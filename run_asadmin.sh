@@ -1,3 +1,5 @@
+#!/usr/bin/env sh
+
 # Copyright 2013-2014 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,20 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all:
-	mkdir --parents build/tmp
-	mkdir --parents build/bin
-	rm -rf build/tmp/*
-	rm -rf build/bin/*
-	rm -f `find . -type f -name '*.pyc' | xargs`
-	mkdir build/tmp/asadmin
-	cp -f *.py build/tmp/asadmin
-	rsync -aL lib build/tmp/asadmin
-	sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g build/tmp/asadmin/asadmin.py
-	cd build/tmp/asadmin && zip -r ../asadmin *
-	cp build/tmp/asadmin.zip build/bin/asadmin
-	cp run_asadmin.sh build/bin/
+BASEDIR=$(dirname $0)
 
-# Alternative
-# pyinstaller -F asadmin.py
-# Requires compilation on each supported linux platofrm
+pyz_file=$BASEDIR/asadmin
+py_file=$BASEDIR/asadmin.py
+
+if [ -e "$pyz_file" ]
+then
+    use_file=$pyz_file
+elif [ -e "$py_file" ]
+then
+    use_file=$py_file
+fi
+
+python $use_file "$@"
