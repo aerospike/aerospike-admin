@@ -3,128 +3,144 @@
 ### Overview
 - The user interface should be case consistent.
 - Minimize/eliminate persisted asadmin state.
-- Consistent ordering using the node _alias_
+- Consistent ordering using the node *alias*
 
 ### Command Modifiers:
-#### _with_
-- The _with_ clause which will be followed by a list of space delimited 
+#### *with*
+- The *with* clause which will be followed by a list of space delimited 
   node.
-    - example: =info with n1 n2 n3=
+    - example: <code>info with n1 n2 n3</code>
         - This would run with nodes n1, n2, and n3.
     - Numerical ranges could be specified as [1:3] which would be the range 1,2,3.
 
-#### _like_
-- the _like_ parameter that would only show results
+#### *like*
+- the *like* parameter that would only show results
   like a particular value.
-    - Example: =show stat like migrate= could be used to show migration stats
-    - Example: =show config like defrag migrate with node n1= could show all the
-	       defrag and migrate configuration parameters on the nodes _aliased_
+    - Example: <code>show stat like migrate</code> could be used to show migration stats
+    - Example: <code>show config like defrag migrate with node n1</code> could show all the
+	       defrag and migrate configuration parameters on the nodes *aliased*
 	       n1.
 
 ### Terminology
-- _alias_: This is the name that asadmin will call a particular node.
+- *alias*: This is the name that asadmin will call a particular node.
     - How does it work?
         - It finds the shortest prefix for the FQDNs of the hosts.
         - If it is unable to retrieve the FQDN it uses the IP address instead.
 
 ### Node Interaction
-#### _info_
+#### info
 ##### Modifiers:
-- _with_
+- with
+
 ##### Default
-- Output Tables for info hosts, info service, info network, info namespace,
-  and info xdr
-##### _info namespace_
-- Same as current except object counts are replicated counts not divided by
-  replication factor.
-##### _info network_
-- _network_ - Show network information
-##### _info service_
+- Output Tables for info hosts, info service, info network, info namespace, and info xdr
+
+##### info namespace
+- Same as current except object counts are replicated counts not divided by replication factor.
+
+##### info network
+- *network* - Show network information
+
+##### *info service*
 - equivalent to previous interface's info node
-##### _info xdr_
-- Same as current except always sorted by _alias_.
 
-#### _clinfo/asinfo_
-##### _Modifiers_
-- _with_
-##### _Default_
-- Both functions will exist and behave as the command line tool. Support both
-  names so that 2.0 and 3.0 can have identical source.
+##### info xdr
+- Same as current except always sorted by *alias*.
 
-#### _show_
+#### clinfo/asinfo
 ##### Modifiers
-- _with_, _like_
+- with
+
+##### Default
+- Both functions will exist and behave as the command line tool. Support both names so that 2.0 and 3.0 can have identical source.
+
+#### show
+##### Modifiers
+- with, like
+
 ##### Default
 - Default behavior, show help.
-##### _show statistics_
-- _statistics/stat_ - Show statistics for all nodes in some sort of tabular
-		      format, unlike info this shows all stats in sorted order.
-                      To display each stat will be a row, each node a column.
-                      All of the _show_ commands will probably be displayed in
-                      this way.
-    - _server_ - show statistics for server
-    - _xdr_ - show statistics for xdr
-    - _set_ - show statistics for set
-##### _latency_
-- _latency_ - Show aerospiike latency information sorted by _alias_.
-##### _show config_
-- _config_ - show all configuration parameters in some tabular format
-    - _service_ - show service parameters
-    - _network_ - show network parameters
-    - _namespace_ - show namespace parameters
-    - _xdr_ - show xdr parameters
-    - _diff_ - show only the params that are not the same across the cluster.
-        - May also be nice to be able to only compare a subset of the config, IE
-          =show config xdr compare=
-###### _Modifier_
-- _diff_ - only show parameters that are different for the nodes selected.
+
+##### show statistics
+- *statistics* - Show statistics for all nodes in some sort of tabular
+		 format, unlike info this shows all stats in sorted order.
+                 To display each stat will be a row, each node a column.
+                 All of the _show_ commands will probably be displayed in
+                 this way.
+    - *server* - show statistics for server
+    - *xdr* - show statistics for xdr
+    - *set* - show statistics for set
+
+##### latency
+- *latency* - Show aerospiike latency information sorted by *alias*.
+
+##### show config
+- *config* - show all configuration parameters in some tabular format
+    - *service* - show service parameters
+    - *network* - show network parameters
+    - *namespace* - show namespace parameters
+    - *xdr* - show xdr parameters
+    - *diff* - show only the params that are not the same across the cluster.
+        - May also be nice to be able to only compare a subset of the config.
+        - IE <code>show config xdr compare</code>
+
+###### Modifier
+- *diff* - only show parameters that are different for the nodes selected.
     - IE =show config xdr compare= would only show paramters that are different.
 
-#### _set_
-- The purpose of set is to provide an easier interface to set dynamic
-  options as well as allow tab completion for the various options.
+#### set
+- The purpose of set is to provide an easier interface to set dynamic options as well as allow tab completion for the various options.
+
 ##### Modifiers
-- _with_
+- *with*
+
 ##### Default
 - Show help
-##### _set service_
-- _service_ <config name> <value>
-##### _set network.heartbeat_
-- _networ.heartbeat_ <config name> <value>
-##### _set network.info_
-- _networ.info_ <config name> <value>
-##### _set namespace_
-- _namespace_ <namespace name> <config name> <value>
-- _namespace_ <namespace name> <set name> <config name> <value>
-##### _set_xdr_
-- _xdr_ <config name> <value>
 
-#### _exec_
+##### set service
+- *service* <config name> <value>
+
+##### set network.heartbeat
+- *network.heartbeat* <config name> <value>
+
+##### set network.info
+- *network.info* <config name> <value>
+
+##### set namespace
+- *namespace* <namespace name> <config name> <value>
+- *namespace* <namespace name> <set name> <config name> <value>
+
+##### set xdr
+- *xdr* <config name> <value>
+
+#### exec
 ##### Modifiers
-- _with_
+- with
+
 ##### TBD
 - Requires SSH
 - Execute a shell command on node selection
 
-#### _watch_
+#### watch
 - Similar to current watch
 - Default to display every 10 seconds and only if there are changes
 - Would be nice to highlight changes (similar to watch -d)
 - {,#} - if a number is not provided, watch will check for changes every
 	      10 seconds otherwise every provided number seconds. This command
-	      may be used to prefix any other command except _monitor_
-	      command.
-- IE =watch 2 info service with n1= may display info service with n1 every 2
+	      may be used to prefix any other command.
+- IE <code>watch 2 info service with n1</code> may display info service with n1 every 2
   seconds
+
 ##### Modifiers
 - Modifiers supported by watched command
+
 ##### Default
 - Show help
 
 ## Developer Guide
 Important files and structure:
-1. /monitor.py <br>
-   monitor.py is the entry point specifically the *precmd* performs a
+1. /asadmin.py <br>
+   asadmin.py is the entry point specifically the *precmd* performs a
    search and finds the actual command the user is requesting and executes.
    <br>
    For most updates this file will not need modified.
