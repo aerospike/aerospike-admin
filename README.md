@@ -1,8 +1,16 @@
-# AeroSpike ADMIN
+# Aerospike Admin
 ## Description
-AeroSpike ADMIN provides and interface for Aerospike users to view the current
+Aerospike Admin provides and interface for Aerospike users to view the current
 stat of their Aerospike Cluster. Start the tool with *python asadmin.py* and
 run the *help* command to get started.
+
+## Installing Aerospike Admin
+make
+sudo make install
+
+## Running Aerospike Admin
+asadmin -h <Aerospike Server Address>
+Admin> help
 
 ## Dependencies
 - python 2.6+
