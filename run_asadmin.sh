@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-BASEDIR=$(dirname $0)
+BASEDIR="$(dirname "$(readlink -f "$0")")"
 
 pyz_file=$BASEDIR/asadmin
 py_file=$BASEDIR/asadmin.py
