@@ -1,0 +1,453 @@
+# Copyright 2013-2014 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from lib import citrusleaf
+from lib import util
+import lib
+from telnetlib import Telnet
+from time import time
+import socket
+import threading
+
+def getfqdn(address, timeout=0.5):
+    # note: cannot use timeout lib because signal must be run from the
+    #       main thread
+
+    result = [address]
+    
+    def helper():
+        result[0] = socket.getfqdn(address)
+
+    t = threading.Thread(target=helper)
+
+    t.start()
+
+    t.join(timeout)
+
+    return result[0]
+
+def return_exceptions(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            return e
+
+    return wrapper
+
+class Node(object):
+    dns_cache = {}
+
+    def __init__(self, address, port=3000, timeout=3, use_telnet=False):
+        """
+        address -- ip or fqdn for this node
+        port -- info port for this node
+        timeout -- number of seconds to wait before giving up on the node
+        If address is ip then get fqdn else get ip
+        store ip in self.ip
+        store fqdn in self.fqdn
+        store port in self.port
+
+        NOTE: would be nice if the port could either be the service or telnet
+        access port. Can we detect from the socket?
+        ALSO NOTE: May be better to just use telnet instead?
+        """
+        self._updateIP(address)
+        self.port = port
+        self._key = hash("%s%s"%(self.ip, self.port))
+        self.xdr_port = 3004 # TODO: Find the xdr port
+        self._timeout = timeout
+        self._use_telnet = use_telnet
+        # Cluster will use the Node ID to identify a particular node.
+        self.node_id = self.infoNode()
+        if isinstance(self.node_id, Exception):
+            raise self.node_id
+
+        # Original address may not be the service address, the following will
+        # ensure we have the service address
+        address = self.infoService()[0]
+        if isinstance(address, Exception):
+            raise address
+        self._updateIP(address)
+
+    def __hash__(self):
+        return hash(self._key)
+
+    def __eq__(self, other):
+        return self._key == other._key
+
+    def _updateIP(self, address):
+        if address not in self.dns_cache:
+            self.dns_cache[address] = (socket.gethostbyname(address)
+                                       , getfqdn(address))
+
+        self.ip, self.fqdn = self.dns_cache[address]
+
+    def sockName(self, use_fqdn = False):
+        if use_fqdn:
+            return ":".join([self.fqdn, str(self.port)])
+        else:
+            return ":".join([self.ip, str(self.port)])
+
+    def __str__(self):
+        return self.sockName()
+
+    def isXDREnabled(self):
+        config = self.infoGetConfig('xdr')
+        if isinstance(config, Exception):
+            return False
+
+        
+        xdr_enabled = config['xdr']['enable-xdr']
+        return xdr_enabled == 'true'
+
+    @return_exceptions
+    @util.cached
+    def _infoTelnet(self, command, port = None):
+        # TODO: Handle socket failures
+        if port == None:
+            port = self.port
+        try:
+            self.sock == self.sock # does self.sock exist?
+        except:
+            self.sock = Telnet(self.ip, port)
+
+        self.sock.write("%s\n"%command)
+
+        starttime = time()
+        result = ""
+        while not result:
+            result = self.sock.read_very_eager().strip()
+            if starttime + self._timeout < time():
+                # TODO: rasie appropriate exception
+                raise IOError("Could not connect to node %s"%self.ip)
+        return result
+
+    @return_exceptions
+    @util.cached
+    def _infoCInfo(self, command, port = None):
+        # TODO: citrusleaf.py does not support passing a timeout default is 0.5s
+        if port == None:
+            port = self.port
+
+        result = citrusleaf.citrusleaf_info(self.ip, port, command)
+        if result != -1 and result is not None:
+            return result
+        else:
+            raise IOError(
+                "Invalid command or Could not connect to node %s "%self.ip)
+
+    @return_exceptions
+    def info(self, command):
+        """
+        asinfo function equivalent
+
+        Arguments:
+        command -- the info command to execute on this node
+        """
+        if self._use_telnet:
+            return self._infoTelnet(command)
+        else:
+            return self._infoCInfo(command)
+
+    @return_exceptions
+    @util.cached
+    def xdrInfo(self, command):
+        """
+        asinfo -p [xdr-port] equivalent
+
+        Arguments:
+        command -- the info command to execute on this node
+        """
+        
+        try:
+            return self._infoCInfo(command, self.xdr_port)
+        except Exception as e:
+            return e
+
+    @return_exceptions
+    def infoNode(self):
+        """
+        Get this nodes id. asinfo -v "node"
+
+        Returns:
+        string -- this node's id.
+        """
+
+        return self.info("node")
+
+    @return_exceptions
+    def _infoServicesHelper(self, services):
+        """
+        Takes an info services response and returns a list.
+        """
+        if not services:
+            return []
+
+        s = map(util.info_to_tuple, util.info_to_list(services))
+        return map(lambda v: (v[0], int(v[1])), s)
+
+    @return_exceptions
+    def infoServices(self):
+        """
+        Get other services this node knows of that are active
+
+        Returns:
+        list -- [(ip,port),...]
+        """
+        services = self.info("services")
+
+        return self._infoServicesHelper(self.info("services"))
+
+    @return_exceptions
+    def infoService(self):
+        service = self.info("service")
+        return tuple(service.split(':'))
+
+    @return_exceptions
+    def infoServicesAlumni(self):
+        """
+        Get other services this node has ever know of
+
+        Returns:
+        list -- [(ip,port),...]
+        """
+        
+        try:
+            return self._infoServicesHelper(self.info("services-alumni"))
+        except IOError:
+            # Possibly old asd without alumni feature
+            return self.infoServices()
+
+    @return_exceptions
+    def infoStatistics(self):
+        """
+        Get statistics for this node. asinfo -v "statistics"
+
+        Returns:
+        dictionary -- statistic name -> value
+        """
+
+        return util.info_to_dict(self.info("statistics"))
+
+    @return_exceptions
+    def infoNamespaces(self):
+        """
+        Get a list of namespaces for this node. asinfo -v "namespaces"
+
+        Returns:
+        list -- list of namespaces
+        """
+
+        return util.info_to_list(self.info("namespaces"))
+
+    @return_exceptions
+    def infoNamespaceStatistics(self, namespace):
+        """
+        Get statistics for a namespace.
+
+        Returns:
+        dict -- {stat_name : stat_value, ...}
+        """
+
+        return util.info_to_dict(self.info("namespace/%s"%namespace))
+
+    @return_exceptions
+    def infoAllNamespaceStatistics(self):
+        namespaces = self.infoNamespaces()
+
+        if isinstance(namespaces, Exception):
+            return namespaces
+
+        stats = {}
+        for ns in namespaces:
+            stats[ns] = self.infoNamespaceStatistics(ns)
+
+        return stats
+
+    @return_exceptions
+    def infoSetStatistics(self):
+        stats = self.info("sets")
+        stats = util.info_to_list(stats)
+        stats.pop()
+        stats = [util.info_colon_to_dict(stat) for stat in stats]
+        
+        sets = {}
+        for stat in stats:
+            ns_name = stat['ns_name']
+            set_name = stat['set_name']
+
+            key = (ns_name, set_name)
+            if key not in sets:
+                sets[key] = {}
+            set_dict = sets[key]
+
+            set_dict.update(stat)
+
+        return sets
+
+    @return_exceptions
+    def infoBinStatistics(self):
+        stats = util.info_to_list(self.info("bins"))
+        stats.pop()
+        stats = [value.split(':') for value in stats]
+        stat_dict = {}
+
+        for stat in stats:
+            values = util.info_to_list(stat[1], ',')
+            values = ";".join(filter(lambda v: '=' in v, values))
+            values = util.info_to_dict(values)
+            stat_dict[stat[0]] = values
+
+        return stat_dict
+
+    @return_exceptions
+    def infoXDRStatistics(self):
+        """
+        Get statistics for XDR
+
+        Returns:
+        dict -- {stat_name : stat_value, ...}
+        """
+        return util.info_to_dict(self.xdrInfo('statistics'))
+
+    @return_exceptions
+    def infoGetConfig(self, stanza = "", namespace = ""):
+        """
+        Get the complete config for a node. This should include the following
+        stanzas: Service, Network, XDR, and Namespace
+        Sadly it seems Service and Network are not seperable.
+
+        Returns:
+        dict -- stanza --> [namespace] --> param --> value
+        """
+        config = {}
+        if stanza == 'namespace':
+            if namespace != "":
+                config[stanza] = {namespace:util.info_to_dict(
+                    self.info("get-config:context=namespace;id=%s"%namespace))}
+            else:
+                namespace_configs = {}
+                namespaces = self.infoNamespaces()
+                for namespace in namespaces:
+                    namespace_config = self.infoGetConfig('namespace', namespace)
+                    namespace_config = namespace_config['namespace'][namespace]
+                    namespace_configs[namespace] = namespace_config
+                config['namespace'] = namespace_configs
+                
+        elif stanza == '':
+            config['service'] = util.info_to_dict(self.info("get-config:"))
+        elif stanza != 'all':
+            config[stanza] = util.info_to_dict(
+                self.info("get-config:context=%s"%stanza))
+        elif stanza == "all":
+            namespace_configs = {}
+            namespaces = self.infoNamespaces()
+            for namespace in namespaces:
+                namespace_config = self.infoGetConfig('namespace', namespace)
+                namespace_config = namespace_config['namespace'][namespace]
+                namespace_configs[namespace] = namespace_config
+            config['namespace'] = namespace_configs
+            config['service'] = self.infoGetConfig("service")
+            # Server lumps this with service
+            # config["network"] = self.infoGetConfig("network")
+        return config
+
+    @return_exceptions
+    def infoLatency(self):
+        tdata = self.info('latency:').split(';')[:-1]
+        data = {}
+        while tdata != []:
+            columns = tdata.pop(0)
+            row = tdata.pop(0)
+
+            hist_name, columns = columns.split(':', 1)
+            columns = columns.split(',')
+            row = row.split(',')
+            start_time = columns.pop(0)
+            end_time = row.pop(0)
+            columns.insert(0, 'Time Span')
+            row = [float(r) for r in row]
+            row.insert(0, "%s->%s"%(start_time, end_time))
+
+            data[hist_name] = (columns, row)
+            
+        return data
+
+    @return_exceptions
+    def infoXDRGetConfig(self):
+        result = self.xdrInfo('get-config')
+        result = {'xdr':util.info_to_dict(result)}
+        return result
+
+    @return_exceptions
+    def infoHistogram(self, histogram):
+        namespaces = self.infoNamespaces()
+
+        data = {}
+        for namespace in namespaces:
+            datum = self.info("hist-dump:ns=%s;hist=%s"%(namespace
+                                                         , histogram))
+            datum = datum.split(',')
+            datum.pop(0) # don't care about ns, hist_name, or length
+            width = int(datum.pop(0))
+            datum[-1] = datum[-1].split(';')[0]
+            datum = map(int, datum)
+
+            data[namespace] = {'histogram':histogram
+                               , 'width':width
+                               , 'data':datum}
+
+        return data
+
+    def _parseDunList(self, dun_list, allow_all=False):
+        c = lib.cluster.Cluster(self.ip)
+        lookup = c.node_lookup
+        result = set()
+        for node in dun_list:
+            if node == 'all':
+                if allow_all:
+                    result.update([n.node_id for n in c.nodes.itervalues()])
+                    break
+                else:
+                    raise Exception("Command does not permit 'all' in dun list")
+            if node in lookup:
+                nodes = lookup[node]
+                if len(nodes) == 1:
+                    result.add(nodes[0].node_id)
+                else:
+                    keys = lookup.getKey(node)
+                    raise Exception(
+                        "Node Name: %s is not unique, conflicts "%(node) + \
+                        "with %s"%(','.join(keys)))
+
+        dun_list = ','.join(sorted(result))
+        if not dun_list:
+            raise Exception('Did not recieve any valid hosts')
+
+        return dun_list
+
+    @return_exceptions
+    def infoDun(self, dun_list):
+        dun_list = self._parseDunList(dun_list)
+        command = "dun:nodes=%s"%(dun_list)
+        result = self.info(command)
+        return command, result
+
+    @return_exceptions
+    def infoUndun(self, dun_list):
+        dun_list = self._parseDunList(dun_list, allow_all=True)
+        command = "undun:nodes=%s"%(dun_list)
+        result = self.info(command)
+        return command, result
