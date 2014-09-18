@@ -72,7 +72,7 @@
     - **set** - show statistics for set
 
 ##### latency
-- **latency** - Show aerospiike latency information sorted by **alias**.
+- **latency** - Show Aerospike latency information sorted by **alias**.
 
 ##### show config
 - **config** - show all configuration parameters in some tabular format
@@ -86,7 +86,7 @@
 
 ###### Modifier
 - **diff** - only show parameters that are different for the nodes selected.
-    - IE =show config xdr compare= would only show paramters that are different.
+    - IE =show config xdr compare= would only show parameters that are different.
 
 #### set
 - The purpose of set is to provide an easier interface to set dynamic options as well as allow tab completion for the various options.
@@ -150,8 +150,8 @@ Important files and structure:
    **commandHelp** decorator that accepts a list of lines to be displayed when
    help on a command is requested.
    <br>
-   Commands are organized into an heirarchy, and the entry point is the
-   **RootController**. End points int he heirachy will be methods of a controller
+   Commands are organized into an hierarchy, and the entry point is the
+   **RootController**. End points int he hierarchy will be methods of a controller
    that are prefixed "do_", default controller behavior will be prefixed
    "\_do\_".
 3. /lib/view.py <br>
@@ -165,14 +165,14 @@ Important files and structure:
    for instance if you wanted to display uptime in hrs/days use timeExtractor.
    <br>
    Before adding rows to the table you need to define a list of column names,
-   if a column is bing renamed, use a tuple of ('original\_name', 'new\_name')
+   if a column is being renamed, use a tuple of ('original\_name', 'new\_name')
    <br>
    A datasource is really a data transformation, if you want to use
    timeExtractor on a column then you would need to call **addDataSource** on a
    new column name and pass the extractor as the function to do the
    transformation, passing the function the old columnname.
 
-   Afterwards will need to add data to the table one row at a time.
+   Afterward will need to add data to the table one row at a time.
 5. /lib/cluster.py <br>
    Calls node methods in parallel, shouldn't need to modify for anything other
    than bug fixes.
