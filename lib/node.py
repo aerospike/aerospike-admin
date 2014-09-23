@@ -440,7 +440,7 @@ class Node(object):
 
     @return_exceptions
     def infoDun(self, dun_list):
-        dun_list = self._parseDunList(dun_list)
+        dun_list = self._parseDunList(dun_list, allow_all=True)
         command = "dun:nodes=%s"%(dun_list)
         result = self.info(command)
         return command, result
