@@ -45,6 +45,7 @@ class Cluster(object):
 
         self._original_seed_nodes = set(seed_nodes)
         self._seed_nodes = set(seed_nodes)
+        self._live_nodes = set()
         # crawl the cluster search for nodes in addition to the seed nodes.
         self._enable_crawler = True
         self._crawl()
@@ -68,10 +69,7 @@ class Cluster(object):
             return ''
 
     def getVisibility(self):
-        try:
-            return set(self._seed_nodes)
-        except:
-            return set()
+        return self._live_nodes
 
     def _shouldCrawl(self):
         """
@@ -86,7 +84,7 @@ class Cluster(object):
             for s in self.infoServices().values():
                 current_services |= set(s)
 
-            nodes = set(map(lambda n: (n.ip, n.port), self.nodes.itervalues()))
+            nodes = self._live_nodes
 
             if current_services and current_services == nodes:
                 # services have not changed, do not crawl
@@ -117,6 +115,7 @@ class Cluster(object):
             seed_nodes = self._original_seed_nodes
 
         # clear the current lookup and node list
+        self._live_nodes.clear()
         all_services = set()
         visited = set()
         unvisited = set(seed_nodes)
@@ -133,12 +132,11 @@ class Cluster(object):
 
             services_list = util.concurrent_map(self._getServices, nodes)
 
-            #all_services = set()
-            for services in services_list:
+            for node, services in zip(nodes, services_list):
                 if isinstance(services, Exception):
                     continue
+                self._live_nodes.add((node.ip, node.port))
                 all_services.update(set(services))
-
             unvisited = all_services - visited
 
         if all_services:
