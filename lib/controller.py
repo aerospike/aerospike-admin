@@ -78,7 +78,7 @@ class InfoController(CommandController):
         visibility = {}
         for node_id, service_list in services.iteritems():
             if isinstance(service_list, Exception):
-                visibility[node_id] = "IOError"
+                continue
 
             if len(visible - set(service_list)) != 1:
                 visibility[node_id] = False

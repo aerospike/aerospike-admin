@@ -101,7 +101,8 @@ class CliView(object):
             if not isinstance(build, Exception):
                 row['build'] = build
 
-            row['cluster_visibility'] = visibilities[node_id]
+            if node_id in visibilities:
+                row['cluster_visibility'] = visibilities[node_id]
 
             t.insertRow(row)
 
