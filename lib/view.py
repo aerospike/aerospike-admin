@@ -48,7 +48,6 @@ class CliView(object):
                         , '_migrates'
                         , ('_paxos_principal', 'Principal')
                         , '_objects'
-                        , 'system_free_mem_pct'
                         , 'uptime')
 
         t = Table(title, column_names)
@@ -74,21 +73,21 @@ class CliView(object):
         t.addCellAlert('free-pct-memory'
                        ,lambda data: int(data['free-pct-memory']) < 40)
 
-        t.addCellAlert('system_free_mem_pct'
-                       ,lambda data: int(data['system_free_mem_pct']) < 40)
-
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
 
-        for node_id, n_stats in stats.iteritems():
+        for node_key, n_stats in stats.iteritems():
             if isinstance(n_stats, Exception):
                 n_stats = {}
+
+            node = cluster.getNode(node_key)[0]
             row = n_stats
-            row['real_node_id'] = node_id
-            row['node'] = prefixes[node_id]
+            row['real_node_id'] = node.node_id
+            row['node'] = prefixes[node_key]
             try:
-                row['_paxos_principal'] = prefixes[row['paxos_principal']]
+                paxos_node = cluster.getNode(row['paxos_principal'])[0]
+                row['_paxos_principal'] = prefixes[paxos_node.key]
             except KeyError:
                 # The principal is a node we currently do not know about
                 # So return the principal ID
@@ -97,12 +96,12 @@ class CliView(object):
                 except KeyError:
                     pass
 
-            build = builds[node_id]
+            build = builds[node_key]
             if not isinstance(build, Exception):
                 row['build'] = build
 
-            if node_id in visibilities:
-                row['cluster_visibility'] = visibilities[node_id]
+            if node_key in visibilities:
+                row['cluster_visibility'] = visibilities[node_key]
 
             t.insertRow(row)
 
@@ -135,15 +134,16 @@ class CliView(object):
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
 
-        for node_id, n_stats in stats.iteritems():
+        for node_key, n_stats in stats.iteritems():
             if isinstance(n_stats, Exception):
                 n_stats = {}
+            node = cluster.getNode(node_key)[0]
             row = n_stats
-            row['node'] = prefixes[node_id]
-            row['real_node_id'] = node_id
-            row['node_id'] = node_id if node_id != principal else "*%s"%(node_id)
-            row['fqdn'] = hosts[node_id].sockName(use_fqdn = True)
-            row['ip'] = hosts[node_id].sockName(use_fqdn = False)
+            row['node'] = prefixes[node_key]
+            row['real_node_id'] = node.node_id
+            row['node_id'] = node.node_id if node.node_id != principal else "*%s"%(node.node_id)
+            row['fqdn'] = hosts[node_key].sockName(use_fqdn = True)
+            row['ip'] = hosts[node_key].sockName(use_fqdn = False)
             t.insertRow(row)
         print t
 
@@ -202,10 +202,11 @@ class CliView(object):
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
 
-        for node_id, n_stats in stats.iteritems():
+        for node_key, n_stats in stats.iteritems():
+            node = cluster.getNode(node_key)[0]
             if isinstance(n_stats, Exception):
-                t.insertRow({'real_node_id':node_id
-                             , 'node':prefixes[node_id]})
+                t.insertRow({'real_node_id':node.node_id
+                             , 'node':prefixes[node_key]})
                 continue
 
             for ns, ns_stats in n_stats.iteritems():
@@ -215,8 +216,8 @@ class CliView(object):
                     row = ns_stats
 
                 row['namespace'] = ns
-                row['real_node_id'] = node_id
-                row['node'] = prefixes[node_id]
+                row['real_node_id'] = node.node_id
+                row['node'] = prefixes[node_key]
                 t.insertRow(row)
         print t
 
@@ -267,22 +268,23 @@ class CliView(object):
                        , color=terminal.fg_green)
 
         row = None
-        for node_id, row in stats.iteritems():
+        for node_key, row in stats.iteritems():
             if isinstance(row, Exception):
                 row = {}
 
-            if xdr_enable[node_id]:
+            node = cluster.getNode(node_key)[0]
+            if xdr_enable[node_key]:
                 if row:
-                    row['build'] = builds[node_id]
+                    row['build'] = builds[node_key]
                     row['_free-dlog-pct'] = row['free-dlog-pct'][:-1]
                 else:
                     row = {}
-                    row['node-id'] = node_id
-                row['real_node_id'] = node_id
+                    row['node-id'] = node.node_id
+                row['real_node_id'] = node.node_id
             else:
                 continue
 
-            row['node'] = prefixes[node_id]
+            row['node'] = prefixes[node_key]
 
             t.insertRow(row)
         print t
