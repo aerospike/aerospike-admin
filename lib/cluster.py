@@ -54,14 +54,23 @@ class Cluster(object):
         self._crawl()
 
     def __str__(self):
-        nodes = (str(node) for node in self.nodes.itervalues())
-        return "Connected to %s nodes:\n%s"%(len(self.nodes), ", ".join(nodes))
+        nodes = self.nodes.values()
+        online = [n.key for n in filter(lambda n: n.alive, nodes)]
+        offline = [n.key for n in filter(lambda n: not n.alive, nodes)]
+
+        retval = "Found %s nodes"%(len(nodes))
+        if online:
+            retval += "\nOnline:  %s"%(", ".join(online))
+        if offline:
+            retval += "\nOffline: %s"%(", ".join(offline))
+
+        return retval
 
     def getPrefixes(self):
         prefixes = {}
-        for node_id, node in self.nodes.iteritems():
+        for node_key, node in self.nodes.iteritems():
             fqdn = node.sockName(use_fqdn=True)
-            prefixes[node_id] = self.node_lookup.getPrefix(fqdn)
+            prefixes[node_key] = self.node_lookup.getPrefix(fqdn)
 
         return prefixes
 
@@ -77,19 +86,26 @@ class Cluster(object):
     def _shouldCrawl(self):
         """
         Determine if we need to do a crawl.
+
+        We crawl if the union of all services lists is not equal to the set
+        of nodes that this tool percieves as alive.
         """
         if not self._enable_crawler:
             return False
         self._enable_crawler = False
         current_services = set()
 
+        self._refreshNodeLiveliness()
+
         try:
+            infoservices = self.infoServices().values()
+
             for s in self.infoServices().values():
+                if isinstance(s, Exception):
+                    continue
                 current_services |= set(s)
 
-            nodes = self._live_nodes
-
-            if current_services and current_services == nodes:
+            if current_services and current_services == self._live_nodes:
                 # services have not changed, do not crawl
                 # if services are empty they crawl regardless
                 return False
@@ -111,67 +127,57 @@ class Cluster(object):
         """
         if not self._shouldCrawl():
             return
-
-        if self._seed_nodes:
-            seed_nodes = self._seed_nodes
-        else:
-            seed_nodes = self._original_seed_nodes
-
-        # clear the current lookup and node list
-        self._live_nodes.clear()
-        all_services = set()
-        visited = set()
-        unvisited = set(seed_nodes)
-        while unvisited - visited:
-            l_unvisited = list(unvisited)
-
-            nodes = util.concurrent_map(self._registerNode,
-                                        l_unvisited)
-            nodes = filter(lambda n: n is not None and n not in visited,
-                           nodes)
-
-            visited |= unvisited
-            unvisited = set()
-
-            services_list = util.concurrent_map(self._getServices, nodes)
-
-            for node, services in zip(nodes, services_list):
-                if isinstance(services, Exception):
-                    continue
-                self._live_nodes.add((node.ip, node.port))
-                all_services.update(set(services))
-            unvisited = all_services - visited
-
-        if all_services:
-            self._seed_nodes = all_services
-
-    def updateNode(self, node):
-        self.removeNode(node)
-        self.nodes[node.node_id] = node
-        # add node to lookup
-        self.node_lookup[node.node_id] = node
-        self.node_lookup[node.sockName(use_fqdn = True)] = node
-        self.node_lookup[node.sockName()] = node
-
-    def removeNode(self, node):
-        """
-        Currently not used... may not work
-        """
-        if isinstance(node, Node):
-            node = node.node_id
+        self._enable_crawler = False
 
         try:
-            node = self.getNode(node)
-        except:
-            return # nothing to do
+            if self._seed_nodes:
+                seed_nodes = self._seed_nodes
+            else:
+                seed_nodes = self._original_seed_nodes
 
-        del(self.nodes[node.node_id])
-        del(self.node_lookup[node.node_id])
-        del(self.node_lookup[node.fqdn])
-        del(self.node_lookup[node.sockName(use_fqdn = True)])
-        del(self.node_lookup[node.sockName()])
-        del(self.node_lookup[node.alias])
-        del(node)
+            # clear the current lookup and node list
+            all_services = set()
+            visited = set()
+            unvisited = set(seed_nodes)
+            while unvisited - visited:
+                l_unvisited = list(unvisited)
+
+                nodes = util.concurrent_map(self._registerNode, l_unvisited)
+                live_nodes = filter(
+                    lambda n: n is not None and n.alive and n not in visited
+                    , nodes)
+
+                visited |= unvisited
+                unvisited.clear()
+
+                services_list = util.concurrent_map(self._getServices, live_nodes)
+                for node, services in zip(live_nodes, services_list):
+                    if isinstance(services, Exception):
+                        continue
+                    all_services.update(set(services))
+                    all_services.add((node.ip, node.port))
+                unvisited = all_services - visited
+            if all_services:
+                self._seed_nodes = all_services
+
+            self._refreshNodeLiveliness()
+        except:
+            pass
+        finally:
+            self._enable_crawler = True
+
+    def _refreshNodeLiveliness(self):
+        live_nodes = filter(lambda n: n.alive, self.nodes.itervalues())
+        self._live_nodes.clear()
+        self._live_nodes.update(map(lambda n: (n.ip, n.port), live_nodes))
+
+    def updateNode(self, node):
+        self.nodes[node.key] = node
+        # add node to lookup
+        self.node_lookup[node.sockName(use_fqdn = True)] = node
+        self.node_lookup[node.sockName()] = node
+        if node.alive:
+            self.node_lookup[node.node_id] = node
 
     def getNode(self, node):
         return self.node_lookup[node]
@@ -179,6 +185,11 @@ class Cluster(object):
     def _registerNode(self, ip_port):
         """
         Instantiate and return a new node
+
+        If cannot instantiate node, return None.
+        Creates a new node if:
+           1) node.key doesn't already exist
+           2) node.key exists but existing node is not alive
         """
         try:
             ip, port = ip_port
@@ -189,21 +200,21 @@ class Cluster(object):
             return None
 
         try:
-            s_ip_port = "%s:%s"%(ip, port)
-            if s_ip_port in self.node_lookup:
-                n = self.node_lookup[s_ip_port][0]
+            node_key = Node.createKey(ip, port)
+            if node_key in self.nodes:
+                n = self.nodes[node_key]
+                if not n.alive:
+                    n1 = Node(ip, port, use_telnet = self.use_telnet)
+                    if n1.alive:
+                        n = n1
+                        self.updateNode(n)
             else:
                 n = Node(ip
                          , port
                          , use_telnet=self.use_telnet
                          , user=self.user
                          , password=self.password)
-
-                # Don't reregister a node
-                if n.node_id in self.node_lookup:
-                    n = self.node_lookup[n.node_id][0]
-                else:
-                    self.updateNode(n)
+                self.updateNode(n)
 
             return n
         except:
@@ -248,7 +259,7 @@ class Cluster(object):
         return dict(
             util.concurrent_map(
                 lambda node:
-                (node.node_id, getattr(node, method_name)(*args, **kwargs)),
+                (node.key, getattr(node, method_name)(*args, **kwargs)),
                 use_nodes))
 
     def isXDREnabled(self, nodes = 'all'):

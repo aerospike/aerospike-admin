@@ -18,6 +18,7 @@ from lib.controller import *
 from lib.view import *
 from lib.cluster import Cluster
 from lib.prefixdict import PrefixDict
+from lib.node import Node
 import lib
 import sys
 from cStringIO import StringIO
@@ -40,10 +41,14 @@ class ControllerTest(unittest.TestCase):
 
         self.MockCluster = self.cluster_patch.start()
         #self.MockView = self.view_patch.start()
-        Cluster._crawl = classmethod(lambda self: "boo")
+        Cluster._crawl = classmethod(lambda self: None)
         Cluster._callNodeMethod = classmethod(
             lambda self, nodes, method_name, *args, **kwargs:
             {"test":IOError("test error")})
+
+        n = Node("172.99.99.99")
+        Cluster.getNode = classmethod(
+            lambda self, key: [n])
 
         pd = PrefixDict()
         pd['test'] = 'test'
