@@ -411,26 +411,24 @@ class Node(object):
 
         return data
 
-    def _parseDunList(self, dun_list, allow_all=False):
+    def _parseDunList(self, dun_list):
         c = lib.cluster.Cluster(self.ip)
         lookup = c.node_lookup
         result = set()
-        for node in dun_list:
-            if node == 'all':
-                if allow_all:
-                    result.update([n.node_id for n in c.nodes.itervalues()])
-                    break
-                else:
-                    raise Exception("Command does not permit 'all' in dun list")
-            if node in lookup:
-                nodes = lookup[node]
-                if len(nodes) == 1:
-                    result.add(nodes[0].node_id)
-                else:
-                    keys = lookup.getKey(node)
-                    raise Exception(
-                        "Node Name: %s is not unique, conflicts "%(node) + \
-                        "with %s"%(','.join(keys)))
+
+        if 'all' in dun_list:
+            result.add('all')
+        else:
+            for node in dun_list:
+                if node in lookup:
+                    nodes = lookup[node]
+                    if len(nodes) == 1:
+                        result.add(nodes[0].node_id)
+                    else:
+                        keys = lookup.getKey(node)
+                        raise Exception(
+                            "Node Name: %s is not unique, conflicts "%(node) + \
+                            "with %s"%(','.join(keys)))
 
         dun_list = ','.join(sorted(result))
         if not dun_list:
@@ -440,14 +438,14 @@ class Node(object):
 
     @return_exceptions
     def infoDun(self, dun_list):
-        dun_list = self._parseDunList(dun_list, allow_all=True)
+        dun_list = self._parseDunList(dun_list)
         command = "dun:nodes=%s"%(dun_list)
         result = self.info(command)
         return command, result
 
     @return_exceptions
     def infoUndun(self, dun_list):
-        dun_list = self._parseDunList(dun_list, allow_all=True)
+        dun_list = self._parseDunList(dun_list)
         command = "undun:nodes=%s"%(dun_list)
         result = self.info(command)
         return command, result
