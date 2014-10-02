@@ -202,21 +202,22 @@ class Cluster(object):
         try:
             node_key = Node.createKey(ip, port)
             if node_key in self.nodes:
-                n = self.nodes[node_key]
-                if not n.alive:
-                    n1 = Node(ip, port, use_telnet = self.use_telnet)
-                    if n1.alive:
-                        n = n1
-                        self.updateNode(n)
+                existing = self.nodes[node_key]
             else:
-                n = Node(ip
-                         , port
-                         , use_telnet=self.use_telnet
-                         , user=self.user
-                         , password=self.password)
-                self.updateNode(n)
+                existing = None
 
-            return n
+            if not existing or not existing.alive:
+                new_node = Node(ip
+                              , port
+                              , use_telnet=self.use_telnet
+                              , user=self.user
+                              , password=self.password)
+
+                if existing and not new_node.alive:
+                    new_node = existing
+            self.updateNode(new_node)
+
+            return new_node
         except:
             return None
 
