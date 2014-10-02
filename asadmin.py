@@ -229,11 +229,14 @@ def main():
                         , "--execute"
                         , help="Execute a single asadmin command and exit")
     parser.add_argument("--profile"
-                        , help="Profile Aerospike Admin for performance issues")
+                        , action="store_true"
+                        #, help="Profile Aerospike Admin for performance issues"
+                        , help=argparse.SUPPRESS)
     parser.add_argument("-u"
                         , "--help"
                         , action="store_true"
                         , help="show program usage")
+
     cli_args = parser.parse_args()
     if cli_args.help:
         parser.print_help()
