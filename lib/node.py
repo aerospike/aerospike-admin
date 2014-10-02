@@ -42,6 +42,7 @@ def return_exceptions(func):
         try:
             return func(*args, **kwargs)
         except Exception as e:
+            args[0].alive = False
             return e
 
     return wrapper
@@ -65,21 +66,51 @@ class Node(object):
         """
         self._updateIP(address)
         self.port = port
-        self._key = hash("%s%s"%(self.ip, self.port))
         self.xdr_port = 3004 # TODO: Find the xdr port
         self._timeout = timeout
         self._use_telnet = use_telnet
-        # Cluster will use the Node ID to identify a particular node.
-        self.node_id = self.infoNode()
-        if isinstance(self.node_id, Exception):
-            raise self.node_id
+        # hack, _key needs to be defines before info calls... but may have
+        # wrong (localhost) address before infoService is called. Will set
+        # again after that call.
 
-        # Original address may not be the service address, the following will
-        # ensure we have the service address
-        address = self.infoService()[0]
-        if isinstance(address, Exception):
-            raise address
-        self._updateIP(address)
+        self._key = hash(self.createKey(address, self.port))
+
+        try:
+            self.node_id = self.infoNode()
+            if isinstance(self.node_id, Exception):
+                raise self.node_id
+
+            # Original address may not be the service address, the
+            # following will ensure we have the service address
+            address = self.infoService()[0]
+            if isinstance(address, Exception):
+                raise address
+
+            # calling update ip again because infoService may have provided a
+            # different IP than what was seeded.
+            self._updateIP(address)
+            self._serviceIPPort = self.createKey(self.ip, self.port)
+            self._key = hash(self._serviceIPPort)
+            self.alive = True
+        except:
+            # Node is offline... fake a node
+            self.ip = address
+            self.fqdn = address
+            self.port = port
+            self._serviceIPPort = self.createKey(self.ip, self.port)
+            self._key = hash(self._serviceIPPort)
+
+            self.node_id = "000000000000000"
+            self.alive = False
+
+    @property
+    def key(self):
+        """Get the value of serviceIPPort"""
+        return self._serviceIPPort
+
+    @staticmethod
+    def createKey(address, port):
+        return "%s:%s"%(address, port)
 
     def __hash__(self):
         return hash(self._key)
@@ -96,9 +127,11 @@ class Node(object):
 
     def sockName(self, use_fqdn = False):
         if use_fqdn:
-            return ":".join([self.fqdn, str(self.port)])
+            address = self.fqdn
         else:
-            return ":".join([self.ip, str(self.port)])
+            address = self.ip
+
+        return self.createKey(address, self.port)
 
     def __str__(self):
         return self.sockName()
