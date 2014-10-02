@@ -49,7 +49,8 @@ def return_exceptions(func):
 class Node(object):
     dns_cache = {}
 
-    def __init__(self, address, port=3000, timeout=3, use_telnet=False):
+    def __init__(self, address, port=3000, timeout=3, use_telnet=False
+                 , user=None, password=None):
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -69,6 +70,8 @@ class Node(object):
         self.xdr_port = 3004 # TODO: Find the xdr port
         self._timeout = timeout
         self._use_telnet = use_telnet
+        self.user = user
+        self.password = password
         # Cluster will use the Node ID to identify a particular node.
         self.node_id = self.infoNode()
         if isinstance(self.node_id, Exception):
@@ -141,7 +144,9 @@ class Node(object):
         if port == None:
             port = self.port
 
-        result = citrusleaf.citrusleaf_info(self.ip, port, command)
+        result = citrusleaf.citrusleaf_info(self.ip, port, command
+                                            , user=self.user
+                                            , password=self.password)
         if result != -1 and result is not None:
             return result
         else:
