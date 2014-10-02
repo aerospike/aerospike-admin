@@ -206,18 +206,6 @@ class AerospikeShell(cmd.Cmd):
 def do_ctrl_c(*args, **kwargs):
     print "Please press ctrl+d or type exit"
 
-def usage():
-    print "Aerospike Admin Help"
-    print "Usage:"
-    print "  -h --host    Address (ip/fqdn) of a host in a Aerospike cluster"
-    print "               [Default: 127.0.0.1]"
-    print "  -p --port    Aerospike Service port used by the cluster"
-    print "               [Default: 3000]"
-#    print "  -t --telnet  Enable telent protocol for communication with"
-#    print "               Aerospike"
-#    print "               [Default: False]"
-    print "  -e --execute Execute a single asadmin command and exit"
-
 def main():
     parser = argparse.ArgumentParser(add_help=False, conflict_handler='resolve')
     parser.add_argument("-h"
