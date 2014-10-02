@@ -23,7 +23,7 @@ class Cluster(object):
     # state... This makes the class no
     cluster_state = {}
 
-    def __init__(self, seed_nodes, use_telnet=False):
+    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None):
         """
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port) address can be fqdn or ip.
@@ -35,6 +35,9 @@ class Cluster(object):
 
         # will we connect using telnet port?
         self.use_telnet = use_telnet
+
+        self.user = user
+        self.password = password
 
         # self.nodes is a dict from Node ID -> Node objects
         self.nodes = {}
@@ -190,7 +193,11 @@ class Cluster(object):
             if s_ip_port in self.node_lookup:
                 n = self.node_lookup[s_ip_port][0]
             else:
-                n = Node(ip, port, use_telnet = self.use_telnet)
+                n = Node(ip
+                         , port
+                         , use_telnet=self.use_telnet
+                         , user=self.user
+                         , password=self.password)
 
                 # Don't reregister a node
                 if n.node_id in self.node_lookup:

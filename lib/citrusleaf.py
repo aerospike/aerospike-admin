@@ -998,7 +998,7 @@ def citrusleaf_info_command( host, port, cmd, user=None, password=None, paramete
 def citrusleaf_info( host, port, names=None, user=None, password=None, debug=False ):
 	
 	# Passed a set of names: created output buffer
-	
+
 	if names == None:
 		q = (2 << 56) | (1 << 48)
 		if g_proto_header != None:

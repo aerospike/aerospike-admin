@@ -18,18 +18,23 @@ import readline
 import cmd
 import sys
 import os
-import getopt
 import re
+import argparse
+import getpass
+from lib import citrusleaf
 from lib.controller import *
 from lib import terminal
 
 __version__ = '$$__version__$$'
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, telnet):
+    def __init__(self, seed, telnet, user=None, password=None):
         cmd.Cmd.__init__(self)
+
         self.ctrl = RootController(seed_nodes=[seed]
-                                   , use_telnet=telnet)
+                                   , use_telnet=telnet
+                                   , user=user
+                                   , password=password)
         try:
             readline.read_history_file(ADMINHIST)
         except Exception, i:
@@ -201,56 +206,49 @@ class AerospikeShell(cmd.Cmd):
 def do_ctrl_c(*args, **kwargs):
     print "Please press ctrl+d or type exit"
 
-def usage():
-    print "Aerospike Admin Help"
-    print "Usage:"
-    print "  -h --host    Address (ip/fqdn) of a host in a Aerospike cluster"
-    print "               [Default: 127.0.0.1]"
-    print "  -p --port    Aerospike Service port used by the cluster"
-    print "               [Default: 3000]"
-    print "  -t --telnet  Enable telent protocol for communication with"
-    print "               Aerospike"
-    print "               [Default: False]"
-    print "  -e --execute Execute a single asadmin command and exit"
-
 def main():
-    # pretty text...
-    # Confirm you are in real console
+    parser = argparse.ArgumentParser(add_help=False, conflict_handler='resolve')
+    parser.add_argument("-h"
+                        , "--host"
+                        , default="127.0.0.1"
+                        , help="Address (ip/fqdn) of a host in an " + \
+                               "Aerospike cluster")
+    parser.add_argument("-p", "--port"
+                        , type=int
+                        , default=3000
+                        , help="Aerospike service port used by the host.")
+    parser.add_argument("-U"
+                        , "--user"
+                        , help="user name")
+    parser.add_argument("-P"
+                        , "--password"
+                        , nargs="?"
+                        , const="prompt"
+                        , help="password")
+    parser.add_argument("-e"
+                        , "--execute"
+                        , help="Execute a single asadmin command and exit")
+    parser.add_argument("--profile"
+                        , action="store_true"
+                        #, help="Profile Aerospike Admin for performance issues"
+                        , help=argparse.SUPPRESS)
+    parser.add_argument("-u"
+                        , "--help"
+                        , action="store_true"
+                        , help="show program usage")
 
-    port = 3000
-    host = '127.0.0.1'
-    telnet = False
-    try:
-        opts, args = getopt.getopt(sys.argv[1:]
-                                   , 'h:p:te:'
-                                   , ['host='
-                                      , 'port='
-                                      , 'telnet'
-                                      , 'execute='
-                                      , 'profile'])
-    except getopt.GetoptError as err:
-        print str(err)
-        usage()
-        sys.exit(2)
+    cli_args = parser.parse_args()
+    if cli_args.help:
+        parser.print_help()
+        exit(0)
 
-    single_command = False
-    profile = False
-    for o, a in opts:
-        if o == '-h' or o == '--host':
-            tmp = a.split(':')
-            if len(tmp) == 1:
-                host = tmp[0]
-            else:
-                host = tmp[0]
-                port = int(tmp[1])
-        elif o == '-p' or o == '--port':
-            port = int(a)
-        elif o == '-e' or o == '--execute':
-            single_command = a
-        elif o == '-t' or o == '--telnet':
-            telnet = True
-        elif o == '--profile':
-            profile = True
+    user = None
+    password = None
+    if cli_args.user != None:
+        user = cli_args.user
+        if cli_args.password == "prompt":
+            cli_args.password = getpass.getpass("Enter Password:")
+        password = citrusleaf.hashpassword(cli_args.password)
 
     global ADMINHOME, ADMINHIST
     ADMINHOME = os.environ['HOME'] + '/.aerospike/'
@@ -259,11 +257,12 @@ def main():
     if not os.path.isdir(ADMINHOME):
         os.makedirs(ADMINHOME)
 
-    seed = (host, port)
-    shell = AerospikeShell(seed, telnet)
+    seed = (cli_args.host, cli_args.port)
+    telnet = False # telnet currently not working, hardcoding to off
+    shell = AerospikeShell(seed, telnet, user=user, password=password)
 
     use_yappi = False
-    if profile:
+    if cli_args.profile:
         try:
             import yappi
             use_yappi = True
@@ -276,10 +275,10 @@ def main():
 
     func = None
     args = ()
-    if not single_command:
+    if not cli_args.execute:
         func = shell.cmdloop
     else:
-        line = shell.precmd(single_command)
+        line = shell.precmd(args.execute)
         shell.onecmd(line)
         func = shell.onecmd
         args = (line,)
