@@ -48,7 +48,7 @@ class CliView(object):
                         , '_migrates'
                         , ('_paxos_principal', 'Principal')
                         , '_objects'
-                        , 'uptime')
+                        , '_uptime')
 
         t = Table(title, column_names)
         t.addDataSource('_migrates'
@@ -60,6 +60,7 @@ class CliView(object):
         t.addDataSource('_cluster_integrity'
                         , lambda data:
                         True if row['cluster_integrity'] == 'true' else False)
+        t.addDataSource('_uptime', Extractors.timeExtractor('uptime'))
 
         t.addCellAlert('cluster_visibility'
                        , lambda data: data['cluster_visibility'] is not True)
@@ -240,9 +241,11 @@ class CliView(object):
                         ,'_req-shipped'
                         ,'cur_throughput'
                         ,('latency_avg_ship', 'Avg Latency (ms)')
-                        ,'xdr-uptime')
+                        ,'_xdr-uptime')
         
         t = Table(title, column_names)
+
+        t.addDataSource('_xdr-uptime', Extractors.timeExtractor('xdr-uptime'))
 
         t.addDataSource('_bytes-shipped',
                         Extractors.byteExtractor('esmt-bytes-shipped'))

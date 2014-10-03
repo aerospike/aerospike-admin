@@ -53,7 +53,15 @@ class Extractors(object):
 
     @staticmethod
     def timeExtractor(column):
-        return Extractors._numExtractor(column, filesize.time)
+        def t_extractor(data):
+            time_stamp = int(data[column])
+            hours = time_stamp / 3600
+            minutes = (time_stamp % 3600) / 60
+            seconds = time_stamp % 60
+
+            return "%02d:%02d:%02d"%(hours, minutes, seconds)
+
+        return t_extractor
 
 class TitleFormats(object):
     @staticmethod
