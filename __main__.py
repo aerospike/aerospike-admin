@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asadmin
+import asadm
 
 # Uncommned next two line to enable cProfile, be sure to comment asadmin.main()
 #import cProfile
 #cProfile.run('asadmin.main()')
-asadmin.main()
+asadm.main()
