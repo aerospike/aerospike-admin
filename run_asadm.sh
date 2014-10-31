@@ -16,8 +16,8 @@
 
 BASEDIR="$(dirname "$(readlink -f "$0")")"
 
-pyz_file=$BASEDIR/asadmin
-py_file=$BASEDIR/asadmin.py
+pyz_file=$BASEDIR/asadm
+py_file=$BASEDIR/asadm.py
 
 if [ -e "$pyz_file" ]
 then
