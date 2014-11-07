@@ -21,6 +21,7 @@ import os
 import re
 import argparse
 import getpass
+import shlex
 from lib import citrusleaf
 from lib.controller import *
 from lib import terminal
@@ -60,25 +61,51 @@ class AerospikeShell(cmd.Cmd):
 
     def cleanLine(self, line):
         # get rid of extra whitespace
-        line = line.split(" ")
-        line = filter(lambda v: v, map(str.strip, line))
+        lexer = shlex.shlex(line)
+        commands = []
 
-        return line
+        command = []
+        build_token = ''
+        for token in lexer:
+            build_token += token
+            if token == '-':
+                continue
+
+            if token == ';':
+                if command:
+                    commands.append(command)
+                    command = []
+            else:
+                command.append(build_token)
+            build_token = ''
+        else:
+            if build_token:
+                command.append(build_token)
+            if command:
+                commands.append(command)
+
+        return commands
 
     def precmd(self, line):
-        sys.stdout.write(terminal.reset())
-        line = self.cleanLine(line)
+        lines = self.cleanLine(line)
 
-        if not line: # allow empty lines
+        if not lines: # allow empty lines
             return ""
 
-        if line[0] in self.commands:
-            return " ".join(line)
+        for line in lines:
+            if line[0] in self.commands:
+                return " ".join(line)
 
-        try:
-            self.ctrl.execute(line)
-        except ShellException as e:
-            print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
+            if len(lines) > 1:
+                print "~~~ %s%s%s ~~~"%(terminal.bold()
+                                        , ' '.join(line[1:])
+                                        , terminal.reset())
+
+            sys.stdout.write(terminal.reset())
+            try:
+                self.ctrl.execute(line)
+            except ShellException as e:
+                print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
 
         return "" # line was handled by execute
 
@@ -278,7 +305,7 @@ def main():
     if not cli_args.execute:
         func = shell.cmdloop
     else:
-        line = shell.precmd(args.execute)
+        line = shell.precmd(cli_args.execute)
         shell.onecmd(line)
         func = shell.onecmd
         args = (line,)
