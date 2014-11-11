@@ -14,7 +14,7 @@
 
 from lib.controllerlib import *
 
-@CommandHelp('Aerospike Monitor')
+@CommandHelp('Aerospike Admin')
 class RootController(BaseController):
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
                  , use_telnet=False, user=None, password=None):
