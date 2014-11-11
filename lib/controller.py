@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http:#www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -191,7 +191,7 @@ class ShowController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-@CommandHelp('"distribution" is used ot show the ditribution of object sizes'
+@CommandHelp('"distribution" is used to show the distribution of object sizes'
              , 'and time to live for node and a namespace.')
 class ShowDistributionController(CommandController):
     def __init__(self):
@@ -478,7 +478,6 @@ class ShowStatisticsController(CommandController):
 class ClusterController(CommandController):
     def __init__(self):
         self.modifiers = set(['with'])
-        #self.default_nodes = [None]
 
     def _do_default(self, line):
         self.executeHelp(line)
