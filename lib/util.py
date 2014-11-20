@@ -16,6 +16,8 @@ import re
 import itertools
 import threading
 from time import time
+import subprocess
+import pipes
 
 def info_to_dict(value, delimiter = ';'):
     """
@@ -101,3 +103,22 @@ class cached(object):
 
     def __call__(self, *args):
         return self[args]
+
+def shell_command(command):
+    """
+    command is a list of ['cmd','arg1','arg2',...]
+    """
+
+    command = pipes.quote(" ".join(command))
+    command = ['sh', '-c', "'%s'"%(command)]
+    try:
+        p = subprocess.Popen(command
+                             , stdout=subprocess.PIPE
+                             , stderr=subprocess.PIPE)
+
+        out, err = p.communicate()
+    except Exception as e:
+        return '', 'error'
+    else:
+        return out, err
+

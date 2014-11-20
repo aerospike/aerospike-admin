@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from lib.controllerlib import *
+from lib import util
 
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
@@ -29,6 +30,8 @@ class RootController(BaseController):
             , 'asinfo':ASInfoController
             , 'clinfo':ASInfoController
             , 'cluster':ClusterController
+            , '!':ShellController
+            , 'shell':ShellController
         }
 
     @CommandHelp('Terminate session')
@@ -174,6 +177,17 @@ class ASInfoController(CommandController):
             results = self.cluster.info(value, nodes=nodes)
 
         self.view.asinfo(results, line_sep, self.cluster, **mods)
+
+@CommandHelp('"shell" is used to run shell commands on the local node.')
+class ShellController(CommandController):
+    def _do_default(self, line):
+        command = line
+        out, err = util.shell_command(command)
+        if err:
+            print err
+
+        if out:
+            print out
 
 @CommandHelp('"show" is used to display Aerospike Statistics and'
              , 'configuration.')
