@@ -15,6 +15,18 @@
 from lib.controllerlib import *
 from lib import util
 
+def flip_keys(orig_data):
+    new_data = {}
+    for key1, data1 in orig_data.iteritems():
+        if isinstance(data1, Exception):
+            continue
+        for key2, data2 in data1.iteritems():
+            if key2 not in new_data:
+                new_data[key2] = {}
+            new_data[key2][key1] = data2
+
+    return new_data
+
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
@@ -129,6 +141,24 @@ class InfoController(CommandController):
         xdr_enable = self.cluster.isXDREnabled(nodes=self.nodes)
         self.view.infoXDR(stats, builds, xdr_enable, self.cluster, **self.mods)
 
+    @CommandHelp('Displays summary information for Seconday Indexes (SIndex).')
+    def do_sindex(self, line):
+        stats = self.cluster.infoSIndex(nodes=self.nodes)
+        sindexes = {}
+
+        for host, stat_list in stats.iteritems():
+            for stat in stat_list:
+                if not stat:
+                    continue
+                indexname = stat['indexname']
+
+                if indexname not in sindexes:
+                    sindexes[indexname] = {}
+                sindexes[indexname][host] = stat
+
+        self.view.infoSIndex(stats, self.cluster, **self.mods)
+
+
 @CommandHelp('"asinfo" provides raw access to the info protocol.'
              , '  Options:'
              , '    -v <command>  - The command to execute'
@@ -216,22 +246,10 @@ class ShowDistributionController(CommandController):
         self.do_time_to_live(line[:])
         self.do_object_size(line[:])
 
-    def flip_keys(self, orig_data):
-        new_data = {}
-        for key1, data1 in orig_data.iteritems():
-            if isinstance(data1, Exception):
-                continue
-            for key2, data2 in data1.iteritems():
-                if key2 not in new_data:
-                    new_data[key2] = {}
-                new_data[key2][key1] = data2
-
-        return new_data
-
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
 
-        histogram = self.flip_keys(histogram)
+        histogram = flip_keys(histogram)
 
         for namespace, host_data in histogram.iteritems():
             for host_id, data in host_data.iteritems():

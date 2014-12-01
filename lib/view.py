@@ -169,7 +169,7 @@ class CliView(object):
                         ,('high-water-memory-pct', 'HWM Mem%')
                         ,('stop-writes-pct', 'Stop Writes%'))
 
-        t = Table(title, column_names, group_by = 1)
+        t = Table(title, column_names, group_by=1)
         t.addDataSource('_used-bytes-disk'
                         ,Extractors.byteExtractor('used-bytes-disk'))
         t.addDataSource('_used-bytes-memory'
@@ -291,6 +291,38 @@ class CliView(object):
 
             t.insertRow(row)
         print t
+
+    @staticmethod
+    def infoSIndex(stats, cluster, **ignore):
+        prefixes = cluster.getPrefixes()
+        principal = cluster.getExpectedPrincipal()
+
+        title = "Secondary Index Information"
+        column_names = ('node'
+                        , ('indexname', 'Index Name')
+                        ,('ns', 'Namespace')
+                        , 'set'
+                        , 'bins'
+                        , 'num_bins'
+                        , ('type', 'Bin Type')
+                        , 'state'
+                        , 'sync_state')
+
+        t = Table(title, column_names, group_by=1)
+
+        for node_key, n_stats in stats.iteritems():
+            node = prefixes[node_key]
+            for index_stats in n_stats:
+                if isinstance(index_stats, Exception):
+                    row = {}
+                else:
+                    row = index_stats
+
+                row['node'] = node
+                t.insertRow(row)
+
+        print t
+
 
     @staticmethod
     def showDistribution(title

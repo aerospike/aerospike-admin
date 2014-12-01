@@ -487,3 +487,8 @@ class Node(object):
         command = "undun:nodes=%s"%(dun_list)
         result = self.info(command)
         return command, result
+
+    @return_exceptions
+    def infoSIndex(self):
+        return [util.info_to_dict(v, ':')
+                for v in util.info_to_list(self.info("sindex"))[:-1]]
