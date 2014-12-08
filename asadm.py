@@ -62,6 +62,8 @@ class AerospikeShell(cmd.Cmd):
     def cleanLine(self, line):
         # get rid of extra whitespace
         lexer = shlex.shlex(line)
+        # TODO: shlex is not working with 'with' ip addresses. Need to write a
+        #       new parser or correct shlex behavior.
         commands = []
 
         command = []

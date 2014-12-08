@@ -776,7 +776,7 @@ def CitrusleafCleanup():
 	n_threads = num_workers
 	num_workers_lock.release()
 	for i in xrange(n_threads):
-		as_queue.put(0)			# putting an integer will throw an exception and shit will stop
+		as_queue.put(0)			# putting an integer will throw an exception and will stop
 		
 	while num_workers > 0:
 		sleep(0.1)
