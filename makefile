@@ -31,11 +31,11 @@ all:
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
-ifeq ($(OS),Darwin)
-	sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
-else
-	sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
-endif 
+        ifeq ($(OS),Darwin)
+		sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
+        else
+		sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
+        endif 
 
 	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
 	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm
