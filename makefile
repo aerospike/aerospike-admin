@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+OS = $(shell uname)
 SOURCE_ROOT = $(realpath .)
 BUILD_ROOT = $(SOURCE_ROOT)/build/
 INSTALL_ROOT = /opt/aerospike/bin/
@@ -29,7 +30,13 @@ all:
 	mkdir $(BUILD_ROOT)tmp/asadm
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
+
+ifeq ($(OS),Darwin)
+	sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
+else
 	sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
+endif 
+
 	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
 	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm
 	cat $(BUILD_ROOT)tmp/asadm.zip >> $(BUILD_ROOT)bin/asadm
