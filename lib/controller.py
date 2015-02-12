@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from lib.controllerlib import *
-from lib import util
+from lib import util 
 
 def flip_keys(orig_data):
     new_data = {}
@@ -44,6 +44,7 @@ class RootController(BaseController):
             , 'cluster':ClusterController
             , '!':ShellController
             , 'shell':ShellController
+            , 'collectinfo':CollectinfoController
         }
 
     @CommandHelp('Terminate session')
@@ -521,3 +522,11 @@ class ClusterController(CommandController):
     def do_undun(self, line):
         results = self.cluster.infoUndun(self.mods['line'], nodes=self.nodes)
         self.view.dun(results, self.cluster, **self.mods)
+
+@CommandHelp('"collectinfo" is used to collect system stats on the local node.')
+class CollectinfoController(CommandController):
+
+    def _do_default(self, line):
+        print "Kevin: How do I call shell and info commands from here?"
+#         do_shell(cmd)
+#         do_info(cmd)
