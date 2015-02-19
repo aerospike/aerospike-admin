@@ -527,6 +527,8 @@ class ClusterController(CommandController):
 class CollectinfoController(CommandController):
 
     def _do_default(self, line):
-        print "Kevin: How do I call shell and info commands from here?"
+        print "@Kevin: How do I call shell and info commands from here?"
+        print "@Anshu: I would use the util.shell_command function"
+        # util.shell_command(command)
 #         do_shell(cmd)
 #         do_info(cmd)
