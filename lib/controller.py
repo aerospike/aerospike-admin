@@ -537,7 +537,7 @@ class CollectinfoController(CommandController):
         f.write(str(collectedinfo))
         f.close()
         self.collect_local_file(src_file,aslogdir)
-        util.shell_command("tar -czvf " + aslogdir + ".tgz " + aslogdir)
+        util.shell_command(["tar -czvf " + aslogdir + ".tgz " + aslogdir])
         sys.stderr.write("\x1b[2J\x1b[H")
         print "\n\n\nFiles in " + aslogdir + " and " + aslogdir + ".tgz saved. Please send tgz archive to support@aerospike.com"
         print "END OF ASCOLLECTINFO"
