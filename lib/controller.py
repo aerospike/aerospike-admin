@@ -14,6 +14,7 @@
 
 from lib.controllerlib import *
 from lib import util
+import time,os,sys,platform,shutil
 
 def flip_keys(orig_data):
     new_data = {}
@@ -44,6 +45,7 @@ class RootController(BaseController):
             , 'cluster':ClusterController
             , '!':ShellController
             , 'shell':ShellController
+            , 'collectinfo':CollectinfoController
         }
 
     @CommandHelp('Terminate session')
@@ -521,3 +523,72 @@ class ClusterController(CommandController):
     def do_undun(self, line):
         results = self.cluster.infoUndun(self.mods['line'], nodes=self.nodes)
         self.view.dun(results, self.cluster, **self.mods)
+
+@CommandHelp('"collectinfo" is used to collect system stats on the local node.')
+class CollectinfoController(CommandController):
+
+    def write_log(self,collectedinfo):
+        aslogdir = '/tmp/as_log_' + str(time.time())
+        aslogfile = aslogdir + '/ascollectinfo.log'
+        os.mkdir(aslogdir)
+        f = open(str(aslogfile), 'w')
+        f.write(str(collectedinfo))
+        f.close()
+        util.shell_command("tar -czvf " + aslogdir + ".tgz " + aslogdir)
+        sys.stderr.write("\x1b[2J\x1b[H")
+        print "\n\n\nFiles in " + aslogdir + " and " + aslogdir + ".tgz saved. Please send tgz archive to support@aerospike.com"
+        print "END OF ASCOLLECTINFO"
+
+    def do_collectinfo(self, line):
+        capture_stdout = util.capture_stdout
+        collect_output = ''
+        collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
+        info_params = ['network','service', 'namespace', 'xdr', 'sindex']
+        show_params = ['config', 'distribution', 'latency', 'statistics']
+        shell_cmds = ['date',
+                     'hostname',
+                     'ifconfig',
+                      'uname -a',
+                      'lsb_release -a',
+                      'ls /etc|grep release|xargs -I f cat /etc/f',
+                      'rpm -qa|grep -E "citrus|aero"',
+                      'dpkg -l|grep -E "citrus|aero"',
+                      'tail -n 1000 /var/log/aerospike/*.log',
+                      'tail -n 1000 /var/log/citrusleaf.log',
+                      'tail -n 1000 /var/log/*xdr.log',
+                      'netstat -pant|grep 3000',
+                      'top -n3 -b',
+                      'free -m',
+                      'df -h',
+                      'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
+                      'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
+                      'lsof',
+                      'dmesg',
+                      'iostat -x 1 10',
+                      'vmstat -s',
+                      'vmstat -m',
+                      'iptables -L',
+                      'cat /etc/aerospike/aerospike.conf',
+                      'cat /etc/citrusleaf/citrusleaf.conf',
+                      ]
+
+        for cmd in shell_cmds:
+            collect_output += capture_stdout(util.shell_command, [cmd])
+        try:
+            pass
+            cinfo = InfoController()
+            for info_param in info_params:
+                collect_output += capture_stdout(cinfo,[info_param])
+            do_show = ShowController()
+            for show_param in show_params:
+                collect_output += capture_stdout(do_show,[show_param])
+        except Exception as e:
+            collect_output += str(e)
+            sys.stdout = sys.__stdout__
+            
+
+        self.write_log(collect_output)
+
+
+    def _do_default(self, line):
+        self.do_collectinfo(line)
