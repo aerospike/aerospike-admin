@@ -575,7 +575,6 @@ class CollectinfoController(CommandController):
         for cmd in shell_cmds:
             collect_output += capture_stdout(util.shell_command, [cmd])
         try:
-            pass
             cinfo = InfoController()
             for info_param in info_params:
                 collect_output += capture_stdout(cinfo,[info_param])
