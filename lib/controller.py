@@ -526,14 +526,17 @@ class ClusterController(CommandController):
 
 @CommandHelp('"collectinfo" is used to collect system stats on the local node.')
 class CollectinfoController(CommandController):
-
-    def write_log(self,collectedinfo):
+    def collect_local_file(self,src,dest_dir):
+        shutil.copy2(src, dest_dir)
+        
+    def write_log(self,collectedinfo,src_file='/var/log/aerospike/*log'):
         aslogdir = '/tmp/as_log_' + str(time.time())
         aslogfile = aslogdir + '/ascollectinfo.log'
         os.mkdir(aslogdir)
         f = open(str(aslogfile), 'w')
         f.write(str(collectedinfo))
         f.close()
+        self.collect_local_file(src_file,aslogdir)
         util.shell_command("tar -czvf " + aslogdir + ".tgz " + aslogdir)
         sys.stderr.write("\x1b[2J\x1b[H")
         print "\n\n\nFiles in " + aslogdir + " and " + aslogdir + ".tgz saved. Please send tgz archive to support@aerospike.com"
@@ -553,9 +556,9 @@ class CollectinfoController(CommandController):
                       'ls /etc|grep release|xargs -I f cat /etc/f',
                       'rpm -qa|grep -E "citrus|aero"',
                       'dpkg -l|grep -E "citrus|aero"',
-                      'tail -n 1000 /var/log/aerospike/*.log',
-                      'tail -n 1000 /var/log/citrusleaf.log',
-                      'tail -n 1000 /var/log/*xdr.log',
+                      'tail -n 10000 /var/log/aerospike/*.log',
+                      'tail -n 10000 /var/log/citrusleaf.log',
+                      'tail -n 10000 /var/log/*xdr.log',
                       'netstat -pant|grep 3000',
                       'top -n3 -b',
                       'free -m',
@@ -572,23 +575,45 @@ class CollectinfoController(CommandController):
                       'cat /etc/citrusleaf/citrusleaf.conf',
                       ]
 
+        def collect_sys(self):
+            sys_data = ''
+            lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
+            print util.shell_command([lsof_cmd])
+            print platform.platform()
+            smd_home = '/opt/aerospike/smd'
+            if os.path.isdir(smd_home):
+                smd_files = [ f for f in os.listdir(smd_home) if os.path.isfile(os.path.join(smd_home, f)) ]
+                for f in smd_files:
+                    smd_f = os.path.join(smd_home, f)    
+                    print smd_f
+                    smd_fp = open(smd_f, 'r')
+                    print smd_fp.read()
+                    smd_fp.close()
+
         for cmd in shell_cmds:
             collect_output += capture_stdout(util.shell_command, [cmd])
         try:
-            pass
+            log_location = '/var/log/aerospike/aerospike.log'
             cinfo = InfoController()
             for info_param in info_params:
                 collect_output += capture_stdout(cinfo,[info_param])
             do_show = ShowController()
             for show_param in show_params:
                 collect_output += capture_stdout(do_show,[show_param])
+            # Below is not optimum, we should query only localhost
+            logs = self.cluster.info('logs')
+            for i in logs:
+                log_location = logs[i].split(':')[1]
+            cmd = 'tail -n 10000 ' + log_location
+            if log_location != '/var/log/aerospike/aerospike.log':
+                collect_output += capture_stdout(util.shell_command, [cmd])
+            
         except Exception as e:
             collect_output += str(e)
             sys.stdout = sys.__stdout__
             
-
-        self.write_log(collect_output)
-
+        collect_output += capture_stdout(collect_sys)
+        self.write_log(collect_output,log_location)
 
     def _do_default(self, line):
         self.do_collectinfo(line)
