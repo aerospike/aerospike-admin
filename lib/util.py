@@ -18,6 +18,7 @@ import threading
 from time import time
 import subprocess
 import pipes
+import sys,StringIO
 
 def info_to_dict(value, delimiter = ';'):
     """
@@ -122,3 +123,29 @@ def shell_command(command):
     else:
         return out, err
 
+# ## Many of the view functions just do a print without any valid returns
+# ## This is to capture such prints so that they can be used as returns
+def capture_stdout(func,line=[''],printMsg=True):
+    name = ''
+    if printMsg is True:
+        try:
+            name = func.func_name
+        except Exception:
+            pass
+        print "Data collection for " + name +str(line) + " in progress.."
+        sys.stdout.flush()
+    old = sys.stdout
+    capturer = StringIO.StringIO()
+    sys.stdout = capturer
+    print '===ASCOLLECTINFO==='
+    print name + str(line)
+    o = func(line)
+    if isinstance(o,object):
+        try:
+            for item in o:
+                print item
+        except Exception:
+            pass
+    output = capturer.getvalue()
+    sys.stdout = old
+    return output
