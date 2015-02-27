@@ -14,6 +14,7 @@
 
 from lib.controllerlib import *
 from lib import util
+import time, os, sys, platform, shutil
 
 def flip_keys(orig_data):
     new_data = {}
@@ -44,6 +45,7 @@ class RootController(BaseController):
             , 'cluster':ClusterController
             , '!':ShellController
             , 'shell':ShellController
+            , 'collectinfo':CollectinfoController
         }
 
     @CommandHelp('Terminate session')
@@ -521,3 +523,96 @@ class ClusterController(CommandController):
     def do_undun(self, line):
         results = self.cluster.infoUndun(self.mods['line'], nodes=self.nodes)
         self.view.dun(results, self.cluster, **self.mods)
+
+@CommandHelp('"collectinfo" is used to collect system stats on the local node.')
+class CollectinfoController(CommandController):
+    def collect_local_file(self,src,dest_dir):
+        shutil.copy2(src, dest_dir)
+        
+    def write_log(self,collectedinfo,src_file='/var/log/aerospike/*log'):
+        aslogdir = '/tmp/as_log_' + str(time.time())
+        aslogfile = aslogdir + '/ascollectinfo.log'
+        os.mkdir(aslogdir)
+        f = open(str(aslogfile), 'w')
+        f.write(str(collectedinfo))
+        f.close()
+        self.collect_local_file(src_file,aslogdir)
+        util.shell_command(["tar -czvf " + aslogdir + ".tgz " + aslogdir])
+        sys.stderr.write("\x1b[2J\x1b[H")
+        print "\n\n\nFiles in " + aslogdir + " and " + aslogdir + ".tgz saved. Please send tgz archive to support@aerospike.com"
+        print "END OF ASCOLLECTINFO"
+
+    def main_collectinfo(self, line):
+        capture_stdout = util.capture_stdout
+        collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
+        info_params = ['network','service', 'namespace', 'xdr', 'sindex']
+        show_params = ['config', 'distribution', 'latency', 'statistics']
+        shell_cmds = ['date',
+                      'hostname',
+                      'ifconfig',
+                      'uptime',
+                      'uname -a',
+                      'lsb_release -a',
+                      'ls /etc|grep release|xargs -I f cat /etc/f',
+                      'rpm -qa|grep -E "citrus|aero"',
+                      'dpkg -l|grep -E "citrus|aero"',
+                      'tail -n 10000 /var/log/aerospike/*.log',
+                      'tail -n 10000 /var/log/citrusleaf.log',
+                      'tail -n 10000 /var/log/*xdr.log',
+                      'netstat -pant|grep 3000',
+                      'top -n3 -b',
+                      'free -m',
+                      'df -h',
+                      'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
+                      'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
+                      'lsof',
+                      'dmesg',
+                      'iostat -x 1 10',
+                      'vmstat -s',
+                      'vmstat -m',
+                      'iptables -L',
+                      'cat /etc/aerospike/aerospike.conf',
+                      'cat /etc/citrusleaf/citrusleaf.conf',
+                      ]
+
+        def collect_sys(self):
+            lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
+            print util.shell_command([lsof_cmd])
+            print platform.platform()
+            smd_home = '/opt/aerospike/smd'
+            if os.path.isdir(smd_home):
+                smd_files = [ f for f in os.listdir(smd_home) if os.path.isfile(os.path.join(smd_home, f)) ]
+                for f in smd_files:
+                    smd_f = os.path.join(smd_home, f)    
+                    print smd_f
+                    smd_fp = open(smd_f, 'r')
+                    print smd_fp.read()
+                    smd_fp.close()
+
+        for cmd in shell_cmds:
+            collect_output += capture_stdout(util.shell_command, [cmd])
+        try:
+            log_location = '/var/log/aerospike/aerospike.log'
+            cinfo = InfoController()
+            for info_param in info_params:
+                collect_output += capture_stdout(cinfo,[info_param])
+            do_show = ShowController()
+            for show_param in show_params:
+                collect_output += capture_stdout(do_show,[show_param])
+            # Below is not optimum, we should query only localhost
+            logs = self.cluster.info('logs')
+            for i in logs:
+                log_location = logs[i].split(':')[1]
+            cmd = 'tail -n 10000 ' + log_location
+            if log_location != '/var/log/aerospike/aerospike.log':
+                collect_output += capture_stdout(util.shell_command, [cmd])
+            
+        except Exception as e:
+            collect_output += str(e)
+            sys.stdout = sys.__stdout__
+            
+        collect_output += capture_stdout(collect_sys)
+        self.write_log(collect_output,log_location)
+
+    def _do_default(self, line):
+        self.main_collectinfo(line)
