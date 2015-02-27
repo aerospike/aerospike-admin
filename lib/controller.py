@@ -542,15 +542,16 @@ class CollectinfoController(CommandController):
         print "\n\n\nFiles in " + aslogdir + " and " + aslogdir + ".tgz saved. Please send tgz archive to support@aerospike.com"
         print "END OF ASCOLLECTINFO"
 
-    def do_collectinfo(self, line):
+    def main_collectinfo(self, line):
         capture_stdout = util.capture_stdout
         collect_output = ''
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
         info_params = ['network','service', 'namespace', 'xdr', 'sindex']
         show_params = ['config', 'distribution', 'latency', 'statistics']
         shell_cmds = ['date',
-                     'hostname',
-                     'ifconfig',
+                      'hostname',
+                      'ifconfig',
+                      'uptime',
                       'uname -a',
                       'lsb_release -a',
                       'ls /etc|grep release|xargs -I f cat /etc/f',
@@ -616,4 +617,4 @@ class CollectinfoController(CommandController):
         self.write_log(collect_output,log_location)
 
     def _do_default(self, line):
-        self.do_collectinfo(line)
+        self.main_collectinfo(line)
