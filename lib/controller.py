@@ -532,7 +532,7 @@ class CollectinfoController(CommandController):
     def collectinfo_content(self,func,parm=''):
         name = ''
         capture_stdout = util.capture_stdout
-        sep = "====ASCOLLECTINFO====\n"
+        sep = "\n====ASCOLLECTINFO====\n"
         try:
             name = func.func_name
         except Exception:
@@ -543,9 +543,11 @@ class CollectinfoController(CommandController):
         
         if func == 'shell':
             o,e = util.shell_command(parm)
+        elif func == 'cluster':
+            o = self.cluster.info(parm)
         else:
             o = capture_stdout(func,parm)
-        return sep+o
+        return sep+str(o)
         
     def write_log(self,collectedinfo,src_file='/var/log/aerospike/*log'):
         aslogdir = '/tmp/as_log_' + str(time.time())
@@ -621,6 +623,20 @@ class CollectinfoController(CommandController):
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
         info_params = ['network','service', 'namespace', 'xdr', 'sindex']
         show_params = ['config', 'distribution', 'latency', 'statistics']
+        cluster_params = ['service',
+                          'services',
+                          'xdr-min-lastshipinfo:',
+                          'dump-fabric:',
+                          'dump-hb:',
+                          'dump-migrates:',
+                          'dump-msgs:',
+                          'dump-paxos:',
+                          'dump-smd:',
+                          'dump-wb:',
+                          'dump-wb-summary:',
+                          'dump-wr:',
+                          'sindex-dump:'
+                          ]
         shell_cmds = ['date',
                       'hostname',
                       'ifconfig',
@@ -648,11 +664,8 @@ class CollectinfoController(CommandController):
                       'cat /etc/aerospike/aerospike.conf',
                       'cat /etc/citrusleaf/citrusleaf.conf',
                       ]
-
-        for cmd in shell_cmds:
-            collect_output += self.collectinfo_content('shell',[cmd])
+       
         try:
-            pass
             log_location = '/var/log/aerospike/aerospike.log'
             cinfo = InfoController()
             for info_param in info_params:
@@ -660,6 +673,8 @@ class CollectinfoController(CommandController):
             do_show = ShowController()
             for show_param in show_params:
                 collect_output += self.collectinfo_content(do_show,[show_param])
+            for cluster_param in cluster_params:
+                collect_output += self.collectinfo_content('cluster',cluster_param)
             # Below is not optimum, we should query only localhost
             logs = self.cluster.info('logs')
             for i in logs:
@@ -670,6 +685,8 @@ class CollectinfoController(CommandController):
         except Exception as e:
             collect_output += str(e)
             sys.stdout = sys.__stdout__
+        for cmd in shell_cmds:
+            collect_output += self.collectinfo_content('shell',[cmd])
         collect_output += self.collectinfo_content(self.collect_sys)
         collect_output += self.collectinfo_content(self.get_awsdata)
         self.write_log(collect_output,log_location)
