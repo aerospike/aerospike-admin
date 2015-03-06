@@ -14,7 +14,7 @@
 
 from lib.controllerlib import *
 from lib import util
-import time, os, sys, platform, shutil
+import time, os, sys, platform, shutil, requests
 
 def flip_keys(orig_data):
     new_data = {}
@@ -528,11 +528,31 @@ class ClusterController(CommandController):
 class CollectinfoController(CommandController):
     def collect_local_file(self,src,dest_dir):
         shutil.copy2(src, dest_dir)
+
+    def collectinfo_content(self,func,parm=''):
+        name = ''
+        capture_stdout = util.capture_stdout
+        sep = "====ASCOLLECTINFO====\n"
+        try:
+            name = func.func_name
+        except Exception:
+            pass
+        info_line = "[INFO] Data collection for " + name +str(parm) + " in progress.."
+        print info_line
+        sep += info_line+"\n"
+        
+        if func == 'shell':
+            o,e = util.shell_command(parm)
+        else:
+            o = capture_stdout(func,parm)
+        return sep+o
         
     def write_log(self,collectedinfo,src_file='/var/log/aerospike/*log'):
         aslogdir = '/tmp/as_log_' + str(time.time())
         aslogfile = aslogdir + '/ascollectinfo.log'
         os.mkdir(aslogdir)
+        remove_color = re.compile(r'\x1B\[[^A-Za-z]*[A-Za-z]')
+        collectedinfo = remove_color.sub('', collectedinfo)
         f = open(str(aslogfile), 'w')
         f.write(str(collectedinfo))
         f.close()
@@ -541,9 +561,63 @@ class CollectinfoController(CommandController):
         sys.stderr.write("\x1b[2J\x1b[H")
         print "\n\n\nFiles in " + aslogdir + " and " + aslogdir + ".tgz saved. Please send tgz archive to support@aerospike.com"
         print "END OF ASCOLLECTINFO"
+        
+
+    def get_metadata(self,response_str,prefix=''):
+        aws_c = ''
+        aws_timeout = 1
+        aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
+        prefix_o = prefix
+        if prefix_o == '/':
+            prefix = ''
+        for rsp in response_str.split("\n"):
+            if rsp[-1:] == '/':
+                if prefix_o == '': #First level child
+                    rsp_p = rsp.strip('/')
+                else:
+                    rsp_p = rsp
+                self.get_metadata(rsp_p,prefix)
+            else:
+                meta_url = aws_metadata_base_url+prefix+'/'+rsp
+                r = requests.get(meta_url,timeout=aws_timeout)
+                if r.status_code != 404:
+                    aws_c += rsp +'\n'+r.text +"\n"
+        return aws_c
+    
+    def get_awsdata(self,line):
+        aws_rsp = ''
+        aws_timeout = 1
+        aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
+        try:
+            r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
+            if r.status_code == 200:
+                print "This is in AWS"
+                rsp = r.text
+                aws_rsp += self.get_metadata(rsp,'/')
+                print aws_rsp
+            else:
+                aws_rsp = "Not in AWS"
+                print aws_rsp
+    
+        except Exception as e:
+            print e
+            print "Not in AWS"
+
+    def collect_sys(self,line):
+        lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
+        print util.shell_command([lsof_cmd])
+        print platform.platform()
+        smd_home = '/opt/aerospike/smd'
+        if os.path.isdir(smd_home):
+            smd_files = [ f for f in os.listdir(smd_home) if os.path.isfile(os.path.join(smd_home, f)) ]
+            for f in smd_files:
+                smd_f = os.path.join(smd_home, f)    
+                print smd_f
+                smd_fp = open(smd_f, 'r')
+                print smd_fp.read()
+                smd_fp.close()
 
     def main_collectinfo(self, line):
-        capture_stdout = util.capture_stdout
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
         info_params = ['network','service', 'namespace', 'xdr', 'sindex']
         show_params = ['config', 'distribution', 'latency', 'statistics']
@@ -575,43 +649,29 @@ class CollectinfoController(CommandController):
                       'cat /etc/citrusleaf/citrusleaf.conf',
                       ]
 
-        def collect_sys(self):
-            lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
-            print util.shell_command([lsof_cmd])
-            print platform.platform()
-            smd_home = '/opt/aerospike/smd'
-            if os.path.isdir(smd_home):
-                smd_files = [ f for f in os.listdir(smd_home) if os.path.isfile(os.path.join(smd_home, f)) ]
-                for f in smd_files:
-                    smd_f = os.path.join(smd_home, f)    
-                    print smd_f
-                    smd_fp = open(smd_f, 'r')
-                    print smd_fp.read()
-                    smd_fp.close()
-
         for cmd in shell_cmds:
-            collect_output += capture_stdout(util.shell_command, [cmd])
+            collect_output += self.collectinfo_content('shell',[cmd])
         try:
+            pass
             log_location = '/var/log/aerospike/aerospike.log'
             cinfo = InfoController()
             for info_param in info_params:
-                collect_output += capture_stdout(cinfo,[info_param])
+                collect_output += self.collectinfo_content(cinfo,[info_param])
             do_show = ShowController()
             for show_param in show_params:
-                collect_output += capture_stdout(do_show,[show_param])
+                collect_output += self.collectinfo_content(do_show,[show_param])
             # Below is not optimum, we should query only localhost
             logs = self.cluster.info('logs')
             for i in logs:
                 log_location = logs[i].split(':')[1]
             cmd = 'tail -n 10000 ' + log_location
             if log_location != '/var/log/aerospike/aerospike.log':
-                collect_output += capture_stdout(util.shell_command, [cmd])
-            
+                collect_output += self.collectinfo_content('shell',[cmd])
         except Exception as e:
             collect_output += str(e)
             sys.stdout = sys.__stdout__
-            
-        collect_output += capture_stdout(collect_sys)
+        collect_output += self.collectinfo_content(self.collect_sys)
+        collect_output += self.collectinfo_content(self.get_awsdata)
         self.write_log(collect_output,log_location)
 
     def _do_default(self, line):

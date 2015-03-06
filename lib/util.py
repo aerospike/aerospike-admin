@@ -124,30 +124,18 @@ def shell_command(command):
         return out, err
 
     # Redirecting the stdout to use the output elsewhere
-def capture_stdout(func,line=[''],collectinfo_msg=True,print_msg=''):
-    name = ''
-    if collectinfo_msg is True:
-        try:
-            name = func.func_name
-        except Exception:
-            pass
-        print "Data collection for " + name +str(line) + " in progress.."
-        sys.stdout.flush()
+def capture_stdout(func,line=''):
+    """
+    Redirecting the stdout to use the output elsewhere
+    """
+
+    sys.stdout.flush()
     old = sys.stdout
     capturer = StringIO.StringIO()
     sys.stdout = capturer
-    if collectinfo_msg is True:
-        print '===ASCOLLECTINFO==='
-    if print_msg != '':
-        print print_msg
-    print name + str(line)
-    o = func(line)
-    if isinstance(o, object):
-        try:
-            for item in o:
-                print item
-        except Exception:
-            pass
+
+    func(line)
+
     output = capturer.getvalue()
     sys.stdout = old
     return output
