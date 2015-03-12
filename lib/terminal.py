@@ -15,104 +15,115 @@
 import sys
 from inspect import isfunction
 
-# Real terminal
+def enable_color(is_enable):
+    global _add_it, _remove_it, _reset
+    global sclear, sbold, sdim, snormal, sunderline
+    global fgblack, fgred, fggreen, fgyellow, fgblue, fgmagenta, fgcyan, fgwhite
+    global bgblack, bgred, bggreen, bgyellow, bgblue, bgmagenta, bgcyan, bgwhite
+    global esc, term
+    global sclear_code, cur_format
+
+    if is_enable:
+        sclear     = '0'
+        sbold      = '1'
+        sdim       = '2'
+        snormal    = '22'
+        sunderline = '4'
+
+        fgblack    = '30;90'
+        fgred      = '31;91'
+        fggreen    = '32;92'
+        fgyellow   = '33;93'
+        fgblue     = '34;94'
+        fgmagenta  = '35;95'
+        fgcyan     = '36;96'
+        fgwhite    = '37;97'
+
+        bgblack    = '40;100'
+        bgred      = '41;101'
+        bggreen    = '42;102'
+        bgyellow   = '43;103'
+        bgblue     = '44;104'
+        bgmagenta  = '45;105'
+        bgcyan     = '46;106'
+        bgwhite    = '47;107'
+
+        esc        = '\033['
+        term       = 'm'
+
+        sclear_code   = esc + sclear + term
+        cur_format = set()
+
+        def _add_it(decoration):
+            if decoration in cur_format:
+                return '' # nothing to do
+            else:
+                cur_format.add(decoration)
+                return esc + ';'.join(cur_format) + term
+
+        def _remove_it(decoration):
+            if decoration in cur_format:
+                cur_format.remove(decoration)
+                return esc + sclear + ';' + ';'.join(cur_format) + term
+            else:
+                return '' # nothing to do
+
+        def _reset():
+            cur_format.clear()
+            return esc + sclear + term
+
+    else:
+        sclear        = ''
+        sbold         = ''
+        sdim          = ''
+        snormal       = ''
+        sunderline    = ''
+
+        fgblack        = ''
+        fgred          = ''
+        fggreen        = ''
+        fgyellow       = ''
+        fgblue         = ''
+        fgmagenta      = ''
+        fgcyan         = ''
+        fgwhite        = ''
+
+        bgblack       = ''
+        bgred         = ''
+        bggreen       = ''
+        bgyellow      = ''
+        bgblue        = ''
+        bgmagenta     = ''
+        bgcyan        = ''
+        bgwhite       = ''
+
+        sclear_code   = ''
+        cur_format = list()
+
+        def _add_it(decoration):
+            if decoration in cur_format:
+                return '' # nothing to do
+            else:
+                cur_format.append(decoration)
+                return decoration
+
+        def _remove_it(decoration):
+            if decoration in cur_format:
+                cur_format.remove(decoration)
+                return decoration
+            else:
+                return '' # nothing to do
+
+        def _reset():
+            cur_format.reverse()
+            retval = ''.join(cur_format)
+            del(cur_format[:])
+            return retval
+
+# Real terminal?
 isatty = sys.stdout.isatty()
-if isatty:
-    sclear     = '0'
-    sbold      = '1'
-    sdim       = '2'
-    snormal    = '22'
-    sunderline = '4'
 
-    fgblack    = '30;90'
-    fgred      = '31;91'
-    fggreen    = '32;92'
-    fgyellow   = '33;93'
-    fgblue     = '34;94'
-    fgmagenta  = '35;95'
-    fgcyan     = '36;96'
-    fgwhite    = '37;97'
-
-    bgblack    = '40;100'
-    bgred      = '41;101'
-    bggreen    = '42;102'
-    bgyellow   = '43;103'
-    bgblue     = '44;104'
-    bgmagenta  = '45;105'
-    bgcyan     = '46;106'
-    bgwhite    = '47;107'
-
-    esc        = '\033['
-    term       = 'm'
-
-    sclear_code   = esc + sclear + term
-    cur_format = set()
-
-    def _add_it(decoration):
-        if decoration in cur_format:
-            return '' # nothing to do
-        else:
-            cur_format.add(decoration)
-            return esc + ';'.join(cur_format) + term
-
-    def _remove_it(decoration):
-        if decoration in cur_format:
-            cur_format.remove(decoration)
-            return esc + sclear + ';' + ';'.join(cur_format) + term
-        else:
-            return '' # nothing to do
-
-    def _reset():
-        cur_format.clear()
-        return esc + sclear + term
-
-else:
-    sclear        = ''
-    sbold         = ''
-    sdim          = ''
-    snormal       = ''
-    sunderline    = ''
-
-    fgblack        = ''
-    fgred          = ''
-    fggreen        = ''
-    fgyellow       = ''
-    fgblue         = ''
-    fgmagenta      = ''
-    fgcyan         = ''
-    fgwhite        = ''
-
-    bgblack       = ''
-    bgred         = ''
-    bggreen       = ''
-    bgyellow      = ''
-    bgblue        = ''
-    bgmagenta     = ''
-    bgcyan        = ''
-    bgwhite       = ''
-
-    sclear_code   = ''
-    cur_format = list()
-
-    def _add_it(decoration):
-        if decoration in cur_format:
-            return '' # nothing to do
-        else:
-            cur_format.append(decoration)
-            return decoration
-
-    def _remove_it(decoration):
-        if decoration in cur_format:
-            cur_format.remove(decoration)
-            return decoration
-        else:
-            return '' # nothing to do
-
-    def _reset():
-        cur_format.reverse()
-        retval = ''.join(cur_format)
-        del(cur_format[:])
-        return retval
+enable_color(isatty)
 
 def bold():
     return _add_it(sbold)
