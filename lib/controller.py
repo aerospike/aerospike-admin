@@ -14,7 +14,7 @@
 
 from lib.controllerlib import *
 from lib import util
-import time, os, sys, platform, shutil, requests
+import time, os, sys, platform, shutil, urllib2, socket
 
 def flip_keys(orig_data):
     new_data = {}
@@ -527,7 +527,12 @@ class ClusterController(CommandController):
 @CommandHelp('"collectinfo" is used to collect system stats on the local node.')
 class CollectinfoController(CommandController):
     def collect_local_file(self,src,dest_dir):
-        shutil.copy2(src, dest_dir)
+        try:
+            shutil.copy2(src, dest_dir)
+        except Exception,e:
+            print e
+            pass
+        return
 
     def collectinfo_content(self,func,parm=''):
         name = ''
@@ -547,27 +552,17 @@ class CollectinfoController(CommandController):
             o = self.cluster.info(parm)
         else:
             o = capture_stdout(func,parm)
-        return sep+str(o)
+        self.write_log(sep+str(o))
+        return ''
         
-    def write_log(self,collectedinfo,src_file='/var/log/aerospike/*log'):
-        aslogdir = '/tmp/as_log_' + str(time.time())
-        aslogfile = aslogdir + '/ascollectinfo.log'
-        os.mkdir(aslogdir)
-        remove_color = re.compile(r'\x1B\[[^A-Za-z]*[A-Za-z]')
-        collectedinfo = remove_color.sub('', collectedinfo)
-        f = open(str(aslogfile), 'w')
+    def write_log(self,collectedinfo):
+        global aslogfile
+        f = open(str(aslogfile), 'a')
         f.write(str(collectedinfo))
-        f.close()
-        self.collect_local_file(src_file,aslogdir)
-        util.shell_command(["tar -czvf " + aslogdir + ".tgz " + aslogdir])
-        sys.stderr.write("\x1b[2J\x1b[H")
-        print "\n\n\nFiles in " + aslogdir + " and " + aslogdir + ".tgz saved. Please send tgz archive to support@aerospike.com"
-        print "END OF ASCOLLECTINFO"
-        
+        return f.close() 
 
     def get_metadata(self,response_str,prefix=''):
         aws_c = ''
-        aws_timeout = 1
         aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
         prefix_o = prefix
         if prefix_o == '/':
@@ -581,20 +576,25 @@ class CollectinfoController(CommandController):
                 self.get_metadata(rsp_p,prefix)
             else:
                 meta_url = aws_metadata_base_url+prefix+'/'+rsp
-                r = requests.get(meta_url,timeout=aws_timeout)
-                if r.status_code != 404:
-                    aws_c += rsp +'\n'+r.text +"\n"
+                req = urllib2.Request(meta_url)
+                r = urllib2.urlopen(req)
+#                 r = requests.get(meta_url,timeout=aws_timeout)
+                if r.code != 404:
+                    aws_c += rsp +'\n'+r.read() +"\n"
         return aws_c
     
     def get_awsdata(self,line):
         aws_rsp = ''
         aws_timeout = 1
+        socket.setdefaulttimeout(aws_timeout)
         aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
         try:
-            r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
-            if r.status_code == 200:
+            req = urllib2.Request(aws_metadata_base_url)
+            r = urllib2.urlopen(req)
+#             r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
+            if r.code == 200:
                 print "This is in AWS"
-                rsp = r.text
+                rsp = r.read()
                 aws_rsp += self.get_metadata(rsp,'/')
                 print aws_rsp
             else:
@@ -618,6 +618,12 @@ class CollectinfoController(CommandController):
                 smd_fp = open(smd_f, 'r')
                 print smd_fp.read()
                 smd_fp.close()
+    
+    def archive_log(self,logdir):
+        util.shell_command(["tar -czvf " + logdir + ".tgz " + aslogdir])
+        sys.stderr.write("\x1b[2J\x1b[H")
+        print "\n\n\nFiles in " + logdir + " and " + logdir + ".tgz saved. "
+        print "END OF ASCOLLECTINFO"
 
     def main_collectinfo(self, line):
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
@@ -664,32 +670,39 @@ class CollectinfoController(CommandController):
                       'cat /etc/aerospike/aerospike.conf',
                       'cat /etc/citrusleaf/citrusleaf.conf',
                       ]
-       
+        terminal.enable_color(False)
+        global aslogdir,aslogfile
+        aslogdir = '/tmp/as_log_' + str(time.time())
+        aslogfile = aslogdir + '/ascollectinfo.log'
+        os.mkdir(aslogdir)
+        self.write_log(collect_output)
+        log_location = '/var/log/aerospike/*.log'
         try:
             log_location = '/var/log/aerospike/aerospike.log'
             cinfo = InfoController()
             for info_param in info_params:
-                collect_output += self.collectinfo_content(cinfo,[info_param])
+                self.collectinfo_content(cinfo,[info_param])
             do_show = ShowController()
             for show_param in show_params:
-                collect_output += self.collectinfo_content(do_show,[show_param])
+                self.collectinfo_content(do_show,[show_param])
             for cluster_param in cluster_params:
-                collect_output += self.collectinfo_content('cluster',cluster_param)
+                self.collectinfo_content('cluster',cluster_param)
             # Below is not optimum, we should query only localhost
             logs = self.cluster.info('logs')
             for i in logs:
                 log_location = logs[i].split(':')[1]
             cmd = 'tail -n 10000 ' + log_location
             if log_location != '/var/log/aerospike/aerospike.log':
-                collect_output += self.collectinfo_content('shell',[cmd])
+                self.collectinfo_content('shell',[cmd])
         except Exception as e:
-            collect_output += str(e)
+            self.write_log(str(e))
             sys.stdout = sys.__stdout__
         for cmd in shell_cmds:
-            collect_output += self.collectinfo_content('shell',[cmd])
-        collect_output += self.collectinfo_content(self.collect_sys)
-        collect_output += self.collectinfo_content(self.get_awsdata)
-        self.write_log(collect_output,log_location)
+            self.collectinfo_content('shell',[cmd])
+        self.collectinfo_content(self.collect_sys)
+        self.collectinfo_content(self.get_awsdata)
+        self.collect_local_file(log_location,aslogdir)
+        self.archive_log(aslogdir)
 
     def _do_default(self, line):
         self.main_collectinfo(line)
