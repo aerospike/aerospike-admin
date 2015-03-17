@@ -690,10 +690,14 @@ class CollectinfoController(CommandController):
             # Below is not optimum, we should query only localhost
             logs = self.cluster.info('logs')
             for i in logs:
-                log_location = logs[i].split(':')[1]
-            cmd = 'tail -n 10000 ' + log_location
-            if log_location != '/var/log/aerospike/aerospike.log':
-                self.collectinfo_content('shell',[cmd])
+                logs_c = logs[i].split(';')
+            for log in logs_c:
+                log_location = log.split(':')[1]
+                cmd = 'tail -n 10000 ' + log_location
+                if log_location != '/var/log/aerospike/aerospike.log':
+                    self.collectinfo_content('shell',[cmd])
+                self.collect_local_file(log_location,aslogdir)
+
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
@@ -701,7 +705,6 @@ class CollectinfoController(CommandController):
             self.collectinfo_content('shell',[cmd])
         self.collectinfo_content(self.collect_sys)
         self.collectinfo_content(self.get_awsdata)
-        self.collect_local_file(log_location,aslogdir)
         self.archive_log(aslogdir)
 
     def _do_default(self, line):
