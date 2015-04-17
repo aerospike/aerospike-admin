@@ -18,6 +18,7 @@ import threading
 from time import time
 import subprocess
 import pipes
+import sys, StringIO
 
 def info_to_dict(value, delimiter = ';'):
     """
@@ -122,3 +123,19 @@ def shell_command(command):
     else:
         return out, err
 
+    # Redirecting the stdout to use the output elsewhere
+def capture_stdout(func,line=''):
+    """
+    Redirecting the stdout to use the output elsewhere
+    """
+
+    sys.stdout.flush()
+    old = sys.stdout
+    capturer = StringIO.StringIO()
+    sys.stdout = capturer
+
+    func(line)
+
+    output = capturer.getvalue()
+    sys.stdout = old
+    return output

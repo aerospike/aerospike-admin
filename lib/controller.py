@@ -14,6 +14,7 @@
 
 from lib.controllerlib import *
 from lib import util
+import time, os, sys, platform, shutil, urllib2, socket
 
 def flip_keys(orig_data):
     new_data = {}
@@ -44,6 +45,7 @@ class RootController(BaseController):
             , 'cluster':ClusterController
             , '!':ShellController
             , 'shell':ShellController
+            , 'collectinfo':CollectinfoController
         }
 
     @CommandHelp('Terminate session')
@@ -521,3 +523,189 @@ class ClusterController(CommandController):
     def do_undun(self, line):
         results = self.cluster.infoUndun(self.mods['line'], nodes=self.nodes)
         self.view.dun(results, self.cluster, **self.mods)
+
+@CommandHelp('"collectinfo" is used to collect system stats on the local node.')
+class CollectinfoController(CommandController):
+    def collect_local_file(self,src,dest_dir):
+        try:
+            shutil.copy2(src, dest_dir)
+        except Exception,e:
+            print e
+            pass
+        return
+
+    def collectinfo_content(self,func,parm=''):
+        name = ''
+        capture_stdout = util.capture_stdout
+        sep = "\n====ASCOLLECTINFO====\n"
+        try:
+            name = func.func_name
+        except Exception:
+            pass
+        info_line = "[INFO] Data collection for " + name +str(parm) + " in progress.."
+        print info_line
+        sep += info_line+"\n"
+        
+        if func == 'shell':
+            o,e = util.shell_command(parm)
+        elif func == 'cluster':
+            o = self.cluster.info(parm)
+        else:
+            o = capture_stdout(func,parm)
+        self.write_log(sep+str(o))
+        return ''
+        
+    def write_log(self,collectedinfo):
+        global aslogfile
+        f = open(str(aslogfile), 'a')
+        f.write(str(collectedinfo))
+        return f.close() 
+
+    def get_metadata(self,response_str,prefix=''):
+        aws_c = ''
+        aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
+        prefix_o = prefix
+        if prefix_o == '/':
+            prefix = ''
+        for rsp in response_str.split("\n"):
+            if rsp[-1:] == '/':
+                if prefix_o == '': #First level child
+                    rsp_p = rsp.strip('/')
+                else:
+                    rsp_p = rsp
+                self.get_metadata(rsp_p,prefix)
+            else:
+                meta_url = aws_metadata_base_url+prefix+'/'+rsp
+                req = urllib2.Request(meta_url)
+                r = urllib2.urlopen(req)
+#                 r = requests.get(meta_url,timeout=aws_timeout)
+                if r.code != 404:
+                    aws_c += rsp +'\n'+r.read() +"\n"
+        return aws_c
+    
+    def get_awsdata(self,line):
+        aws_rsp = ''
+        aws_timeout = 1
+        socket.setdefaulttimeout(aws_timeout)
+        aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
+        try:
+            req = urllib2.Request(aws_metadata_base_url)
+            r = urllib2.urlopen(req)
+#             r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
+            if r.code == 200:
+                print "This is in AWS"
+                rsp = r.read()
+                aws_rsp += self.get_metadata(rsp,'/')
+                print aws_rsp
+            else:
+                aws_rsp = "Not in AWS"
+                print aws_rsp
+    
+        except Exception as e:
+            print e
+            print "Not in AWS"
+
+    def collect_sys(self,line):
+        lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
+        print util.shell_command([lsof_cmd])
+        print platform.platform()
+        smd_home = '/opt/aerospike/smd'
+        if os.path.isdir(smd_home):
+            smd_files = [ f for f in os.listdir(smd_home) if os.path.isfile(os.path.join(smd_home, f)) ]
+            for f in smd_files:
+                smd_f = os.path.join(smd_home, f)    
+                print smd_f
+                smd_fp = open(smd_f, 'r')
+                print smd_fp.read()
+                smd_fp.close()
+    
+    def archive_log(self,logdir):
+        util.shell_command(["tar -czvf " + logdir + ".tgz " + aslogdir])
+        sys.stderr.write("\x1b[2J\x1b[H")
+        print "\n\n\nFiles in " + logdir + " and " + logdir + ".tgz saved. "
+        print "END OF ASCOLLECTINFO"
+
+    def main_collectinfo(self, line):
+        collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
+        info_params = ['network','service', 'namespace', 'xdr', 'sindex']
+        show_params = ['config', 'distribution', 'latency', 'statistics']
+        cluster_params = ['service',
+                          'services',
+                          'xdr-min-lastshipinfo:',
+                          'dump-fabric:',
+                          'dump-hb:',
+                          'dump-migrates:',
+                          'dump-msgs:',
+                          'dump-paxos:',
+                          'dump-smd:',
+                          'dump-wb:',
+                          'dump-wb-summary:',
+                          'dump-wr:',
+                          'sindex-dump:'
+                          ]
+        shell_cmds = ['date',
+                      'hostname',
+                      'ifconfig',
+                      'uptime',
+                      'uname -a',
+                      'lsb_release -a',
+                      'ls /etc|grep release|xargs -I f cat /etc/f',
+                      'rpm -qa|grep -E "citrus|aero"',
+                      'dpkg -l|grep -E "citrus|aero"',
+                      'tail -n 10000 /var/log/aerospike/*.log',
+                      'tail -n 10000 /var/log/citrusleaf.log',
+                      'tail -n 10000 /var/log/*xdr.log',
+                      'netstat -pant|grep 3000',
+                      'top -n3 -b',
+                      'free -m',
+                      'df -h',
+                      'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
+                      'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
+                      'lsof',
+                      'dmesg',
+                      'iostat -x 1 10',
+                      'vmstat -s',
+                      'vmstat -m',
+                      'iptables -L',
+                      'cat /etc/aerospike/aerospike.conf',
+                      'cat /etc/citrusleaf/citrusleaf.conf',
+                      ]
+        terminal.enable_color(False)
+        global aslogdir,aslogfile
+        aslogdir = '/tmp/as_log_' + str(time.time())
+        aslogfile = aslogdir + '/ascollectinfo.log'
+        os.mkdir(aslogdir)
+        self.write_log(collect_output)
+        log_location = '/var/log/aerospike/*.log'
+        try:
+            log_location = '/var/log/aerospike/aerospike.log'
+            cinfo = InfoController()
+            for info_param in info_params:
+                self.collectinfo_content(cinfo,[info_param])
+            do_show = ShowController()
+            for show_param in show_params:
+                self.collectinfo_content(do_show,[show_param])
+            for cluster_param in cluster_params:
+                self.collectinfo_content('cluster',cluster_param)
+            # Below is not optimum, we should query only localhost
+            logs = self.cluster.info('logs')
+            for i in logs:
+                logs_c = logs[i].split(';')
+            for log in logs_c:
+                log_location = log.split(':')[1]
+                cmd = 'tail -n 10000 ' + log_location
+                if log_location != '/var/log/aerospike/aerospike.log':
+                    self.collectinfo_content('shell',[cmd])
+                self.collect_local_file(log_location,aslogdir)
+
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+        for cmd in shell_cmds:
+            self.collectinfo_content('shell',[cmd])
+        self.collectinfo_content(self.collect_sys)
+        self.collectinfo_content(self.get_awsdata)
+        self.archive_log(aslogdir)
+
+    def _do_default(self, line):
+        self.main_collectinfo(line)
