@@ -242,7 +242,7 @@ class CliView(object):
                         ,'cur_throughput'
                         ,('latency_avg_ship', 'Avg Latency (ms)')
                         ,'_xdr-uptime')
-        
+
         t = Table(title, column_names)
 
         t.addDataSource('_xdr-uptime', Extractors.timeExtractor('xdr-uptime'))
@@ -399,13 +399,13 @@ class CliView(object):
                 t.insertRow(node_data)
 
             print t
-        
+
     @staticmethod
     def showConfig(title, service_configs, cluster, like=None, **ignore):
         prefixes = cluster.getPrefixes()
 
         column_names = set()
-        
+
         for config in service_configs.itervalues():
             if isinstance(config, Exception):
                 continue
@@ -414,7 +414,7 @@ class CliView(object):
         column_names = sorted(column_names)
         if like:
             likes = CliView.compileLikes(like)
-            
+
             column_names = filter(likes.search, column_names)
 
         if len(column_names) == 0:
@@ -483,7 +483,7 @@ class CliView(object):
                                            , prefix
                                            , node.ip
                                            , terminal.reset())
-            
+
             if isinstance(command_result, Exception):
                 print "%s%s%s"%(terminal.fg_red()
                                 , command_result
@@ -494,22 +494,33 @@ class CliView(object):
                 print "asinfo -v '%s'"%(command)
                 print result
 
-            
+
 
     @staticmethod
     def watch(ctrl, line):
+        diff_highlight = True
+        sleep = 2.0
+        num_iterations = False
+
         try:
             sleep = float(line[0])
             line.pop(0)
         except:
-            sleep = 2.0
-
-        num_iterations = False
-        try:
-            num_iterations = int(line[0])
-            line.pop(0)
-        except:
             pass
+        else:
+            try:
+                num_iterations = int(line[0])
+                line.pop(0)
+            except:
+                pass
+
+        if "".join(line[0:2]) == "--no-diff":
+            diff_highlight = False
+            line.pop(0)
+            line.pop(0)
+
+        if not terminal.color_enabled:
+            diff_highlight = False
 
         try:
             real_stdout = sys.stdout
@@ -521,7 +532,7 @@ class CliView(object):
                 ctrl.execute(line[:])
                 output = mystdout.getvalue()
                 mystdout.reset()
-                if previous:
+                if previous and diff_highlight:
                     result = []
                     for (prev_char, cur_char) in itertools.izip(previous, output):
                         if cur_char == prev_char:
@@ -559,7 +570,7 @@ class CliView(object):
 
                 count += 1
                 time.sleep(sleep)
-                
+
         except (KeyboardInterrupt, SystemExit):
             return
         finally:

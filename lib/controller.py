@@ -60,11 +60,12 @@ class RootController(BaseController):
         self.executeHelp(line)
 
     @CommandHelp('"watch" Runs a command for a specified pause and iterations.'
-                 , 'Usage: watch [pause] [iterations] [command]'
+                 , 'Usage: watch [pause] [iterations] [--no-diff] command]'
                  , '   pause:      the duration between executions.'
                  , '               [default: 2 seconds]'
                  , '   iterations: Number of iterations to execute command.'
                  , '               [default: until keyboard interrupt]'
+                 , '   --no-diff:  Do not do diff highlighting'
                  , 'Example 1: Show "info network" 3 times with 1 second pause'
                  , '           watch 1 3 info network'
                  , 'Example 2: Show "info namespace" with 5 second pause until'
@@ -257,7 +258,7 @@ class ShowDistributionController(CommandController):
             for host_id, data in host_data.iteritems():
                 hist = data['data']
                 width = data['width']
-                
+
                 cum_total = 0
                 total = sum(hist)
                 percentile = 0.1
@@ -431,7 +432,7 @@ class ShowStatisticsController(CommandController):
 
         self.view.showStats("Service Statistics", service_stats, self.cluster
                             , **self.mods)
-        
+
     @CommandHelp('Displays namespace statistics')
     def do_namespace(self, line):
         namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
@@ -479,7 +480,7 @@ class ShowStatisticsController(CommandController):
     def do_bins(self, line):
         bin_stats = self.cluster.infoBinStatistics(nodes=self.nodes)
         new_bin_stats = {}
-        
+
         for node_id, bin_stat in bin_stats.iteritems():
             if isinstance(bin_stat, Exception):
                 continue
@@ -545,7 +546,7 @@ class CollectinfoController(CommandController):
         info_line = "[INFO] Data collection for " + name +str(parm) + " in progress.."
         print info_line
         sep += info_line+"\n"
-        
+
         if func == 'shell':
             o,e = util.shell_command(parm)
         elif func == 'cluster':
@@ -554,12 +555,12 @@ class CollectinfoController(CommandController):
             o = capture_stdout(func,parm)
         self.write_log(sep+str(o))
         return ''
-        
+
     def write_log(self,collectedinfo):
         global aslogfile
         f = open(str(aslogfile), 'a')
         f.write(str(collectedinfo))
-        return f.close() 
+        return f.close()
 
     def get_metadata(self,response_str,prefix=''):
         aws_c = ''
@@ -582,7 +583,7 @@ class CollectinfoController(CommandController):
                 if r.code != 404:
                     aws_c += rsp +'\n'+r.read() +"\n"
         return aws_c
-    
+
     def get_awsdata(self,line):
         aws_rsp = ''
         aws_timeout = 1
@@ -600,7 +601,7 @@ class CollectinfoController(CommandController):
             else:
                 aws_rsp = "Not in AWS"
                 print aws_rsp
-    
+
         except Exception as e:
             print e
             print "Not in AWS"
@@ -613,12 +614,12 @@ class CollectinfoController(CommandController):
         if os.path.isdir(smd_home):
             smd_files = [ f for f in os.listdir(smd_home) if os.path.isfile(os.path.join(smd_home, f)) ]
             for f in smd_files:
-                smd_f = os.path.join(smd_home, f)    
+                smd_f = os.path.join(smd_home, f)
                 print smd_f
                 smd_fp = open(smd_f, 'r')
                 print smd_fp.read()
                 smd_fp.close()
-    
+
     def archive_log(self,logdir):
         util.shell_command(["tar -czvf " + logdir + ".tgz " + aslogdir])
         sys.stderr.write("\x1b[2J\x1b[H")
