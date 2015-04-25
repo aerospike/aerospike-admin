@@ -22,6 +22,9 @@ def enable_color(is_enable):
     global bgblack, bgred, bggreen, bgyellow, bgblue, bgmagenta, bgcyan, bgwhite
     global esc, term
     global sclear_code, cur_format
+    global color_enabled
+
+    color_enabled = is_enable
 
     if is_enable:
         sclear     = '0'
@@ -122,12 +125,12 @@ def enable_color(is_enable):
 
 # Real terminal?
 isatty = sys.stdout.isatty()
-
+color_enabled = isatty
 enable_color(isatty)
 
 def bold():
     return _add_it(sbold)
-    
+
 def unbold():
     return _remove_it(sbold)
 
@@ -178,7 +181,7 @@ def fg_clear():
     _remove_it(fgblue)
     _remove_it(fgmagenta)
     _remove_it(fgcyan)
-    return sclear_code + _remove_it(fgwhite)    
+    return sclear_code + _remove_it(fgwhite)
 
 def bg_black():
         return _add_it(bgblack)
@@ -212,7 +215,7 @@ def bg_clear():
     _remove_it(bgblue)
     _remove_it(bgmagenta)
     _remove_it(bgcyan)
-    return sclear_code + _remove_it(bgwhite)    
+    return sclear_code + _remove_it(bgwhite)
 
 def style(*functions):
     if not functions:

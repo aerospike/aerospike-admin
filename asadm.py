@@ -257,6 +257,9 @@ def main():
     parser.add_argument("-e"
                         , "--execute"
                         , help="Execute a single asadmin command and exit")
+    parser.add_argument("--no-color"
+                        , action="store_true"
+                        , help="Disable colored output")
     parser.add_argument("--profile"
                         , action="store_true"
                         #, help="Profile Aerospike Admin for performance issues"
@@ -270,6 +273,10 @@ def main():
     if cli_args.help:
         parser.print_help()
         exit(0)
+
+    if cli_args.no_color:
+        from lib import terminal
+        terminal.enable_color(False)
 
     user = None
     password = None
