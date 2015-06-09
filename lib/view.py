@@ -250,10 +250,12 @@ class CliView(object):
 
         t = Table(title, column_names)
 
-        t.addDataSource('_xdr-uptime', Extractors.timeExtractor('xdr-uptime'))
+        t.addDataSource('_xdr-uptime', Extractors.timeExtractor(
+            ('xdr-uptime', 'xdr_uptime')))
 
         t.addDataSource('_bytes-shipped',
-                        Extractors.byteExtractor('esmt-bytes-shipped'))
+                        Extractors.byteExtractor(
+                            ('esmt-bytes-shipped', 'esmt_bytes_shipped')))
 
         t.addDataSource('_lag-secs',
                         Extractors.timeExtractor('timediff_lastship_cur_secs'))
@@ -284,7 +286,10 @@ class CliView(object):
             if xdr_enable[node_key]:
                 if row:
                     row['build'] = builds[node_key]
-                    row['_free-dlog-pct'] = row['free-dlog-pct'][:-1]
+                    if 'free_dlog_pct' in row:
+                        row['_free-dlog-pct'] = row['free_dlog_pct'][:-1]
+                    else:
+                        row['_free-dlog-pct'] = row['free-dlog-pct'][:-1]
                 else:
                     row = {}
                     row['node-id'] = node.node_id

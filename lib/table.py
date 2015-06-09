@@ -18,10 +18,17 @@ import re
 
 class Extractors(object):
     # standard set of extractors
-    
+
     @staticmethod
-    def _numExtractor(column, system):
+    def _numExtractor(columns, system):
+        if not isinstance(columns, tuple):
+            columns = (columns,)
+
         def si_extractor(data):
+            for column in columns:
+                if column in data:
+                    break
+
             if system == int:
                 return int(data[column])
             elif system == float:
@@ -32,28 +39,35 @@ class Extractors(object):
         return si_extractor
 
     @staticmethod
-    def floatExtractor(column):
-        return Extractors._numExtractor(column, float)
+    def floatExtractor(columns):
+        return Extractors._numExtractor(columns, float)
 
     @staticmethod
-    def intExtractor(column):
-        return Extractors._numExtractor(column, int)
-        
-    @staticmethod
-    def sifExtractor(column):
-        return Extractors._numExtractor(column, filesize.sif)
+    def intExtractor(columns):
+        return Extractors._numExtractor(columns, int)
 
     @staticmethod
-    def siExtractor(column):
-        return Extractors._numExtractor(column, filesize.si)
+    def sifExtractor(columns):
+        return Extractors._numExtractor(columns, filesize.sif)
 
     @staticmethod
-    def byteExtractor(column):
-        return Extractors._numExtractor(column, filesize.byte)
+    def siExtractor(columns):
+        return Extractors._numExtractor(columns, filesize.si)
 
     @staticmethod
-    def timeExtractor(column):
+    def byteExtractor(columns):
+        return Extractors._numExtractor(columns, filesize.byte)
+
+    @staticmethod
+    def timeExtractor(columns):
+        if not isinstance(columns, tuple):
+            columns = (columns,)
+
         def t_extractor(data):
+            for column in columns:
+                if column in data:
+                    break
+
             time_stamp = int(data[column])
             hours = time_stamp / 3600
             minutes = (time_stamp % 3600) / 60
@@ -189,7 +203,7 @@ class Table(object):
                 is_alert = False
                 if column in self._cell_alert:
                     is_alert, color = self._cell_alert[column]
-                
+
                 if is_alert and is_alert(row_data):
                     cell = (color, cell)
                 else:
@@ -220,7 +234,7 @@ class Table(object):
             group_by = row[self._group_by]
             if group_by not in grouped_data:
                 grouped_data[group_by] = []
-                
+
             grouped_data[group_by].append(row)
 
         data = []
@@ -286,7 +300,7 @@ class Table(object):
             if words:
                 line = ' '.join(words)
                 lines.append(line)
-            
+
         description = ["%s%s%s"%(terminal.dim()
                                 , l.center(line_width)
                                  , terminal.reset()) for l in lines]
@@ -369,7 +383,7 @@ class Table(object):
 
     def _str_vertical(self):
         output = []
-        
+
         title_width = sum(self._render_column_widths) + 1 # 1 for ":"
         title_width += len(self._column_padding) * (len(self._render_column_widths) - 1)
         output = [terminal.bold()]
