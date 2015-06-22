@@ -98,7 +98,7 @@ class cached(object):
             value, eol = self.cache[key]
             if eol > time():
                 return value
-        
+
         self[key] = self.func(*key)
         return self.cache[key][0]
 

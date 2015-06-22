@@ -51,7 +51,7 @@ class RootController(BaseController):
     @CommandHelp('Terminate session')
     def do_exit(self, line):
         # This function is a hack for autocomplete
-        raise Exception("Should not be possible to call")
+        return "EXIT"
 
     @CommandHelp('Returns documentation related to a command'
                  , 'for example, to retrieve documentation for the "info"'

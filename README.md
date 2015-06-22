@@ -5,8 +5,10 @@ stat of their Aerospike Cluster. Start the tool with *python asadmin.py* and
 run the *help* command to get started.
 
 ## Installing Aerospike Admin
+```
 make
 sudo make install
+```
 
 ## Running Aerospike Admin
 asadmin -h <Aerospike Server Address>

@@ -25,7 +25,7 @@ def getfqdn(address, timeout=0.5):
     #       main thread
 
     result = [address]
-    
+
     def helper():
         result[0] = socket.getfqdn(address)
 
@@ -144,7 +144,7 @@ class Node(object):
         if isinstance(config, Exception):
             return False
 
-        
+
         xdr_enabled = config['xdr']['enable-xdr']
         return xdr_enabled == 'true'
 
@@ -208,7 +208,7 @@ class Node(object):
         Arguments:
         command -- the info command to execute on this node
         """
-        
+
         try:
             return self._infoCInfo(command, self.xdr_port)
         except Exception as e:
@@ -261,7 +261,7 @@ class Node(object):
         Returns:
         list -- [(ip,port),...]
         """
-        
+
         try:
             return self._infoServicesHelper(self.info("services-alumni"))
         except IOError:
@@ -320,7 +320,7 @@ class Node(object):
         stats = util.info_to_list(stats)
         stats.pop()
         stats = [util.info_colon_to_dict(stat) for stat in stats]
-        
+
         sets = {}
         for stat in stats:
             ns_name = stat['ns_name']
@@ -383,7 +383,7 @@ class Node(object):
                     namespace_config = namespace_config['namespace'][namespace]
                     namespace_configs[namespace] = namespace_config
                 config['namespace'] = namespace_configs
-                
+
         elif stanza == '':
             config['service'] = util.info_to_dict(self.info("get-config:"))
         elif stanza != 'all':
@@ -420,7 +420,7 @@ class Node(object):
             row.insert(0, "%s->%s"%(start_time, end_time))
 
             data[hist_name] = (columns, row)
-            
+
         return data
 
     @return_exceptions

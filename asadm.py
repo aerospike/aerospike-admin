@@ -105,10 +105,11 @@ class AerospikeShell(cmd.Cmd):
 
             sys.stdout.write(terminal.reset())
             try:
-                self.ctrl.execute(line)
+                response = self.ctrl.execute(line)
+                if response == "EXIT":
+                    return "exit"
             except ShellException as e:
                 print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
-
         return "" # line was handled by execute
 
     def completenames(self, text, line, begidx, endidx):

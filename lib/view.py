@@ -155,19 +155,20 @@ class CliView(object):
 
         title = "Namespace Information"
         column_names = ('node'
-                        ,'namespace'
-                        ,('available_pct', 'Avail%')
-                        ,('evicted-objects', 'Evictions')
-                        ,'_objects'
-                        ,'repl-factor'
-                        ,'stop-writes'
-                        ,('_used-bytes-disk', 'Disk Used')
-                        ,('_used-disk-pct', 'Disk Used%')
-                        ,('high-water-disk-pct', 'HWM Disk%')
-                        ,('_used-bytes-memory', 'Mem Used')
-                        ,('_used-mem-pct', 'Mem Used%')
-                        ,('high-water-memory-pct', 'HWM Mem%')
-                        ,('stop-writes-pct', 'Stop Writes%'))
+                        , 'namespace'
+                        , ('available_pct', 'Avail%')
+                        , ('evicted-objects', 'Evictions')
+                        , ('_master-objects', 'Master Objects')
+                        , ('_prole-objects', 'Replica Objects')
+                        , 'repl-factor'
+                        , 'stop-writes'
+                        , ('_used-bytes-disk', 'Disk Used')
+                        , ('_used-disk-pct', 'Disk Used%')
+                        , ('high-water-disk-pct', 'HWM Disk%')
+                        , ('_used-bytes-memory', 'Mem Used')
+                        , ('_used-mem-pct', 'Mem Used%')
+                        , ('high-water-memory-pct', 'HWM Mem%')
+                        , ('stop-writes-pct', 'Stop Writes%'))
 
         t = Table(title, column_names, group_by=1)
         t.addDataSource('_used-bytes-disk'
@@ -175,8 +176,12 @@ class CliView(object):
         t.addDataSource('_used-bytes-memory'
                         ,Extractors.byteExtractor(
                             'used-bytes-memory'))
-        t.addDataSource('_objects'
-                        ,Extractors.sifExtractor('objects'))
+
+        t.addDataSource('_master-objects'
+                        ,Extractors.sifExtractor('master-objects'))
+
+        t.addDataSource('_prole-objects'
+                        ,Extractors.sifExtractor('prole-objects'))
 
         t.addDataSource('_used-disk-pct'
                         , lambda data: 100 - int(data['free-pct-disk']))
@@ -245,10 +250,12 @@ class CliView(object):
 
         t = Table(title, column_names)
 
-        t.addDataSource('_xdr-uptime', Extractors.timeExtractor('xdr-uptime'))
+        t.addDataSource('_xdr-uptime', Extractors.timeExtractor(
+            ('xdr-uptime', 'xdr_uptime')))
 
         t.addDataSource('_bytes-shipped',
-                        Extractors.byteExtractor('esmt-bytes-shipped'))
+                        Extractors.byteExtractor(
+                            ('esmt-bytes-shipped', 'esmt_bytes_shipped')))
 
         t.addDataSource('_lag-secs',
                         Extractors.timeExtractor('timediff_lastship_cur_secs'))
@@ -279,7 +286,10 @@ class CliView(object):
             if xdr_enable[node_key]:
                 if row:
                     row['build'] = builds[node_key]
-                    row['_free-dlog-pct'] = row['free-dlog-pct'][:-1]
+                    if 'free_dlog_pct' in row:
+                        row['_free-dlog-pct'] = row['free_dlog_pct'][:-1]
+                    else:
+                        row['_free-dlog-pct'] = row['free-dlog-pct'][:-1]
                 else:
                     row = {}
                     row['node-id'] = node.node_id
