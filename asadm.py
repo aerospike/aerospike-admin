@@ -19,7 +19,7 @@ import cmd
 import sys
 import os
 import re
-import argparse
+import optparse
 import getpass
 import shlex
 from lib import citrusleaf
@@ -237,40 +237,50 @@ def do_ctrl_c(*args, **kwargs):
     print "Please press ctrl+d or type exit"
 
 def main():
-    parser = argparse.ArgumentParser(add_help=False, conflict_handler='resolve')
-    parser.add_argument("-h"
+    usage = "usage: %prog [options]"
+    parser = optparse.OptionParser(usage, add_help_option=False)
+    parser.add_option("-h"
                         , "--host"
+                        , dest="host"
                         , default="127.0.0.1"
                         , help="Address (ip/fqdn) of a host in an " + \
                                "Aerospike cluster")
-    parser.add_argument("-p", "--port"
+    parser.add_option("-p", "--port"
+                        , dest="port"
                         , type=int
                         , default=3000
                         , help="Aerospike service port used by the host.")
-    parser.add_argument("-U"
+    parser.add_option("-U"
                         , "--user"
+                        , dest="user"
                         , help="user name")
-    parser.add_argument("-P"
+    parser.add_option("-P"
                         , "--password"
-                        , nargs="?"
+                        , dest="password"
+                        , action="store_const"
+                        # , nargs="?"
                         , const="prompt"
                         , help="password")
-    parser.add_argument("-e"
+    parser.add_option("-e"
                         , "--execute"
+                        , dest="execute"
                         , help="Execute a single asadmin command and exit")
-    parser.add_argument("--no-color"
+    parser.add_option("--no-color"
+                        , dest="no_color"
                         , action="store_true"
                         , help="Disable colored output")
-    parser.add_argument("--profile"
+    parser.add_option("--profile"
+                        , dest="profile"
                         , action="store_true"
                         #, help="Profile Aerospike Admin for performance issues"
-                        , help=argparse.SUPPRESS)
-    parser.add_argument("-u"
+                        , help=optparse.SUPPRESS_USAGE)
+    parser.add_option("-u"
                         , "--help"
+                        , dest="help"
                         , action="store_true"
                         , help="show program usage")
 
-    cli_args = parser.parse_args()
+    (cli_args, args) = parser.parse_args()
     if cli_args.help:
         parser.print_help()
         exit(0)
