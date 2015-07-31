@@ -244,7 +244,6 @@ class Node(object):
         Returns:
         list -- [(ip,port),...]
         """
-        services = self.info("services")
 
         return self._infoServicesHelper(self.info("services"))
 
