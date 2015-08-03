@@ -19,6 +19,7 @@ from telnetlib import Telnet
 from time import time
 import socket
 import threading
+from distutils.version import StrictVersion
 
 def getfqdn(address, timeout=0.5):
     # note: cannot use timeout lib because signal must be run from the
@@ -453,9 +454,17 @@ class Node(object):
         c = lib.cluster.Cluster(self.ip)
         lookup = c.node_lookup
         result = set()
-
+        
         if 'all' in dun_list:
-            result.add('all')
+            _serviceIP, _servicePort = self._serviceIPPort.split(':')
+            as_version = citrusleaf.citrusleaf_info(_serviceIP, _servicePort)['build']
+            # Comparing with this version because the ability 
+            # to specify "all" in cluster dun was added in 3.3.26
+            if StrictVersion(as_version) < StrictVersion("3.3.26"):
+                # Fetching node id's
+                result = {node.node_id for node in  c.nodes.values()}
+            else:
+                result.add('all')
         else:
             for node in dun_list:
                 if node in lookup:
