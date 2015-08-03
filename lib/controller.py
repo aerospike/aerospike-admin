@@ -627,6 +627,13 @@ class CollectinfoController(CommandController):
         print "END OF ASCOLLECTINFO"
 
     def main_collectinfo(self, line):
+        # Unfortunately timestamp can not be printed in Centos with dmesg, 
+        # storing dmesg logs without timestamp for this particular OS.
+        if 'centos' == (platform.linux_distribution()[0]).lower():
+            cmd_dmesg  = 'dmesg'
+        else:
+            cmd_dmesg  = 'dmesg -T'
+        
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
         info_params = ['network','service', 'namespace', 'xdr', 'sindex']
         show_params = ['config', 'distribution', 'latency', 'statistics']
@@ -663,7 +670,7 @@ class CollectinfoController(CommandController):
                       'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
                       'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
                       'lsof',
-                      'dmesg',
+                       cmd_dmesg,
                       'iostat -x 1 10',
                       'vmstat -s',
                       'vmstat -m',
