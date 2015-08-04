@@ -456,8 +456,7 @@ class Node(object):
         result = set()
         
         if 'all' in dun_list:
-            _serviceIP, _servicePort = self._serviceIPPort.split(':')
-            as_version = citrusleaf.citrusleaf_info(_serviceIP, _servicePort)['build']
+            as_version = self.info('build')
             # Comparing with this version because the ability 
             # to specify "all" in cluster dun was added in 3.3.26
             if StrictVersion(as_version) < StrictVersion("3.3.26"):
