@@ -411,15 +411,27 @@ class CliView(object):
             print t
 
     @staticmethod
-    def showConfig(title, service_configs, cluster, like=None, **ignore):
+    def showConfig(title, service_configs, cluster, like=None, diff=None, **ignore):
         prefixes = cluster.getPrefixes()
-
         column_names = set()
 
-        for config in service_configs.itervalues():
-            if isinstance(config, Exception):
-                continue
-            column_names.update(config.keys())
+        if diff:
+            try:
+                if service_configs:  
+                    union = dict(set.union(*(set(service_configs[d].iteritems()) 
+                                                           for d in  service_configs 
+                                                           if service_configs[d]))).viewitems()
+                    intersection = dict(set.intersection(*(set(service_configs[d].iteritems()) 
+                                                           for d in  service_configs 
+                                                           if service_configs[d]))).viewitems()
+                    column_names = dict(union - intersection).keys()
+            except:
+                pass
+        else:
+            for config in service_configs.itervalues():
+                if isinstance(config, Exception):
+                    continue
+                column_names.update(config.keys())
 
         column_names = sorted(column_names)
         if like:

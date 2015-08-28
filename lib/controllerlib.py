@@ -244,7 +244,7 @@ class CommandController(BaseController):
         groups = {}
 
         for mod in mods:
-            if mod in mods:
+            if mod in mods: 
                 groups[mod] = []
 
         mod = 'line'
@@ -254,6 +254,8 @@ class CommandController(BaseController):
             word = line.pop(0)
             if word in self.modifiers:
                 mod = word
+                if mod == 'diff':      # Special case for handling diff modifier of show config 
+                    groups[mod].append(True)
             else:
                 if word not in groups[mod]:
                     groups[mod].append(word)
