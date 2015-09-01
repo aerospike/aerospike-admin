@@ -673,6 +673,7 @@ class CollectinfoController(CommandController):
         shell_cmds = ['date',
                       'hostname',
                       'ip addr',
+                      'ip -s link',
                       'uptime',
                       'uname -a',
                       'lsb_release -a',
@@ -708,7 +709,12 @@ class CollectinfoController(CommandController):
             do_show = ShowController()
             for show_param in show_params:
                 self.collectinfo_content(do_show,[show_param])
-            
+
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+        
+        try:            
             aslogfile = as_logfile_prefix + 'clusterCmd.log'
             for cluster_param in cluster_params:
                 self.collectinfo_content('cluster',cluster_param)
