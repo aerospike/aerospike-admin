@@ -420,13 +420,15 @@ class CliView(object):
                 if service_configs:  
                     union = dict(set.union(*(set(service_configs[d].iteritems()) 
                                                            for d in  service_configs 
-                                                           if service_configs[d]))).viewitems()
+                                                           if service_configs[d]))).items()
                     intersection = dict(set.intersection(*(set(service_configs[d].iteritems()) 
                                                            for d in  service_configs 
-                                                           if service_configs[d]))).viewitems()
-                    column_names = dict(union - intersection).keys()
-            except:
-                pass
+                                                           if service_configs[d]))).items()
+                    column_names = dict(set(union) - set(intersection)).keys()
+            except Exception as e:
+                print str(e)
+                print "Oops! something went wrong, please try command without diff keyword"
+                
         else:
             for config in service_configs.itervalues():
                 if isinstance(config, Exception):
