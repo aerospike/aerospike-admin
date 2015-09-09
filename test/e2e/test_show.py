@@ -42,6 +42,8 @@ def parse_output(actual_out = ""):
     header = data.pop(0)
     params = [item.split(':')[0].strip() for item in  data if item.split(':')[0].strip()]
     
+    # handled beast color code
+    params = [item[4:] for item in params if "\x1b[0m" in item]
     return(heading, header, params)
     
     
