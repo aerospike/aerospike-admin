@@ -1,8 +1,9 @@
 '''
 Created on 07-Sep-2015
 
-@author: gslab
+@author: Pavan Gupta
 '''
+import test_util
 import unittest2 as unittest
 import re
 # from .. import *
@@ -10,40 +11,7 @@ import lib.util as util
 import lib.controller as controller
 
 
-def parse_output(actual_out = ""):
-    """
-        commmon parser for all show commands will return touple of following
-        @param heading : first line of output
-        @param header: Second line of output
-        @param params: list of parameters 
-    
-    """
-    data =  actual_out.split('\n')
-    heading = data.pop(0)
-    header = data.pop(0)
-    params = [item.split(':')[0].strip() for item in  data if item.split(':')[0].strip()]
-    
-# handled beast color code
-    for i, item in enumerate(params):
-        if "\x1b[0m" in item:
-            params[i] = item[4:]
-    if '\x1b[1m' in params:
-        params.remove('\x1b[1m')
-        
-#     params = [item[4:] for item in params if "\x1b[0m" in item]
-    return(heading, header, params)
-
-def get_separate_output(in_str = '', mid_str=''):
-    _regex = re.compile("~.+" + mid_str + "~.+")
-    out_pattern, outstr = re.findall(_regex,in_str), re.split(_regex, in_str)
-    output_list =[]
-    for i, item in enumerate(out_pattern):
-        output_list.append((item + outstr[i + 1]))
-    return output_list
-        
 # @unittest.skip("Skipping for testing purpose")   
-
-# @unittest.skip("for time being") 
 class TestShowConfig(unittest.TestCase):
     output_list = list()
     service_config = ''
@@ -56,7 +24,7 @@ class TestShowConfig(unittest.TestCase):
     def setUpClass(cls):
         rc = controller.RootController()
         actual_out = util.capture_stdout(rc.execute, ['show', 'config'])
-        TestShowConfig.output_list = get_separate_output(actual_out, 'Configuration')
+        TestShowConfig.output_list = test_util.get_separate_output(actual_out, 'Configuration')
                           
         for item in TestShowConfig.output_list:
             if "~~Service Configuration~~" in item:
@@ -79,7 +47,7 @@ class TestShowConfig(unittest.TestCase):
         This test will assert network output on heading, header, parameters.
         ToDo: test for values as well
         """
-        
+    
         exp_heading = "~~Network Configuration~~"
         exp_header = "NODE"
         exp_params = ['enable-fastpath', 
@@ -102,7 +70,7 @@ class TestShowConfig(unittest.TestCase):
         # mesh-seed-address-port :  additional parameter comes only with mesh setup.
         
 #         actual_out = util.capture_stdout(self.rc.execute, ['show', 'config', 'network'])
-        actual_heading, actual_header, actual_params = parse_output(TestShowConfig.network_config)
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.network_config)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -208,7 +176,7 @@ class TestShowConfig(unittest.TestCase):
                         'write-duplicate-resolution-disable',
                     ]
 
-        actual_heading, actual_header, actual_params = parse_output(TestShowConfig.service_config)        
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.service_config)        
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -249,7 +217,7 @@ class TestShowConfig(unittest.TestCase):
                         'write-commit-level-override'
                       ] 
         
-        actual_heading, actual_header, actual_params = parse_output(TestShowConfig.test_namespace_config)        
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.test_namespace_config)        
        
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -289,7 +257,7 @@ class TestShowConfig(unittest.TestCase):
                             'write-commit-level-override'
                         ] 
         
-        actual_heading, actual_header, actual_params = parse_output(TestShowConfig.bar_namespace_config)        
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.bar_namespace_config)        
        
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -328,7 +296,7 @@ class TestShowConfig(unittest.TestCase):
                             'xdr-write-batch-size'
                           ] 
             
-            actual_heading, actual_header, actual_params = parse_output(TestShowConfig.xdr_config)        
+            actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.xdr_config)        
            
             self.assertTrue(exp_heading in actual_heading)
             self.assertTrue(exp_header in actual_header)
@@ -372,11 +340,47 @@ class TestShowLatency(unittest.TestCase):
         self.assertEqual(expected_out.strip(), actual_out.strip())
 
 class TestShowDistribution(unittest.TestCase):
+    output_list = list()
+    test_ttl_distri = ''
+    bar_ttl_distri = ''
+    
+    @classmethod
+    def setUpClass(cls):
+        rc = controller.RootController()
+        actual_out = util.capture_stdout(rc.execute, ['show', 'distribution'])
+        # use regex in get_separate_output(~.+Distribution.*~.+) 
+        #if you are changing below Distribution keyword
+        TestShowDistribution.output_list = test_util.get_separate_output(actual_out, 'Distribution in Seconds')
+                          
+        for item in TestShowDistribution.output_list:
+            if "~~test - TTL Distribution in Seconds~~" in item:
+                TestShowDistribution.test_ttl_distri = item           
+            elif "~~bar - TTL Distribution in Seconds~~" in item:
+                TestShowDistribution.bar_ttl_distri = item           
+            elif "~~~~" in item:
+                TestShowDistribution.test_namespace_config = item               
+          
+              
+    @classmethod    
+    def tearDownClass(self):
+        self.rc = None
+    
+    @unittest.skip("need to implement without asinfo")
+    def test_test_ttl(self):
+        """
+        Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
+        ToDo: test for values as well
+        """
+        exp_heading = "~~test - TTL Distribution in Seconds~~"
+        exp_header = "NODE"
+        exp_params = []
+        
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowDistribution.test_ttl_distri)
+
+    
     pass
 
 # @unittest.skip("Skipping for testing purpose")  
-
-
 class TestShowStatistics(unittest.TestCase):
     output_list = list()
     test_bin_stats = ''
@@ -390,7 +394,7 @@ class TestShowStatistics(unittest.TestCase):
     def setUpClass(cls):
         rc = controller.RootController()
         actual_out = util.capture_stdout(rc.execute, ['show', 'statistics'])
-        TestShowStatistics.output_list = get_separate_output(actual_out, 'Statistics')
+        TestShowStatistics.output_list = test_util.get_separate_output(actual_out, 'Statistics')
                           
         for item in TestShowStatistics.output_list:
             if "~~test Bin Statistics~~" in item:
@@ -419,7 +423,7 @@ class TestShowStatistics(unittest.TestCase):
         exp_header = "NODE"
         exp_params = ['bin-names-quota', 'num-bin-names']
         
-        actual_heading, actual_header, actual_params = parse_output(TestShowStatistics.test_bin_stats)
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.test_bin_stats)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -434,7 +438,7 @@ class TestShowStatistics(unittest.TestCase):
         exp_header = "NODE"
         exp_params = ['bin-names-quota', 'num-bin-names']
         
-        actual_heading, actual_header, actual_params = parse_output(TestShowStatistics.bar_bin_stats)
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.bar_bin_stats)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -636,7 +640,7 @@ class TestShowStatistics(unittest.TestCase):
                         'write_prole',  
                     ]
         
-        actual_heading, actual_header, actual_params = parse_output(TestShowStatistics.service_stats)
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.service_stats)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -698,7 +702,7 @@ class TestShowStatistics(unittest.TestCase):
                         'write-commit-level-override',
                     ]
         
-        actual_heading, actual_header, actual_params = parse_output(TestShowStatistics.bar_namespace_stats)
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.bar_namespace_stats)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -760,7 +764,7 @@ class TestShowStatistics(unittest.TestCase):
                         'write-commit-level-override',
                     ]
         
-        actual_heading, actual_header, actual_params = parse_output(TestShowStatistics.test_namespace_stats)
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.test_namespace_stats)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -817,7 +821,7 @@ class TestShowStatistics(unittest.TestCase):
                         'xdr_deletes_relogged',
                         'xdr_deletes_shipped',
                     ]
-        actual_heading, actual_header, actual_params = parse_output(TestShowStatistics.xdr_stats)
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.xdr_stats)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -826,4 +830,9 @@ class TestShowStatistics(unittest.TestCase):
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
+
     unittest.main()
+    
+    
+    
+    
