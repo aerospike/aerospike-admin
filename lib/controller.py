@@ -534,7 +534,6 @@ class CollectinfoController(CommandController):
             shutil.copy2(src, dest_dir)
         except Exception,e:
             print e
-            pass
         return
 
     def collectinfo_content(self, func, parm=''):
@@ -647,6 +646,35 @@ class CollectinfoController(CommandController):
         print "\n\n\nFiles in " + logdir + " and " + logdir + ".tgz saved. "
         print "END OF ASCOLLECTINFO"
 
+    def parse_namespace(self, namespace_data):
+        """
+        This method will return set of namespaces present given namespace data
+        @param namespace_data: should be a form of dict returned by info protocol for namespace.
+        """
+        namespaces = set()
+        for _value in namespace_data.values():
+            for ns in _value.split(';'):
+                namespaces.add(ns)
+        return namespaces
+
+    def parse_sindex(self, sindex_data):
+        """
+        This method will return set of namespaces for which
+        sindex is present in given data
+        @param sindex_data: should be a form of dict returned by info protocol for sindex.
+        """
+        sindexes = set()
+        for _value in sindex_data.values():
+            try:
+                indexes = [v for v in _value.split(';') if v]
+                for sindex in indexes:
+                    for item in sindex.split(':'):
+                        if 'ns' == item.split('=')[0]:
+                            sindexes.add(item.split('=')[1])
+            except:
+                pass
+        return sindexes
+
     def main_collectinfo(self, line):
         global aslogdir, aslogfile, output_time
         output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
@@ -665,10 +693,7 @@ class CollectinfoController(CommandController):
                           'dump-msgs:',
                           'dump-paxos:',
                           'dump-smd:',
-                          'dump-wb:',
-                          'dump-wb-summary:',
                           'dump-wr:',
-                          'sindex-dump:'
                           ]
         shell_cmds = ['date',
                       'hostname',
@@ -688,8 +713,17 @@ class CollectinfoController(CommandController):
                       'vmstat -m',
                       'iptables -L',
                       ]
-        cpu_stat = ['top -n3 -b', 'iostat -x 1 10', 'ss -pant']
+        cpu_stat = ['top -n3 -b', 'iostat -x 1 10', 'ss -pant', 'sar -n DEV', 'sar -n EDEV']
+        _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
 
+        if 'all' in line:
+            namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
+            sindexes = self.parse_sindex(self.cluster._callNodeMethod([_ip], "info", "sindex"))
+            for ns in namespaces:
+                cluster_params.append('dump-wb:ns=' + ns)
+                cluster_params.append('dump-wb-summary:ns=' + ns)
+                if ns in sindexes:
+                    cluster_params.append('sindex-dump:ns=' + ns)
 
         if 'ubuntu' == (platform.linux_distribution()[0]).lower():
             cmd_dmesg  = 'cat /var/log/syslog'
@@ -700,7 +734,7 @@ class CollectinfoController(CommandController):
         
         os.makedirs(as_sysinfo_logdir)
                 
-        try:            
+        try:
             aslogfile = as_logfile_prefix + 'asadmCmd.log'
             cinfo = InfoController()
             for info_param in info_params:
@@ -714,7 +748,7 @@ class CollectinfoController(CommandController):
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
         
-        try:            
+        try:
             aslogfile = as_logfile_prefix + 'clusterCmd.log'
             for cluster_param in cluster_params:
                 self.collectinfo_content('cluster',cluster_param)
@@ -739,7 +773,6 @@ class CollectinfoController(CommandController):
             self.collectinfo_content('shell',['tail -n 10000 /var/log/*xdr.log'])
             
         try:         
-            _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
             as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
             log_location = self.cluster._callNodeMethod([_ip], "info", 
                                                         "logs").popitem()[1].split(':')[1]
