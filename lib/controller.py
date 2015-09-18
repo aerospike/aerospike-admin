@@ -15,6 +15,8 @@
 from lib.controllerlib import *
 from lib import util
 import time, os, sys, platform, shutil, urllib2, socket
+from distutils.version import StrictVersion
+import zipfile
 
 def flip_keys(orig_data):
     new_data = {}
@@ -532,13 +534,12 @@ class CollectinfoController(CommandController):
             shutil.copy2(src, dest_dir)
         except Exception,e:
             print e
-            pass
         return
 
-    def collectinfo_content(self,func,parm=''):
+    def collectinfo_content(self, func, parm=''):
         name = ''
         capture_stdout = util.capture_stdout
-        sep = "\n====ASCOLLECTINFO====\n"
+        sep = "\n=======ASCOLLECTINFO(" + output_time + ")======\n"
         try:
             name = func.func_name
         except Exception:
@@ -557,7 +558,6 @@ class CollectinfoController(CommandController):
         return ''
 
     def write_log(self,collectedinfo):
-        global aslogfile
         f = open(str(aslogfile), 'a')
         f.write(str(collectedinfo))
         return f.close()
@@ -594,18 +594,17 @@ class CollectinfoController(CommandController):
             r = urllib2.urlopen(req)
 #             r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
             if r.code == 200:
-                print "This is in AWS"
                 rsp = r.read()
                 aws_rsp += self.get_metadata(rsp,'/')
-                print aws_rsp
+                print "Requesting... {0} {1}  \t Successful".format(aws_metadata_base_url, aws_rsp)
             else:
-                aws_rsp = "Not in AWS"
-                print aws_rsp
+                aws_rsp = " Not likely in AWS"
+                print "Requesting... {0} \t FAILED {1} ".format(aws_metadata_base_url, aws_rsp)
 
         except Exception as e:
-            print e
-            print "Not in AWS"
-
+            print "Requesting... {0} \t  {1} ".format(aws_metadata_base_url, e)
+            print "FAILED! Node Is Not likely In AWS"
+            
     def collect_sys(self,line):
         lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
         print util.shell_command([lsof_cmd])
@@ -620,13 +619,46 @@ class CollectinfoController(CommandController):
                 print smd_fp.read()
                 smd_fp.close()
 
+    def zip_files(self, dir_path, _size = 5):
+        """
+        If file size is greater then given _size, create zip of file on same location and 
+        remove original one. Won't zip If zlib module is not available. 
+        """ 
+        for root, dirs, files in os.walk(dir_path):
+            for _file in files:
+                file_path = os.path.join(root,_file)
+                size_mb = (os.path.getsize(file_path)/(1024*1024))
+                if size_mb >= _size:
+                    os.chdir(root)
+                    try:                                      
+                        newzip =  zipfile.ZipFile(_file + ".zip", "w", zipfile.ZIP_DEFLATED)
+                        newzip.write(_file)
+                        newzip.close()
+                        os.remove(_file)
+                    except Exception as e: 
+                        print e
+                        pass
+    
     def archive_log(self,logdir):
+        self.zip_files(logdir)
         util.shell_command(["tar -czvf " + logdir + ".tgz " + aslogdir])
         sys.stderr.write("\x1b[2J\x1b[H")
         print "\n\n\nFiles in " + logdir + " and " + logdir + ".tgz saved. "
         print "END OF ASCOLLECTINFO"
 
+    def parse_namespace(self, namespace_data):
+        """
+        This method will return set of namespaces present given namespace data
+        @param namespace_data: should be a form of dict returned by info protocol for namespace.
+        """
+        namespaces = set()
+        for _value in namespace_data.values():
+            for ns in _value.split(';'):
+                namespaces.add(ns)
+        return namespaces
+
     def main_collectinfo(self, line):
+<<<<<<< HEAD
         # Unfortunately timestamp can not be printed in Centos with dmesg, 
         # storing dmesg logs without timestamp for this particular OS.
         if 'centos' == (platform.linux_distribution()[0]).lower():
@@ -635,6 +667,14 @@ class CollectinfoController(CommandController):
             cmd_dmesg  = 'dmesg -T'
         
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
+=======
+        global aslogdir, aslogfile, output_time
+        output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+        aslogdir = '/tmp/collectInfo_' + output_time
+        as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
+        as_logfile_prefix = aslogdir + '/' + output_time + '_'
+                
+>>>>>>> 369cedb30f9a0ff0cbc2bc2780118734852f56c8
         info_params = ['network','service', 'namespace', 'xdr', 'sindex']
         show_params = ['config', 'distribution', 'latency', 'statistics']
         cluster_params = ['service',
@@ -646,73 +686,111 @@ class CollectinfoController(CommandController):
                           'dump-msgs:',
                           'dump-paxos:',
                           'dump-smd:',
-                          'dump-wb:',
-                          'dump-wb-summary:',
                           'dump-wr:',
-                          'sindex-dump:'
                           ]
         shell_cmds = ['date',
                       'hostname',
-                      'ifconfig',
+                      'ip addr',
+                      'ip -s link',
                       'uptime',
                       'uname -a',
                       'lsb_release -a',
                       'ls /etc|grep release|xargs -I f cat /etc/f',
                       'rpm -qa|grep -E "citrus|aero"',
                       'dpkg -l|grep -E "citrus|aero"',
-                      'tail -n 10000 /var/log/aerospike/*.log',
-                      'tail -n 10000 /var/log/citrusleaf.log',
-                      'tail -n 10000 /var/log/*xdr.log',
-                      'netstat -pant|grep 3000',
-                      'top -n3 -b',
                       'free -m',
                       'df -h',
                       'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
                       'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
+<<<<<<< HEAD
                       'lsof',
                        cmd_dmesg,
                       'iostat -x 1 10',
+=======
+>>>>>>> 369cedb30f9a0ff0cbc2bc2780118734852f56c8
                       'vmstat -s',
                       'vmstat -m',
                       'iptables -L',
-                      'cat /etc/aerospike/aerospike.conf',
-                      'cat /etc/citrusleaf/citrusleaf.conf',
                       ]
+        cpu_stat = ['top -n3 -b', 'iostat -x 1 10', 'ss -pant', 'sar -n DEV', 'sar -n EDEV']
+        _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
+
+        if 'all' in line:
+            namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
+            for ns in namespaces:
+                cluster_params.append('dump-wb:ns=' + ns)
+                cluster_params.append('dump-wb-summary:ns=' + ns)
+
+        if 'ubuntu' == (platform.linux_distribution()[0]).lower():
+            cmd_dmesg  = 'cat /var/log/syslog'
+        else:
+            cmd_dmesg  = 'cat /var/log/messages'
+        
         terminal.enable_color(False)
-        global aslogdir,aslogfile
-        aslogdir = '/tmp/as_log_' + str(time.time())
-        aslogfile = aslogdir + '/ascollectinfo.log'
-        os.mkdir(aslogdir)
-        self.write_log(collect_output)
-        log_location = '/var/log/aerospike/*.log'
+        
+        os.makedirs(as_sysinfo_logdir)
+                
         try:
-            log_location = '/var/log/aerospike/aerospike.log'
+            aslogfile = as_logfile_prefix + 'asadmCmd.log'
             cinfo = InfoController()
             for info_param in info_params:
                 self.collectinfo_content(cinfo,[info_param])
+            
             do_show = ShowController()
             for show_param in show_params:
                 self.collectinfo_content(do_show,[show_param])
-            for cluster_param in cluster_params:
-                self.collectinfo_content('cluster',cluster_param)
-            # Below is not optimum, we should query only localhost
-            logs = self.cluster.info('logs')
-            for i in logs:
-                logs_c = logs[i].split(';')
-            for log in logs_c:
-                log_location = log.split(':')[1]
-                cmd = 'tail -n 10000 ' + log_location
-                if log_location != '/var/log/aerospike/aerospike.log':
-                    self.collectinfo_content('shell',[cmd])
-                self.collect_local_file(log_location,aslogdir)
 
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
+        
+        try:
+            aslogfile = as_logfile_prefix + 'clusterCmd.log'
+            for cluster_param in cluster_params:
+                self.collectinfo_content('cluster',cluster_param)
+
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+            
+        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'sysCmdOutput.log')
         for cmd in shell_cmds:
             self.collectinfo_content('shell',[cmd])
+            
+        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'cpu_stat.log')
+        for _cmd in cpu_stat:
+            self.collectinfo_content('shell',[_cmd])
+        
+        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'dmesg.log')
+        self.collectinfo_content('shell',[cmd_dmesg])
+        
+        if 'True' in self.cluster.isXDREnabled().values():
+            aslogfile = as_logfile_prefix + 'xdr.log'
+            self.collectinfo_content('shell',['tail -n 10000 /var/log/*xdr.log'])
+            
+        try:         
+            as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
+            log_location = self.cluster._callNodeMethod([_ip], "info", 
+                                                        "logs").popitem()[1].split(':')[1]
+            # Comparing with this version because prior to this it was citrusleaf.conf & citrusleaf.log
+            if StrictVersion(as_version) > StrictVersion("3.0.0"):            
+                aslogfile = as_logfile_prefix + 'aerospike.conf'
+                self.collectinfo_content('shell',['cat /etc/aerospike/aerospike.conf'])
+            else:
+                aslogfile = as_logfile_prefix + 'citrusleaf.conf'
+                self.collectinfo_content('shell',['cat /etc/citrusleaf/citrusleaf.conf'])
+                
+            self.collect_local_file(log_location, aslogdir)
+        except Exception as e: 
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__            
+                    
+        aslogfile = as_logfile_prefix + 'collectSys.log'
         self.collectinfo_content(self.collect_sys)
+        
+        aslogfile = as_logfile_prefix + 'awsData.log'
         self.collectinfo_content(self.get_awsdata)
+        
         self.archive_log(aslogdir)
 
     def _do_default(self, line):
