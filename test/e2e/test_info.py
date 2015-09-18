@@ -24,7 +24,7 @@ class TestInfo(unittest.TestCase):
         TestInfo.rc = controller.RootController()
         actual_out = util.capture_stdout(TestInfo.rc.execute, ['info'])
         TestInfo.output_list = test_util.get_separate_output(actual_out, 'Information')
-                          
+        TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex']))            
         for item in TestInfo.output_list:
             if "~~Service Information~~" in item:
                 TestInfo.service_info = item           
@@ -32,7 +32,7 @@ class TestInfo(unittest.TestCase):
                 TestInfo.network_info = item           
             elif "~~Namespace Information~~" in item:
                 TestInfo.namespace_info = item               
-            elif "~~Sindex Information~~" in item:
+            elif "~~Secondary Index Information~~" in item:
                 TestInfo.sindex_info = item              
             elif "~~XDR Information~~" in item:
                 TestInfo.xdr_info = item
@@ -48,17 +48,24 @@ class TestInfo(unittest.TestCase):
         ToDo: test for values as well
         """
         exp_heading = "~~Service Information~~"
-        exp_headerl1 = 'Node    Build   Cluster      Cluster     Cluster    Free   Free   Migrates   Principal   Objects     Uptime   '
-        exp_headerl2 = '   .        .      Size   Visibility   Integrity   Disk%   Mem%          .           .         .          .   '
-        exp_no_of_rows = len(TestInfo.rc.cluster._live_nodes)
+        exp_header= ['Node',
+                     'Build',
+                     'Cluster Size',
+                     'Cluster Visibility',
+                     'Cluster Integrity',
+                     'Free Disk%',
+                     'Free Mem%',
+                     'Migrates',
+                     'Principal',
+                     'Objects',
+                     'Uptime'] 
+        exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
-        actual_heading, actual_headerl1, actual_headerl2, actual_no_of_rows = test_util.parse_output(TestInfo.service_info, horizontal = True)        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.service_info, horizontal = True)        
         
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_headerl1.strip() in actual_headerl1.strip())
-        self.assertTrue(exp_headerl2.strip() in actual_headerl2.strip())
+        self.assertEqual(exp_header, actual_header)
         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
     
     def test_network(self):
         """
@@ -67,19 +74,44 @@ class TestInfo(unittest.TestCase):
         ToDo: test for values as well
         """
         exp_heading = "~~Network Information~~"
-        exp_headerl1 = 'Node               Node             Fqdn               Ip   Client     Current     HB        HB   '
-        exp_headerl2 = '   .                 Id                .                .    Conns        Time   Self   Foreign   '
-        exp_no_of_rows = len(TestInfo.rc.cluster._live_nodes)
+        exp_header = [   'Node',
+                         'Node Id',
+                         'Fqdn',
+                         'Ip',
+                         'Client Conns',
+                         'Current Time',
+                         'HB Self',
+                         'HB Foreign' ]
+        exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
-        actual_heading, actual_headerl1, actual_headerl2, actual_no_of_rows = test_util.parse_output(TestInfo.network_info, horizontal = True)        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.network_info, horizontal = True)        
         
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_headerl1.strip() in actual_headerl1.strip())
-        self.assertTrue(exp_headerl2.strip() in actual_headerl2.strip())
+        self.assertEqual(exp_header, actual_header)
         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
         
     def test_sindex(self):
-            pass
+        """
+        This test will assert <b> info sindex </b> output for heading, headerline1, headerline2
+        and no of row displayed in output
+        ToDo: test for values as well
+        """
+        exp_heading = '~~Secondary Index Information~~'
+        exp_header = ['Node', 
+                      'Index Name', 
+                      'Namespace', 
+                      'Set', 
+                      'Bins', 
+                      'Num Bins', 
+                      'Bin Type', 
+                      'State', 
+                      'Sync State']
+        exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
+        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.sindex_info, horizontal = True)        
+        
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertEqual(exp_header, actual_header)
 
     def test_namespace(self):
         """
@@ -88,15 +120,24 @@ class TestInfo(unittest.TestCase):
         ToDo: test for values as well
         """
         exp_heading = "~~Namespace Information~~"
-        exp_headerl1 = 'Node   Namespace   Evictions    Master   Replica     Repl     Stop     HWM         Mem     Mem    HWM      Stop   '
-        exp_headerl2 = '   .           .           .   Objects   Objects   Factor   Writes   Disk%        Used   Used%   Mem%   Writes%   '
-        exp_no_of_rows = len(TestInfo.rc.cluster._live_nodes)
+        exp_header = [   'Node',
+                         'Namespace',
+                         'Evictions',
+                         'Master Objects',
+                         'Replica Objects',
+                         'Repl Factor',
+                         'Stop Writes',
+                         'HWM Disk%',
+                         'Mem Used',
+                         'Mem Used%',
+                         'HWM Mem%',
+                         'Stop Writes%']
+        exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
-        actual_heading, actual_headerl1, actual_headerl2, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_info, horizontal = True)        
-        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_info, horizontal = True)        
+        self.assertEqual(exp_header, actual_header)
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_headerl1.strip() in actual_headerl1.strip())
-        self.assertTrue(exp_headerl2.strip() in actual_headerl2.strip())
+       
         # commenting below below line because no of row depends on namespaces not nodes
 #         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
         
@@ -109,15 +150,23 @@ class TestInfo(unittest.TestCase):
         ToDo: test for values as well
         """
         exp_heading = "~~XDR Information~~"
-        exp_headerl1 = '      Node   Build        Data    Free        Lag           Req         Req         Req          Cur       Avg         Xdr   '
-        exp_headerl2 = '         .       .     Shipped   Dlog%      (sec)   Outstanding       Relog     Shipped   Throughput   Latency      Uptime   '
-        exp_no_of_rows = len(TestInfo.rc.cluster._live_nodes)
+        exp_header = ['Node', 
+                      'Build', 
+                      'Data Shipped', 
+                      'Free Dlog%', 
+                      'Lag (sec)', 
+                      'Req Outstanding', 
+                      'Req Relog', 
+                      'Req Shipped', 
+                      'Cur Throughput', 
+                      'Avg Latency', 
+                      'Xdr Uptime']
+        exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
-        actual_heading, actual_headerl1, actual_headerl2, actual_no_of_rows = test_util.parse_output(TestInfo.xdr_info, horizontal = True)        
-        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.xdr_info, horizontal = True)        
+        self.assertEqual(exp_header, actual_header)
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_headerl1.strip() in actual_headerl1.strip())
-        self.assertTrue(exp_headerl2.strip() in actual_headerl2.strip())
+        
 
 
 if __name__ == "__main__":

@@ -3,6 +3,11 @@ Created on 07-Sep-2015
 
 @author: Pavan Gupta
 '''
+import os
+import sys
+sys.path.insert(1, os.getcwd())
+
+import sys
 import test_util
 import unittest2 as unittest
 import re
@@ -267,77 +272,201 @@ class TestShowConfig(unittest.TestCase):
 
     @unittest.skip("Will enable once xdr is configuired")   
     def test_xdr(self):
-            """
-            Asserts XDR config output with heading, header & parameters.
-            ToDo: test for values as well
-            """
-            exp_heading = "~~XDR Configuration~~"
-            exp_header = "NODE"
-            exp_params = [  'enable-xdr',
-                            'xdr-batch-num-retry',
-                            'xdr-batch-retry-sleep',
-                            'xdr-check-data-before-delete',
-                            'xdr-compression-threshold',
-                            'xdr-digestlog-size',
-                            'xdr-forward-with-gencheck',
-                            'xdr-hotkey-maxskip',
-                            'xdr-info-timeout',
-                            'xdr-local-port',
-                            'xdr-max-recs-inflight',
-                            'xdr-namedpipe-path',
-                            'xdr-nw-timeout',
-                            'xdr-read-batch-size',
-                            'xdr-read-mode',
-                            'xdr-read-threads',
-                            'xdr-ship-delay',
-                            'xdr-shipping-enabled',
-                            'xdr-threads',
-                            'xdr-timeout',
-                            'xdr-write-batch-size'
-                          ] 
-            
-            actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.xdr_config)        
-           
-            self.assertTrue(exp_heading in actual_heading)
-            self.assertTrue(exp_header in actual_header)
-            self.assertEqual(set(exp_params), set(actual_params)) 
+        """
+        Asserts XDR config output with heading, header & parameters.
+        ToDo: test for values as well
+        """
+        exp_heading = "~~XDR Configuration~~"
+        exp_header = "NODE"
+        exp_params = [  'enable-xdr',
+                        'xdr-batch-num-retry',
+                        'xdr-batch-retry-sleep',
+                        'xdr-check-data-before-delete',
+                        'xdr-compression-threshold',
+                        'xdr-digestlog-size',
+                        'xdr-forward-with-gencheck',
+                        'xdr-hotkey-maxskip',
+                        'xdr-info-timeout',
+                        'xdr-local-port',
+                        'xdr-max-recs-inflight',
+                        'xdr-namedpipe-path',
+                        'xdr-nw-timeout',
+                        'xdr-read-batch-size',
+                        'xdr-read-mode',
+                        'xdr-read-threads',
+                        'xdr-ship-delay',
+                        'xdr-shipping-enabled',
+                        'xdr-threads',
+                        'xdr-timeout',
+                        'xdr-write-batch-size'
+                      ] 
+        
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.xdr_config)        
+       
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertTrue(exp_header in actual_header)
+        self.assertEqual(set(exp_params), set(actual_params)) 
     
 class TestShowLatency(unittest.TestCase):
-    # will remove this function once latency test is implemented without asinfo
-    def parse_latency(tdata = ""):
-            tdata = tdata.split(';')[:-1]
-            data = {}
-            while tdata != []:
-                columns = tdata.pop(0)
-                row = tdata.pop(0)
+    output_list = list()
+    proxy_latency = ''
+    query_latency = ''
+    reads_latency = ''
+    udf_latency = ''
+    writes_master_latency = ''
+    writes_reply_latency = ''
     
-                hist_name, columns = columns.split(':', 1)
-                columns = columns.split(',')
-                row = row.split(',')
-                start_time = columns.pop(0)
-                end_time = row.pop(0)
-                columns.insert(0, 'Time Span')
-                row = [float(r) for r in row]
-                row.insert(0, "%s->%s"%(start_time, end_time))
-    
-                data[hist_name] = (columns, row)
-    
-            return data
+    @classmethod
+    def setUpClass(cls):
+        TestShowLatency.rc = controller.RootController()
+        actual_out = util.capture_stdout(TestShowLatency.rc.execute, ['show', 'latency'])
+        TestShowLatency.output_list = test_util.get_separate_output(actual_out, 'Latency')
+                          
+        for item in TestShowLatency.output_list:
+            if "~~~proxy Latency~~" in item:
+                TestShowLatency.proxy_latency = item           
+            elif "~~query Latency~~" in item:
+                TestShowLatency.query_latency = item           
+            elif "~~reads Latency~~" in item:
+                TestShowLatency.reads_latency = item               
+            elif "~~udf Latency~~" in item:
+                TestShowLatency.udf_latency = item              
+            elif "~~writes_master Latency~~" in item:
+                TestShowLatency.writes_master_latency = item
+            elif "~~writes_reply Latency~~" in item:
+                TestShowLatency.writes_reply_latency = item
+              
+    @classmethod    
+    def tearDownClass(self):
+        self.rc = None
         
         
-    @unittest.skip("need to implement without asinfo")
-    def test_latency(self):        
-        expected_out, err = util.shell_command(["asinfo", "-v", "latency:"])
-        print expected_out, err
-        self.assertTrue(True)
+#     @unittest.skip("need to implement without asinfo")
+    def test_proxy_latency(self):      
+        """
+        Asserts <b> proxy latency <b> output with heading, header & no of node processed(based on row count).
+        ToDo: test for values as well
+        """
+        exp_heading = "~~proxy Latency~~"
+        exp_header= ['Node', 
+                     'Time Span', 
+                     'Ops/Sec', 
+                     '>1Ms', 
+                     '>8Ms', 
+                     '>64Ms'] 
         
-        rc = controller.RootController()
-        actual_out = util.capture_stdout(rc.execute, ['show', 'latency'])
-#         slc = controller.ShowLatencyController()
-#         slc.nodes = "all"
-#         slc._do_default([])
-        print actual_out
-        self.assertEqual(expected_out.strip(), actual_out.strip())
+        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.proxy_latency, horizontal = True)        
+       
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertEqual(exp_header, actual_header)
+        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+
+    def test_query_latency(self):      
+            """
+            Asserts <b> query latency <b> output with heading, header & no of node processed(based on row count).
+            ToDo: test for values as well
+            """
+            exp_heading = "~~query Latency~~"
+            exp_header= ['Node', 
+                         'Time Span', 
+                         'Ops/Sec', 
+                         '>1Ms', 
+                         '>8Ms', 
+                         '>64Ms'] 
+            
+            exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+            
+            actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.query_latency, horizontal = True)        
+           
+            self.assertTrue(exp_heading in actual_heading)
+            self.assertEqual(exp_header, actual_header)
+            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+
+    def test_reads_latency(self):      
+        """
+        Asserts <b> reads latency <b> output with heading, header & no of node processed(based on row count).
+        ToDo: test for values as well
+        """
+        exp_heading = "~~reads Latency~~"
+        exp_header= ['Node', 
+                     'Time Span', 
+                     'Ops/Sec', 
+                     '>1Ms', 
+                     '>8Ms', 
+                     '>64Ms'] 
+        
+        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.reads_latency, horizontal = True)        
+       
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertEqual(exp_header, actual_header)
+        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+
+    def test_udf_latency(self):      
+        """
+        Asserts <b> udf latency <b> output with heading, header & no of node processed(based on row count).
+        ToDo: test for values as well
+        """
+        exp_heading = "~~udf Latency~~"
+        exp_header= ['Node', 
+                     'Time Span', 
+                     'Ops/Sec', 
+                     '>1Ms', 
+                     '>8Ms', 
+                     '>64Ms'] 
+        
+        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.udf_latency, horizontal = True)        
+       
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertEqual(exp_header, actual_header)
+        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+
+    def test_writes_master_latency(self):      
+        """
+        Asserts <b> writes_master latency <b> output with heading, header & no of node processed(based on row count).
+        ToDo: test for values as well
+        """
+        exp_heading = "~~writes_master Latency~~"
+        exp_header= ['Node', 
+                     'Time Span', 
+                     'Ops/Sec', 
+                     '>1Ms', 
+                     '>8Ms', 
+                     '>64Ms'] 
+        
+        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_master_latency, horizontal = True)        
+       
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertEqual(exp_header, actual_header)
+        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+        
+    def test_writes_reply_latency(self):      
+        """
+        Asserts <b> writes_reply latency <b> output with heading, header & no of node processed(based on row count).
+        ToDo: test for values as well
+        """
+        exp_heading = "~~writes_reply Latency~~"
+        exp_header= ['Node', 
+                     'Time Span', 
+                     'Ops/Sec', 
+                     '>1Ms', 
+                     '>8Ms', 
+                     '>64Ms'] 
+        
+        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_reply_latency, horizontal = True)        
+       
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertEqual(exp_header, actual_header)
+        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
 class TestShowDistribution(unittest.TestCase):
     output_list = list()
@@ -365,22 +494,50 @@ class TestShowDistribution(unittest.TestCase):
     def tearDownClass(self):
         self.rc = None
     
-    @unittest.skip("need to implement without asinfo")
+#     @unittest.skip("need to implement without asinfo")
     def test_test_ttl(self):
         """
         Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
         ToDo: test for values as well
         """
         exp_heading = "~~test - TTL Distribution in Seconds~~"
-        exp_header = "NODE"
-        exp_params = []
+        exp_header1 = "Percentage of records having ttl less than or equal to"
+        exp_header2 = 'value measured in Seconds '
+        exp_header3 = 'Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%'
+#         exp_params = []
         
-        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowDistribution.test_ttl_distri)
+        actual_heading, actual_header1, actual_params = test_util.parse_output(TestShowDistribution.test_ttl_distri)
+        # Special case to handle show distribution case
+        new_test_ttl_distri = '\n'.join(TestShowDistribution.test_ttl_distri.split('\n')[2:])
+        actual_header2, actual_header3, actual_params = test_util.parse_output(new_test_ttl_distri)
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertTrue(exp_header1.strip() in actual_header1.strip())
+        self.assertTrue(exp_header2.strip() in actual_header2.strip())
+        self.assertTrue(exp_header3.strip() in actual_header3.strip())
 
-    
-    pass
+    def test_bar_ttl(self):
+        """
+        Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
+        ToDo: test for values as well
+        """
+        exp_heading = "~~bar - TTL Distribution in Seconds~~"
+        exp_header1 = "Percentage of records having ttl less than or equal to"
+        exp_header2 = 'value measured in Seconds '
+        exp_header3 = 'Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%'
+#         exp_params = []
+        
+        actual_heading, actual_header1, actual_params = test_util.parse_output(TestShowDistribution.bar_ttl_distri)
+        # Special case to handle show distribution case
+        new_test_ttl_distri = '\n'.join(TestShowDistribution.bar_ttl_distri.split('\n')[2:])
+        actual_header2, actual_header3, actual_params = test_util.parse_output(new_test_ttl_distri)
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertTrue(exp_header1.strip() in actual_header1.strip())
+        self.assertTrue(exp_header2.strip() in actual_header2.strip())
+        self.assertTrue(exp_header3.strip() in actual_header3.strip())
+
 
 # @unittest.skip("Skipping for testing purpose")  
+
 class TestShowStatistics(unittest.TestCase):
     output_list = list()
     test_bin_stats = ''
@@ -827,12 +984,9 @@ class TestShowStatistics(unittest.TestCase):
         self.assertTrue(exp_header in actual_header)
         self.assertEqual(set(exp_params), set(actual_params)) 
 
-
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
+#     suite = unittest.TestLoader().loadTestsFromTestCase(TestShowLatency)
+#     unittest.TextTestRunner(verbosity=2).run(suite)
 
-    unittest.main()
-    
-    
-    
-    
+    unittest.main(verbosity=1)    

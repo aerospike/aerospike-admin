@@ -19,7 +19,8 @@ def parse_output(actual_out = "", horizontal = False):
         header_line1 = data.pop(0)
         header_line2 = data.pop(0)
         no_of_rows = data[-3].split(':')[1]
-        return(heading, header_line1, header_line2, no_of_rows)
+        
+        return(heading, get_merged_header(header_line1, header_line2), no_of_rows)
     else:
         data =  actual_out.split('\n')
         heading = data.pop(0)
@@ -40,3 +41,16 @@ def get_separate_output(in_str = '', mid_str=''):
     for i, item in enumerate(out_pattern):
         output_list.append((item + outstr[i + 1]))
     return output_list
+
+def get_merged_header(h1, h2):
+    h1 = filter(None, h1.split(' '))
+    h2 = filter(None, h2.split(' '))
+    header = []
+    if len(h1) == len(h2):
+        for i in range(len(h1)):
+            if h2[i] == '.':
+                header.append(h1[i])
+                continue
+            header.append(h1[i] + ' ' + h2[i])
+    return header
+
