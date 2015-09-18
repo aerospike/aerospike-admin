@@ -657,24 +657,6 @@ class CollectinfoController(CommandController):
                 namespaces.add(ns)
         return namespaces
 
-    def parse_sindex(self, sindex_data):
-        """
-        This method will return set of namespaces for which
-        sindex is present in given data
-        @param sindex_data: should be a form of dict returned by info protocol for sindex.
-        """
-        sindexes = set()
-        for _value in sindex_data.values():
-            try:
-                indexes = [v for v in _value.split(';') if v]
-                for sindex in indexes:
-                    for item in sindex.split(':'):
-                        if 'ns' == item.split('=')[0]:
-                            sindexes.add(item.split('=')[1])
-            except:
-                pass
-        return sindexes
-
     def main_collectinfo(self, line):
         global aslogdir, aslogfile, output_time
         output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
@@ -718,12 +700,9 @@ class CollectinfoController(CommandController):
 
         if 'all' in line:
             namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
-            sindexes = self.parse_sindex(self.cluster._callNodeMethod([_ip], "info", "sindex"))
             for ns in namespaces:
                 cluster_params.append('dump-wb:ns=' + ns)
                 cluster_params.append('dump-wb-summary:ns=' + ns)
-                if ns in sindexes:
-                    cluster_params.append('sindex-dump:ns=' + ns)
 
         if 'ubuntu' == (platform.linux_distribution()[0]).lower():
             cmd_dmesg  = 'cat /var/log/syslog'
