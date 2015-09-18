@@ -25,7 +25,7 @@ class TestCluster(unittest.TestCase):
         
         actual_out = util.capture_stdout(TestCluster.rc.execute, ['cluster', 'dun', 'all'])
         actual_live_nodes = actual_out.count('ok')
-        actual_total_nodes = actual_out.count('returnedfdf')
+        actual_total_nodes = actual_out.count('returned')
         
         self.assertEqual(exp_no_of_live_nodes, actual_live_nodes)
         self.assertEqual(exp_total_nodes, actual_total_nodes)
@@ -35,7 +35,7 @@ class TestCluster(unittest.TestCase):
         exp_total_nodes = len(TestCluster.rc.cluster.nodes)
         actual_out = util.capture_stdout(TestCluster.rc.execute, ['cluster', 'undun', 'all'])
         actual_live_nodes = actual_out.count('ok')
-        actual_total_nodes = actual_out.count('returnedsdfsdf')
+        actual_total_nodes = actual_out.count('returned')
         
         self.assertEqual(exp_no_of_live_nodes, actual_live_nodes)
         self.assertEqual(exp_total_nodes, actual_total_nodes)
