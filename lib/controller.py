@@ -330,7 +330,7 @@ class ShowLatencyController(CommandController):
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(CommandController):
     def __init__(self):
-        self.modifiers = set(['with', 'like'])
+        self.modifiers = set(['with', 'like', 'diff'])
 
     @CommandHelp('Displays service, network, namespace, and xdr configuration')
     def _do_default(self, line):
