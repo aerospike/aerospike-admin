@@ -415,20 +415,15 @@ class CliView(object):
         prefixes = cluster.getPrefixes()
         column_names = set()
 
-        if diff:
-            try:
-                if service_configs:  
-                    union = dict(set.union(*(set(service_configs[d].iteritems()) 
-                                                           for d in  service_configs 
-                                                           if service_configs[d]))).items()
-                    intersection = dict(set.intersection(*(set(service_configs[d].iteritems()) 
-                                                           for d in  service_configs 
-                                                           if service_configs[d]))).items()
-                    column_names = dict(set(union) - set(intersection)).keys()
-            except Exception as e:
-                print str(e)
-                print "Oops! something went wrong, please try command without diff keyword"
-                
+        if diff and service_configs:
+                config_sets = (set(service_configs[d].iteritems())
+                               for d in service_configs if service_configs[d])
+                union = set.union(*config_sets)
+                # Regenerating generator expression for config_sets.
+                config_sets = (set(service_configs[d].iteritems())
+                               for d in service_configs if service_configs[d])
+                intersection = set.intersection(*config_sets)
+                column_names = dict(union - intersection).keys()
         else:
             for config in service_configs.itervalues():
                 if isinstance(config, Exception):
