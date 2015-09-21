@@ -658,7 +658,6 @@ class CollectinfoController(CommandController):
         return namespaces
 
     def main_collectinfo(self, line):
-<<<<<<< HEAD
         # Unfortunately timestamp can not be printed in Centos with dmesg, 
         # storing dmesg logs without timestamp for this particular OS.
         if 'centos' == (platform.linux_distribution()[0]).lower():
@@ -667,14 +666,12 @@ class CollectinfoController(CommandController):
             cmd_dmesg  = 'dmesg -T'
         
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
-=======
         global aslogdir, aslogfile, output_time
         output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
         aslogdir = '/tmp/collectInfo_' + output_time
         as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
         as_logfile_prefix = aslogdir + '/' + output_time + '_'
                 
->>>>>>> 369cedb30f9a0ff0cbc2bc2780118734852f56c8
         info_params = ['network','service', 'namespace', 'xdr', 'sindex']
         show_params = ['config', 'distribution', 'latency', 'statistics']
         cluster_params = ['service',
@@ -702,12 +699,9 @@ class CollectinfoController(CommandController):
                       'df -h',
                       'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
                       'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
-<<<<<<< HEAD
                       'lsof',
                        cmd_dmesg,
                       'iostat -x 1 10',
-=======
->>>>>>> 369cedb30f9a0ff0cbc2bc2780118734852f56c8
                       'vmstat -s',
                       'vmstat -m',
                       'iptables -L',
