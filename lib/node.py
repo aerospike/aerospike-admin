@@ -459,8 +459,8 @@ class Node(object):
             # Comparing with this version because the ability 
             # to specify "all" in cluster dun was added in 3.3.26
             if StrictVersion(as_version) < StrictVersion("3.3.26"):
-                # Fetching node id's
-                result = {node.node_id for node in  c.nodes.values()}
+                for node in  c.nodes.values():
+                    result.add(node.node_id)
             else:
                 result.add('all')
         else:
