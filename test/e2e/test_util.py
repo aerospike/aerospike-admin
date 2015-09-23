@@ -27,6 +27,7 @@ def parse_output(actual_out = "", horizontal = False):
         header = data.pop(0)
         params = [item.split(':')[0].strip() for item in  data if item.split(':')[0].strip()]
         # handled beast color code
+        # TODO: Create separate method for removing color code
         for i, item in enumerate(params):
             if "\x1b[0m" in item:
                 params[i] = item[4:]

@@ -355,7 +355,7 @@ class TestShowLatency(unittest.TestCase):
                      '>8Ms', 
                      '>64Ms'] 
         
-        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.proxy_latency, horizontal = True)        
        
@@ -376,7 +376,7 @@ class TestShowLatency(unittest.TestCase):
                          '>8Ms', 
                          '>64Ms'] 
             
-            exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+            exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
             
             actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.query_latency, horizontal = True)        
            
@@ -397,7 +397,7 @@ class TestShowLatency(unittest.TestCase):
                      '>8Ms', 
                      '>64Ms'] 
         
-        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.reads_latency, horizontal = True)        
        
@@ -418,7 +418,7 @@ class TestShowLatency(unittest.TestCase):
                      '>8Ms', 
                      '>64Ms'] 
         
-        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.udf_latency, horizontal = True)        
        
@@ -439,7 +439,7 @@ class TestShowLatency(unittest.TestCase):
                      '>8Ms', 
                      '>64Ms'] 
         
-        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_master_latency, horizontal = True)        
        
@@ -460,7 +460,7 @@ class TestShowLatency(unittest.TestCase):
                      '>8Ms', 
                      '>64Ms'] 
         
-        exp_no_of_rows = len(TestShowLatency.rc.cluster.nodes)
+        exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_reply_latency, horizontal = True)        
        
@@ -494,46 +494,56 @@ class TestShowDistribution(unittest.TestCase):
     def tearDownClass(self):
         self.rc = None
     
-#     @unittest.skip("need to implement without asinfo")
+    @unittest.skip("TODO: Create separate method for removing color code")
     def test_test_ttl(self):
         """
         Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
         ToDo: test for values as well
         """
         exp_heading = "~~test - TTL Distribution in Seconds~~"
-        exp_header1 = "Percentage of records having ttl less than or equal to"
-        exp_header2 = 'value measured in Seconds '
-        exp_header3 = 'Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%'
-#         exp_params = []
+        exp_header = """Percentage of records having ttl less than or equal
+                        to value measured in Seconds
+                        Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
         
         actual_heading, actual_header1, actual_params = test_util.parse_output(TestShowDistribution.test_ttl_distri)
         # Special case to handle show distribution case
         new_test_ttl_distri = '\n'.join(TestShowDistribution.test_ttl_distri.split('\n')[2:])
         actual_header2, actual_header3, actual_params = test_util.parse_output(new_test_ttl_distri)
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header1.strip() in actual_header1.strip())
-        self.assertTrue(exp_header2.strip() in actual_header2.strip())
-        self.assertTrue(exp_header3.strip() in actual_header3.strip())
 
+        actual_header = actual_header1 + actual_header2 + actual_header3
+        # Sanitization of headers
+        # TODO: Create separate method for removing color code in test_util
+        exp_header = ' '.join(exp_header.split())
+        actual_header = ' '.join([item for item in actual_header.split()
+                                  if not item.startswith('\x1b')])
+
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertEqual(exp_header.strip(), actual_header.strip())
+
+    @unittest.skip("TODO: Create separate method for removing color code")
     def test_bar_ttl(self):
         """
         Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
         ToDo: test for values as well
         """
         exp_heading = "~~bar - TTL Distribution in Seconds~~"
-        exp_header1 = "Percentage of records having ttl less than or equal to"
-        exp_header2 = 'value measured in Seconds '
-        exp_header3 = 'Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%'
-#         exp_params = []
+        exp_header = """Percentage of records having ttl less than or equal
+                        to value measured in Seconds
+                        Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
         
         actual_heading, actual_header1, actual_params = test_util.parse_output(TestShowDistribution.bar_ttl_distri)
         # Special case to handle show distribution case
-        new_test_ttl_distri = '\n'.join(TestShowDistribution.bar_ttl_distri.split('\n')[2:])
+        new_test_ttl_distri = '\n'.join(TestShowDistribution.test_ttl_distri.split('\n')[2:])
         actual_header2, actual_header3, actual_params = test_util.parse_output(new_test_ttl_distri)
+
+        actual_header = actual_header1 + actual_header2 + actual_header3
+        # Sanitization of headers
+        exp_header = ' '.join(exp_header.split())
+        actual_header = ' '.join([item for item in actual_header.split()
+                                  if not item.startswith('\x1b')])
+
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header1.strip() in actual_header1.strip())
-        self.assertTrue(exp_header2.strip() in actual_header2.strip())
-        self.assertTrue(exp_header3.strip() in actual_header3.strip())
+        self.assertEqual(exp_header.strip(), actual_header.strip())
 
 
 # @unittest.skip("Skipping for testing purpose")  
