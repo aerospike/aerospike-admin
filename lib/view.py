@@ -498,6 +498,29 @@ class CliView(object):
                 print
 
     @staticmethod
+    def clusterPMap(pmap_data, cluster, **ignore):
+        prefixes = cluster.getPrefixes()
+        title = "Partition Map Analysis"
+        column_names = ('Node',
+                        'Namespace',
+                        'Primary Partitions',
+                        'Secondary Partitions',
+                        'Missing Partitions',
+                        'Distribution pct')
+        t = Table(title, column_names)
+        for node_key, n_stats in pmap_data.iteritems():
+            row = {}
+            row['Node'] = prefixes[node_key]
+            for ns, ns_stats in n_stats.iteritems():
+                row['Namespace'] = ns
+                row['Primary Partitions'] = ns_stats['pri_index']
+                row['Secondary Partitions'] = ns_stats['sec_index']
+                row['Missing Partitions'] = ns_stats['missing_part']
+                row['Distribution pct'] = ns_stats['distribution_pct']
+                t.insertRow(row)
+        print t
+
+    @staticmethod
     def dun(results, cluster, **kwargs):
         for node_id, command_result in results.iteritems():
             prefix = cluster.getPrefixes()[node_id]

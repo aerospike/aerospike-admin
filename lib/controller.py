@@ -527,6 +527,75 @@ class ClusterController(CommandController):
         results = self.cluster.infoUndun(self.mods['line'], nodes=self.nodes)
         self.view.dun(results, self.cluster, **self.mods)
 
+    def get_pmap_data(self, pmap_info):
+        pmap_data = dict()
+        for _node, partitions in pmap_info.items():
+            if isinstance(partitions, Exception):
+                continue
+            node_pmap = dict()
+            for item in partitions.split(';'):
+                fields = item.split(':')
+                ns, pid, pindex = fields[0], int(fields[1]), int(fields[3])
+                # assuming entries for namespaces would be continues
+                if ns not in node_pmap:
+                    node_pmap[ns] = { 'pri_index' : 0,
+                                      'sec_index' : 0,
+                                      'missing_part' : range(4096) # each namespace is devided into 4096 partition
+                                    }
+                if  pindex == 0:
+                    node_pmap[ns]['pri_index'] += 1
+                else:
+                    node_pmap[ns]['sec_index'] += 1
+                try:
+                    if pid in node_pmap[ns]['missing_part']:
+                        node_pmap[ns]['missing_part'].remove(pid)
+                except IndexError:
+                    pass
+            for _ns, config in node_pmap.items():
+                node_pmap[_ns]['distribution_pct'] = node_pmap[_ns]['pri_index'] * 100 / 4096
+            pmap_data[_node] = node_pmap
+        return pmap_data
+
+    @CommandHelp('"pmap" command is used for displaying partition map analysis of cluster')
+    def do_pmap(self, line):
+        _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
+        pmap_info = self.cluster._callNodeMethod(self.nodes, "info", "partition-info")
+        pmap_data = self.get_pmap_data(pmap_info)
+        self.view.clusterPMap(pmap_data, self.cluster)
+
+    def get_qnode_data(self, qnode_config=''):
+        qnode_data = dict()
+        for _node, config in qnode_config.items():
+            if isinstance(config, Exception):
+                continue
+            node_qnode = dict()
+            for item in config.split(';'):
+                fields = item.split(':')
+                ns, pid, node_type, pdata = fields[0], int(fields[1]), fields[5], int(fields[7])
+                # assuming entries for namespaces would be continues
+                if ns not in node_qnode:
+                    node_qnode[ns] = { 'MQ_without_data' : [],
+                                      'RQ_data' : [],
+                                      'RQ_without_data' : []
+                                     }
+                if node_type == 'MQ' and pdata == 0:
+                    node_qnode[ns]['MQ_without_data'].append(pid)
+                elif node_type == 'RQ' and pdata == 0:
+                    node_qnode[ns]['RQ_without_data'].append(pid)
+                    node_qnode[ns]['RQ_data'].append(pid)
+                elif node_type == 'RQ':
+                    node_qnode[ns]['RQ_data'].append(pid)
+            qnode_data[_node] = node_qnode
+        return qnode_data
+
+    @CommandHelp('"qnode" command is used for displaying qnode map analysis')
+    def do_qnode(self, line):
+        _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
+        qnode_info = self.cluster._callNodeMethod(self.nodes, "info", "sindex-qnodemap:")
+        qnode_data = self.get_qnode_data(qnode_info)
+        for ns, configs in qnode_data.iteritems():
+            print ns, configs
+
 @CommandHelp('"collectinfo" is used to collect system stats on the local node.')
 class CollectinfoController(CommandController):
     def collect_local_file(self,src,dest_dir):
