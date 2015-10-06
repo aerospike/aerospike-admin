@@ -593,8 +593,7 @@ class ClusterController(CommandController):
         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
         qnode_info = self.cluster._callNodeMethod(self.nodes, "info", "sindex-qnodemap:")
         qnode_data = self.get_qnode_data(qnode_info)
-        for ns, configs in qnode_data.iteritems():
-            print ns, configs
+        self.view.clusterQNode(qnode_data, self.cluster)
 
 @CommandHelp('"collectinfo" is used to collect system stats on the local node.')
 class CollectinfoController(CommandController):
