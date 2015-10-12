@@ -52,8 +52,8 @@ class CliView(object):
         t = Table(title, column_names)
         t.addDataSource('_migrates'
                         ,lambda data:
-                        "(%s,%s,%s)"%(row.get('migrate_tx_partitions_remaining',False) or row['migrate_progress_send']
-                                      , row.get('migrate_rx_partitions_remaining',False) or row['migrate_progress_recv']
+                        "(%s,%s,%s)"%(row['tx_migrations']
+                                      , row['rx_migrations']
                                       , int(row.get('migrate_progress_send',0)) + int(row.get('migrate_progress_recv',0))))
         t.addDataSource('_objects'
                         ,Extractors.sifExtractor('objects'))

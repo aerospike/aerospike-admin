@@ -96,6 +96,29 @@ class InfoController(CommandController):
         builds = self.cluster.info('build', nodes=self.nodes)
         services = self.cluster.infoServices(nodes=self.nodes)
         visible = self.cluster.getVisibility()
+        namespace_stats = self.cluster.infoAllNamespaceStatistics(nodes=self.nodes)
+
+        migrations = {}
+        for node in namespace_stats:
+            if isinstance(namespace_stats[node], Exception):
+                continue
+
+            migrations[node] = node_migrations = {}
+            node_migrations['rx'] = 0
+            node_migrations['tx'] = 0
+            for ns_stats in namespace_stats[node].itervalues():
+                node_migrations['rx'] += int(ns_stats.get("migrate_rx_partitions_remaining", 0))
+                node_migrations['tx'] += int(ns_stats.get("migrate_tx_partitions_remaining", 0))
+
+        for node in stats:
+            if isinstance(stats[node], Exception):
+                continue
+
+            node_stats = stats[node]
+            node_stats['rx_migrations'] = migrations[node]['rx'] \
+                                          or node_stats['migrate_progress_recv']
+            node_stats['tx_migrations'] = migrations[node]['tx'] \
+                                          or node_stats['migrate_progress_send']
 
         visibility = {}
         for node_id, service_list in services.iteritems():
