@@ -24,18 +24,26 @@ import getpass
 import shlex
 from lib import citrusleaf
 from lib.controller import *
+from lib.logcontroller import *
 from lib import terminal
 
 __version__ = '$$__version__$$'
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, telnet, user=None, password=None):
+    def __init__(self, seed, telnet, user=None, password=None, log_path=""):
         cmd.Cmd.__init__(self)
 
-        self.ctrl = RootController(seed_nodes=[seed]
+        if log_path:
+            self.ctrl = LogRootController(seed_nodes=[seed]
+                                   , use_telnet=telnet
+                                   , user=user
+                                   , password=password, log_path=log_path)
+        else:
+            self.ctrl = RootController(seed_nodes=[seed]
                                    , use_telnet=telnet
                                    , user=user
                                    , password=password)
+
         try:
             readline.read_history_file(ADMINHIST)
         except Exception, i:
@@ -49,8 +57,11 @@ class AerospikeShell(cmd.Cmd):
 
         self.name = 'Aerospike Interactive Shell'
         self.intro = terminal.bold() + self.name + ', version ' +\
-                     __version__ + terminal.reset() + "\n" +\
-                     str(self.ctrl.cluster) + "\n"
+                     __version__ + terminal.reset() + "\n"
+        if log_path:
+            self.intro += str(self.ctrl.logger) + "\n"
+        else:
+            self.intro += str(self.ctrl.cluster) + "\n"
         self.commands = set()
 
         regex = re.compile("^do_(.*)$")
@@ -283,6 +294,13 @@ def main():
                       , dest="show_version"
                       , action="store_true"
                       , help="Show the version of asadm and exit")
+    parser.add_option("-l"
+                        , "--log-path"
+                        , dest="log_path"
+                        , help="Path of ascollectinfo log files. " + \
+                               "If it is provided then asadm will work on log files instead of cluster.")
+
+
 
     (cli_args, args) = parser.parse_args()
     if cli_args.help:
@@ -314,7 +332,12 @@ def main():
 
     seed = (cli_args.host, cli_args.port)
     telnet = False # telnet currently not working, hardcoding to off
-    shell = AerospikeShell(seed, telnet, user=user, password=password)
+    log_path = ""
+    if cli_args.log_path:
+        log_path = cli_args.log_path
+        os.chdir(log_path)
+
+    shell = AerospikeShell(seed, telnet, user=user, password=password, log_path=log_path)
 
     use_yappi = False
     if cli_args.profile:
