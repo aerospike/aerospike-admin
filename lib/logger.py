@@ -94,18 +94,36 @@ class Logger(object):
 
         return grepRes
 
-    def grepLatency(self,search_str, grep_cluster_logs):
-        files = []
-        if(grep_cluster_logs):
-            files = self.log_reader.getFiles(True);
-        else:
-            files = self.log_reader.getFiles(False);
+    def grepDiff(self,search_str, grep_cluster_logs, start_tm, duration, slice_tm, show_count):
+        grep_diff_res = {}
+        dirs = self.log_reader.get_dirs()
 
-        grepRes = {}
+        for dir_path in dirs:
+            files = self.log_reader.getFiles(False, dir_path);
+            grepRes = {}
+            global_start_time = ""
 
-        for file in files:
-            grepRes[file] = self.log_reader.grepLatency(search_str, file)
+            union_keys = []
+            for file in files:
+                global_start_time,grepRes[file] = self.log_reader.grepDiff(search_str, file, start_tm, duration, slice_tm, global_start_time)
+                if grepRes[file]["value"]:
+                    union_keys = list(set(union_keys) | set(grepRes[file]["value"].keys()))
 
-        return grepRes
+            index_count = 0
+            for key in sorted(union_keys):
+                skip = index_count%show_count
+                for file in files:
+                    if skip:
+                        if grepRes[file]["value"] and key in grepRes[file]["value"].keys():
+                            del grepRes[file]["value"][key]
+                    else:
+                        if not grepRes[file]["value"] or key not in grepRes[file]["value"].keys():
+                            grepRes[file]["value"][key] = []
+                            grepRes[file]["diff"][key] = []
+                index_count += 1
+
+            grep_diff_res[dir_path] = grepRes
+
+        return grep_diff_res
 
 

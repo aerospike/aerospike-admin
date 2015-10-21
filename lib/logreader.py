@@ -1,8 +1,12 @@
 __author__ = 'aerospike'
 
 import os, glob, re
-import time
+import time, datetime
 from lib.util import shell_command
+
+DT_FMT = "%b %d %Y %H:%M:%S"
+DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
+DT_TIME_FMT = "%H:%M:%S"
 
 class LogReader(object):
     ascollectinfoExt = "/ascollectinfo.log"
@@ -14,14 +18,22 @@ class LogReader(object):
     statsPattern="\[\'statistics\'\]"
     configPattern="\[\'config\'\]"
 
-    def __init__(self,log_path):
+    def __init__(self, log_path):
         self.log_path = log_path
 
-    def getFiles(self, clusterMode):
+    def get_dirs(self, path=""):
+        if not path:
+            path = self.log_path
+        return [name for name in os.listdir(path)
+            if os.path.isdir(os.path.join(path, name))]
+
+    def getFiles(self, clusterMode, dir_path=""):
+        if not dir_path:
+            dir_path = self.log_path
         ext = self.ascollectinfoExt
         if not clusterMode:
             ext = self.serverLogExt
-        dirs = [a[0] for a in os.walk(self.log_path)]
+        dirs = [a[0] for a in os.walk(dir_path)]
         f_filter = [d+ext for d in dirs]
         return [f for files in [glob.iglob(files) for files in f_filter] for f in files]
 
@@ -222,37 +234,171 @@ class LogReader(object):
         out, err = shell_command(['grep', '-o', '\"'+str+'\"', file, '|' 'wc -l'])
         return out
 
-    def grepLatency(self, str, file):
+    def parse_timedelta(self, arg):
+        toks = arg.split(":")
+        num_toks = len(toks)
+        if num_toks > 3:
+            return 0
+        toks.reverse()
+        try:
+            arg_seconds = long(toks[0].strip())
+            if num_toks > 1:
+                arg_seconds = arg_seconds + (60 * long(toks[1].strip()))
+            if num_toks > 2:
+                arg_seconds = arg_seconds + (3600 * long(toks[2].strip()))
+        except:
+            return 0
+        return datetime.timedelta(seconds = arg_seconds)
+
+    def parse_init_dt(self, arg_from, tail_dt):
+        if arg_from.startswith("-"):
+            # Relative start time:
+            try:
+                init_dt = tail_dt - self.parse_timedelta(arg_from.strip("- "))
+            except:
+                print "can't parse relative start time " + arg_from
+                return 0
+        else:
+            # Absolute start time:
+            try:
+                init_dt = datetime.datetime(\
+                    *(time.strptime(arg_from, DT_FMT)[0:6]))
+            except:
+                print "can't parse absolute start time " + arg_from
+                return 0
+        return init_dt
+
+    def get_dt(self, line):
+        return line[0: line.find(" GMT:")]
+
+    def parse_dt(self, line):
+        prefix = line[0: line.find(" GMT:")]
+        return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:6]))
+
+    def grepDiff(self, str, file, start_tm="head", duration="", slice_tm="10", global_start_tm=""):
         latencyPattern1 = '%s (\d+)'
         latencyPattern2 = '%s \(([0-9,\s]+)\)'
-        result = []
+        result = {"value":{},"diff":{}}
+
         lines = self.grep(str, file).strip().split('\n')
+        if not lines:
+            return global_start_tm,result
         line = lines.pop(0)
+        try:
+            tail_line = lines[-1]
+        except:
+            tail_line = line
+        tail_tm = self.parse_dt(tail_line)
+        if global_start_tm:
+            start_tm = global_start_tm
+        else:
+            if start_tm == "head":
+                start_tm = self.parse_dt(line)
+            else:
+                start_tm = self.parse_init_dt(start_tm, tail_tm)
+                if start_tm>tail_tm:
+                    #print "Wrong start time"
+                    return global_start_tm,result
+
+        while(self.parse_dt(line)<start_tm):
+                try:
+                    line = lines.pop(0)
+                except:
+                    #print "Wrong start time"
+                    return global_start_tm,result
+
+        if duration:
+            duration_tm = self.parse_timedelta(duration)
+            end_tm = start_tm + duration_tm
+        else:
+            end_tm = tail_tm + self.parse_timedelta("10")
+
+
+        slice_size = self.parse_timedelta(slice_tm)
+
         m1 = re.search( latencyPattern1%(str), line )
         m2 = re.search( latencyPattern2%(str), line )
-        while(not m1 and not m2 and len(lines)>0):
-            line = lines.pop(0)
+        while(not m1 and not m2):
+            try:
+                line = lines.pop(0)
+                if self.parse_dt(line)>=end_tm:
+                    return global_start_tm,result
+            except:
+                return global_start_tm,result
             m1 = re.search( latencyPattern1%(str), line )
             m2 = re.search( latencyPattern2%(str), line )
 
+        value = {}
+        diff = {}
+
+        slice_start = start_tm
+        slice_end = slice_start + slice_size
+        while(self.parse_dt(line)>=slice_end):
+            value[slice_start.strftime(DT_FMT)] = []
+            diff[slice_start.strftime(DT_FMT)] = []
+            slice_start = slice_end
+            slice_end = slice_start + slice_size
+
+        if slice_end > end_tm:
+                slice_end = end_tm
+
         pattern = ""
         prev = []
+        slice_val = []
+
         if(m1):
             pattern = latencyPattern1%(str)
-            prev.append(int(m1.group(1)))
+            slice_val.append(int(m1.group(1)))
         elif(m2):
             pattern = latencyPattern2%(str)
-            prev = map(lambda x: int(x), m2.group(1).split(","))
+            slice_val = map(lambda x: int(x), m2.group(1).split(","))
+        else:
+            return global_start_tm,result
 
         for line in lines:
             #print line
+            if self.parse_dt(line)>=end_tm:
+                value[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                if prev :
+                    diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
+                else:
+                    diff[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                slice_val = []
+                break
+
+            if self.parse_dt(line)>=slice_end:
+                value[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                if prev :
+                    diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
+                else:
+                    diff[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                prev = slice_val
+                slice_start = slice_end
+                slice_end = slice_start + slice_size
+                slice_val = []
+                if slice_end > end_tm:
+                    slice_end = end_tm
+
             m = re.search( pattern, line )
             if(m):
+                tm = self.get_dt(line)
                 current = map(lambda x: int(x),m.group(1).split(","))
-                result.append([b-a for b,a in zip(current,prev)])
-                prev = current
+                if(slice_val):
+                    slice_val = ([b+a for b,a in zip(current,slice_val)])
+                else:
+                    slice_val = ([b for b in current])
 
-        return result
+        if slice_val:
+            value[slice_start.strftime(DT_FMT)] = slice_val
+            if prev :
+                diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
+            else:
+                diff[slice_start.strftime(DT_FMT)] = slice_val
+
+        result["value"] = value
+        result["diff"] = diff
+
+        return start_tm, result
 #l = LogReader("/var/log/aerospike/asla/as_log_1444289465.19")
 #print l.getPrefixes("/var/log/aerospike/asla/as_log_1444289465.19/ascollectinfo.log")
 

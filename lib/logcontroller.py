@@ -11,9 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from lib.controller import ShellController
 from lib.controllerlib import *
-from lib.controller import *
 from lib import util
 import time, os, sys, platform, shutil, urllib2, socket
 from lib.loghelper import LogHelper
@@ -120,7 +119,7 @@ class ShowController(CommandController):
         self.controller_map = {
             'config':ShowConfigController
             , 'statistics':ShowStatisticsController
-            , 'latency':ShowlatencyController
+            , 'latency':ShowLatencyController
             , 'distribution':ShowDistributionController
         }
         self.modifiers = set()
@@ -383,7 +382,7 @@ class GrepFile(CommandController):
             #ToDo : Grep Count Output
             print grepRes[file]
 
-    def do_latency(self, line):
+    def do_diff(self,line):
         if not line:
             raise ShellException("Could not understand grep request, " + \
                                  "see 'help grep'")
@@ -393,11 +392,27 @@ class GrepFile(CommandController):
 
         tline = line[:]
         search_str = ""
+        start_tm = "head"
+        duration = ""
+        slice_tm = "10"
+        show_count = 1
         while tline:
             word = tline.pop(0)
             if word == '-s':
                 search_str = tline.pop(0)
                 search_str = self.stripString(search_str)
+            elif word == '-f':
+                start_tm = tline.pop(0)
+                start_tm = self.stripString(start_tm)
+            elif word == '-d':
+                duration = tline.pop(0)
+                duration = self.stripString(duration)
+            elif word == '-t':
+                slice_tm = tline.pop(0)
+                slice_tm = self.stripString(slice_tm)
+            elif word == '-n':
+                show_count = tline.pop(0)
+                show_count = int(self.stripString(show_count))
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
@@ -405,68 +420,94 @@ class GrepFile(CommandController):
         grepRes = {}
 
         if(search_str):
-            grepRes = self.logger.grepLatency(search_str, self.grep_cluster)
+            grepRes = self.logger.grepDiff(search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count)
 
-        for file in grepRes.keys():
+        for dir_path in sorted(grepRes.keys()):
             #ToDo : Grep Latency Output
-            print file
-            for val in grepRes[file]:
-                print val
+            self.view.showGrepDiff(dir_path, grepRes[dir_path])
 
     def stripString(self, search_str):
+        search_str = search_str.strip()
         if(search_str[0]=="\"" or search_str[0]=="\'"):
             return search_str[1:len(search_str)-1]
         else:
             return search_str
 
-@CommandHelp('"grep" searches for lines with input string in logs.'
-             , '  Options:'
-             , '    -s <string>  - The String to search in log files')
+@CommandHelp('"grep" search in server logs(ascollectinfo.log)')
 class GrepClusterController(CommandController):
     def __init__(self):
         self.modifiers = set()
         self.grepFile = GrepFile(True, self.modifiers)
 
-    @CommandHelp('Displays all possible results from logs')
+    @CommandHelp('Display all lines with input string in server logs(ascollectinfo.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files')
     def _do_default(self, line):
         self.grepFile.do_show(line)
 
-    @CommandHelp('Displays all possible results from logs')
+    @CommandHelp('Display all lines with input string in server logs(ascollectinfo.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
-    @CommandHelp('Displays number of occurances of input string in logs')
+    @CommandHelp('Display count of lines with input string in server logs(ascollectinfo.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files')
     def do_count(self, line):
         self.grepFile.do_count(line)
 
-    @CommandHelp('Displays difference between consecutive results from logs.'
-                 , 'Currently it is working for format KEY<space>VALUE and KEY<space>(Comma separated VALUE list).')
-    def do_latency(self, line):
-        self.grepFile.do_latency(line)
-
-@CommandHelp('"grep" searches for lines with input string in logs.'
+    @CommandHelp('Display values and diff for input string in server logs(ascollectinfo.log).'
+             , 'Currently it is working for format KEY<space>VALUE and KEY<space>(Comma separated VALUE list).'
              , '  Options:'
-             , '    -s <string>  - The String to search in log files')
+             , '    -s <string>  - The String to search in log files'
+             , '    -t <string>  - Analysis slice interval in seconds or time format.'
+             , '    -f <string>  - Log time from which to analyze.'
+               ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
+             , '    -d <string>  - Maximum time period to analyze.'
+               ' May use the following formats: 3600 or 1:00:00'
+             , '    -n <string>  - Show the 0-th and then every n-th bucket'
+                  )
+    def do_diff(self, line):
+        self.grepFile.do_diff(line)
+
+@CommandHelp('"grep" search in server logs(aerospike.log)')
 class GrepServersController(CommandController):
     def __init__(self):
         self.modifiers = set()
         self.grepFile = GrepFile(False, self.modifiers)
 
-    @CommandHelp('Displays all possible results from logs')
+    @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files')
     def _do_default(self, line):
         self.grepFile.do_show(line)
 
-    @CommandHelp('Displays all possible results from logs')
+    @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
-    @CommandHelp('Displays number of occurances of input string in logs')
+    @CommandHelp('Display count of lines with input string in server logs(aerospike.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files')
     def do_count(self, line):
         self.grepFile.do_count(line)
 
-    @CommandHelp('Displays difference between consecutive results from logs')
-    def do_latency(self, line):
-        self.grepFile.do_latency(line)
+    @CommandHelp('Display values and diff for input string in server logs(aerospike.log).'
+             , 'Currently it is working for format KEY<space>VALUE and KEY<space>(Comma separated VALUE list).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files'
+             , '    -t <string>  - Analysis slice interval in seconds or time format.'
+             , '    -f <string>  - Log time from which to analyze.'
+               ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
+             , '    -d <string>  - Maximum time period to analyze.'
+               ' May use the following formats: 3600 or 1:00:00'
+             , '    -n <string>  - Show the 0-th and then every n-th bucket'
+                  )
+    def do_diff(self, line):
+        self.grepFile.do_diff(line)
 
 
 @CommandHelp('Checks for common inconsistencies and print if there is any')
