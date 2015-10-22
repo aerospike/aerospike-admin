@@ -351,9 +351,11 @@ class GrepFile(CommandController):
         if(search_str):
             grepRes = self.logger.grep(search_str, self.grep_cluster)
 
-        for file in grepRes.keys():
+        for dir_path in grepRes.keys():
             #ToDo : Grep Output
-            print grepRes[file]
+            print "***************** %s ****************"%(dir_path)
+            for key in sorted(grepRes[dir_path].keys()):
+                print grepRes[dir_path][key]
 
     def do_count(self, line):
         if not line:

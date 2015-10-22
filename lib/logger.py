@@ -67,18 +67,25 @@ class Logger(object):
         return resDic
 
     def grep(self,search_str, grep_cluster_logs):
-        files = []
-        if(grep_cluster_logs):
-            files = self.log_reader.getFiles(True);
-        else:
-            files = self.log_reader.getFiles(False);
+        grep_res = {}
+        dirs = self.log_reader.get_dirs()
+        for dir_path in dirs:
+            files = self.log_reader.getFiles(grep_cluster_logs, dir_path);
+            if grep_cluster_logs:
+                grep_res[dir_path] = self.log_reader.grep(search_str, files[0])
+            else:
+                grep_res[dir_path]={}
+                for file in sorted(files):
+                    node = file.split("/")[-2]
+                    for line in self.log_reader.grep(search_str, file).strip().split('\n'):
 
-        grepRes = {}
-
-        for file in files:
-            grepRes[file] = self.log_reader.grep(search_str, file)
-
-        return grepRes
+                        key = self.log_reader.get_dt(line)
+                        try:
+                            grep_res[dir_path][key] += "\n%s"%(node)
+                        except:
+                            grep_res[dir_path][key] = node
+                        grep_res[dir_path][key] += "::%s"%(line)
+        return grep_res
 
     def grepCount(self,search_str, grep_cluster_logs):
         files = []
@@ -99,7 +106,7 @@ class Logger(object):
         dirs = self.log_reader.get_dirs()
 
         for dir_path in dirs:
-            files = self.log_reader.getFiles(False, dir_path);
+            files = self.log_reader.getFiles(grep_cluster_logs, dir_path);
             grepRes = {}
             global_start_time = ""
 

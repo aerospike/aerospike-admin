@@ -272,7 +272,7 @@ class LogReader(object):
         return line[0: line.find(" GMT:")]
 
     def parse_dt(self, line):
-        prefix = line[0: line.find(" GMT:")]
+        prefix = line[0: line.find(" GMT:")].split(",")[0]
         return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:6]))
 
     def grepDiff(self, str, file, start_tm="head", duration="", slice_tm="10", global_start_tm=""):

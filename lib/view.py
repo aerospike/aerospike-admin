@@ -476,15 +476,17 @@ class CliView(object):
                   , style=Styles.VERTICAL)
 
         row = None
-        for file, rows in grep_result.iteritems():
-            if isinstance(rows, Exception):
+        for file in sorted(grep_result.keys()):
+            if isinstance(grep_result[file], Exception):
                 row1 = {}
                 row2 = {}
                 row3 = {}
             else:
-                row1 = rows["value"]
-                row2 = rows["diff"]
-                row3 = {key : "|" for key in rows["value"].keys()}
+                row1 = grep_result[file]["value"]
+                row2 = grep_result[file]["diff"]
+                row3 = {}
+                for key in grep_result[file]["value"].keys():
+                    row3[key] = "|"
 
             row1['NODE'] = file.split("/")[-2]
             row1['.'] = "Total"
