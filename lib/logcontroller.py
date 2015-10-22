@@ -351,7 +351,7 @@ class GrepFile(CommandController):
         if(search_str):
             grepRes = self.logger.grep(search_str, self.grep_cluster)
 
-        for dir_path in grepRes.keys():
+        for dir_path in sorted(grepRes.keys()):
             #ToDo : Grep Output
             print "***************** %s ****************"%(dir_path)
             for key in sorted(grepRes[dir_path].keys()):
