@@ -38,8 +38,14 @@ class LogReader(object):
         return [f for files in [glob.iglob(files) for files in f_filter] for f in files]
 
     def getTime(self, path):
-        filename = re.split("/", path)[-2]
-        return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(re.split('_', filename)[2])))
+        try:
+            filename = re.split("/", path)[-2]
+        except:
+            filename = path
+        try:
+            return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(re.split('_', filename)[2])))
+        except:
+            return filename
 
     def getNodes(self, path):
         nodes = []

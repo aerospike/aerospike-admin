@@ -338,24 +338,31 @@ class GrepFile(CommandController):
 
         tline = line[:]
         search_str = ""
+        start_tm = "head"
+        duration = ""
         while tline:
             word = tline.pop(0)
             if word == '-s':
                 search_str = tline.pop(0)
                 search_str = self.stripString(search_str)
+            elif word == '-f' and not self.grep_cluster:
+                start_tm = tline.pop(0)
+                start_tm = self.stripString(start_tm)
+            elif word == '-d' and not self.grep_cluster:
+                duration = tline.pop(0)
+                duration = self.stripString(duration)
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
                                                    , " ".join(line)))
-        grepRes = {}
         if(search_str):
-            grepRes = self.logger.grep(search_str, self.grep_cluster)
+            dirs = self.logger.log_reader.get_dirs()
+            for dir_path in dirs:
+                print "***************** %s ****************"%(self.logger.log_reader.getTime(dir_path))
+                grepRes = self.logger.grep(dir_path, search_str, self.grep_cluster, start_tm, duration)
+                for key in sorted(grepRes.keys()):
+                    print grepRes[key]
 
-        for dir_path in sorted(grepRes.keys()):
-            #ToDo : Grep Output
-            print "***************** %s ****************"%(dir_path)
-            for key in sorted(grepRes[dir_path].keys()):
-                print grepRes[dir_path][key]
 
     def do_count(self, line):
         if not line:
@@ -378,11 +385,12 @@ class GrepFile(CommandController):
                                                    , " ".join(line)))
         grepRes = {}
         if(search_str):
-            grepRes = self.logger.grepCount(search_str, self.grep_cluster)
-
-        for file in grepRes.keys():
-            #ToDo : Grep Count Output
-            print grepRes[file]
+            dirs = self.logger.log_reader.get_dirs()
+            for dir_path in dirs:
+                print "***************** %s ****************"%(self.logger.log_reader.getTime(dir_path))
+                grepRes = self.logger.grepCount(dir_path, search_str, self.grep_cluster)
+                for key in sorted(grepRes.keys()):
+                    print key + " :: " + grepRes[key]
 
     def do_diff(self,line):
         if not line:
@@ -422,11 +430,10 @@ class GrepFile(CommandController):
         grepRes = {}
 
         if(search_str):
-            grepRes = self.logger.grepDiff(search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count)
-
-        for dir_path in sorted(grepRes.keys()):
-            #ToDo : Grep Latency Output
-            self.view.showGrepDiff(dir_path, grepRes[dir_path])
+            dirs = self.logger.log_reader.get_dirs()
+            for dir_path in sorted(dirs):
+                grep_res = self.logger.grepDiff(dir_path, search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count)
+                self.view.showGrepDiff(self.logger.log_reader.getTime(dir_path), grep_res)
 
     def stripString(self, search_str):
         search_str = search_str.strip()
@@ -487,7 +494,11 @@ class GrepServersController(CommandController):
 
     @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
              , '  Options:'
-             , '    -s <string>  - The String to search in log files')
+             , '    -s <string>  - The String to search in log files'
+             , '    -f <string>  - Log time from which to analyze.'
+               ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
+             , '    -d <string>  - Maximum time period to analyze.'
+               ' May use the following formats: 3600 or 1:00:00')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
