@@ -45,6 +45,8 @@ class LogRootController(BaseController):
             , 'shell':ShellController
             , 'grep':GrepController
             , 'assert':AssertController
+            , 'list':ListController
+            , 'select':SelectController
         }
 
     @CommandHelp('Terminate session')
@@ -356,13 +358,12 @@ class GrepFile(CommandController):
                     "Do not understand '%s' in '%s'"%(word
                                                    , " ".join(line)))
         if(search_str):
-            dirs = self.logger.log_reader.get_dirs()
+            dirs = self.logger.log_reader.get_current_dirs()
             for dir_path in dirs:
                 print "***************** %s ****************"%(self.logger.log_reader.getTime(dir_path))
                 grepRes = self.logger.grep(dir_path, search_str, self.grep_cluster, start_tm, duration)
                 for key in sorted(grepRes.keys()):
                     print grepRes[key]
-
 
     def do_count(self, line):
         if not line:
@@ -385,7 +386,7 @@ class GrepFile(CommandController):
                                                    , " ".join(line)))
         grepRes = {}
         if(search_str):
-            dirs = self.logger.log_reader.get_dirs()
+            dirs = self.logger.log_reader.get_current_dirs()
             for dir_path in dirs:
                 print "***************** %s ****************"%(self.logger.log_reader.getTime(dir_path))
                 grepRes = self.logger.grepCount(dir_path, search_str, self.grep_cluster)
@@ -430,7 +431,7 @@ class GrepFile(CommandController):
         grepRes = {}
 
         if(search_str):
-            dirs = self.logger.log_reader.get_dirs()
+            dirs = self.logger.log_reader.get_current_dirs()
             for dir_path in sorted(dirs):
                 grep_res = self.logger.grepDiff(dir_path, search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count)
                 self.view.showGrepDiff(self.logger.log_reader.getTime(dir_path), grep_res)
@@ -534,6 +535,91 @@ class AssertController(CommandController):
 
     def _do_default(self, line):
         self.executeHelp(line)
+
+@CommandHelp('Display list of snapshots')
+class ListController(CommandController):
+    def __init__(self):
+        self.controller_map = {}
+        self.modifiers = set()
+
+    @CommandHelp('Displays list of snapshots from which tool is reading data')
+    def _do_default(self, line):
+        index = 1
+        for snapshot in sorted(self.logger.log_reader.selected_dirs):
+            print str(index) + "  : " + snapshot + "\t" + self.logger.log_reader.getTime(snapshot)
+            index += 1
+
+    @CommandHelp('Displays list of all available snapshots from which tool can read data')
+    def do_all(self, line):
+        dirs = self.logger.log_reader.get_dirs()
+        index = 1
+        for dir_path in sorted(dirs):
+            print str(index) + "  : " + dir_path + "\t" + self.logger.log_reader.getTime(dir_path)
+            index += 1
+
+@CommandHelp('Select list of snapshots')
+class SelectController(CommandController):
+    def __init__(self):
+        self.controller_map = {}
+        self.modifiers = set()
+
+    @CommandHelp('Select list of snapshots.'
+             , '  Options:'
+             , '    -y - Expected year of snapshot. May use the following formats: \'2015\', \'2011-2015\' or \'2011,2013,2015\''
+             , '    -m - Expected month of snapshot. May use the following formats: \'10\', \'5-10\' or \'1,6,12\''
+             , '    -d - Expected date of snapshot. May use the following formats: \'27\', \'20-25\' or \'11,13,29\''
+             , '    -hh - Expected hour value of snapshot. May use the following formats: \'15\', \'1-8\' or \'11,22\''
+             , '    -mm - Expected minute value of snapshot. May use the following formats: \'55\', \'30-55\' or \'1,4,45\''
+             , '    -ss - Expected second value of snapshot. May use the following formats: \'43\', \'3-23\' or \'6,8,58\''
+             )
+    def _do_default(self, line):
+        print "select"
+        tline = line[:]
+        year = ""
+        month = ""
+        date = ""
+        hr = ""
+        minutes = ""
+        sec = ""
+
+        while tline:
+            word = tline.pop(0)
+            if word == '-y':
+                year = tline.pop(0)
+                year = self.stripString(year)
+            elif word == '-m':
+                month = tline.pop(0)
+                month = self.stripString(month)
+            elif word == '-d':
+                date = tline.pop(0)
+                date = self.stripString(date)
+            elif word == '-hh':
+                hr = tline.pop(0)
+                hr = self.stripString(hr)
+            elif word == '-mm':
+                minutes = tline.pop(0)
+                minutes = self.stripString(minutes)
+            elif word == '-ss':
+                sec = tline.pop(0)
+                sec = self.stripString(sec)
+            else:
+                raise ShellException(
+                    "Do not understand '%s' in '%s'"%(word
+                                                   , " ".join(line)))
+        self.logger.log_reader.select_dirs(year, month, date, hr, minutes, sec)
+        print self.logger.log_reader.get_current_dirs()
+
+    @CommandHelp('Select all available snapshots from which tool can read data')
+    def do_all(self, line):
+        self.logger.log_reader.select_dirs()
+        print self.logger.log_reader.get_current_dirs()
+
+    def stripString(self, search_str):
+        search_str = search_str.strip()
+        if(search_str[0]=="\"" or search_str[0]=="\'"):
+            return search_str[1:len(search_str)-1]
+        else:
+            return search_str
 
 class AssertClusterController(CommandController):
     def __init__(self):

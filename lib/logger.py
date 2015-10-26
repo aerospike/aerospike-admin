@@ -44,7 +44,7 @@ class Logger(object):
 
     def infoGetConfig(self, stanza = ""):
         resDic = {}
-        files = self.log_reader.getFiles(True);
+        files = self.log_reader.getFilesFromCurrentList(True);
 
         for file in sorted(files):
             if(not self.logInfo.has_key(file)):
@@ -61,7 +61,7 @@ class Logger(object):
 
     def infoStatistics(self, stanza = ""):
         resDic = {}
-        files = self.log_reader.getFiles(True);
+        files = self.log_reader.getFilesFromCurrentList(True);
 
         for file in sorted(files):
             if(not self.logInfo.has_key(file)):

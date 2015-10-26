@@ -3,10 +3,22 @@ __author__ = 'aerospike'
 import os, glob, re
 import time, datetime
 from lib.util import shell_command
+import copy
 
 DT_FMT = "%b %d %Y %H:%M:%S"
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
 DT_TIME_FMT = "%H:%M:%S"
+DATE_SEG = 0
+DATE_SEPARATOR = "-"
+YEAR = 0
+MONTH = 1
+DATE = 2
+
+TIME_SEG = 1
+TIME_SEPARATOR = ":"
+HH = 0
+MM = 1
+SS = 2
 
 class LogReader(object):
     ascollectinfoExt = "/ascollectinfo.log"
@@ -20,12 +32,68 @@ class LogReader(object):
 
     def __init__(self, log_path):
         self.log_path = log_path
+        self.selected_dirs = self.get_dirs()
 
     def get_dirs(self, path=""):
         if not path:
             path = self.log_path
         return [name for name in os.listdir(path)
             if os.path.isdir(os.path.join(path, name))]
+
+    def get_current_dirs(self, path=""):
+        return filter(lambda dir: dir in self.selected_dirs,self.get_dirs(self.log_path))
+
+    def checkTime(self, val, date_string, segment, index=""):
+        try:
+            if segment == DATE_SEG:
+                if val.__contains__("-"):
+                    for v in range(int(val.split("-")[0]),int(val.split("-")[1])+1):
+                        if(int(date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[index]) == v):
+                            return True
+
+                elif val.__contains__(","):
+                    for v in val.split(","):
+                        if(int(date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[index]) == int(v)):
+                            return True
+
+                else:
+                    if(int(date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[index]) == int(val)):
+                        return True
+            elif segment == TIME_SEG:
+                if val.__contains__("-"):
+                    for v in range(int(val.split("-")[0]),int(val.split("-")[1])+1):
+                        if(int(date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]) == v):
+                            return True
+
+                elif val.__contains__(","):
+                    for v in val.split(","):
+                        if(int(date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]) == int(v)):
+                            return True
+
+                else:
+                    if(int(date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]) == int(val)):
+                        return True
+        except:
+            pass
+
+        return False
+
+    def select_dirs(self, year="", month="", date="", hr="", minutes="", sec=""):
+        dirs = self.get_dirs()
+        if(year):
+            dirs = filter(lambda dir : self.checkTime(year, self.getTime(dir), DATE_SEG, YEAR), dirs)
+        if(month):
+            dirs = filter(lambda dir : self.checkTime(month, self.getTime(dir), DATE_SEG, MONTH), dirs)
+        if(date):
+            dirs = filter(lambda dir : self.checkTime(date, self.getTime(dir), DATE_SEG, DATE), dirs)
+        if(hr):
+            dirs = filter(lambda dir : self.checkTime(hr, self.getTime(dir), TIME_SEG, HH), dirs)
+        if(minutes):
+            dirs = filter(lambda dir : self.checkTime(minutes, self.getTime(dir), TIME_SEG, MM), dirs)
+        if(sec):
+            dirs = filter(lambda dir : self.checkTime(sec, self.getTime(dir), TIME_SEG, SS), dirs)
+
+        self.selected_dirs = copy.deepcopy(dirs)
 
     def getFiles(self, clusterMode, dir_path=""):
         if not dir_path:
@@ -34,6 +102,14 @@ class LogReader(object):
         if not clusterMode:
             ext = self.serverLogExt
         dirs = [a[0] for a in os.walk(dir_path)]
+        f_filter = [d+ext for d in dirs]
+        return [f for files in [glob.iglob(files) for files in f_filter] for f in files]
+
+    def getFilesFromCurrentList(self, clusterMode):
+        ext = self.ascollectinfoExt
+        if not clusterMode:
+            ext = self.serverLogExt
+        dirs = self.get_current_dirs()
         f_filter = [d+ext for d in dirs]
         return [f for files in [glob.iglob(files) for files in f_filter] for f in files]
 
