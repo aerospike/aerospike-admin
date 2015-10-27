@@ -30,6 +30,13 @@ def flip_keys(orig_data):
 
     return new_data
 
+def stripString(search_str):
+        search_str = search_str.strip()
+        if(search_str[0]=="\"" or search_str[0]=="\'"):
+            return search_str[1:len(search_str)-1]
+        else:
+            return search_str
+
 @CommandHelp('Aerospike Admin')
 class LogRootController(BaseController):
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
@@ -43,10 +50,11 @@ class LogRootController(BaseController):
             , 'show':ShowController
             , '!':ShellController
             , 'shell':ShellController
-            , 'grep':GrepController
+            , 'grepstr':GrepStrController
             , 'assert':AssertController
             , 'list':ListController
             , 'select':SelectController
+            , 'add':AddController
         }
 
     @CommandHelp('Terminate session')
@@ -232,32 +240,32 @@ class ShowConfigController(CommandController):
     def do_service(self, line):
         service_configs = self.logger.infoGetConfig(stanza='service')
 
-        for file in sorted(service_configs.keys()):
-            self.view.showConfig("Service Configuration (%s)"%(file)
-                         , service_configs[file]
-                         , LogHelper(file), **self.mods)
+        for timestamp in sorted(service_configs.keys()):
+            self.view.showConfig("Service Configuration (%s)"%(timestamp)
+                         , service_configs[timestamp]
+                         , LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
 
     @CommandHelp('Displays network configuration')
     def do_network(self, line):
         service_configs = self.logger.infoGetConfig(stanza='network')
 
-        for file in sorted(service_configs.keys()):
-            self.view.showConfig("Network Configuration (%s)"%(file)
-                         , service_configs[file]
-                         , LogHelper(file), **self.mods)
+        for timestamp in sorted(service_configs.keys()):
+            self.view.showConfig("Network Configuration (%s)"%(timestamp)
+                         , service_configs[timestamp]
+                         , LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
 
     @CommandHelp('Displays namespace configuration')
     def do_namespace(self, line):
         ns_configs = self.logger.infoGetConfig(stanza='namespace')
 
-        for file in sorted(ns_configs.keys()):
-            for ns, configs in ns_configs[file].iteritems():
-                self.view.showConfig("%s Namespace Configuration (%s)"%(ns, file)
-                                 , configs, LogHelper(file), **self.mods)
+        for timestamp in sorted(ns_configs.keys()):
+            for ns, configs in ns_configs[timestamp].iteritems():
+                self.view.showConfig("%s Namespace Configuration (%s)"%(ns, timestamp)
+                                 , configs, LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
 
     @CommandHelp('Displays XDR configuration')
     def do_xdr(self, line):
-        print "ToDo"
+        print "config XDR :: ToDo"
 
 @CommandHelp('Displays statistics for Aerospike components.')
 class ShowStatisticsController(CommandController):
@@ -275,46 +283,46 @@ class ShowStatisticsController(CommandController):
     @CommandHelp('Displays service statistics')
     def do_service(self, line):
         service_stats = self.logger.infoStatistics(stanza="service")
-        for file in sorted(service_stats.keys()):
-            self.view.showConfig("Service Statistics (%s)"%(file)
-                         , service_stats[file]
-                         , LogHelper(file), **self.mods)
+        for timestamp in sorted(service_stats.keys()):
+            self.view.showConfig("Service Statistics (%s)"%(timestamp)
+                         , service_stats[timestamp]
+                         , LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
 
     @CommandHelp('Displays namespace statistics')
     def do_namespace(self, line):
         ns_stats = self.logger.infoStatistics(stanza="namespace")
-        for file in sorted(ns_stats.keys()):
-            for ns, configs in ns_stats[file].iteritems():
-                self.view.showStats("%s Namespace Statistics (%s)"%(ns, file)
+        for timestamp in sorted(ns_stats.keys()):
+            for ns, configs in ns_stats[timestamp].iteritems():
+                self.view.showStats("%s Namespace Statistics (%s)"%(ns, timestamp)
                                     , configs
-                                    , LogHelper(file)
+                                    , LogHelper(self.logger.log_reader.selected_cluster_files[timestamp])
                                     , **self.mods)
 
     @CommandHelp('Displays set statistics')
     def do_sets(self, line):
         set_stats = self.logger.infoStatistics(stanza="sets")
-        for file in sorted(set_stats.keys()):
-            for ns_set, configs in set_stats[file].iteritems():
-                self.view.showStats("%s Set Statistics (%s)"%(ns_set, file)
+        for timestamp in sorted(set_stats.keys()):
+            for ns_set, configs in set_stats[timestamp].iteritems():
+                self.view.showStats("%s Set Statistics (%s)"%(ns_set, timestamp)
                              , configs
-                             , LogHelper(file), **self.mods)
+                             , LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
 
     @CommandHelp('Displays bin statistics')
     def do_bins(self, line):
         new_bin_stats = self.logger.infoStatistics(stanza="bins")
-        for file in sorted(new_bin_stats.keys()):
-            for ns, configs in new_bin_stats[file].iteritems():
-                self.view.showStats("%s Bin Statistics (%s)"%(ns, file)
+        for timestamp in sorted(new_bin_stats.keys()):
+            for ns, configs in new_bin_stats[timestamp].iteritems():
+                self.view.showStats("%s Bin Statistics (%s)"%(ns, timestamp)
                                     , configs
-                                    , LogHelper(file)
+                                    , LogHelper(self.logger.log_reader.selected_cluster_files[timestamp])
                                     , **self.mods)
 
     @CommandHelp('Displays xdr statistics')
     def do_xdr(self, line):
-        print "ToDo"
+        print "statistics XDR :: ToDo"
 
 @CommandHelp('Displays grep results for input string.')
-class GrepController(CommandController):
+class GrepStrController(CommandController):
     def __init__(self):
         self.controller_map = {
            'cluster':GrepClusterController
@@ -358,10 +366,10 @@ class GrepFile(CommandController):
                     "Do not understand '%s' in '%s'"%(word
                                                    , " ".join(line)))
         if(search_str):
-            dirs = self.logger.log_reader.get_current_dirs()
-            for dir_path in dirs:
-                print "***************** %s ****************"%(self.logger.log_reader.getTime(dir_path))
-                grepRes = self.logger.grep(dir_path, search_str, self.grep_cluster, start_tm, duration)
+            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster)
+            for timestamp in sorted(files.keys()):
+                print "***************** %s ****************"%(timestamp)
+                grepRes = self.logger.grep(files[timestamp], search_str, self.grep_cluster, start_tm, duration)
                 for key in sorted(grepRes.keys()):
                     print grepRes[key]
 
@@ -384,14 +392,16 @@ class GrepFile(CommandController):
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
                                                    , " ".join(line)))
-        grepRes = {}
         if(search_str):
-            dirs = self.logger.log_reader.get_current_dirs()
-            for dir_path in dirs:
-                print "***************** %s ****************"%(self.logger.log_reader.getTime(dir_path))
-                grepRes = self.logger.grepCount(dir_path, search_str, self.grep_cluster)
-                for key in sorted(grepRes.keys()):
-                    print key + " :: " + grepRes[key]
+            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster)
+            for timestamp in sorted(files.keys()):
+                print "***************** %s ****************"%(timestamp)
+                res = self.logger.grepCount(files[timestamp], search_str, self.grep_cluster)
+                for key in sorted(res.keys()):
+                    str =" "
+                    if not self.grep_cluster:
+                        str = key + " : "
+                    print str+ "Count of %s is : %s"%(search_str, res[key])
 
     def do_diff(self,line):
         if not line:
@@ -431,10 +441,10 @@ class GrepFile(CommandController):
         grepRes = {}
 
         if(search_str):
-            dirs = self.logger.log_reader.get_current_dirs()
-            for dir_path in sorted(dirs):
-                grep_res = self.logger.grepDiff(dir_path, search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count)
-                self.view.showGrepDiff(self.logger.log_reader.getTime(dir_path), grep_res)
+            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster)
+            for timestamp in sorted(files.keys()):
+                grep_res = self.logger.grepDiff(files[timestamp], search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count)
+                self.view.showGrepDiff(timestamp, grep_res)
 
     def stripString(self, search_str):
         search_str = search_str.strip()
@@ -466,7 +476,7 @@ class GrepClusterController(CommandController):
              , '    -s <string>  - The String to search in log files')
     def do_count(self, line):
         self.grepFile.do_count(line)
-
+'''
     @CommandHelp('Display values and diff for input string in server logs(ascollectinfo.log).'
              , 'Currently it is working for format KEY<space>VALUE and KEY<space>(Comma separated VALUE list).'
              , '  Options:'
@@ -480,7 +490,7 @@ class GrepClusterController(CommandController):
                   )
     def do_diff(self, line):
         self.grepFile.do_diff(line)
-
+'''
 @CommandHelp('"grep" search in server logs(aerospike.log)')
 class GrepServersController(CommandController):
     def __init__(self):
@@ -542,19 +552,33 @@ class ListController(CommandController):
         self.controller_map = {}
         self.modifiers = set()
 
-    @CommandHelp('Displays list of snapshots from which tool is reading data')
     def _do_default(self, line):
-        index = 1
-        for snapshot in sorted(self.logger.log_reader.selected_dirs):
-            print str(index) + "  : " + snapshot + "\t" + self.logger.log_reader.getTime(snapshot)
-            index += 1
+        self.do_all(line)
 
     @CommandHelp('Displays list of all available snapshots from which tool can read data')
     def do_all(self, line):
-        dirs = self.logger.log_reader.get_dirs()
+        print "*************************** CLUSTER ***************************"
         index = 1
-        for dir_path in sorted(dirs):
-            print str(index) + "  : " + dir_path + "\t" + self.logger.log_reader.getTime(dir_path)
+        for timestamp in sorted(self.logger.log_reader.all_cluster_files.keys()):
+            print str(index) + "  : " + timestamp + "\t" + self.logger.log_reader.all_cluster_files[timestamp]
+            index += 1
+        print "*************************** SERVER ***************************"
+        index = 1
+        for node in sorted(self.logger.log_reader.added_server_files.keys()):
+            print str(index) + "  : " + node + "\t" + self.logger.log_reader.added_server_files[node]
+            index += 1
+
+    @CommandHelp('Displays list of snapshots from which tool is reading data')
+    def do_selected(self, line):
+        print "*************************** CLUSTER ***************************"
+        index = 1
+        for timestamp in sorted(self.logger.log_reader.selected_cluster_files.keys()):
+            print str(index) + "  : " + timestamp + "\t" + self.logger.log_reader.selected_cluster_files[timestamp]
+            index += 1
+        print "*************************** SERVER ***************************"
+        index = 1
+        for node in sorted(self.logger.log_reader.selected_server_files.keys()):
+            print str(index) + "  : " + node + "\t" + self.logger.log_reader.selected_server_files[node]
             index += 1
 
 @CommandHelp('Select list of snapshots')
@@ -572,8 +596,7 @@ class SelectController(CommandController):
              , '    -mm - Expected minute value of snapshot. May use the following formats: \'55\', \'30-55\' or \'1,4,45\''
              , '    -ss - Expected second value of snapshot. May use the following formats: \'43\', \'3-23\' or \'6,8,58\''
              )
-    def _do_default(self, line):
-        print "select"
+    def do_cluster(self, line):
         tline = line[:]
         year = ""
         month = ""
@@ -606,13 +629,11 @@ class SelectController(CommandController):
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
                                                    , " ".join(line)))
-        self.logger.log_reader.select_dirs(year, month, date, hr, minutes, sec)
-        print self.logger.log_reader.get_current_dirs()
+        self.logger.log_reader.select_cluster_snapshots(year, month, date, hr, minutes, sec)
 
-    @CommandHelp('Select all available snapshots from which tool can read data')
-    def do_all(self, line):
-        self.logger.log_reader.select_dirs()
-        print self.logger.log_reader.get_current_dirs()
+    @CommandHelp('Select list of servers. You can get server number from list command. May use the following formats: select server 1 2 3')
+    def do_server(self, line):
+        self.logger.log_reader.select_servers(line)
 
     def stripString(self, search_str):
         search_str = search_str.strip()
@@ -641,3 +662,46 @@ class AssertServersController(CommandController):
     @CommandHelp('Displays all possible results from logs')
     def _do_default(self, line):
         print "Todo"
+
+@CommandHelp('Allow users to add cluster and server logs. After adding new log file by using this command also update the selected file list with new input')
+class AddController(CommandController):
+    def __init__(self):
+        self.controller_map = {
+           'cluster':AddClusterController
+            , 'server':AddServerController
+        }
+        self.modifiers = set()
+
+    def _do_default(self, line):
+        self.executeHelp(line)
+
+class AddClusterController(CommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    def _do_default(self, line):
+        length = len(line)
+        if length<2:
+            return
+
+        for index in range(0,length,2):
+            if(index==length-1):
+                break
+            self.logger.log_reader.added_server_filesed_cluster_files[line[index]] = line[index+1]
+            self.logger.log_reader.selected_cluster_files[line[index]] = line[index+1]
+            self.logger.log_reader.all_cluster_files[line[index]] = line[index+1]
+
+class AddServerController(CommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    def _do_default(self, line):
+        length = len(line)
+        if length<2:
+            return
+
+        for index in range(0,length,2):
+            if(index==length-1):
+                break
+            self.logger.log_reader.added_server_files[line[index]] = line[index+1]
+            self.logger.log_reader.selected_server_files[line[index]] = line[index+1]

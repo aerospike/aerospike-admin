@@ -59,6 +59,7 @@ class AerospikeShell(cmd.Cmd):
         self.intro = terminal.bold() + self.name + ', version ' +\
                      __version__ + terminal.reset() + "\n"
         if log_path:
+            self.intro += terminal.fg_red() + "Working on log files\n" + terminal.fg_clear()
             self.intro += str(self.ctrl.logger) + "\n"
         else:
             self.intro += str(self.ctrl.cluster) + "\n"
@@ -294,11 +295,15 @@ def main():
                       , dest="show_version"
                       , action="store_true"
                       , help="Show the version of asadm and exit")
+    parser.add_option("-f"
+                        , "--file"
+                        , dest="log_analyser"
+                        , action="store_true"
+                        , help="Fetch data from log files")
     parser.add_option("-l"
                         , "--log-path"
                         , dest="log_path"
-                        , help="Path of ascollectinfo log files. " + \
-                               "If it is provided then asadm will work on log files instead of cluster.")
+                        , help="Path of ascollectinfo log files.")
 
 
 
@@ -332,10 +337,13 @@ def main():
 
     seed = (cli_args.host, cli_args.port)
     telnet = False # telnet currently not working, hardcoding to off
-    log_path = ""
+    log_path = " "
     if cli_args.log_path:
         log_path = cli_args.log_path
         os.chdir(log_path)
+
+    if not cli_args.log_analyser:
+        log_path = ""
 
     shell = AerospikeShell(seed, telnet, user=user, password=password, log_path=log_path)
 

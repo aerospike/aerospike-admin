@@ -45,36 +45,46 @@ class Logger(object):
     def infoGetConfig(self, stanza = ""):
         resDic = {}
         files = self.log_reader.getFilesFromCurrentList(True);
+        if not files:
+            return resDic
 
-        for file in sorted(files):
-            if(not self.logInfo.has_key(file)):
-                self.logInfo[file] = self.log_reader.read(file)
+        for timestamp in sorted(files.keys()):
+            try:
+                if(not self.logInfo.has_key(timestamp)):
+                    self.logInfo[timestamp] = self.log_reader.read(files[timestamp])
 
-            if (stanza == "service"):
-                resDic[file] = copy.deepcopy(self.logInfo[file]["config"]["service"])
-            elif (stanza == "network"):
-                resDic[file] = copy.deepcopy(self.logInfo[file]["config"]["network"])
-            elif (stanza == "namespace"):
-                resDic[file] = copy.deepcopy(self.logInfo[file]["config"]["namespace"])
+                if (stanza == "service"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["config"]["service"])
+                elif (stanza == "network"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["config"]["network"])
+                elif (stanza == "namespace"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["config"]["namespace"])
+            except:
+                continue
 
         return resDic
 
     def infoStatistics(self, stanza = ""):
         resDic = {}
         files = self.log_reader.getFilesFromCurrentList(True);
+        if not files:
+            return resDic
 
-        for file in sorted(files):
-            if(not self.logInfo.has_key(file)):
-                self.logInfo[file] = self.log_reader.read(file)
+        for timestamp in sorted(files.keys()):
+            try:
+                if(not self.logInfo.has_key(timestamp)):
+                    self.logInfo[timestamp] = self.log_reader.read(files[timestamp])
 
-            if (stanza == "service"):
-                resDic[file] = copy.deepcopy(self.logInfo[file]["statistics"]["stats"]["service"])
-            elif (stanza == "sets"):
-                resDic[file] = copy.deepcopy(self.logInfo[file]["statistics"]["sets"])
-            elif (stanza == "bins"):
-                resDic[file] = copy.deepcopy(self.logInfo[file]["statistics"]["bins"])
-            elif (stanza == "namespace"):
-                resDic[file] = copy.deepcopy(self.logInfo[file]["statistics"]["namespace"])
+                if (stanza == "service"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["statistics"]["stats"]["service"])
+                elif (stanza == "sets"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["statistics"]["sets"])
+                elif (stanza == "bins"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["statistics"]["bins"])
+                elif (stanza == "namespace"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["statistics"]["namespace"])
+            except:
+                continue
 
         return resDic
 
@@ -93,9 +103,10 @@ class Logger(object):
 
         return new_fg_index,new_bg_index
 
-    def grep(self,dir_path, search_str, grep_cluster_logs, start_tm_arg="head", duration_arg=""):
+    def grep(self, files, search_str, grep_cluster_logs, start_tm_arg="head", duration_arg=""):
         grep_res = {}
-        files = self.log_reader.getFiles(grep_cluster_logs, dir_path)
+        if not files:
+            return {}
         if grep_cluster_logs:
             grep_res["key"] = self.log_reader.grep(search_str, files[0])
         else:
@@ -103,75 +114,81 @@ class Logger(object):
             for file in sorted(files):
                 start_tm = copy.deepcopy(start_tm_arg)
                 duration = copy.deepcopy(duration_arg)
-                node = file.split("/")[-2]
+                node = self.log_reader.getNode(file)
 
                 lines = self.log_reader.grep(search_str, file).strip().split('\n')
                 if not lines:
                     continue
 
-                tail_tm = self.log_reader.parse_dt(lines[-1])
-                if start_tm=="head":
-                    start_tm = self.log_reader.parse_dt(lines[0])
-                else:
-                    start_tm = self.log_reader.parse_init_dt(start_tm, tail_tm)
-                    if start_tm>tail_tm:
-                        continue
+                try:
+                    tail_tm = self.log_reader.parse_dt(lines[-1])
+                    if start_tm=="head":
+                        start_tm = self.log_reader.parse_dt(lines[0])
+                    else:
+                        start_tm = self.log_reader.parse_init_dt(start_tm, tail_tm)
+                        if start_tm>tail_tm:
+                            continue
 
-                if duration:
-                    duration_tm = self.log_reader.parse_timedelta(duration)
-                    end_tm = start_tm + duration_tm
-                else:
-                    end_tm = tail_tm + self.log_reader.parse_timedelta("10")
+                    if duration:
+                        duration_tm = self.log_reader.parse_timedelta(duration)
+                        end_tm = start_tm + duration_tm
+                    else:
+                        end_tm = tail_tm + self.log_reader.parse_timedelta("10")
 
-                for line in lines:
-                    line_tm = self.log_reader.parse_dt(line)
-                    if line_tm < start_tm:
-                        continue
-                    if line_tm > end_tm:
-                        break
-                    key = self.log_reader.get_dt(line)
-                    try:
-                        grep_res[key] += "\n%s%s%s%s::"%(self.bg_colors[bg_color_index][1](),self.fg_colors[fg_color_index][1](),node,terminal.reset())
-                    except:
-                        grep_res[key] = "%s%s%s%s::"%(self.bg_colors[bg_color_index][1](),self.fg_colors[fg_color_index][1](),node,terminal.reset())
-                    grep_res[key] += line
+                    for line in lines:
+                        line_tm = self.log_reader.parse_dt(line)
+                        if line_tm < start_tm:
+                            continue
+                        if line_tm > end_tm:
+                            break
+                        key = self.log_reader.get_dt(line)
+                        try:
+                            grep_res[key] += "\n%s%s%s%s::"%(self.bg_colors[bg_color_index][1](),self.fg_colors[fg_color_index][1](),node,terminal.reset())
+                        except:
+                            grep_res[key] = "%s%s%s%s::"%(self.bg_colors[bg_color_index][1](),self.fg_colors[fg_color_index][1](),node,terminal.reset())
+                        grep_res[key] += line
 
-                fg_color_index,bg_color_index  = self.get_diff_bg_fg_color(fg_color_index,bg_color_index)
+                    fg_color_index,bg_color_index  = self.get_diff_bg_fg_color(fg_color_index,bg_color_index)
+                except:
+                    continue
 
         return grep_res
 
-    def grepCount(self, dir_path, search_str, grep_cluster_logs):
-        files = self.log_reader.getFiles(grep_cluster_logs, dir_path)
-        grepRes = {}
+    def grepCount(self, files, search_str, grep_cluster_logs):
+        res_dic = {}
+        try:
+            for file in files:
+                try:
+                    res_dic[self.log_reader.getNode(file)] = int(self.log_reader.grepCount(search_str, file))
+                except:
+                    res_dic[self.log_reader.getNode(file)] = 0
+            return res_dic
+        except:
+            return res_dic
 
-        for file in files:
-            grepRes[file.split("/")[-2]] = self.log_reader.grepCount(search_str, file)
-
-        return grepRes
-
-    def grepDiff(self, dir_path, search_str, grep_cluster_logs, start_tm, duration, slice_tm, show_count):
+    def grepDiff(self, files, search_str, grep_cluster_logs, start_tm, duration, slice_tm, show_count):
         grep_diff_res = {}
 
-        files = self.log_reader.getFiles(grep_cluster_logs, dir_path);
         global_start_time = ""
         union_keys = []
         for file in files:
-            global_start_time,grep_diff_res[file] = self.log_reader.grepDiff(search_str, file, start_tm, duration, slice_tm, global_start_time)
-            if grep_diff_res[file]["value"]:
-                union_keys = list(set(union_keys) | set(grep_diff_res[file]["value"].keys()))
+            node = self.log_reader.getNode(file)
+            global_start_time,grep_diff_res[node] = self.log_reader.grepDiff(search_str, file, start_tm, duration, slice_tm, global_start_time)
+            if grep_diff_res[node]["value"]:
+                union_keys = list(set(union_keys) | set(grep_diff_res[node]["value"].keys()))
 
         index_count = 0
         for key in sorted(union_keys):
             skip = index_count%show_count
             for file in files:
                 if skip:
-                    if grep_diff_res[file]["value"] and key in grep_diff_res[file]["value"].keys():
-                        del grep_diff_res[file]["value"][key]
-                        del grep_diff_res[file]["diff"][key]
+                    if grep_diff_res[node]["value"] and key in grep_diff_res[node]["value"].keys():
+                        del grep_diff_res[node]["value"][key]
+                        del grep_diff_res[node]["diff"][key]
                 else:
-                    if not grep_diff_res[file]["value"] or key not in grep_diff_res[file]["value"].keys():
-                        grep_diff_res[file]["value"][key] = []
-                        grep_diff_res[file]["diff"][key] = []
+                    if not grep_diff_res[node]["value"] or key not in grep_diff_res[node]["value"].keys():
+                        grep_diff_res[node]["value"][key] = []
+                        grep_diff_res[node]["diff"][key] = []
             index_count += 1
 
         return grep_diff_res

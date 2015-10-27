@@ -488,7 +488,7 @@ class CliView(object):
                 for key in grep_result[file]["value"].keys():
                     row3[key] = "|"
 
-            row1['NODE'] = file.split("/")[-2]
+            row1['NODE'] = file
             row1['.'] = "Total"
 
             row2['NODE'] = "."

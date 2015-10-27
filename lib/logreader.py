@@ -29,16 +29,35 @@ class LogReader(object):
     sectionSeparator="(=+)ASCOLLECTINFO(=+)"
     statsPattern="\[\'statistics\'\]"
     configPattern="\[\'config\'\]"
+    distributionPattern="\[\'distribution\'\]"
 
     def __init__(self, log_path):
         self.log_path = log_path
         self.selected_dirs = self.get_dirs()
+        self.initial_cluster_files = {}
+        for file in self.getFiles(True, log_path):
+            self.initial_cluster_files[self.get_timestamp(file)] = file
+        self.all_cluster_files = copy.deepcopy(self.initial_cluster_files)
+        self.selected_cluster_files = copy.deepcopy(self.initial_cluster_files)
+        self.added_cluster_files = {}
+
+        self.added_server_files = {}
+        self.selected_server_files = {}
+
+    def get_timestamp(self, file):
+        file_id = open(file,"r")
+        file_id.seek(0,0)
+        line = file_id.readline()
+        return line.strip().strip("\n")
 
     def get_dirs(self, path=""):
-        if not path:
-            path = self.log_path
-        return [name for name in os.listdir(path)
-            if os.path.isdir(os.path.join(path, name))]
+        try:
+            if not path:
+                path = self.log_path
+            return [name for name in os.listdir(path)
+                if os.path.isdir(os.path.join(path, name))]
+        except:
+            return []
 
     def get_current_dirs(self, path=""):
         return filter(lambda dir: dir in self.selected_dirs,self.get_dirs(self.log_path))
@@ -95,23 +114,62 @@ class LogReader(object):
 
         self.selected_dirs = copy.deepcopy(dirs)
 
+    def select_cluster_snapshots(self, year="", month="", date="", hr="", minutes="", sec=""):
+        snapshots = self.all_cluster_files.keys()
+
+        if(year):
+            snapshots = filter(lambda timestamp : self.checkTime(year, self.getTime(timestamp), DATE_SEG, YEAR), snapshots)
+        if(month):
+            snapshots = filter(lambda timestamp : self.checkTime(month, self.getTime(timestamp), DATE_SEG, MONTH), snapshots)
+        if(date):
+            snapshots = filter(lambda timestamp : self.checkTime(date, self.getTime(timestamp), DATE_SEG, DATE), snapshots)
+        if(hr):
+            snapshots = filter(lambda timestamp : self.checkTime(hr, self.getTime(timestamp), TIME_SEG, HH), snapshots)
+        if(minutes):
+            snapshots = filter(lambda timestamp : self.checkTime(minutes, self.getTime(timestamp), TIME_SEG, MM), snapshots)
+        if(sec):
+            snapshots = filter(lambda timestamp : self.checkTime(sec, self.getTime(timestamp), TIME_SEG, SS), snapshots)
+
+        self.selected_cluster_files.clear()
+        for snapshot in snapshots:
+            self.selected_cluster_files[snapshot] = self.all_cluster_files[snapshot]
+
+    def select_servers(self, indices):
+        nodes = sorted(self.added_server_files.keys())
+        self.selected_server_files.clear()
+        for index in indices:
+            self.selected_server_files[nodes[int(index)-1]] = self.added_server_files[nodes[int(index)-1]]
+
     def getFiles(self, clusterMode, dir_path=""):
-        if not dir_path:
-            dir_path = self.log_path
-        ext = self.ascollectinfoExt
-        if not clusterMode:
-            ext = self.serverLogExt
-        dirs = [a[0] for a in os.walk(dir_path)]
-        f_filter = [d+ext for d in dirs]
-        return [f for files in [glob.iglob(files) for files in f_filter] for f in files]
+        try:
+            if not dir_path:
+                dir_path = self.log_path
+            ext = self.ascollectinfoExt
+            if not clusterMode:
+                ext = self.serverLogExt
+            dirs = [a[0] for a in os.walk(dir_path)]
+            f_filter = [d+ext for d in dirs]
+            return [f for files in [glob.iglob(files) for files in f_filter] for f in files]
+        except:
+            return []
 
     def getFilesFromCurrentList(self, clusterMode):
-        ext = self.ascollectinfoExt
-        if not clusterMode:
-            ext = self.serverLogExt
-        dirs = self.get_current_dirs()
-        f_filter = [d+ext for d in dirs]
-        return [f for files in [glob.iglob(files) for files in f_filter] for f in files]
+        if clusterMode:
+            files = {}
+            for timestamp in self.selected_cluster_files:
+                files[timestamp] = [self.selected_cluster_files[timestamp]]
+            return files
+        else :
+            files = []
+            for node, file in self.selected_server_files.iteritems():
+                files.append(file)
+            return {"cluster":files}
+
+    def getNode(self, path):
+        for node,fpath in self.selected_server_files.iteritems():
+            if path == fpath:
+                return node
+        return path
 
     def getTime(self, path):
         try:
@@ -155,47 +213,36 @@ class LogReader(object):
         logInfo = {}
         logInfo["statistics"]={}
         logInfo["config"]={}
+        logInfo["distribution"]={}
 
-        lines = open(path,"r").readlines()
-        line = lines.pop(0)
+        file_id = open(path,"r")
+        line = file_id.readline()
 
         while(line):
-            sr1 = re.search( self.statsPattern, line )
-            sr2 = re.search( self.configPattern, line )
-            key = ""
-            method = self.readStats
-            collectLines = 0
+            sr1 = re.search( self.configPattern, line )
+            sr2 = re.search( self.distributionPattern, line )
+            sr3 = re.search( self.statsPattern, line )
             if(sr1):
-                key = "statistics"
-                method = self.readStats
-                collectLines = 1
-                line = lines.pop(0)
-            elif(sr2):
-                key = "config"
-                method = self.readConfig
-                collectLines = 1
-                line = lines.pop(0)
-
-            tempLines = []
-            while(collectLines and (not re.search( self.sectionSeparator, line) )):
-                tempLines.append(line)
-                line = lines.pop(0)
-
-            if(len(tempLines)>0):
-                logInfo[key]=method(tempLines)
+                logInfo["config"] = self.readConfig(file_id)
+        #    elif(sr2):
+        #        logInfo["distribution"] = self.readDistribution(file_id)
+            elif(sr3):
+                logInfo["statistics"] = self.readStats(file_id)
+                break
 
             try:
-                line = lines.pop(0)
+                line = file_id.readline()
             except IndexError:
                 break;
 
         return logInfo
 
-    def htableToDic(self,rows):
+    def htableToDic(self,file_id):
         currentLine = 0
         nodes = []
         resDir = {}
-        for line in rows:
+        line = file_id.readline()
+        while(line.strip().__len__()!=0 and not line.startswith('~')):
             if currentLine==0:
                 tempNodes = line.split()
                 nodes = tempNodes[2:len(tempNodes)]
@@ -218,9 +265,10 @@ class LogReader(object):
                     currentNode += 1
 
             currentLine += 1
+            line = file_id.readline()
         return resDir
 
-    def readStats(self, lines):
+    def readStats(self, file_id):
         statDic = {}
         statDic["bins"] = {}
         statDic["sets"] = {}
@@ -232,9 +280,8 @@ class LogReader(object):
         statPattern = 'Service Statistics'
         nsPattern = '~([^~]+) Namespace Statistics'
 
-        line = lines.pop(0)
-
-        while(line.strip().__len__()!=0):
+        line = file_id.readline()
+        while(line.strip().__len__()!=0 and not re.search( self.sectionSeparator, line)):
             m1 = re.search( binPattern, line )
             m2 = re.search( setPattern, line )
             m3 = re.search( statPattern, line )
@@ -254,20 +301,15 @@ class LogReader(object):
                 dic = statDic["namespace"]
                 key = m4.group(1)
 
-            line = lines.pop(0)
-            tempLines = []
-            while(line.strip().__len__()!=0 and not line.startswith('~')):
-                tempLines.append(line)
-                line = lines.pop(0)
-            dic[key]=self.htableToDic(tempLines)
+            dic[key]=self.htableToDic(file_id)
             try:
-                line = lines.pop(0)
+                line = file_id.readline()
             except IndexError:
                 break
 
         return statDic
 
-    def readConfig(self, lines):
+    def readConfig(self, file_id):
         configDic = {}
         configDic["service"] = {}
         configDic["network"] = {}
@@ -277,9 +319,9 @@ class LogReader(object):
         netPattern = '(~+)Network Configuration(~+)'
         nsPattern = '~([^~]+)Namespace Configuration(~+)'
 
-        line = lines.pop(0)
+        line = file_id.readline()
 
-        while(line.strip().__len__()!=0):
+        while(line.strip().__len__()!=0 and not re.search( self.sectionSeparator, line)):
             m1 = re.search( servicePattern, line )
             m2 = re.search( netPattern, line )
             m3 = re.search( nsPattern, line )
@@ -295,18 +337,67 @@ class LogReader(object):
                 dic = configDic["namespace"]
                 key = m3.group(1).strip()
 
-            line = lines.pop(0)
-            tempLines = []
-            while(line.strip().__len__()!=0 and not line.startswith('~')):
-                tempLines.append(line)
-                line = lines.pop(0)
-            dic[key]=self.htableToDic(tempLines)
+            dic[key]=self.htableToDic(file_id)
             try:
-                line = lines.pop(0)
+                line = file_id.readline()
             except IndexError:
                 break
 
         return configDic
+
+    def readDistribution(self, file_id):
+        configDic = {}
+        configDic["ttl"] = {}
+        configDic["evict"] = {}
+        configDic["objsz"] = {}
+
+        ttlPattern = '~([^~]+) - TTL Distribution in Seconds(~+)'
+        evictPattern = '~([^~]+) - Eviction Distribution in Seconds(~+)'
+        objszPattern = '~([^~]+) - Object Size Distribution in Seconds(~+)'
+
+        line = file_id.readline()
+
+        while(line.strip().__len__()!=0 and not re.search( self.sectionSeparator, line)):
+            m1 = re.search( ttlPattern, line )
+            m2 = re.search( evictPattern, line )
+            m3 = re.search( objszPattern, line )
+            dic = {}
+            key = "key"
+            if(m1):
+                dic = configDic["ttl"]
+                key = m1.group(1).strip()
+            elif(m2):
+                dic = configDic["evict"]
+                key = m2.group(1).strip()
+            elif(m3):
+                dic = configDic["objsz"]
+                key = m3.group(1).strip()
+
+            dic[key]=self.distTableToDic(file_id)
+            try:
+                line = file_id.readline()
+            except IndexError:
+                break
+
+        return configDic
+
+    def distTableToDic(self, file_id):
+        result = {}
+        line = file_id.readline()
+        while(line.strip().__len__()!=0 and (line.split()[0].strip()!="Node" or not line.strip().startswith("Number of rows"))):
+            line = file_id.readline()
+
+        if(line.strip().__len__()==0 or line.strip().startswith("Number of rows")):
+            return result
+
+        line = file_id.readline()
+        while not line.strip().startswith("Number of rows"):
+            vals = line.split()
+            result[vals[0]] = vals[1:len(vals)]
+            line = file_id.readline()
+
+        file_id.seek(1,1)
+        return result
 
     def grep(self, str, file):
         out, err = shell_command(['grep','\"'+str+'\"', file])

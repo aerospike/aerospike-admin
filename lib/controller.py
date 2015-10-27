@@ -321,6 +321,8 @@ class ShowDistributionController(CommandController):
 
                 data['percentiles'] = [r * width for r in result]
 
+        print histogram
+
         return util.Future(self.view.showDistribution
                            , title
                            , histogram
