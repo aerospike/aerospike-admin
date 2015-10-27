@@ -675,22 +675,20 @@ class AddController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
+@CommandHelp("Adds cluster logs. Format : add cluster /'cluster log path1/' /'cluster log path2/' /'cluster log path3/' ...")
 class AddClusterController(CommandController):
     def __init__(self):
         self.modifiers = set()
 
     def _do_default(self, line):
-        length = len(line)
-        if length<2:
-            return
+        for ip in line:
+            ip = stripString(ip)
+            timestamp = self.logger.log_reader.get_timestamp(ip)
+            self.logger.log_reader.added_cluster_files[timestamp] = ip
+            self.logger.log_reader.selected_cluster_files[timestamp] = ip
+            self.logger.log_reader.all_cluster_files[timestamp] = ip
 
-        for index in range(0,length,2):
-            if(index==length-1):
-                break
-            self.logger.log_reader.added_server_filesed_cluster_files[line[index]] = line[index+1]
-            self.logger.log_reader.selected_cluster_files[line[index]] = line[index+1]
-            self.logger.log_reader.all_cluster_files[line[index]] = line[index+1]
-
+@CommandHelp("Adds server logs. Format : add server /'server_name1/' /'server log path1/' /'server_name2/' /'server log path2/'/'server_name3/' /'server log path3/' ...")
 class AddServerController(CommandController):
     def __init__(self):
         self.modifiers = set()

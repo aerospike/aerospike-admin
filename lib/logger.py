@@ -51,7 +51,7 @@ class Logger(object):
         for timestamp in sorted(files.keys()):
             try:
                 if(not self.logInfo.has_key(timestamp)):
-                    self.logInfo[timestamp] = self.log_reader.read(files[timestamp])
+                    self.logInfo[timestamp] = self.log_reader.read(files[timestamp][0])
 
                 if (stanza == "service"):
                     resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["config"]["service"])
@@ -73,7 +73,7 @@ class Logger(object):
         for timestamp in sorted(files.keys()):
             try:
                 if(not self.logInfo.has_key(timestamp)):
-                    self.logInfo[timestamp] = self.log_reader.read(files[timestamp])
+                    self.logInfo[timestamp] = self.log_reader.read(files[timestamp][0])
 
                 if (stanza == "service"):
                     resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["statistics"]["stats"]["service"])
