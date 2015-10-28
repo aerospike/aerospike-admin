@@ -137,93 +137,6 @@ class ShowController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-@CommandHelp('"distribution" is used to show the distribution of object sizes'
-             , 'and time to live for node and a namespace.')
-class ShowDistributionController(CommandController):
-    def __init__(self):
-        self.modifiers = set(['with', 'like'])
-
-    @CommandHelp('Shows the distributions of Time to Live and Object Size')
-    def _do_default(self, line):
-        self.do_time_to_live(line[:])
-        self.do_object_size(line[:])
-
-    def _do_distribution(self, histogram_name, title, unit):
-        histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
-
-        histogram = flip_keys(histogram)
-
-        for namespace, host_data in histogram.iteritems():
-            for host_id, data in host_data.iteritems():
-                hist = data['data']
-                width = data['width']
-
-                cum_total = 0
-                total = sum(hist)
-                percentile = 0.1
-                result = []
-
-                for i, v in enumerate(hist):
-                    cum_total += float(v)
-                    if total > 0:
-                        portion = cum_total / total
-                    else:
-                        portion = 0.0
-
-                    while portion >= percentile:
-                        percentile += 0.1
-                        result.append(i+1)
-
-                    if percentile > 1.0:
-                        break
-
-                if result == []:
-                    result = [0] * 10
-
-                data['percentiles'] = [r * width for r in result]
-
-        self.view.showDistribution(title
-                                   , histogram
-                                   , unit
-                                   , histogram_name
-                                   , self.cluster
-                                   , **self.mods)
-
-    @CommandHelp('Shows the distribution of TTLs for namespaces')
-    def do_time_to_live(self, line):
-        self._do_distribution('ttl', 'TTL Distribution', 'Seconds')
-
-    @CommandHelp('Shows the distribution of Eviction TTLs for namespaces')
-    def do_eviction(self, line):
-        self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
-
-    @CommandHelp('Shows the distribution of Object sizes for namespaces')
-    def do_object_size(self, line):
-        self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
-
-class ShowLatencyController(CommandController):
-    def __init__(self):
-        self.modifiers = set(['with', 'like'])
-
-    @CommandHelp('Displays latency information for Aerospike cluster.')
-    def _do_default(self, line):
-        self.modifiers.add('like')
-        self.modifiers.remove('like')
-
-        latency = self.cluster.infoLatency(nodes=self.nodes)
-
-        hist_latency = {}
-        for node_id, hist_data in latency.iteritems():
-            if isinstance(hist_data, Exception):
-                continue
-            for hist_name, data in hist_data.iteritems():
-                if hist_name not in hist_latency:
-                    hist_latency[hist_name] = {node_id:data}
-                else:
-                    hist_latency[hist_name][node_id] = data
-        print hist_latency
-        self.view.showLatency(hist_latency, self.cluster, **self.mods)
-
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(CommandController):
     def __init__(self):
@@ -266,6 +179,56 @@ class ShowConfigController(CommandController):
     @CommandHelp('Displays XDR configuration')
     def do_xdr(self, line):
         print "config XDR :: ToDo"
+
+@CommandHelp('"distribution" is used to show the distribution of object sizes'
+             , 'and time to live for node and a namespace.')
+class ShowDistributionController(CommandController):
+    def __init__(self):
+        self.modifiers = set(['with', 'like'])
+
+    @CommandHelp('Displays ttl, object, and eviction distribution')
+    def _do_default(self, line):
+        self.do_ttl(line)
+        self.do_object(line)
+        self.do_evict(line)
+
+    def _do_distribution(self, histogram_name, title, unit):
+        histogram = self.logger.infoGetHistogram(histogram_name)
+        for timestamp in sorted(histogram.keys()):
+            print "************************** %s for %s **************************"%(title, timestamp)
+            self.view.showDistribution( title
+                           , histogram[timestamp]
+                           , unit
+                           , histogram_name
+                           , LogHelper(self.logger.log_reader.selected_cluster_files[timestamp])
+                           , **self.mods)
+
+    @CommandHelp('Shows the distribution of TTLs for namespaces')
+    def do_ttl(self, line):
+        return self._do_distribution('ttl', 'TTL Distribution', 'Seconds')
+
+    @CommandHelp('Shows the distribution of Object sizes for namespaces')
+    def do_object_size(self, line):
+        return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
+
+    @CommandHelp('Shows the distribution of Eviction TTLs for namespaces')
+    def do_eviction(self, line):
+        return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
+
+class ShowLatencyController(CommandController):
+    def __init__(self):
+        self.modifiers = set(['with', 'like'])
+
+    @CommandHelp('Displays latency information for Aerospike cluster log.')
+    def _do_default(self, line):
+        self.modifiers.add('like')
+        self.modifiers.remove('like')
+
+        hist_latency = self.logger.infoGetLatency()
+        for timestamp in sorted(hist_latency.keys()):
+            #print hist_latency[timestamp]
+            print "************************** Latency for %s **************************"%(timestamp)
+            self.view.showLatency(hist_latency[timestamp], LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
 
 @CommandHelp('Displays statistics for Aerospike components.')
 class ShowStatisticsController(CommandController):

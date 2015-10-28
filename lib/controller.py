@@ -363,6 +363,7 @@ class ShowLatencyController(CommandController):
                     hist_latency[hist_name] = {node_id:data}
                 else:
                     hist_latency[hist_name][node_id] = data
+        print hist_latency
 
         self.view.showLatency(hist_latency, self.cluster, **self.mods)
 

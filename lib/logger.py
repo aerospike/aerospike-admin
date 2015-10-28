@@ -90,6 +90,50 @@ class Logger(object):
 
         return resDic
 
+    def infoGetHistogram(self, stanza = ""):
+        resDic = {}
+        if not stanza:
+            return resDic
+        files = self.log_reader.getFilesFromCurrentList(True);
+        if not files:
+            return resDic
+
+        for timestamp in sorted(files.keys()):
+            try:
+                if(not self.logInfo.has_key(timestamp)):
+                    self.logInfo[timestamp] = self.log_reader.read(files[timestamp][0])
+
+
+
+                if (stanza == "ttl"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["distribution"]["ttl"])
+                elif (stanza == "evict"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["distribution"]["evict"])
+                elif (stanza == "objsz"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["distribution"]["objsz"])
+                else:
+                    continue
+            except:
+                continue
+
+        return resDic
+
+    def infoGetLatency(self):
+        resDic = {}
+        files = self.log_reader.getFilesFromCurrentList(True);
+        if not files:
+            return resDic
+
+        for timestamp in sorted(files.keys()):
+            try:
+                if(not self.logInfo.has_key(timestamp)):
+                    self.logInfo[timestamp] = self.log_reader.read(files[timestamp][0])
+                resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["latency"])
+            except:
+                continue
+
+        return resDic
+
     def get_diff_bg_fg_color(self, old_fg_index, old_bg_index):
         new_fg_index = old_fg_index + 1
         new_bg_index = old_bg_index

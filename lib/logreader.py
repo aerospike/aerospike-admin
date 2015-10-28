@@ -30,6 +30,7 @@ class LogReader(object):
     statsPattern="\[\'statistics\'\]"
     configPattern="\[\'config\'\]"
     distributionPattern="\[\'distribution\'\]"
+    latencyPattern="\[\'latency\'\]"
 
     def __init__(self, log_path):
         self.log_path = log_path
@@ -247,12 +248,15 @@ class LogReader(object):
         while(line):
             sr1 = re.search( self.configPattern, line )
             sr2 = re.search( self.distributionPattern, line )
-            sr3 = re.search( self.statsPattern, line )
+            sr3 = re.search( self.latencyPattern, line )
+            sr4 = re.search( self.statsPattern, line )
             if(sr1):
                 logInfo["config"] = self.readConfig(file_id)
-        #    elif(sr2):
-        #        logInfo["distribution"] = self.readDistribution(file_id)
+            elif(sr2):
+                logInfo["distribution"] = self.readDistribution(file_id)
             elif(sr3):
+                logInfo["latency"] = self.readLatency(file_id)
+            elif(sr4):
                 logInfo["statistics"] = self.readStats(file_id)
                 break
 
@@ -371,6 +375,71 @@ class LogReader(object):
 
         return configDic
 
+    def readLatency(self, file_id):
+        configDic = {}
+
+        pattern = '~([^~]+) Latency(~+)'
+
+        line = file_id.readline()
+
+        while(not re.search( self.sectionSeparator, line)):
+            m1 = re.search( pattern, line )
+
+            if(m1):
+                dic = configDic
+                key = m1.group(1).strip()
+                dic[key]=self.latencyTableToDic(file_id)
+
+            try:
+                line = file_id.readline()
+            except IndexError:
+                break
+
+        return configDic
+
+    def latencyTableToDic(self, file_id):
+        result = {}
+        line = file_id.readline()
+        while(line.strip().__len__()==0):
+            line = file_id.readline()
+
+        if(line.strip().startswith("Number of rows")):
+            return result
+
+        header = []
+        vals = line.strip().split()
+        if vals[0]=="Node":
+            header = vals[1:len(vals)]
+        else:
+            return result
+
+        line = file_id.readline()
+        while(line.strip().startswith(".")):
+            vals = line.strip().split()
+            for index in range(1, len(vals)):
+                if(vals[index]!="."):
+                    header[index-1] = header[index-1] + " " + vals[index]
+            line = file_id.readline()
+
+        for i in range(0, len(header)):
+            if(header[i].endswith("Ms")):
+                header[i] = header[i].replace("Ms","ms")
+            elif(header[i].startswith("Ops")):
+                header[i] = header[i].replace("Ops","ops")
+
+        while not line.strip().startswith("Number of rows"):
+            try:
+                vals = line.strip().split()
+                for i in range(2,len(vals)):
+                    vals[i] = float(vals[i])
+                result[vals[0]] = (header, vals[1:len(vals)])
+                line = file_id.readline()
+            except:
+                continue
+
+        file_id.seek(1,1)
+        return result
+
     def readDistribution(self, file_id):
         configDic = {}
         configDic["ttl"] = {}
@@ -410,7 +479,7 @@ class LogReader(object):
     def distTableToDic(self, file_id):
         result = {}
         line = file_id.readline()
-        while(line.strip().__len__()!=0 and (line.split()[0].strip()!="Node" or not line.strip().startswith("Number of rows"))):
+        while(line.strip().__len__()!=0 and (line.split()[0].strip()!="Node" and not line.strip().startswith("Number of rows"))):
             line = file_id.readline()
 
         if(line.strip().__len__()==0 or line.strip().startswith("Number of rows")):
@@ -419,7 +488,9 @@ class LogReader(object):
         line = file_id.readline()
         while not line.strip().startswith("Number of rows"):
             vals = line.split()
-            result[vals[0]] = vals[1:len(vals)]
+            data = {}
+            data['percentiles'] = vals[1:len(vals)]
+            result[vals[0]] = data
             line = file_id.readline()
 
         file_id.seek(1,1)
