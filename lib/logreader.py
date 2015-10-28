@@ -455,7 +455,7 @@ class LogReader(object):
         prefix = line[0: line.find(" GMT:")].split(",")[0]
         return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:6]))
 
-    def grepDiff(self, grep_str, file, start_tm="head", duration="", slice_tm="10", global_start_tm=""):
+    def grepDiff(self, grep_str, file, start_tm="head", duration="", slice_tm="10", global_start_tm="", limit=""):
         latencyPattern1 = '%s (\d+)'
         latencyPattern2 = '%s \(([0-9,\s]+)\)'
         latencyPattern3 = '(\d+)\((\d+)\) %s'
@@ -520,8 +520,8 @@ class LogReader(object):
         slice_start = start_tm
         slice_end = slice_start + slice_size
         while(self.parse_dt(line)>=slice_end):
-            value[slice_start.strftime(DT_FMT)] = []
-            diff[slice_start.strftime(DT_FMT)] = []
+            #value[slice_start.strftime(DT_FMT)] = []
+            #diff[slice_start.strftime(DT_FMT)] = []
             slice_start = slice_end
             slice_end = slice_start + slice_size
 
@@ -533,7 +533,7 @@ class LogReader(object):
         slice_val = []
         pattern_type = 0
 
-        print str(m1) + " : " + str(m2) + " " + str(m3) + " " +str(m4)
+        #print str(m1) + " : " + str(m2) + " " + str(m3) + " " +str(m4)
         if(m1):
             pattern = latencyPattern1%(grep_str)
             slice_val.append(int(m1.group(1)))
@@ -556,20 +556,48 @@ class LogReader(object):
         for line in lines:
             #print line
             if self.parse_dt(line) >= end_tm:
-                value[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                under_limit = True
+                if limit:
+                    under_limit = False
                 if prev :
-                    diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
+                    if limit:
+                        temp = ([b-a for b,a in zip(slice_val,prev)])
+                        if any(i >= limit for i in temp):
+                            diff[slice_start.strftime(DT_FMT)] = ([b for b in temp])
+                            under_limit = True
+                        temp = []
+                    else:
+                        diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
                 else:
-                    diff[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                    if not limit or any(i >= limit for i in slice_val):
+                        diff[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                        under_limit = True
+
+                if under_limit:
+                    value[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
                 slice_val = []
                 break
 
             if self.parse_dt(line)>=slice_end:
-                value[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                under_limit = True
+                if limit:
+                    under_limit = False
                 if prev :
-                    diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
+                    if limit:
+                        temp = ([b-a for b,a in zip(slice_val,prev)])
+                        if any(i >= limit for i in temp):
+                            diff[slice_start.strftime(DT_FMT)] = ([b for b in temp])
+                            under_limit = True
+                        temp = []
+                    else:
+                        diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
                 else:
-                    diff[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                    if not limit or any(i >= limit for i in slice_val):
+                        diff[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                        under_limit = True
+
+                if under_limit:
+                    value[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
                 prev = slice_val
                 slice_start = slice_end
                 slice_end = slice_start + slice_size
@@ -591,11 +619,25 @@ class LogReader(object):
                     slice_val = ([b for b in current])
 
         if slice_val:
-            value[slice_start.strftime(DT_FMT)] = slice_val
+            under_limit = True
+            if limit:
+                under_limit = False
             if prev :
-                diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
+                if limit:
+                    temp = ([b-a for b,a in zip(slice_val,prev)])
+                    if any(i >= limit for i in temp):
+                        diff[slice_start.strftime(DT_FMT)] = ([b for b in temp])
+                        under_limit = True
+                    temp = []
+                else:
+                    diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
             else:
-                diff[slice_start.strftime(DT_FMT)] = slice_val
+                if not limit or any(i >= limit for i in slice_val):
+                    diff[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
+                    under_limit = True
+
+            if under_limit:
+                value[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
 
         result["value"] = value
         result["diff"] = diff

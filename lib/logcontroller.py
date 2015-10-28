@@ -417,6 +417,7 @@ class GrepFile(CommandController):
         duration = ""
         slice_tm = "10"
         show_count = 1
+        limit = ""
         while tline:
             word = tline.pop(0)
             if word == '-s':
@@ -431,9 +432,12 @@ class GrepFile(CommandController):
             elif word == '-t':
                 slice_tm = tline.pop(0)
                 slice_tm = self.stripString(slice_tm)
-            elif word == '-n':
+            elif word == '-k':
                 show_count = tline.pop(0)
                 show_count = int(self.stripString(show_count))
+            elif word == '-l':
+                limit = tline.pop(0)
+                limit = int(self.stripString(limit))
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
@@ -443,7 +447,7 @@ class GrepFile(CommandController):
         if(search_str):
             files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster)
             for timestamp in sorted(files.keys()):
-                grep_res = self.logger.grepDiff(files[timestamp], search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count)
+                grep_res = self.logger.grepDiff(files[timestamp], search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count, limit)
                 self.view.showGrepDiff(timestamp, grep_res)
 
     def stripString(self, search_str):
@@ -486,7 +490,7 @@ class GrepClusterController(CommandController):
                ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
              , '    -d <string>  - Maximum time period to analyze.'
                ' May use the following formats: 3600 or 1:00:00'
-             , '    -n <string>  - Show the 0-th and then every n-th bucket'
+             , '    -k <string>  - Show the 0-th and then every k-th bucket'
                   )
     def do_diff(self, line):
         self.grepFile.do_diff(line)
@@ -528,7 +532,8 @@ class GrepServersController(CommandController):
                ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
              , '    -d <string>  - Maximum time period to analyze.'
                ' May use the following formats: 3600 or 1:00:00'
-             , '    -n <string>  - Show the 0-th and then every n-th bucket'
+             , '    -k <string>  - Show the 0-th and then every k-th bucket'
+             , '    -l <string>  - Show results with at least one diff value greater than or equal to limit'
                   )
     def do_diff(self, line):
         self.grepFile.do_diff(line)

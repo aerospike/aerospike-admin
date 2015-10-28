@@ -168,14 +168,14 @@ class Logger(object):
         except:
             return res_dic
 
-    def grepDiff(self, files, search_str, grep_cluster_logs, start_tm, duration, slice_tm, show_count):
+    def grepDiff(self, files, search_str, grep_cluster_logs, start_tm, duration, slice_tm, show_count, limit):
         grep_diff_res = {}
 
         global_start_time = ""
         union_keys = []
         for file in files:
             node = self.log_reader.getNode(file)
-            global_start_time,grep_diff_res[node] = self.log_reader.grepDiff(search_str, file, start_tm, duration, slice_tm, global_start_time)
+            global_start_time,grep_diff_res[node] = self.log_reader.grepDiff(search_str, file, start_tm, duration, slice_tm, global_start_time, limit)
             if grep_diff_res[node]["value"]:
                 union_keys = list(set(union_keys) | set(grep_diff_res[node]["value"].keys()))
 
@@ -183,6 +183,7 @@ class Logger(object):
         for key in sorted(union_keys):
             skip = index_count%show_count
             for file in files:
+                node = self.log_reader.getNode(file)
                 if skip:
                     if grep_diff_res[node]["value"] and key in grep_diff_res[node]["value"].keys():
                         del grep_diff_res[node]["value"][key]
@@ -192,5 +193,6 @@ class Logger(object):
                         grep_diff_res[node]["value"][key] = []
                         grep_diff_res[node]["diff"][key] = []
             index_count += 1
+
 
         return grep_diff_res
