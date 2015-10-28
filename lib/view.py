@@ -44,7 +44,7 @@ class CliView(object):
                         , '_cluster_integrity'
                         , ('free-pct-disk', 'Free Disk%')
                         , ('free-pct-memory', 'Free Mem%')
-                        , ('_migrates', 'Migrates (tx,rx,q)')
+                        , ('_migrates', 'Migrates (tx,rx,a)')
                         , ('_paxos_principal', 'Principal')
                         , '_objects'
                         , '_uptime')
@@ -52,9 +52,11 @@ class CliView(object):
         t = Table(title, column_names)
         t.addDataSource('_migrates'
                         ,lambda data:
-                        "(%s,%s,%s)"%(row['tx_migrations']
-                                      , row['rx_migrations']
-                                      , int(row.get('migrate_progress_send',0)) + int(row.get('migrate_progress_recv',0))))
+                        "(%s,%s,%s)"%(row.get('tx_migrations', 'N/E')
+                                      , row.get('rx_migrations', 'N/E')
+                                      , int(row.get('migrate_progress_send',0)) + int(row.get('migrate_progress_recv',0))
+                                            if (row.has_key('migrate_progress_send')
+                                                and row.has_key('migrate_progress_recv')) else 'N/E'))
         t.addDataSource('_objects'
                         ,Extractors.sifExtractor('objects'))
         t.addDataSource('_cluster_integrity'

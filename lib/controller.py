@@ -110,8 +110,12 @@ class InfoController(CommandController):
             node_migrations['rx'] = 0
             node_migrations['tx'] = 0
             for ns_stats in namespace_stats[node].itervalues():
-                node_migrations['rx'] += int(ns_stats.get("migrate_rx_partitions_remaining", 0))
-                node_migrations['tx'] += int(ns_stats.get("migrate_tx_partitions_remaining", 0))
+                if not isinstance(ns_stats, Exception):
+                    node_migrations['rx'] += int(ns_stats.get("migrate-rx-partitions-remaining", 0))
+                    node_migrations['tx'] += int(ns_stats.get("migrate-tx-partitions-remaining", 0))
+                else:
+                    node_migrations['rx'] = 0
+                    node_migrations['tx'] = 0
 
         stats = stats.result()
         for node in stats:
@@ -119,10 +123,8 @@ class InfoController(CommandController):
                 continue
 
             node_stats = stats[node]
-            node_stats['rx_migrations'] = migrations[node]['rx'] \
-                                          or node_stats['migrate_progress_recv']
-            node_stats['tx_migrations'] = migrations[node]['tx'] \
-                                          or node_stats['migrate_progress_send']
+            node_stats['rx_migrations'] = migrations.get(node,{}).get('rx', 0)
+            node_stats['tx_migrations'] = migrations.get(node,{}).get('tx',0)
 
         builds = builds.result()
         services = services.result()
