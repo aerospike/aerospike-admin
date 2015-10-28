@@ -350,6 +350,7 @@ class GrepFile(CommandController):
         search_str = ""
         start_tm = "head"
         duration = ""
+        sources = []
         while tline:
             word = tline.pop(0)
             if word == '-s':
@@ -361,12 +362,17 @@ class GrepFile(CommandController):
             elif word == '-d' and not self.grep_cluster:
                 duration = tline.pop(0)
                 duration = self.stripString(duration)
+            elif word == '-n':
+                try:
+                    sources = [int(i) for i in self.stripString(tline.pop(0)).split(",")]
+                except:
+                    sources = []
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
                                                    , " ".join(line)))
         if(search_str):
-            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster)
+            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster, sources)
             for timestamp in sorted(files.keys()):
                 print "***************** %s ****************"%(timestamp)
                 grepRes = self.logger.grep(files[timestamp], search_str, self.grep_cluster, start_tm, duration)
@@ -383,17 +389,23 @@ class GrepFile(CommandController):
 
         tline = line[:]
         search_str = ""
+        sources = []
         while tline:
             word = tline.pop(0)
             if word == '-s':
                 search_str = tline.pop(0)
                 search_str = self.stripString(search_str)
+            elif word == '-n':
+                try:
+                    sources = [int(i) for i in self.stripString(tline.pop(0)).split(",")]
+                except:
+                    sources = []
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
                                                    , " ".join(line)))
         if(search_str):
-            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster)
+            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster, sources)
             for timestamp in sorted(files.keys()):
                 print "***************** %s ****************"%(timestamp)
                 res = self.logger.grepCount(files[timestamp], search_str, self.grep_cluster)
@@ -418,6 +430,7 @@ class GrepFile(CommandController):
         slice_tm = "10"
         show_count = 1
         limit = ""
+        sources = []
         while tline:
             word = tline.pop(0)
             if word == '-s':
@@ -438,6 +451,11 @@ class GrepFile(CommandController):
             elif word == '-l':
                 limit = tline.pop(0)
                 limit = int(self.stripString(limit))
+            elif word == '-n':
+                try:
+                    sources = [int(i) for i in self.stripString(tline.pop(0)).split(",")]
+                except:
+                    sources = []
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
@@ -445,7 +463,7 @@ class GrepFile(CommandController):
         grepRes = {}
 
         if(search_str):
-            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster)
+            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster, sources)
             for timestamp in sorted(files.keys()):
                 grep_res = self.logger.grepDiff(files[timestamp], search_str, self.grep_cluster, start_tm, duration, slice_tm, show_count, limit)
                 self.view.showGrepDiff(timestamp, grep_res)
@@ -465,19 +483,22 @@ class GrepClusterController(CommandController):
 
     @CommandHelp('Display all lines with input string in server logs(ascollectinfo.log).'
              , '  Options:'
-             , '    -s <string>  - The String to search in log files')
+             , '    -s <string>  - The String to search in log files'
+             , '    -n <string>  - Comma separated cluster snapshot numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def _do_default(self, line):
         self.grepFile.do_show(line)
 
     @CommandHelp('Display all lines with input string in server logs(ascollectinfo.log).'
              , '  Options:'
-             , '    -s <string>  - The String to search in log files')
+             , '    -s <string>  - The String to search in log files'
+             , '    -n <string>  - Comma separated cluster snapshot numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
     @CommandHelp('Display count of lines with input string in server logs(ascollectinfo.log).'
              , '  Options:'
-             , '    -s <string>  - The String to search in log files')
+             , '    -s <string>  - The String to search in log files'
+             , '    -n <string>  - Comma separated cluster snapshot numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def do_count(self, line):
         self.grepFile.do_count(line)
 '''
@@ -503,7 +524,8 @@ class GrepServersController(CommandController):
 
     @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
              , '  Options:'
-             , '    -s <string>  - The String to search in log files')
+             , '    -s <string>  - The String to search in log files'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def _do_default(self, line):
         self.grepFile.do_show(line)
 
@@ -513,13 +535,15 @@ class GrepServersController(CommandController):
              , '    -f <string>  - Log time from which to analyze.'
                ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
              , '    -d <string>  - Maximum time period to analyze.'
-               ' May use the following formats: 3600 or 1:00:00')
+               ' May use the following formats: 3600 or 1:00:00'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
     @CommandHelp('Display count of lines with input string in server logs(aerospike.log).'
              , '  Options:'
-             , '    -s <string>  - The String to search in log files')
+             , '    -s <string>  - The String to search in log files'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def do_count(self, line):
         self.grepFile.do_count(line)
 
@@ -534,7 +558,7 @@ class GrepServersController(CommandController):
                ' May use the following formats: 3600 or 1:00:00'
              , '    -k <string>  - Show the 0-th and then every k-th bucket'
              , '    -l <string>  - Show results with at least one diff value greater than or equal to limit'
-                  )
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def do_diff(self, line):
         self.grepFile.do_diff(line)
 

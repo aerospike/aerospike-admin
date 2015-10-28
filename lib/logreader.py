@@ -142,7 +142,10 @@ class LogReader(object):
         nodes = sorted(self.added_server_files.keys())
         self.selected_server_files.clear()
         for index in indices:
-            self.selected_server_files[nodes[int(index)-1]] = self.added_server_files[nodes[int(index)-1]]
+            try:
+                self.selected_server_files[nodes[int(index)-1]] = self.added_server_files[nodes[int(index)-1]]
+            except:
+                continue
 
     def getFiles(self, clusterMode, dir_path=""):
         try:
@@ -157,16 +160,32 @@ class LogReader(object):
         except:
             return []
 
-    def getFilesFromCurrentList(self, clusterMode):
+    def getFilesFromCurrentList(self, clusterMode, indices=[]):
         if clusterMode:
             files = {}
-            for timestamp in self.selected_cluster_files:
-                files[timestamp] = [self.selected_cluster_files[timestamp]]
+            if indices:
+                timestamps = sorted(self.all_cluster_files.keys())
+                for index in indices:
+                    try:
+                        files[timestamps[index-1]] = [self.all_cluster_files[timestamps[index-1]]]
+                    except:
+                        continue
+            else:
+                for timestamp in self.selected_cluster_files:
+                    files[timestamp] = [self.selected_cluster_files[timestamp]]
             return files
         else :
             files = []
-            for node, file in self.selected_server_files.iteritems():
-                files.append(file)
+            if indices:
+                nodes = sorted(self.added_server_files.keys())
+                for index in indices:
+                    try:
+                        files.append(self.added_server_files[nodes[index-1]])
+                    except:
+                        continue
+            else:
+                for node, file in self.selected_server_files.iteritems():
+                    files.append(file)
             return {"cluster":files}
 
     def getNode(self, path):
