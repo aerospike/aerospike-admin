@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib import citrusleaf
 from lib import util
 from lib.node import Node
 from lib.prefixdict import PrefixDict
@@ -55,8 +54,8 @@ class Cluster(object):
 
     def __str__(self):
         nodes = self.nodes.values()
-        online = [n.key for n in filter(lambda n: n.alive, nodes)]
-        offline = [n.key for n in filter(lambda n: not n.alive, nodes)]
+        online = [node.key for node in nodes if node.alive]
+        offline = [node.key for node in nodes if not node.alive]
 
         retval = "Found %s nodes"%(len(nodes))
         if online:
@@ -98,12 +97,10 @@ class Cluster(object):
         self._refreshNodeLiveliness()
 
         try:
-            infoservices = self.infoServices().values()
-
-            for s in self.infoServices().values():
-                if isinstance(s, Exception):
+            for services in self.infoServices().itervalues():
+                if isinstance(services, Exception):
                     continue
-                current_services |= set(s)
+                current_services |= set(services)
 
             if current_services and current_services == self._live_nodes:
                 # services have not changed, do not crawl
@@ -114,7 +111,7 @@ class Cluster(object):
                 return True
 
         except IOError:
-            # We aren't connected yet, definently crawl.
+            # We aren't connected yet, definitely crawl.
             return True
 
         finally:
@@ -143,9 +140,9 @@ class Cluster(object):
                 l_unvisited = list(unvisited)
 
                 nodes = util.concurrent_map(self._registerNode, l_unvisited)
-                live_nodes = filter(
-                    lambda n: n is not None and n.alive and n not in visited
-                    , nodes)
+                live_nodes = [node
+                              for node in nodes
+                              if node is not None and node.alive and node not in visited]
 
                 visited |= unvisited
                 unvisited.clear()
@@ -159,7 +156,6 @@ class Cluster(object):
                 unvisited = all_services - visited
             if all_services:
                 self._seed_nodes = all_services
-
             self._refreshNodeLiveliness()
         except:
             pass
@@ -167,14 +163,14 @@ class Cluster(object):
             self._enable_crawler = True
 
     def _refreshNodeLiveliness(self):
-        live_nodes = filter(lambda n: n.alive, self.nodes.itervalues())
+        live_nodes = [node for node in self.nodes.itervalues() if node.alive]
         self._live_nodes.clear()
-        self._live_nodes.update(map(lambda n: (n.ip, n.port), live_nodes))
+        self._live_nodes.update(((node.ip, node.port) for node in live_nodes))
 
     def updateNode(self, node):
         self.nodes[node.key] = node
         # add node to lookup
-        self.node_lookup[node.sockName(use_fqdn = True)] = node
+        self.node_lookup[node.sockName(use_fqdn=True)] = node
         self.node_lookup[node.sockName()] = node
         if node.alive:
             self.node_lookup[node.node_id] = node
@@ -182,7 +178,7 @@ class Cluster(object):
     def getNode(self, node):
         return self.node_lookup[node]
 
-    def _registerNode(self, ip_port):
+    def _registerNode(self, addr_port):
         """
         Instantiate and return a new node
 
@@ -192,36 +188,36 @@ class Cluster(object):
            2) node.key exists but existing node is not alive
         """
         try:
-            ip, port = ip_port
-        except Exception as e:
+            addr, port = addr_port
+        except:
             print "ip_port is expected to be a tuple of len 2, " + \
-                "instead it is of type %s and str value of %s"%(type(ip_port)
-                                                                , str(ip_port))
+                "instead it is of type %s and str value of %s"%(type(addr_port)
+                                                                , str(addr_port))
             return None
 
         try:
-            node_key = Node.createKey(ip, port)
-            if node_key in self.nodes:
-                existing = self.nodes[node_key]
-            else:
-                existing = None
+            node_key = Node.createKey(addr, port)
+            existing = self.nodes.get(node_key, None)
 
             if not existing or not existing.alive:
-                new_node = Node(ip
-                              , port
-                              , use_telnet=self.use_telnet
-                              , user=self.user
-                              , password=self.password)
+                new_node = Node(addr,
+                                port,
+                                use_telnet=self.use_telnet,
+                                user=self.user,
+                                password=self.password)
 
                 if existing and not new_node.alive:
                     new_node = existing
-            self.updateNode(new_node)
+            else:
+                return existing
 
+            self.updateNode(new_node)
             return new_node
         except:
             return None
 
-    def _getServices(self, node):
+    @staticmethod
+    def _getServices(node):
         """
         Given a node object return its services list
         """
@@ -240,15 +236,15 @@ class Cluster(object):
         self._crawl()
         if nodes == 'all':
             use_nodes = self.nodes.values()
-        elif type(nodes) == list:
+        elif isinstance(nodes, list):
             use_nodes = []
-            for n in nodes:
+            for node in nodes:
                 try:
-                    node_list = self.getNode(n)
+                    node_list = self.getNode(node)
                     if isinstance(node_list, list):
-                        use_nodes.extend(self.getNode(n))
+                        use_nodes.extend(self.getNode(node))
                     else:
-                        use_nodes.append(self.getNode(n))
+                        use_nodes.append(self.getNode(node))
                 except: # Ignore ambiguous and key errors
                     continue
         else:
@@ -263,7 +259,7 @@ class Cluster(object):
                 (node.key, getattr(node, method_name)(*args, **kwargs)),
                 use_nodes))
 
-    def isXDREnabled(self, nodes = 'all'):
+    def isXDREnabled(self, nodes='all'):
         return self._callNodeMethod(nodes, 'isXDREnabled')
 
     def __getattr__(self, name):
@@ -274,7 +270,7 @@ class Cluster(object):
                     nodes = 'all'
                 else:
                     nodes = kwargs['nodes']
-                    del(kwargs['nodes'])
+                    del kwargs['nodes']
 
                 return self._callNodeMethod(nodes, name, *args, **kwargs)
 
