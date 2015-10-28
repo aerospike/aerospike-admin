@@ -36,7 +36,11 @@ class LogReader(object):
         self.selected_dirs = self.get_dirs()
         self.initial_cluster_files = {}
         for file in self.getFiles(True, log_path):
-            self.initial_cluster_files[self.get_timestamp(file)] = file
+            timestamp = self.get_timestamp(file)
+            if "===ASCOLLECTINFO===" == timestamp:
+                print "\n>>> Cannot add collectinfo file from asmonitor. Use the one from asadm ignoring " + file + " <<<\n"
+            else:
+                self.initial_cluster_files[self.get_timestamp(file)] = file
         self.all_cluster_files = copy.deepcopy(self.initial_cluster_files)
         self.selected_cluster_files = copy.deepcopy(self.initial_cluster_files)
         self.added_cluster_files = {}
@@ -192,7 +196,10 @@ class LogReader(object):
                     nodes.append(line.split()[3])
                     line = lines.pop(2)
                 break
-            line = lines.pop(0)
+            if lines:
+                line = lines.pop(0)
+            else:
+                break
         return nodes
 
     @staticmethod
@@ -448,13 +455,15 @@ class LogReader(object):
         prefix = line[0: line.find(" GMT:")].split(",")[0]
         return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:6]))
 
-    def grepDiff(self, str, file, start_tm="head", duration="", slice_tm="10", global_start_tm=""):
+    def grepDiff(self, grep_str, file, start_tm="head", duration="", slice_tm="10", global_start_tm=""):
         latencyPattern1 = '%s (\d+)'
         latencyPattern2 = '%s \(([0-9,\s]+)\)'
+        latencyPattern3 = '(\d+)\((\d+)\) %s'
+        latencyPattern4 = '%s \((\d+)'
         result = {"value":{},"diff":{}}
 
-        lines = self.grep(str, file).strip().split('\n')
-        if not lines:
+        lines = self.grep(grep_str, file).strip().split('\n')
+        if not lines or lines == ['']:
             return global_start_tm,result
         line = lines.pop(0)
         try:
@@ -489,17 +498,21 @@ class LogReader(object):
 
         slice_size = self.parse_timedelta(slice_tm)
 
-        m1 = re.search( latencyPattern1%(str), line )
-        m2 = re.search( latencyPattern2%(str), line )
-        while(not m1 and not m2):
+        m1 = re.search( latencyPattern1%(grep_str), line )
+        m2 = re.search( latencyPattern2%(grep_str), line )
+        m3 = re.search( latencyPattern3%(grep_str), line )
+        m4 = re.search( latencyPattern4%(grep_str), line )
+        while(not m1 and not m2 and not m3 and not m4):
             try:
                 line = lines.pop(0)
                 if self.parse_dt(line)>=end_tm:
                     return global_start_tm,result
             except:
                 return global_start_tm,result
-            m1 = re.search( latencyPattern1%(str), line )
-            m2 = re.search( latencyPattern2%(str), line )
+            m1 = re.search( latencyPattern1%(grep_str), line )
+            m2 = re.search( latencyPattern2%(grep_str), line )
+            m3 = re.search( latencyPattern3%(grep_str), line )
+            m4 = re.search( latencyPattern4%(grep_str), line )
 
         value = {}
         diff = {}
@@ -518,19 +531,31 @@ class LogReader(object):
         pattern = ""
         prev = []
         slice_val = []
+        pattern_type = 0
 
+        print str(m1) + " : " + str(m2) + " " + str(m3) + " " +str(m4)
         if(m1):
-            pattern = latencyPattern1%(str)
+            pattern = latencyPattern1%(grep_str)
             slice_val.append(int(m1.group(1)))
         elif(m2):
-            pattern = latencyPattern2%(str)
+            pattern = latencyPattern2%(grep_str)
             slice_val = map(lambda x: int(x), m2.group(1).split(","))
+            pattern_type = 1
+        elif(m3):
+            pattern = latencyPattern3%(grep_str)
+            slice_val = map(lambda x: int(x), list(m3.groups()))
+            pattern_type = 2
+        elif(m4):
+            pattern = latencyPattern4%(grep_str)
+            slice_val.append(int(m4.group(1)))
+            pattern_type = 3
         else:
+            print "no match"
             return global_start_tm,result
 
         for line in lines:
             #print line
-            if self.parse_dt(line)>=end_tm:
+            if self.parse_dt(line) >= end_tm:
                 value[slice_start.strftime(DT_FMT)] = ([b for b in slice_val])
                 if prev :
                     diff[slice_start.strftime(DT_FMT)] = ([b-a for b,a in zip(slice_val,prev)])
@@ -555,7 +580,11 @@ class LogReader(object):
             m = re.search( pattern, line )
             if(m):
                 tm = self.get_dt(line)
-                current = map(lambda x: int(x),m.group(1).split(","))
+                current = None
+                if pattern_type == 2:
+                    current = map(lambda x: int(x), list(m.groups()))
+                else:
+                    current = map(lambda x: int(x),m.group(1).split(","))
                 if(slice_val):
                     slice_val = ([b+a for b,a in zip(current,slice_val)])
                 else:

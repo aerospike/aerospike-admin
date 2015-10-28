@@ -684,9 +684,12 @@ class AddClusterController(CommandController):
         for ip in line:
             ip = stripString(ip)
             timestamp = self.logger.log_reader.get_timestamp(ip)
-            self.logger.log_reader.added_cluster_files[timestamp] = ip
-            self.logger.log_reader.selected_cluster_files[timestamp] = ip
-            self.logger.log_reader.all_cluster_files[timestamp] = ip
+            if "===ASCOLLECTINFO===" == timestamp:
+                print ">>>> Cannot add collectinfo file from asmonitor. Use the one from asadm <<<< \n"
+            else:
+                self.logger.log_reader.added_cluster_files[timestamp] = ip
+                self.logger.log_reader.selected_cluster_files[timestamp] = ip
+                self.logger.log_reader.all_cluster_files[timestamp] = ip
 
 @CommandHelp("Adds server logs. Format : add server /'server_name1/' /'server log path1/' /'server_name2/' /'server log path2/'/'server_name3/' /'server log path3/' ...")
 class AddServerController(CommandController):

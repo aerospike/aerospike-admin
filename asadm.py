@@ -30,10 +30,10 @@ from lib import terminal
 __version__ = '$$__version__$$'
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, telnet, user=None, password=None, log_path=""):
+    def __init__(self, seed, telnet, user=None, password=None, log_path="", log_analyser=False):
         cmd.Cmd.__init__(self)
 
-        if log_path:
+        if log_path and log_analyser:
             self.ctrl = LogRootController(seed_nodes=[seed]
                                    , use_telnet=telnet
                                    , user=user
@@ -58,8 +58,13 @@ class AerospikeShell(cmd.Cmd):
         self.name = 'Aerospike Interactive Shell'
         self.intro = terminal.bold() + self.name + ', version ' +\
                      __version__ + terminal.reset() + "\n"
+
+        if not log_analyser:
+            log_path = ""
+            self.intro += terminal.fg_red() + ">>>>> -f not specified -l ignored. Running in normal asadm mode. Use -f for log analyser mode !! <<<<< \n" + terminal.fg_clear()
+
         if log_path:
-            self.intro += terminal.fg_red() + "Working on log files\n" + terminal.fg_clear()
+            self.intro += terminal.fg_red() + ">>>>> Working on log files <<<<<<\n" + terminal.fg_clear()
             self.intro += str(self.ctrl.logger) + "\n"
         else:
             self.intro += str(self.ctrl.cluster) + "\n"
@@ -342,10 +347,11 @@ def main():
         log_path = cli_args.log_path
         os.chdir(log_path)
 
-    if not cli_args.log_analyser:
-        log_path = ""
+    log_analyser = False;
+    if cli_args.log_analyser:
+        log_analyser = True
 
-    shell = AerospikeShell(seed, telnet, user=user, password=password, log_path=log_path)
+    shell = AerospikeShell(seed, telnet, user=user, password=password, log_path=log_path, log_analyser=log_analyser)
 
     use_yappi = False
     if cli_args.profile:

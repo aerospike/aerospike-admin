@@ -30,6 +30,8 @@ class Logger(object):
         i = 1
         for file in sorted(files):
             nodes = self.log_reader.getNodes(file)
+            if len(nodes) == 0:
+                continue
             retval += "\n "+str(i)+": "
             retval += ntpath.basename(file)
             retval += " (" 
@@ -114,7 +116,7 @@ class Logger(object):
             for file in sorted(files):
                 start_tm = copy.deepcopy(start_tm_arg)
                 duration = copy.deepcopy(duration_arg)
-                node = self.log_reader.getNode(file)
+                node = "[" + str(self.log_reader.getNode(file))+"]->"
 
                 lines = self.log_reader.grep(search_str, file).strip().split('\n')
                 if not lines:
@@ -143,9 +145,9 @@ class Logger(object):
                             break
                         key = self.log_reader.get_dt(line)
                         try:
-                            grep_res[key] += "\n%s%s%s%s::"%(self.bg_colors[bg_color_index][1](),self.fg_colors[fg_color_index][1](),node,terminal.reset())
+                            grep_res[key] += "\n%s%s%s::"%(self.fg_colors[fg_color_index][1](),node,terminal.reset())
                         except:
-                            grep_res[key] = "%s%s%s%s::"%(self.bg_colors[bg_color_index][1](),self.fg_colors[fg_color_index][1](),node,terminal.reset())
+                            grep_res[key] = "%s%s%s::"%(self.fg_colors[fg_color_index][1](),node,terminal.reset())
                         grep_res[key] += line
 
                     fg_color_index,bg_color_index  = self.get_diff_bg_fg_color(fg_color_index,bg_color_index)
