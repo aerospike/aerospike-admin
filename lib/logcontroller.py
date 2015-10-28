@@ -50,11 +50,12 @@ class LogRootController(BaseController):
             , 'show':ShowController
             , '!':ShellController
             , 'shell':ShellController
-            , 'grepstr':GrepStrController
-            , 'assert':AssertController
+            , 'loggrep':LogGrepController
+            , 'loglatency':LogLatencyController
+            , 'assert':AssertClusterController
+            , 'add':AddController
             , 'list':ListController
             , 'select':SelectController
-            , 'add':AddController
         }
 
     @CommandHelp('Terminate session')
@@ -122,14 +123,13 @@ class InfoController(CommandController):
         print ("info scan")
 
 
-@CommandHelp('"show" is used to display Aerospike Statistics and'
+@CommandHelp('"show" is used to display Raw Aerospike Statistics and'
              , 'configuration.')
 class ShowController(CommandController):
     def __init__(self):
         self.controller_map = {
             'config':ShowConfigController
             , 'statistics':ShowStatisticsController
-            , 'latency':ShowLatencyController
             , 'distribution':ShowDistributionController
         }
         self.modifiers = set()
@@ -215,9 +215,9 @@ class ShowDistributionController(CommandController):
     def do_eviction(self, line):
         return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
 
-class ShowLatencyController(CommandController):
+class LogLatencyController(CommandController):
     def __init__(self):
-        self.modifiers = set(['with', 'like'])
+        self.modifiers = set()
 
     @CommandHelp('Displays latency information for Aerospike cluster log.')
     def _do_default(self, line):
@@ -284,17 +284,51 @@ class ShowStatisticsController(CommandController):
     def do_xdr(self, line):
         print "statistics XDR :: ToDo"
 
-@CommandHelp('Displays grep results for input string.')
-class GrepStrController(CommandController):
+@CommandHelp('Displays grep results for input string on the server logs(aerospike.log)')
+class LogGrepController(CommandController):
     def __init__(self):
-        self.controller_map = {
-           'cluster':GrepClusterController
-            , 'servers':GrepServersController
-        }
         self.modifiers = set()
+        self.grepFile = GrepFile(False, self.modifiers)
 
+    @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def _do_default(self, line):
-        self.executeHelp(line)
+        self.grepFile.do_show(line)
+
+    @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files'
+             , '    -f <string>  - Log time from which to analyze.'
+               ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
+             , '    -d <string>  - Maximum time period to analyze.'
+               ' May use the following formats: 3600 or 1:00:00'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
+    def do_show(self, line):
+        self.grepFile.do_show(line)
+
+    @CommandHelp('Display count of lines with input string in server logs(aerospike.log).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
+    def do_count(self, line):
+        self.grepFile.do_count(line)
+
+    @CommandHelp('Display values and diff for input string in server logs(aerospike.log).'
+             , 'Currently it is working for format KEY<space>VALUE and KEY<space>(Comma separated VALUE list).'
+             , '  Options:'
+             , '    -s <string>  - The String to search in log files'
+             , '    -t <string>  - Analysis slice interval in seconds or time format.'
+             , '    -f <string>  - Log time from which to analyze.'
+               ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
+             , '    -d <string>  - Maximum time period to analyze.'
+               ' May use the following formats: 3600 or 1:00:00'
+             , '    -k <string>  - Show the 0-th and then every k-th bucket'
+             , '    -l <string>  - Show results with at least one diff value greater than or equal to limit'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
+    def do_diff(self, line):
+        self.grepFile.do_diff(line)
 
 class GrepFile(CommandController):
     def __init__(self, grep_cluster, modifiers):
@@ -479,51 +513,6 @@ class GrepClusterController(CommandController):
     def do_diff(self, line):
         self.grepFile.do_diff(line)
 '''
-@CommandHelp('"grep" search in server logs(aerospike.log)')
-class GrepServersController(CommandController):
-    def __init__(self):
-        self.modifiers = set()
-        self.grepFile = GrepFile(False, self.modifiers)
-
-    @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
-             , '  Options:'
-             , '    -s <string>  - The String to search in log files'
-             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
-    def _do_default(self, line):
-        self.grepFile.do_show(line)
-
-    @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
-             , '  Options:'
-             , '    -s <string>  - The String to search in log files'
-             , '    -f <string>  - Log time from which to analyze.'
-               ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
-             , '    -d <string>  - Maximum time period to analyze.'
-               ' May use the following formats: 3600 or 1:00:00'
-             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
-    def do_show(self, line):
-        self.grepFile.do_show(line)
-
-    @CommandHelp('Display count of lines with input string in server logs(aerospike.log).'
-             , '  Options:'
-             , '    -s <string>  - The String to search in log files'
-             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
-    def do_count(self, line):
-        self.grepFile.do_count(line)
-
-    @CommandHelp('Display values and diff for input string in server logs(aerospike.log).'
-             , 'Currently it is working for format KEY<space>VALUE and KEY<space>(Comma separated VALUE list).'
-             , '  Options:'
-             , '    -s <string>  - The String to search in log files'
-             , '    -t <string>  - Analysis slice interval in seconds or time format.'
-             , '    -f <string>  - Log time from which to analyze.'
-               ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
-             , '    -d <string>  - Maximum time period to analyze.'
-               ' May use the following formats: 3600 or 1:00:00'
-             , '    -k <string>  - Show the 0-th and then every k-th bucket'
-             , '    -l <string>  - Show results with at least one diff value greater than or equal to limit'
-             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
-    def do_diff(self, line):
-        self.grepFile.do_diff(line)
 
 
 @CommandHelp('Checks for common inconsistencies and print if there is any')
