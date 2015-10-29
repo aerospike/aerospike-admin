@@ -122,7 +122,6 @@ class InfoController(CommandController):
     def do_scan(self, line):
         print ("info scan")
 
-
 @CommandHelp('"show" is used to display Raw Aerospike Statistics and'
              , 'configuration.')
 class ShowController(CommandController):
@@ -217,13 +216,10 @@ class ShowDistributionController(CommandController):
 
 class LogLatencyController(CommandController):
     def __init__(self):
-        self.modifiers = set()
+        self.modifiers = set(['like'])
 
     @CommandHelp('Displays latency information for Aerospike cluster log.')
     def _do_default(self, line):
-        self.modifiers.add('like')
-        self.modifiers.remove('like')
-
         hist_latency = self.logger.infoGetLatency()
         for timestamp in sorted(hist_latency.keys()):
             #print hist_latency[timestamp]
@@ -656,7 +652,7 @@ class AddController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-@CommandHelp("Adds cluster logs. Format : add cluster /'cluster log path1/' /'cluster log path2/' /'cluster log path3/' ...")
+@CommandHelp("Adds cluster logs. Format : add cluster \'cluster log path1\' \'cluster log path2\' \'cluster log path3\' ...")
 class AddClusterController(CommandController):
     def __init__(self):
         self.modifiers = set()
@@ -672,7 +668,7 @@ class AddClusterController(CommandController):
                 self.logger.log_reader.selected_cluster_files[timestamp] = ip
                 self.logger.log_reader.all_cluster_files[timestamp] = ip
 
-@CommandHelp("Adds server logs. Format : add server /'server_name1/' /'server log path1/' /'server_name2/' /'server log path2/'/'server_name3/' /'server log path3/' ...")
+@CommandHelp("Adds server logs. Format : add server \'server_name1\' \'server log path1\' \'server_name2\' \'server log path2\' \'server_name3\' \'server log path3\' ...")
 class AddServerController(CommandController):
     def __init__(self):
         self.modifiers = set()
@@ -685,5 +681,5 @@ class AddServerController(CommandController):
         for index in range(0,length,2):
             if(index==length-1):
                 break
-            self.logger.log_reader.added_server_files[line[index]] = line[index+1]
-            self.logger.log_reader.selected_server_files[line[index]] = line[index+1]
+            self.logger.log_reader.added_server_files[stripString(line[index])] = stripString(line[index+1])
+            self.logger.log_reader.selected_server_files[stripString(line[index])] = stripString(line[index+1])

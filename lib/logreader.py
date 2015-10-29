@@ -185,8 +185,8 @@ class LogReader(object):
                     except:
                         continue
             else:
-                for node, file in self.selected_server_files.iteritems():
-                    files.append(file)
+                for node in sorted(self.selected_server_files.keys()):
+                    files.append(self.selected_server_files[node])
             return {"cluster":files}
 
     def getNode(self, path):
