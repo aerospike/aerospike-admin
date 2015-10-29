@@ -56,6 +56,7 @@ class LogRootController(BaseController):
             , 'add':AddController
             , 'list':ListController
             , 'select':SelectController
+            , 'features':FeaturesController
         }
 
     @CommandHelp('Terminate session')
@@ -225,6 +226,93 @@ class LogLatencyController(CommandController):
             #print hist_latency[timestamp]
             print "************************** Latency for %s **************************"%(timestamp)
             self.view.showLatency(hist_latency[timestamp], LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
+
+class FeaturesController(CommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+
+    @CommandHelp('Displays features of Aerospike cluster.')
+    def _do_default(self, line):
+        service_stats = self.logger.infoStatistics(stanza="service")
+        ns_stats = self.logger.infoStatistics(stanza="namespace")
+        for timestamp in sorted(service_stats.keys()):
+            features = {}
+            for node, stats in service_stats[timestamp].iteritems():
+                features[node] = {}
+                features[node]["KVS"] = "NO"
+                try:
+                    if int(stats["stat_read_reqs"]) > 0 or int(stats["stat_write_reqs"])>0:
+                        features[node]["KVS"] = "YES"
+                except:
+                    pass
+
+                features[node]["UDF"] = "NO"
+                try:
+                    if int(stats["udf_read_reqs"]) > 0 or int(stats["udf_write_reqs"])>0:
+                        features[node]["UDF"] = "YES"
+                except:
+                    pass
+
+                features[node]["BATCH"] = "NO"
+                try:
+                    if int(stats["batch_initiate"])>0:
+                        features[node]["BATCH"] = "YES"
+                except:
+                    pass
+
+                features[node]["SCAN"] = "NO"
+                try:
+                    if int(stats["tscan_initiate"]) > 0:
+                        features[node]["SCAN"] = "YES"
+                except:
+                    pass
+
+                features[node]["SINDEX"] = "NO"
+                try:
+                    if int(stats["sindex-used-bytes-memory"]) > 0:
+                        features[node]["SINDEX"] = "YES"
+                except:
+                    pass
+
+                features[node]["QUERY"] = "NO"
+                try:
+                    if int(stats["query_reqs"]) > 0 or int(stats["query_success"]) > 0:
+                        features[node]["QUERY"] = "YES"
+                except:
+                    pass
+
+                features[node]["AGGREGATION"] = "NO"
+                try:
+                    if int(stats["query_agg"]) > 0 or int(stats["query_agg_success"]) > 0:
+                        features[node]["AGGREGATION"] = "YES"
+                except:
+                    pass
+
+                for ns, configs in ns_stats[timestamp].iteritems():
+                    features[node]["LDT(%s)"%(ns)] = "NO"
+                    try:
+                        if configs["ldt-enabled"]=="true":
+                            features[node]["LDT(%s)"%(ns)] = "YES"
+                    except:
+                        pass
+
+                features[node]["XDR ENABLED"] = "NO"
+                try:
+                    if int(stats["stat_read_reqs_xdr"]) > 0:
+                        features[node]["XDR ENABLED"] = "YES"
+                except:
+                    pass
+
+                features[node]["XDR DESTINATION"] = "NO"
+                try:
+                    if int(stats["stat_write_reqs_xdr"]) > 0:
+                        features[node]["XDR DESTINATION"] = "YES"
+                except:
+                    pass
+
+            self.view.showConfig("(%s) Features"%(timestamp)
+                         , features
+                         , LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
 
 @CommandHelp('Displays statistics for Aerospike components.')
 class ShowStatisticsController(CommandController):
