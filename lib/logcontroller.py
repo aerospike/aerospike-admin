@@ -17,6 +17,7 @@ from lib.loglatency import *
 from lib import util
 import time, os, sys, platform, shutil, urllib2, socket
 from lib.loghelper import LogHelper
+from lib import terminal
 
 
 def flip_keys(orig_data):
@@ -612,9 +613,11 @@ class GrepFile(CommandController):
         if hist:
             files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster, sources)
             for timestamp in sorted(files.keys()):
+                index = 1
                 for file in files[timestamp]:
-                   print "\n>>>>>>>>>>>>>>%s<<<<<<<<<<<<"%file
+                   print terminal.bold() + terminal.fg_blue() + "\n" +  str(index) + ": %s"%file + terminal.fg_clear() + terminal.unbold()
                    loglatency(file, hist, slice_tm, start_tm, duration, 3, show_count)
+                   index = index + 1
 
 @CommandHelp('"grep" search in server logs(ascollectinfo.log)')
 class GrepClusterController(CommandController):
