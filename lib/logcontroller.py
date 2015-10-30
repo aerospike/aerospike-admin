@@ -54,7 +54,7 @@ class LogRootController(BaseController):
             , 'shell':ShellController
             , 'loggrep':LogGrepController
             , 'loglatency':LogLatencyController
-            , 'health':HealthClusterController
+            , 'health':HealthController
             , 'add':AddController
             , 'list':ListController
             , 'select':SelectController
@@ -315,13 +315,12 @@ class FeaturesController(CommandController):
                 except:
                     pass
 
-                for ns, configs in ns_stats[timestamp].iteritems():
-                    features[node]["LDT(%s)"%(ns)] = "NO"
-                    try:
-                        if stat["sub-records"] > 0:
-                            features[node]["LDT(%s)"%(ns)] = "YES"
-                    except:
-                        pass
+                features[node]["LDT"] = "NO"
+                try:
+                    if stat["sub-records"] > 0 or stat["ldt-writes"] > 0 or stats["ldt-reads"] > 0 or stats["ldt-deletes"] > 0:
+                         features[node]["LDT(%s)"%(ns)] = "YES"
+                except:
+                    pass
 
                 features[node]["XDR ENABLED"] = "NO"
                 try:
@@ -538,7 +537,7 @@ class GrepFile(CommandController):
         search_str = ""
         start_tm = "head"
         duration = ""
-        slice_tm = "10"
+        slice_tm = "60"
         show_count = 1
         limit = ""
         sources = []
@@ -806,9 +805,6 @@ class HealthClusterController(CommandController):
     def _do_default(self, line):
         print "Todo"
 
-@CommandHelp('"grep" searches for lines with input string in logs.'
-             , '  Options:'
-             , '    -s <string>  - The String to search in log files')
 class HealthServersController(CommandController):
     def __init__(self):
         self.modifiers = set()

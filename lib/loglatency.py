@@ -196,7 +196,7 @@ def percentage_over(bucket, percentages):
 #
 def parse_dt(line):
 	prefix = line[0: line.find(" GMT:")]
-	return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:6]))
+	return datetime.datetime(*(time.strptime(prefix.split(",")[0], DT_FMT)[0:6]))
 
 #------------------------------------------------
 # Get a histogram at or just after the specified datetime.
