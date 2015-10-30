@@ -574,7 +574,7 @@ class GrepFile(CommandController):
 
         tline = line[:]
         hist = ""
-        start_tm = ""
+        start_tm = "head"
         duration = None
         slice_tm = "10"
         show_count = 3
