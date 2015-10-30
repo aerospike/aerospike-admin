@@ -21,12 +21,13 @@ MM = 1
 SS = 2
 
 class LogReader(object):
-    ascollectinfoExt = "/ascollectinfo.log"
+    ascollectinfoExt1 = "/ascollectinfo.log"
+    ascollectinfoExt2 = "/*asadmCmd.log"
     serverLogExt = "/aerospike.log"
     networkStartPattern = 'Network Information'
     serviceStartPattern = 'Service Configuration'
     networkEndPattern = 'Number of rows'
-    sectionSeparator="(=+)ASCOLLECTINFO(=+)"
+    sectionSeparator="(=+)ASCOLLECTINFO[*](=+)"
     statsPattern="\[\'statistics\'\]"
     configPattern="\[\'config\'\]"
     distributionPattern="\[\'distribution\'\]"
@@ -139,6 +140,15 @@ class LogReader(object):
         for snapshot in snapshots:
             self.selected_cluster_files[snapshot] = self.all_cluster_files[snapshot]
 
+    def select_clusters(self, indices):
+        nodes = sorted(self.all_cluster_files.keys())
+        self.selected_cluster_files.clear()
+        for index in indices:
+            try:
+                self.selected_cluster_files[nodes[int(index)-1]] = self.all_cluster_files[nodes[int(index)-1]]
+            except:
+                continue
+
     def select_servers(self, indices):
         nodes = sorted(self.added_server_files.keys())
         self.selected_server_files.clear()
@@ -152,11 +162,16 @@ class LogReader(object):
         try:
             if not dir_path:
                 dir_path = self.log_path
-            ext = self.ascollectinfoExt
+            dirs = [a[0] for a in os.walk(dir_path)]
             if not clusterMode:
                 ext = self.serverLogExt
-            dirs = [a[0] for a in os.walk(dir_path)]
-            f_filter = [d+ext for d in dirs]
+                f_filter = [d+ext for d in dirs]
+            else:
+                ext1 = self.ascollectinfoExt1
+                ext2 = self.ascollectinfoExt2
+                f_filter = [d+ext1 for d in dirs]
+                f_filter += [d+ext2 for d in dirs]
+
             return [f for files in [glob.iglob(files) for files in f_filter] for f in files]
         except:
             return []
@@ -266,6 +281,14 @@ class LogReader(object):
                 break;
 
         return logInfo
+
+    def htableToString(self,file_id):
+        resStr = ""
+        line = file_id.readline()
+        while(line.strip().__len__()!=0 and not line.startswith('~')):
+            resStr += line + "\n"
+            line = file_id.readline()
+        return resStr
 
     def htableToDic(self,file_id):
         currentLine = 0
@@ -382,7 +405,7 @@ class LogReader(object):
 
         line = file_id.readline()
 
-        while(not re.search( self.sectionSeparator, line)):
+        while(line.strip().__len__()!=0 and not re.search( self.sectionSeparator, line)):
             m1 = re.search( pattern, line )
 
             if(m1):
@@ -439,6 +462,52 @@ class LogReader(object):
 
         file_id.seek(1,1)
         return result
+
+    def readSummary(self, path):
+        summaryInfo = {}
+        summaryInfo["service"] = {}
+        summaryInfo["network"] = {}
+        summaryInfo["namespace"] = {}
+
+        file_id = open(path,"r")
+        servicePattern = '(~+)Service Information(~+)'
+        netPattern = '(~+)Network Information(~+)'
+        nsPattern = '(~+)Namespace Information(~+)'
+
+        line = file_id.readline()
+
+        while(line):
+            sr1 = re.search( servicePattern, line )
+            sr2 = re.search( netPattern, line )
+            sr3 = re.search( nsPattern, line )
+            if(sr1):
+                summaryInfo["service"] = line + self.readSummaryStr(file_id)
+            elif(sr2):
+                summaryInfo["namespace"] = line + self.readSummaryStr(file_id)
+            elif(sr3):
+                summaryInfo["network"] = line + self.readSummaryStr(file_id)
+                break;
+
+            try:
+                line = file_id.readline()
+            except IndexError:
+                break;
+
+        return summaryInfo
+
+        
+    def readSummaryStr(self, file_id):
+        line = file_id.readline()
+        summaryStr = ""
+        while(line.strip().__len__()!=0 and not re.search( self.sectionSeparator, line)):
+            summaryStr += line 
+            try:
+                line = file_id.readline()
+            except IndexError:
+                break
+
+        return summaryStr
+
 
     def readDistribution(self, file_id):
         configDic = {}
@@ -497,7 +566,7 @@ class LogReader(object):
         return result
 
     def grep(self, str, file):
-        out, err = shell_command(['grep','\"'+str+'\"', file])
+        out, err = shell_command(['grep --color','\"'+str+'\"', file])
         return out
 
     def grepCount(self, str, file):

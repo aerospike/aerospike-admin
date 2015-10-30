@@ -779,6 +779,7 @@ class CollectinfoController(CommandController):
                 
         try:
             aslogfile = as_logfile_prefix + 'asadmCmd.log'
+            self.write_log(collect_output) 
             cinfo = InfoController()
             for info_param in info_params:
                 self.collectinfo_content(cinfo,[info_param])
@@ -793,6 +794,7 @@ class CollectinfoController(CommandController):
         
         try:
             aslogfile = as_logfile_prefix + 'clusterCmd.log'
+            self.write_log(collect_output) 
             for cluster_param in cluster_params:
                 self.collectinfo_content('cluster',cluster_param)
 
@@ -801,18 +803,23 @@ class CollectinfoController(CommandController):
             sys.stdout = sys.__stdout__
             
         aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'sysCmdOutput.log')
+        self.write_log(collect_output) 
+
         for cmd in shell_cmds:
             self.collectinfo_content('shell',[cmd])
             
         aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'cpu_stat.log')
+        self.write_log(collect_output) 
         for _cmd in cpu_stat:
             self.collectinfo_content('shell',[_cmd])
         
         aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'dmesg.log')
+        self.write_log(collect_output) 
         self.collectinfo_content('shell',[cmd_dmesg])
         
         if 'True' in self.cluster.isXDREnabled().values():
             aslogfile = as_logfile_prefix + 'xdr.log'
+            self.write_log(collect_output) 
             self.collectinfo_content('shell',['tail -n 10000 /var/log/*xdr.log'])
             
         try:         
@@ -833,9 +840,11 @@ class CollectinfoController(CommandController):
             sys.stdout = sys.__stdout__            
                     
         aslogfile = as_logfile_prefix + 'collectSys.log'
+        self.write_log(collect_output) 
         self.collectinfo_content(self.collect_sys)
         
         aslogfile = as_logfile_prefix + 'awsData.log'
+        self.write_log(collect_output) 
         self.collectinfo_content(self.get_awsdata)
         
         self.archive_log(aslogdir)

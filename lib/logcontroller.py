@@ -76,7 +76,7 @@ class LogRootController(BaseController):
              , 'of Aerospike functionality.')
 class InfoController(CommandController):
     def __init__(self):
-        self.modifiers = set(['with'])
+        self.modifiers = set()
 
     @CommandHelp('Displays service, network, namespace, and xdr summary'
                  , 'information.')
@@ -88,42 +88,55 @@ class InfoController(CommandController):
 
     @CommandHelp('Displays help.')
     def do_help(self, line):
-        self.executeHelp(line)
+        print self.log_reader.readInfo(line)
 
     @CommandHelp('Displays summary information for the Aerospike service.')
     def do_service(self, line):
-        print "info service"
+        service_infos = self.logger.infoSummary(stanza='service')
+
+        for timestamp in sorted(service_infos.keys()):
+            print "************************** %s **************************"%(timestamp)
+            print service_infos[timestamp]
 
     @CommandHelp('Displays network information for Aerospike, the main'
                  , 'purpose of this information is to link node ids to'
                  , 'fqdn/ip addresses.')
     def do_network(self, line):
-        print "info network"
+        service_infos = self.logger.infoSummary(stanza='network')
+
+        for timestamp in sorted(service_infos.keys()):
+            print "************************** %s **************************"%(timestamp)
+            print service_infos[timestamp]
+
 
     @CommandHelp('Displays summary information for each namespace.')
     def do_namespace(self, line):
-        print "info namespace"
+        service_infos = self.logger.infoSummary(stanza='namespace')
+
+        for timestamp in sorted(service_infos.keys()):
+            print "************************** %s **************************"%(timestamp)
+            print service_infos[timestamp]
+
 
     @CommandHelp('Displays summary information for Cross Datacenter'
                  , 'Replication (XDR).')
     def do_xdr(self, line):
-        print ("info xdr")
+        service_infos = self.logger.infoSummary(stanza='xdr')
+
+        for timestamp in sorted(service_infos.keys()):
+            print "************************** %s **************************"%(timestamp)
+            print service_infos[timestamp]
 
     @CommandHelp('Displays summary information for Seconday Indexes (SIndex).')
     def do_sindex(self, line):
-        print ("info sindex")
+        service_infos = self.logger.infoSummary(stanza='sindex')
 
-    @CommandHelp('Displays summary information for User Defined Functions (UDF).')
-    def do_udf(self, line):
-        print ("info udf")
+        for timestamp in sorted(service_infos.keys()):
+            print "************************** %s **************************"%(timestamp)
+            print service_infos[timestamp]
 
-    @CommandHelp('Displays summary information for Batch (UDF).')
-    def do_batch(self, line):
-        print ("info batch")
-
-    @CommandHelp('Displays summary information for Scan (UDF).')
-    def do_scan(self, line):
-        print ("info scan")
+    def do_help(self, line):
+        self.executeHelp(line)
 
 @CommandHelp('"show" is used to display Raw Aerospike Statistics and'
              , 'configuration.')
@@ -182,6 +195,9 @@ class ShowConfigController(CommandController):
     def do_xdr(self, line):
         print "config XDR :: ToDo"
 
+    def do_help(self, line):
+        self.executeHelp(line)
+
 @CommandHelp('"distribution" is used to show the distribution of object sizes'
              , 'and time to live for node and a namespace.')
 class ShowDistributionController(CommandController):
@@ -234,6 +250,9 @@ class LogLatencyController(CommandController):
 
     def _do_default(self, line):
         self.grepFile.do_latency(line)
+
+    def do_help(self, line):
+        self.executeHelp(line)
 
 class FeaturesController(CommandController):
     def __init__(self):
@@ -299,7 +318,7 @@ class FeaturesController(CommandController):
                 for ns, configs in ns_stats[timestamp].iteritems():
                     features[node]["LDT(%s)"%(ns)] = "NO"
                     try:
-                        if configs["ldt-enabled"]=="true":
+                        if stat["sub-records"] > 0:
                             features[node]["LDT(%s)"%(ns)] = "YES"
                     except:
                         pass
@@ -421,6 +440,9 @@ class LogGrepController(CommandController):
              , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def do_diff(self, line):
         self.grepFile.do_diff(line)
+
+    def do_help(self, line):
+        self.executeHelp(line)
 
 class GrepFile(CommandController):
     def __init__(self, grep_cluster, modifiers):
@@ -724,7 +746,7 @@ class SelectController(CommandController):
              , '    -mm - Expected minute value of snapshot. May use the following formats: \'55\', \'30-55\' or \'1,4,45\''
              , '    -ss - Expected second value of snapshot. May use the following formats: \'43\', \'3-23\' or \'6,8,58\''
              )
-    def do_cluster(self, line):
+    def do_time(self, line):
         tline = line[:]
         year = ""
         month = ""
@@ -762,6 +784,11 @@ class SelectController(CommandController):
     @CommandHelp('Select list of servers. You can get server number from list command. May use the following formats: select server 1 2 3')
     def do_server(self, line):
         self.logger.log_reader.select_servers(line)
+
+    @CommandHelp('Select list of clusters. You can get server number from list command. May use the following formats: select cluster 1 2 3')
+    def do_cluster(self, line):
+        self.logger.log_reader.select_clusters(line)
+
 
     def stripString(self, search_str):
         search_str = search_str.strip()

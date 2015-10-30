@@ -134,6 +134,29 @@ class Logger(object):
 
         return resDic
 
+    def infoSummary(self, stanza = ""):
+        resDic = {}
+        files = self.log_reader.getFilesFromCurrentList(True);
+        if not files:
+            return resDic
+
+        for timestamp in sorted(files.keys()):
+            try:
+                if(not self.logInfo.has_key(timestamp)):
+                    self.logInfo[timestamp] = self.log_reader.readSummary(files[timestamp][0])
+
+                if (stanza == "service"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["service"])
+                elif (stanza == "network"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["network"])
+                elif (stanza == "namespace"):
+                    resDic[timestamp] = copy.deepcopy(self.logInfo[timestamp]["namespace"])
+            except:
+                continue
+
+        return resDic
+
+
     def get_diff_bg_fg_color(self, old_fg_index, old_bg_index):
         new_fg_index = old_fg_index + 1
         new_bg_index = old_bg_index
