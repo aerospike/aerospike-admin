@@ -106,7 +106,10 @@ class AerospikeShell(cmd.Cmd):
         return commands
 
     def precmd(self, line):
-        lines = self.cleanLine(line)
+        try:
+            lines = self.cleanLine(line)
+        except:
+            return ""
 
         if not lines: # allow empty lines
             return ""

@@ -13,6 +13,7 @@
 # limitations under the License.
 from lib.controller import ShellController
 from lib.controllerlib import *
+from lib.loglatency import *
 from lib import util
 import time, os, sys, platform, shutil, urllib2, socket
 from lib.loghelper import LogHelper
@@ -52,7 +53,7 @@ class LogRootController(BaseController):
             , 'shell':ShellController
             , 'loggrep':LogGrepController
             , 'loglatency':LogLatencyController
-            , 'assert':AssertClusterController
+            , 'health':HealthClusterController
             , 'add':AddController
             , 'list':ListController
             , 'select':SelectController
@@ -189,8 +190,8 @@ class ShowDistributionController(CommandController):
     @CommandHelp('Displays ttl, object, and eviction distribution')
     def _do_default(self, line):
         self.do_ttl(line)
-        self.do_object(line)
-        self.do_evict(line)
+        self.do_object_size(line)
+        self.do_eviction(line)
 
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.logger.infoGetHistogram(histogram_name)
@@ -217,15 +218,21 @@ class ShowDistributionController(CommandController):
 
 class LogLatencyController(CommandController):
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set()
+        self.grepFile = GrepFile(False, self.modifiers)
 
-    @CommandHelp('Displays latency information for Aerospike cluster log.')
+    @CommandHelp('Displays latency information for Aerospike cluster log.'
+             , '  Options:'
+			 , '    -h <string>  - Histogram Name, MANDATORY - NO DEFAULT'
+			 , '    -t <string>  - Analysis slice interval, default: 10 other e.g. 3600 or 1:00:00'
+			 , '    -f <string>  - Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00'
+			 , '    -d <string>  - Maximum duration for which to analyze default: not set e.g. 3600 or 1:00:00'
+			 , '    -n <string>  - Number of buckets to display default: 3'
+			 , '    -N <string>  - Nodes to show for -N 1,2,3'
+			 , '    -e <string>  - Show 0-th then every n-th bucket  default: 3')
+
     def _do_default(self, line):
-        hist_latency = self.logger.infoGetLatency()
-        for timestamp in sorted(hist_latency.keys()):
-            #print hist_latency[timestamp]
-            print "************************** Latency for %s **************************"%(timestamp)
-            self.view.showLatency(hist_latency[timestamp], LogHelper(self.logger.log_reader.selected_cluster_files[timestamp]), **self.mods)
+        self.grepFile.do_latency(line)
 
 class FeaturesController(CommandController):
     def __init__(self):
@@ -529,14 +536,14 @@ class GrepFile(CommandController):
             elif word == '-k':
                 show_count = tline.pop(0)
                 show_count = int(self.stripString(show_count))
-            elif word == '-l':
-                limit = tline.pop(0)
-                limit = int(self.stripString(limit))
             elif word == '-n':
                 try:
                     sources = [int(i) for i in self.stripString(tline.pop(0)).split(",")]
                 except:
                     sources = []
+            elif word == '-l' and tline:
+                limit = tline.pop(0)
+                limit = int(self.stripString(limit))
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'"%(word
@@ -555,6 +562,59 @@ class GrepFile(CommandController):
             return search_str[1:len(search_str)-1]
         else:
             return search_str
+
+    def do_latency(self, line):
+        if not line:
+            raise ShellException("Could not understand latency request request, " + \
+                                 "see 'help grep'")
+
+        mods = self.parseModifiers(line)
+        line = mods['line']
+
+        tline = line[:]
+        hist = ""
+        start_tm = ""
+        duration = None
+        slice_tm = "10"
+        show_count = 3
+        limit = 0
+        sources = []
+        while tline:
+            word = tline.pop(0)
+            if word == '-h':
+                hist = tline.pop(0)
+                hist = self.stripString(hist)
+            elif word == '-f':
+                start_tm = tline.pop(0)
+                start_tm = self.stripString(start_tm)
+            elif word == '-d':
+                duration = tline.pop(0)
+                duration = self.stripString(duration)
+            elif word == '-t':
+                slice_tm = tline.pop(0)
+                slice_tm = self.stripString(slice_tm)
+            elif word == '-e':
+                show_count = tline.pop(0)
+                show_count = int(self.stripString(show_count))
+            elif word == '-N':
+                try:
+                    sources = [int(i) for i in self.stripString(tline.pop(0)).split(",")]
+                except:
+                    sources = []
+            elif word == '-l' and tline:
+                limit = tline.pop(0)
+                limit = int(self.stripString(limit))
+            else:
+                raise ShellException(
+                    "Do not understand '%s' in '%s'"%(word
+                                                   , " ".join(line)))
+
+        if hist:
+            files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster, sources)
+            for timestamp in sorted(files.keys()):
+                for file in files[timestamp]:
+                   print "\n>>>>>>>>>>>>>>%s<<<<<<<<<<<<"%file
+                   loglatency(file, hist, slice_tm, start_tm, duration, 3, show_count)
 
 @CommandHelp('"grep" search in server logs(ascollectinfo.log)')
 class GrepClusterController(CommandController):
@@ -600,11 +660,11 @@ class GrepClusterController(CommandController):
 
 
 @CommandHelp('Checks for common inconsistencies and print if there is any')
-class AssertController(CommandController):
+class HealthController(CommandController):
     def __init__(self):
         self.controller_map = {
-           'cluster':AssertClusterController
-            , 'servers':AssertServersController
+           'cluster':HealthClusterController
+            , 'servers':HealthServersController
         }
         self.modifiers = set()
 
@@ -707,7 +767,7 @@ class SelectController(CommandController):
         else:
             return search_str
 
-class AssertClusterController(CommandController):
+class HealthClusterController(CommandController):
     def __init__(self):
         self.modifiers = set()
         self.grepFile = GrepFile(True, self.modifiers)
@@ -719,7 +779,7 @@ class AssertClusterController(CommandController):
 @CommandHelp('"grep" searches for lines with input string in logs.'
              , '  Options:'
              , '    -s <string>  - The String to search in log files')
-class AssertServersController(CommandController):
+class HealthServersController(CommandController):
     def __init__(self):
         self.modifiers = set()
         self.grepFile = GrepFile(False, self.modifiers)
