@@ -13,6 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+import glob
 
 import readline
 import cmd
@@ -133,6 +135,48 @@ class AerospikeShell(cmd.Cmd):
                 print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
         return "" # line was handled by execute
 
+    def _listdir(self, root):
+        "List directory 'root' appending the path separator to subdirs."
+        res = []
+        for name in os.listdir(root):
+            path = os.path.join(root, name)
+            if os.path.isdir(path):
+                name += os.sep
+            res.append(name)
+        return res
+
+    def _complete_path(self, path=None):
+        "Perform completion of filesystem path."
+        if not path:
+            return self._listdir('/')
+        dirname, rest = os.path.split(path)
+        tmp = dirname if dirname else '.'
+        res = [os.path.join(dirname, p)
+                    for p in self._listdir(tmp) if p.startswith(rest)]
+
+        # more than one match, or single match which does not exist (typo)
+        if len(res) > 1 or not os.path.exists(path):
+            return res
+        # resolved to a single directory, so return list of files below it
+        if os.path.isdir(path):
+            return [os.path.join(path, p) for p in self._listdir(path)]
+        # exact file match terminates this completion
+        return [path + ' ']
+
+    def complete_path(self, args):
+        "Completions for the 'extra' command."
+        if not args:
+            return []
+
+        if args[-1].startswith("\'/"):
+            names = map( lambda v : "\'"+v, self._complete_path(args[-1].split("\'")[-1]))
+            return names
+        if args[-1].startswith("\"/"):
+            names = map( lambda v : "\""+v, self._complete_path(args[-1].split("\"")[-1]))
+            return names
+        # treat the last arg as a path and complete it
+        return self._complete_path(args[-1])
+
     def completenames(self, text, line, begidx, endidx):
         try:
             origline = line
@@ -163,13 +207,16 @@ class AerospikeShell(cmd.Cmd):
                             line.pop(0)
                     except:
                         pass
-
+            line_copy = copy.deepcopy(line)
             names = self.ctrl.complete(line)
             if watch:
                 try:
                     names.remove('watch')
                 except:
                     pass
+            if not names:
+                names = self.complete_path(line_copy)+[None]
+                return names
 
         except Exception as e:
             return []
@@ -354,7 +401,7 @@ def main():
     log_analyser = False;
     if cli_args.log_analyser:
         log_analyser = True
-
+    readline.set_completer_delims(' \t\n;')
     shell = AerospikeShell(seed, telnet, user=user, password=password, log_path=log_path, log_analyser=log_analyser)
 
     use_yappi = False
