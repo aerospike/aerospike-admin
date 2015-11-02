@@ -37,14 +37,15 @@ class LogReader(object):
         self.log_path = log_path
         self.selected_dirs = self.get_dirs()
         self.initial_cluster_files = {}
-        index = 0
+        #index = 0
         for file in self.getFiles(True, log_path):
             timestamp = self.get_timestamp(file)
             if timestamp:
-                index = index + 1
-                self.initial_cluster_files[str(index) + "_" + self.get_timestamp(file)] = file
+                #index = index + 1
+                #self.initial_cluster_files[str(index) + "_" + self.get_timestamp(file)] = file
+                self.initial_cluster_files[self.get_timestamp(file)] = file
             else:
-                print "\n>>> Cannot add collectinfo file from asmonitor. Use the one from asadm ignoring " + file + " <<<\n"
+                print "\n>>> Cannot add collectinfo file from asmonitor or any other log file other than collectinfo. Use the one from asadm ignoring " + file + " <<<\n"
         self.all_cluster_files = copy.deepcopy(self.initial_cluster_files)
         self.selected_cluster_files = copy.deepcopy(self.initial_cluster_files)
         self.added_cluster_files = {}
@@ -56,7 +57,10 @@ class LogReader(object):
         file_id = open(file,"r")
         file_id.seek(0,0)
         line = file_id.readline()
-        return line.strip().strip("\n")
+        timestamp = line.strip().strip("\n").strip()
+        if timestamp.endswith("UTC"):
+            return timestamp
+        return ""
 
     def get_dirs(self, path=""):
         try:

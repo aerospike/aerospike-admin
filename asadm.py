@@ -60,7 +60,7 @@ class AerospikeShell(cmd.Cmd):
                      __version__ + terminal.reset() + "\n"
 
         if not log_analyser:
-            if log_path == "":
+            if log_path:
                 self.intro += terminal.fg_red() + ">>>>> -f not specified -l ignored. Running in normal asadm mode. Use -f for log analyser mode !! <<<<< \n" + terminal.fg_clear()
                 log_path = ""
 

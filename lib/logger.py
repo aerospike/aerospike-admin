@@ -24,18 +24,18 @@ class Logger(object):
                        , filter(lambda x:bg_color_re.search(x) and "clear" not in x, dir(terminal)))
 
     def __str__(self):
-        files = self.log_reader.getFiles(True);
+        files = self.log_reader.all_cluster_files
         retval =""
 
         i = 1
-        for file in sorted(files):
-            nodes = self.log_reader.getNodes(file)
+        for timestamp in sorted(files.keys()):
+            nodes = self.log_reader.getNodes(files[timestamp])
             if len(nodes) == 0:
                 continue
             retval += "\n "+str(i)+": "
-            retval += ntpath.basename(file)
+            retval += ntpath.basename(files[timestamp])
             retval += " (" 
-            retval += self.log_reader.getTime(file)
+            retval += str(timestamp)
             retval += ")" 
             retval += "\n\tFound %s nodes"%(len(nodes))
             retval += "\n\tOnline:  %s"%(", ".join(nodes))
