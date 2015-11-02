@@ -22,7 +22,7 @@ SS = 2
 
 class LogReader(object):
     ascollectinfoExt1 = "/ascollectinfo.log"
-    ascollectinfoExt2 = "/*asadmCmd.log"
+    ascollectinfoExt2 = "/*.log"
     serverLogExt = "/aerospike.log"
     networkStartPattern = 'Network Information'
     serviceStartPattern = 'Service Configuration'
@@ -37,12 +37,14 @@ class LogReader(object):
         self.log_path = log_path
         self.selected_dirs = self.get_dirs()
         self.initial_cluster_files = {}
+        index = 0
         for file in self.getFiles(True, log_path):
             timestamp = self.get_timestamp(file)
-            if "===ASCOLLECTINFO===" == timestamp:
-                print "\n>>> Cannot add collectinfo file from asmonitor. Use the one from asadm ignoring " + file + " <<<\n"
+            if timestamp:
+                index = index + 1
+                self.initial_cluster_files[str(index) + "_" + self.get_timestamp(file)] = file
             else:
-                self.initial_cluster_files[self.get_timestamp(file)] = file
+                print "\n>>> Cannot add collectinfo file from asmonitor. Use the one from asadm ignoring " + file + " <<<\n"
         self.all_cluster_files = copy.deepcopy(self.initial_cluster_files)
         self.selected_cluster_files = copy.deepcopy(self.initial_cluster_files)
         self.added_cluster_files = {}
@@ -565,13 +567,38 @@ class LogReader(object):
         file_id.seek(1,1)
         return result
 
-    def grep(self, str, file):
-        out, err = shell_command(['grep --color','\"'+str+'\"', file])
-        return out
+    def grep(self, str, ignore_str, unique, file):
+        if ignore_str:
+            if unique:
+                 out, err = shell_command(['grep','\"'+str+'\"', file ,'|', 'grep -v ', ignore_str, '| sort -k 9 | uniq -f 8 | sort -k 1,4'])
+                 print out
+                 return out
+            else:
+                 out, err = shell_command(['grep','\"'+str+'\"', file ,'|', 'grep -v ', ignore_str])
+                 return out
+        else:
+            if unique:
+                out, err = shell_command(['grep','\"'+str+'\"', file, '| sort -k 9 | uniq -f 8 | sort -k 1,4'])
+                return out
+            else:
+                out, err = shell_command(['grep','\"'+str+'\"', file])
+                return out
 
-    def grepCount(self, str, file):
-        out, err = shell_command(['grep', '-o', '\"'+str+'\"', file, '|' 'wc -l'])
-        return out
+    def grepCount(self, str, ignore_str, unique, file):
+        if ignore_str:
+            if unique:
+                out, err = shell_command(['grep', '\"'+str+'\"', file, '| grep -v', ignore_str, '| sort -k 9 | uniq -f 8 | wc -l'])
+                return out
+            else:
+                out, err = shell_command(['grep', '\"'+str+'\"', file, '| grep -v', ignore_str, '| wc -l'])
+                return out
+        else:
+            if unique:
+                out, err = shell_command(['grep', '\"'+str+'\"', file, '| sort -k 9 | uniq -f 8 | wc -l'])
+                return out
+            else:
+                out, err = shell_command(['grep', '\"'+str+'\"', file, '| wc -l'])
+                return out
 
     def parse_timedelta(self, arg):
         toks = arg.split(":")
@@ -621,7 +648,7 @@ class LogReader(object):
         latencyPattern4 = '%s \((\d+)'
         result = {"value":{},"diff":{}}
 
-        lines = self.grep(grep_str, file).strip().split('\n')
+        lines = self.grep(grep_str, None, None, file).strip().split('\n')
         if not lines or lines == ['']:
             return global_start_tm,result
         line = lines.pop(0)

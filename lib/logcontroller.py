@@ -240,13 +240,13 @@ class LogLatencyController(CommandController):
 
     @CommandHelp('Displays latency information for Aerospike cluster log.'
              , '  Options:'
-			 , '    -h <string>  - Histogram Name, MANDATORY - NO DEFAULT'
-			 , '    -t <string>  - Analysis slice interval, default: 10 other e.g. 3600 or 1:00:00'
-			 , '    -f <string>  - Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00'
-			 , '    -d <string>  - Maximum duration for which to analyze default: not set e.g. 3600 or 1:00:00'
-			 , '    -n <string>  - Number of buckets to display default: 3'
-			 , '    -N <string>  - Nodes to show for -N 1,2,3'
-			 , '    -e <string>  - Show 0-th then every n-th bucket  default: 3')
+             , '    -h <string>  - Histogram Name, MANDATORY - NO DEFAULT'
+             , '    -t <string>  - Analysis slice interval, default: 10 other e.g. 3600 or 1:00:00'
+             , '    -f <string>  - Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00'
+             , '    -d <string>  - Maximum duration for which to analyze default: not set e.g. 3600 or 1:00:00'
+             , '    -n <string>  - Number of buckets to display default: 3'
+             , '    -N <string>  - Nodes to show for -N 1,2,3'
+             , '    -e <string>  - Show 0-th then every n-th bucket  default: 3')
 
     def _do_default(self, line):
         self.grepFile.do_latency(line)
@@ -317,7 +317,7 @@ class FeaturesController(CommandController):
 
                 features[node]["LDT"] = "NO"
                 try:
-                    if stat["sub-records"] > 0 or stat["ldt-writes"] > 0 or stats["ldt-reads"] > 0 or stats["ldt-deletes"] > 0:
+                    if int(stat["sub-records"]) > 0 or int(stat["ldt-writes"]) > 0 or int(stats["ldt-reads"]) > 0 or int(stats["ldt-deletes"]) > 0:
                          features[node]["LDT(%s)"%(ns)] = "YES"
                 except:
                     pass
@@ -400,28 +400,28 @@ class LogGrepController(CommandController):
         self.modifiers = set()
         self.grepFile = GrepFile(False, self.modifiers)
 
-    @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
-             , '  Options:'
-             , '    -s <string>  - The String to search in log files'
-             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
     def _do_default(self, line):
         self.grepFile.do_show(line)
 
     @CommandHelp('Display all lines with input string in server logs(aerospike.log).'
              , '  Options:'
              , '    -s <string>  - The String to search in log files'
+             , '    -v <string>  - The non-matching string'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\''
              , '    -f <string>  - Log time from which to analyze.'
                ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
              , '    -d <string>  - Maximum time period to analyze.'
                ' May use the following formats: 3600 or 1:00:00'
-             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
+             , '    -u           - if account only for unique lines')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
     @CommandHelp('Display count of lines with input string in server logs(aerospike.log).'
              , '  Options:'
              , '    -s <string>  - The String to search in log files'
-             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\''
+             , '    -v <string>  - The non-matching string'
+             , '    -u           - if account only for unique lines')
     def do_count(self, line):
         self.grepFile.do_count(line)
 
@@ -429,14 +429,14 @@ class LogGrepController(CommandController):
              , 'Currently it is working for format KEY<space>VALUE and KEY<space>(Comma separated VALUE list).'
              , '  Options:'
              , '    -s <string>  - The String to search in log files'
-             , '    -t <string>  - Analysis slice interval in seconds or time format.'
+             , '    -v <string>  - The non-matching string'
+             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\''
              , '    -f <string>  - Log time from which to analyze.'
                ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\''
              , '    -d <string>  - Maximum time period to analyze.'
                ' May use the following formats: 3600 or 1:00:00'
-             , '    -k <string>  - Show the 0-th and then every k-th bucket'
              , '    -l <string>  - Show results with at least one diff value greater than or equal to limit'
-             , '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'')
+             , '    -t <string>  - Analysis slice interval in seconds or time format.')
     def do_diff(self, line):
         self.grepFile.do_diff(line)
 
@@ -458,14 +458,21 @@ class GrepFile(CommandController):
 
         tline = line[:]
         search_str = ""
+        ignore_str = ""
         start_tm = "head"
         duration = ""
         sources = []
+        unique = False
         while tline:
             word = tline.pop(0)
             if word == '-s':
                 search_str = tline.pop(0)
                 search_str = self.stripString(search_str)
+            elif word == '-v':
+                ignore_str = tline.pop(0)
+                ignore_str = self.stripString(ignore_str)
+            elif word == '-u':
+                unique = True;
             elif word == '-f' and not self.grep_cluster:
                 start_tm = tline.pop(0)
                 start_tm = self.stripString(start_tm)
@@ -485,7 +492,7 @@ class GrepFile(CommandController):
             files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster, sources)
             for timestamp in sorted(files.keys()):
                 print "***************** %s ****************"%(timestamp)
-                grepRes = self.logger.grep(files[timestamp], search_str, self.grep_cluster, start_tm, duration)
+                grepRes = self.logger.grep(files[timestamp], search_str, ignore_str, unique, self.grep_cluster, start_tm, duration)
                 for key in sorted(grepRes.keys()):
                     print grepRes[key]
 
@@ -499,12 +506,19 @@ class GrepFile(CommandController):
 
         tline = line[:]
         search_str = ""
+        ignore_str = ""
+        unique = False
         sources = []
         while tline:
             word = tline.pop(0)
             if word == '-s':
                 search_str = tline.pop(0)
                 search_str = self.stripString(search_str)
+            elif word == '-u':
+                unique = True;
+            elif word == '-v':
+                ignore_str = tline.pop(0)
+                ignore_str = self.stripString(ignore_str)
             elif word == '-n':
                 try:
                     sources = [int(i) for i in self.stripString(tline.pop(0)).split(",")]
@@ -518,7 +532,7 @@ class GrepFile(CommandController):
             files = self.logger.log_reader.getFilesFromCurrentList(self.grep_cluster, sources)
             for timestamp in sorted(files.keys()):
                 print "***************** %s ****************"%(timestamp)
-                res = self.logger.grepCount(files[timestamp], search_str, self.grep_cluster)
+                res = self.logger.grepCount(files[timestamp], search_str, ignore_str, unique, self.grep_cluster)
                 for key in sorted(res.keys()):
                     str =" "
                     if not self.grep_cluster:
@@ -588,7 +602,7 @@ class GrepFile(CommandController):
     def do_latency(self, line):
         if not line:
             raise ShellException("Could not understand latency request request, " + \
-                                 "see 'help grep'")
+                                 "see 'help loglatency'")
 
         mods = self.parseModifiers(line)
         line = mods['line']
@@ -803,7 +817,31 @@ class HealthClusterController(CommandController):
 
     @CommandHelp('Displays All Cluster Level Assetions !!')
     def _do_default(self, line):
-        print "Todo"
+        service_stats = self.logger.infoStatistics(stanza="service")
+        namespace_stats = self.logger.infoStatistics(stanza="namespace")
+        asserts = {}
+
+        NOT_OK = 0
+        WARNING = 0
+        CRITICAL = 0
+        
+        for timestamp in sorted(service_stats.keys()):
+            asserts[timestamp] = {}
+            tot_objects = 0
+            tot_refs = 0
+            for node, stats in service_stats[timestamp].iteritems():
+                tot_objects += int(stats["objects"]) 
+                tot_refs += int(stats["record_refs"]) 
+            if tot_objects != tot_refs:
+                asserts[timestamp]["Object Count"] = ": objects=" + str(tot_objects) + " != refs=" + str(tot_refs)
+                WARNING += 1
+
+        for timestamp in sorted(service_stats.keys()):
+            print terminal.fg_blue() + "************************** Assertions for %s **************************"%(timestamp) + terminal.fg_clear()
+            for node, string in asserts[timestamp].iteritems():           
+                 print terminal.bold() + node + terminal.unbold() + terminal.fg_red() + string + terminal.fg_clear()
+
+
 
 class HealthServersController(CommandController):
     def __init__(self):

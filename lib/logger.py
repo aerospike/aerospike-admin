@@ -172,12 +172,12 @@ class Logger(object):
 
         return new_fg_index,new_bg_index
 
-    def grep(self, files, search_str, grep_cluster_logs, start_tm_arg="head", duration_arg=""):
+    def grep(self, files, search_str, ignore_str, unique, grep_cluster_logs, start_tm_arg="head", duration_arg=""):
         grep_res = {}
         if not files:
             return {}
         if grep_cluster_logs:
-            grep_res["key"] = self.log_reader.grep(search_str, files[0])
+            grep_res["key"] = self.log_reader.grep(search_str, ignore_str, unique, files[0])
         else:
             fg_color_index,bg_color_index  = self.get_diff_bg_fg_color(2,6)
             for file in sorted(files):
@@ -185,7 +185,7 @@ class Logger(object):
                 duration = copy.deepcopy(duration_arg)
                 node = "[" + str(self.log_reader.getNode(file))+"]->"
 
-                lines = self.log_reader.grep(search_str, file).strip().split('\n')
+                lines = self.log_reader.grep(search_str, ignore_str, unique, file).strip().split('\n')
                 if not lines:
                     continue
 
@@ -206,6 +206,7 @@ class Logger(object):
 
                     for line in lines:
                         line_tm = self.log_reader.parse_dt(line)
+                        print line_tm
                         if line_tm < start_tm:
                             continue
                         if line_tm > end_tm:
@@ -223,12 +224,12 @@ class Logger(object):
 
         return grep_res
 
-    def grepCount(self, files, search_str, grep_cluster_logs):
+    def grepCount(self, files, search_str, ignore_str, unique, grep_cluster_logs):
         res_dic = {}
         try:
             for file in files:
                 try:
-                    res_dic[self.log_reader.getNode(file)] = int(self.log_reader.grepCount(search_str, file))
+                    res_dic[self.log_reader.getNode(file)] = int(self.log_reader.grepCount(search_str, ignore_str, unique, file))
                 except:
                     res_dic[self.log_reader.getNode(file)] = 0
             return res_dic
