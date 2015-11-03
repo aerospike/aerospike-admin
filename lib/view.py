@@ -459,6 +459,53 @@ class CliView(object):
         print t
 
     @staticmethod
+    def showGrepDiff(title, grep_result, like=None, diff=None, **ignore):
+        column_names = set()
+
+        if grep_result:
+            if grep_result[grep_result.keys()[0]]:
+                column_names = sorted(grep_result[grep_result.keys()[0]]["value"].keys())
+
+        if len(column_names) == 0:
+            return ''
+
+        column_names.insert(0, ".")
+        column_names.insert(0, "NODE")
+
+        t = Table(title
+                  , column_names
+                  , title_format=TitleFormats.noChange
+                  , style=Styles.VERTICAL)
+
+        row = None
+        for file in sorted(grep_result.keys()):
+            if isinstance(grep_result[file], Exception):
+                row1 = {}
+                row2 = {}
+                row3 = {}
+            else:
+                row1 = grep_result[file]["value"]
+                row2 = grep_result[file]["diff"]
+                row3 = {}
+                for key in grep_result[file]["value"].keys():
+                    row3[key] = "|"
+
+            row1['NODE'] = file
+            row1['.'] = "Total"
+
+            row2['NODE'] = "."
+            row2['.'] = "Diff"
+
+            row3['NODE'] = "|"
+            row3['.'] = "|"
+
+            t.insertRow(row1)
+            t.insertRow(row2)
+            t.insertRow(row3)
+        t._need_sort = False
+        print t
+
+    @staticmethod
     def showStats(*args, **kwargs):
         CliView.showConfig(*args, **kwargs)
 

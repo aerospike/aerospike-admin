@@ -13,6 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+import glob
 
 import readline
 import cmd
@@ -24,18 +26,26 @@ import getpass
 import shlex
 from lib import citrusleaf
 from lib.controller import *
+from lib.logcontroller import *
 from lib import terminal
 
 __version__ = '$$__version__$$'
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, telnet, user=None, password=None):
+    def __init__(self, seed, telnet, user=None, password=None, log_path="", log_analyser=False):
         cmd.Cmd.__init__(self)
 
-        self.ctrl = RootController(seed_nodes=[seed]
+        if log_path and log_analyser:
+            self.ctrl = LogRootController(seed_nodes=[seed]
+                                   , use_telnet=telnet
+                                   , user=user
+                                   , password=password, log_path=log_path)
+        else:
+            self.ctrl = RootController(seed_nodes=[seed]
                                    , use_telnet=telnet
                                    , user=user
                                    , password=password)
+
         try:
             readline.read_history_file(ADMINHIST)
         except Exception, i:
@@ -49,8 +59,18 @@ class AerospikeShell(cmd.Cmd):
 
         self.name = 'Aerospike Interactive Shell'
         self.intro = terminal.bold() + self.name + ', version ' +\
-                     __version__ + terminal.reset() + "\n" +\
-                     str(self.ctrl.cluster) + "\n"
+                     __version__ + terminal.reset() + "\n"
+
+        if not log_analyser:
+            if log_path:
+                self.intro += terminal.fg_red() + ">>>>> -f not specified -l ignored. Running in normal asadm mode. Use -f for log analyser mode !! <<<<< \n" + terminal.fg_clear()
+                log_path = ""
+
+        if log_path:
+            self.intro += terminal.fg_red() + ">>>>> Working on log files <<<<<<\n" + terminal.fg_clear()
+            self.intro += str(self.ctrl.logger) + "\n"
+        else:
+            self.intro += str(self.ctrl.cluster) + "\n"
         self.commands = set()
 
         regex = re.compile("^do_(.*)$")
@@ -89,7 +109,10 @@ class AerospikeShell(cmd.Cmd):
         return commands
 
     def precmd(self, line):
-        lines = self.cleanLine(line)
+        try:
+            lines = self.cleanLine(line)
+        except:
+            return ""
 
         if not lines: # allow empty lines
             return ""
@@ -111,6 +134,48 @@ class AerospikeShell(cmd.Cmd):
             except ShellException as e:
                 print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
         return "" # line was handled by execute
+
+    def _listdir(self, root):
+        "List directory 'root' appending the path separator to subdirs."
+        res = []
+        for name in os.listdir(root):
+            path = os.path.join(root, name)
+            if os.path.isdir(path):
+                name += os.sep
+            res.append(name)
+        return res
+
+    def _complete_path(self, path=None):
+        "Perform completion of filesystem path."
+        if not path:
+            return self._listdir('/')
+        dirname, rest = os.path.split(path)
+        tmp = dirname if dirname else '.'
+        res = [os.path.join(dirname, p)
+                    for p in self._listdir(tmp) if p.startswith(rest)]
+
+        # more than one match, or single match which does not exist (typo)
+        if len(res) > 1 or not os.path.exists(path):
+            return res
+        # resolved to a single directory, so return list of files below it
+        if os.path.isdir(path):
+            return [os.path.join(path, p) for p in self._listdir(path)]
+        # exact file match terminates this completion
+        return [path + ' ']
+
+    def complete_path(self, args):
+        "Completions for the 'extra' command."
+        if not args:
+            return []
+
+        if args[-1].startswith("\'/"):
+            names = map( lambda v : "\'"+v, self._complete_path(args[-1].split("\'")[-1]))
+            return names
+        if args[-1].startswith("\"/"):
+            names = map( lambda v : "\""+v, self._complete_path(args[-1].split("\"")[-1]))
+            return names
+        # treat the last arg as a path and complete it
+        return self._complete_path(args[-1])
 
     def completenames(self, text, line, begidx, endidx):
         try:
@@ -142,13 +207,16 @@ class AerospikeShell(cmd.Cmd):
                             line.pop(0)
                     except:
                         pass
-
+            line_copy = copy.deepcopy(line)
             names = self.ctrl.complete(line)
             if watch:
                 try:
                     names.remove('watch')
                 except:
                     pass
+            if not names:
+                names = self.complete_path(line_copy)+[None]
+                return names
 
         except Exception as e:
             return []
@@ -283,6 +351,17 @@ def main():
                       , dest="show_version"
                       , action="store_true"
                       , help="Show the version of asadm and exit")
+    parser.add_option("-f"
+                        , "--file"
+                        , dest="log_analyser"
+                        , action="store_true"
+                        , help="Fetch data from log files")
+    parser.add_option("-l"
+                        , "--log-path"
+                        , dest="log_path"
+                        , help="Path of ascollectinfo log files.")
+
+
 
     (cli_args, args) = parser.parse_args()
     if cli_args.help:
@@ -314,7 +393,16 @@ def main():
 
     seed = (cli_args.host, cli_args.port)
     telnet = False # telnet currently not working, hardcoding to off
-    shell = AerospikeShell(seed, telnet, user=user, password=password)
+    log_path = " "
+    if cli_args.log_path:
+        log_path = cli_args.log_path
+        os.chdir(log_path)
+
+    log_analyser = False;
+    if cli_args.log_analyser:
+        log_analyser = True
+    readline.set_completer_delims(' \t\n;')
+    shell = AerospikeShell(seed, telnet, user=user, password=password, log_path=log_path, log_analyser=log_analyser)
 
     use_yappi = False
     if cli_args.profile:
