@@ -15,6 +15,8 @@
 from lib.controllerlib import *
 from lib import util
 import time, os, sys, platform, shutil, urllib2, socket
+from distutils.version import StrictVersion
+import zipfile
 
 def flip_keys(orig_data):
     new_data = {}
@@ -83,18 +85,49 @@ class InfoController(CommandController):
     @CommandHelp('Displays service, network, namespace, and xdr summary'
                  , 'information.')
     def _do_default(self, line):
-        self.do_service(line)
-        self.do_network(line)
-        self.do_namespace(line)
-        self.do_xdr(line)
+        actions = (util.Future(self.do_service, line).start()
+                   , util.Future(self.do_network, line).start()
+                   , util.Future(self.do_namespace, line).start()
+                   , util.Future(self.do_xdr, line).start())
+        return [action.result() for action in actions]
 
     @CommandHelp('Displays summary information for the Aerospike service.')
     def do_service(self, line):
-        stats = self.cluster.infoStatistics(nodes=self.nodes)
-        builds = self.cluster.info('build', nodes=self.nodes)
-        services = self.cluster.infoServices(nodes=self.nodes)
+        namespace_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
+        stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
+        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
+        services = util.Future(self.cluster.infoServices, nodes=self.nodes).start()
+
         visible = self.cluster.getVisibility()
 
+        migrations = {}
+        namespace_stats = namespace_stats.result()
+        for node in namespace_stats:
+            if isinstance(namespace_stats[node], Exception):
+                continue
+
+            migrations[node] = node_migrations = {}
+            node_migrations['rx'] = 0
+            node_migrations['tx'] = 0
+            for ns_stats in namespace_stats[node].itervalues():
+                if not isinstance(ns_stats, Exception):
+                    node_migrations['rx'] += int(ns_stats.get("migrate-rx-partitions-remaining", 0))
+                    node_migrations['tx'] += int(ns_stats.get("migrate-tx-partitions-remaining", 0))
+                else:
+                    node_migrations['rx'] = 0
+                    node_migrations['tx'] = 0
+
+        stats = stats.result()
+        for node in stats:
+            if isinstance(stats[node], Exception):
+                continue
+
+            node_stats = stats[node]
+            node_stats['rx_migrations'] = migrations.get(node,{}).get('rx', 0)
+            node_stats['tx_migrations'] = migrations.get(node,{}).get('tx',0)
+
+        builds = builds.result()
+        services = services.result()
         visibility = {}
         for node_id, service_list in services.iteritems():
             if isinstance(service_list, Exception):
@@ -106,18 +139,20 @@ class InfoController(CommandController):
             else:
                 visibility[node_id] = True
 
-        self.view.infoService(stats, builds, visibility, self.cluster, **self.mods)
+        return util.Future(self.view.infoService, stats, builds, visibility, self.cluster, **self.mods)
 
     @CommandHelp('Displays network information for Aerospike, the main'
                  , 'purpose of this information is to link node ids to'
                  , 'fqdn/ip addresses.')
     def do_network(self, line):
-        stats = self.cluster.infoStatistics(nodes=self.nodes)
+        stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
+        # get current time from namespace
+        ns_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
+
         hosts = self.cluster.nodes
 
-        # get current time from namespace
-        ns_stats = self.cluster.infoAllNamespaceStatistics(nodes=self.nodes)
-
+        ns_stats = ns_stats.result()
+        stats = stats.result()
         for host, configs in ns_stats.iteritems():
             if isinstance(configs, Exception):
                 continue
@@ -129,20 +164,24 @@ class InfoController(CommandController):
                    not isinstance(stats[host], Exception):
                     stats[host]['current-time'] = configs[ns]['current-time']
 
-        self.view.infoNetwork(stats, hosts, self.cluster, **self.mods)
+        return util.Future(self.view.infoNetwork, stats, hosts, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each namespace.')
     def do_namespace(self, line):
         stats = self.cluster.infoAllNamespaceStatistics(nodes=self.nodes)
-        self.view.infoNamespace(stats, self.cluster, **self.mods)
+        return util.Future(self.view.infoNamespace, stats, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for Cross Datacenter'
                  , 'Replication (XDR).')
     def do_xdr(self, line):
-        stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
-        builds = self.cluster.xdrInfo('build', nodes=self.nodes)
-        xdr_enable = self.cluster.isXDREnabled(nodes=self.nodes)
-        self.view.infoXDR(stats, builds, xdr_enable, self.cluster, **self.mods)
+        stats = util.Future(self.cluster.infoXDRStatistics, nodes=self.nodes).start()
+        builds = util.Future(self.cluster.xdrInfo, 'build', nodes=self.nodes).start()
+        xdr_enable = util.Future(self.cluster.isXDREnabled, nodes=self.nodes).start()
+
+        stats = stats.result()
+        builds = builds.result()
+        xdr_enable = xdr_enable.result()
+        return util.Future(self.view.infoXDR, stats, builds, xdr_enable, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for Seconday Indexes (SIndex).')
     def do_sindex(self, line):
@@ -159,7 +198,7 @@ class InfoController(CommandController):
                     sindexes[indexname] = {}
                 sindexes[indexname][host] = stat
 
-        self.view.infoSIndex(stats, self.cluster, **self.mods)
+        return util.Future(self.view.infoSIndex, stats, self.cluster, **self.mods)
 
 
 @CommandHelp('"asinfo" provides raw access to the info protocol.'
@@ -209,7 +248,7 @@ class ASInfoController(CommandController):
         else:
             results = self.cluster.info(value, nodes=nodes)
 
-        self.view.asinfo(results, line_sep, self.cluster, **mods)
+        return util.Future(self.view.asinfo, results, line_sep, self.cluster, **mods)
 
 @CommandHelp('"shell" is used to run shell commands on the local node.')
 class ShellController(CommandController):
@@ -246,8 +285,9 @@ class ShowDistributionController(CommandController):
 
     @CommandHelp('Shows the distributions of Time to Live and Object Size')
     def _do_default(self, line):
-        self.do_time_to_live(line[:])
-        self.do_object_size(line[:])
+        actions = (util.Future(self.do_time_to_live, line[:]).start()
+                   , util.Future(self.do_object_size, line[:]).start())
+        return [action.result() for action in actions]
 
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
@@ -283,24 +323,25 @@ class ShowDistributionController(CommandController):
 
                 data['percentiles'] = [r * width for r in result]
 
-        self.view.showDistribution(title
-                                   , histogram
-                                   , unit
-                                   , histogram_name
-                                   , self.cluster
-                                   , **self.mods)
+        return util.Future(self.view.showDistribution
+                           , title
+                           , histogram
+                           , unit
+                           , histogram_name
+                           , self.cluster
+                           , **self.mods)
 
     @CommandHelp('Shows the distribution of TTLs for namespaces')
     def do_time_to_live(self, line):
-        self._do_distribution('ttl', 'TTL Distribution', 'Seconds')
+        return self._do_distribution('ttl', 'TTL Distribution', 'Seconds')
 
     @CommandHelp('Shows the distribution of Eviction TTLs for namespaces')
     def do_eviction(self, line):
-        self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
+        return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
 
     @CommandHelp('Shows the distribution of Object sizes for namespaces')
     def do_object_size(self, line):
-        self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
+        return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
 
 class ShowLatencyController(CommandController):
     def __init__(self):
@@ -328,14 +369,15 @@ class ShowLatencyController(CommandController):
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(CommandController):
     def __init__(self):
-        self.modifiers = set(['with', 'like'])
+        self.modifiers = set(['with', 'like', 'diff'])
 
     @CommandHelp('Displays service, network, namespace, and xdr configuration')
     def _do_default(self, line):
-        self.do_service(line)
-        self.do_network(line)
-        self.do_namespace(line)
-        self.do_xdr(line)
+        actions = (util.Future(self.do_service, line).start()
+                   , util.Future(self.do_network, line).start()
+                   , util.Future(self.do_namespace, line).start()
+                   , util.Future(self.do_xdr, line).start())
+        return [action.result() for action in actions]
 
     @CommandHelp('Displays service configuration')
     def do_service(self, line):
@@ -347,31 +389,33 @@ class ShowConfigController(CommandController):
             else:
                 service_configs[node] = service_configs[node]['service']
 
-        self.view.showConfig("Service Configuration"
-                             , service_configs
-                             , self.cluster, **self.mods)
+        return util.Future(self.view.showConfig, "Service Configuration"
+                    , service_configs
+                    , self.cluster, **self.mods)
 
     @CommandHelp('Displays network configuration')
     def do_network(self, line):
-        hb_configs = self.cluster.infoGetConfig(nodes=self.nodes
-                                                , stanza='network.heartbeat')
-        info_configs  = self.cluster.infoGetConfig(nodes=self.nodes
-                                                   , stanza='network.info')
+        hb_configs = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
+                                                , stanza='network.heartbeat').start()
+        info_configs  = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
+                                                   , stanza='network.info').start()
 
         network_configs = {}
+        hb_configs = hb_configs.result()
         for node in hb_configs:
             if isinstance(hb_configs[node], Exception):
                 network_configs[node] = {}
             else:
                 network_configs[node] = hb_configs[node]['network.heartbeat']
 
+        info_configs = info_configs.result()
         for node in info_configs:
             if isinstance(info_configs[node], Exception):
                 continue
             else:
                 network_configs[node].update(info_configs[node]['network.info'])
 
-        self.view.showConfig("Network Configuration", network_configs
+        return util.Future(self.view.showConfig, "Network Configuration", network_configs
                              , self.cluster, **self.mods)
 
     @CommandHelp('Displays namespace configuration')
@@ -395,9 +439,9 @@ class ShowConfigController(CommandController):
                 except KeyError:
                     ns_configs[ns][host] = config
 
-        for ns, configs in ns_configs.iteritems():
-            self.view.showConfig("%s Namespace Configuration"%(ns)
-                                 , configs, self.cluster, **self.mods)
+        return [util.Future(self.view.showConfig, "%s Namespace Configuration"%(ns)
+                            , configs, self.cluster, **self.mods)
+                for ns, configs in ns_configs.iteritems()]
 
     @CommandHelp('Displays XDR configuration')
     def do_xdr(self, line):
@@ -410,7 +454,7 @@ class ShowConfigController(CommandController):
 
             xdr_filtered[node] = config['xdr']
 
-        self.view.showConfig("XDR Configuration", xdr_filtered, self.cluster
+        return util.Future(self.view.showConfig, "XDR Configuration", xdr_filtered, self.cluster
                              , **self.mods)
 
 @CommandHelp('Displays statistics for Aerospike components.')
@@ -420,17 +464,19 @@ class ShowStatisticsController(CommandController):
 
     @CommandHelp('Displays bin, set, service, namespace, and xdr statistics')
     def _do_default(self, line):
-        self.do_bins(line)
-        self.do_sets(line)
-        self.do_service(line)
-        self.do_namespace(line)
-        self.do_xdr(line)
+        actions = (util.Future(self.do_bins, line).start()
+                   , util.Future(self.do_sets, line).start()
+                   , util.Future(self.do_service, line).start()
+                   , util.Future(self.do_namespace, line).start()
+                   , util.Future(self.do_xdr, line).start())
+
+        return [action.result() for action in actions]
 
     @CommandHelp('Displays service statistics')
     def do_service(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
 
-        self.view.showStats("Service Statistics", service_stats, self.cluster
+        return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster
                             , **self.mods)
 
     @CommandHelp('Displays namespace statistics')
@@ -444,13 +490,18 @@ class ShowStatisticsController(CommandController):
                 continue
             namespace_set.update(namespace)
 
-        for namespace in sorted(namespace_set):
-            ns_stats = self.cluster.infoNamespaceStatistics(namespace
-                                                            , nodes=self.nodes)
-            self.view.showStats("%s Namespace Statistics"%(namespace)
-                                , ns_stats
-                                , self.cluster
-                                , **self.mods)
+        ns_stats = {}
+        for namespace in namespace_set:
+            ns_stats[namespace] = util.Future(self.cluster.infoNamespaceStatistics
+                                              , namespace
+                                              , nodes=self.nodes).start()
+
+        return [util.Future(self.view.showStats
+                            , "%s Namespace Statistics"%(namespace)
+                            , ns_stats[namespace].result()
+                            , self.cluster
+                            , **self.mods)
+                for namespace in sorted(namespace_set)]
 
     @CommandHelp('Displays set statistics')
     def do_sets(self, line):
@@ -470,11 +521,11 @@ class ShowStatisticsController(CommandController):
                 hv = host_vals[host_id]
                 hv.update(values)
 
-        for (namespace, set_name), stats in set_stats.iteritems():
-            self.view.showStats("%s %s Set Statistics"%(namespace, set_name)
-                                , stats
-                                , self.cluster
-                                , **self.mods)
+        return [util.Future(self.view.showStats, "%s %s Set Statistics"%(namespace, set_name)
+                            , stats
+                            , self.cluster
+                            , **self.mods)
+                for (namespace, set_name), stats in set_stats.iteritems()]
 
     @CommandHelp('Displays bin statistics')
     def do_bins(self, line):
@@ -495,17 +546,18 @@ class ShowStatisticsController(CommandController):
 
                 node_stats.update(stats)
 
-        for namespace, bin_stats in new_bin_stats.iteritems():
-            self.view.showStats("%s Bin Statistics"%(namespace)
-                                , bin_stats
-                                , self.cluster
-                                , **self.mods)
+        views = []
+        return [util.Future(self.view.showStats, "%s Bin Statistics"%(namespace)
+                            , bin_stats
+                            , self.cluster
+                            , **self.mods)
+                for namespace, bin_stats in new_bin_stats.iteritems()]
 
     @CommandHelp('Displays xdr statistics')
     def do_xdr(self, line):
         xdr_stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
 
-        self.view.showStats("XDR Statistics"
+        return util.Future(self.view.showStats, "XDR Statistics"
                             , xdr_stats
                             , self.cluster
                             , **self.mods)
@@ -532,13 +584,12 @@ class CollectinfoController(CommandController):
             shutil.copy2(src, dest_dir)
         except Exception,e:
             print e
-            pass
         return
 
-    def collectinfo_content(self,func,parm=''):
+    def collectinfo_content(self, func, parm=''):
         name = ''
         capture_stdout = util.capture_stdout
-        sep = "\n====ASCOLLECTINFO====\n"
+        sep = "\n=======ASCOLLECTINFO(" + output_time + ")======\n"
         try:
             name = func.func_name
         except Exception:
@@ -557,7 +608,6 @@ class CollectinfoController(CommandController):
         return ''
 
     def write_log(self,collectedinfo):
-        global aslogfile
         f = open(str(aslogfile), 'a')
         f.write(str(collectedinfo))
         return f.close()
@@ -594,18 +644,17 @@ class CollectinfoController(CommandController):
             r = urllib2.urlopen(req)
 #             r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
             if r.code == 200:
-                print "This is in AWS"
                 rsp = r.read()
                 aws_rsp += self.get_metadata(rsp,'/')
-                print aws_rsp
+                print "Requesting... {0} {1}  \t Successful".format(aws_metadata_base_url, aws_rsp)
             else:
-                aws_rsp = "Not in AWS"
-                print aws_rsp
+                aws_rsp = " Not likely in AWS"
+                print "Requesting... {0} \t FAILED {1} ".format(aws_metadata_base_url, aws_rsp)
 
         except Exception as e:
-            print e
-            print "Not in AWS"
-
+            print "Requesting... {0} \t  {1} ".format(aws_metadata_base_url, e)
+            print "FAILED! Node Is Not likely In AWS"
+            
     def collect_sys(self,line):
         lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
         print util.shell_command([lsof_cmd])
@@ -620,14 +669,59 @@ class CollectinfoController(CommandController):
                 print smd_fp.read()
                 smd_fp.close()
 
+    def zip_files(self, dir_path, _size = 5):
+        """
+        If file size is greater then given _size, create zip of file on same location and 
+        remove original one. Won't zip If zlib module is not available. 
+        """ 
+        for root, dirs, files in os.walk(dir_path):
+            for _file in files:
+                file_path = os.path.join(root,_file)
+                size_mb = (os.path.getsize(file_path)/(1024*1024))
+                if size_mb >= _size:
+                    os.chdir(root)
+                    try:                                      
+                        newzip =  zipfile.ZipFile(_file + ".zip", "w", zipfile.ZIP_DEFLATED)
+                        newzip.write(_file)
+                        newzip.close()
+                        os.remove(_file)
+                    except Exception as e: 
+                        print e
+                        pass
+    
     def archive_log(self,logdir):
+        self.zip_files(logdir)
         util.shell_command(["tar -czvf " + logdir + ".tgz " + aslogdir])
         sys.stderr.write("\x1b[2J\x1b[H")
         print "\n\n\nFiles in " + logdir + " and " + logdir + ".tgz saved. "
         print "END OF ASCOLLECTINFO"
 
+    def parse_namespace(self, namespace_data):
+        """
+        This method will return set of namespaces present given namespace data
+        @param namespace_data: should be a form of dict returned by info protocol for namespace.
+        """
+        namespaces = set()
+        for _value in namespace_data.values():
+            for ns in _value.split(';'):
+                namespaces.add(ns)
+        return namespaces
+
     def main_collectinfo(self, line):
+        # Unfortunately timestamp can not be printed in Centos with dmesg, 
+        # storing dmesg logs without timestamp for this particular OS.
+        if 'centos' == (platform.linux_distribution()[0]).lower():
+            cmd_dmesg  = 'dmesg'
+        else:
+            cmd_dmesg  = 'dmesg -T'
+        
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
+        global aslogdir, aslogfile, output_time
+        output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+        aslogdir = '/tmp/collectInfo_' + output_time
+        as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
+        as_logfile_prefix = aslogdir + '/' + output_time + '_'
+                
         info_params = ['network','service', 'namespace', 'xdr', 'sindex']
         show_params = ['config', 'distribution', 'latency', 'statistics']
         cluster_params = ['service',
@@ -639,73 +733,108 @@ class CollectinfoController(CommandController):
                           'dump-msgs:',
                           'dump-paxos:',
                           'dump-smd:',
-                          'dump-wb:',
-                          'dump-wb-summary:',
                           'dump-wr:',
-                          'sindex-dump:'
                           ]
         shell_cmds = ['date',
                       'hostname',
-                      'ifconfig',
+                      'ip addr',
+                      'ip -s link',
                       'uptime',
                       'uname -a',
                       'lsb_release -a',
                       'ls /etc|grep release|xargs -I f cat /etc/f',
                       'rpm -qa|grep -E "citrus|aero"',
                       'dpkg -l|grep -E "citrus|aero"',
-                      'tail -n 10000 /var/log/aerospike/*.log',
-                      'tail -n 10000 /var/log/citrusleaf.log',
-                      'tail -n 10000 /var/log/*xdr.log',
-                      'netstat -pant|grep 3000',
-                      'top -n3 -b',
                       'free -m',
                       'df -h',
                       'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
                       'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
                       'lsof',
-                      'dmesg',
+                       cmd_dmesg,
                       'iostat -x 1 10',
                       'vmstat -s',
                       'vmstat -m',
                       'iptables -L',
-                      'cat /etc/aerospike/aerospike.conf',
-                      'cat /etc/citrusleaf/citrusleaf.conf',
                       ]
+        cpu_stat = ['top -n3 -b', 'iostat -x 1 10', 'ss -pant', 'sar -n DEV', 'sar -n EDEV']
+        _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
+
+        if 'all' in line:
+            namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
+            for ns in namespaces:
+                cluster_params.append('dump-wb:ns=' + ns)
+                cluster_params.append('dump-wb-summary:ns=' + ns)
+
+        if 'ubuntu' == (platform.linux_distribution()[0]).lower():
+            cmd_dmesg  = 'cat /var/log/syslog'
+        else:
+            cmd_dmesg  = 'cat /var/log/messages'
+        
         terminal.enable_color(False)
-        global aslogdir,aslogfile
-        aslogdir = '/tmp/as_log_' + str(time.time())
-        aslogfile = aslogdir + '/ascollectinfo.log'
-        os.mkdir(aslogdir)
-        self.write_log(collect_output)
-        log_location = '/var/log/aerospike/*.log'
+        
+        os.makedirs(as_sysinfo_logdir)
+                
         try:
-            log_location = '/var/log/aerospike/aerospike.log'
+            aslogfile = as_logfile_prefix + 'asadmCmd.log'
             cinfo = InfoController()
             for info_param in info_params:
                 self.collectinfo_content(cinfo,[info_param])
+            
             do_show = ShowController()
             for show_param in show_params:
                 self.collectinfo_content(do_show,[show_param])
-            for cluster_param in cluster_params:
-                self.collectinfo_content('cluster',cluster_param)
-            # Below is not optimum, we should query only localhost
-            logs = self.cluster.info('logs')
-            for i in logs:
-                logs_c = logs[i].split(';')
-            for log in logs_c:
-                log_location = log.split(':')[1]
-                cmd = 'tail -n 10000 ' + log_location
-                if log_location != '/var/log/aerospike/aerospike.log':
-                    self.collectinfo_content('shell',[cmd])
-                self.collect_local_file(log_location,aslogdir)
 
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
+        
+        try:
+            aslogfile = as_logfile_prefix + 'clusterCmd.log'
+            for cluster_param in cluster_params:
+                self.collectinfo_content('cluster',cluster_param)
+
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+            
+        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'sysCmdOutput.log')
         for cmd in shell_cmds:
             self.collectinfo_content('shell',[cmd])
+            
+        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'cpu_stat.log')
+        for _cmd in cpu_stat:
+            self.collectinfo_content('shell',[_cmd])
+        
+        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'dmesg.log')
+        self.collectinfo_content('shell',[cmd_dmesg])
+        
+        if 'True' in self.cluster.isXDREnabled().values():
+            aslogfile = as_logfile_prefix + 'xdr.log'
+            self.collectinfo_content('shell',['tail -n 10000 /var/log/*xdr.log'])
+            
+        try:         
+            as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
+            log_location = self.cluster._callNodeMethod([_ip], "info", 
+                                                        "logs").popitem()[1].split(':')[1]
+            # Comparing with this version because prior to this it was citrusleaf.conf & citrusleaf.log
+            if StrictVersion(as_version) > StrictVersion("3.0.0"):            
+                aslogfile = as_logfile_prefix + 'aerospike.conf'
+                self.collectinfo_content('shell',['cat /etc/aerospike/aerospike.conf'])
+            else:
+                aslogfile = as_logfile_prefix + 'citrusleaf.conf'
+                self.collectinfo_content('shell',['cat /etc/citrusleaf/citrusleaf.conf'])
+                
+            self.collect_local_file(log_location, aslogdir)
+        except Exception as e: 
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__            
+                    
+        aslogfile = as_logfile_prefix + 'collectSys.log'
         self.collectinfo_content(self.collect_sys)
+        
+        aslogfile = as_logfile_prefix + 'awsData.log'
         self.collectinfo_content(self.get_awsdata)
+        
         self.archive_log(aslogdir)
 
     def _do_default(self, line):

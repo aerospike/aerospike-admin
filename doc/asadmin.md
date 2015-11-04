@@ -151,7 +151,7 @@ Important files and structure:
    help on a command is requested.
    <br>
    Commands are organized into an hierarchy, and the entry point is the
-   **RootController**. End points int he hierarchy will be methods of a controller
+   **RootController**. End points in the hierarchy will be methods of a controller
    that are prefixed "do_", default controller behavior will be prefixed
    "\_do\_".
 3. /lib/view.py <br>
