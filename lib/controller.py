@@ -526,41 +526,58 @@ class ClusterController(CommandController):
     def do_undun(self, line):
         results = self.cluster.infoUndun(self.mods['line'], nodes=self.nodes)
         self.view.dun(results, self.cluster, **self.mods)
+    
+    def format_missing_part(self, part_data):
+        missing_part = ''
+        get_part = lambda pid, pindex: str(pid) + ':S:' + str(pindex) + ','
+        for pid, part in enumerate(part_data):
+            if part:
+                for pindex in part:
+                    missing_part += get_part(pid, pindex)
+        return missing_part[:-1]
 
-    def get_pmap_data(self, pmap_info):
-        pmap_data = dict()
+    def get_pmap_data(self, pmap_info, repl_factor):
+        pid_range = 4096        # each namespace is devided into 4096 partition
+        pmap_data = {}
+        ns_missing_part = {}
+        visited_ns = set()
         for _node, partitions in pmap_info.items():
+            node_pmap = dict()
             if isinstance(partitions, Exception):
                 continue
-            node_pmap = dict()
-            for item in partitions.split(';'):
+            for item in partitions.split(';'):           
                 fields = item.split(':')
-                ns, pid, pindex = fields[0], int(fields[1]), int(fields[3])
-                # assuming entries for namespaces would be continues
+                ns, pid, state, pindex = fields[0], int(fields[1]), fields[2], int(fields[3])
+                # assuming entries for namespaces would be continues  
                 if ns not in node_pmap:
                     node_pmap[ns] = { 'pri_index' : 0,
                                       'sec_index' : 0,
-                                      'missing_part' : range(4096) # each namespace is devided into 4096 partition
                                     }
-                if  pindex == 0:
-                    node_pmap[ns]['pri_index'] += 1
-                else:
-                    node_pmap[ns]['sec_index'] += 1
-                try:
-                    if pid in node_pmap[ns]['missing_part']:
-                        node_pmap[ns]['missing_part'].remove(pid)
-                except IndexError:
-                    pass
+                if ns not in visited_ns:
+                    ns_missing_part[ns] = {}
+                    ns_missing_part[ns]['missing_part'] = [range(repl_factor) for i in range(pid_range)]
+                    visited_ns.add(ns)
+                if state == 'S':
+                    if  pindex == 0:
+                        node_pmap[ns]['pri_index'] += 1
+                    if  pindex in range(1, repl_factor):
+                        node_pmap[ns]['sec_index'] += 1
+                    ns_missing_part[ns]['missing_part'][pid].remove(pindex)
+                if pid not in range(pid_range):
+                    print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
             for _ns, config in node_pmap.items():
-                node_pmap[_ns]['distribution_pct'] = node_pmap[_ns]['pri_index'] * 100 / 4096
+                node_pmap[_ns]['distribution_pct'] = node_pmap[_ns]['pri_index'] * 100 / pid_range
             pmap_data[_node] = node_pmap
+        for _node, _ns in pmap_data.items():
+            for ns_name, params in _ns.items():
+                params['missing_part'] = self.format_missing_part(ns_missing_part[ns_name]['missing_part'])
         return pmap_data
-
+    
     @CommandHelp('"pmap" command is used for displaying partition map analysis of cluster')
     def do_pmap(self, line):
-        _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
-        pmap_info = self.cluster._callNodeMethod(self.nodes, "info", "partition-info")
-        pmap_data = self.get_pmap_data(pmap_info)
+#         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
+        pmap_info = self.cluster.info("partition-info", nodes = self.nodes)
+        pmap_data = self.get_pmap_data(pmap_info, 2)
         self.view.clusterPMap(pmap_data, self.cluster)
 
     def get_qnode_data(self, qnode_config=''):
@@ -590,7 +607,7 @@ class ClusterController(CommandController):
 
     @CommandHelp('"qnode" command is used for displaying qnode map analysis')
     def do_qnode(self, line):
-        _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
+#         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
         qnode_info = self.cluster._callNodeMethod(self.nodes, "info", "sindex-qnodemap:")
         qnode_data = self.get_qnode_data(qnode_info)
         self.view.clusterQNode(qnode_data, self.cluster)
