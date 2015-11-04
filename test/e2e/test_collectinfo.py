@@ -14,7 +14,7 @@ class TestCollectinfo(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         TestCollectinfo.rc = controller.RootController()
-        actual_out = util.capture_stdout(TestCollectinfo.rc.execute, ['collectinfo'])
+        # actual_out = util.capture_stdout(TestCollectinfo.rc.execute, ['collectinfo'])
 
     def test_collectinfo(self):
         expected = ['aerospike.log',
