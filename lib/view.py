@@ -506,7 +506,8 @@ class CliView(object):
                         'Primary Partitions',
                         'Secondary Partitions',
                         'Missing Partitions',
-                        'Distribution pct')
+                        'master_disc_part',
+                        'replica_disc_part')
         t = Table(title, column_names)
         for node_key, n_stats in pmap_data.iteritems():
             row = {}
@@ -516,7 +517,8 @@ class CliView(object):
                 row['Primary Partitions'] = ns_stats['pri_index']
                 row['Secondary Partitions'] = ns_stats['sec_index']
                 row['Missing Partitions'] = ns_stats['missing_part']
-                row['Distribution pct'] = ns_stats['distribution_pct']
+                row['master_disc_part'] = ns_stats['master_disc_part']
+                row['replica_disc_part'] = ns_stats['replica_disc_part']
                 t.insertRow(row)
         print t
 

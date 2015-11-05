@@ -536,8 +536,27 @@ class ClusterController(CommandController):
                     missing_part += get_part(pid, pindex)
         return missing_part[:-1]
 
-    def get_pmap_data(self, pmap_info, repl_factor):
+    def get_namespace_data(self, namespace_stats):
+        ns_info = {}
+        for ns, nodes in namespace_stats.items():
+            ns_info[ns] = {}
+            master_objs = 0
+            replica_objs = 0
+            repl_factor = 0
+            for params in nodes.values():
+                master_objs += int(params['master-objects'])
+                replica_objs += int(params['prole-objects'])
+                repl_factor = max(repl_factor, int(params['repl-factor']))
+            ns_info[ns]['avg_master_objs'] = master_objs / 4096
+            ns_info[ns]['avg_replica_objs'] = replica_objs / 4096
+            ns_info[ns]['repl_factor'] = repl_factor
+        return ns_info
+
+    def get_pmap_data(self, pmap_info, ns_info):
+        # TODO: check if node not have master & replica objects
         pid_range = 4096        # each namespace is devided into 4096 partition
+        disc_pct_allowed = 1   # Considering Negative & Positive both discrepancy
+        get_dist_delta = lambda exp, act: abs((exp - act) * 100 / exp) > disc_pct_allowed
         pmap_data = {}
         ns_missing_part = {}
         visited_ns = set()
@@ -545,28 +564,44 @@ class ClusterController(CommandController):
             node_pmap = dict()
             if isinstance(partitions, Exception):
                 continue
-            for item in partitions.split(';'):           
+            for item in partitions.split(';'):
                 fields = item.split(':')
-                ns, pid, state, pindex = fields[0], int(fields[1]), fields[2], int(fields[3])
+                ns, pid, state, pindex, objects = fields[0], int(fields[1]), fields[2], int(fields[3]), int(fields[8])
                 # assuming entries for namespaces would be continues  
                 if ns not in node_pmap:
                     node_pmap[ns] = { 'pri_index' : 0,
                                       'sec_index' : 0,
+                                      'master_disc_part': [],
+                                      'replica_disc_part':[]
                                     }
                 if ns not in visited_ns:
                     ns_missing_part[ns] = {}
-                    ns_missing_part[ns]['missing_part'] = [range(repl_factor) for i in range(pid_range)]
+                    ns_missing_part[ns]['missing_part'] = [range(ns_info[ns]['repl_factor']) for i in range(pid_range)]
                     visited_ns.add(ns)
                 if state == 'S':
-                    if  pindex == 0:
-                        node_pmap[ns]['pri_index'] += 1
-                    if  pindex in range(1, repl_factor):
-                        node_pmap[ns]['sec_index'] += 1
-                    ns_missing_part[ns]['missing_part'][pid].remove(pindex)
+                    try:
+                        if  pindex == 0:
+                            node_pmap[ns]['pri_index'] += 1
+                            exp_master_objs = ns_info[ns]['avg_master_objs']
+                            if exp_master_objs == 0 and objects == 0:        #Avoid devide by zero
+                                pass
+                            elif get_dist_delta(exp_master_objs, objects):
+                                node_pmap[ns]['master_disc_part'].append(pid)
+                        if  pindex in range(1, ns_info[ns]['repl_factor']):
+                            node_pmap[ns]['sec_index'] += 1
+                            exp_replica_objs = ns_info[ns]['avg_replica_objs']
+                            if exp_replica_objs == 0 and objects == 0:
+                                pass
+                            elif get_dist_delta(exp_replica_objs, objects):
+                                node_pmap[ns]['replica_disc_part'].append(pid)
+
+                        ns_missing_part[ns]['missing_part'][pid].remove(pindex)
+                    except Exception as e:
+                        print e
                 if pid not in range(pid_range):
                     print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
-            for _ns, config in node_pmap.items():
-                node_pmap[_ns]['distribution_pct'] = node_pmap[_ns]['pri_index'] * 100 / pid_range
+#             for _ns, config in node_pmap.items():
+#                 node_pmap[_ns]['distribution_pct'] = node_pmap[_ns]['pri_index'] * 100 / pid_range
             pmap_data[_node] = node_pmap
         for _node, _ns in pmap_data.items():
             for ns_name, params in _ns.items():
@@ -577,7 +612,19 @@ class ClusterController(CommandController):
     def do_pmap(self, line):
 #         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
         pmap_info = self.cluster.info("partition-info", nodes = self.nodes)
-        pmap_data = self.get_pmap_data(pmap_info, 2)
+        namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
+        namespaces = namespaces.values()
+        namespace_set = set()
+        namespace_stats = dict()
+        for namespace in namespaces:
+            if isinstance(namespace, Exception):
+                continue
+            namespace_set.update(namespace)
+        for namespace in sorted(namespace_set):
+            ns_stats = self.cluster.infoNamespaceStatistics(namespace
+                                                            , nodes=self.nodes)
+            namespace_stats[namespace] = ns_stats
+        pmap_data = self.get_pmap_data(pmap_info, self.get_namespace_data(namespace_stats))
         self.view.clusterPMap(pmap_data, self.cluster)
 
     def get_qnode_data(self, qnode_config=''):
