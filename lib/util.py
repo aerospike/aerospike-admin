@@ -81,6 +81,31 @@ def concurrent_map(func, data):
 
     return result
 
+class Future(object):
+    """
+    Very basic implementation of a async future.
+    """
+
+    def __init__(self, func, *args, **kwargs):
+        self._result = None
+
+        args = list(args)
+        args.insert(0, func)
+
+        def wrapper(func, *args, **kwargs):
+            self._result = func(*args, **kwargs)
+
+        self._worker = threading.Thread(target=wrapper,
+                                        args=args, kwargs=kwargs)
+
+    def start(self):
+        self._worker.start()
+        return self
+
+    def result(self):
+        self._worker.join()
+        return self._result
+
 class cached(object):
     # Doesn't support lists, dicts and other unhashables
     # Also doesn't support kwargs for reason above.

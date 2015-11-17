@@ -85,18 +85,49 @@ class InfoController(CommandController):
     @CommandHelp('Displays service, network, namespace, and xdr summary'
                  , 'information.')
     def _do_default(self, line):
-        self.do_service(line)
-        self.do_network(line)
-        self.do_namespace(line)
-        self.do_xdr(line)
+        actions = (util.Future(self.do_service, line).start()
+                   , util.Future(self.do_network, line).start()
+                   , util.Future(self.do_namespace, line).start()
+                   , util.Future(self.do_xdr, line).start())
+        return [action.result() for action in actions]
 
     @CommandHelp('Displays summary information for the Aerospike service.')
     def do_service(self, line):
-        stats = self.cluster.infoStatistics(nodes=self.nodes)
-        builds = self.cluster.info('build', nodes=self.nodes)
-        services = self.cluster.infoServices(nodes=self.nodes)
+        namespace_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
+        stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
+        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
+        services = util.Future(self.cluster.infoServices, nodes=self.nodes).start()
+
         visible = self.cluster.getVisibility()
 
+        migrations = {}
+        namespace_stats = namespace_stats.result()
+        for node in namespace_stats:
+            if isinstance(namespace_stats[node], Exception):
+                continue
+
+            migrations[node] = node_migrations = {}
+            node_migrations['rx'] = 0
+            node_migrations['tx'] = 0
+            for ns_stats in namespace_stats[node].itervalues():
+                if not isinstance(ns_stats, Exception):
+                    node_migrations['rx'] += int(ns_stats.get("migrate-rx-partitions-remaining", 0))
+                    node_migrations['tx'] += int(ns_stats.get("migrate-tx-partitions-remaining", 0))
+                else:
+                    node_migrations['rx'] = 0
+                    node_migrations['tx'] = 0
+
+        stats = stats.result()
+        for node in stats:
+            if isinstance(stats[node], Exception):
+                continue
+
+            node_stats = stats[node]
+            node_stats['rx_migrations'] = migrations.get(node,{}).get('rx', 0)
+            node_stats['tx_migrations'] = migrations.get(node,{}).get('tx',0)
+
+        builds = builds.result()
+        services = services.result()
         visibility = {}
         for node_id, service_list in services.iteritems():
             if isinstance(service_list, Exception):
@@ -108,18 +139,20 @@ class InfoController(CommandController):
             else:
                 visibility[node_id] = True
 
-        self.view.infoService(stats, builds, visibility, self.cluster, **self.mods)
+        return util.Future(self.view.infoService, stats, builds, visibility, self.cluster, **self.mods)
 
     @CommandHelp('Displays network information for Aerospike, the main'
                  , 'purpose of this information is to link node ids to'
                  , 'fqdn/ip addresses.')
     def do_network(self, line):
-        stats = self.cluster.infoStatistics(nodes=self.nodes)
+        stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
+        # get current time from namespace
+        ns_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
+
         hosts = self.cluster.nodes
 
-        # get current time from namespace
-        ns_stats = self.cluster.infoAllNamespaceStatistics(nodes=self.nodes)
-
+        ns_stats = ns_stats.result()
+        stats = stats.result()
         for host, configs in ns_stats.iteritems():
             if isinstance(configs, Exception):
                 continue
@@ -131,20 +164,24 @@ class InfoController(CommandController):
                    not isinstance(stats[host], Exception):
                     stats[host]['current-time'] = configs[ns]['current-time']
 
-        self.view.infoNetwork(stats, hosts, self.cluster, **self.mods)
+        return util.Future(self.view.infoNetwork, stats, hosts, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each namespace.')
     def do_namespace(self, line):
         stats = self.cluster.infoAllNamespaceStatistics(nodes=self.nodes)
-        self.view.infoNamespace(stats, self.cluster, **self.mods)
+        return util.Future(self.view.infoNamespace, stats, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for Cross Datacenter'
                  , 'Replication (XDR).')
     def do_xdr(self, line):
-        stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
-        builds = self.cluster.xdrInfo('build', nodes=self.nodes)
-        xdr_enable = self.cluster.isXDREnabled(nodes=self.nodes)
-        self.view.infoXDR(stats, builds, xdr_enable, self.cluster, **self.mods)
+        stats = util.Future(self.cluster.infoXDRStatistics, nodes=self.nodes).start()
+        builds = util.Future(self.cluster.xdrInfo, 'build', nodes=self.nodes).start()
+        xdr_enable = util.Future(self.cluster.isXDREnabled, nodes=self.nodes).start()
+
+        stats = stats.result()
+        builds = builds.result()
+        xdr_enable = xdr_enable.result()
+        return util.Future(self.view.infoXDR, stats, builds, xdr_enable, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for Seconday Indexes (SIndex).')
     def do_sindex(self, line):
@@ -161,7 +198,7 @@ class InfoController(CommandController):
                     sindexes[indexname] = {}
                 sindexes[indexname][host] = stat
 
-        self.view.infoSIndex(stats, self.cluster, **self.mods)
+        return util.Future(self.view.infoSIndex, stats, self.cluster, **self.mods)
 
 
 @CommandHelp('"asinfo" provides raw access to the info protocol.'
@@ -211,7 +248,7 @@ class ASInfoController(CommandController):
         else:
             results = self.cluster.info(value, nodes=nodes)
 
-        self.view.asinfo(results, line_sep, self.cluster, **mods)
+        return util.Future(self.view.asinfo, results, line_sep, self.cluster, **mods)
 
 @CommandHelp('"shell" is used to run shell commands on the local node.')
 class ShellController(CommandController):
@@ -248,8 +285,9 @@ class ShowDistributionController(CommandController):
 
     @CommandHelp('Shows the distributions of Time to Live and Object Size')
     def _do_default(self, line):
-        self.do_time_to_live(line[:])
-        self.do_object_size(line[:])
+        actions = (util.Future(self.do_time_to_live, line[:]).start()
+                   , util.Future(self.do_object_size, line[:]).start())
+        return [action.result() for action in actions]
 
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
@@ -285,24 +323,25 @@ class ShowDistributionController(CommandController):
 
                 data['percentiles'] = [r * width for r in result]
 
-        self.view.showDistribution(title
-                                   , histogram
-                                   , unit
-                                   , histogram_name
-                                   , self.cluster
-                                   , **self.mods)
+        return util.Future(self.view.showDistribution
+                           , title
+                           , histogram
+                           , unit
+                           , histogram_name
+                           , self.cluster
+                           , **self.mods)
 
     @CommandHelp('Shows the distribution of TTLs for namespaces')
     def do_time_to_live(self, line):
-        self._do_distribution('ttl', 'TTL Distribution', 'Seconds')
+        return self._do_distribution('ttl', 'TTL Distribution', 'Seconds')
 
     @CommandHelp('Shows the distribution of Eviction TTLs for namespaces')
     def do_eviction(self, line):
-        self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
+        return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
 
     @CommandHelp('Shows the distribution of Object sizes for namespaces')
     def do_object_size(self, line):
-        self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
+        return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
 
 class ShowLatencyController(CommandController):
     def __init__(self):
@@ -334,10 +373,11 @@ class ShowConfigController(CommandController):
 
     @CommandHelp('Displays service, network, namespace, and xdr configuration')
     def _do_default(self, line):
-        self.do_service(line)
-        self.do_network(line)
-        self.do_namespace(line)
-        self.do_xdr(line)
+        actions = (util.Future(self.do_service, line).start()
+                   , util.Future(self.do_network, line).start()
+                   , util.Future(self.do_namespace, line).start()
+                   , util.Future(self.do_xdr, line).start())
+        return [action.result() for action in actions]
 
     @CommandHelp('Displays service configuration')
     def do_service(self, line):
@@ -349,31 +389,33 @@ class ShowConfigController(CommandController):
             else:
                 service_configs[node] = service_configs[node]['service']
 
-        self.view.showConfig("Service Configuration"
-                             , service_configs
-                             , self.cluster, **self.mods)
+        return util.Future(self.view.showConfig, "Service Configuration"
+                    , service_configs
+                    , self.cluster, **self.mods)
 
     @CommandHelp('Displays network configuration')
     def do_network(self, line):
-        hb_configs = self.cluster.infoGetConfig(nodes=self.nodes
-                                                , stanza='network.heartbeat')
-        info_configs  = self.cluster.infoGetConfig(nodes=self.nodes
-                                                   , stanza='network.info')
+        hb_configs = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
+                                                , stanza='network.heartbeat').start()
+        info_configs  = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
+                                                   , stanza='network.info').start()
 
         network_configs = {}
+        hb_configs = hb_configs.result()
         for node in hb_configs:
             if isinstance(hb_configs[node], Exception):
                 network_configs[node] = {}
             else:
                 network_configs[node] = hb_configs[node]['network.heartbeat']
 
+        info_configs = info_configs.result()
         for node in info_configs:
             if isinstance(info_configs[node], Exception):
                 continue
             else:
                 network_configs[node].update(info_configs[node]['network.info'])
 
-        self.view.showConfig("Network Configuration", network_configs
+        return util.Future(self.view.showConfig, "Network Configuration", network_configs
                              , self.cluster, **self.mods)
 
     @CommandHelp('Displays namespace configuration')
@@ -397,9 +439,9 @@ class ShowConfigController(CommandController):
                 except KeyError:
                     ns_configs[ns][host] = config
 
-        for ns, configs in ns_configs.iteritems():
-            self.view.showConfig("%s Namespace Configuration"%(ns)
-                                 , configs, self.cluster, **self.mods)
+        return [util.Future(self.view.showConfig, "%s Namespace Configuration"%(ns)
+                            , configs, self.cluster, **self.mods)
+                for ns, configs in ns_configs.iteritems()]
 
     @CommandHelp('Displays XDR configuration')
     def do_xdr(self, line):
@@ -412,7 +454,7 @@ class ShowConfigController(CommandController):
 
             xdr_filtered[node] = config['xdr']
 
-        self.view.showConfig("XDR Configuration", xdr_filtered, self.cluster
+        return util.Future(self.view.showConfig, "XDR Configuration", xdr_filtered, self.cluster
                              , **self.mods)
 
 @CommandHelp('Displays statistics for Aerospike components.')
@@ -422,17 +464,19 @@ class ShowStatisticsController(CommandController):
 
     @CommandHelp('Displays bin, set, service, namespace, and xdr statistics')
     def _do_default(self, line):
-        self.do_bins(line)
-        self.do_sets(line)
-        self.do_service(line)
-        self.do_namespace(line)
-        self.do_xdr(line)
+        actions = (util.Future(self.do_bins, line).start()
+                   , util.Future(self.do_sets, line).start()
+                   , util.Future(self.do_service, line).start()
+                   , util.Future(self.do_namespace, line).start()
+                   , util.Future(self.do_xdr, line).start())
+
+        return [action.result() for action in actions]
 
     @CommandHelp('Displays service statistics')
     def do_service(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
 
-        self.view.showStats("Service Statistics", service_stats, self.cluster
+        return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster
                             , **self.mods)
 
     @CommandHelp('Displays namespace statistics')
@@ -446,13 +490,18 @@ class ShowStatisticsController(CommandController):
                 continue
             namespace_set.update(namespace)
 
-        for namespace in sorted(namespace_set):
-            ns_stats = self.cluster.infoNamespaceStatistics(namespace
-                                                            , nodes=self.nodes)
-            self.view.showStats("%s Namespace Statistics"%(namespace)
-                                , ns_stats
-                                , self.cluster
-                                , **self.mods)
+        ns_stats = {}
+        for namespace in namespace_set:
+            ns_stats[namespace] = util.Future(self.cluster.infoNamespaceStatistics
+                                              , namespace
+                                              , nodes=self.nodes).start()
+
+        return [util.Future(self.view.showStats
+                            , "%s Namespace Statistics"%(namespace)
+                            , ns_stats[namespace].result()
+                            , self.cluster
+                            , **self.mods)
+                for namespace in sorted(namespace_set)]
 
     @CommandHelp('Displays set statistics')
     def do_sets(self, line):
@@ -472,11 +521,11 @@ class ShowStatisticsController(CommandController):
                 hv = host_vals[host_id]
                 hv.update(values)
 
-        for (namespace, set_name), stats in set_stats.iteritems():
-            self.view.showStats("%s %s Set Statistics"%(namespace, set_name)
-                                , stats
-                                , self.cluster
-                                , **self.mods)
+        return [util.Future(self.view.showStats, "%s %s Set Statistics"%(namespace, set_name)
+                            , stats
+                            , self.cluster
+                            , **self.mods)
+                for (namespace, set_name), stats in set_stats.iteritems()]
 
     @CommandHelp('Displays bin statistics')
     def do_bins(self, line):
@@ -497,17 +546,18 @@ class ShowStatisticsController(CommandController):
 
                 node_stats.update(stats)
 
-        for namespace, bin_stats in new_bin_stats.iteritems():
-            self.view.showStats("%s Bin Statistics"%(namespace)
-                                , bin_stats
-                                , self.cluster
-                                , **self.mods)
+        views = []
+        return [util.Future(self.view.showStats, "%s Bin Statistics"%(namespace)
+                            , bin_stats
+                            , self.cluster
+                            , **self.mods)
+                for namespace, bin_stats in new_bin_stats.iteritems()]
 
     @CommandHelp('Displays xdr statistics')
     def do_xdr(self, line):
         xdr_stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
 
-        self.view.showStats("XDR Statistics"
+        return util.Future(self.view.showStats, "XDR Statistics"
                             , xdr_stats
                             , self.cluster
                             , **self.mods)

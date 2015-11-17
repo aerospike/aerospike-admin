@@ -23,7 +23,6 @@ from cStringIO import StringIO
 import sys
 import itertools
 
-
 class CliView(object):
     @staticmethod
     def compileLikes(likes):
@@ -45,7 +44,7 @@ class CliView(object):
                         , '_cluster_integrity'
                         , ('free-pct-disk', 'Free Disk%')
                         , ('free-pct-memory', 'Free Mem%')
-                        , '_migrates'
+                        , ('_migrates', 'Migrates (tx,rx,a)')
                         , ('_paxos_principal', 'Principal')
                         , '_objects'
                         , '_uptime')
@@ -53,8 +52,11 @@ class CliView(object):
         t = Table(title, column_names)
         t.addDataSource('_migrates'
                         ,lambda data:
-                        "(%s,%s)"%(row['migrate_progress_send']
-                                   ,row['migrate_progress_recv']))
+                        "(%s,%s,%s)"%(row.get('tx_migrations', 'N/E')
+                                      , row.get('rx_migrations', 'N/E')
+                                      , int(row.get('migrate_progress_send',0)) + int(row.get('migrate_progress_recv',0))
+                                            if (row.has_key('migrate_progress_send')
+                                                and row.has_key('migrate_progress_recv')) else 'N/E'))
         t.addDataSource('_objects'
                         ,Extractors.sifExtractor('objects'))
         t.addDataSource('_cluster_integrity'
@@ -415,20 +417,15 @@ class CliView(object):
         prefixes = cluster.getPrefixes()
         column_names = set()
 
-        if diff:
-            try:
-                if service_configs:  
-                    union = dict(set.union(*(set(service_configs[d].iteritems()) 
-                                                           for d in  service_configs 
-                                                           if service_configs[d]))).items()
-                    intersection = dict(set.intersection(*(set(service_configs[d].iteritems()) 
-                                                           for d in  service_configs 
-                                                           if service_configs[d]))).items()
-                    column_names = dict(set(union) - set(intersection)).keys()
-            except Exception as e:
-                print str(e)
-                print "Oops! something went wrong, please try command without diff keyword"
-                
+        if diff and service_configs:
+                config_sets = (set(service_configs[d].iteritems())
+                               for d in service_configs if service_configs[d])
+                union = set.union(*config_sets)
+                # Regenerating generator expression for config_sets.
+                config_sets = (set(service_configs[d].iteritems())
+                               for d in service_configs if service_configs[d])
+                intersection = set.intersection(*config_sets)
+                column_names = dict(union - intersection).keys()
         else:
             for config in service_configs.itervalues():
                 if isinstance(config, Exception):
@@ -564,7 +561,32 @@ class CliView(object):
                 print "asinfo -v '%s'"%(command)
                 print result
 
+    @staticmethod
+    def group_output(output):
+        i = 0;
+        while i < len(output):
+            group = output[i]
 
+            if group == '\033':
+                i += 1
+                while i < len(output):
+                    group = group + output[i]
+                    if output[i] == 'm':
+                        i += 1
+                        break
+                    i += 1
+                yield group
+                continue
+            else:
+                yield group
+                i += 1
+
+    @staticmethod
+    def peekable(peeked, remaining):
+        for val in remaining:
+            while peeked:
+                yield peeked.pop(0)
+            yield val
 
     @staticmethod
     def watch(ctrl, line):
@@ -596,27 +618,69 @@ class CliView(object):
             real_stdout = sys.stdout
             sys.stdout = mystdout = StringIO()
             previous = None
-            highlight = False
             count = 1
             while True:
+                highlight = False
                 ctrl.execute(line[:])
                 output = mystdout.getvalue()
-                mystdout.reset()
+                mystdout.truncate(0)
+                mystdout.seek(0)
+
                 if previous and diff_highlight:
                     result = []
-                    for (prev_char, cur_char) in itertools.izip(previous, output):
-                        if cur_char == prev_char:
+                    prev_iterator = CliView.group_output(previous)
+                    next_peeked = []
+                    next_iterator = CliView.group_output(output)
+                    next_iterator = CliView.peekable(next_peeked, next_iterator)
+
+                    for prev_group in prev_iterator:
+                        if '\033' in prev_group:
+                            # skip prev escape seq
+                            continue
+
+                        for next_group in next_iterator:
+                            if '\033' in next_group:
+                                # add current escape seq
+                                result += next_group
+                                continue
+                            elif next_group == '\n':
+                                if prev_group != '\n':
+                                    next_peeked.append(next_group)
+                                    break
+                                if highlight:
+                                    result += terminal.bg_clear()
+                                    highlight = False
+                            elif prev_group == next_group:
+                                if highlight:
+                                    result += terminal.bg_clear()
+                                    highlight = False
+                            else:
+                                if not highlight:
+                                    result += terminal.bg_blue()
+                                    highlight = True
+
+                            result += next_group
+
+                            if '\n' == prev_group and '\n' != next_group:
+                                continue
+                            break
+
+                    for next_group in next_iterator:
+                        if next_group == ' ' or next_group == '\n':
                             if highlight:
                                 result += terminal.bg_clear()
                                 highlight = False
-                            result += cur_char
                         else:
                             if not highlight:
                                 result += terminal.bg_blue()
                                 highlight = True
-                            result += cur_char
+
+                        result += next_group
+
                     if highlight:
                         result += terminal.reset()
+                        highlight = False
+
                     result = "".join(result)
                     previous = output
                 else:

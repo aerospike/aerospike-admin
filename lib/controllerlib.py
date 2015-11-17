@@ -14,8 +14,8 @@
 
 from lib import view, terminal
 from lib.cluster import Cluster
-from lib.controllerlib import *
 from lib.prefixdict import PrefixDict
+from lib import util
 import inspect
 import re
 
@@ -164,6 +164,18 @@ class BaseController(object):
 
         return method
 
+    def _run_results(self, results):
+        rv = []
+        for result in results:
+            if isinstance(result, util.Future):
+                result.start()
+                rv.append(result.result())
+            elif isinstance(result, list) or isinstance(result, tuple):
+                rv.append(self._run_results(result))
+            else:
+                rv.append(result)
+        return rv
+
     def execute(self, line):
         self._init()
 
@@ -173,7 +185,15 @@ class BaseController(object):
             try:
                 if inspect.ismethod(method):
                     self.preCommand(line[:])
-                return method(line)
+                results = method(line)
+                if not isinstance(results, list) and not isinstance(results, tuple):
+                    if isinstance(results, util.Future):
+                        results = (results,)
+                    else:
+                        return results
+
+                return self._run_results(results)
+
             except IOError as e:
                 raise ShellException(str(e))
         else:
@@ -244,7 +264,7 @@ class CommandController(BaseController):
         groups = {}
 
         for mod in mods:
-            if mod in mods: 
+            if mod in mods:
                 groups[mod] = []
 
         mod = 'line'
@@ -254,7 +274,7 @@ class CommandController(BaseController):
             word = line.pop(0)
             if word in self.modifiers:
                 mod = word
-                if mod == 'diff':      # Special case for handling diff modifier of show config 
+                if mod == 'diff':      # Special case for handling diff modifier of show config
                     groups[mod].append(True)
             else:
                 if word not in groups[mod]:

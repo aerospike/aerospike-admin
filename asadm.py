@@ -279,10 +279,18 @@ def main():
                         , dest="help"
                         , action="store_true"
                         , help="show program usage")
+    parser.add_option("--version"
+                      , dest="show_version"
+                      , action="store_true"
+                      , help="Show the version of asadm and exit")
 
     (cli_args, args) = parser.parse_args()
     if cli_args.help:
         parser.print_help()
+        exit(0)
+
+    if cli_args.show_version:
+        print __version__
         exit(0)
 
     if cli_args.no_color:
