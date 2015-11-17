@@ -594,6 +594,8 @@ class ClusterController(CommandController):
             replica_objs = 0
             repl_factor = 0
             for params in nodes.values():
+                if isinstance(params, Exception):
+                    continue
                 master_objs += int(params['master-objects'])
                 replica_objs += int(params['prole-objects'])
                 repl_factor = max(repl_factor, int(params['repl-factor']))
@@ -674,7 +676,7 @@ class ClusterController(CommandController):
                                                             , nodes=self.nodes)
             namespace_stats[namespace] = ns_stats
         pmap_data = self.get_pmap_data(pmap_info, self.get_namespace_data(namespace_stats))
-        self.view.clusterPMap(pmap_data, self.cluster)
+        return util.Future(self.view.clusterPMap, pmap_data, self.cluster)
 
     def get_qnode_data(self, qnode_config=''):
         qnode_data = dict()
@@ -702,10 +704,9 @@ class ClusterController(CommandController):
 
     @CommandHelp('"qnode" command is used for displaying qnode map analysis')
     def do_qnode(self, line):
-#         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
-        qnode_info = self.cluster._callNodeMethod(self.nodes, "info", "sindex-qnodemap:")
+        qnode_info = self.cluster.info("sindex-qnodemap:", nodes = self.nodes)
         qnode_data = self.get_qnode_data(qnode_info)
-        self.view.clusterQNode(qnode_data, self.cluster)
+        return util.Future(self.view.clusterQNode, qnode_data, self.cluster)
 
 @CommandHelp('"collectinfo" is used to collect system stats on the local node.')
 class CollectinfoController(CommandController):
