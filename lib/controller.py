@@ -556,7 +556,7 @@ class ClusterController(CommandController):
         # TODO: check if node not have master & replica objects
         pid_range = 4096        # each namespace is devided into 4096 partition
         disc_pct_allowed = 1   # Considering Negative & Positive both discrepancy
-        get_dist_delta = lambda exp, act: abs((exp - act) * 100 / exp) > disc_pct_allowed
+        is_dist_delta_exeeds = lambda exp, act: abs((exp - act) * 100 / exp) > disc_pct_allowed
         pmap_data = {}
         ns_missing_part = {}
         visited_ns = set()
@@ -566,7 +566,7 @@ class ClusterController(CommandController):
                 continue
             for item in partitions.split(';'):
                 fields = item.split(':')
-                ns, pid, state, pindex, objects = fields[0], int(fields[1]), fields[2], int(fields[3]), int(fields[8])
+                ns, pid, state, pindex, objects = fields[0], int(fields[1]), fields[2], int(fields[3]), int(fields[9])
                 # assuming entries for namespaces would be continues  
                 if ns not in node_pmap:
                     node_pmap[ns] = { 'pri_index' : 0,
@@ -583,16 +583,16 @@ class ClusterController(CommandController):
                         if  pindex == 0:
                             node_pmap[ns]['pri_index'] += 1
                             exp_master_objs = ns_info[ns]['avg_master_objs']
-                            if exp_master_objs == 0 and objects == 0:        #Avoid devide by zero
+                            if exp_master_objs == 0 and objects == 0:       #Avoid devide by zero
                                 pass
-                            elif get_dist_delta(exp_master_objs, objects):
+                            elif is_dist_delta_exeeds(exp_master_objs, objects):
                                 node_pmap[ns]['master_disc_part'].append(pid)
                         if  pindex in range(1, ns_info[ns]['repl_factor']):
                             node_pmap[ns]['sec_index'] += 1
                             exp_replica_objs = ns_info[ns]['avg_replica_objs']
                             if exp_replica_objs == 0 and objects == 0:
                                 pass
-                            elif get_dist_delta(exp_replica_objs, objects):
+                            elif is_dist_delta_exeeds(exp_replica_objs, objects):
                                 node_pmap[ns]['replica_disc_part'].append(pid)
 
                         ns_missing_part[ns]['missing_part'][pid].remove(pindex)
@@ -610,7 +610,6 @@ class ClusterController(CommandController):
     
     @CommandHelp('"pmap" command is used for displaying partition map analysis of cluster')
     def do_pmap(self, line):
-#         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
         pmap_info = self.cluster.info("partition-info", nodes = self.nodes)
         namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
         namespaces = namespaces.values()
@@ -636,19 +635,18 @@ class ClusterController(CommandController):
             for item in config.split(';'):
                 fields = item.split(':')
                 ns, pid, node_type, pdata = fields[0], int(fields[1]), fields[5], int(fields[7])
-                # assuming entries for namespaces would be continues
                 if ns not in node_qnode:
-                    node_qnode[ns] = { 'MQ_without_data' : [],
-                                      'RQ_data' : [],
+                    node_qnode[ns] = { 'MQ_without_data' : 0,
+                                      'RQ_data' : 0,
                                       'RQ_without_data' : []
                                      }
                 if node_type == 'MQ' and pdata == 0:
-                    node_qnode[ns]['MQ_without_data'].append(pid)
+                    node_qnode[ns]['MQ_without_data'] += 1
                 elif node_type == 'RQ' and pdata == 0:
                     node_qnode[ns]['RQ_without_data'].append(pid)
-                    node_qnode[ns]['RQ_data'].append(pid)
+                    node_qnode[ns]['RQ_data'] += 1
                 elif node_type == 'RQ':
-                    node_qnode[ns]['RQ_data'].append(pid)
+                    node_qnode[ns]['RQ_data'] += 1
             qnode_data[_node] = node_qnode
         return qnode_data
 
