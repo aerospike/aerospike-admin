@@ -189,6 +189,8 @@ class InfoController(CommandController):
         sindexes = {}
 
         for host, stat_list in stats.iteritems():
+            if isinstance(stat_list, Exception):
+                continue
             for stat in stat_list:
                 if not stat:
                     continue
@@ -198,7 +200,7 @@ class InfoController(CommandController):
                     sindexes[indexname] = {}
                 sindexes[indexname][host] = stat
 
-        return util.Future(self.view.infoSIndex, stats, self.cluster, **self.mods)
+        return util.Future(self.view.infoSIndex, sindexes, self.cluster, **self.mods)
 
 
 @CommandHelp('"asinfo" provides raw access to the info protocol.'
