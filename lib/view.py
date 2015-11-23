@@ -321,15 +321,13 @@ class CliView(object):
                         , 'sync_state')
 
         t = Table(title, column_names, group_by=1)
-
-        for node_key, n_stats in stats.iteritems():
-            node = prefixes[node_key]
-            for index_stats in n_stats:
-                if isinstance(index_stats, Exception):
+        for stat in stats.values():
+            for node_key, n_stats in stat.iteritems():
+                node = prefixes[node_key]
+                if isinstance(n_stats, Exception):
                     row = {}
                 else:
-                    row = index_stats
-
+                    row = n_stats
                 row['node'] = node
                 t.insertRow(row)
 
