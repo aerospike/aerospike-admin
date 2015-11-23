@@ -921,6 +921,10 @@ class CollectinfoController(CommandController):
         
         try:
             aslogfile = as_logfile_prefix + 'clusterCmd.log'
+            ccluster = ClusterController()
+            for cmd in ['pmap', 'qnode']:
+                self.collectinfo_content(ccluster, [cmd])
+
             for cluster_param in cluster_params:
                 self.collectinfo_content('cluster',cluster_param)
 
