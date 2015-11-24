@@ -686,7 +686,12 @@ class ClusterController(CommandController):
             node_qnode = dict()
             for item in config.split(';'):
                 fields = item.split(':')
-                ns, pid, node_type, pdata = fields[0], int(fields[1]), fields[5], int(fields[7])
+                ns, pid, node_type = fields[0], int(fields[1]), fields[5]
+# qnode format is changed(1 field is removed) in aerospike's 3.6.1 version
+                if len(fields) == 7:
+                    pdata = int(fields[6])
+                else:
+                    pdata = int(fields[7])
                 if ns not in node_qnode:
                     node_qnode[ns] = { 'MQ_without_data' : 0,
                                       'RQ_data' : 0,
