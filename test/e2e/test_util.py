@@ -5,7 +5,7 @@ Created on 13-Sep-2015
 '''
 import re
 
-def parse_output(actual_out = "", horizontal = False):
+def parse_output(actual_out = "", horizontal = False, mearge_header = True):
     """
         commmon parser for all show commands will return touple of following
         @param heading : first line of output
@@ -19,8 +19,10 @@ def parse_output(actual_out = "", horizontal = False):
         header_line1 = data.pop(0)
         header_line2 = data.pop(0)
         no_of_rows = data[-3].split(':')[1]
-        
-        return(heading, get_merged_header(header_line1, header_line2), no_of_rows)
+        if mearge_header:
+            return(heading, get_merged_header(header_line1, header_line2), no_of_rows)
+        else:
+            return(heading, header_line1 + header_line2, no_of_rows)
     else:
         data =  actual_out.split('\n')
         heading = data.pop(0)

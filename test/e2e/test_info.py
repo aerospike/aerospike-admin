@@ -55,7 +55,7 @@ class TestInfo(unittest.TestCase):
                      'Cluster Integrity',
                      'Free Disk%',
                      'Free Mem%',
-                     'Migrates',
+                     'Migrates (tx,rx,a)',
                      'Principal',
                      'Objects',
                      'Uptime'] 
@@ -89,7 +89,8 @@ class TestInfo(unittest.TestCase):
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-    @unittest.skip("Skipping by default, to make it work please enable in setup class also")
+
+    @unittest.skip("Skipping by default, to make it work please enable in setupClass also")
     def test_sindex(self):
         """
         This test will assert <b> info sindex </b> output for heading, headerline1, headerline2
@@ -137,12 +138,8 @@ class TestInfo(unittest.TestCase):
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_info, horizontal = True)        
         self.assertEqual(exp_header, actual_header)
         self.assertTrue(exp_heading in actual_heading)
-       
-        # commenting below below line because no of row depends on namespaces not nodes
-#         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-        
-        pass
-    @unittest.skip("Skipping for testing purpose")   
+
+#     @unittest.skip("Will enable only when xdr is configuired")
     def test_xdr(self):
         """
         This test will assert <b> info Namespace </b> output for heading, headerline1, headerline2

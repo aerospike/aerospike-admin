@@ -7,16 +7,13 @@ import os
 import sys
 sys.path.insert(1, os.getcwd())
 
-import sys
 import test_util
 import unittest2 as unittest
-import re
 # from .. import *
 import lib.util as util
 import lib.controller as controller
 
 
-# @unittest.skip("Skipping for testing purpose")   
 class TestShowConfig(unittest.TestCase):
     output_list = list()
     service_config = ''
@@ -79,12 +76,8 @@ class TestShowConfig(unittest.TestCase):
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params))
-        pass
-    
-    
-#     @unittest.skip("for time being")    
-   
+        self.assertTrue(set(exp_params).issubset(set(actual_params)))
+
     def test_service(self):
         """
         Asserts service config output with heading, header & parameters.
@@ -96,10 +89,7 @@ class TestShowConfig(unittest.TestCase):
         exp_params = [  'allow-inline-transactions',
                         'auto-dun',
                         'auto-undun',
-#                         'batch-index-threads',
-#                         'batch-max-buffers-per-queue',
                         'batch-max-requests',
-#                         'batch-max-unused-buffers',
                         'batch-priority',
                         'batch-threads',
                         'dump-message-above-size',
@@ -131,7 +121,6 @@ class TestShowConfig(unittest.TestCase):
                         'paxos-retransmit-period',
                         'paxos-single-replica-limit',
                         'pidfile',
-#                         'pre-reserve-qnodes',
                         'prole-extra-ttl',
                         'proto-fd-idle-ms',
                         'proto-fd-max',
@@ -139,32 +128,19 @@ class TestShowConfig(unittest.TestCase):
                         'query-batch-size',
                         'query-bufpool-size',
                         'query-in-transaction-thread',
-                        'query-job-tracking',
                         'query-long-q-max-size',
                         'query-priority',
-#                         'query-priority-sleep-us',
                         'query-rec-count-bound',
                         'query-req-in-query-thread',
                         'query-req-max-inflight',
                         'query-short-q-max-size',
-                        'query-sleep',
                         'query-threads',
                         'query-threshold',
-                        'query-untracked-time',
-#                         'query-untracked-time-ms',
                         'query-worker-threads',
                         'replication-fire-and-forget',
                         'respond-client-on-master-completion',
-#                         'scan-max-active',
-#                         'scan-max-done',
-#                         'scan-max-udf-transactions',
-                        'scan-priority',
-                        'scan-sleep',
-#                         'scan-threads',
                         'service-threads',
-#                         'sindex-builder-threads',
                         'sindex-data-max-memory',
-                        'sindex-populator-scan-priority',
                         'snub-nodes',
                         'storage-benchmarks',
                         'ticker-interval',
@@ -185,10 +161,8 @@ class TestShowConfig(unittest.TestCase):
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params))
-      
-#     @unittest.skip("for time being")
-    
+        self.assertTrue(set(exp_params).issubset(set(actual_params)))
+
     def test_test_namespace(self):
         """
         Asserts namespace config output with heading, header & parameters.
@@ -226,9 +200,8 @@ class TestShowConfig(unittest.TestCase):
        
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params_test), set(actual_params)) 
-    
-#     @unittest.skip("for time being") 
+        self.assertTrue(set(exp_params_test).issubset(set(actual_params)))
+
     def test_bar_namespace(self):
         """
         Asserts namespace config output with heading, header & parameters.
@@ -266,11 +239,9 @@ class TestShowConfig(unittest.TestCase):
        
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params_bar), set(actual_params)) 
-    
-#     @unittest.skip("Will enable once xdr is configuired")
+        self.assertTrue(set(exp_params_bar).issubset(set(actual_params)))
 
-    @unittest.skip("Will enable once xdr is configuired")   
+    @unittest.skip("Will enable only when xdr is configuired")   
     def test_xdr(self):
         """
         Asserts XDR config output with heading, header & parameters.
@@ -305,8 +276,8 @@ class TestShowConfig(unittest.TestCase):
        
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params)) 
-    
+        self.assertTrue(set(exp_params).issubset(set(actual_params)))
+
 class TestShowLatency(unittest.TestCase):
     output_list = list()
     proxy_latency = ''
@@ -339,9 +310,7 @@ class TestShowLatency(unittest.TestCase):
     @classmethod    
     def tearDownClass(self):
         self.rc = None
-        
-        
-#     @unittest.skip("need to implement without asinfo")
+
     def test_proxy_latency(self):      
         """
         Asserts <b> proxy latency <b> output with heading, header & no of node processed(based on row count).
@@ -459,14 +428,10 @@ class TestShowLatency(unittest.TestCase):
                      '>1Ms', 
                      '>8Ms', 
                      '>64Ms'] 
-        
-        exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
-        
+
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_reply_latency, horizontal = True)        
-       
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
 class TestShowDistribution(unittest.TestCase):
     output_list = list()
@@ -494,7 +459,6 @@ class TestShowDistribution(unittest.TestCase):
     def tearDownClass(self):
         self.rc = None
     
-    @unittest.skip("TODO: Create separate method for removing color code")
     def test_test_ttl(self):
         """
         Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
@@ -505,14 +469,7 @@ class TestShowDistribution(unittest.TestCase):
                         to value measured in Seconds
                         Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
         
-        actual_heading, actual_header1, actual_params = test_util.parse_output(TestShowDistribution.test_ttl_distri)
-        # Special case to handle show distribution case
-        new_test_ttl_distri = '\n'.join(TestShowDistribution.test_ttl_distri.split('\n')[2:])
-        actual_header2, actual_header3, actual_params = test_util.parse_output(new_test_ttl_distri)
-
-        actual_header = actual_header1 + actual_header2 + actual_header3
-        # Sanitization of headers
-        # TODO: Create separate method for removing color code in test_util
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowDistribution.test_ttl_distri, horizontal=True, mearge_header = False)
         exp_header = ' '.join(exp_header.split())
         actual_header = ' '.join([item for item in actual_header.split()
                                   if not item.startswith('\x1b')])
@@ -520,10 +477,9 @@ class TestShowDistribution(unittest.TestCase):
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header.strip(), actual_header.strip())
 
-    @unittest.skip("TODO: Create separate method for removing color code")
     def test_bar_ttl(self):
         """
-        Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
+        Asserts TTL Distribution in Seconds for bar namespace with heading, header & parameters.
         ToDo: test for values as well
         """
         exp_heading = "~~bar - TTL Distribution in Seconds~~"
@@ -531,22 +487,15 @@ class TestShowDistribution(unittest.TestCase):
                         to value measured in Seconds
                         Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
         
-        actual_heading, actual_header1, actual_params = test_util.parse_output(TestShowDistribution.bar_ttl_distri)
-        # Special case to handle show distribution case
-        new_test_ttl_distri = '\n'.join(TestShowDistribution.test_ttl_distri.split('\n')[2:])
-        actual_header2, actual_header3, actual_params = test_util.parse_output(new_test_ttl_distri)
-
-        actual_header = actual_header1 + actual_header2 + actual_header3
-        # Sanitization of headers
+        actual_heading, actual_header, actual_params = test_util.parse_output(TestShowDistribution.bar_ttl_distri, horizontal=True, mearge_header = False)
+        if 'Node' not in actual_header:
+            actual_header += TestShowDistribution.bar_ttl_distri.split('\n')[3]
         exp_header = ' '.join(exp_header.split())
         actual_header = ' '.join([item for item in actual_header.split()
                                   if not item.startswith('\x1b')])
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header.strip(), actual_header.strip())
-
-
-# @unittest.skip("Skipping for testing purpose")  
 
 class TestShowStatistics(unittest.TestCase):
     output_list = list()
@@ -638,7 +587,6 @@ class TestShowStatistics(unittest.TestCase):
                         'err_rw_request_not_found',
                         'err_storage_queue_full',
                         'err_sync_copy_null_master',
-                        'err_sync_copy_null_node',
                         'err_tsvc_requests',
                         'err_write_fail_bin_exists',
                         'err_write_fail_bin_name',
@@ -699,7 +647,6 @@ class TestShowStatistics(unittest.TestCase):
                         'query_avg_rec_count',
                         'query_fail',
                         'query_long_queue_full',
-                        'query_long_queue_size',
                         'query_long_running',
                         'query_lookup_abort',
                         'query_lookup_avg_rec_count',
@@ -708,10 +655,8 @@ class TestShowStatistics(unittest.TestCase):
                         'query_lookups',
                         'query_reqs',
                         'query_short_queue_full',
-                        'query_short_queue_size',
                         'query_short_running',
                         'query_success',
-                        'query_tracked',
                         'queue',
                         'read_dup_prole',
                         'reaped_fds',
@@ -782,10 +727,6 @@ class TestShowStatistics(unittest.TestCase):
                         'total-bytes-memory',
                         'transactions',
                         'tree_count',
-                        'tscan_aborted',
-                        'tscan_initiate',
-                        'tscan_pending',
-                        'tscan_succeeded',
                         'udf_delete_err_others',
                         'udf_delete_reqs',
                         'udf_delete_success',
@@ -811,7 +752,7 @@ class TestShowStatistics(unittest.TestCase):
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params))   
+        self.assertTrue(set(exp_params).issubset(set(actual_params)))
                       
     def test_bar_namespace(self):
         """
@@ -873,7 +814,7 @@ class TestShowStatistics(unittest.TestCase):
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params))  
+        self.assertTrue(set(exp_params).issubset(set(actual_params)))
         
     def test_test_namespace(self):
         """
@@ -935,9 +876,9 @@ class TestShowStatistics(unittest.TestCase):
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params)) 
+        self.assertTrue(set(exp_params).issubset(set(actual_params)))
     
-    @unittest.skip("Will enable once xdr is configuired")
+    @unittest.skip("Will enable only when xdr is configuired")
     def test_xdr(self):
         """
         This test will assert <b> test Namespace Statistics </b> output for heading, header and parameters.
@@ -992,11 +933,10 @@ class TestShowStatistics(unittest.TestCase):
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params)) 
+        self.assertTrue(set(exp_params).issubset(set(actual_params)))
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
-#     suite = unittest.TestLoader().loadTestsFromTestCase(TestShowLatency)
+#     suite = unittest.TestLoader().loadTestsFromTestCase(TestShowConfig)
 #     unittest.TextTestRunner(verbosity=2).run(suite)
-
-    unittest.main(verbosity=1)    
+    unittest.main()
