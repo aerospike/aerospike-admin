@@ -68,6 +68,7 @@ class AerospikeShell(cmd.Cmd):
 
         command = []
         build_token = ''
+        lexer.wordchars+="-"
         for token in lexer:
             build_token += token
             if token == '-':
