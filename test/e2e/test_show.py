@@ -68,10 +68,7 @@ class TestShowConfig(unittest.TestCase):
                     'reuse-address', 
                     'service-address', 
                     'service-port']
-        
-        # mesh-seed-address-port :  additional parameter comes only with mesh setup.
-        
-#         actual_out = util.capture_stdout(self.rc.execute, ['show', 'config', 'network'])
+
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.network_config)
         
         self.assertTrue(exp_heading in actual_heading)
@@ -173,7 +170,6 @@ class TestShowConfig(unittest.TestCase):
         exp_header = "NODE"
         exp_params_test = [  'allow-nonxdr-writes',
                         'allow-xdr-writes',
-                        'allow_versions',
                         'cold-start-evict-ttl',
                         'conflict-resolution-policy',
                         'default-ttl',
@@ -212,7 +208,6 @@ class TestShowConfig(unittest.TestCase):
         exp_header = "NODE"
         exp_params_bar = [  'allow-nonxdr-writes',
                             'allow-xdr-writes',
-                            'allow_versions',
                             'cold-start-evict-ttl',
                             'conflict-resolution-policy',
                             'default-ttl',
@@ -415,23 +410,6 @@ class TestShowLatency(unittest.TestCase):
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-        
-    def test_writes_reply_latency(self):      
-        """
-        Asserts <b> writes_reply latency <b> output with heading, header & no of node processed(based on row count).
-        ToDo: test for values as well
-        """
-        exp_heading = "~~writes_reply Latency~~"
-        exp_header= ['Node', 
-                     'Time Span', 
-                     'Ops/Sec', 
-                     '>1Ms', 
-                     '>8Ms', 
-                     '>64Ms'] 
-
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_reply_latency, horizontal = True)        
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
 
 class TestShowDistribution(unittest.TestCase):
     output_list = list()
@@ -470,6 +448,8 @@ class TestShowDistribution(unittest.TestCase):
                         Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
         
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowDistribution.test_ttl_distri, horizontal=True, mearge_header = False)
+        if 'Node' not in actual_header:
+            actual_header += TestShowDistribution.test_ttl_distri.split('\n')[3]
         exp_header = ' '.join(exp_header.split())
         actual_header = ' '.join([item for item in actual_header.split()
                                   if not item.startswith('\x1b')])
@@ -693,7 +673,6 @@ class TestShowStatistics(unittest.TestCase):
                         'stat_duplicate_operation',
                         'stat_evicted_objects',
                         'stat_evicted_objects_time',
-                        'stat_evicted_set_objects',
                         'stat_expired_objects',
                         'stat_ldt_proxy',
                         'stat_nsup_deletes_not_shipped',
@@ -763,7 +742,6 @@ class TestShowStatistics(unittest.TestCase):
         exp_header = "NODE"
         exp_params = [  'allow-nonxdr-writes',
                         'allow-xdr-writes',
-                        'allow_versions',
                         'available-bin-names',
                         'cold-start-evict-ttl',
                         'conflict-resolution-policy',
@@ -797,7 +775,6 @@ class TestShowStatistics(unittest.TestCase):
                         'read-consistency-level-override',
                         'repl-factor',
                         'set-deleted-objects',
-                        'set-evicted-objects',
                         'sets-enable-xdr',
                         'sindex-used-bytes-memory',
                         'single-bin',
@@ -815,7 +792,7 @@ class TestShowStatistics(unittest.TestCase):
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
         self.assertTrue(set(exp_params).issubset(set(actual_params)))
-        
+
     def test_test_namespace(self):
         """
         This test will assert <b> test Namespace Statistics </b> output for heading, header and parameters.
@@ -825,7 +802,6 @@ class TestShowStatistics(unittest.TestCase):
         exp_header = "NODE"
         exp_params = [  'allow-nonxdr-writes',
                         'allow-xdr-writes',
-                        'allow_versions',
                         'available-bin-names',
                         'cold-start-evict-ttl',
                         'conflict-resolution-policy',
@@ -859,7 +835,6 @@ class TestShowStatistics(unittest.TestCase):
                         'read-consistency-level-override',
                         'repl-factor',
                         'set-deleted-objects',
-                        'set-evicted-objects',
                         'sets-enable-xdr',
                         'sindex-used-bytes-memory',
                         'single-bin',

@@ -136,10 +136,10 @@ class TestInfo(unittest.TestCase):
         exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_info, horizontal = True)        
-        self.assertEqual(exp_header, actual_header)
+        self.assertTrue(set(exp_header).issubset(set(actual_header)))
         self.assertTrue(exp_heading in actual_heading)
 
-#     @unittest.skip("Will enable only when xdr is configuired")
+    @unittest.skip("Will enable only when xdr is configuired")
     def test_xdr(self):
         """
         This test will assert <b> info Namespace </b> output for heading, headerline1, headerline2
