@@ -449,7 +449,7 @@ class TestShowDistribution(unittest.TestCase):
         
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowDistribution.test_ttl_distri, horizontal=True, mearge_header = False)
         if 'Node' not in actual_header:
-            actual_header += TestShowDistribution.test_ttl_distri.split('\n')[3]
+            actual_header += ' ' + TestShowDistribution.test_ttl_distri.split('\n')[3]
         exp_header = ' '.join(exp_header.split())
         actual_header = ' '.join([item for item in actual_header.split()
                                   if not item.startswith('\x1b')])
@@ -469,7 +469,7 @@ class TestShowDistribution(unittest.TestCase):
         
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowDistribution.bar_ttl_distri, horizontal=True, mearge_header = False)
         if 'Node' not in actual_header:
-            actual_header += TestShowDistribution.bar_ttl_distri.split('\n')[3]
+            actual_header += ' ' + TestShowDistribution.bar_ttl_distri.split('\n')[3]
         exp_header = ' '.join(exp_header.split())
         actual_header = ' '.join([item for item in actual_header.split()
                                   if not item.startswith('\x1b')])
