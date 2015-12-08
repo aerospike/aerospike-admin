@@ -760,7 +760,13 @@ class CollectinfoController(CommandController):
         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
 
         if 'all' in line:
-            namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
+            try:
+                namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
+            except:
+                from lib.node import Node
+                tempNode = Node(_ip)
+                namespaces = self.parse_namespace(self.cluster._callNodeMethod([tempNode.ip], "info", "namespaces"))
+
             for ns in namespaces:
                 cluster_params.append('dump-wb:ns=' + ns)
                 cluster_params.append('dump-wb-summary:ns=' + ns)
@@ -812,10 +818,18 @@ class CollectinfoController(CommandController):
             aslogfile = as_logfile_prefix + 'xdr.log'
             self.collectinfo_content('shell',['tail -n 10000 /var/log/*xdr.log'])
             
-        try:         
-            as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
-            log_location = self.cluster._callNodeMethod([_ip], "info", 
+        try:
+            try:
+                as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
+                log_location = self.cluster._callNodeMethod([_ip], "info",
                                                         "logs").popitem()[1].split(':')[1]
+            except:
+                from lib.node import Node
+                tempNode = Node(_ip)
+                as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
+                log_location = self.cluster._callNodeMethod([tempNode.ip], "info",
+                                                            "logs").popitem()[1].split(':')[1]
+
             # Comparing with this version because prior to this it was citrusleaf.conf & citrusleaf.log
             if StrictVersion(as_version) > StrictVersion("3.0.0"):            
                 aslogfile = as_logfile_prefix + 'aerospike.conf'
