@@ -33,11 +33,11 @@ def flip_keys(orig_data):
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
-                 , use_telnet=False, user=None, password=None):
+                 , use_telnet=False, user=None, password=None, use_services_alumni=False):
         super(RootController, self).__init__(seed_nodes=seed_nodes
                                              , use_telnet=use_telnet
                                              , user=user
-                                             , password=password)
+                                             , password=password, use_services_alumni=use_services_alumni)
 
         self.controller_map = {
             'info':InfoController

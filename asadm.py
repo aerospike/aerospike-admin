@@ -29,13 +29,13 @@ from lib import terminal
 __version__ = '$$__version__$$'
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, telnet, user=None, password=None):
+    def __init__(self, seed, telnet, user=None, password=None, use_services_alumni=False):
         cmd.Cmd.__init__(self)
 
         self.ctrl = RootController(seed_nodes=[seed]
                                    , use_telnet=telnet
                                    , user=user
-                                   , password=password)
+                                   , password=password, use_services_alumni=use_services_alumni)
         try:
             readline.read_history_file(ADMINHIST)
         except Exception, i:
@@ -284,6 +284,11 @@ def main():
                       , dest="show_version"
                       , action="store_true"
                       , help="Show the version of asadm and exit")
+    parser.add_option("-s"
+                        , "--services-alumni"
+                        , dest="use_services_alumni"
+                        , action="store_true"
+                        , help="Enable use of services-alumni-list instead of existing services-list")
 
     (cli_args, args) = parser.parse_args()
     if cli_args.help:
@@ -315,7 +320,10 @@ def main():
 
     seed = (cli_args.host, cli_args.port)
     telnet = False # telnet currently not working, hardcoding to off
-    shell = AerospikeShell(seed, telnet, user=user, password=password)
+    use_services_alumni = False
+    if cli_args.use_services_alumni:
+        use_services_alumni = True
+    shell = AerospikeShell(seed, telnet, user=user, password=password, use_services_alumni=use_services_alumni)
 
     use_yappi = False
     if cli_args.profile:

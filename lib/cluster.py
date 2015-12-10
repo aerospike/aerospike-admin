@@ -21,8 +21,9 @@ class Cluster(object):
     # Kinda like a singleton... All instantiated classes will share the same
     # state... This makes the class no
     cluster_state = {}
+    use_services_alumni = False
 
-    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None):
+    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None, use_services_alumni=False):
         """
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port) address can be fqdn or ip.
@@ -37,6 +38,7 @@ class Cluster(object):
 
         self.user = user
         self.password = password
+        Cluster.use_services_alumni = use_services_alumni
 
         # self.nodes is a dict from Node ID -> Node objects
         self.nodes = {}
@@ -228,9 +230,8 @@ class Cluster(object):
         """
         Given a node object return its services list
         """
-        services = node.infoServicesAlumni()
-        if services:
-            return services
+        if Cluster.use_services_alumni:
+            return node.infoServicesAlumni()
 
         return node.infoServices() # compatible for version without alumni
 

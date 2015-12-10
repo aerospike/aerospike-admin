@@ -70,11 +70,11 @@ class BaseController(object):
     cluster = None
 
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
-                 , use_telnet=False, user=None, password=None):
+                 , use_telnet=False, user=None, password=None, use_services_alumni=False):
 
         cls = BaseController
         cls.view = view.CliView()
-        cls.cluster = Cluster(seed_nodes, use_telnet, user, password)
+        cls.cluster = Cluster(seed_nodes, use_telnet, user, password, use_services_alumni)
 
         # instance vars
         self.modifiers = set()
