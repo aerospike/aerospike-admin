@@ -73,6 +73,13 @@ class Cluster(object):
 
         return prefixes
 
+    def getNodeNames(self):
+        nodeNames = {}
+        for node_key, node in self.nodes.iteritems():
+            nodeNames[node_key] = node.sockName(use_fqdn=True)
+
+        return nodeNames
+
     def getExpectedPrincipal(self):
         try:
             return max([n.node_id for n in self.nodes.itervalues()])

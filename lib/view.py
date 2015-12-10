@@ -33,7 +33,7 @@ class CliView(object):
 
     @staticmethod
     def infoService(stats, builds, visibilities, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "Service Information"
@@ -112,7 +112,7 @@ class CliView(object):
 
     @staticmethod
     def infoNetwork(stats, hosts, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "Network Information"
@@ -152,7 +152,7 @@ class CliView(object):
 
     @staticmethod
     def infoNamespace(stats, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "Namespace Information"
@@ -234,7 +234,7 @@ class CliView(object):
         if not max(xdr_enable.itervalues()):
             return
 
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "XDR Information"
@@ -306,7 +306,7 @@ class CliView(object):
 
     @staticmethod
     def infoSIndex(stats, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "Secondary Index Information"
@@ -344,7 +344,7 @@ class CliView(object):
                          , cluster
                          , like=None
                          , **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
 
         likes = CliView.compileLikes(like)
 
@@ -376,7 +376,7 @@ class CliView(object):
 
     @staticmethod
     def showLatency(latency, cluster, like=None, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
 
         if like:
             likes = CliView.compileLikes(like)
@@ -414,7 +414,7 @@ class CliView(object):
 
     @staticmethod
     def showConfig(title, service_configs, cluster, like=None, diff=None, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         column_names = set()
 
         if diff and service_configs:
@@ -466,7 +466,7 @@ class CliView(object):
     def asinfo(results, line_sep, cluster, **kwargs):
         like = set(kwargs['like'])
         for node_id, value in results.iteritems():
-            prefix = cluster.getPrefixes()[node_id]
+            prefix = cluster.getNodeNames()[node_id]
             node = cluster.getNode(node_id)[0]
 
             print "%s%s (%s) returned%s:"%(terminal.bold()
@@ -497,7 +497,7 @@ class CliView(object):
     @staticmethod
     def dun(results, cluster, **kwargs):
         for node_id, command_result in results.iteritems():
-            prefix = cluster.getPrefixes()[node_id]
+            prefix = cluster.getNodeNames()[node_id]
             node = cluster.getNode(node_id)[0]
 
             print "%s%s (%s) returned%s:"%(terminal.bold()
