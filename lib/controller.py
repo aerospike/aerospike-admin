@@ -587,6 +587,7 @@ class ClusterController(CommandController):
         return missing_part[:-1]
 
     def get_namespace_data(self, namespace_stats):
+        disc_pct_allowed = 1   # Considering Negative & Positive both discrepancy
         ns_info = {}
         for ns, nodes in namespace_stats.items():
             ns_info[ns] = {}
@@ -602,13 +603,20 @@ class ClusterController(CommandController):
             ns_info[ns]['avg_master_objs'] = master_objs / 4096
             ns_info[ns]['avg_replica_objs'] = replica_objs / 4096
             ns_info[ns]['repl_factor'] = repl_factor
+            diff_master = ns_info[ns]['avg_master_objs'] * disc_pct_allowed / 100
+            if diff_master < 1024:
+                diff_master = 1024
+            diff_replica = ns_info[ns]['avg_replica_objs'] * disc_pct_allowed / 100
+            if diff_replica < 1024:
+                diff_replica = 1024
+            ns_info[ns]['diff_master'] = diff_master
+            ns_info[ns]['diff_replica'] = diff_replica
         return ns_info
 
     def get_pmap_data(self, pmap_info, ns_info):
         # TODO: check if node not have master & replica objects
         pid_range = 4096        # each namespace is devided into 4096 partition
-        disc_pct_allowed = 1   # Considering Negative & Positive both discrepancy
-        is_dist_delta_exeeds = lambda exp, act: abs((exp - act) * 100 / exp) > disc_pct_allowed
+        is_dist_delta_exeeds = lambda exp, act, diff: abs(exp - act) > diff
         pmap_data = {}
         ns_missing_part = {}
         visited_ns = set()
@@ -618,8 +626,12 @@ class ClusterController(CommandController):
                 continue
             for item in partitions.split(';'):
                 fields = item.split(':')
-                ns, pid, state, pindex, objects = fields[0], int(fields[1]), fields[2], int(fields[3]), int(fields[9])
-                # assuming entries for namespaces would be continues  
+                ns, pid, state, pindex = fields[0], int(fields[1]), fields[2], int(fields[3])
+                # pmap format is changed(1 field is removed) in aerospike 3.6.1
+                if len(fields) == 11:
+                    objects = int(fields[8])
+                else:
+                    objects = int(fields[9])
                 if ns not in node_pmap:
                     node_pmap[ns] = { 'pri_index' : 0,
                                       'sec_index' : 0,
@@ -637,14 +649,14 @@ class ClusterController(CommandController):
                             exp_master_objs = ns_info[ns]['avg_master_objs']
                             if exp_master_objs == 0 and objects == 0:       #Avoid devide by zero
                                 pass
-                            elif is_dist_delta_exeeds(exp_master_objs, objects):
+                            elif is_dist_delta_exeeds(exp_master_objs, objects, ns_info[ns]['diff_master']):
                                 node_pmap[ns]['master_disc_part'].append(pid)
                         if  pindex in range(1, ns_info[ns]['repl_factor']):
                             node_pmap[ns]['sec_index'] += 1
                             exp_replica_objs = ns_info[ns]['avg_replica_objs']
                             if exp_replica_objs == 0 and objects == 0:
                                 pass
-                            elif is_dist_delta_exeeds(exp_replica_objs, objects):
+                            elif is_dist_delta_exeeds(exp_replica_objs, objects, ns_info[ns]['diff_replica']):
                                 node_pmap[ns]['replica_disc_part'].append(pid)
 
                         ns_missing_part[ns]['missing_part'][pid].remove(pindex)
@@ -652,8 +664,6 @@ class ClusterController(CommandController):
                         print e
                 if pid not in range(pid_range):
                     print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
-#             for _ns, config in node_pmap.items():
-#                 node_pmap[_ns]['distribution_pct'] = node_pmap[_ns]['pri_index'] * 100 / pid_range
             pmap_data[_node] = node_pmap
         for _node, _ns in pmap_data.items():
             for ns_name, params in _ns.items():
