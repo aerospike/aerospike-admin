@@ -798,6 +798,152 @@ class ClusterController(CommandController):
     def do_undun(self, line):
         results = self.cluster.infoUndun(self.mods['line'], nodes=self.nodes)
         self.view.dun(results, self.cluster, **self.mods)
+    
+    def format_missing_part(self, part_data):
+        missing_part = ''
+        get_part = lambda pid, pindex: str(pid) + ':S:' + str(pindex) + ','
+        for pid, part in enumerate(part_data):
+            if part:
+                for pindex in part:
+                    missing_part += get_part(pid, pindex)
+        return missing_part[:-1]
+
+    def get_namespace_data(self, namespace_stats):
+        disc_pct_allowed = 1   # Considering Negative & Positive both discrepancy
+        ns_info = {}
+        for ns, nodes in namespace_stats.items():
+            ns_info[ns] = {}
+            master_objs = 0
+            replica_objs = 0
+            repl_factor = 0
+            for params in nodes.values():
+                if isinstance(params, Exception):
+                    continue
+                master_objs += int(params['master-objects'])
+                replica_objs += int(params['prole-objects'])
+                repl_factor = max(repl_factor, int(params['repl-factor']))
+            ns_info[ns]['avg_master_objs'] = master_objs / 4096
+            ns_info[ns]['avg_replica_objs'] = replica_objs / 4096
+            ns_info[ns]['repl_factor'] = repl_factor
+            diff_master = ns_info[ns]['avg_master_objs'] * disc_pct_allowed / 100
+            if diff_master < 1024:
+                diff_master = 1024
+            diff_replica = ns_info[ns]['avg_replica_objs'] * disc_pct_allowed / 100
+            if diff_replica < 1024:
+                diff_replica = 1024
+            ns_info[ns]['diff_master'] = diff_master
+            ns_info[ns]['diff_replica'] = diff_replica
+        return ns_info
+
+    def get_pmap_data(self, pmap_info, ns_info):
+        # TODO: check if node not have master & replica objects
+        pid_range = 4096        # each namespace is devided into 4096 partition
+        is_dist_delta_exeeds = lambda exp, act, diff: abs(exp - act) > diff
+        pmap_data = {}
+        ns_missing_part = {}
+        visited_ns = set()
+        for _node, partitions in pmap_info.items():
+            node_pmap = dict()
+            if isinstance(partitions, Exception):
+                continue
+            for item in partitions.split(';'):
+                fields = item.split(':')
+                ns, pid, state, pindex = fields[0], int(fields[1]), fields[2], int(fields[3])
+                # pmap format is changed(1 field is removed) in aerospike 3.6.1
+                if len(fields) == 11:
+                    objects = int(fields[8])
+                else:
+                    objects = int(fields[9])
+                if ns not in node_pmap:
+                    node_pmap[ns] = { 'pri_index' : 0,
+                                      'sec_index' : 0,
+                                      'master_disc_part': [],
+                                      'replica_disc_part':[]
+                                    }
+                if ns not in visited_ns:
+                    ns_missing_part[ns] = {}
+                    ns_missing_part[ns]['missing_part'] = [range(ns_info[ns]['repl_factor']) for i in range(pid_range)]
+                    visited_ns.add(ns)
+                if state == 'S':
+                    try:
+                        if  pindex == 0:
+                            node_pmap[ns]['pri_index'] += 1
+                            exp_master_objs = ns_info[ns]['avg_master_objs']
+                            if exp_master_objs == 0 and objects == 0:       #Avoid devide by zero
+                                pass
+                            elif is_dist_delta_exeeds(exp_master_objs, objects, ns_info[ns]['diff_master']):
+                                node_pmap[ns]['master_disc_part'].append(pid)
+                        if  pindex in range(1, ns_info[ns]['repl_factor']):
+                            node_pmap[ns]['sec_index'] += 1
+                            exp_replica_objs = ns_info[ns]['avg_replica_objs']
+                            if exp_replica_objs == 0 and objects == 0:
+                                pass
+                            elif is_dist_delta_exeeds(exp_replica_objs, objects, ns_info[ns]['diff_replica']):
+                                node_pmap[ns]['replica_disc_part'].append(pid)
+
+                        ns_missing_part[ns]['missing_part'][pid].remove(pindex)
+                    except Exception as e:
+                        print e
+                if pid not in range(pid_range):
+                    print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
+            pmap_data[_node] = node_pmap
+        for _node, _ns in pmap_data.items():
+            for ns_name, params in _ns.items():
+                params['missing_part'] = self.format_missing_part(ns_missing_part[ns_name]['missing_part'])
+        return pmap_data
+    
+    @CommandHelp('"pmap" command is used for displaying partition map analysis of cluster')
+    def do_pmap(self, line):
+        pmap_info = self.cluster.info("partition-info", nodes = self.nodes)
+        namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
+        namespaces = namespaces.values()
+        namespace_set = set()
+        namespace_stats = dict()
+        for namespace in namespaces:
+            if isinstance(namespace, Exception):
+                continue
+            namespace_set.update(namespace)
+        for namespace in sorted(namespace_set):
+            ns_stats = self.cluster.infoNamespaceStatistics(namespace
+                                                            , nodes=self.nodes)
+            namespace_stats[namespace] = ns_stats
+        pmap_data = self.get_pmap_data(pmap_info, self.get_namespace_data(namespace_stats))
+        return util.Future(self.view.clusterPMap, pmap_data, self.cluster)
+
+    def get_qnode_data(self, qnode_config=''):
+        qnode_data = dict()
+        for _node, config in qnode_config.items():
+            if isinstance(config, Exception):
+                continue
+            node_qnode = dict()
+            for item in config.split(';'):
+                fields = item.split(':')
+                ns, pid, node_type = fields[0], int(fields[1]), fields[5]
+# qnode format is changed(1 field is removed) in aerospike's 3.6.1 version
+                if len(fields) == 7:
+                    pdata = int(fields[6])
+                else:
+                    pdata = int(fields[7])
+                if ns not in node_qnode:
+                    node_qnode[ns] = { 'MQ_without_data' : 0,
+                                      'RQ_data' : 0,
+                                      'RQ_without_data' : []
+                                     }
+                if node_type == 'MQ' and pdata == 0:
+                    node_qnode[ns]['MQ_without_data'] += 1
+                elif node_type == 'RQ' and pdata == 0:
+                    node_qnode[ns]['RQ_without_data'].append(pid)
+                    node_qnode[ns]['RQ_data'] += 1
+                elif node_type == 'RQ':
+                    node_qnode[ns]['RQ_data'] += 1
+            qnode_data[_node] = node_qnode
+        return qnode_data
+
+    @CommandHelp('"qnode" command is used for displaying qnode map analysis')
+    def do_qnode(self, line):
+        qnode_info = self.cluster.info("sindex-qnodemap:", nodes = self.nodes)
+        qnode_data = self.get_qnode_data(qnode_info)
+        return util.Future(self.view.clusterQNode, qnode_data, self.cluster)
 
 @CommandHelp('"collectinfo" is used to collect system stats on the local node.')
 class CollectinfoController(CommandController):
@@ -1018,6 +1164,10 @@ class CollectinfoController(CommandController):
         
         try:
             aslogfile = as_logfile_prefix + 'clusterCmd.log'
+            ccluster = ClusterController()
+            for cmd in ['pmap', 'qnode']:
+                self.collectinfo_content(ccluster, [cmd])
+
             for cluster_param in cluster_params:
                 self.collectinfo_content('cluster',cluster_param)
 
