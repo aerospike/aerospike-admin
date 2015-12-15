@@ -463,6 +463,10 @@ class CliView(object):
         CliView.showConfig(*args, **kwargs)
 
     @staticmethod
+    def showHealth(*args, **kwargs):
+        CliView.showConfig(*args, **kwargs)
+
+    @staticmethod
     def asinfo(results, line_sep, cluster, **kwargs):
         like = set(kwargs['like'])
         for node_id, value in results.iteritems():
