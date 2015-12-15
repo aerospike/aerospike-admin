@@ -498,7 +498,7 @@ class CliView(object):
 
     @staticmethod
     def clusterPMap(pmap_data, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         title = "Partition Map Analysis"
         column_names = ('Node',
                         'Namespace',
@@ -523,7 +523,7 @@ class CliView(object):
 
     @staticmethod
     def clusterQNode(qnode_data, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         title = "QNode Map Analysis"
         column_names = ('Node',
                         'Namespace',
