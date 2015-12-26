@@ -495,6 +495,52 @@ class CliView(object):
                 print
 
     @staticmethod
+    def clusterPMap(pmap_data, cluster, **ignore):
+        prefixes = cluster.getPrefixes()
+        title = "Partition Map Analysis"
+        column_names = ('Node',
+                        'Namespace',
+                        'Primary Partitions',
+                        'Secondary Partitions',
+                        'Missing Partitions',
+                        'Master Discrepancy Partitions',
+                        'Replica Discrepancy Partitions')
+        t = Table(title, column_names)
+        for node_key, n_stats in pmap_data.iteritems():
+            row = {}
+            row['Node'] = prefixes[node_key]
+            for ns, ns_stats in n_stats.iteritems():
+                row['Namespace'] = ns
+                row['Primary Partitions'] = ns_stats['pri_index']
+                row['Secondary Partitions'] = ns_stats['sec_index']
+                row['Missing Partitions'] = ns_stats['missing_part']
+                row['Master Discrepancy Partitions'] = ns_stats['master_disc_part']
+                row['Replica Discrepancy Partitions'] = ns_stats['replica_disc_part']
+                t.insertRow(row)
+        print t
+
+    @staticmethod
+    def clusterQNode(qnode_data, cluster, **ignore):
+        prefixes = cluster.getPrefixes()
+        title = "QNode Map Analysis"
+        column_names = ('Node',
+                        'Namespace',
+                        'Master QNode Without Data',
+                        'Replica QNode Without Data',
+                        'Replica QNode With Data',)
+        t = Table(title, column_names)
+        for node_key, n_stats in qnode_data.iteritems():
+            row = {}
+            row['Node'] = prefixes[node_key]
+            for ns, ns_stats in n_stats.iteritems():
+                row['Namespace'] = ns
+                row['Master QNode Without Data'] = ns_stats['MQ_without_data']
+                row['Replica QNode Without Data'] = ns_stats['RQ_without_data']
+                row['Replica QNode With Data'] = ns_stats['RQ_data']
+                t.insertRow(row)
+        print t
+
+    @staticmethod
     def dun(results, cluster, **kwargs):
         for node_id, command_result in results.iteritems():
             prefix = cluster.getPrefixes()[node_id]
