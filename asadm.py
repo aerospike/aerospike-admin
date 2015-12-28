@@ -19,7 +19,7 @@ import cmd
 import sys
 import os
 import re
-import optparse
+import argparse
 import getpass
 import shlex
 from lib import citrusleaf
@@ -239,58 +239,57 @@ def do_ctrl_c(*args, **kwargs):
 
 def main():
     usage = "usage: %prog [options]"
-    parser = optparse.OptionParser(usage, add_help_option=False)
-    parser.add_option("-h"
+    parser = argparse.ArgumentParser(add_help=False, conflict_handler='resolve')
+    parser.add_argument("-h"
                         , "--host"
                         , dest="host"
                         , default="127.0.0.1"
                         , help="Address (ip/fqdn) of a host in an " + \
                                "Aerospike cluster")
-    parser.add_option("-p", "--port"
+    parser.add_argument("-p", "--port"
                         , dest="port"
                         , type=int
                         , default=3000
                         , help="Aerospike service port used by the host.")
-    parser.add_option("-U"
+    parser.add_argument("-U"
                         , "--user"
                         , dest="user"
                         , help="user name")
-    parser.add_option("-P"
+    parser.add_argument("-P"
                         , "--password"
                         , dest="password"
-                        , action="store_const"
-                        # , nargs="?"
+                        , nargs="?"
                         , const="prompt"
                         , help="password")
-    parser.add_option("-e"
+    parser.add_argument("-e"
                         , "--execute"
                         , dest="execute"
                         , help="Execute a single asadmin command and exit")
-    parser.add_option("--no-color"
+    parser.add_argument("--no-color"
                         , dest="no_color"
                         , action="store_true"
                         , help="Disable colored output")
-    parser.add_option("--profile"
+    parser.add_argument("--profile"
                         , dest="profile"
                         , action="store_true"
                         #, help="Profile Aerospike Admin for performance issues"
-                        , help=optparse.SUPPRESS_USAGE)
-    parser.add_option("-u"
+                        , help=argparse.SUPPRESS)
+    parser.add_argument("-u"
                         , "--help"
                         , dest="help"
                         , action="store_true"
                         , help="show program usage")
-    parser.add_option("--version"
+    parser.add_argument("--version"
                       , dest="show_version"
                       , action="store_true"
                       , help="Show the version of asadm and exit")
-    parser.add_option("-s"
+    parser.add_argument("-s"
                         , "--services-alumni"
                         , dest="use_services_alumni"
                         , action="store_true"
                         , help="Enable use of services-alumni-list instead of existing services-list")
 
-    (cli_args, args) = parser.parse_args()
+    cli_args = parser.parse_args()
     if cli_args.help:
         parser.print_help()
         exit(0)
