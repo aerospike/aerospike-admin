@@ -164,6 +164,7 @@ class CliView(object):
                         , ('_prole-objects', 'Replica Objects')
                         , 'repl-factor'
                         , 'stop-writes'
+                        , ('_migrates', 'Migrates (tx_i,tx_r,rx_i,rx_r)')
                         , ('_used-bytes-disk', 'Disk Used')
                         , ('_used-disk-pct', 'Disk Used%')
                         , ('high-water-disk-pct', 'HWM Disk%')
@@ -196,6 +197,13 @@ class CliView(object):
 
         t.addCellAlert('stop-writes'
                        , lambda data: data['stop-writes'] != 'false')
+
+        t.addDataSource('_migrates'
+                        ,lambda data:
+                        "(%s,%s,%s,%s)"%(row.get('migrate-tx-partitions-initial', 'N/E')
+                                      , row.get('migrate-tx-partitions-remaining', 'N/E')
+                                      , row.get('migrate-rx-partitions-initial','N/E')
+                                      , row.get('migrate-rx-partitions-remaining','N/E')))
 
         t.addCellAlert('_used-disk-pct'
                        , lambda data: int(data['_used-disk-pct']) >= int(data['high-water-disk-pct']))
