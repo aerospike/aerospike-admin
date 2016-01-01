@@ -86,7 +86,7 @@ class Node(object):
 
             # Original address may not be the service address, the
             # following will ensure we have the service address
-            address = self.infoService()[0]
+            address = self.infoService(address)[0]
             if isinstance(address, Exception):
                 raise address
 
@@ -249,9 +249,12 @@ class Node(object):
         return self._infoServicesHelper(self.info("services"))
 
     @return_exceptions
-    def infoService(self):
-        service = self.info("service")
-        return tuple(service.split(':'))
+    def infoService(self, address):
+        try:
+            service = self.info("service")
+            return tuple(service.split(':'))
+        except:
+            return [address]
 
     @return_exceptions
     def infoServicesAlumni(self):
