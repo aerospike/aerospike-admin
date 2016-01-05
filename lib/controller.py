@@ -230,20 +230,23 @@ class ASInfoController(CommandController):
 
         tline = line[:]
 
-        while tline:
-            word = tline.pop(0)
-            if word == '-v':
-                value = tline.pop(0)
-            elif word == '-l':
-                line_sep = True
-            elif word == '-p':
-                port = tline.pop(0)
-                if port == '3004': # ugly Hack
-                    xdr = True
-            else:
-                raise ShellException(
-                    "Do not understand '%s' in '%s'"%(word
-                                                   , " ".join(line)))
+        try:
+            while tline:
+                word = tline.pop(0)
+                if word == '-v':
+                    value = tline.pop(0)
+                elif word == '-l':
+                    line_sep = True
+                elif word == '-p':
+                    port = tline.pop(0)
+                    if port == '3004': # ugly Hack
+                        xdr = True
+                else:
+                    raise ShellException(
+                        "Do not understand '%s' in '%s'"%(word
+                                                       , " ".join(line)))
+        except:
+            return
 
         value = value.translate(None, "'\"")
         if xdr:
@@ -273,7 +276,7 @@ class ShowController(CommandController):
             , 'statistics':ShowStatisticsController
             , 'latency':ShowLatencyController
             , 'distribution':ShowDistributionController
-            ,  'health':ShowHealthController
+            , 'health':ShowHealthController
         }
 
         self.modifiers = set()
