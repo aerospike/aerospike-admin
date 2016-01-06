@@ -236,6 +236,53 @@ class CliView(object):
         print t
 
     @staticmethod
+    def infoSet(stats, cluster, **ignore):
+        prefixes = cluster.getNodeNames()
+        principal = cluster.getExpectedPrincipal()
+
+        title = "Set Information"
+        column_names = ('node'
+                        , 'set'
+                        , 'namespace'
+                        , 'set-delete'
+                        , ('_n-bytes-memory', 'Mem used')
+                        , ('_n_objects', 'Objects')
+                        , 'stop-writes-count'
+                        , 'disable-eviction'
+                        , 'set-enable-xdr'
+                        )
+
+        t = Table(title, column_names, group_by=1)
+        t.addDataSource('_n-bytes-memory'
+                        ,Extractors.byteExtractor('n-bytes-memory'))
+        t.addDataSource('_n_objects'
+                        ,Extractors.sifExtractor('n_objects'))
+
+        t.addCellAlert('node'
+                       ,lambda data: data['real_node_id'] == principal
+                       , color=terminal.fg_green)
+
+        for node_key, s_stats in stats.iteritems():
+            node = cluster.getNode(node_key)[0]
+            if isinstance(s_stats, Exception):
+                t.insertRow({'real_node_id':node.node_id
+                             , 'node':prefixes[node_key]})
+                continue
+
+            for (ns,set), set_stats in s_stats.iteritems():
+                if isinstance(set_stats, Exception):
+                    row = {}
+                else:
+                    row = set_stats
+
+                row['set'] = set
+                row['namespace'] = ns
+                row['real_node_id'] = node.node_id
+                row['node'] = prefixes[node_key]
+                t.insertRow(row)
+        print t
+
+    @staticmethod
     def infoXDR(stats, builds, xdr_enable, cluster, **ignore):
         if not max(xdr_enable.itervalues()):
             return

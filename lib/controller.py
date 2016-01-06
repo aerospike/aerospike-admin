@@ -15,7 +15,7 @@
 from lib.controllerlib import *
 from lib import util
 import time, os, sys, platform, shutil, urllib2, socket
-from distutils.version import StrictVersion
+from distutils.version import StrictVersion, LooseVersion
 import zipfile
 import copy
 
@@ -49,6 +49,7 @@ class RootController(BaseController):
             , '!':ShellController
             , 'shell':ShellController
             , 'collectinfo':CollectinfoController
+            , 'features':FeaturesController
         }
 
     @CommandHelp('Terminate session')
@@ -88,6 +89,7 @@ class InfoController(CommandController):
     def _do_default(self, line):
         actions = (util.Future(self.do_service, line).start()
                    , util.Future(self.do_network, line).start()
+                   , util.Future(self.do_set, line).start()
                    , util.Future(self.do_namespace, line).start()
                    , util.Future(self.do_xdr, line).start())
         return [action.result() for action in actions]
@@ -166,6 +168,11 @@ class InfoController(CommandController):
                     stats[host]['current-time'] = configs[ns]['current-time']
 
         return util.Future(self.view.infoNetwork, stats, hosts, self.cluster, **self.mods)
+
+    @CommandHelp('Displays summary information for each set.')
+    def do_set(self, line):
+        stats = self.cluster.infoSetStatistics(nodes=self.nodes)
+        return util.Future(self.view.infoSet, stats, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each namespace.')
     def do_namespace(self, line):
@@ -450,8 +457,7 @@ class ShowConfigController(CommandController):
                             , configs, self.cluster, **self.mods)
                 for ns, configs in ns_configs.iteritems()]
 
-    @CommandHelp('Displays XDR configuration')
-    def do_xdr(self, line):
+    def xdr_port_config(self, line):
         xdr_configs = self.cluster.infoXDRGetConfig(nodes=self.nodes)
 
         xdr_filtered = {}
@@ -461,8 +467,26 @@ class ShowConfigController(CommandController):
 
             xdr_filtered[node] = config['xdr']
 
-        return util.Future(self.view.showConfig, "XDR Configuration", xdr_filtered, self.cluster
+        return util.Future(self.view.showConfig, "XDR Configuration from xdr port", xdr_filtered, self.cluster
                              , **self.mods)
+
+    def asd_port_config(self, line):
+        xdr_configs_asd = self.cluster.infoGetConfig(nodes=self.nodes
+                                                     , stanza='xdr')
+        for node in xdr_configs_asd:
+            if isinstance(xdr_configs_asd[node], Exception):
+                xdr_configs_asd[node] = {}
+            else:
+                xdr_configs_asd[node] = xdr_configs_asd[node]['xdr']
+
+        return util.Future(self.view.showConfig, "XDR Configuration from asd port", xdr_configs_asd, self.cluster
+                             , **self.mods)
+    @CommandHelp('Displays XDR configuration')
+    def do_xdr(self, line):
+        actions = (util.Future(self.xdr_port_config, line).start()
+                   , util.Future(self.asd_port_config, line).start()
+                   )
+        return [action.result() for action in actions]
 
 @CommandHelp('"show health" is used to display Aerospike configuration health')
 class ShowHealthController(CommandController):
@@ -950,6 +974,7 @@ class ClusterController(CommandController):
 
 @CommandHelp('"collectinfo" is used to collect system stats on the local node.')
 class CollectinfoController(CommandController):
+
     def collect_local_file(self,src,dest_dir):
         try:
             shutil.copy2(src, dest_dir)
@@ -957,10 +982,10 @@ class CollectinfoController(CommandController):
             print e
         return
 
-    def collectinfo_content(self, func, parm=''):
+    def collectinfo_content(self, func, parm='', alt_parm=''):
         name = ''
         capture_stdout = util.capture_stdout
-        sep = "\n=======ASCOLLECTINFO(" + output_time + ")======\n"
+        sep = "\n====ASCOLLECTINFO====\n"
         try:
             name = func.func_name
         except Exception:
@@ -971,6 +996,28 @@ class CollectinfoController(CommandController):
 
         if func == 'shell':
             o,e = util.shell_command(parm)
+            if e:
+                if e:
+                    info_line = "[Error] " + str(e)
+                    print info_line
+                    sep += info_line+"\n"
+                if alt_parm:
+                    info_line = "[INFO] Data collection for alternative command " + name +str(alt_parm) + " in progress.."
+                    print info_line
+                    sep += info_line+"\n"
+                    o_alt,e_alt = util.shell_command(alt_parm)
+                    if e_alt:
+                        self.cmds_error.add(parm[0])
+                        self.cmds_error.add(alt_parm[0])
+                        if e_alt:
+                            info_line = "[Error] " + str(e_alt)
+                            print info_line
+                            sep += info_line+"\n"
+                    if o_alt:
+                        o = o_alt
+                else:
+                    self.cmds_error.add(parm[0])
+
         elif func == 'cluster':
             o = self.cluster.info(parm)
         else:
@@ -1081,6 +1128,12 @@ class CollectinfoController(CommandController):
     def main_collectinfo(self, line):
         # Unfortunately timestamp can not be printed in Centos with dmesg, 
         # storing dmesg logs without timestamp for this particular OS.
+        port = 3000
+        try:
+            host,port = list(self.cluster._original_seed_nodes)[0]
+        except:
+            port = 3000
+
         if 'centos' == (platform.linux_distribution()[0]).lower():
             cmd_dmesg  = 'dmesg'
         else:
@@ -1090,44 +1143,56 @@ class CollectinfoController(CommandController):
         global aslogdir, aslogfile, output_time
         output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
         aslogdir = '/tmp/collectInfo_' + output_time
-        as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
+        #as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
         as_logfile_prefix = aslogdir + '/' + output_time + '_'
-                
-        info_params = ['network','service', 'namespace', 'xdr', 'sindex']
-        show_params = ['config', 'distribution', 'latency', 'statistics']
-        cluster_params = ['service',
-                          'services',
-                          'xdr-min-lastshipinfo:',
-                          'dump-fabric:',
-                          'dump-hb:',
-                          'dump-migrates:',
-                          'dump-msgs:',
-                          'dump-paxos:',
-                          'dump-smd:',
-                          'dump-wr:',
-                          ]
-        shell_cmds = ['date',
+
+        sys_shell_cmds = ['date',
                       'hostname',
-                      'ip addr',
-                      'ip -s link',
-                      'uptime',
                       'uname -a',
                       'lsb_release -a',
                       'ls /etc|grep release|xargs -I f cat /etc/f',
-                      'rpm -qa|grep -E "citrus|aero"',
-                      'dpkg -l|grep -E "citrus|aero"',
-                      'free -m',
-                      'df -h',
+                      'cat /proc/cpuinfo | grep "processor\|vendor_id\|cpu family\|core id\|cpu cores\|cache_alignment\|model_name\|^$"',
+                      'vmstat -s',
                       'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
                       'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
-                      'lsof',
-                       cmd_dmesg,
-                      'iostat -x 1 10',
-                      'vmstat -s',
-                      'vmstat -m',
-                      'iptables -L',
+                      'rpm -qa|grep -E "citrus|aero"',
+                      'dpkg -l|grep -E "citrus|aero"'
                       ]
-        cpu_stat = ['top -n3 -b', 'iostat -x 1 10', 'ss -pant', 'sar -n DEV', 'sar -n EDEV']
+        sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'sindex']
+        sys_show_params = ['distribution', 'latency']
+        sys_features_params = ['features']
+        sys_cluster_params = ['pmap']
+        dignostic_show_params = ['config', 'config diff', 'statistics']
+        dignostic_cluster_params = ['service', 'services']
+        dignostic_cluster_params_additional = [
+                          'partition-info',
+                          'dump-msgs:',
+                          'dump-wr:'
+                          ]
+        dignostic_cluster_params_additional_verbose = [
+                          'dump-fabric:',
+                          'dump-hb:',
+                          'dump-migrates:',
+                          'dump-paxos:',
+                          'dump-smd:'
+                          ]
+        dignostic_shell_cmds = ['ip addr',
+                      'ip -s link',
+                      'iptables -L',
+                      'iostat -x 1 10',
+                      'sar -n DEV',
+                      'sar -n EDEV',
+                      'df -h',
+                      'vmstat -m',
+                      'free -m',
+                      cmd_dmesg,
+                      'top -n3 -b',
+                      'uptime'
+                      ]
+        dignostic_shell_cmds_with_alternatives = {
+                      'ss -pant | grep %d | grep TIME_WAIT | wc -l'%(port):'netstat -pant | grep %d | grep TIME_WAIT | wc -l'%(port),
+                      'ss -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port):'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)
+                      }
         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
 
         if 'all' in line:
@@ -1139,8 +1204,20 @@ class CollectinfoController(CommandController):
                 namespaces = self.parse_namespace(self.cluster._callNodeMethod([tempNode.ip], "info", "namespaces"))
 
             for ns in namespaces:
-                cluster_params.append('dump-wb:ns=' + ns)
-                cluster_params.append('dump-wb-summary:ns=' + ns)
+                # dump-wb dumps debug information about Write Bocks, it needs namespace, device-id and write-block-id as a parameter
+                #dignostic_cluster_params_additional.append('dump-wb:ns=' + ns)
+
+                dignostic_cluster_params_additional.append('dump-wb-summary:ns=' + ns)
+
+            if 'verbose' in line:
+                for index, param in enumerate(dignostic_cluster_params_additional_verbose):
+                    if param.startswith("dump"):
+                        if not param.endswith(":"):
+                            param = param + ";"
+                        param = param + "verbose=true"
+                    dignostic_cluster_params_additional_verbose[index]=param
+
+            dignostic_cluster_params = dignostic_cluster_params + dignostic_cluster_params_additional + dignostic_cluster_params_additional_verbose
 
         if 'ubuntu' == (platform.linux_distribution()[0]).lower():
             cmd_dmesg  = 'cat /var/log/syslog'
@@ -1149,45 +1226,96 @@ class CollectinfoController(CommandController):
         
         terminal.enable_color(False)
         
-        os.makedirs(as_sysinfo_logdir)
+        ####### System info ########
+
+        os.makedirs(aslogdir)
+        aslogfile = as_logfile_prefix + 'sysinfo.log'
+        self.write_log(collect_output)
+
+        try:
+            for cmd in sys_shell_cmds:
+                self.collectinfo_content('shell',[cmd])
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            self.collectinfo_content(self.collect_sys)
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            self.collectinfo_content(self.get_awsdata)
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
                 
         try:
-            aslogfile = as_logfile_prefix + 'asadmCmd.log'
-            cinfo = InfoController()
-            for info_param in info_params:
-                self.collectinfo_content(cinfo,[info_param])
-            
-            do_show = ShowController()
-            for show_param in show_params:
-                self.collectinfo_content(do_show,[show_param])
-
+            info_controller = InfoController()
+            for info_param in sys_info_params:
+                self.collectinfo_content(info_controller,[info_param])
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
-        
+
         try:
-            aslogfile = as_logfile_prefix + 'clusterCmd.log'
-            ccluster = ClusterController()
-            for cmd in ['pmap', 'qnode']:
-                self.collectinfo_content(ccluster, [cmd])
+            show_controller = ShowController()
+            for show_param in sys_show_params:
+                self.collectinfo_content(show_controller,[show_param])
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
 
-            for cluster_param in cluster_params:
-                self.collectinfo_content('cluster',cluster_param)
+        try:
+            features_controller = FeaturesController()
+            for cmd in sys_features_params:
+                self.collectinfo_content(features_controller, [cmd])
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            cluster_controller = ClusterController()
+            for cmd in sys_cluster_params:
+                self.collectinfo_content(cluster_controller, [cmd])
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        ####### Dignostic info ########
+
+        aslogfile = as_logfile_prefix + 'ascollectinfo.log'
+        self.write_log(collect_output)
+
+        try:
+            show_controller = ShowController()
+            for show_param in dignostic_show_params:
+                self.collectinfo_content(show_controller,show_param.split())
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            for cmd in dignostic_cluster_params:
+                self.collectinfo_content('cluster', cmd)
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            for cmd in dignostic_shell_cmds:
+                self.collectinfo_content('shell',[cmd])
+
+            for cmd, alt_cmd in dignostic_shell_cmds_with_alternatives.iteritems():
+                self.collectinfo_content('shell',[cmd],[alt_cmd])
 
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
-            
-        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'sysCmdOutput.log')
-        for cmd in shell_cmds:
-            self.collectinfo_content('shell',[cmd])
-            
-        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'cpu_stat.log')
-        for _cmd in cpu_stat:
-            self.collectinfo_content('shell',[_cmd])
-        
-        aslogfile = os.path.join(as_sysinfo_logdir, output_time + '_' + 'dmesg.log')
-        self.collectinfo_content('shell',[cmd_dmesg])
+
+
+        ####### Logs and conf ########
         
         if 'True' in self.cluster.isXDREnabled().values():
             aslogfile = as_logfile_prefix + 'xdr.log'
@@ -1204,9 +1332,8 @@ class CollectinfoController(CommandController):
                 as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
                 log_location = self.cluster._callNodeMethod([tempNode.ip], "info",
                                                             "logs").popitem()[1].split(':')[1]
-
             # Comparing with this version because prior to this it was citrusleaf.conf & citrusleaf.log
-            if StrictVersion(as_version) > StrictVersion("3.0.0"):            
+            if LooseVersion(as_version) > LooseVersion("3.0.0"):
                 aslogfile = as_logfile_prefix + 'aerospike.conf'
                 self.collectinfo_content('shell',['cat /etc/aerospike/aerospike.conf'])
             else:
@@ -1218,13 +1345,100 @@ class CollectinfoController(CommandController):
             self.write_log(str(e))
             sys.stdout = sys.__stdout__            
                     
-        aslogfile = as_logfile_prefix + 'collectSys.log'
-        self.collectinfo_content(self.collect_sys)
-        
-        aslogfile = as_logfile_prefix + 'awsData.log'
-        self.collectinfo_content(self.get_awsdata)
-        
         self.archive_log(aslogdir)
 
     def _do_default(self, line):
+        self.cmds_error = set()
         self.main_collectinfo(line)
+        if self.cmds_error:
+            print "\n\n--------------------------------------------------------------------------------------------------\n"
+            print "ERROR ::: Following commands are either unavailable or giving runtime error..."
+            print "  " + '\n  '.join(self.cmds_error)
+            print "\n--------------------------------------------------------------------------------------------------\n"
+
+class FeaturesController(CommandController):
+
+    def __init__(self):
+        self.modifiers = set(['like'])
+
+    @CommandHelp('Displays features of Aerospike cluster.')
+    def _do_default(self, line):
+        service_stats = self.cluster.infoStatistics(nodes=self.nodes)
+        #ns_stats = self.logger.infoStatistics(stanza="namespace")
+        features = {}
+        for node, stats in service_stats.iteritems():
+            features[node] = {}
+            features[node]["KVS"] = "NO"
+            try:
+                if int(stats["stat_read_reqs"]) > 0 or int(stats["stat_write_reqs"]) > 0:
+                    features[node]["KVS"] = "YES"
+            except:
+                pass
+
+            features[node]["UDF"] = "NO"
+            try:
+                if int(stats["udf_read_reqs"]) > 0 or int(stats["udf_write_reqs"]) > 0:
+                    features[node]["UDF"] = "YES"
+            except:
+                pass
+
+            features[node]["BATCH"] = "NO"
+            try:
+                if int(stats["batch_initiate"]) > 0:
+                    features[node]["BATCH"] = "YES"
+            except:
+                pass
+
+            features[node]["SCAN"] = "NO"
+            try:
+                if int(stats["tscan_initiate"]) > 0:
+                    features[node]["SCAN"] = "YES"
+            except:
+                pass
+
+            features[node]["SINDEX"] = "NO"
+            try:
+                if int(stats["sindex-used-bytes-memory"]) > 0:
+                    features[node]["SINDEX"] = "YES"
+            except:
+                pass
+
+            features[node]["QUERY"] = "NO"
+            try:
+                if int(stats["query_reqs"]) > 0 or int(stats["query_success"]) > 0:
+                    features[node]["QUERY"] = "YES"
+            except:
+                pass
+
+            features[node]["AGGREGATION"] = "NO"
+            try:
+                if int(stats["query_agg"]) > 0 or int(stats["query_agg_success"]) > 0:
+                    features[node]["AGGREGATION"] = "YES"
+            except:
+                pass
+
+            features[node]["LDT"] = "NO"
+            try:
+                if int(stats["sub-records"]) > 0 or int(stats["ldt-writes"]) > 0 or int(
+                            stats["ldt-reads"]) > 0 or int(stats["ldt-deletes"]) > 0:
+                    features[node]["LDT"] = "YES"
+            except:
+                pass
+
+            features[node]["XDR ENABLED"] = "NO"
+            try:
+                if int(stats["stat_read_reqs_xdr"]) > 0:
+                    features[node]["XDR ENABLED"] = "YES"
+            except:
+                pass
+
+            features[node]["XDR DESTINATION"] = "NO"
+            try:
+                if int(stats["stat_write_reqs_xdr"]) > 0:
+                    features[node]["XDR DESTINATION"] = "YES"
+            except:
+                pass
+
+        return util.Future(self.view.showConfig, "Features"
+                    , features
+                    , self.cluster, **self.mods)
