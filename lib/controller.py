@@ -283,7 +283,7 @@ class ShowController(CommandController):
             , 'statistics':ShowStatisticsController
             , 'latency':ShowLatencyController
             , 'distribution':ShowDistributionController
-            , 'health':ShowHealthController
+            #, 'health':ShowHealthController
         }
 
         self.modifiers = set()
@@ -992,27 +992,26 @@ class CollectinfoController(CommandController):
             pass
         info_line = "[INFO] Data collection for " + name +str(parm) + " in progress.."
         print info_line
-        sep += info_line+"\n"
+        if parm:
+            sep += str(parm)+"\n"
 
         if func == 'shell':
             o,e = util.shell_command(parm)
             if e:
                 if e:
-                    info_line = "[Error] " + str(e)
+                    info_line = "[ERROR] " + str(e)
                     print info_line
-                    sep += info_line+"\n"
-                if alt_parm:
+                if alt_parm and alt_parm[0]:
                     info_line = "[INFO] Data collection for alternative command " + name +str(alt_parm) + " in progress.."
                     print info_line
-                    sep += info_line+"\n"
+                    sep += str(alt_parm)+"\n"
                     o_alt,e_alt = util.shell_command(alt_parm)
                     if e_alt:
                         self.cmds_error.add(parm[0])
                         self.cmds_error.add(alt_parm[0])
                         if e_alt:
-                            info_line = "[Error] " + str(e_alt)
+                            info_line = "[ERROR] " + str(e_alt)
                             print info_line
-                            sep += info_line+"\n"
                     if o_alt:
                         o = o_alt
                 else:
@@ -1073,21 +1072,52 @@ class CollectinfoController(CommandController):
             print "Requesting... {0} \t  {1} ".format(aws_metadata_base_url, e)
             print "FAILED! Node Is Not likely In AWS"
             
-    def collect_sys(self,line):
-        lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
-        print util.shell_command([lsof_cmd])
-        print platform.platform()
-        smd_home = '/opt/aerospike/smd'
-        if os.path.isdir(smd_home):
-            smd_files = [ f for f in os.listdir(smd_home) if os.path.isfile(os.path.join(smd_home, f)) ]
-            for f in smd_files:
-                smd_f = os.path.join(smd_home, f)
-                print smd_f
-                smd_fp = open(smd_f, 'r')
-                print smd_fp.read()
-                smd_fp.close()
+    def collect_sys(self, line=''):
+        print "['cpuinfo']"
+        cpu_info_cmd = 'cat /proc/cpuinfo | grep "vendor_id"'
+        o,e = util.shell_command([cpu_info_cmd])
+        if o:
+            o = o.strip().split("\n")
+            cpu_info = {}
+            for item in o:
+                items = item.strip().split(":")
+                if len(items)== 2:
+                    key = items[1].strip()
+                    if key in cpu_info.keys():
+                        cpu_info[key] = cpu_info[key] + 1
+                    else:
+                        cpu_info[key] = 1
+            print "vendor_id\tprocessor count"
+            for key in cpu_info.keys():
+                print key + "\t" + str(cpu_info[key])
 
-    def zip_files(self, dir_path, _size = 5):
+        print "\n====ASCOLLECTINFO===="
+
+        print "['lsof']"
+        ps_cmd = 'sudo ps aux|grep -v grep|grep -E "asd|cld"'
+        ps_o,ps_e = util.shell_command([ps_cmd])
+        if ps_o:
+            ps_o = ps_o.strip().split("\n")
+            pids = []
+            for item in ps_o:
+                vals = item.strip().split()
+                if len(vals)>=2:
+                    pids.append(vals[1])
+
+            if pids and len(pids)>0:
+                search_str = pids[0]
+                for _str in pids[1:len(pids)]:
+                    search_str += "\\|" + _str
+                lsof_cmd='sudo lsof|grep "%s"'%(search_str)
+                lsof_o,lsof_e = util.shell_command([lsof_cmd])
+                if lsof_e :
+                    self.cmds_error.add(lsof_cmd)
+                print lsof_o
+
+        # old command
+        #lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
+
+    def zip_files(self, dir_path, _size = 1):
         """
         If file size is greater then given _size, create zip of file on same location and 
         remove original one. Won't zip If zlib module is not available. 
@@ -1126,14 +1156,15 @@ class CollectinfoController(CommandController):
         return namespaces
 
     def main_collectinfo(self, line):
-        # Unfortunately timestamp can not be printed in Centos with dmesg, 
-        # storing dmesg logs without timestamp for this particular OS.
+        # getting service port to use in ss/netstat command
         port = 3000
         try:
             host,port = list(self.cluster._original_seed_nodes)[0]
         except:
             port = 3000
 
+        # Unfortunately timestamp can not be printed in Centos with dmesg,
+        # storing dmesg logs without timestamp for this particular OS.
         if 'centos' == (platform.linux_distribution()[0]).lower():
             cmd_dmesg  = 'dmesg'
         else:
@@ -1146,17 +1177,16 @@ class CollectinfoController(CommandController):
         #as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
         as_logfile_prefix = aslogdir + '/' + output_time + '_'
 
-        sys_shell_cmds = ['date',
-                      'hostname',
-                      'uname -a',
-                      'lsb_release -a',
-                      'ls /etc|grep release|xargs -I f cat /etc/f',
-                      'cat /proc/cpuinfo | grep "processor\|vendor_id\|cpu family\|core id\|cpu cores\|cache_alignment\|model_name\|^$"',
-                      'vmstat -s',
-                      'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',
-                      'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',
-                      'rpm -qa|grep -E "citrus|aero"',
-                      'dpkg -l|grep -E "citrus|aero"'
+        # cmd and alternative cmds are stored in list of list instead of dic to maintain proper order for output
+        sys_shell_cmds = [['date',''],
+                      ['hostname -I',''],
+                      ['uname -a',''],
+                      ['lsb_release -a','ls /etc|grep release|xargs -I f cat /etc/f'],
+                      ['cat /proc/cpuinfo | grep "processor\|vendor_id\|cpu family\|core id\|cpu cores\|cache_alignment\|model_name\|^$"',''],
+                      ['vmstat -s',''],
+                      ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',''],
+                      ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',''],
+                      ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"']
                       ]
         sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'sindex']
         sys_show_params = ['distribution', 'latency']
@@ -1176,23 +1206,21 @@ class CollectinfoController(CommandController):
                           'dump-paxos:',
                           'dump-smd:'
                           ]
-        dignostic_shell_cmds = ['ip addr',
-                      'ip -s link',
-                      'iptables -L',
-                      'iostat -x 1 10',
-                      'sar -n DEV',
-                      'sar -n EDEV',
-                      'df -h',
-                      'vmstat -m',
-                      'free -m',
-                      cmd_dmesg,
-                      'top -n3 -b',
-                      'uptime'
+        dignostic_shell_cmds = [['ip addr',''],
+                      ['ip -s link',''],
+                      ['sudo iptables -L',''],
+                      ['iostat -x 1 10',''],
+                      ['sar -n DEV',''],
+                      ['sar -n EDEV',''],
+                      ['df -h',''],
+                      ['free -m',''],
+                      [cmd_dmesg,''],
+                      ['top -n3 -b',''],
+                      ['uptime',''],
+                      ['ss -pant | grep %d | grep TIME-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep TIMED_WAIT | wc -l'%(port)],
+                      ['ss -pant | grep %d | grep CLOSED-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)],
+                      ['ss -pant | grep %d | grep ESTAB | wc -l'%(port),'netstat -pant | grep %d | grep ESTABLISHED | wc -l'%(port)]
                       ]
-        dignostic_shell_cmds_with_alternatives = {
-                      'ss -pant | grep %d | grep TIME_WAIT | wc -l'%(port):'netstat -pant | grep %d | grep TIME_WAIT | wc -l'%(port),
-                      'ss -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port):'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)
-                      }
         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
 
         if 'all' in line:
@@ -1233,8 +1261,8 @@ class CollectinfoController(CommandController):
         self.write_log(collect_output)
 
         try:
-            for cmd in sys_shell_cmds:
-                self.collectinfo_content('shell',[cmd])
+            for cmds in sys_shell_cmds:
+                self.collectinfo_content('shell',[cmds[0]],[cmds[1]])
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
@@ -1250,7 +1278,7 @@ class CollectinfoController(CommandController):
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
-                
+
         try:
             info_controller = InfoController()
             for info_param in sys_info_params:
@@ -1304,11 +1332,8 @@ class CollectinfoController(CommandController):
             sys.stdout = sys.__stdout__
 
         try:
-            for cmd in dignostic_shell_cmds:
-                self.collectinfo_content('shell',[cmd])
-
-            for cmd, alt_cmd in dignostic_shell_cmds_with_alternatives.iteritems():
-                self.collectinfo_content('shell',[cmd],[alt_cmd])
+            for cmds in dignostic_shell_cmds:
+                self.collectinfo_content('shell',[cmds[0]],[cmds[1]])
 
         except Exception as e:
             self.write_log(str(e))
@@ -1317,21 +1342,36 @@ class CollectinfoController(CommandController):
 
         ####### Logs and conf ########
         
-        if 'True' in self.cluster.isXDREnabled().values():
-            aslogfile = as_logfile_prefix + 'xdr.log'
-            self.collectinfo_content('shell',['tail -n 10000 /var/log/*xdr.log'])
-            
+        if 'all' in line:
+            try:
+                if 'True' in self.cluster.isXDREnabled().values():
+                    aslogfile = as_logfile_prefix + 'xdr.log'
+                    self.collectinfo_content('shell',['cat /var/log/*xdr.log'])
+            except:
+                self.write_log(str(e))
+                sys.stdout = sys.__stdout__
+
+            try:
+                try:
+                    log_location = self.cluster._callNodeMethod([_ip], "info",
+                                                            "logs").popitem()[1].split(':')[1]
+                except:
+                    from lib.node import Node
+                    tempNode = Node(_ip)
+                    log_location = self.cluster._callNodeMethod([tempNode.ip], "info",
+                                                                "logs").popitem()[1].split(':')[1]
+                self.collect_local_file(log_location, aslogdir)
+            except:
+                self.write_log(str(e))
+                sys.stdout = sys.__stdout__
+
         try:
             try:
                 as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
-                log_location = self.cluster._callNodeMethod([_ip], "info",
-                                                        "logs").popitem()[1].split(':')[1]
             except:
                 from lib.node import Node
                 tempNode = Node(_ip)
                 as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
-                log_location = self.cluster._callNodeMethod([tempNode.ip], "info",
-                                                            "logs").popitem()[1].split(':')[1]
             # Comparing with this version because prior to this it was citrusleaf.conf & citrusleaf.log
             if LooseVersion(as_version) > LooseVersion("3.0.0"):
                 aslogfile = as_logfile_prefix + 'aerospike.conf'
@@ -1340,7 +1380,7 @@ class CollectinfoController(CommandController):
                 aslogfile = as_logfile_prefix + 'citrusleaf.conf'
                 self.collectinfo_content('shell',['cat /etc/citrusleaf/citrusleaf.conf'])
                 
-            self.collect_local_file(log_location, aslogdir)
+
         except Exception as e: 
             self.write_log(str(e))
             sys.stdout = sys.__stdout__            
