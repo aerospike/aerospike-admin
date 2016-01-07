@@ -253,6 +253,8 @@ class ASInfoController(CommandController):
                         "Do not understand '%s' in '%s'"%(word
                                                        , " ".join(line)))
         except:
+            print  "Do not understand '%s' in '%s'"%(word
+                                              , " ".join(line))
             return
 
         value = value.translate(None, "'\"")
@@ -1182,7 +1184,6 @@ class CollectinfoController(CommandController):
                       ['hostname -I',''],
                       ['uname -a',''],
                       ['lsb_release -a','ls /etc|grep release|xargs -I f cat /etc/f'],
-                      ['cat /proc/cpuinfo | grep "processor\|vendor_id\|cpu family\|core id\|cpu cores\|cache_alignment\|model_name\|^$"',''],
                       ['vmstat -s',''],
                       ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',''],
                       ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',''],
@@ -1216,6 +1217,7 @@ class CollectinfoController(CommandController):
                       ['free -m',''],
                       [cmd_dmesg,''],
                       ['top -n3 -b',''],
+                      ['mpstat -P ALL 2 3',''],
                       ['uptime',''],
                       ['ss -pant | grep %d | grep TIME-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep TIME_WAIT | wc -l'%(port)],
                       ['ss -pant | grep %d | grep CLOSE-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)],

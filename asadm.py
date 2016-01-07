@@ -90,9 +90,14 @@ class AerospikeShell(cmd.Cmd):
         return commands
 
     def precmd(self, line):
-        lines = self.cleanLine(line)
+        lines = None
+        try:
+            lines = self.cleanLine(line)
 
-        if not lines: # allow empty lines
+            if not lines: # allow empty lines
+                return ""
+        except Exception as e:
+            print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
             return ""
 
         for line in lines:
@@ -109,7 +114,7 @@ class AerospikeShell(cmd.Cmd):
                 response = self.ctrl.execute(line)
                 if response == "EXIT":
                     return "exit"
-            except ShellException as e:
+            except Exception as e:
                 print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
         return "" # line was handled by execute
 
