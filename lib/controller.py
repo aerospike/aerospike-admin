@@ -31,6 +31,32 @@ def flip_keys(orig_data):
 
     return new_data
 
+def get_sindex_stats(cluster, nodes='all'):
+    stats = cluster.infoSIndex(nodes=nodes)
+    sindexe_stats = {}
+
+    for host, stat_list in stats.iteritems():
+        if isinstance(stat_list, Exception):
+            continue
+        for stat in stat_list:
+            if not stat:
+                continue
+            ns = stat['ns']
+            set = stat['set']
+            indexname = stat['indexname']
+
+            sindex_key = "%s %s %s"%(ns,set,indexname)
+
+            if sindex_key not in sindexe_stats:
+                sindexe_stats[sindex_key] = {}
+            sindexe_stats[sindex_key] = cluster.infoSIndexStatistics(ns,indexname)
+            for node in sindexe_stats[sindex_key].keys():
+                for key,value in stat.iteritems():
+                    sindexe_stats[sindex_key][node][key] = value
+
+    return sindexe_stats
+
+
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
@@ -193,22 +219,8 @@ class InfoController(CommandController):
 
     @CommandHelp('Displays summary information for Seconday Indexes (SIndex).')
     def do_sindex(self, line):
-        stats = self.cluster.infoSIndex(nodes=self.nodes)
-        sindexes = {}
-
-        for host, stat_list in stats.iteritems():
-            if isinstance(stat_list, Exception):
-                continue
-            for stat in stat_list:
-                if not stat:
-                    continue
-                indexname = stat['indexname']
-
-                if indexname not in sindexes:
-                    sindexes[indexname] = {}
-                sindexes[indexname][host] = stat
-
-        return util.Future(self.view.infoSIndex, sindexes, self.cluster, **self.mods)
+        sindex_stats = get_sindex_stats(self.cluster, self.nodes)
+        return util.Future(self.view.infoSIndex, sindex_stats, self.cluster, **self.mods)
 
 
 @CommandHelp('"asinfo" provides raw access to the info protocol.'
@@ -719,7 +731,8 @@ class ShowStatisticsController(CommandController):
                    , util.Future(self.do_sets, line).start()
                    , util.Future(self.do_service, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start())
+                   , util.Future(self.do_xdr, line).start()
+                   , util.Future(self.do_sindex, line).start())
 
         return [action.result() for action in actions]
 
@@ -753,6 +766,18 @@ class ShowStatisticsController(CommandController):
                             , self.cluster
                             , **self.mods)
                 for namespace in sorted(namespace_set)]
+
+
+
+    @CommandHelp('Displays namespace statistics')
+    def do_sindex(self, line):
+        sindex_stats = get_sindex_stats(self.cluster, self.nodes)
+        return [util.Future(self.view.showStats
+                            , "%s Sindex Statistics"%(ns_set_sindex)
+                            , sindex_stats[ns_set_sindex]
+                            , self.cluster
+                            , **self.mods)
+                for ns_set_sindex in sorted(sindex_stats.keys())]
 
     @CommandHelp('Displays set statistics')
     def do_sets(self, line):
@@ -1255,10 +1280,39 @@ class CollectinfoController(CommandController):
             cmd_dmesg  = 'cat /var/log/messages'
         
         terminal.enable_color(False)
+        os.makedirs(aslogdir)
+
+        ####### Dignostic info ########
+
+        aslogfile = as_logfile_prefix + 'ascollectinfo.log'
+        self.write_log(collect_output)
+
+        try:
+            for cmds in dignostic_shell_cmds:
+                self.collectinfo_content('shell',[cmds[0]],[cmds[1]])
+
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            show_controller = ShowController()
+            for show_param in dignostic_show_params:
+                self.collectinfo_content(show_controller,show_param.split())
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            for cmd in dignostic_cluster_params:
+                self.collectinfo_content('cluster', cmd)
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
         
         ####### System info ########
 
-        os.makedirs(aslogdir)
         aslogfile = as_logfile_prefix + 'sysinfo.log'
         self.write_log(collect_output)
 
@@ -1313,34 +1367,6 @@ class CollectinfoController(CommandController):
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
 
-        ####### Dignostic info ########
-
-        aslogfile = as_logfile_prefix + 'ascollectinfo.log'
-        self.write_log(collect_output)
-
-        try:
-            show_controller = ShowController()
-            for show_param in dignostic_show_params:
-                self.collectinfo_content(show_controller,show_param.split())
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            for cmd in dignostic_cluster_params:
-                self.collectinfo_content('cluster', cmd)
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            for cmds in dignostic_shell_cmds:
-                self.collectinfo_content('shell',[cmds[0]],[cmds[1]])
-
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
 
         ####### Logs and conf ########
         
@@ -1377,9 +1403,11 @@ class CollectinfoController(CommandController):
             # Comparing with this version because prior to this it was citrusleaf.conf & citrusleaf.log
             if LooseVersion(as_version) > LooseVersion("3.0.0"):
                 aslogfile = as_logfile_prefix + 'aerospike.conf'
+                self.write_log(collect_output)
                 self.collectinfo_content('shell',['cat /etc/aerospike/aerospike.conf'])
             else:
                 aslogfile = as_logfile_prefix + 'citrusleaf.conf'
+                self.write_log(collect_output)
                 self.collectinfo_content('shell',['cat /etc/citrusleaf/citrusleaf.conf'])
                 
 

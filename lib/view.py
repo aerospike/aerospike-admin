@@ -371,7 +371,14 @@ class CliView(object):
                         , 'num_bins'
                         , ('type', 'Bin Type')
                         , 'state'
-                        , 'sync_state')
+                        , 'sync_state'
+                        , 'keys'
+                        , 'objects'
+                        , ('ibtr_memory_used','si_accounted_memory')
+                        , ('query_reqs','q')
+                        , ('stat_write_success','w')
+                        , ('stat_delete_success','d')
+                        , ('query_avg_rec_count', 's'))
 
         t = Table(title, column_names, group_by=1)
         for stat in stats.values():

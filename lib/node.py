@@ -502,3 +502,13 @@ class Node(object):
     def infoSIndex(self):
         return [util.info_to_dict(v, ':')
                 for v in util.info_to_list(self.info("sindex"))[:-1]]
+
+    @return_exceptions
+    def infoSIndexStatistics(self, namespace, indexname):
+        """
+        Get statistics for a sindex.
+
+        Returns:
+        dict -- {stat_name : stat_value, ...}
+        """
+        return util.info_to_dict(self.info("sindex/%s/%s"%(namespace,indexname)))
