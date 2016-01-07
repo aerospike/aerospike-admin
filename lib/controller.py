@@ -18,6 +18,8 @@ import time, os, sys, platform, shutil, urllib2, socket
 from distutils.version import StrictVersion, LooseVersion
 import zipfile
 import copy
+from lib.data import lsof_file_type_desc
+
 
 def flip_keys(orig_data):
     new_data = {}
@@ -1118,8 +1120,67 @@ class CollectinfoController(CommandController):
             for key in cpu_info.keys():
                 print key + "\t" + str(cpu_info[key])
 
-        print "\n====ASCOLLECTINFO===="
+    def collect_lsof(self, verbose=False):
+        print "['lsof']"
+        ps_cmd = 'sudo ps aux|grep -v grep|grep -E "asd|cld"'
+        ps_o,ps_e = util.shell_command([ps_cmd])
+        if ps_o:
+            ps_o = ps_o.strip().split("\n")
+            pids = []
+            for item in ps_o:
+                vals = item.strip().split()
+                if len(vals)>=2:
+                    pids.append(vals[1])
 
+            if pids and len(pids)>0:
+                search_str = pids[0]
+                for _str in pids[1:len(pids)]:
+                    search_str += "\\|" + _str
+                lsof_cmd='sudo lsof -n |grep "%s"'%(search_str)
+                lsof_o,lsof_e = util.shell_command([lsof_cmd])
+                if lsof_e :
+                    self.cmds_error.add(lsof_cmd)
+                if lsof_o:
+                    if verbose:
+                        print lsof_o
+                    else:
+                        lsof_dic = {}
+                        unidentified_protocol_count = 0
+                        lsof_list = lsof_o.strip().split("\n")
+                        type_ljust_parm = 20
+                        desc_ljust_parm = 20
+                        for row in lsof_list:
+                            try:
+                                if "can't identify protocol" in row:
+                                    unidentified_protocol_count = unidentified_protocol_count + 1
+                            except:
+                                pass
+
+                            try:
+                                type = row.strip().split()[4]
+                                if type not in lsof_dic:
+                                    if len(type)>type_ljust_parm:
+                                        type_ljust_parm = len(type)
+                                    if type in lsof_file_type_desc and len(lsof_file_type_desc[type])>desc_ljust_parm:
+                                        desc_ljust_parm = len(lsof_file_type_desc[type])
+                                    lsof_dic[type] = 1
+                                else:
+                                    lsof_dic[type] = lsof_dic[type] + 1
+
+                            except:
+                                continue
+
+                        print "FileType".ljust(type_ljust_parm)+"Description".ljust(desc_ljust_parm)+"fd count"
+                        for ftype in sorted(lsof_dic.keys()):
+                            desc = "Unknown"
+                            if ftype in lsof_file_type_desc:
+                                desc = lsof_file_type_desc[ftype]
+                            print ftype.ljust(type_ljust_parm)+desc.ljust(desc_ljust_parm) + str(lsof_dic[ftype])
+
+                        print "\nUnidentified Protocols = " + str(unidentified_protocol_count)
+
+
+    def _collect_lsof(self, line=''):
         print "['lsof']"
         ps_cmd = 'sudo ps aux|grep -v grep|grep -E "asd|cld"'
         ps_o,ps_e = util.shell_command([ps_cmd])
@@ -1182,7 +1243,7 @@ class CollectinfoController(CommandController):
                 namespaces.add(ns)
         return namespaces
 
-    def main_collectinfo(self, line):
+    def main_collectinfo(self, show_all=False, verbose=False):
         # getting service port to use in ss/netstat command
         port = 3000
         try:
@@ -1212,13 +1273,16 @@ class CollectinfoController(CommandController):
                       ['vmstat -s',''],
                       ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',''],
                       ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',''],
-                      ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"']
+                      ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
+                      ['ip addr',''],
+                      ['ip -s link',''],
+                      ['sudo iptables -L','']
                       ]
         sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'sindex']
-        sys_show_params = ['distribution', 'latency']
+        sys_show_params = ['distribution', 'config diff']
         sys_features_params = ['features']
         sys_cluster_params = ['pmap']
-        dignostic_show_params = ['config', 'config diff', 'statistics']
+        dignostic_show_params = ['config', 'latency', 'statistics']
         dignostic_cluster_params = ['service', 'services']
         dignostic_cluster_params_additional = [
                           'partition-info',
@@ -1232,9 +1296,7 @@ class CollectinfoController(CommandController):
                           'dump-paxos:',
                           'dump-smd:'
                           ]
-        dignostic_shell_cmds = [['ip addr',''],
-                      ['ip -s link',''],
-                      ['sudo iptables -L',''],
+        dignostic_shell_cmds = [
                       ['iostat -x 1 10',''],
                       ['sar -n DEV',''],
                       ['sar -n EDEV',''],
@@ -1250,7 +1312,7 @@ class CollectinfoController(CommandController):
                       ]
         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
 
-        if 'all' in line:
+        if show_all:
             try:
                 namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
             except:
@@ -1264,7 +1326,7 @@ class CollectinfoController(CommandController):
 
                 dignostic_cluster_params_additional.append('dump-wb-summary:ns=' + ns)
 
-            if 'verbose' in line:
+            if verbose:
                 for index, param in enumerate(dignostic_cluster_params_additional_verbose):
                     if param.startswith("dump"):
                         if not param.endswith(":"):
@@ -1294,6 +1356,19 @@ class CollectinfoController(CommandController):
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
+
+        try:
+            self.collectinfo_content(self.collect_lsof)
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        if show_all and verbose:
+            try:
+                self.collectinfo_content(self.collect_lsof,verbose)
+            except Exception as e:
+                self.write_log(str(e))
+                sys.stdout = sys.__stdout__
 
         try:
             show_controller = ShowController()
@@ -1346,7 +1421,7 @@ class CollectinfoController(CommandController):
         try:
             show_controller = ShowController()
             for show_param in sys_show_params:
-                self.collectinfo_content(show_controller,[show_param])
+                self.collectinfo_content(show_controller,show_param.split())
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
@@ -1370,7 +1445,7 @@ class CollectinfoController(CommandController):
 
         ####### Logs and conf ########
         
-        if 'all' in line:
+        if show_all:
             try:
                 if 'True' in self.cluster.isXDREnabled().values():
                     aslogfile = as_logfile_prefix + 'xdr.log'
@@ -1388,7 +1463,7 @@ class CollectinfoController(CommandController):
                     tempNode = Node(_ip)
                     log_location = self.cluster._callNodeMethod([tempNode.ip], "info",
                                                                 "logs").popitem()[1].split(':')[1]
-                self.collect_local_file(log_location, aslogdir)
+                self.collect_local_file(log_location, as_logfile_prefix + 'aerospike.log')
             except:
                 self.write_log(str(e))
                 sys.stdout = sys.__stdout__
@@ -1417,15 +1492,33 @@ class CollectinfoController(CommandController):
                     
         self.archive_log(aslogdir)
 
+    @CommandHelp('Collects system stats on the local node.')
     def _do_default(self, line):
         self.cmds_error = set()
-        self.main_collectinfo(line)
+        self.main_collectinfo(False,False)
         if self.cmds_error:
             print "\n\n--------------------------------------------------------------------------------------------------\n"
             print "ERROR ::: Following commands are either unavailable or giving runtime error..."
             print "  " + '\n  '.join(self.cmds_error)
             print "\n--------------------------------------------------------------------------------------------------\n"
 
+    @CommandHelp('collecting all default stats and additional stats like info dump-* commands output'
+             , '  Options:'
+             , '  verbose     - collecting all default and additional stats with detailed output of info dump-* commands'
+             )
+    def do_all(self, line):
+        verbose = False
+        if 'verbose' in line:
+            verbose = True
+        self.cmds_error = set()
+        self.main_collectinfo(True,verbose)
+        if self.cmds_error:
+            print "\n\n--------------------------------------------------------------------------------------------------\n"
+            print "ERROR ::: Following commands are either unavailable or giving runtime error..."
+            print "  " + '\n  '.join(self.cmds_error)
+            print "\n--------------------------------------------------------------------------------------------------\n"
+
+@CommandHelp('Displays features used in Aerospike cluster.')
 class FeaturesController(CommandController):
 
     def __init__(self):
