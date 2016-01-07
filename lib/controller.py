@@ -1110,7 +1110,7 @@ class CollectinfoController(CommandController):
                 search_str = pids[0]
                 for _str in pids[1:len(pids)]:
                     search_str += "\\|" + _str
-                lsof_cmd='sudo lsof|grep "%s"'%(search_str)
+                lsof_cmd='sudo lsof -n |grep "%s"'%(search_str)
                 lsof_o,lsof_e = util.shell_command([lsof_cmd])
                 if lsof_e :
                     self.cmds_error.add(lsof_cmd)
@@ -1180,7 +1180,7 @@ class CollectinfoController(CommandController):
         as_logfile_prefix = aslogdir + '/' + output_time + '_'
 
         # cmd and alternative cmds are stored in list of list instead of dic to maintain proper order for output
-        sys_shell_cmds = [['date',''],
+        sys_shell_cmds = [
                       ['hostname -I',''],
                       ['uname -a',''],
                       ['lsb_release -a','ls /etc|grep release|xargs -I f cat /etc/f'],
