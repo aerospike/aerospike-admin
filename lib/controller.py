@@ -1217,8 +1217,8 @@ class CollectinfoController(CommandController):
                       [cmd_dmesg,''],
                       ['top -n3 -b',''],
                       ['uptime',''],
-                      ['ss -pant | grep %d | grep TIME-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep TIMED_WAIT | wc -l'%(port)],
-                      ['ss -pant | grep %d | grep CLOSED-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)],
+                      ['ss -pant | grep %d | grep TIME-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep TIME_WAIT | wc -l'%(port)],
+                      ['ss -pant | grep %d | grep CLOSE-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)],
                       ['ss -pant | grep %d | grep ESTAB | wc -l'%(port),'netstat -pant | grep %d | grep ESTABLISHED | wc -l'%(port)]
                       ]
         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
