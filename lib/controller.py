@@ -1525,13 +1525,12 @@ class CollectinfoController(CommandController):
             print "  " + '\n  '.join(self.cmds_error)
             print "\n--------------------------------------------------------------------------------------------------\n"
 
-@CommandHelp('Displays features used in Aerospike cluster.')
+@CommandHelp('Displays features used in running Aerospike cluster.')
 class FeaturesController(CommandController):
 
     def __init__(self):
         self.modifiers = set(['like'])
 
-    @CommandHelp('Displays features of Aerospike cluster.')
     def _do_default(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
         #ns_stats = self.logger.infoStatistics(stanza="namespace")
