@@ -40,6 +40,7 @@ class CliView(object):
         column_names = ('node'
                         , 'build'
                         , 'cluster_size'
+                        , 'cluster_key'
                         , 'cluster_visibility'
                         , '_cluster_integrity'
                         , ('free-pct-disk', 'Free Disk%')

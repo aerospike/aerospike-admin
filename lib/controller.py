@@ -1277,7 +1277,7 @@ class CollectinfoController(CommandController):
                       ['hostname -I',''],
                       ['uname -a',''],
                       ['lsb_release -a','ls /etc|grep release|xargs -I f cat /etc/f'],
-                      ['vmstat -s',''],
+                      ['cat /proc/meminfo',''],
                       ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',''],
                       ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',''],
                       ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
