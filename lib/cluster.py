@@ -231,9 +231,7 @@ class Cluster(object):
         Given a node object return its services list
         """
         if Cluster.use_services:
-            services = node.infoServices()
-            if services:
-                return services
+            return node.infoServices()
 
         services = node.infoServicesAlumni()
         if services:
