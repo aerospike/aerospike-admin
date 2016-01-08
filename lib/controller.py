@@ -35,28 +35,35 @@ def flip_keys(orig_data):
 
 def get_sindex_stats(cluster, nodes='all'):
     stats = cluster.infoSIndex(nodes=nodes)
-    sindexe_stats = {}
 
-    for host, stat_list in stats.iteritems():
-        if isinstance(stat_list, Exception):
-            continue
-        for stat in stat_list:
-            if not stat:
+    sindex_stats = {}
+
+    if stats:
+        for host, stat_list in stats.iteritems():
+            if not stat_list or isinstance(stat_list, Exception):
                 continue
-            ns = stat['ns']
-            set = stat['set']
-            indexname = stat['indexname']
+            for stat in stat_list:
+                if not stat:
+                    continue
+                ns = stat['ns']
+                set = stat['set']
+                indexname = stat['indexname']
 
-            sindex_key = "%s %s %s"%(ns,set,indexname)
+                if not indexname or not ns:
+                    continue
 
-            if sindex_key not in sindexe_stats:
-                sindexe_stats[sindex_key] = {}
-            sindexe_stats[sindex_key] = cluster.infoSIndexStatistics(ns,indexname)
-            for node in sindexe_stats[sindex_key].keys():
-                for key,value in stat.iteritems():
-                    sindexe_stats[sindex_key][node][key] = value
+                sindex_key = "%s %s %s"%(ns,set,indexname)
 
-    return sindexe_stats
+                if sindex_key not in sindex_stats:
+                    sindex_stats[sindex_key] = {}
+                sindex_stats[sindex_key] = cluster.infoSIndexStatistics(ns,indexname)
+                for node in sindex_stats[sindex_key].keys():
+                    if not sindex_stats[sindex_key][node] or isinstance(sindex_stats[sindex_key][node],Exception):
+                        continue
+                    for key,value in stat.iteritems():
+                        sindex_stats[sindex_key][node][key] = value
+
+    return sindex_stats
 
 
 @CommandHelp('Aerospike Admin')
