@@ -1262,8 +1262,10 @@ class CollectinfoController(CommandController):
         # storing dmesg logs without timestamp for this particular OS.
         if 'centos' == (platform.linux_distribution()[0]).lower():
             cmd_dmesg  = 'dmesg'
+            alt_dmesg  = ''
         else:
             cmd_dmesg  = 'dmesg -T'
+            alt_dmesg  = 'dmesg'
         
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
         global aslogdir, aslogfile, output_time
@@ -1274,10 +1276,10 @@ class CollectinfoController(CommandController):
 
         # cmd and alternative cmds are stored in list of list instead of dic to maintain proper order for output
         sys_shell_cmds = [
-                      ['hostname -I',''],
+                      ['hostname -I','hostname'],
                       ['uname -a',''],
                       ['lsb_release -a','ls /etc|grep release|xargs -I f cat /etc/f'],
-                      ['cat /proc/meminfo',''],
+                      ['cat /proc/meminfo','vmstat -s'],
                       ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',''],
                       ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',''],
                       ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
@@ -1309,8 +1311,8 @@ class CollectinfoController(CommandController):
                       ['sar -n EDEV',''],
                       ['df -h',''],
                       ['free -m',''],
-                      [cmd_dmesg,''],
-                      ['top -n3 -b',''],
+                      [cmd_dmesg,alt_dmesg],
+                      ['top -n3 -b','top -l 3'],
                       ['mpstat -P ALL 2 3',''],
                       ['uptime',''],
                       ['ss -pant | grep %d | grep TIME-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep TIME_WAIT | wc -l'%(port)],
@@ -1529,7 +1531,7 @@ class CollectinfoController(CommandController):
 class FeaturesController(CommandController):
 
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set(['with', 'like'])
 
     def _do_default(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
