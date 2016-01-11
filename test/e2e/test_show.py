@@ -27,6 +27,7 @@ class TestShowConfig(unittest.TestCase):
         rc = controller.RootController()
         actual_out = util.capture_stdout(rc.execute, ['show', 'config'])
         TestShowConfig.output_list = test_util.get_separate_output(actual_out, 'Configuration')
+        TestShowConfig.is_bar_present = False
                           
         for item in TestShowConfig.output_list:
             if "~~Service Configuration~~" in item:
@@ -36,7 +37,8 @@ class TestShowConfig(unittest.TestCase):
             elif "~~test Namespace Configuration~~" in item:
                 TestShowConfig.test_namespace_config = item               
             elif "~~bar Namespace Configuration~~" in item:
-                TestShowConfig.bar_namespace_config = item              
+                TestShowConfig.bar_namespace_config = item
+                TestShowConfig.is_bar_present = True
             elif "~~XDR Configuration~~" in item:
                 TestShowConfig.xdr_config = item
               
@@ -203,6 +205,8 @@ class TestShowConfig(unittest.TestCase):
         Asserts namespace config output with heading, header & parameters.
         ToDo: test for values as well
         """
+        if not TestShowConfig.is_bar_present:
+            return
         
         exp_heading = "~~bar Namespace Configuration~~"
         exp_header = "NODE"
@@ -423,12 +427,14 @@ class TestShowDistribution(unittest.TestCase):
         # use regex in get_separate_output(~.+Distribution.*~.+) 
         #if you are changing below Distribution keyword
         TestShowDistribution.output_list = test_util.get_separate_output(actual_out, 'Distribution in Seconds')
+        TestShowDistribution.is_bar_present = False
                           
         for item in TestShowDistribution.output_list:
             if "~~test - TTL Distribution in Seconds~~" in item:
                 TestShowDistribution.test_ttl_distri = item           
             elif "~~bar - TTL Distribution in Seconds~~" in item:
-                TestShowDistribution.bar_ttl_distri = item           
+                TestShowDistribution.bar_ttl_distri = item
+                TestShowDistribution.is_bar_present = True
             elif "~~~~" in item:
                 TestShowDistribution.test_namespace_config = item               
           
@@ -462,6 +468,8 @@ class TestShowDistribution(unittest.TestCase):
         Asserts TTL Distribution in Seconds for bar namespace with heading, header & parameters.
         ToDo: test for values as well
         """
+        if not TestShowDistribution.is_bar_present:
+            return
         exp_heading = "~~bar - TTL Distribution in Seconds~~"
         exp_header = """Percentage of records having ttl less than or equal
                         to value measured in Seconds
@@ -491,16 +499,19 @@ class TestShowStatistics(unittest.TestCase):
         rc = controller.RootController()
         actual_out = util.capture_stdout(rc.execute, ['show', 'statistics'])
         TestShowStatistics.output_list = test_util.get_separate_output(actual_out, 'Statistics')
+        TestShowStatistics.is_bar_present = False
                           
         for item in TestShowStatistics.output_list:
             if "~~test Bin Statistics~~" in item:
                 TestShowStatistics.test_bin_stats = item           
             elif "~~bar Bin Statistics~~" in item:
-                TestShowStatistics.bar_bin_stats = item           
+                TestShowStatistics.bar_bin_stats = item
+                TestShowStatistics.is_bar_present = True
             elif "~~Service Statistics~~" in item:
                 TestShowStatistics.service_stats = item               
             elif "~~bar Namespace Statistics~~" in item:
-                TestShowStatistics.bar_namespace_stats = item              
+                TestShowStatistics.bar_namespace_stats = item
+                TestShowStatistics.is_bar_present = True
             elif "~~test Namespace Statistics~~" in item:
                 TestShowStatistics.test_namespace_stats = item
             elif "~~XDR Statistics~~" in item:
@@ -530,6 +541,8 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> bar Bin Statistics </b> output for heading, header and parameters.
         ToDo: test for values as well
         """
+        if not TestShowStatistics.is_bar_present:
+            return
         exp_heading = "~bar Bin Statistics~"
         exp_header = "NODE"
         exp_params = ['bin-names-quota', 'num-bin-names']
@@ -735,6 +748,8 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> bar Namespace Statistics </b> output for heading, header and parameters.
         ToDo: test for values as well
         """
+        if not TestShowStatistics.is_bar_present:
+            return
         exp_heading = "~bar Namespace Statistics~"
         exp_header = "NODE"
         exp_params = [  'allow-nonxdr-writes',
