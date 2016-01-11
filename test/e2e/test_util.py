@@ -18,7 +18,12 @@ def parse_output(actual_out = "", horizontal = False, mearge_header = True):
         heading = data.pop(0)
         header_line1 = data.pop(0)
         header_line2 = data.pop(0)
-        no_of_rows = data[-3].split(':')[1]
+        row_data = data[-3]
+        index = -4
+        while not row_data:
+            row_data = data[index]
+            index = index - 1
+        no_of_rows = row_data.split(':')[1]
         if mearge_header:
             return(heading, get_merged_header(header_line1, header_line2), no_of_rows)
         else:

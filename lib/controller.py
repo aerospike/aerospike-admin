@@ -1238,11 +1238,11 @@ class CollectinfoController(CommandController):
         # Unfortunately timestamp can not be printed in Centos with dmesg,
         # storing dmesg logs without timestamp for this particular OS.
         if 'centos' == (platform.linux_distribution()[0]).lower():
-            cmd_dmesg  = 'dmesg'
+            cmd_dmesg  = 'sudo dmesg'
             alt_dmesg  = ''
         else:
-            cmd_dmesg  = 'dmesg -T'
-            alt_dmesg  = 'dmesg'
+            cmd_dmesg  = 'sudo dmesg -T'
+            alt_dmesg  = 'sudo dmesg'
         
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime())
         global aslogdir, aslogfile, output_time

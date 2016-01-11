@@ -686,9 +686,6 @@ class TestShowStatistics(unittest.TestCase):
                         'stat_read_reqs_xdr',
                         'stat_read_success',
                         'stat_rw_timeout',
-                        'stat_slow_trans_queue_batch_pop',
-                        'stat_slow_trans_queue_pop',
-                        'stat_slow_trans_queue_push',
                         'stat_write_errs',
                         'stat_write_errs_notfound',
                         'stat_write_errs_other',
@@ -728,7 +725,7 @@ class TestShowStatistics(unittest.TestCase):
                     ]
         
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.service_stats)
-        
+        #print actual_params
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
         self.assertTrue(set(exp_params).issubset(set(actual_params)))
@@ -765,6 +762,11 @@ class TestShowStatistics(unittest.TestCase):
                         'max-ttl',
                         'max-void-time',
                         'memory-size',
+                        'migrate-rx-partitions-initial',
+                        'migrate-rx-partitions-remaining',
+                        'migrate-tx-partitions-imbalance',
+                        'migrate-tx-partitions-initial',
+                        'migrate-tx-partitions-remaining',
                         'non-expirable-objects',
                         'ns-forward-xdr-writes',
                         'nsup-cycle-duration',

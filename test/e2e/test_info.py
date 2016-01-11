@@ -51,6 +51,7 @@ class TestInfo(unittest.TestCase):
         exp_header= ['Node',
                      'Build',
                      'Cluster Size',
+                     'Cluster Key',
                      'Cluster Visibility',
                      'Cluster Integrity',
                      'Free Disk%',
