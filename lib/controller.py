@@ -126,7 +126,8 @@ class InfoController(CommandController):
                    , util.Future(self.do_network, line).start()
                    , util.Future(self.do_set, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start())
+                   , util.Future(self.do_xdr, line).start()
+                   , util.Future(self.do_sindex, line).start())
         return [action.result() for action in actions]
 
     @CommandHelp('Displays summary information for the Aerospike service.')
@@ -1002,8 +1003,7 @@ class ClusterController(CommandController):
             qnode_data[_node] = node_qnode
         return qnode_data
 
-    @CommandHelp('"qnode" command is used for displaying qnode map analysis')
-    def do_qnode(self, line):
+    def _do_qnode(self, line):
         qnode_info = self.cluster.info("sindex-qnodemap:", nodes = self.nodes)
         qnode_data = self.get_qnode_data(qnode_info)
         return util.Future(self.view.clusterQNode, qnode_data, self.cluster)
@@ -1146,6 +1146,7 @@ class CollectinfoController(CommandController):
                 lsof_cmd='sudo lsof -n |grep "%s"'%(search_str)
                 lsof_o,lsof_e = util.shell_command([lsof_cmd])
                 if lsof_e :
+                    print lsof_e
                     self.cmds_error.add(lsof_cmd)
                 if lsof_o:
                     if verbose:
@@ -1185,32 +1186,8 @@ class CollectinfoController(CommandController):
                             print ftype.ljust(type_ljust_parm)+desc.ljust(desc_ljust_parm) + str(lsof_dic[ftype])
 
                         print "\nUnidentified Protocols = " + str(unidentified_protocol_count)
-
-
-    def _collect_lsof(self, line=''):
-        print "['lsof']"
-        ps_cmd = 'sudo ps aux|grep -v grep|grep -E "asd|cld"'
-        ps_o,ps_e = util.shell_command([ps_cmd])
-        if ps_o:
-            ps_o = ps_o.strip().split("\n")
-            pids = []
-            for item in ps_o:
-                vals = item.strip().split()
-                if len(vals)>=2:
-                    pids.append(vals[1])
-
-            if pids and len(pids)>0:
-                search_str = pids[0]
-                for _str in pids[1:len(pids)]:
-                    search_str += "\\|" + _str
-                lsof_cmd='sudo lsof -n |grep "%s"'%(search_str)
-                lsof_o,lsof_e = util.shell_command([lsof_cmd])
-                if lsof_e :
-                    self.cmds_error.add(lsof_cmd)
-                print lsof_o
-
-        # old command
-        #lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
+       # old command
+       #lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
 
     def zip_files(self, dir_path, _size = 1):
         """
