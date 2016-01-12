@@ -1,4 +1,4 @@
-# Copyright 2013-2014 Aerospike, Inc.
+# Copyright 2013-2016 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -70,11 +70,11 @@ class BaseController(object):
     cluster = None
 
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
-                 , use_telnet=False, user=None, password=None):
+                 , use_telnet=False, user=None, password=None, use_services=False):
 
         cls = BaseController
         cls.view = view.CliView()
-        cls.cluster = Cluster(seed_nodes, use_telnet, user, password)
+        cls.cluster = Cluster(seed_nodes, use_telnet, user, password, use_services)
 
         # instance vars
         self.modifiers = set()

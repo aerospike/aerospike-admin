@@ -1,4 +1,4 @@
-# Copyright 2013-2014 Aerospike, Inc.
+# Copyright 2013-2016 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -91,9 +91,14 @@ class Future(object):
 
         args = list(args)
         args.insert(0, func)
+        self.exc = None
 
         def wrapper(func, *args, **kwargs):
-            self._result = func(*args, **kwargs)
+            self.exc = None
+            try:
+                self._result = func(*args, **kwargs)
+            except Exception as e:
+                self.exc = e
 
         self._worker = threading.Thread(target=wrapper,
                                         args=args, kwargs=kwargs)
@@ -103,6 +108,8 @@ class Future(object):
         return self
 
     def result(self):
+        if self.exc:
+            raise self.exc
         self._worker.join()
         return self._result
 

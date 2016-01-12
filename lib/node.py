@@ -1,4 +1,4 @@
-# Copyright 2013-2014 Aerospike, Inc.
+# Copyright 2013-2016 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ from telnetlib import Telnet
 from time import time
 import socket
 import threading
-from distutils.version import StrictVersion
+from distutils.version import LooseVersion
 
 def getfqdn(address, timeout=0.5):
     # note: cannot use timeout lib because signal must be run from the
@@ -86,7 +86,7 @@ class Node(object):
 
             # Original address may not be the service address, the
             # following will ensure we have the service address
-            address = self.infoService()[0]
+            address = self.infoService(address)[0]
             if isinstance(address, Exception):
                 raise address
 
@@ -249,9 +249,12 @@ class Node(object):
         return self._infoServicesHelper(self.info("services"))
 
     @return_exceptions
-    def infoService(self):
-        service = self.info("service")
-        return tuple(service.split(':'))
+    def infoService(self, address):
+        try:
+            service = self.info("service")
+            return tuple(service.split(':'))
+        except:
+            return [address]
 
     @return_exceptions
     def infoServicesAlumni(self):
@@ -458,7 +461,7 @@ class Node(object):
             as_version = self.info('build')
             # Comparing with this version because the ability 
             # to specify "all" in cluster dun was added in 3.3.26
-            if StrictVersion(as_version) < StrictVersion("3.3.26"):
+            if LooseVersion(as_version) < LooseVersion("3.3.26"):
                 for node in  c.nodes.values():
                     result.add(node.node_id)
             else:
@@ -499,3 +502,13 @@ class Node(object):
     def infoSIndex(self):
         return [util.info_to_dict(v, ':')
                 for v in util.info_to_list(self.info("sindex"))[:-1]]
+
+    @return_exceptions
+    def infoSIndexStatistics(self, namespace, indexname):
+        """
+        Get statistics for a sindex.
+
+        Returns:
+        dict -- {stat_name : stat_value, ...}
+        """
+        return util.info_to_dict(self.info("sindex/%s/%s"%(namespace,indexname)))

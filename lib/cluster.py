@@ -1,4 +1,4 @@
-# Copyright 2013-2014 Aerospike, Inc.
+# Copyright 2013-2016 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,8 +21,9 @@ class Cluster(object):
     # Kinda like a singleton... All instantiated classes will share the same
     # state... This makes the class no
     cluster_state = {}
+    use_services = False
 
-    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None):
+    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None, use_services=False):
         """
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port) address can be fqdn or ip.
@@ -37,6 +38,7 @@ class Cluster(object):
 
         self.user = user
         self.password = password
+        Cluster.use_services = use_services
 
         # self.nodes is a dict from Node ID -> Node objects
         self.nodes = {}
@@ -72,6 +74,13 @@ class Cluster(object):
             prefixes[node_key] = self.node_lookup.getPrefix(fqdn)
 
         return prefixes
+
+    def getNodeNames(self):
+        nodeNames = {}
+        for node_key, node in self.nodes.iteritems():
+            nodeNames[node_key] = node.sockName(use_fqdn=True)
+
+        return nodeNames
 
     def getExpectedPrincipal(self):
         try:
@@ -221,10 +230,12 @@ class Cluster(object):
         """
         Given a node object return its services list
         """
+        if Cluster.use_services:
+            return node.infoServices()
+
         services = node.infoServicesAlumni()
         if services:
             return services
-
         return node.infoServices() # compatible for version without alumni
 
     def _callNodeMethod(self, nodes, method_name, *args, **kwargs):

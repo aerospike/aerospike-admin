@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2013-2014 Aerospike, Inc.
+# Copyright 2013-2016 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import cmd
 import sys
 import os
 import re
-import optparse
 import getpass
 import shlex
 from lib import citrusleaf
@@ -29,13 +28,13 @@ from lib import terminal
 __version__ = '$$__version__$$'
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, telnet, user=None, password=None):
+    def __init__(self, seed, telnet, user=None, password=None, use_services=False):
         cmd.Cmd.__init__(self)
 
         self.ctrl = RootController(seed_nodes=[seed]
                                    , use_telnet=telnet
                                    , user=user
-                                   , password=password)
+                                   , password=password, use_services=use_services)
         try:
             readline.read_history_file(ADMINHIST)
         except Exception, i:
@@ -68,6 +67,7 @@ class AerospikeShell(cmd.Cmd):
 
         command = []
         build_token = ''
+        lexer.wordchars+=".-:"
         for token in lexer:
             build_token += token
             if token == '-':
@@ -89,9 +89,14 @@ class AerospikeShell(cmd.Cmd):
         return commands
 
     def precmd(self, line):
-        lines = self.cleanLine(line)
+        lines = None
+        try:
+            lines = self.cleanLine(line)
 
-        if not lines: # allow empty lines
+            if not lines: # allow empty lines
+                return ""
+        except Exception as e:
+            print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
             return ""
 
         for line in lines:
@@ -108,7 +113,7 @@ class AerospikeShell(cmd.Cmd):
                 response = self.ctrl.execute(line)
                 if response == "EXIT":
                     return "exit"
-            except ShellException as e:
+            except Exception as e:
                 print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
         return "" # line was handled by execute
 
@@ -237,54 +242,116 @@ def do_ctrl_c(*args, **kwargs):
     print "Please press ctrl+d or type exit"
 
 def main():
-    usage = "usage: %prog [options]"
-    parser = optparse.OptionParser(usage, add_help_option=False)
-    parser.add_option("-h"
-                        , "--host"
-                        , dest="host"
-                        , default="127.0.0.1"
-                        , help="Address (ip/fqdn) of a host in an " + \
-                               "Aerospike cluster")
-    parser.add_option("-p", "--port"
-                        , dest="port"
-                        , type=int
-                        , default=3000
-                        , help="Aerospike service port used by the host.")
-    parser.add_option("-U"
-                        , "--user"
-                        , dest="user"
-                        , help="user name")
-    parser.add_option("-P"
-                        , "--password"
-                        , dest="password"
-                        , action="store_const"
-                        # , nargs="?"
-                        , const="prompt"
-                        , help="password")
-    parser.add_option("-e"
-                        , "--execute"
-                        , dest="execute"
-                        , help="Execute a single asadmin command and exit")
-    parser.add_option("--no-color"
-                        , dest="no_color"
-                        , action="store_true"
-                        , help="Disable colored output")
-    parser.add_option("--profile"
-                        , dest="profile"
-                        , action="store_true"
-                        #, help="Profile Aerospike Admin for performance issues"
-                        , help=optparse.SUPPRESS_USAGE)
-    parser.add_option("-u"
-                        , "--help"
-                        , dest="help"
-                        , action="store_true"
-                        , help="show program usage")
-    parser.add_option("--version"
-                      , dest="show_version"
-                      , action="store_true"
-                      , help="Show the version of asadm and exit")
 
-    (cli_args, args) = parser.parse_args()
+    try:
+        import argparse
+        parser = argparse.ArgumentParser(add_help=False, conflict_handler='resolve')
+        parser.add_argument("-h"
+                            , "--host"
+                            , dest="host"
+                            , default="127.0.0.1"
+                            , help="Address (ip/fqdn) of a host in an " + \
+                                   "Aerospike cluster")
+        parser.add_argument("-p", "--port"
+                            , dest="port"
+                            , type=int
+                            , default=3000
+                            , help="Aerospike service port used by the host.")
+        parser.add_argument("-U"
+                            , "--user"
+                            , dest="user"
+                            , help="user name")
+        parser.add_argument("-P"
+                            , "--password"
+                            , dest="password"
+                            , nargs="?"
+                            , const="prompt"
+                            , help="password")
+        parser.add_argument("-e"
+                            , "--execute"
+                            , dest="execute"
+                            , help="Execute a single asadmin command and exit")
+        parser.add_argument("--no-color"
+                            , dest="no_color"
+                            , action="store_true"
+                            , help="Disable colored output")
+        parser.add_argument("--profile"
+                            , dest="profile"
+                            , action="store_true"
+                            #, help="Profile Aerospike Admin for performance issues"
+                            , help=argparse.SUPPRESS)
+        parser.add_argument("-u"
+                            , "--help"
+                            , dest="help"
+                            , action="store_true"
+                            , help="show program usage")
+        parser.add_argument("--version"
+                          , dest="show_version"
+                          , action="store_true"
+                          , help="Show the version of asadm and exit")
+        parser.add_argument("-s"
+                            , "--services"
+                            , dest="use_services"
+                            , action="store_true"
+                            , help="Enable use of services-list instead of services-alumni-list")
+
+        cli_args = parser.parse_args()
+    except:
+        import optparse
+        usage = "usage: %prog [options]"
+        parser = optparse.OptionParser(usage, add_help_option=False)
+        parser.add_option("-h"
+                            , "--host"
+                            , dest="host"
+                            , default="127.0.0.1"
+                            , help="Address (ip/fqdn) of a host in an " + \
+                                   "Aerospike cluster")
+        parser.add_option("-p", "--port"
+                            , dest="port"
+                            , type=int
+                            , default=3000
+                            , help="Aerospike service port used by the host.")
+        parser.add_option("-U"
+                            , "--user"
+                            , dest="user"
+                            , help="user name")
+        parser.add_option("-P"
+                            , "--password"
+                            , dest="password"
+                            , action="store_const"
+                            #, nargs="?"
+                            , const="prompt"
+                            , help="password")
+        parser.add_option("-e"
+                            , "--execute"
+                            , dest="execute"
+                            , help="Execute a single asadmin command and exit")
+        parser.add_option("--no-color"
+                            , dest="no_color"
+                            , action="store_true"
+                            , help="Disable colored output")
+        parser.add_option("--profile"
+                            , dest="profile"
+                            , action="store_true"
+                            #, help="Profile Aerospike Admin for performance issues"
+                            , help=optparse.SUPPRESS_USAGE)
+        parser.add_option("-u"
+                            , "--help"
+                            , dest="help"
+                            , action="store_true"
+                            , help="show program usage")
+        parser.add_option("--version"
+                          , dest="show_version"
+                          , action="store_true"
+                          , help="Show the version of asadm and exit")
+        parser.add_option("-s"
+                            , "--services"
+                            , dest="use_services"
+                            , action="store_true"
+                            , help="Enable use of services-list instead of services-alumni-list")
+
+        (cli_args, args) = parser.parse_args()
+
     if cli_args.help:
         parser.print_help()
         exit(0)
@@ -305,6 +372,7 @@ def main():
             cli_args.password = getpass.getpass("Enter Password:")
         password = citrusleaf.hashpassword(cli_args.password)
 
+
     global ADMINHOME, ADMINHIST
     ADMINHOME = os.environ['HOME'] + '/.aerospike/'
     ADMINHIST = ADMINHOME + 'admin_hist'
@@ -314,7 +382,10 @@ def main():
 
     seed = (cli_args.host, cli_args.port)
     telnet = False # telnet currently not working, hardcoding to off
-    shell = AerospikeShell(seed, telnet, user=user, password=password)
+    use_services = False
+    if cli_args.use_services:
+        use_services = True
+    shell = AerospikeShell(seed, telnet, user=user, password=password, use_services=use_services)
 
     use_yappi = False
     if cli_args.profile:

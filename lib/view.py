@@ -1,4 +1,4 @@
-# Copyright 2013-2014 Aerospike, Inc.
+# Copyright 2013-2016 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,13 +33,14 @@ class CliView(object):
 
     @staticmethod
     def infoService(stats, builds, visibilities, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "Service Information"
         column_names = ('node'
                         , 'build'
                         , 'cluster_size'
+                        , 'cluster_key'
                         , 'cluster_visibility'
                         , '_cluster_integrity'
                         , ('free-pct-disk', 'Free Disk%')
@@ -112,7 +113,7 @@ class CliView(object):
 
     @staticmethod
     def infoNetwork(stats, hosts, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "Network Information"
@@ -152,7 +153,7 @@ class CliView(object):
 
     @staticmethod
     def infoNamespace(stats, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "Namespace Information"
@@ -164,6 +165,7 @@ class CliView(object):
                         , ('_prole-objects', 'Replica Objects')
                         , 'repl-factor'
                         , 'stop-writes'
+                        , ('_migrates', 'Migrates (tx,rx)')
                         , ('_used-bytes-disk', 'Disk Used')
                         , ('_used-disk-pct', 'Disk Used%')
                         , ('high-water-disk-pct', 'HWM Disk%')
@@ -196,6 +198,11 @@ class CliView(object):
 
         t.addCellAlert('stop-writes'
                        , lambda data: data['stop-writes'] != 'false')
+
+        t.addDataSource('_migrates'
+                        , lambda data:
+                        "(%s,%s)"%(row.get('migrate-tx-partitions-remaining', 'N/E')
+                                      , row.get('migrate-rx-partitions-remaining','N/E')))
 
         t.addCellAlert('_used-disk-pct'
                        , lambda data: int(data['_used-disk-pct']) >= int(data['high-water-disk-pct']))
@@ -230,11 +237,58 @@ class CliView(object):
         print t
 
     @staticmethod
+    def infoSet(stats, cluster, **ignore):
+        prefixes = cluster.getNodeNames()
+        principal = cluster.getExpectedPrincipal()
+
+        title = "Set Information"
+        column_names = ('node'
+                        , 'set'
+                        , 'namespace'
+                        , 'set-delete'
+                        , ('_n-bytes-memory', 'Mem used')
+                        , ('_n_objects', 'Objects')
+                        , 'stop-writes-count'
+                        , 'disable-eviction'
+                        , 'set-enable-xdr'
+                        )
+
+        t = Table(title, column_names, group_by=1)
+        t.addDataSource('_n-bytes-memory'
+                        ,Extractors.byteExtractor('n-bytes-memory'))
+        t.addDataSource('_n_objects'
+                        ,Extractors.sifExtractor('n_objects'))
+
+        t.addCellAlert('node'
+                       ,lambda data: data['real_node_id'] == principal
+                       , color=terminal.fg_green)
+
+        for node_key, s_stats in stats.iteritems():
+            node = cluster.getNode(node_key)[0]
+            if isinstance(s_stats, Exception):
+                t.insertRow({'real_node_id':node.node_id
+                             , 'node':prefixes[node_key]})
+                continue
+
+            for (ns,set), set_stats in s_stats.iteritems():
+                if isinstance(set_stats, Exception):
+                    row = {}
+                else:
+                    row = set_stats
+
+                row['set'] = set
+                row['namespace'] = ns
+                row['real_node_id'] = node.node_id
+                row['node'] = prefixes[node_key]
+                t.insertRow(row)
+        print t
+
+    @staticmethod
     def infoXDR(stats, builds, xdr_enable, cluster, **ignore):
         if not max(xdr_enable.itervalues()):
             return
 
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "XDR Information"
@@ -306,7 +360,7 @@ class CliView(object):
 
     @staticmethod
     def infoSIndex(stats, cluster, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
         title = "Secondary Index Information"
@@ -318,18 +372,23 @@ class CliView(object):
                         , 'num_bins'
                         , ('type', 'Bin Type')
                         , 'state'
-                        , 'sync_state')
+                        , 'sync_state'
+                        , 'keys'
+                        , 'objects'
+                        , ('ibtr_memory_used','si_accounted_memory')
+                        , ('query_reqs','q')
+                        , ('stat_write_success','w')
+                        , ('stat_delete_success','d')
+                        , ('query_avg_rec_count', 's'))
 
         t = Table(title, column_names, group_by=1)
-
-        for node_key, n_stats in stats.iteritems():
-            node = prefixes[node_key]
-            for index_stats in n_stats:
-                if isinstance(index_stats, Exception):
+        for stat in stats.values():
+            for node_key, n_stats in stat.iteritems():
+                node = prefixes[node_key]
+                if isinstance(n_stats, Exception):
                     row = {}
                 else:
-                    row = index_stats
-
+                    row = n_stats
                 row['node'] = node
                 t.insertRow(row)
 
@@ -344,7 +403,7 @@ class CliView(object):
                          , cluster
                          , like=None
                          , **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
 
         likes = CliView.compileLikes(like)
 
@@ -376,7 +435,7 @@ class CliView(object):
 
     @staticmethod
     def showLatency(latency, cluster, like=None, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
 
         if like:
             likes = CliView.compileLikes(like)
@@ -414,7 +473,7 @@ class CliView(object):
 
     @staticmethod
     def showConfig(title, service_configs, cluster, like=None, diff=None, **ignore):
-        prefixes = cluster.getPrefixes()
+        prefixes = cluster.getNodeNames()
         column_names = set()
 
         if diff and service_configs:
@@ -463,10 +522,14 @@ class CliView(object):
         CliView.showConfig(*args, **kwargs)
 
     @staticmethod
+    def showHealth(*args, **kwargs):
+        CliView.showConfig(*args, **kwargs)
+
+    @staticmethod
     def asinfo(results, line_sep, cluster, **kwargs):
         like = set(kwargs['like'])
         for node_id, value in results.iteritems():
-            prefix = cluster.getPrefixes()[node_id]
+            prefix = cluster.getNodeNames()[node_id]
             node = cluster.getNode(node_id)[0]
 
             print "%s%s (%s) returned%s:"%(terminal.bold()
@@ -495,9 +558,55 @@ class CliView(object):
                 print
 
     @staticmethod
+    def clusterPMap(pmap_data, cluster, **ignore):
+        prefixes = cluster.getNodeNames()
+        title = "Partition Map Analysis"
+        column_names = ('Node',
+                        'Namespace',
+                        'Primary Partitions',
+                        'Secondary Partitions',
+                        'Missing Partitions',
+                        'Master Discrepancy Partitions',
+                        'Replica Discrepancy Partitions')
+        t = Table(title, column_names)
+        for node_key, n_stats in pmap_data.iteritems():
+            row = {}
+            row['Node'] = prefixes[node_key]
+            for ns, ns_stats in n_stats.iteritems():
+                row['Namespace'] = ns
+                row['Primary Partitions'] = ns_stats['pri_index']
+                row['Secondary Partitions'] = ns_stats['sec_index']
+                row['Missing Partitions'] = ns_stats['missing_part']
+                row['Master Discrepancy Partitions'] = ns_stats['master_disc_part']
+                row['Replica Discrepancy Partitions'] = ns_stats['replica_disc_part']
+                t.insertRow(row)
+        print t
+
+    @staticmethod
+    def clusterQNode(qnode_data, cluster, **ignore):
+        prefixes = cluster.getNodeNames()
+        title = "QNode Map Analysis"
+        column_names = ('Node',
+                        'Namespace',
+                        'Master QNode Without Data',
+                        'Replica QNode Without Data',
+                        'Replica QNode With Data',)
+        t = Table(title, column_names)
+        for node_key, n_stats in qnode_data.iteritems():
+            row = {}
+            row['Node'] = prefixes[node_key]
+            for ns, ns_stats in n_stats.iteritems():
+                row['Namespace'] = ns
+                row['Master QNode Without Data'] = ns_stats['MQ_without_data']
+                row['Replica QNode Without Data'] = ns_stats['RQ_without_data']
+                row['Replica QNode With Data'] = ns_stats['RQ_data']
+                t.insertRow(row)
+        print t
+
+    @staticmethod
     def dun(results, cluster, **kwargs):
         for node_id, command_result in results.iteritems():
-            prefix = cluster.getPrefixes()[node_id]
+            prefix = cluster.getNodeNames()[node_id]
             node = cluster.getNode(node_id)[0]
 
             print "%s%s (%s) returned%s:"%(terminal.bold()
