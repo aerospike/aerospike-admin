@@ -586,7 +586,7 @@ class ShowHealthController(CommandController):
                             broken[ip][param] =  result
 
                     update_health(self.HIGH_WATER_DISK_PCT, high_water_disk_pct, self.WARNING)
-    #                 update_health(self.HIGH_WATER_MEMEORY_PCT, high_water_memory_pct, self.WARNING)
+                    # update_health(self.HIGH_WATER_MEMEORY_PCT, high_water_memory_pct, self.WARNING)
                     update_health(self.HWM_BREACHED, 'false', self.WARNING)
                     update_health(self.MEMORY_SIZE, memory_size, self.WARNING)
                     update_health(self.REPL_FACTOR, repl_factor, self.CRITICAL)
@@ -663,8 +663,7 @@ class ShowHealthController(CommandController):
                 del logs_config[log]
         health, health_missing = self.get_logs_health(logs_config)
         self.view.showHealth('Logs Health', health, self.cluster, **self.mods)
-#         TODO: develop printing logic for health_missing
-#         print health_missing
+        # TODO: develop printing logic for health_missing
 
     def get_network_health(self, network_config = None):
         broken = {}
@@ -724,7 +723,6 @@ class ShowHealthController(CommandController):
         for node in xdr_stats:
             if isinstance(xdr_stats[node], Exception):
                 xdr_stats[node] = {}
-#         print xdr_stats
         self.view.showStats("XDR Statistics"
                             , xdr_stats
                             , self.cluster
@@ -901,7 +899,7 @@ class ClusterController(CommandController):
 
     def get_pmap_data(self, pmap_info, ns_info):
         # TODO: check if node not have master & replica objects
-        pid_range = 4096        # each namespace is devided into 4096 partition
+        pid_range = 4096        # each namespace is divided into 4096 partition
         is_dist_delta_exeeds = lambda exp, act, diff: abs(exp - act) > diff
         pmap_data = {}
         ns_missing_part = {}
@@ -933,7 +931,7 @@ class ClusterController(CommandController):
                         if  pindex == 0:
                             node_pmap[ns]['pri_index'] += 1
                             exp_master_objs = ns_info[ns]['avg_master_objs']
-                            if exp_master_objs == 0 and objects == 0:       #Avoid devide by zero
+                            if exp_master_objs == 0 and objects == 0:
                                 pass
                             elif is_dist_delta_exeeds(exp_master_objs, objects, ns_info[ns]['diff_master']):
                                 node_pmap[ns]['master_disc_part'].append(pid)
@@ -983,7 +981,7 @@ class ClusterController(CommandController):
             for item in config.split(';'):
                 fields = item.split(':')
                 ns, pid, node_type = fields[0], int(fields[1]), fields[5]
-# qnode format is changed(1 field is removed) in aerospike's 3.6.1 version
+                # qnode format is changed(1 field is removed) in aerospike's 3.6.1 version
                 if len(fields) == 7:
                     pdata = int(fields[6])
                 else:
@@ -1082,7 +1080,7 @@ class CollectinfoController(CommandController):
                 meta_url = aws_metadata_base_url+prefix+'/'+rsp
                 req = urllib2.Request(meta_url)
                 r = urllib2.urlopen(req)
-#                 r = requests.get(meta_url,timeout=aws_timeout)
+                # r = requests.get(meta_url,timeout=aws_timeout)
                 if r.code != 404:
                     aws_c += rsp +'\n'+r.read() +"\n"
         return aws_c
@@ -1095,7 +1093,7 @@ class CollectinfoController(CommandController):
         try:
             req = urllib2.Request(aws_metadata_base_url)
             r = urllib2.urlopen(req)
-#             r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
+            # r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
             if r.code == 200:
                 rsp = r.read()
                 aws_rsp += self.get_metadata(rsp,'/')
@@ -1186,8 +1184,6 @@ class CollectinfoController(CommandController):
                             print ftype.ljust(type_ljust_parm)+desc.ljust(desc_ljust_parm) + str(lsof_dic[ftype])
 
                         print "\nUnidentified Protocols = " + str(unidentified_protocol_count)
-       # old command
-       #lsof_cmd='sudo lsof|grep `sudo ps aux|grep -v grep|grep -E \'asd|cld\'|awk \'{print $2}\'` 2>/dev/null'
 
     def zip_files(self, dir_path, _size = 1):
         """
@@ -1248,7 +1244,7 @@ class CollectinfoController(CommandController):
         global aslogdir, aslogfile, output_time
         output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
         aslogdir = '/tmp/collectInfo_' + output_time
-        #as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
+        # as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
         as_logfile_prefix = aslogdir + '/' + output_time + '_'
 
         # cmd and alternative cmds are stored in list of list instead of dic to maintain proper order for output
@@ -1308,7 +1304,7 @@ class CollectinfoController(CommandController):
 
             for ns in namespaces:
                 # dump-wb dumps debug information about Write Bocks, it needs namespace, device-id and write-block-id as a parameter
-                #dignostic_cluster_params_additional.append('dump-wb:ns=' + ns)
+                # dignostic_cluster_params_additional.append('dump-wb:ns=' + ns)
 
                 dignostic_cluster_params_additional.append('dump-wb-summary:ns=' + ns)
 
@@ -1512,7 +1508,7 @@ class FeaturesController(CommandController):
 
     def _do_default(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
-        #ns_stats = self.logger.infoStatistics(stanza="namespace")
+        # ns_stats = self.logger.infoStatistics(stanza="namespace")
         features = {}
         for node, stats in service_stats.iteritems():
             features[node] = {}
