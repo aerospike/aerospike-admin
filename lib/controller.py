@@ -119,7 +119,7 @@ class InfoController(CommandController):
     def __init__(self):
         self.modifiers = set(['with'])
 
-    @CommandHelp('Displays service, network, namespace, and xdr summary'
+    @CommandHelp('Displays service, network, set, namespace, xdr, and sindex summary'
                  , 'information.')
     def _do_default(self, line):
         actions = (util.Future(self.do_service, line).start()
@@ -227,7 +227,7 @@ class InfoController(CommandController):
         xdr_enable = xdr_enable.result()
         return util.Future(self.view.infoXDR, stats, builds, xdr_enable, self.cluster, **self.mods)
 
-    @CommandHelp('Displays summary information for Seconday Indexes (SIndex).')
+    @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
         return util.Future(self.view.infoSIndex, sindex_stats, self.cluster, **self.mods)
@@ -733,7 +733,7 @@ class ShowStatisticsController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Displays bin, set, service, namespace, and xdr statistics')
+    @CommandHelp('Displays bin, set, service, namespace, xdr, and sindex statistics')
     def _do_default(self, line):
         actions = (util.Future(self.do_bins, line).start()
                    , util.Future(self.do_sets, line).start()
@@ -777,7 +777,7 @@ class ShowStatisticsController(CommandController):
 
 
 
-    @CommandHelp('Displays namespace statistics')
+    @CommandHelp('Displays sindex statistics')
     def do_sindex(self, line):
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
         return [util.Future(self.view.showStats
