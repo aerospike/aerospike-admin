@@ -149,6 +149,13 @@ class Node(object):
         xdr_enabled = config['xdr']['enable-xdr']
         return xdr_enabled == 'true'
 
+    def isFeaturePresent(self, feature):
+        features = self.info('features')
+        if isinstance(features, Exception):
+            return False
+
+        return (feature in features)
+
     @return_exceptions
     @util.cached
     def _infoTelnet(self, command, port = None):
@@ -361,6 +368,9 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
+        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.7.2) with xdr-in-asd stats available on service port
+            return util.info_to_dict(self.info("statistics/xdr"))
+
         return util.info_to_dict(self.xdrInfo('statistics'))
 
     @return_exceptions
@@ -428,9 +438,19 @@ class Node(object):
 
     @return_exceptions
     def infoXDRGetConfig(self):
-        result = self.xdrInfo('get-config')
-        result = {'xdr':util.info_to_dict(result)}
-        return result
+        xdr_configs = self.infoGetConfig(stanza='xdr')
+        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.7.2) with xdr-in-asd config from service port is sufficient
+            return xdr_configs
+        xdr_configs_xdr = self.xdrInfo('get-config') # required for old aerospike server versions (<3.7.2)
+        if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
+            xdr_configs_xdr = {'xdr':util.info_to_dict(xdr_configs_xdr)}
+            if xdr_configs_xdr['xdr'] and not isinstance(xdr_configs_xdr['xdr'], Exception):
+                if xdr_configs and xdr_configs['xdr'] and not isinstance(xdr_configs['xdr'],Exception):
+                    xdr_configs['xdr'].update(xdr_configs_xdr['xdr'])
+                else:
+                    xdr_configs = {}
+                    xdr_configs['xdr'] = xdr_configs_xdr['xdr']
+        return xdr_configs
 
     @return_exceptions
     def infoHistogram(self, histogram):

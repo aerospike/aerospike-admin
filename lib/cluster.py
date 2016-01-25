@@ -273,6 +273,9 @@ class Cluster(object):
     def isXDREnabled(self, nodes='all'):
         return self._callNodeMethod(nodes, 'isXDREnabled')
 
+    def isFeaturePresent(self, feature, nodes='all'):
+        return self._callNodeMethod(nodes, 'isFeaturePresent', feature)
+
     def __getattr__(self, name):
         regex = re.compile("^info.*$|^xdr.*$")
         if regex.match(name):

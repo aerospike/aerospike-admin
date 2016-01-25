@@ -481,36 +481,19 @@ class ShowConfigController(CommandController):
                             , configs, self.cluster, **self.mods)
                 for ns, configs in ns_configs.iteritems()]
 
-    def xdr_port_config(self, line):
-        xdr_configs = self.cluster.infoXDRGetConfig(nodes=self.nodes)
+    @CommandHelp('Displays XDR configuration')
+    def do_xdr(self, line):
+        configs = self.cluster.infoXDRGetConfig(nodes=self.nodes)
 
-        xdr_filtered = {}
-        for node, config in xdr_configs.iteritems():
+        xdr_configs = {}
+        for node, config in configs.iteritems():
             if isinstance(config, Exception):
                 continue
 
-            xdr_filtered[node] = config['xdr']
+            xdr_configs[node] = config['xdr']
 
-        return util.Future(self.view.showConfig, "XDR Configuration from xdr port", xdr_filtered, self.cluster
+        return util.Future(self.view.showConfig, "XDR Configuration", xdr_configs, self.cluster
                              , **self.mods)
-
-    def asd_port_config(self, line):
-        xdr_configs_asd = self.cluster.infoGetConfig(nodes=self.nodes
-                                                     , stanza='xdr')
-        for node in xdr_configs_asd:
-            if isinstance(xdr_configs_asd[node], Exception):
-                xdr_configs_asd[node] = {}
-            else:
-                xdr_configs_asd[node] = xdr_configs_asd[node]['xdr']
-
-        return util.Future(self.view.showConfig, "XDR Configuration from asd port", xdr_configs_asd, self.cluster
-                             , **self.mods)
-    @CommandHelp('Displays XDR configuration')
-    def do_xdr(self, line):
-        actions = (util.Future(self.xdr_port_config, line).start()
-                   , util.Future(self.asd_port_config, line).start()
-                   )
-        return [action.result() for action in actions]
 
 @CommandHelp('"show health" is used to display Aerospike configuration health')
 class ShowHealthController(CommandController):
@@ -774,8 +757,6 @@ class ShowStatisticsController(CommandController):
                             , self.cluster
                             , **self.mods)
                 for namespace in sorted(namespace_set)]
-
-
 
     @CommandHelp('Displays sindex statistics')
     def do_sindex(self, line):
