@@ -42,6 +42,20 @@ def info_to_dict(value, delimiter = ';'):
             pass
     return stat_dict
 
+def info_to_dict_multi_level(value, keyname, delimiter1 = ';', delimiter2 = ':'):
+    """
+    Simple function to convert string to dict where string is format like
+    field1_section1=value1<delimiter2>field2_section1=value2<delimiter2>... <delimiter1> field1_section2=value3<delimiter2>field2_section2=value4<delimiter2>...
+    """
+    value_list = info_to_list(value, delimiter1)
+    value_dict = {}
+    for v in value_list:
+        values = info_to_dict(v, delimiter2)
+        if not values or isinstance(values,Exception) or keyname not in values.keys():
+            continue
+        value_dict[values[keyname]] = values
+    return value_dict
+
 def info_colon_to_dict(value):
     """
     Simple function to convert colon separated string to dict

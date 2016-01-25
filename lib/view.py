@@ -359,6 +359,42 @@ class CliView(object):
         print t
 
     @staticmethod
+    def infoDC(stats, cluster, **ignore):
+        prefixes = cluster.getNodeNames()
+
+        title = "DC Information"
+        column_names = ('node'
+                        ,('DC_Name','DC')
+                        ,('_no_of_nodes','DC size')
+                        ,'namespaces'
+                        ,('_lag-secs', 'Lag (sec)')
+                        ,('_xdr-dc-state', 'Status')
+                        )
+
+        t = Table(title, column_names)
+
+        t.addDataSource('_lag-secs',
+                        Extractors.timeExtractor(('xdr-dc-timelag','xdr_dc_timelag')))
+
+        t.addDataSource('_no_of_nodes', lambda data: len(data['Nodes'].split(',')))
+
+        for node_key, dc_stats in stats.iteritems():
+            if isinstance(dc_stats, Exception):
+                dc_stats = {}
+            for dc, row in dc_stats.iteritems():
+                if isinstance(row, Exception):
+                    row = {}
+                if row:
+                    if 'xdr_dc_state' in row:
+                        row['_xdr-dc-state'] = row['xdr_dc_state']
+                    else:
+                        row['_xdr-dc-state'] = row['xdr-dc-state']
+
+                row['node'] = prefixes[node_key]
+                t.insertRow(row)
+        print t
+
+    @staticmethod
     def infoSIndex(stats, cluster, **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()

@@ -227,6 +227,15 @@ class InfoController(CommandController):
         xdr_enable = xdr_enable.result()
         return util.Future(self.view.infoXDR, stats, builds, xdr_enable, self.cluster, **self.mods)
 
+    @CommandHelp('Displays summary information for each datacenter.')
+    def do_dc(self, line):
+        stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
+        configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
+        for node in stats.keys():
+            for dc in stats[node].keys():
+                stats[node][dc].update(configs[node][dc])
+        return util.Future(self.view.infoDC, stats, self.cluster, **self.mods)
+
     @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
@@ -1241,7 +1250,7 @@ class CollectinfoController(CommandController):
                       ['ip -s link',''],
                       ['sudo iptables -L','']
                       ]
-        sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'sindex']
+        sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'dc', 'sindex']
         sys_show_params = ['distribution', 'config diff']
         sys_features_params = ['features']
         sys_cluster_params = ['pmap']
