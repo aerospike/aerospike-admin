@@ -466,11 +466,14 @@ class Node(object):
         dcs = self.infoDCs()
 
         if isinstance(dcs, Exception):
-            return dcs
+            return {}
 
         stats = {}
         for dc in dcs:
-            stats[dc] = self.infoDCStatistics(dc)
+            stat = self.infoDCStatistics(dc)
+            if not stat or isinstance(stat,Exception):
+                stat = {}
+            stats[dc] = stat
 
         return stats
 
@@ -486,9 +489,14 @@ class Node(object):
             configs = self.info("get-dc-config")
             if not configs or isinstance(configs,Exception):
                 configs = self.info("get-dc-config:")
+            if not configs or isinstance(configs,Exception):
+                return {}
             return util.info_to_dict_multi_level(configs, "DC_Name")
 
-        return util.info_to_dict_multi_level(self.xdrInfo("get-dc-config"), "DC_Name")
+        configs = self.xdrInfo("get-dc-config")
+        if not configs or isinstance(configs,Exception):
+            return {}
+        return util.info_to_dict_multi_level(configs, "DC_Name")
 
     @return_exceptions
     def infoXDRGetConfig(self):

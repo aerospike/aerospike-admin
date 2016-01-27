@@ -232,8 +232,11 @@ class InfoController(CommandController):
         stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
         configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
         for node in stats.keys():
-            for dc in stats[node].keys():
-                stats[node][dc].update(configs[node][dc])
+            if stats[node] and not isinstance(stats[node],Exception) and configs[node] and not isinstance(configs[node],Exception):
+                for dc in stats[node].keys():
+                    stats[node][dc].update(configs[node][dc])
+            elif (not stats[node] or isinstance(stats[node],Exception)) and configs[node] and not isinstance(configs[node],Exception):
+                stats[node] = configs[node]
         return util.Future(self.view.infoDC, stats, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
@@ -423,7 +426,8 @@ class ShowConfigController(CommandController):
         actions = (util.Future(self.do_service, line).start()
                    , util.Future(self.do_network, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start())
+                   , util.Future(self.do_xdr, line).start()
+                   , util.Future(self.do_dc, line).start())
         return [action.result() for action in actions]
 
     @CommandHelp('Displays service configuration')
@@ -503,6 +507,26 @@ class ShowConfigController(CommandController):
 
         return util.Future(self.view.showConfig, "XDR Configuration", xdr_configs, self.cluster
                              , **self.mods)
+
+    @CommandHelp('Displays DC configuration')
+    def do_dc(self, line):
+        all_dc_configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
+        dc_configs = {}
+        for host, configs in all_dc_configs.iteritems():
+            if not configs or isinstance(configs,Exception):
+                continue
+            for dc, config in configs.iteritems():
+                if dc not in dc_configs:
+                    dc_configs[dc] = {}
+
+                try:
+                    dc_configs[dc][host].update(config)
+                except KeyError:
+                    dc_configs[dc][host] = config
+
+        return [util.Future(self.view.showConfig, "%s DC Configuration"%(dc)
+                            , configs, self.cluster, **self.mods)
+                for dc, configs in dc_configs.iteritems()]
 
 @CommandHelp('"show health" is used to display Aerospike configuration health')
 class ShowHealthController(CommandController):
@@ -732,6 +756,7 @@ class ShowStatisticsController(CommandController):
                    , util.Future(self.do_service, line).start()
                    , util.Future(self.do_namespace, line).start()
                    , util.Future(self.do_xdr, line).start()
+                   , util.Future(self.do_dc, line).start()
                    , util.Future(self.do_sindex, line).start())
 
         return [action.result() for action in actions]
@@ -835,6 +860,27 @@ class ShowStatisticsController(CommandController):
                             , xdr_stats
                             , self.cluster
                             , **self.mods)
+
+    @CommandHelp('Displays dc statistics')
+    def do_dc(self, line):
+        all_dc_stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
+        dc_stats = {}
+        for host, stats in all_dc_stats.iteritems():
+            if not stats or isinstance(stats,Exception):
+                continue
+            for dc, stat in stats.iteritems():
+                if dc not in dc_stats:
+                    dc_stats[dc] = {}
+
+                try:
+                    dc_stats[dc][host].update(stat)
+                except KeyError:
+                    dc_stats[dc][host] = stat
+        return [util.Future(self.view.showConfig, "%s DC Statistics"%(dc)
+                            , stats, self.cluster, **self.mods)
+                for dc, stats in dc_stats.iteritems()]
+
+
 
 class ClusterController(CommandController):
     def __init__(self):
