@@ -421,7 +421,7 @@ class ShowConfigController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'diff'])
 
-    @CommandHelp('Displays service, network, namespace, and xdr configuration')
+    @CommandHelp('Displays service, network, namespace, xdr, and dc configuration')
     def _do_default(self, line):
         actions = (util.Future(self.do_service, line).start()
                    , util.Future(self.do_network, line).start()
@@ -508,7 +508,7 @@ class ShowConfigController(CommandController):
         return util.Future(self.view.showConfig, "XDR Configuration", xdr_configs, self.cluster
                              , **self.mods)
 
-    @CommandHelp('Displays DC configuration')
+    @CommandHelp('Displays datacenter configuration')
     def do_dc(self, line):
         all_dc_configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
         dc_configs = {}
@@ -749,7 +749,7 @@ class ShowStatisticsController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Displays bin, set, service, namespace, xdr, and sindex statistics')
+    @CommandHelp('Displays bin, set, service, namespace, xdr, dc, and sindex statistics')
     def _do_default(self, line):
         actions = (util.Future(self.do_bins, line).start()
                    , util.Future(self.do_sets, line).start()
@@ -861,7 +861,7 @@ class ShowStatisticsController(CommandController):
                             , self.cluster
                             , **self.mods)
 
-    @CommandHelp('Displays dc statistics')
+    @CommandHelp('Displays datacenter statistics')
     def do_dc(self, line):
         all_dc_stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
         dc_stats = {}
