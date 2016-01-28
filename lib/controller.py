@@ -880,8 +880,6 @@ class ShowStatisticsController(CommandController):
                             , stats, self.cluster, **self.mods)
                 for dc, stats in dc_stats.iteritems()]
 
-
-
 class ClusterController(CommandController):
     def __init__(self):
         self.modifiers = set(['with'])
@@ -1403,7 +1401,7 @@ class CollectinfoController(CommandController):
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
 
-        
+
         ####### System info ########
 
         aslogfile = as_logfile_prefix + 'sysinfo.log'
@@ -1462,30 +1460,47 @@ class CollectinfoController(CommandController):
 
 
         ####### Logs and conf ########
-        
+
         if show_all:
+            ##### aerospike xdr logs #####
+               #### collectinfo can read the xdr log file from nondefault path for aerospike version >=3.7.2
+               #### as older versions do not provide xdr log path in xdr configuration
             try:
-                if 'True' in self.cluster.isXDREnabled().values():
+                if True in self.cluster.isXDREnabled().values():
+                    try:
+                        xdr_config = self.cluster._callNodeMethod([_ip], "infoXDRGetConfig")
+                    except:
+                        from lib.node import Node
+                        tempNode = Node(_ip)
+                        xdr_config = self.cluster._callNodeMethod([tempNode.ip], "infoXDRGetConfig")
+
+                    try:
+                        xdr_log_location = xdr_config.popitem()[1]['xdr']['xdr-errorlog-path']
+                    except Exception as e:
+                        xdr_log_location = '/var/log/aerospike/*xdr.log'
+
                     aslogfile = as_logfile_prefix + 'xdr.log'
-                    self.collectinfo_content('shell',['cat /var/log/*xdr.log'])
-            except:
+                    self.collectinfo_content('shell',['cat ' + xdr_log_location])
+            except Exception as e:
                 self.write_log(str(e))
                 sys.stdout = sys.__stdout__
 
+            ##### aerospike server logs #####
             try:
                 try:
                     log_location = self.cluster._callNodeMethod([_ip], "info",
-                                                            "logs").popitem()[1].split(':')[1]
+                                                            "logs").popitem()[1].split(';')[0].split(':')[1]
                 except:
                     from lib.node import Node
                     tempNode = Node(_ip)
                     log_location = self.cluster._callNodeMethod([tempNode.ip], "info",
-                                                                "logs").popitem()[1].split(':')[1]
+                                                            "logs").popitem()[1].split(';')[0].split(':')[1]
                 self.collect_local_file(log_location, as_logfile_prefix + 'aerospike.log')
-            except:
+            except Exception as e:
                 self.write_log(str(e))
                 sys.stdout = sys.__stdout__
 
+        ##### aerospike conf file #####
         try:
             try:
                 as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]

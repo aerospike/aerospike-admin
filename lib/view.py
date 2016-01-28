@@ -366,7 +366,7 @@ class CliView(object):
         title = "DC Information"
         column_names = ('node'
                         ,('DC_Name','DC')
-                        ,('_no_of_nodes','DC size')
+                        ,('xdr_dc_size','DC size')
                         ,'namespaces'
                         ,('_lag-secs', 'Lag (sec)')
                         ,('xdr_dc_remote_ship_ok', 'Records Shipped')
@@ -378,8 +378,6 @@ class CliView(object):
 
         t.addDataSource('_lag-secs',
                         Extractors.timeExtractor(('xdr-dc-timelag','xdr_dc_timelag')))
-
-        t.addDataSource('_no_of_nodes', lambda data: len(data['Nodes'].split(',')))
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
