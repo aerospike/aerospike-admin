@@ -201,8 +201,8 @@ class CliView(object):
 
         t.addDataSource('_migrates'
                         , lambda data:
-                        "(%s,%s)"%(row.get('migrate-tx-partitions-remaining', 'N/E')
-                                      , row.get('migrate-rx-partitions-remaining','N/E')))
+                        "(%s,%s)"%(data.get('migrate-tx-partitions-remaining', 'N/E')
+                                      , data.get('migrate-rx-partitions-remaining','N/E')))
 
         t.addCellAlert('_used-disk-pct'
                        , lambda data: int(data['_used-disk-pct']) >= int(data['high-water-disk-pct']))
