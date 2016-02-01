@@ -368,7 +368,7 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.7.2) with xdr-in-asd stats available on service port
+        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.8) with xdr-in-asd stats available on service port
             return util.info_to_dict(self.info("statistics/xdr"))
 
         return util.info_to_dict(self.xdrInfo('statistics'))
@@ -501,9 +501,9 @@ class Node(object):
     @return_exceptions
     def infoXDRGetConfig(self):
         xdr_configs = self.infoGetConfig(stanza='xdr')
-        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.7.2) with xdr-in-asd config from service port is sufficient
+        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.8) with xdr-in-asd config from service port is sufficient
             return xdr_configs
-        xdr_configs_xdr = self.xdrInfo('get-config') # required for old aerospike server versions (<3.7.2)
+        xdr_configs_xdr = self.xdrInfo('get-config') # required for old aerospike server versions (<3.8)
         if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
             xdr_configs_xdr = {'xdr':util.info_to_dict(xdr_configs_xdr)}
             if xdr_configs_xdr['xdr'] and not isinstance(xdr_configs_xdr['xdr'], Exception):

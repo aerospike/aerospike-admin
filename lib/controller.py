@@ -119,15 +119,14 @@ class InfoController(CommandController):
     def __init__(self):
         self.modifiers = set(['with'])
 
-    @CommandHelp('Displays service, network, set, namespace, xdr, and sindex summary'
+    @CommandHelp('Displays service, network, set, and namespace summary'
                  , 'information.')
     def _do_default(self, line):
         actions = (util.Future(self.do_service, line).start()
                    , util.Future(self.do_network, line).start()
                    , util.Future(self.do_set, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start()
-                   , util.Future(self.do_sindex, line).start())
+                   )
         return [action.result() for action in actions]
 
     @CommandHelp('Displays summary information for the Aerospike service.')
@@ -421,13 +420,12 @@ class ShowConfigController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'diff'])
 
-    @CommandHelp('Displays service, network, namespace, xdr, and dc configuration')
+    @CommandHelp('Displays service, network, and namespace configuration')
     def _do_default(self, line):
         actions = (util.Future(self.do_service, line).start()
                    , util.Future(self.do_network, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start()
-                   , util.Future(self.do_dc, line).start())
+                   )
         return [action.result() for action in actions]
 
     @CommandHelp('Displays service configuration')
@@ -749,15 +747,13 @@ class ShowStatisticsController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Displays bin, set, service, namespace, xdr, dc, and sindex statistics')
+    @CommandHelp('Displays bin, set, service, and namespace statistics')
     def _do_default(self, line):
         actions = (util.Future(self.do_bins, line).start()
                    , util.Future(self.do_sets, line).start()
                    , util.Future(self.do_service, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start()
-                   , util.Future(self.do_dc, line).start()
-                   , util.Future(self.do_sindex, line).start())
+                   )
 
         return [action.result() for action in actions]
 
@@ -1298,7 +1294,7 @@ class CollectinfoController(CommandController):
         sys_show_params = ['distribution', 'config diff']
         sys_features_params = ['features']
         sys_cluster_params = ['pmap']
-        dignostic_show_params = ['config', 'latency', 'statistics']
+        dignostic_show_params = ['config', 'config xdr', 'config dc', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
         dignostic_cluster_params = ['service', 'services']
         dignostic_cluster_params_additional = [
                           'partition-info',
@@ -1463,7 +1459,7 @@ class CollectinfoController(CommandController):
 
         if show_all:
             ##### aerospike xdr logs #####
-               #### collectinfo can read the xdr log file from nondefault path for aerospike version >=3.7.2
+               #### collectinfo can read the xdr log file from nondefault path for latest aerospike version which can provide xdr log path in asinfo command
                #### as older versions do not provide xdr log path in xdr configuration
             try:
                 if True in self.cluster.isXDREnabled().values():
