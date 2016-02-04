@@ -1040,6 +1040,7 @@ class ClusterController(CommandController):
 class CollectinfoController(CommandController):
 
     def collect_local_file(self,src,dest_dir):
+        print "[INFO] Copying file %s to %s"%(src,dest_dir)
         try:
             shutil.copy2(src, dest_dir)
         except Exception,e:
@@ -1254,6 +1255,7 @@ class CollectinfoController(CommandController):
         return namespaces
 
     def main_collectinfo(self, show_all=False, verbose=False):
+
         # getting service port to use in ss/netstat command
         port = 3000
         try:
@@ -1288,7 +1290,8 @@ class CollectinfoController(CommandController):
                       ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
                       ['ip addr',''],
                       ['ip -s link',''],
-                      ['sudo iptables -L','']
+                      ['sudo iptables -L',''],
+                      ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"','']
                       ]
         sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'dc', 'sindex']
         sys_show_params = ['distribution', 'config diff']
@@ -1457,63 +1460,83 @@ class CollectinfoController(CommandController):
 
         ####### Logs and conf ########
 
+        ##### aerospike logs #####
+
+        try:
+            as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
+        except:
+            from lib.node import Node
+            tempNode = Node(_ip)
+            as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
+
+        conf_path = '/etc/aerospike/aerospike.conf'
+        #Comparing with this version because prior to this it was citrusleaf.conf
+        if LooseVersion(as_version) <= LooseVersion("3.0.0"):
+            conf_path = '/etc/citrusleaf/citrusleaf.conf'
+
+
         if show_all:
             ##### aerospike xdr logs #####
-               #### collectinfo can read the xdr log file from nondefault path for latest aerospike version which can provide xdr log path in asinfo command
-               #### as older versions do not provide xdr log path in xdr configuration
+               #### collectinfo can read the xdr log file from default path for old aerospike version which can not provide xdr log path in asinfo command
+               #### for latest xdr-in-asd versions, 'asinfo -v logs' provide all logs including xdr log, so no need to read it separately
             try:
                 if True in self.cluster.isXDREnabled().values():
+                    is_xdr_in_asd_version = False
                     try:
-                        xdr_config = self.cluster._callNodeMethod([_ip], "infoXDRGetConfig")
+                        is_xdr_in_asd_version = self.cluster._callNodeMethod([_ip], "isFeaturePresent", "xdr").popitem()[1]
                     except:
                         from lib.node import Node
                         tempNode = Node(_ip)
-                        xdr_config = self.cluster._callNodeMethod([tempNode.ip], "infoXDRGetConfig")
+                        is_xdr_in_asd_version = self.cluster._callNodeMethod([tempNode.ip], "isFeaturePresent", "xdr").popitem()[1]
 
-                    try:
-                        xdr_log_location = xdr_config.popitem()[1]['xdr']['xdr-errorlog-path']
-                    except Exception as e:
-                        xdr_log_location = '/var/log/aerospike/*xdr.log'
+                    if not is_xdr_in_asd_version:
+                        try:
+                            o,e = util.shell_command(["grep errorlog-path " + conf_path])
+                            if e:
+                                xdr_log_location = '/var/log/aerospike/*xdr.log'
+                            else:
+                                xdr_log_location = o.split()[1]
+                        except:
+                            xdr_log_location = '/var/log/aerospike/*xdr.log'
 
-                    aslogfile = as_logfile_prefix + 'xdr.log'
-                    self.collectinfo_content('shell',['cat ' + xdr_log_location])
+                        aslogfile = as_logfile_prefix + 'asxdr.log'
+                        self.collectinfo_content('shell',['cat ' + xdr_log_location])
             except Exception as e:
                 self.write_log(str(e))
                 sys.stdout = sys.__stdout__
 
-            ##### aerospike server logs #####
             try:
                 try:
-                    log_location = self.cluster._callNodeMethod([_ip], "info",
-                                                            "logs").popitem()[1].split(';')[0].split(':')[1]
+                    log_locations = [i.split(':')[1] for i in self.cluster._callNodeMethod([_ip], "info", "logs").popitem()[1].split(';')]
                 except:
                     from lib.node import Node
                     tempNode = Node(_ip)
-                    log_location = self.cluster._callNodeMethod([tempNode.ip], "info",
-                                                            "logs").popitem()[1].split(';')[0].split(':')[1]
-                self.collect_local_file(log_location, as_logfile_prefix + 'aerospike.log')
+                    log_locations = [i.split(':')[1] for i in self.cluster._callNodeMethod([tempNode.ip], "info", "logs").popitem()[1].split(';')]
+                file_name_used = {}
+                for log in log_locations:
+                    file_name_base = os.path.basename(log)
+                    if file_name_base in file_name_used:
+                        file_name_used[file_name_base] = file_name_used[file_name_base] + 1
+                        file_name, ext = os.path.splitext(file_name_base)
+                        file_name_base = file_name + "-" + str(file_name_used[file_name_base]) + ext
+                    else:
+                        file_name_used[file_name_base] = 1
+
+                    self.collect_local_file(log, as_logfile_prefix + file_name_base)
             except Exception as e:
                 self.write_log(str(e))
                 sys.stdout = sys.__stdout__
 
         ##### aerospike conf file #####
         try:
-            try:
-                as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
-            except:
-                from lib.node import Node
-                tempNode = Node(_ip)
-                as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
             # Comparing with this version because prior to this it was citrusleaf.conf & citrusleaf.log
             if LooseVersion(as_version) > LooseVersion("3.0.0"):
                 aslogfile = as_logfile_prefix + 'aerospike.conf'
-                self.write_log(collect_output)
-                self.collectinfo_content('shell',['cat /etc/aerospike/aerospike.conf'])
             else:
                 aslogfile = as_logfile_prefix + 'citrusleaf.conf'
-                self.write_log(collect_output)
-                self.collectinfo_content('shell',['cat /etc/citrusleaf/citrusleaf.conf'])
-                
+
+            self.write_log(collect_output)
+            self.collectinfo_content('shell',['cat %s'%(conf_path)])
 
         except Exception as e: 
             self.write_log(str(e))
