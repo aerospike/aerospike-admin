@@ -201,8 +201,8 @@ class CliView(object):
 
         t.addDataSource('_migrates'
                         , lambda data:
-                        "(%s,%s)"%(row.get('migrate-tx-partitions-remaining', 'N/E')
-                                      , row.get('migrate-rx-partitions-remaining','N/E')))
+                        "(%s,%s)"%(data.get('migrate-tx-partitions-remaining', 'N/E')
+                                      , data.get('migrate-rx-partitions-remaining','N/E')))
 
         t.addCellAlert('_used-disk-pct'
                        , lambda data: int(data['_used-disk-pct']) >= int(data['high-water-disk-pct']))
@@ -304,7 +304,7 @@ class CliView(object):
                         ,('latency_avg_ship', 'Avg Latency (ms)')
                         ,'_xdr-uptime')
 
-        t = Table(title, column_names)
+        t = Table(title, column_names, group_by=1)
 
         t.addDataSource('_xdr-uptime', Extractors.timeExtractor(
             ('xdr-uptime', 'xdr_uptime')))
@@ -356,6 +356,49 @@ class CliView(object):
             row['node'] = prefixes[node_key]
 
             t.insertRow(row)
+        print t
+
+    @staticmethod
+    def infoDC(stats, cluster, **ignore):
+        prefixes = cluster.getNodeNames()
+        principal = cluster.getExpectedPrincipal()
+
+        title = "DC Information"
+        column_names = ('node'
+                        ,('DC_Name','DC')
+                        ,('xdr_dc_size','DC size')
+                        ,'namespaces'
+                        ,('_lag-secs', 'Lag (sec)')
+                        ,('xdr_dc_remote_ship_ok', 'Records Shipped')
+                        ,('latency_avg_ship_ema', 'Avg Latency (ms)')
+                        ,('_xdr-dc-state', 'Status')
+                        )
+
+        t = Table(title, column_names, group_by=1)
+
+        t.addDataSource('_lag-secs',
+                        Extractors.timeExtractor(('xdr-dc-timelag','xdr_dc_timelag')))
+
+        t.addCellAlert('node'
+                       ,lambda data: data['real_node_id'] == principal
+                       , color=terminal.fg_green)
+
+        row = None
+        for node_key, dc_stats in stats.iteritems():
+            if isinstance(dc_stats, Exception):
+                dc_stats = {}
+            node = cluster.getNode(node_key)[0]
+            for dc, row in dc_stats.iteritems():
+                if isinstance(row, Exception):
+                    row = {}
+                if row:
+                    if 'xdr_dc_state' in row:
+                        row['_xdr-dc-state'] = row['xdr_dc_state']
+                    else:
+                        row['_xdr-dc-state'] = row['xdr-dc-state']
+                row['real_node_id'] = node.node_id
+                row['node'] = prefixes[node_key]
+                t.insertRow(row)
         print t
 
     @staticmethod

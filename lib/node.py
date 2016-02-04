@@ -149,6 +149,13 @@ class Node(object):
         xdr_enabled = config['xdr']['enable-xdr']
         return xdr_enabled == 'true'
 
+    def isFeaturePresent(self, feature):
+        features = self.info('features')
+        if isinstance(features, Exception):
+            return False
+
+        return (feature in features)
+
     @return_exceptions
     @util.cached
     def _infoTelnet(self, command, port = None):
@@ -361,6 +368,9 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
+        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.8) with xdr-in-asd stats available on service port
+            return util.info_to_dict(self.info("statistics/xdr"))
+
         return util.info_to_dict(self.xdrInfo('statistics'))
 
     @return_exceptions
@@ -427,10 +437,82 @@ class Node(object):
         return data
 
     @return_exceptions
+    def infoDCs(self):
+        """
+        Get a list of datacenters for this node. asinfo -v "dcs" -p 3004
+
+        Returns:
+        list -- list of dcs
+        """
+        if self.isFeaturePresent('xdr'):
+            return util.info_to_list(self.info("dcs"))
+
+        return util.info_to_list(self.xdrInfo("dcs"))
+
+    @return_exceptions
+    def infoDCStatistics(self, dc):
+        """
+        Get statistics for a datacenter.
+
+        Returns:
+        dict -- {stat_name : stat_value, ...}
+        """
+        if self.isFeaturePresent('xdr'):
+            return util.info_to_dict(self.info("dc/%s"%dc))
+        return util.info_to_dict(self.xdrInfo("dc/%s"%dc))
+
+    @return_exceptions
+    def infoAllDCStatistics(self):
+        dcs = self.infoDCs()
+
+        if isinstance(dcs, Exception):
+            return {}
+
+        stats = {}
+        for dc in dcs:
+            stat = self.infoDCStatistics(dc)
+            if not stat or isinstance(stat,Exception):
+                stat = {}
+            stats[dc] = stat
+
+        return stats
+
+    @return_exceptions
+    def infoDCGetConfig(self):
+        """
+        Get config for a datacenter.
+
+        Returns:
+        dict -- {dc_name1:{config_name : config_value, ...}, dc_name2:{config_name : config_value, ...}}
+        """
+        if self.isFeaturePresent('xdr'):
+            configs = self.info("get-dc-config")
+            if not configs or isinstance(configs,Exception):
+                configs = self.info("get-dc-config:")
+            if not configs or isinstance(configs,Exception):
+                return {}
+            return util.info_to_dict_multi_level(configs, "DC_Name")
+
+        configs = self.xdrInfo("get-dc-config")
+        if not configs or isinstance(configs,Exception):
+            return {}
+        return util.info_to_dict_multi_level(configs, "DC_Name")
+
+    @return_exceptions
     def infoXDRGetConfig(self):
-        result = self.xdrInfo('get-config')
-        result = {'xdr':util.info_to_dict(result)}
-        return result
+        xdr_configs = self.infoGetConfig(stanza='xdr')
+        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.8) with xdr-in-asd config from service port is sufficient
+            return xdr_configs
+        xdr_configs_xdr = self.xdrInfo('get-config') # required for old aerospike server versions (<3.8)
+        if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
+            xdr_configs_xdr = {'xdr':util.info_to_dict(xdr_configs_xdr)}
+            if xdr_configs_xdr['xdr'] and not isinstance(xdr_configs_xdr['xdr'], Exception):
+                if xdr_configs and xdr_configs['xdr'] and not isinstance(xdr_configs['xdr'],Exception):
+                    xdr_configs['xdr'].update(xdr_configs_xdr['xdr'])
+                else:
+                    xdr_configs = {}
+                    xdr_configs['xdr'] = xdr_configs_xdr['xdr']
+        return xdr_configs
 
     @return_exceptions
     def infoHistogram(self, histogram):

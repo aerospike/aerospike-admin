@@ -119,15 +119,14 @@ class InfoController(CommandController):
     def __init__(self):
         self.modifiers = set(['with'])
 
-    @CommandHelp('Displays service, network, set, namespace, xdr, and sindex summary'
+    @CommandHelp('Displays service, network, set, and namespace summary'
                  , 'information.')
     def _do_default(self, line):
         actions = (util.Future(self.do_service, line).start()
                    , util.Future(self.do_network, line).start()
                    , util.Future(self.do_set, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start()
-                   , util.Future(self.do_sindex, line).start())
+                   )
         return [action.result() for action in actions]
 
     @CommandHelp('Displays summary information for the Aerospike service.')
@@ -226,6 +225,18 @@ class InfoController(CommandController):
         builds = builds.result()
         xdr_enable = xdr_enable.result()
         return util.Future(self.view.infoXDR, stats, builds, xdr_enable, self.cluster, **self.mods)
+
+    @CommandHelp('Displays summary information for each datacenter.')
+    def do_dc(self, line):
+        stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
+        configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
+        for node in stats.keys():
+            if stats[node] and not isinstance(stats[node],Exception) and configs[node] and not isinstance(configs[node],Exception):
+                for dc in stats[node].keys():
+                    stats[node][dc].update(configs[node][dc])
+            elif (not stats[node] or isinstance(stats[node],Exception)) and configs[node] and not isinstance(configs[node],Exception):
+                stats[node] = configs[node]
+        return util.Future(self.view.infoDC, stats, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):
@@ -409,12 +420,12 @@ class ShowConfigController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'diff'])
 
-    @CommandHelp('Displays service, network, namespace, and xdr configuration')
+    @CommandHelp('Displays service, network, and namespace configuration')
     def _do_default(self, line):
         actions = (util.Future(self.do_service, line).start()
                    , util.Future(self.do_network, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start())
+                   )
         return [action.result() for action in actions]
 
     @CommandHelp('Displays service configuration')
@@ -481,36 +492,39 @@ class ShowConfigController(CommandController):
                             , configs, self.cluster, **self.mods)
                 for ns, configs in ns_configs.iteritems()]
 
-    def xdr_port_config(self, line):
-        xdr_configs = self.cluster.infoXDRGetConfig(nodes=self.nodes)
+    @CommandHelp('Displays XDR configuration')
+    def do_xdr(self, line):
+        configs = self.cluster.infoXDRGetConfig(nodes=self.nodes)
 
-        xdr_filtered = {}
-        for node, config in xdr_configs.iteritems():
+        xdr_configs = {}
+        for node, config in configs.iteritems():
             if isinstance(config, Exception):
                 continue
 
-            xdr_filtered[node] = config['xdr']
+            xdr_configs[node] = config['xdr']
 
-        return util.Future(self.view.showConfig, "XDR Configuration from xdr port", xdr_filtered, self.cluster
+        return util.Future(self.view.showConfig, "XDR Configuration", xdr_configs, self.cluster
                              , **self.mods)
 
-    def asd_port_config(self, line):
-        xdr_configs_asd = self.cluster.infoGetConfig(nodes=self.nodes
-                                                     , stanza='xdr')
-        for node in xdr_configs_asd:
-            if isinstance(xdr_configs_asd[node], Exception):
-                xdr_configs_asd[node] = {}
-            else:
-                xdr_configs_asd[node] = xdr_configs_asd[node]['xdr']
+    @CommandHelp('Displays datacenter configuration')
+    def do_dc(self, line):
+        all_dc_configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
+        dc_configs = {}
+        for host, configs in all_dc_configs.iteritems():
+            if not configs or isinstance(configs,Exception):
+                continue
+            for dc, config in configs.iteritems():
+                if dc not in dc_configs:
+                    dc_configs[dc] = {}
 
-        return util.Future(self.view.showConfig, "XDR Configuration from asd port", xdr_configs_asd, self.cluster
-                             , **self.mods)
-    @CommandHelp('Displays XDR configuration')
-    def do_xdr(self, line):
-        actions = (util.Future(self.xdr_port_config, line).start()
-                   , util.Future(self.asd_port_config, line).start()
-                   )
-        return [action.result() for action in actions]
+                try:
+                    dc_configs[dc][host].update(config)
+                except KeyError:
+                    dc_configs[dc][host] = config
+
+        return [util.Future(self.view.showConfig, "%s DC Configuration"%(dc)
+                            , configs, self.cluster, **self.mods)
+                for dc, configs in dc_configs.iteritems()]
 
 @CommandHelp('"show health" is used to display Aerospike configuration health')
 class ShowHealthController(CommandController):
@@ -733,14 +747,13 @@ class ShowStatisticsController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Displays bin, set, service, namespace, xdr, and sindex statistics')
+    @CommandHelp('Displays bin, set, service, and namespace statistics')
     def _do_default(self, line):
         actions = (util.Future(self.do_bins, line).start()
                    , util.Future(self.do_sets, line).start()
                    , util.Future(self.do_service, line).start()
                    , util.Future(self.do_namespace, line).start()
-                   , util.Future(self.do_xdr, line).start()
-                   , util.Future(self.do_sindex, line).start())
+                   )
 
         return [action.result() for action in actions]
 
@@ -774,8 +787,6 @@ class ShowStatisticsController(CommandController):
                             , self.cluster
                             , **self.mods)
                 for namespace in sorted(namespace_set)]
-
-
 
     @CommandHelp('Displays sindex statistics')
     def do_sindex(self, line):
@@ -845,6 +856,25 @@ class ShowStatisticsController(CommandController):
                             , xdr_stats
                             , self.cluster
                             , **self.mods)
+
+    @CommandHelp('Displays datacenter statistics')
+    def do_dc(self, line):
+        all_dc_stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
+        dc_stats = {}
+        for host, stats in all_dc_stats.iteritems():
+            if not stats or isinstance(stats,Exception):
+                continue
+            for dc, stat in stats.iteritems():
+                if dc not in dc_stats:
+                    dc_stats[dc] = {}
+
+                try:
+                    dc_stats[dc][host].update(stat)
+                except KeyError:
+                    dc_stats[dc][host] = stat
+        return [util.Future(self.view.showConfig, "%s DC Statistics"%(dc)
+                            , stats, self.cluster, **self.mods)
+                for dc, stats in dc_stats.iteritems()]
 
 class ClusterController(CommandController):
     def __init__(self):
@@ -1010,6 +1040,7 @@ class ClusterController(CommandController):
 class CollectinfoController(CommandController):
 
     def collect_local_file(self,src,dest_dir):
+        print "[INFO] Copying file %s to %s"%(src,dest_dir)
         try:
             shutil.copy2(src, dest_dir)
         except Exception,e:
@@ -1224,6 +1255,7 @@ class CollectinfoController(CommandController):
         return namespaces
 
     def main_collectinfo(self, show_all=False, verbose=False):
+
         # getting service port to use in ss/netstat command
         port = 3000
         try:
@@ -1258,13 +1290,14 @@ class CollectinfoController(CommandController):
                       ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
                       ['ip addr',''],
                       ['ip -s link',''],
-                      ['sudo iptables -L','']
+                      ['sudo iptables -L',''],
+                      ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"','']
                       ]
-        sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'sindex']
+        sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'dc', 'sindex']
         sys_show_params = ['distribution', 'config diff']
         sys_features_params = ['features']
         sys_cluster_params = ['pmap']
-        dignostic_show_params = ['config', 'latency', 'statistics']
+        dignostic_show_params = ['config', 'config xdr', 'config dc', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
         dignostic_cluster_params = ['service', 'services']
         dignostic_cluster_params_additional = [
                           'partition-info',
@@ -1367,7 +1400,7 @@ class CollectinfoController(CommandController):
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
 
-        
+
         ####### System info ########
 
         aslogfile = as_logfile_prefix + 'sysinfo.log'
@@ -1426,47 +1459,84 @@ class CollectinfoController(CommandController):
 
 
         ####### Logs and conf ########
-        
+
+        ##### aerospike logs #####
+
+        try:
+            as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
+        except:
+            from lib.node import Node
+            tempNode = Node(_ip)
+            as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
+
+        conf_path = '/etc/aerospike/aerospike.conf'
+        #Comparing with this version because prior to this it was citrusleaf.conf
+        if LooseVersion(as_version) <= LooseVersion("3.0.0"):
+            conf_path = '/etc/citrusleaf/citrusleaf.conf'
+
+
         if show_all:
+            ##### aerospike xdr logs #####
+               #### collectinfo can read the xdr log file from default path for old aerospike version which can not provide xdr log path in asinfo command
+               #### for latest xdr-in-asd versions, 'asinfo -v logs' provide all logs including xdr log, so no need to read it separately
             try:
-                if 'True' in self.cluster.isXDREnabled().values():
-                    aslogfile = as_logfile_prefix + 'xdr.log'
-                    self.collectinfo_content('shell',['cat /var/log/*xdr.log'])
-            except:
+                if True in self.cluster.isXDREnabled().values():
+                    is_xdr_in_asd_version = False
+                    try:
+                        is_xdr_in_asd_version = self.cluster._callNodeMethod([_ip], "isFeaturePresent", "xdr").popitem()[1]
+                    except:
+                        from lib.node import Node
+                        tempNode = Node(_ip)
+                        is_xdr_in_asd_version = self.cluster._callNodeMethod([tempNode.ip], "isFeaturePresent", "xdr").popitem()[1]
+
+                    if not is_xdr_in_asd_version:
+                        try:
+                            o,e = util.shell_command(["grep errorlog-path " + conf_path])
+                            if e:
+                                xdr_log_location = '/var/log/aerospike/*xdr.log'
+                            else:
+                                xdr_log_location = o.split()[1]
+                        except:
+                            xdr_log_location = '/var/log/aerospike/*xdr.log'
+
+                        aslogfile = as_logfile_prefix + 'asxdr.log'
+                        self.collectinfo_content('shell',['cat ' + xdr_log_location])
+            except Exception as e:
                 self.write_log(str(e))
                 sys.stdout = sys.__stdout__
 
             try:
                 try:
-                    log_location = self.cluster._callNodeMethod([_ip], "info",
-                                                            "logs").popitem()[1].split(':')[1]
+                    log_locations = [i.split(':')[1] for i in self.cluster._callNodeMethod([_ip], "info", "logs").popitem()[1].split(';')]
                 except:
                     from lib.node import Node
                     tempNode = Node(_ip)
-                    log_location = self.cluster._callNodeMethod([tempNode.ip], "info",
-                                                                "logs").popitem()[1].split(':')[1]
-                self.collect_local_file(log_location, as_logfile_prefix + 'aerospike.log')
-            except:
+                    log_locations = [i.split(':')[1] for i in self.cluster._callNodeMethod([tempNode.ip], "info", "logs").popitem()[1].split(';')]
+                file_name_used = {}
+                for log in log_locations:
+                    file_name_base = os.path.basename(log)
+                    if file_name_base in file_name_used:
+                        file_name_used[file_name_base] = file_name_used[file_name_base] + 1
+                        file_name, ext = os.path.splitext(file_name_base)
+                        file_name_base = file_name + "-" + str(file_name_used[file_name_base]) + ext
+                    else:
+                        file_name_used[file_name_base] = 1
+
+                    self.collect_local_file(log, as_logfile_prefix + file_name_base)
+            except Exception as e:
                 self.write_log(str(e))
                 sys.stdout = sys.__stdout__
 
+        ##### aerospike conf file #####
         try:
-            try:
-                as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
-            except:
-                from lib.node import Node
-                tempNode = Node(_ip)
-                as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
             # Comparing with this version because prior to this it was citrusleaf.conf & citrusleaf.log
             if LooseVersion(as_version) > LooseVersion("3.0.0"):
                 aslogfile = as_logfile_prefix + 'aerospike.conf'
-                self.write_log(collect_output)
-                self.collectinfo_content('shell',['cat /etc/aerospike/aerospike.conf'])
             else:
                 aslogfile = as_logfile_prefix + 'citrusleaf.conf'
-                self.write_log(collect_output)
-                self.collectinfo_content('shell',['cat /etc/citrusleaf/citrusleaf.conf'])
-                
+
+            self.write_log(collect_output)
+            self.collectinfo_content('shell',['cat %s'%(conf_path)])
 
         except Exception as e: 
             self.write_log(str(e))
