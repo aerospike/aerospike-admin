@@ -84,8 +84,14 @@ class Cluster(object):
 
     def getExpectedPrincipal(self):
         try:
-            return max([n.node_id for n in self.nodes.itervalues()])
-        except:
+            principal = "0"
+            for n in self.nodes.itervalues():
+                if n.node_id.zfill(16) > principal.zfill(16):
+                    principal = n.node_id
+            return principal
+            #return max([n.node_id for n in self.nodes.itervalues()])
+        except Exception as e:
+            print e
             return ''
 
     def getVisibility(self):

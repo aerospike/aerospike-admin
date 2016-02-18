@@ -129,42 +129,22 @@ class InfoController(CommandController):
                    )
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays summary information for the Aerospike service.')
-    def do_service(self, line):
-        namespace_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
+    @CommandHelp('Displays network information for Aerospike, the main'
+                 , 'purpose of this information is to link node ids to'
+                 , 'fqdn/ip addresses.')
+    def do_network(self, line):
         stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
+        versions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
         services = util.Future(self.cluster.infoServices, nodes=self.nodes).start()
 
         visible = self.cluster.getVisibility()
 
-        migrations = {}
-        namespace_stats = namespace_stats.result()
-        for node in namespace_stats:
-            if isinstance(namespace_stats[node], Exception):
-                continue
-
-            migrations[node] = node_migrations = {}
-            node_migrations['rx'] = 0
-            node_migrations['tx'] = 0
-            for ns_stats in namespace_stats[node].itervalues():
-                if not isinstance(ns_stats, Exception):
-                    node_migrations['rx'] += int(ns_stats.get("migrate-rx-partitions-remaining", 0))
-                    node_migrations['tx'] += int(ns_stats.get("migrate-tx-partitions-remaining", 0))
-                else:
-                    node_migrations['rx'] = 0
-                    node_migrations['tx'] = 0
 
         stats = stats.result()
-        for node in stats:
-            if isinstance(stats[node], Exception):
-                continue
-
-            node_stats = stats[node]
-            node_stats['rx_migrations'] = migrations.get(node,{}).get('rx', 0)
-            node_stats['tx_migrations'] = migrations.get(node,{}).get('tx',0)
 
         builds = builds.result()
+        versions = versions.result()
         services = services.result()
         visibility = {}
         for node_id, service_list in services.iteritems():
@@ -177,12 +157,10 @@ class InfoController(CommandController):
             else:
                 visibility[node_id] = True
 
-        return util.Future(self.view.infoService, stats, builds, visibility, self.cluster, **self.mods)
+        return util.Future(self.view.infoNetwork, stats, versions, builds, visibility, self.cluster, **self.mods)
 
-    @CommandHelp('Displays network information for Aerospike, the main'
-                 , 'purpose of this information is to link node ids to'
-                 , 'fqdn/ip addresses.')
-    def do_network(self, line):
+    @CommandHelp('Displays summary information for the Aerospike service.')
+    def do_service(self, line):
         stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
         # get current time from namespace
         ns_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
@@ -190,8 +168,35 @@ class InfoController(CommandController):
         hosts = self.cluster.nodes
 
         ns_stats = ns_stats.result()
+
+        migrations = {}
+        for node in ns_stats:
+            if isinstance(ns_stats[node], Exception):
+                continue
+
+            migrations[node] = node_migrations = {}
+            node_migrations['rx'] = 0
+            node_migrations['tx'] = 0
+            for ns_stat in ns_stats[node].itervalues():
+                if not isinstance(ns_stat, Exception):
+                    node_migrations['rx'] += int(ns_stat.get("migrate-rx-partitions-remaining", 0))
+                    node_migrations['tx'] += int(ns_stat.get("migrate-tx-partitions-remaining", 0))
+                else:
+                    node_migrations['rx'] = 0
+                    node_migrations['tx'] = 0
+
         stats = stats.result()
+
+        for node in stats:
+            if isinstance(stats[node], Exception):
+                continue
+
+            node_stats = stats[node]
+            node_stats['rx_migrations'] = migrations.get(node,{}).get('rx', 0)
+            node_stats['tx_migrations'] = migrations.get(node,{}).get('tx',0)
+
         for host, configs in ns_stats.iteritems():
+
             if isinstance(configs, Exception):
                 continue
             ns = configs.keys()[0]
@@ -202,7 +207,7 @@ class InfoController(CommandController):
                    not isinstance(stats[host], Exception):
                     stats[host]['current-time'] = configs[ns]['current-time']
 
-        return util.Future(self.view.infoNetwork, stats, hosts, self.cluster, **self.mods)
+        return util.Future(self.view.infoService, stats, hosts, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each set.')
     def do_set(self, line):
@@ -760,12 +765,18 @@ class ShowStatisticsController(CommandController):
     @CommandHelp('Displays service statistics')
     def do_service(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
+        show_total = False
+        if '-total' in line:
+            show_total = True
 
-        return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster
+        return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster, show_total=show_total
                             , **self.mods)
 
     @CommandHelp('Displays namespace statistics')
     def do_namespace(self, line):
+        show_total = False
+        if '-total' in line:
+            show_total = True
         namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
 
         namespaces = namespaces.values()
@@ -785,21 +796,29 @@ class ShowStatisticsController(CommandController):
                             , "%s Namespace Statistics"%(namespace)
                             , ns_stats[namespace].result()
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
                 for namespace in sorted(namespace_set)]
 
     @CommandHelp('Displays sindex statistics')
     def do_sindex(self, line):
+        show_total = False
+        if '-total' in line:
+            show_total = True
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
         return [util.Future(self.view.showStats
                             , "%s Sindex Statistics"%(ns_set_sindex)
                             , sindex_stats[ns_set_sindex]
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
                 for ns_set_sindex in sorted(sindex_stats.keys())]
 
     @CommandHelp('Displays set statistics')
     def do_sets(self, line):
+        show_total = False
+        if '-total' in line:
+            show_total = True
         sets = self.cluster.infoSetStatistics(nodes=self.nodes)
 
         set_stats = {}
@@ -819,11 +838,15 @@ class ShowStatisticsController(CommandController):
         return [util.Future(self.view.showStats, "%s %s Set Statistics"%(namespace, set_name)
                             , stats
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
                 for (namespace, set_name), stats in set_stats.iteritems()]
 
     @CommandHelp('Displays bin statistics')
     def do_bins(self, line):
+        show_total = False
+        if '-total' in line:
+            show_total = True
         bin_stats = self.cluster.infoBinStatistics(nodes=self.nodes)
         new_bin_stats = {}
 
@@ -845,20 +868,28 @@ class ShowStatisticsController(CommandController):
         return [util.Future(self.view.showStats, "%s Bin Statistics"%(namespace)
                             , bin_stats
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
                 for namespace, bin_stats in new_bin_stats.iteritems()]
 
     @CommandHelp('Displays xdr statistics')
     def do_xdr(self, line):
+        show_total = False
+        if '-total' in line:
+            show_total = True
         xdr_stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
 
         return util.Future(self.view.showStats, "XDR Statistics"
                             , xdr_stats
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
 
     @CommandHelp('Displays datacenter statistics')
     def do_dc(self, line):
+        show_total = False
+        if '-total' in line:
+            show_total = True
         all_dc_stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
         dc_stats = {}
         for host, stats in all_dc_stats.iteritems():
@@ -873,7 +904,7 @@ class ShowStatisticsController(CommandController):
                 except KeyError:
                     dc_stats[dc][host] = stat
         return [util.Future(self.view.showConfig, "%s DC Statistics"%(dc)
-                            , stats, self.cluster, **self.mods)
+                            , stats, self.cluster, show_total=show_total, **self.mods)
                 for dc, stats in dc_stats.iteritems()]
 
 class ClusterController(CommandController):

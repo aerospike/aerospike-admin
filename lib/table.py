@@ -231,7 +231,7 @@ class Table(object):
 
         grouped_data = {}
         for row in data:
-            group_by = row[self._group_by]
+            group_by = row[self._group_by][1]
             if group_by not in grouped_data:
                 grouped_data[group_by] = []
 
