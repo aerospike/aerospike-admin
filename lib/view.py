@@ -22,14 +22,38 @@ import datetime
 from cStringIO import StringIO
 import sys
 import itertools
+from pydoc import pipepager
 
 class CliView(object):
+    NO_PAGER, LESS, MORE = range(3)
+    pager = NO_PAGER
+
     @staticmethod
     def compileLikes(likes):
         likes = map(re.escape, likes)
         likes = "|".join(likes)
         likes = re.compile(likes)
         return likes
+
+    @staticmethod
+    def print_result(out):
+        if type(out) is not str:
+            out = str(out)
+        if CliView.pager==CliView.LESS:
+            pipepager(out, cmd='less -RSX')
+        elif CliView.pager==CliView.MORE:
+            pipepager(out, cmd='more -d')
+        else:
+             print out
+
+    @staticmethod
+    def print_pager():
+        if CliView.pager==CliView.LESS:
+            print "LESS"
+        elif CliView.pager==CliView.MORE:
+            print "MORE"
+        else:
+             print "NO PAGER"
 
     @staticmethod
     def infoNetwork(stats, versions, builds, visibilities, cluster, **ignore):
@@ -109,7 +133,8 @@ class CliView(object):
 
             t.insertRow(row)
 
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def infoService(stats, hosts, cluster, **ignore):
@@ -155,7 +180,8 @@ class CliView(object):
             row['node'] = prefixes[node_key]
             row['real_node_id'] = node.node_id
             t.insertRow(row)
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def infoNamespace(stats, cluster, **ignore):
@@ -330,7 +356,8 @@ class CliView(object):
             row["migrate-rx-partitions-remaining"] = str(total_res[ns]["migrate-rx-partitions-remaining"])
             t.insertRow(row)
 
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def infoSet(stats, cluster, **ignore):
@@ -420,7 +447,8 @@ class CliView(object):
 
             t.insertRow(row)
 
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def infoXDR(stats, builds, xdr_enable, cluster, **ignore):
@@ -495,7 +523,8 @@ class CliView(object):
             row['node'] = prefixes[node_key]
 
             t.insertRow(row)
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def infoDC(stats, cluster, **ignore):
@@ -538,7 +567,8 @@ class CliView(object):
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 t.insertRow(row)
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def infoSIndex(stats, cluster, **ignore):
@@ -574,7 +604,8 @@ class CliView(object):
                 row['node'] = node
                 t.insertRow(row)
 
-        print t
+        #print t
+        CliView.print_result(t)
 
 
     @staticmethod
@@ -604,6 +635,9 @@ class CliView(object):
             t = Table("%s - %s in %s"%(namespace, title, unit)
                       , columns
                       , description=description)
+            if hist is "objsz":
+                for column in percentages:
+                    t.addDataSource(column, Extractors.byteExtractor(column))
             for node_id, data in node_data.iteritems():
                 percentiles = data['percentiles']
                 row = {}
@@ -613,7 +647,8 @@ class CliView(object):
 
                 t.insertRow(row)
 
-            print t
+            #print t
+            CliView.print_result(t)
 
     @staticmethod
     def showLatency(latency, cluster, like=None, **ignore):
@@ -651,7 +686,8 @@ class CliView(object):
                 node_data['node'] = prefixes[node_id]
                 t.insertRow(node_data)
 
-            print t
+            #print t
+            CliView.print_result(t)
 
     @staticmethod
     def showConfig(title, service_configs, cluster, like=None, diff=None, show_total=False, **ignore):
@@ -709,7 +745,8 @@ class CliView(object):
             rowTotal['NODE'] = "Total"
             t.insertRow(rowTotal)
 
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def showStats(*args, **kwargs):
@@ -774,7 +811,8 @@ class CliView(object):
                 row['Master Discrepancy Partitions'] = ns_stats['master_disc_part']
                 row['Replica Discrepancy Partitions'] = ns_stats['replica_disc_part']
                 t.insertRow(row)
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def clusterQNode(qnode_data, cluster, **ignore):
@@ -795,7 +833,8 @@ class CliView(object):
                 row['Replica QNode Without Data'] = ns_stats['RQ_without_data']
                 row['Replica QNode With Data'] = ns_stats['RQ_data']
                 t.insertRow(row)
-        print t
+        #print t
+        CliView.print_result(t)
 
     @staticmethod
     def dun(results, cluster, **kwargs):

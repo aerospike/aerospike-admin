@@ -520,18 +520,20 @@ class Node(object):
 
         data = {}
         for namespace in namespaces:
-            datum = self.info("hist-dump:ns=%s;hist=%s"%(namespace
-                                                         , histogram))
-            datum = datum.split(',')
-            datum.pop(0) # don't care about ns, hist_name, or length
-            width = int(datum.pop(0))
-            datum[-1] = datum[-1].split(';')[0]
-            datum = map(int, datum)
+            try:
+                datum = self.info("hist-dump:ns=%s;hist=%s"%(namespace
+                                                             , histogram))
+                datum = datum.split(',')
+                datum.pop(0) # don't care about ns, hist_name, or length
+                width = int(datum.pop(0))
+                datum[-1] = datum[-1].split(';')[0]
+                datum = map(int, datum)
 
-            data[namespace] = {'histogram':histogram
-                               , 'width':width
-                               , 'data':datum}
-
+                data[namespace] = {'histogram':histogram
+                                   , 'width':width
+                                   , 'data':datum}
+            except:
+                pass
         return data
 
     def _parseDunList(self, dun_list):

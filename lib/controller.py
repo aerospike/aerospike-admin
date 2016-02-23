@@ -19,6 +19,7 @@ from distutils.version import StrictVersion, LooseVersion
 import zipfile
 import copy
 from lib.data import lsof_file_type_desc
+from lib.view import CliView
 
 
 def flip_keys(orig_data):
@@ -85,6 +86,7 @@ class RootController(BaseController):
             , 'shell':ShellController
             , 'collectinfo':CollectinfoController
             , 'features':FeaturesController
+            , 'pager':PagerController
         }
 
     @CommandHelp('Terminate session')
@@ -345,11 +347,20 @@ class ShowDistributionController(CommandController):
 
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
-
+        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start().result()
         histogram = flip_keys(histogram)
 
         for namespace, host_data in histogram.iteritems():
             for host_id, data in host_data.iteritems():
+                if histogram_name is "objsz":
+                    rblock_size_bytes = 128
+                    try:
+                        as_version = builds[host_id]
+                        if LooseVersion(as_version) < LooseVersion("2.7.0") or (LooseVersion(as_version) >= LooseVersion("3.0.0") and LooseVersion(as_version) < LooseVersion("3.1.3")):
+                            rblock_size_bytes = 512
+                    except:
+                        pass
+
                 hist = data['data']
                 width = data['width']
 
@@ -375,7 +386,15 @@ class ShowDistributionController(CommandController):
                 if result == []:
                     result = [0] * 10
 
-                data['percentiles'] = [r * width for r in result]
+                if histogram_name is "objsz":
+                    data['percentiles'] = []
+                    for r in result:
+                        if r == 0:
+                            data['percentiles'].append(0)
+                        else:
+                            data['percentiles'].append(((r * width)-1) * rblock_size_bytes)
+                else:
+                    data['percentiles'] = [r * width for r in result]
 
         return util.Future(self.view.showDistribution
                            , title
@@ -395,7 +414,7 @@ class ShowDistributionController(CommandController):
 
     @CommandHelp('Shows the distribution of Object sizes for namespaces')
     def do_object_size(self, line):
-        return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
+        return self._do_distribution('objsz', 'Object Size Distribution', 'Bytes')
 
 class ShowLatencyController(CommandController):
     def __init__(self):
@@ -1687,3 +1706,24 @@ class FeaturesController(CommandController):
         return util.Future(self.view.showConfig, "Features"
                     , features
                     , self.cluster, **self.mods)
+
+@CommandHelp("Set pager for output")
+class PagerController(CommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    def _do_default(self, line):
+        self.executeHelp(line)
+
+    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as linux 'less' command."
+                 " We can use arrow keys to scroll output and 'q' to end page for table")
+    def do_less(self, line):
+        CliView.pager = CliView.LESS
+
+    @CommandHelp("Removes pager and prints output normally")
+    def do_remove(self, line):
+        CliView.pager = CliView.NO_PAGER
+
+    @CommandHelp("Displays current selected option.")
+    def do_show(self, line):
+        CliView.print_pager()
