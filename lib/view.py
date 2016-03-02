@@ -72,6 +72,7 @@ class CliView(object):
                         , 'cluster_visibility'
                         , '_cluster_integrity'
                         , ('_paxos_principal', 'Principal')
+                        , ('client_connections', 'Client Conns')
                         , '_uptime')
 
         t = Table(title, column_names)
@@ -197,7 +198,7 @@ class CliView(object):
                         , ('_prole-objects', 'Replica Objects')
                         , 'repl-factor'
                         , 'stop-writes'
-                        , ('_migrates', 'Migrates (tx,rx)')
+                        , ('_migrates', 'Migrates (tx%,rx%)')
                         , ('_used-bytes-disk', 'Disk Used')
                         , ('_used-disk-pct', 'Disk Used%')
                         , ('high-water-disk-pct', 'HWM Disk%')
@@ -233,8 +234,8 @@ class CliView(object):
 
         t.addDataSource('_migrates'
                         , lambda data:
-                        "(%s,%s)"%(data.get('migrate-tx-partitions-remaining', 'N/E')
-                                      , data.get('migrate-rx-partitions-remaining','N/E')))
+                        "(%s,%s)"%(data.get('migrate-tx-partitions-remaining-pct', 'N/E')
+                                      , data.get('migrate-rx-partitions-remaining-pct','N/E')))
 
         t.addCellAlert('_used-disk-pct'
                        , lambda data: int(data['_used-disk-pct']) >= int(data['high-water-disk-pct']) if data['_used-disk-pct'] is not " " else " ")
@@ -295,6 +296,8 @@ class CliView(object):
                     total_res[ns]["evicted-objects"] = 0
                     total_res[ns]["migrate-tx-partitions-remaining"] = 0
                     total_res[ns]["migrate-rx-partitions-remaining"] = 0
+                    total_res[ns]["migrate-tx-partitions-initial"] = 0
+                    total_res[ns]["migrate-rx-partitions-initial"] = 0
                 try:
                     total_res[ns]["master-objects"] += int(ns_stats["master-objects"])
                 except:
@@ -319,18 +322,36 @@ class CliView(object):
                     pass
 
                 try:
-                    total_res[ns]["migrate-tx-partitions-remaining"] += int(ns_stats["migrate-tx-partitions-remaining"])
+                    total_res[ns]["migrate-tx-partitions-remaining"] += float(ns_stats["migrate-tx-partitions-remaining"])
                 except:
                     pass
 
                 try:
-                    total_res[ns]["migrate-rx-partitions-remaining"] += int(ns_stats["migrate-rx-partitions-remaining"])
+                    total_res[ns]["migrate-rx-partitions-remaining"] += float(ns_stats["migrate-rx-partitions-remaining"])
+                except:
+                    pass
+
+                try:
+                    total_res[ns]["migrate-tx-partitions-initial"] += float(ns_stats["migrate-tx-partitions-initial"])
+                except:
+                    pass
+
+                try:
+                    total_res[ns]["migrate-rx-partitions-initial"] += float(ns_stats["migrate-rx-partitions-initial"])
                 except:
                     pass
 
                 row['namespace'] = ns
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
+                try:
+                    row["migrate-rx-partitions-remaining-pct"] = "%.2f"%((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100)
+                except:
+                    row["migrate-rx-partitions-remaining-pct"] = "0"
+                try:
+                    row["migrate-tx-partitions-remaining-pct"] = "%.2f"%((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100)
+                except:
+                    row["migrate-tx-partitions-remaining-pct"] = "0"
                 t.insertRow(row)
 
         for ns in total_res:
@@ -354,6 +375,16 @@ class CliView(object):
             row["evicted-objects"] = str(total_res[ns]["evicted-objects"])
             row["migrate-tx-partitions-remaining"] = str(total_res[ns]["migrate-tx-partitions-remaining"])
             row["migrate-rx-partitions-remaining"] = str(total_res[ns]["migrate-rx-partitions-remaining"])
+
+            try:
+                row["migrate-rx-partitions-remaining-pct"] = "%.2f"%((total_res[ns]["migrate-rx-partitions-remaining"]/total_res[ns]["migrate-rx-partitions-initial"])*100)
+            except:
+                row["migrate-rx-partitions-remaining-pct"] = "0"
+            try:
+                row["migrate-tx-partitions-remaining-pct"] = "%.2f"%((total_res[ns]["migrate-tx-partitions-remaining"]/total_res[ns]["migrate-tx-partitions-initial"])*100)
+            except:
+                row["migrate-tx-partitions-remaining-pct"] = "0"
+
             t.insertRow(row)
 
         #print t
@@ -635,9 +666,6 @@ class CliView(object):
             t = Table("%s - %s in %s"%(namespace, title, unit)
                       , columns
                       , description=description)
-            if hist is "objsz":
-                for column in percentages:
-                    t.addDataSource(column, Extractors.byteExtractor(column))
             for node_id, data in node_data.iteritems():
                 percentiles = data['percentiles']
                 row = {}
@@ -649,6 +677,50 @@ class CliView(object):
 
             #print t
             CliView.print_result(t)
+
+    @staticmethod
+    def showObjectDistribution(title
+                         , histogram
+                         , unit
+                         , hist
+                         , show_bucket_count
+                         , set_bucket_count
+                         , cluster
+                         , like=None
+                         , **ignore):
+        prefixes = cluster.getNodeNames()
+
+        likes = CliView.compileLikes(like)
+
+        description = "Number of records having %s in the range "%(hist) + \
+                      "measured in %s"%(unit)
+
+        namespaces = set(filter(likes.search, histogram.keys()))
+
+        for namespace, node_data in histogram.iteritems():
+            if namespace not in namespaces:
+                continue
+            columns = node_data["columns"]
+            columns.insert(0, 'node')
+            t = Table("%s - %s in %s"%(namespace, title, unit)
+                      , columns
+                      , description=description)
+            for column in columns:
+                if column is not 'node':
+                    t.addDataSource(column,Extractors.sifExtractor(column))
+
+            for node_id, data in node_data.iteritems():
+                if node_id=="columns":
+                    continue
+
+                row = data['values']
+                row['node'] = prefixes[node_id]
+                t.insertRow(row)
+
+            #print t
+            CliView.print_result(t)
+            if set_bucket_count and (len(columns)-1)<show_bucket_count:
+                print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n"%(terminal.fg_green(),(len(columns)-1),"s" if (len(columns)-1)>1 else "",terminal.fg_clear())
 
     @staticmethod
     def showLatency(latency, cluster, like=None, **ignore):

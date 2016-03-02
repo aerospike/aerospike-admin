@@ -20,6 +20,7 @@ import zipfile
 import copy
 from lib.data import lsof_file_type_desc
 from lib.view import CliView
+from lib import filesize
 
 
 def flip_keys(orig_data):
@@ -121,13 +122,12 @@ class InfoController(CommandController):
     def __init__(self):
         self.modifiers = set(['with'])
 
-    @CommandHelp('Displays service, network, set, and namespace summary'
+    @CommandHelp('Displays network, namespace, and xdr summary'
                  , 'information.')
     def _do_default(self, line):
-        actions = (util.Future(self.do_service, line).start()
-                   , util.Future(self.do_network, line).start()
-                   , util.Future(self.do_set, line).start()
+        actions = (util.Future(self.do_network, line).start()
                    , util.Future(self.do_namespace, line).start()
+                   , util.Future(self.do_xdr, line).start()
                    )
         return [action.result() for action in actions]
 
@@ -162,7 +162,7 @@ class InfoController(CommandController):
         return util.Future(self.view.infoNetwork, stats, versions, builds, visibility, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for the Aerospike service.')
-    def do_service(self, line):
+    def _do_service(self, line):
         stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
         # get current time from namespace
         ns_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
@@ -339,7 +339,10 @@ class ShowDistributionController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Shows the distributions of Time to Live and Object Size')
+    @CommandHelp('Shows the distributions of Time to Live and Object Size'
+                 , '  Options(only for Object Size distribution):'
+                 , '    -b               - Force to show bytewise distribution of Object Sizes. Default is rblock wise distribution in percentage'
+                 , '    -k <buckets>     - Number of buckets to show if -b is set. Default is 5.')
     def _do_default(self, line):
         actions = (util.Future(self.do_time_to_live, line[:]).start()
                    , util.Future(self.do_object_size, line[:]).start())
@@ -347,20 +350,10 @@ class ShowDistributionController(CommandController):
 
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
-        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start().result()
         histogram = flip_keys(histogram)
 
         for namespace, host_data in histogram.iteritems():
             for host_id, data in host_data.iteritems():
-                if histogram_name is "objsz":
-                    rblock_size_bytes = 128
-                    try:
-                        as_version = builds[host_id]
-                        if LooseVersion(as_version) < LooseVersion("2.7.0") or (LooseVersion(as_version) >= LooseVersion("3.0.0") and LooseVersion(as_version) < LooseVersion("3.1.3")):
-                            rblock_size_bytes = 512
-                    except:
-                        pass
-
                 hist = data['data']
                 width = data['width']
 
@@ -387,12 +380,7 @@ class ShowDistributionController(CommandController):
                     result = [0] * 10
 
                 if histogram_name is "objsz":
-                    data['percentiles'] = []
-                    for r in result:
-                        if r == 0:
-                            data['percentiles'].append(0)
-                        else:
-                            data['percentiles'].append(((r * width)-1) * rblock_size_bytes)
+                    data['percentiles'] = [(r * width)-1 if r>0 else r for r in result]
                 else:
                     data['percentiles'] = [r * width for r in result]
 
@@ -412,9 +400,152 @@ class ShowDistributionController(CommandController):
     def do_eviction(self, line):
         return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
 
-    @CommandHelp('Shows the distribution of Object sizes for namespaces')
+    def clear_option_from_mods(self, option):
+        for mod in self.modifiers:
+            if mod in self.mods and option in self.mods[mod]:
+                    self.mods[mod].remove(option)
+
+    @CommandHelp('Shows the distribution of Object sizes for namespaces'
+                 , '  Options:'
+                 , '    -b               - Force to show bytewise distribution of Object Sizes. Default is rblock wise distribution in percentage'
+                 , '    -k <buckets>     - Number of buckets to show if -b is set. Default is 5.')
     def do_object_size(self, line):
-        return self._do_distribution('objsz', 'Object Size Distribution', 'Bytes')
+        if "-b" not in line:
+            return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
+        else:
+            self.clear_option_from_mods("-b")
+
+        histogram_name = 'objsz'
+        title = 'Object Size Distribution'
+        unit = 'Bytes'
+        show_bucket_count = 5
+        set_bucket_count = False
+
+        try:
+            if "-k" in line:
+                i = line.index("-k")
+                show_bucket_count = int(line[i+1])
+                set_bucket_count = True
+                self.clear_option_from_mods("-k")
+                self.clear_option_from_mods(str(show_bucket_count))
+        except:
+            pass
+        histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
+        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start().result()
+        histogram = flip_keys(histogram)
+
+        for namespace, host_data in histogram.iteritems():
+            result = []
+            rblock_size_bytes = 128
+            width = 1
+            for host_id, data in host_data.iteritems():
+                try:
+                    as_version = builds[host_id]
+                    if LooseVersion(as_version) < LooseVersion("2.7.0") or (LooseVersion(as_version) >= LooseVersion("3.0.0") and LooseVersion(as_version) < LooseVersion("3.1.3")):
+                        rblock_size_bytes = 512
+                except:
+                    pass
+
+                hist = data['data']
+                width = data['width']
+
+                for i, v in enumerate(hist):
+                    if v and v>0:
+                        result.append(i)
+
+            result = list(set(result))
+            result.sort()
+            start_buckets = []
+            if len(result) <= show_bucket_count:
+            # if asinfo buckets with values>0 are less than show_bucket_count then we can show all single buckets as it is, no need to merge to show big range
+                for res in result:
+                    start_buckets.append(res)
+                    start_buckets.append(res+1)
+            else:
+            # dividing volume buckets (from min possible bucket with value>0 to max possible bucket with value>0) into same range
+                start_bucket = result[0]
+                size = result[len(result)-1]-result[0]+1
+
+                bucket_width = size/show_bucket_count
+                additional_bucket_index = show_bucket_count -(size%show_bucket_count)
+
+                bucket_index = 0
+
+                while bucket_index < show_bucket_count:
+                    start_buckets.append(start_bucket)
+                    if bucket_index == additional_bucket_index:
+                        bucket_width += 1
+                    start_bucket += bucket_width
+                    bucket_index += 1
+                start_buckets.append(start_bucket)
+
+            columns = []
+            need_to_show = {}
+            for i,bucket in enumerate(start_buckets):
+                if i==len(start_buckets)-1:
+                    break
+                key = self.get_bucket_range(bucket,start_buckets[i+1],width,rblock_size_bytes)
+                need_to_show[key] = False
+                columns.append(key)
+            for host_id, data in host_data.iteritems():
+                rblock_size_bytes = 128
+                try:
+                    as_version = builds[host_id]
+                    if LooseVersion(as_version) < LooseVersion("2.7.0") or (LooseVersion(as_version) >= LooseVersion("3.0.0") and LooseVersion(as_version) < LooseVersion("3.1.3")):
+                        rblock_size_bytes = 512
+                except:
+                    pass
+                hist = data['data']
+                width = data['width']
+                data['values'] = {}
+                for i, s in enumerate(start_buckets):
+                    if i == len(start_buckets)-1:
+                        break
+                    b_index = s
+                    key = self.get_bucket_range(s,start_buckets[i+1],width,rblock_size_bytes)
+                    if key not in columns:
+                        columns.append(key)
+                    if key not in data["values"]:
+                        data["values"][key] = 0
+                    while b_index < start_buckets[i+1]:
+                        data["values"][key] += hist[b_index]
+                        b_index += 1
+
+                    if data["values"][key] > 0:
+                        need_to_show[key] = True
+                    else:
+                        if key not in need_to_show:
+                            need_to_show[key] = False
+            host_data["columns"] = []
+            for column in columns:
+                if need_to_show[column]:
+                    host_data["columns"].append(column)
+
+        return util.Future(self.view.showObjectDistribution
+                           , title
+                           , histogram
+                           , unit
+                           , histogram_name
+                           , show_bucket_count
+                           , set_bucket_count
+                           , self.cluster
+                           , **self.mods)
+
+    def get_bucket_range(self, current_bucket, next_bucket, width, rblock_size_bytes):
+        s_b = "0 B"
+        if current_bucket>0:
+            last_bucket_last_rblock_end = ((current_bucket*width)-1)*rblock_size_bytes
+            if last_bucket_last_rblock_end<1:
+                last_bucket_last_rblock_end = 0
+            else:
+                last_bucket_last_rblock_end += 1
+            s_b = filesize.size(last_bucket_last_rblock_end,filesize.byte)
+            if current_bucket==99 or next_bucket>99:
+                return ">%s"%(s_b.replace(" ",""))
+
+        bucket_last_rblock_end = ((next_bucket*width)-1)*rblock_size_bytes
+        e_b = filesize.size(bucket_last_rblock_end, filesize.byte)
+        return "%s to %s"%(s_b.replace(" ",""),e_b.replace(" ",""))
 
 class ShowLatencyController(CommandController):
     def __init__(self):
@@ -771,7 +902,9 @@ class ShowStatisticsController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Displays bin, set, service, and namespace statistics')
+    @CommandHelp('Displays bin, set, service, and namespace statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end. It contains nodewise sum for statistics.')
     def _do_default(self, line):
         actions = (util.Future(self.do_bins, line).start()
                    , util.Future(self.do_sets, line).start()
@@ -781,21 +914,36 @@ class ShowStatisticsController(CommandController):
 
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays service statistics')
+    def clear_option_from_mods(self, option):
+        for mod in self.modifiers:
+            if mod in self.mods and option in self.mods[mod]:
+                    self.mods[mod].remove(option)
+
+    def need_to_show_total(self, line):
+        show_total = False
+        try:
+            if "-t" in line:
+                show_total = True
+                self.clear_option_from_mods("-t")
+        except:
+            pass
+        return show_total
+
+    @CommandHelp('Displays service statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_service(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
-        show_total = False
-        if '-total' in line:
-            show_total = True
-
+        show_total = self.need_to_show_total(line)
+        print self.mods
         return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster, show_total=show_total
                             , **self.mods)
 
-    @CommandHelp('Displays namespace statistics')
+    @CommandHelp('Displays namespace statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_namespace(self, line):
-        show_total = False
-        if '-total' in line:
-            show_total = True
+        show_total = self.need_to_show_total(line)
         namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
 
         namespaces = namespaces.values()
@@ -819,11 +967,11 @@ class ShowStatisticsController(CommandController):
                             , **self.mods)
                 for namespace in sorted(namespace_set)]
 
-    @CommandHelp('Displays sindex statistics')
+    @CommandHelp('Displays sindex statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_sindex(self, line):
-        show_total = False
-        if '-total' in line:
-            show_total = True
+        show_total = self.need_to_show_total(line)
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
         return [util.Future(self.view.showStats
                             , "%s Sindex Statistics"%(ns_set_sindex)
@@ -833,11 +981,11 @@ class ShowStatisticsController(CommandController):
                             , **self.mods)
                 for ns_set_sindex in sorted(sindex_stats.keys())]
 
-    @CommandHelp('Displays set statistics')
+    @CommandHelp('Displays set statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_sets(self, line):
-        show_total = False
-        if '-total' in line:
-            show_total = True
+        show_total = self.need_to_show_total(line)
         sets = self.cluster.infoSetStatistics(nodes=self.nodes)
 
         set_stats = {}
@@ -861,11 +1009,11 @@ class ShowStatisticsController(CommandController):
                             , **self.mods)
                 for (namespace, set_name), stats in set_stats.iteritems()]
 
-    @CommandHelp('Displays bin statistics')
+    @CommandHelp('Displays bin statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_bins(self, line):
-        show_total = False
-        if '-total' in line:
-            show_total = True
+        show_total = self.need_to_show_total(line)
         bin_stats = self.cluster.infoBinStatistics(nodes=self.nodes)
         new_bin_stats = {}
 
@@ -891,11 +1039,11 @@ class ShowStatisticsController(CommandController):
                             , **self.mods)
                 for namespace, bin_stats in new_bin_stats.iteritems()]
 
-    @CommandHelp('Displays xdr statistics')
+    @CommandHelp('Displays xdr statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_xdr(self, line):
-        show_total = False
-        if '-total' in line:
-            show_total = True
+        show_total = self.need_to_show_total(line)
         xdr_stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
 
         return util.Future(self.view.showStats, "XDR Statistics"
@@ -904,11 +1052,11 @@ class ShowStatisticsController(CommandController):
                             , show_total=show_total
                             , **self.mods)
 
-    @CommandHelp('Displays datacenter statistics')
+    @CommandHelp('Displays datacenter statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_dc(self, line):
-        show_total = False
-        if '-total' in line:
-            show_total = True
+        show_total = self.need_to_show_total(line)
         all_dc_stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
         dc_stats = {}
         for host, stats in all_dc_stats.iteritems():
