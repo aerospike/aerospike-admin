@@ -130,9 +130,7 @@ class InfoController(CommandController):
                    )
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays network information for Aerospike, the main'
-                 , 'purpose of this information is to link node ids to'
-                 , 'fqdn/ip addresses.')
+    @CommandHelp('Displays network information for Aerospike.')
     def do_network(self, line):
         stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
@@ -326,7 +324,8 @@ class ShowDistributionController(CommandController):
     @CommandHelp('Shows the distributions of Time to Live and Object Size'
                  , '  Options(only for Object Size distribution):'
                  , '    -b               - Force to show bytewise distribution of Object Sizes. Default is rblock wise distribution in percentage'
-                 , '    -k <buckets>     - Number of buckets to show if -b is set. Default is 5.')
+                 , '    -k <buckets>     - Maximum number of buckets to show if -b is set.'
+                   ' It distributes objects in k same size buckets and display only buckets which has objects in it. Default is 5.')
     def _do_default(self, line):
         actions = (util.Future(self.do_time_to_live, line[:]).start()
                    , util.Future(self.do_object_size, line[:]).start())
@@ -392,7 +391,8 @@ class ShowDistributionController(CommandController):
     @CommandHelp('Shows the distribution of Object sizes for namespaces'
                  , '  Options:'
                  , '    -b               - Force to show bytewise distribution of Object Sizes. Default is rblock wise distribution in percentage'
-                 , '    -k <buckets>     - Number of buckets to show if -b is set. Default is 5.')
+                 , '    -k <buckets>     - Maximum number of buckets to show if -b is set.'
+                   ' It distributes objects in k same size buckets and display only buckets which has objects in it. Default is 5.')
     def do_object_size(self, line):
         if "-b" not in line:
             return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
@@ -1838,14 +1838,14 @@ class PagerController(CommandController):
         self.executeHelp(line)
 
     @CommandHelp("Displays output with vertical and horizontal paging for each output table same as linux 'less' command."
-                 " We can use arrow keys to scroll output and 'q' to end page for table")
+                 " We can use arrow keys to scroll output and 'q' to end page for table.")
     def do_less(self, line):
         CliView.pager = CliView.LESS
 
-    @CommandHelp("Removes pager and prints output normally")
+    @CommandHelp("Removes pager and prints output normally.")
     def do_remove(self, line):
         CliView.pager = CliView.NO_PAGER
 
-    @CommandHelp("Displays current selected option.")
+    @CommandHelp("Displays current selected pager option.")
     def do_show(self, line):
         CliView.print_pager()
