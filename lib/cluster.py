@@ -15,6 +15,7 @@
 from lib import util
 from lib.node import Node
 from lib.prefixdict import PrefixDict
+from lib import terminal
 import re
 
 class Cluster(object):
@@ -65,6 +66,10 @@ class Cluster(object):
         if offline:
             retval += "\nOffline: %s"%(", ".join(offline))
 
+        cluster_visibility_error_nodes = self.getClusterVisibilityErrorNodes()
+        if cluster_visibility_error_nodes:
+            retval += terminal.fg_red() + "\nCluster Visibility error (Please check services list): %s"%(", ".join(cluster_visibility_error_nodes)) + terminal.fg_clear()
+
         return retval
 
     def getPrefixes(self):
@@ -96,6 +101,20 @@ class Cluster(object):
 
     def getVisibility(self):
         return self._live_nodes
+
+    def getClusterVisibilityErrorNodes(self):
+        visible = self.getVisibility()
+        cluster_visibility_error_nodes = []
+        for node in self.nodes.values():
+            service_list = node.infoServices()
+            if isinstance(service_list, Exception):
+                continue
+
+            service_set = set(service_list)
+            if len((visible | service_set) - service_set) != 1:
+                cluster_visibility_error_nodes.append(node.key)
+
+        return cluster_visibility_error_nodes
 
     def _shouldCrawl(self):
         """

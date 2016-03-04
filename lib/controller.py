@@ -137,28 +137,13 @@ class InfoController(CommandController):
         stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
         versions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
-        services = util.Future(self.cluster.infoServices, nodes=self.nodes).start()
-
-        visible = self.cluster.getVisibility()
-
 
         stats = stats.result()
 
         builds = builds.result()
         versions = versions.result()
-        services = services.result()
-        visibility = {}
-        for node_id, service_list in services.iteritems():
-            if isinstance(service_list, Exception):
-                continue
 
-            service_set = set(service_list)
-            if len((visible | service_set) - service_set) != 1:
-                visibility[node_id] = False
-            else:
-                visibility[node_id] = True
-
-        return util.Future(self.view.infoNetwork, stats, versions, builds, visibility, self.cluster, **self.mods)
+        return util.Future(self.view.infoNetwork, stats, versions, builds, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for the Aerospike service.')
     def _do_service(self, line):

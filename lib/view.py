@@ -56,7 +56,7 @@ class CliView(object):
              print "NO PAGER"
 
     @staticmethod
-    def infoNetwork(stats, versions, builds, visibilities, cluster, **ignore):
+    def infoNetwork(stats, versions, builds, cluster, **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
         hosts = cluster.nodes
@@ -69,7 +69,6 @@ class CliView(object):
                         , 'Enterprise'
                         , 'cluster_size'
                         , 'cluster_key'
-                        , 'cluster_visibility'
                         , '_cluster_integrity'
                         , ('_paxos_principal', 'Principal')
                         , ('client_connections', 'Client Conns')
@@ -85,9 +84,6 @@ class CliView(object):
                         , lambda data:
                         True if row['cluster_integrity'] == 'true' else False)
         t.addDataSource('_uptime', Extractors.timeExtractor('uptime'))
-
-        t.addCellAlert('cluster_visibility'
-                       , lambda data: data['cluster_visibility'] is not True)
 
         t.addCellAlert('_cluster_integrity'
                        ,lambda data: data['cluster_integrity'] != 'true')
@@ -128,9 +124,6 @@ class CliView(object):
             version = versions[node_key]
             if not isinstance(version, Exception):
                 row['version'] = version
-
-            if node_key in visibilities:
-                row['cluster_visibility'] = visibilities[node_key]
 
             t.insertRow(row)
 
