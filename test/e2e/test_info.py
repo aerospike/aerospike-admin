@@ -62,7 +62,6 @@ class TestInfo(unittest.TestCase):
                          'Enterprise',
                          'Cluster Size',
                          'Cluster Key',
-                         'Cluster Visibility',
                          'Cluster Integrity',
                          'Principal',
                          'Client Conns',
