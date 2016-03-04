@@ -34,7 +34,8 @@ class AerospikeShell(cmd.Cmd):
         self.ctrl = RootController(seed_nodes=[seed]
                                    , use_telnet=telnet
                                    , user=user
-                                   , password=password, use_services=use_services)
+                                   , password=password, use_services=use_services, asadm_version=__version__)
+
         try:
             readline.read_history_file(ADMINHIST)
         except Exception, i:
@@ -50,6 +51,11 @@ class AerospikeShell(cmd.Cmd):
         self.intro = terminal.bold() + self.name + ', version ' +\
                      __version__ + terminal.reset() + "\n" +\
                      str(self.ctrl.cluster) + "\n"
+        if not self.ctrl.cluster.getVisibility():
+            print self.intro
+            print terminal.fg_red() + "Not able to connect any cluster." + terminal.fg_clear()
+            self.do_exit('')
+            exit(0)
         self.commands = set()
 
         regex = re.compile("^do_(.*)$")

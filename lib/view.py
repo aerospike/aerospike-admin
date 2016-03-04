@@ -252,25 +252,25 @@ class CliView(object):
 
         t.addCellAlert('namespace'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('_master-objects'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('_prole-objects'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('_used-bytes-memory'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('_used-bytes-disk'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('evicted-objects'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('_migrates'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
 
         total_res = {}
 
@@ -419,16 +419,16 @@ class CliView(object):
 
         t.addCellAlert('set'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('namespace'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('_n-bytes-memory'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
         t.addCellAlert('_n_objects'
                        ,lambda data: data['node'] is " "
-                       , color=terminal.bg_yellow)
+                       , color=terminal.fg_blue)
 
         total_res = {}
         for node_key, s_stats in stats.iteritems():

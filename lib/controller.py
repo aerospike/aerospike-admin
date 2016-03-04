@@ -71,12 +71,11 @@ def get_sindex_stats(cluster, nodes='all'):
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
-                 , use_telnet=False, user=None, password=None, use_services=False):
+                 , use_telnet=False, user=None, password=None, use_services=False, asadm_version=''):
         super(RootController, self).__init__(seed_nodes=seed_nodes
                                              , use_telnet=use_telnet
                                              , user=user
-                                             , password=password, use_services=use_services)
-
+                                             , password=password, use_services=use_services, asadm_version=asadm_version)
         self.controller_map = {
             'info':InfoController
             , 'show':ShowController
@@ -935,7 +934,6 @@ class ShowStatisticsController(CommandController):
     def do_service(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
         show_total = self.need_to_show_total(line)
-        print self.mods
         return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster, show_total=show_total
                             , **self.mods)
 
@@ -1292,6 +1290,9 @@ class CollectinfoController(CommandController):
         f.write(str(collectedinfo))
         return f.close()
 
+    def write_version(self,line):
+        print "asadm version " + str(self.asadm_version)
+
     def get_metadata(self,response_str,prefix=''):
         aws_c = ''
         aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
@@ -1319,6 +1320,7 @@ class CollectinfoController(CommandController):
         aws_timeout = 1
         socket.setdefaulttimeout(aws_timeout)
         aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
+        print "['AWS']"
         try:
             req = urllib2.Request(aws_metadata_base_url)
             r = urllib2.urlopen(req)
@@ -1453,7 +1455,6 @@ class CollectinfoController(CommandController):
         return namespaces
 
     def main_collectinfo(self, show_all=False, verbose=False):
-
         # getting service port to use in ss/netstat command
         port = 3000
         try:
@@ -1483,33 +1484,14 @@ class CollectinfoController(CommandController):
                       ['uname -a',''],
                       ['lsb_release -a','ls /etc|grep release|xargs -I f cat /etc/f'],
                       ['cat /proc/meminfo','vmstat -s'],
+                      ['cat /proc/interrupts',''],
                       ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',''],
                       ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',''],
                       ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
                       ['ip addr',''],
                       ['ip -s link',''],
                       ['sudo iptables -L',''],
-                      ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"','']
-                      ]
-        sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'dc', 'sindex']
-        sys_show_params = ['distribution', 'config diff']
-        sys_features_params = ['features']
-        sys_cluster_params = ['pmap']
-        dignostic_show_params = ['config', 'config xdr', 'config dc', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
-        dignostic_cluster_params = ['service', 'services']
-        dignostic_cluster_params_additional = [
-                          'partition-info',
-                          'dump-msgs:',
-                          'dump-wr:'
-                          ]
-        dignostic_cluster_params_additional_verbose = [
-                          'dump-fabric:',
-                          'dump-hb:',
-                          'dump-migrates:',
-                          'dump-paxos:',
-                          'dump-smd:'
-                          ]
-        dignostic_shell_cmds = [
+                      ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"',''],
                       ['iostat -x 1 10',''],
                       ['sar -n DEV',''],
                       ['sar -n EDEV',''],
@@ -1523,6 +1505,24 @@ class CollectinfoController(CommandController):
                       ['ss -pant | grep %d | grep CLOSE-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)],
                       ['ss -pant | grep %d | grep ESTAB | wc -l'%(port),'netstat -pant | grep %d | grep ESTABLISHED | wc -l'%(port)]
                       ]
+        dignostic_info_params = ['network', 'set', 'namespace', 'xdr', 'dc', 'sindex']
+        dignostic_features_params = ['features']
+        dignostic_cluster_params = ['pmap']
+        dignostic_show_params = ['config', 'config xdr', 'config dc', 'config diff', 'distribution', 'distribution eviction', 'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
+        dignostic_aerospike_cluster_params = ['service', 'services']
+        dignostic_aerospike_cluster_params_additional = [
+                          'partition-info',
+                          'dump-msgs:',
+                          'dump-wr:'
+                          ]
+        dignostic_aerospike_cluster_params_additional_verbose = [
+                          'dump-fabric:',
+                          'dump-hb:',
+                          'dump-migrates:',
+                          'dump-paxos:',
+                          'dump-smd:'
+                          ]
+
         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
 
         if show_all:
@@ -1537,17 +1537,17 @@ class CollectinfoController(CommandController):
                 # dump-wb dumps debug information about Write Bocks, it needs namespace, device-id and write-block-id as a parameter
                 # dignostic_cluster_params_additional.append('dump-wb:ns=' + ns)
 
-                dignostic_cluster_params_additional.append('dump-wb-summary:ns=' + ns)
+                dignostic_aerospike_cluster_params_additional.append('dump-wb-summary:ns=' + ns)
 
             if verbose:
-                for index, param in enumerate(dignostic_cluster_params_additional_verbose):
+                for index, param in enumerate(dignostic_aerospike_cluster_params_additional_verbose):
                     if param.startswith("dump"):
                         if not param.endswith(":"):
                             param = param + ";"
                         param = param + "verbose=true"
-                    dignostic_cluster_params_additional_verbose[index]=param
+                    dignostic_aerospike_cluster_params_additional_verbose[index]=param
 
-            dignostic_cluster_params = dignostic_cluster_params + dignostic_cluster_params_additional + dignostic_cluster_params_additional_verbose
+            dignostic_aerospike_cluster_params = dignostic_aerospike_cluster_params + dignostic_aerospike_cluster_params_additional + dignostic_aerospike_cluster_params_additional_verbose
 
         if 'ubuntu' == (platform.linux_distribution()[0]).lower():
             cmd_dmesg  = 'cat /var/log/syslog'
@@ -1563,25 +1563,18 @@ class CollectinfoController(CommandController):
         self.write_log(collect_output)
 
         try:
-            for cmds in dignostic_shell_cmds:
-                self.collectinfo_content('shell',[cmds[0]],[cmds[1]])
-
+            self.collectinfo_content(self.write_version)
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
 
         try:
-            self.collectinfo_content(self.collect_lsof)
+            info_controller = InfoController()
+            for info_param in dignostic_info_params:
+                self.collectinfo_content(info_controller,[info_param])
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
-
-        if show_all and verbose:
-            try:
-                self.collectinfo_content(self.collect_lsof,verbose)
-            except Exception as e:
-                self.write_log(str(e))
-                sys.stdout = sys.__stdout__
 
         try:
             show_controller = ShowController()
@@ -1592,7 +1585,23 @@ class CollectinfoController(CommandController):
             sys.stdout = sys.__stdout__
 
         try:
+            features_controller = FeaturesController()
+            for cmd in dignostic_features_params:
+                self.collectinfo_content(features_controller, [cmd])
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            cluster_controller = ClusterController()
             for cmd in dignostic_cluster_params:
+                self.collectinfo_content(cluster_controller, [cmd])
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            for cmd in dignostic_aerospike_cluster_params:
                 self.collectinfo_content('cluster', cmd)
         except Exception as e:
             self.write_log(str(e))
@@ -1624,37 +1633,17 @@ class CollectinfoController(CommandController):
             sys.stdout = sys.__stdout__
 
         try:
-            info_controller = InfoController()
-            for info_param in sys_info_params:
-                self.collectinfo_content(info_controller,[info_param])
+            self.collectinfo_content(self.collect_lsof)
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
 
-        try:
-            show_controller = ShowController()
-            for show_param in sys_show_params:
-                self.collectinfo_content(show_controller,show_param.split())
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            features_controller = FeaturesController()
-            for cmd in sys_features_params:
-                self.collectinfo_content(features_controller, [cmd])
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            cluster_controller = ClusterController()
-            for cmd in sys_cluster_params:
-                self.collectinfo_content(cluster_controller, [cmd])
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
+        if show_all and verbose:
+            try:
+                self.collectinfo_content(self.collect_lsof,verbose)
+            except Exception as e:
+                self.write_log(str(e))
+                sys.stdout = sys.__stdout__
 
         ####### Logs and conf ########
 
