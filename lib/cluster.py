@@ -66,10 +66,6 @@ class Cluster(object):
         if offline:
             retval += "\nOffline: %s"%(", ".join(offline))
 
-        cluster_visibility_error_nodes = self.getClusterVisibilityErrorNodes()
-        if cluster_visibility_error_nodes:
-            retval += terminal.fg_red() + "\nCluster Visibility error (Please check services list): %s"%(", ".join(cluster_visibility_error_nodes)) + terminal.fg_clear()
-
         return retval
 
     def getPrefixes(self):
@@ -99,11 +95,11 @@ class Cluster(object):
             print e
             return ''
 
-    def getVisibility(self):
+    def getLiveNodes(self):
         return self._live_nodes
 
     def getClusterVisibilityErrorNodes(self):
-        visible = self.getVisibility()
+        visible = self.getLiveNodes()
         cluster_visibility_error_nodes = []
         for node in self.nodes.values():
             service_list = node.infoServices()

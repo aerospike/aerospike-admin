@@ -51,7 +51,13 @@ class AerospikeShell(cmd.Cmd):
         self.intro = terminal.bold() + self.name + ', version ' +\
                      __version__ + terminal.reset() + "\n" +\
                      str(self.ctrl.cluster) + "\n"
-        if not self.ctrl.cluster.getVisibility():
+
+        cluster_visibility_error_nodes = self.ctrl.cluster.getClusterVisibilityErrorNodes()
+        if cluster_visibility_error_nodes:
+            self.intro += terminal.fg_red() + "Cluster Visibility error (Please check services list): %s"%(", ".join(cluster_visibility_error_nodes)) + terminal.fg_clear() + "\n"
+
+
+        if not self.ctrl.cluster.getLiveNodes():
             print self.intro
             print terminal.fg_red() + "Not able to connect any cluster." + terminal.fg_clear()
             self.do_exit('')
