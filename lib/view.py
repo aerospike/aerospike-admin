@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 
 from lib.table import Table, Extractors, TitleFormats, Styles
 import sys
@@ -190,7 +191,7 @@ class CliView(object):
                         , ('_prole-objects', 'Replica Objects')
                         , 'repl-factor'
                         , 'stop-writes'
-                        , ('_migrates', 'Migrates (tx%,rx%)')
+                        , ('_migrates', 'Pending Migrates (tx%,rx%)')
                         , ('_used-bytes-disk', 'Disk Used')
                         , ('_used-disk-pct', 'Disk Used%')
                         , ('high-water-disk-pct', 'HWM Disk%')
@@ -314,22 +315,22 @@ class CliView(object):
                     pass
 
                 try:
-                    total_res[ns]["migrate-tx-partitions-remaining"] += float(ns_stats["migrate-tx-partitions-remaining"])
+                    total_res[ns]["migrate-tx-partitions-remaining"] += int(ns_stats["migrate-tx-partitions-remaining"])
                 except:
                     pass
 
                 try:
-                    total_res[ns]["migrate-rx-partitions-remaining"] += float(ns_stats["migrate-rx-partitions-remaining"])
+                    total_res[ns]["migrate-rx-partitions-remaining"] += int(ns_stats["migrate-rx-partitions-remaining"])
                 except:
                     pass
 
                 try:
-                    total_res[ns]["migrate-tx-partitions-initial"] += float(ns_stats["migrate-tx-partitions-initial"])
+                    total_res[ns]["migrate-tx-partitions-initial"] += int(ns_stats["migrate-tx-partitions-initial"])
                 except:
                     pass
 
                 try:
-                    total_res[ns]["migrate-rx-partitions-initial"] += float(ns_stats["migrate-rx-partitions-initial"])
+                    total_res[ns]["migrate-rx-partitions-initial"] += int(ns_stats["migrate-rx-partitions-initial"])
                 except:
                     pass
 
@@ -337,11 +338,11 @@ class CliView(object):
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 try:
-                    row["migrate-rx-partitions-remaining-pct"] = "%.2f"%((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100)
+                    row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.floor((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100))
                 except:
                     row["migrate-rx-partitions-remaining-pct"] = "0"
                 try:
-                    row["migrate-tx-partitions-remaining-pct"] = "%.2f"%((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100)
+                    row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.floor((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100))
                 except:
                     row["migrate-tx-partitions-remaining-pct"] = "0"
                 t.insertRow(row)
@@ -369,11 +370,11 @@ class CliView(object):
             row["migrate-rx-partitions-remaining"] = str(total_res[ns]["migrate-rx-partitions-remaining"])
 
             try:
-                row["migrate-rx-partitions-remaining-pct"] = "%.2f"%((total_res[ns]["migrate-rx-partitions-remaining"]/total_res[ns]["migrate-rx-partitions-initial"])*100)
+                row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.floor((float(total_res[ns]["migrate-rx-partitions-remaining"])/float(total_res[ns]["migrate-rx-partitions-initial"]))*100))
             except:
                 row["migrate-rx-partitions-remaining-pct"] = "0"
             try:
-                row["migrate-tx-partitions-remaining-pct"] = "%.2f"%((total_res[ns]["migrate-tx-partitions-remaining"]/total_res[ns]["migrate-tx-partitions-initial"])*100)
+                row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.floor((float(total_res[ns]["migrate-tx-partitions-remaining"])/float(total_res[ns]["migrate-tx-partitions-initial"]))*100))
             except:
                 row["migrate-tx-partitions-remaining-pct"] = "0"
 
