@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 
 from lib.table import Table, Extractors, TitleFormats, Styles
 import sys
@@ -22,8 +23,12 @@ import datetime
 from cStringIO import StringIO
 import sys
 import itertools
+from pydoc import pipepager
 
 class CliView(object):
+    NO_PAGER, LESS, MORE = range(3)
+    pager = NO_PAGER
+
     @staticmethod
     def compileLikes(likes):
         likes = map(re.escape, likes)
@@ -32,54 +37,65 @@ class CliView(object):
         return likes
 
     @staticmethod
-    def infoService(stats, builds, visibilities, cluster, **ignore):
+    def print_result(out):
+        if type(out) is not str:
+            out = str(out)
+        if CliView.pager==CliView.LESS:
+            pipepager(out, cmd='less -RSX')
+        elif CliView.pager==CliView.MORE:
+            pipepager(out, cmd='more -d')
+        else:
+             print out
+
+    @staticmethod
+    def print_pager():
+        if CliView.pager==CliView.LESS:
+            print "LESS"
+        elif CliView.pager==CliView.MORE:
+            print "MORE"
+        else:
+             print "NO PAGER"
+
+    @staticmethod
+    def infoNetwork(stats, versions, builds, cluster, **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
+        hosts = cluster.nodes
 
-        title = "Service Information"
+        title = "Network Information"
         column_names = ('node'
+                        , 'node_id'
+                        , 'ip'
                         , 'build'
+                        , 'Enterprise'
                         , 'cluster_size'
                         , 'cluster_key'
-                        , 'cluster_visibility'
                         , '_cluster_integrity'
-                        , ('free-pct-disk', 'Free Disk%')
-                        , ('free-pct-memory', 'Free Mem%')
-                        , ('_migrates', 'Migrates (tx,rx,a)')
                         , ('_paxos_principal', 'Principal')
-                        , '_objects'
+                        , ('client_connections', 'Client Conns')
                         , '_uptime')
 
         t = Table(title, column_names)
-        t.addDataSource('_migrates'
-                        ,lambda data:
-                        "(%s,%s,%s)"%(row.get('tx_migrations', 'N/E')
-                                      , row.get('rx_migrations', 'N/E')
-                                      , int(row.get('migrate_progress_send',0)) + int(row.get('migrate_progress_recv',0))
-                                            if (row.has_key('migrate_progress_send')
-                                                and row.has_key('migrate_progress_recv')) else 'N/E'))
-        t.addDataSource('_objects'
-                        ,Extractors.sifExtractor('objects'))
+
+        t.addCellAlert('node_id'
+                       ,lambda data: data['real_node_id'] == principal
+                       , color=terminal.fg_green)
+
         t.addDataSource('_cluster_integrity'
                         , lambda data:
                         True if row['cluster_integrity'] == 'true' else False)
         t.addDataSource('_uptime', Extractors.timeExtractor('uptime'))
 
-        t.addCellAlert('cluster_visibility'
-                       , lambda data: data['cluster_visibility'] is not True)
-
         t.addCellAlert('_cluster_integrity'
                        ,lambda data: data['cluster_integrity'] != 'true')
-
-        t.addCellAlert('free-pct-disk'
-                       ,lambda data: int(data['free-pct-disk']) < 40)
-
-        t.addCellAlert('free-pct-memory'
-                       ,lambda data: int(data['free-pct-memory']) < 40)
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
+
+        t.addDataSource('Enterprise'
+                        , lambda data:
+                        True if "Enterprise" in data['version'] else False)
 
         for node_key, n_stats in stats.iteritems():
             if isinstance(n_stats, Exception):
@@ -89,9 +105,11 @@ class CliView(object):
             row = n_stats
             row['real_node_id'] = node.node_id
             row['node'] = prefixes[node_key]
+            row['ip'] = hosts[node_key].sockName(use_fqdn = False)
+            row['node_id'] = node.node_id if node.node_id != principal else "*%s"%(node.node_id)
             try:
                 paxos_node = cluster.getNode(row['paxos_principal'])[0]
-                row['_paxos_principal'] = prefixes[paxos_node.key]
+                row['_paxos_principal'] = paxos_node.node_id
             except KeyError:
                 # The principal is a node we currently do not know about
                 # So return the principal ID
@@ -104,39 +122,49 @@ class CliView(object):
             if not isinstance(build, Exception):
                 row['build'] = build
 
-            if node_key in visibilities:
-                row['cluster_visibility'] = visibilities[node_key]
+            version = versions[node_key]
+            if not isinstance(version, Exception):
+                row['version'] = version
 
             t.insertRow(row)
 
-        print t
+        CliView.print_result(t)
 
     @staticmethod
-    def infoNetwork(stats, hosts, cluster, **ignore):
+    def infoService(stats, hosts, cluster, **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
-        title = "Network Information"
+        title = "Service Information"
         column_names = ('node'
-                        , 'node_id'
-                        , 'fqdn'
-                        , 'ip'
-                        , ('client_connections', 'Client Conns')
-                        , 'current-time'
-                        , ('heartbeat_received_self', 'HB Self')
-                        , ('heartbeat_received_foreign', 'HB Foreign'))
+                        , ('system_free_mem_pct', 'Free Mem%')
+                        , ('_migrates', 'Migrates (tx,rx,a)')
+                        , '_objects')
 
         principal = cluster.getExpectedPrincipal()
 
         t = Table(title, column_names)
 
-        t.addCellAlert('node_id'
-                       ,lambda data: data['real_node_id'] == principal
-                       , color=terminal.fg_green)
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
+
+        t.addDataSource('_migrates'
+                        ,lambda data:
+                        "(%s,%s,%s)"%(row.get('tx_migrations', 'N/E')
+                                      , row.get('rx_migrations', 'N/E')
+                                      , int(row.get('migrate_progress_send',0)) + int(row.get('migrate_progress_recv',0))
+                                            if (row.has_key('migrate_progress_send')
+                                                and row.has_key('migrate_progress_recv')) else 'N/E'))
+
+        t.addDataSource('_objects'
+                        ,Extractors.sifExtractor('objects'))
+
+        t.addCellAlert('system_free_mem_pct'
+                       ,lambda data: int(data['free-pct-memory']) < 40)
+
+
 
         for node_key, n_stats in stats.iteritems():
             if isinstance(n_stats, Exception):
@@ -145,11 +173,9 @@ class CliView(object):
             row = n_stats
             row['node'] = prefixes[node_key]
             row['real_node_id'] = node.node_id
-            row['node_id'] = node.node_id if node.node_id != principal else "*%s"%(node.node_id)
-            row['fqdn'] = hosts[node_key].sockName(use_fqdn = True)
-            row['ip'] = hosts[node_key].sockName(use_fqdn = False)
             t.insertRow(row)
-        print t
+
+        CliView.print_result(t)
 
     @staticmethod
     def infoNamespace(stats, cluster, **ignore):
@@ -157,15 +183,15 @@ class CliView(object):
         principal = cluster.getExpectedPrincipal()
 
         title = "Namespace Information"
-        column_names = ('node'
-                        , 'namespace'
+        column_names = ('namespace'
+                        , 'node'
                         , ('available_pct', 'Avail%')
                         , ('evicted-objects', 'Evictions')
                         , ('_master-objects', 'Master Objects')
                         , ('_prole-objects', 'Replica Objects')
                         , 'repl-factor'
                         , 'stop-writes'
-                        , ('_migrates', 'Migrates (tx,rx)')
+                        , ('_migrates', 'Pending Migrates (tx%,rx%)')
                         , ('_used-bytes-disk', 'Disk Used')
                         , ('_used-disk-pct', 'Disk Used%')
                         , ('high-water-disk-pct', 'HWM Disk%')
@@ -174,7 +200,7 @@ class CliView(object):
                         , ('high-water-memory-pct', 'HWM Mem%')
                         , ('stop-writes-pct', 'Stop Writes%'))
 
-        t = Table(title, column_names, group_by=1)
+        t = Table(title, column_names, sort_by=0)
         t.addDataSource('_used-bytes-disk'
                         ,Extractors.byteExtractor('used-bytes-disk'))
         t.addDataSource('_used-bytes-memory'
@@ -188,34 +214,58 @@ class CliView(object):
                         ,Extractors.sifExtractor('prole-objects'))
 
         t.addDataSource('_used-disk-pct'
-                        , lambda data: 100 - int(data['free-pct-disk']))
+                        , lambda data: 100 - int(data['free-pct-disk']) if data['free-pct-disk'] is not " " else " ")
 
         t.addDataSource('_used-mem-pct'
-                        , lambda data: 100 - int(data['free-pct-memory']))
+                        , lambda data: 100 - int(data['free-pct-memory']) if data['free-pct-memory'] is not " " else " ")
 
         t.addCellAlert('available_pct'
-                       , lambda data: int(data['available_pct']) <= 10)
+                       , lambda data: int(data['available_pct']) <= 10 if data['available_pct'] is not " " else " ")
 
         t.addCellAlert('stop-writes'
                        , lambda data: data['stop-writes'] != 'false')
 
         t.addDataSource('_migrates'
                         , lambda data:
-                        "(%s,%s)"%(data.get('migrate-tx-partitions-remaining', 'N/E')
-                                      , data.get('migrate-rx-partitions-remaining','N/E')))
+                        "(%s,%s)"%(data.get('migrate-tx-partitions-remaining-pct', 'N/E')
+                                      , data.get('migrate-rx-partitions-remaining-pct','N/E')))
 
         t.addCellAlert('_used-disk-pct'
-                       , lambda data: int(data['_used-disk-pct']) >= int(data['high-water-disk-pct']))
+                       , lambda data: int(data['_used-disk-pct']) >= int(data['high-water-disk-pct']) if data['_used-disk-pct'] is not " " else " ")
 
         t.addCellAlert('_used-mem-pct'
-                       , lambda data: (100 - int(data['free-pct-memory'])) >= int(data['high-water-memory-pct']))
+                       , lambda data: (100 - int(data['free-pct-memory'])) >= int(data['high-water-memory-pct']) if data['free-pct-memory'] is not " " else " ")
 
         t.addCellAlert('_used-disk-pct'
-                       , lambda data: (100 - int(data['free-pct-disk'])) >= int(data['high-water-disk-pct']))
+                       , lambda data: (100 - int(data['free-pct-disk'])) >= int(data['high-water-disk-pct']) if data['free-pct-disk'] is not " " else " ")
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
+
+        t.addCellAlert('namespace'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('_master-objects'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('_prole-objects'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('_used-bytes-memory'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('_used-bytes-disk'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('evicted-objects'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('_migrates'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+
+        total_res = {}
 
         for node_key, n_stats in stats.iteritems():
             node = cluster.getNode(node_key)[0]
@@ -230,11 +280,107 @@ class CliView(object):
                 else:
                     row = ns_stats
 
+                if ns not in total_res:
+                    total_res[ns] = {}
+                    total_res[ns]["master-objects"] = 0
+                    total_res[ns]["prole-objects"] = 0
+                    total_res[ns]["used-bytes-memory"] = 0
+                    total_res[ns]["used-bytes-disk"] = 0
+                    total_res[ns]["evicted-objects"] = 0
+                    total_res[ns]["migrate-tx-partitions-remaining"] = 0
+                    total_res[ns]["migrate-rx-partitions-remaining"] = 0
+                    total_res[ns]["migrate-tx-partitions-initial"] = 0
+                    total_res[ns]["migrate-rx-partitions-initial"] = 0
+                try:
+                    total_res[ns]["master-objects"] += int(ns_stats["master-objects"])
+                except:
+                    pass
+                try:
+                    total_res[ns]["prole-objects"] += int(ns_stats["prole-objects"])
+                except:
+                    pass
+
+                try:
+                    total_res[ns]["used-bytes-memory"] += int(ns_stats["used-bytes-memory"])
+                except:
+                    pass
+                try:
+                    total_res[ns]["used-bytes-disk"] += int(ns_stats["used-bytes-disk"])
+                except:
+                    pass
+
+                try:
+                    total_res[ns]["evicted-objects"] += int(ns_stats["evicted-objects"])
+                except:
+                    pass
+
+                try:
+                    total_res[ns]["migrate-tx-partitions-remaining"] += int(ns_stats["migrate-tx-partitions-remaining"])
+                except:
+                    pass
+
+                try:
+                    total_res[ns]["migrate-rx-partitions-remaining"] += int(ns_stats["migrate-rx-partitions-remaining"])
+                except:
+                    pass
+
+                try:
+                    total_res[ns]["migrate-tx-partitions-initial"] += int(ns_stats["migrate-tx-partitions-initial"])
+                except:
+                    pass
+
+                try:
+                    total_res[ns]["migrate-rx-partitions-initial"] += int(ns_stats["migrate-rx-partitions-initial"])
+                except:
+                    pass
+
                 row['namespace'] = ns
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
+                try:
+                    row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.floor((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100))
+                except:
+                    row["migrate-rx-partitions-remaining-pct"] = "0"
+                try:
+                    row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.floor((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100))
+                except:
+                    row["migrate-tx-partitions-remaining-pct"] = "0"
                 t.insertRow(row)
-        print t
+
+        for ns in total_res:
+            row = {}
+            row['node'] = " "
+            row['available_pct'] = " "
+            row["repl-factor"] = " "
+            row["stop-writes"] = " "
+            row["evicted-objects"] = " "
+            row["high-water-disk-pct"] = " "
+            row["free-pct-disk"] = " "
+            row["free-pct-memory"] = " "
+            row["high-water-memory-pct"] = " "
+            row["stop-writes-pct"] = " "
+
+            row['namespace'] = ns
+            row["master-objects"] = str(total_res[ns]["master-objects"])
+            row["prole-objects"] = str(total_res[ns]["prole-objects"])
+            row["used-bytes-memory"] = str(total_res[ns]["used-bytes-memory"])
+            row["used-bytes-disk"] = str(total_res[ns]["used-bytes-disk"])
+            row["evicted-objects"] = str(total_res[ns]["evicted-objects"])
+            row["migrate-tx-partitions-remaining"] = str(total_res[ns]["migrate-tx-partitions-remaining"])
+            row["migrate-rx-partitions-remaining"] = str(total_res[ns]["migrate-rx-partitions-remaining"])
+
+            try:
+                row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.floor((float(total_res[ns]["migrate-rx-partitions-remaining"])/float(total_res[ns]["migrate-rx-partitions-initial"]))*100))
+            except:
+                row["migrate-rx-partitions-remaining-pct"] = "0"
+            try:
+                row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.floor((float(total_res[ns]["migrate-tx-partitions-remaining"])/float(total_res[ns]["migrate-tx-partitions-initial"]))*100))
+            except:
+                row["migrate-tx-partitions-remaining-pct"] = "0"
+
+            t.insertRow(row)
+
+        CliView.print_result(t)
 
     @staticmethod
     def infoSet(stats, cluster, **ignore):
@@ -242,9 +388,9 @@ class CliView(object):
         principal = cluster.getExpectedPrincipal()
 
         title = "Set Information"
-        column_names = ('node'
-                        , 'set'
+        column_names = ( 'set'
                         , 'namespace'
+                        , 'node'
                         , 'set-delete'
                         , ('_n-bytes-memory', 'Mem used')
                         , ('_n_objects', 'Objects')
@@ -253,7 +399,7 @@ class CliView(object):
                         , 'set-enable-xdr'
                         )
 
-        t = Table(title, column_names, group_by=1)
+        t = Table(title, column_names, sort_by=1, group_by=0)
         t.addDataSource('_n-bytes-memory'
                         ,Extractors.byteExtractor('n-bytes-memory'))
         t.addDataSource('_n_objects'
@@ -263,6 +409,20 @@ class CliView(object):
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
 
+        t.addCellAlert('set'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('namespace'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('_n-bytes-memory'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('_n_objects'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+
+        total_res = {}
         for node_key, s_stats in stats.iteritems():
             node = cluster.getNode(node_key)[0]
             if isinstance(s_stats, Exception):
@@ -276,12 +436,41 @@ class CliView(object):
                 else:
                     row = set_stats
 
+                if (ns,set) not in total_res:
+                    total_res[(ns,set)] = {}
+                    total_res[(ns,set)]["n-bytes-memory"] = 0
+                    total_res[(ns,set)]["n_objects"] = 0
+                try:
+                    total_res[(ns,set)]["n-bytes-memory"] += int(set_stats["n-bytes-memory"])
+                except:
+                    pass
+                try:
+                    total_res[(ns,set)]["n_objects"] += int(set_stats["n_objects"])
+                except:
+                    pass
+
                 row['set'] = set
                 row['namespace'] = ns
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 t.insertRow(row)
-        print t
+
+        for (ns,set) in total_res:
+            row = {}
+            row['set'] = set
+            row['namespace'] = ns
+            row['node'] = " "
+            row['set-delete'] = " "
+            row['stop-writes-count'] = " "
+            row['disable-eviction'] = " "
+            row['set-enable-xdr'] = " "
+
+            row['n-bytes-memory'] = str(total_res[(ns,set)]["n-bytes-memory"])
+            row["n_objects"] = str(total_res[(ns,set)]["n_objects"])
+
+            t.insertRow(row)
+
+        CliView.print_result(t)
 
     @staticmethod
     def infoXDR(stats, builds, xdr_enable, cluster, **ignore):
@@ -356,7 +545,7 @@ class CliView(object):
             row['node'] = prefixes[node_key]
 
             t.insertRow(row)
-        print t
+        CliView.print_result(t)
 
     @staticmethod
     def infoDC(stats, cluster, **ignore):
@@ -399,7 +588,7 @@ class CliView(object):
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 t.insertRow(row)
-        print t
+        CliView.print_result(t)
 
     @staticmethod
     def infoSIndex(stats, cluster, **ignore):
@@ -435,7 +624,7 @@ class CliView(object):
                 row['node'] = node
                 t.insertRow(row)
 
-        print t
+        CliView.print_result(t)
 
 
     @staticmethod
@@ -474,7 +663,50 @@ class CliView(object):
 
                 t.insertRow(row)
 
-            print t
+            CliView.print_result(t)
+
+    @staticmethod
+    def showObjectDistribution(title
+                         , histogram
+                         , unit
+                         , hist
+                         , show_bucket_count
+                         , set_bucket_count
+                         , cluster
+                         , like=None
+                         , **ignore):
+        prefixes = cluster.getNodeNames()
+
+        likes = CliView.compileLikes(like)
+
+        description = "Number of records having %s in the range "%(hist) + \
+                      "measured in %s"%(unit)
+
+        namespaces = set(filter(likes.search, histogram.keys()))
+
+        for namespace, node_data in histogram.iteritems():
+            if namespace not in namespaces:
+                continue
+            columns = node_data["columns"]
+            columns.insert(0, 'node')
+            t = Table("%s - %s in %s"%(namespace, title, unit)
+                      , columns
+                      , description=description)
+            for column in columns:
+                if column is not 'node':
+                    t.addDataSource(column,Extractors.sifExtractor(column))
+
+            for node_id, data in node_data.iteritems():
+                if node_id=="columns":
+                    continue
+
+                row = data['values']
+                row['node'] = prefixes[node_id]
+                t.insertRow(row)
+
+            CliView.print_result(t)
+            if set_bucket_count and (len(columns)-1)<show_bucket_count:
+                print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n"%(terminal.fg_green(),(len(columns)-1),"s" if (len(columns)-1)>1 else "",terminal.fg_clear())
 
     @staticmethod
     def showLatency(latency, cluster, like=None, **ignore):
@@ -512,10 +744,10 @@ class CliView(object):
                 node_data['node'] = prefixes[node_id]
                 t.insertRow(node_data)
 
-            print t
+            CliView.print_result(t)
 
     @staticmethod
-    def showConfig(title, service_configs, cluster, like=None, diff=None, **ignore):
+    def showConfig(title, service_configs, cluster, like=None, diff=None, show_total=False, **ignore):
         prefixes = cluster.getNodeNames()
         column_names = set()
 
@@ -551,14 +783,26 @@ class CliView(object):
                   , style=Styles.VERTICAL)
 
         row = None
+        if show_total:
+            rowTotal = {}
         for node_id, row in service_configs.iteritems():
             if isinstance(row, Exception):
                 row = {}
 
             row['NODE'] = prefixes[node_id]
             t.insertRow(row)
+            if show_total:
+                for key, val in row.iteritems():
+                    if (val.isdigit()):
+                        try:
+                            rowTotal[key] = rowTotal[key] + int(val)
+                        except:
+                            rowTotal[key] = int(val)
+        if show_total:
+            rowTotal['NODE'] = "Total"
+            t.insertRow(rowTotal)
 
-        print t
+        CliView.print_result(t)
 
     @staticmethod
     def showStats(*args, **kwargs):
@@ -623,7 +867,7 @@ class CliView(object):
                 row['Master Discrepancy Partitions'] = ns_stats['master_disc_part']
                 row['Replica Discrepancy Partitions'] = ns_stats['replica_disc_part']
                 t.insertRow(row)
-        print t
+        CliView.print_result(t)
 
     @staticmethod
     def clusterQNode(qnode_data, cluster, **ignore):
@@ -644,7 +888,7 @@ class CliView(object):
                 row['Replica QNode Without Data'] = ns_stats['RQ_without_data']
                 row['Replica QNode With Data'] = ns_stats['RQ_data']
                 t.insertRow(row)
-        print t
+        CliView.print_result(t)
 
     @staticmethod
     def dun(results, cluster, **kwargs):

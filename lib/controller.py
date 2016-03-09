@@ -19,6 +19,8 @@ from distutils.version import StrictVersion, LooseVersion
 import zipfile
 import copy
 from lib.data import lsof_file_type_desc
+from lib.view import CliView
+from lib import filesize
 
 
 def flip_keys(orig_data):
@@ -69,12 +71,11 @@ def get_sindex_stats(cluster, nodes='all'):
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
-                 , use_telnet=False, user=None, password=None, use_services=False):
+                 , use_telnet=False, user=None, password=None, use_services=False, asadm_version=''):
         super(RootController, self).__init__(seed_nodes=seed_nodes
                                              , use_telnet=use_telnet
                                              , user=user
-                                             , password=password, use_services=use_services)
-
+                                             , password=password, use_services=use_services, asadm_version=asadm_version)
         self.controller_map = {
             'info':InfoController
             , 'show':ShowController
@@ -85,6 +86,7 @@ class RootController(BaseController):
             , 'shell':ShellController
             , 'collectinfo':CollectinfoController
             , 'features':FeaturesController
+            , 'pager':PagerController
         }
 
     @CommandHelp('Terminate session')
@@ -107,7 +109,7 @@ class RootController(BaseController):
                  , '   --no-diff:  Do not do diff highlighting'
                  , 'Example 1: Show "info network" 3 times with 1 second pause'
                  , '           watch 1 3 info network'
-                 , 'Example 2: Show "info namespace" with 5 second pause until'
+                 , 'Example 2: Show "info namespace" with 5 seconds pause until'
                  , '           interrupted'
                  , '           watch 5 info namespace')
     def do_watch(self, line):
@@ -119,43 +121,56 @@ class InfoController(CommandController):
     def __init__(self):
         self.modifiers = set(['with'])
 
-    @CommandHelp('Displays service, network, set, and namespace summary'
+    @CommandHelp('Displays network, namespace, and XDR summary'
                  , 'information.')
     def _do_default(self, line):
-        actions = (util.Future(self.do_service, line).start()
-                   , util.Future(self.do_network, line).start()
-                   , util.Future(self.do_set, line).start()
+        actions = (util.Future(self.do_network, line).start()
                    , util.Future(self.do_namespace, line).start()
+                   , util.Future(self.do_xdr, line).start()
                    )
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays summary information for the Aerospike service.')
-    def do_service(self, line):
-        namespace_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
+    @CommandHelp('Displays network information for Aerospike.')
+    def do_network(self, line):
         stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
-        services = util.Future(self.cluster.infoServices, nodes=self.nodes).start()
+        versions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
 
-        visible = self.cluster.getVisibility()
+        stats = stats.result()
+
+        builds = builds.result()
+        versions = versions.result()
+
+        return util.Future(self.view.infoNetwork, stats, versions, builds, self.cluster, **self.mods)
+
+    @CommandHelp('Displays summary information for the Aerospike service.')
+    def _do_service(self, line):
+        stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
+        # get current time from namespace
+        ns_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
+
+        hosts = self.cluster.nodes
+
+        ns_stats = ns_stats.result()
 
         migrations = {}
-        namespace_stats = namespace_stats.result()
-        for node in namespace_stats:
-            if isinstance(namespace_stats[node], Exception):
+        for node in ns_stats:
+            if isinstance(ns_stats[node], Exception):
                 continue
 
             migrations[node] = node_migrations = {}
             node_migrations['rx'] = 0
             node_migrations['tx'] = 0
-            for ns_stats in namespace_stats[node].itervalues():
-                if not isinstance(ns_stats, Exception):
-                    node_migrations['rx'] += int(ns_stats.get("migrate-rx-partitions-remaining", 0))
-                    node_migrations['tx'] += int(ns_stats.get("migrate-tx-partitions-remaining", 0))
+            for ns_stat in ns_stats[node].itervalues():
+                if not isinstance(ns_stat, Exception):
+                    node_migrations['rx'] += int(ns_stat.get("migrate-rx-partitions-remaining", 0))
+                    node_migrations['tx'] += int(ns_stat.get("migrate-tx-partitions-remaining", 0))
                 else:
                     node_migrations['rx'] = 0
                     node_migrations['tx'] = 0
 
         stats = stats.result()
+
         for node in stats:
             if isinstance(stats[node], Exception):
                 continue
@@ -164,34 +179,8 @@ class InfoController(CommandController):
             node_stats['rx_migrations'] = migrations.get(node,{}).get('rx', 0)
             node_stats['tx_migrations'] = migrations.get(node,{}).get('tx',0)
 
-        builds = builds.result()
-        services = services.result()
-        visibility = {}
-        for node_id, service_list in services.iteritems():
-            if isinstance(service_list, Exception):
-                continue
-
-            service_set = set(service_list)
-            if len((visible | service_set) - service_set) != 1:
-                visibility[node_id] = False
-            else:
-                visibility[node_id] = True
-
-        return util.Future(self.view.infoService, stats, builds, visibility, self.cluster, **self.mods)
-
-    @CommandHelp('Displays network information for Aerospike, the main'
-                 , 'purpose of this information is to link node ids to'
-                 , 'fqdn/ip addresses.')
-    def do_network(self, line):
-        stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
-        # get current time from namespace
-        ns_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
-
-        hosts = self.cluster.nodes
-
-        ns_stats = ns_stats.result()
-        stats = stats.result()
         for host, configs in ns_stats.iteritems():
+
             if isinstance(configs, Exception):
                 continue
             ns = configs.keys()[0]
@@ -202,7 +191,7 @@ class InfoController(CommandController):
                    not isinstance(stats[host], Exception):
                     stats[host]['current-time'] = configs[ns]['current-time']
 
-        return util.Future(self.view.infoNetwork, stats, hosts, self.cluster, **self.mods)
+        return util.Future(self.view.infoService, stats, hosts, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each set.')
     def do_set(self, line):
@@ -332,7 +321,11 @@ class ShowDistributionController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Shows the distributions of Time to Live and Object Size')
+    @CommandHelp('Shows the distributions of Time to Live and Object Size'
+                 , '  Options(only for Object Size distribution):'
+                 , '    -b               - Force to show byte wise distribution of Object Sizes. Default is rblock wise distribution in percentage'
+                 , '    -k <buckets>     - Maximum number of buckets to show if -b is set.'
+                   ' It distributes objects in same size k buckets and display only buckets which has objects in it. Default is 5.')
     def _do_default(self, line):
         actions = (util.Future(self.do_time_to_live, line[:]).start()
                    , util.Future(self.do_object_size, line[:]).start())
@@ -340,7 +333,6 @@ class ShowDistributionController(CommandController):
 
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
-
         histogram = flip_keys(histogram)
 
         for namespace, host_data in histogram.iteritems():
@@ -370,7 +362,10 @@ class ShowDistributionController(CommandController):
                 if result == []:
                     result = [0] * 10
 
-                data['percentiles'] = [r * width for r in result]
+                if histogram_name is "objsz":
+                    data['percentiles'] = [(r * width)-1 if r>0 else r for r in result]
+                else:
+                    data['percentiles'] = [r * width for r in result]
 
         return util.Future(self.view.showDistribution
                            , title
@@ -388,9 +383,153 @@ class ShowDistributionController(CommandController):
     def do_eviction(self, line):
         return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
 
-    @CommandHelp('Shows the distribution of Object sizes for namespaces')
+    def clear_option_from_mods(self, option):
+        for mod in self.modifiers:
+            if mod in self.mods and option in self.mods[mod]:
+                    self.mods[mod].remove(option)
+
+    @CommandHelp('Shows the distribution of Object sizes for namespaces'
+                 , '  Options:'
+                 , '    -b               - Force to show byte wise distribution of Object Sizes. Default is rblock wise distribution in percentage'
+                 , '    -k <buckets>     - Maximum number of buckets to show if -b is set.'
+                   ' It distributes objects in k same size buckets and display only buckets which has objects in it. Default is 5.')
     def do_object_size(self, line):
-        return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
+        if "-b" not in line:
+            return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
+        else:
+            self.clear_option_from_mods("-b")
+
+        histogram_name = 'objsz'
+        title = 'Object Size Distribution'
+        unit = 'Bytes'
+        show_bucket_count = 5
+        set_bucket_count = False
+
+        try:
+            if "-k" in line:
+                i = line.index("-k")
+                show_bucket_count = int(line[i+1])
+                set_bucket_count = True
+                self.clear_option_from_mods("-k")
+                self.clear_option_from_mods(str(show_bucket_count))
+        except:
+            pass
+        histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
+        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start().result()
+        histogram = flip_keys(histogram)
+
+        for namespace, host_data in histogram.iteritems():
+            result = []
+            rblock_size_bytes = 128
+            width = 1
+            for host_id, data in host_data.iteritems():
+                try:
+                    as_version = builds[host_id]
+                    if LooseVersion(as_version) < LooseVersion("2.7.0") or (LooseVersion(as_version) >= LooseVersion("3.0.0") and LooseVersion(as_version) < LooseVersion("3.1.3")):
+                        rblock_size_bytes = 512
+                except:
+                    pass
+
+                hist = data['data']
+                width = data['width']
+
+                for i, v in enumerate(hist):
+                    if v and v>0:
+                        result.append(i)
+
+            result = list(set(result))
+            result.sort()
+            start_buckets = []
+            if len(result) <= show_bucket_count:
+            # if asinfo buckets with values>0 are less than show_bucket_count then we can show all single buckets as it is, no need to merge to show big range
+                for res in result:
+                    start_buckets.append(res)
+                    start_buckets.append(res+1)
+            else:
+            # dividing volume buckets (from min possible bucket with value>0 to max possible bucket with value>0) into same range
+                start_bucket = result[0]
+                size = result[len(result)-1]-result[0]+1
+
+                bucket_width = size/show_bucket_count
+                additional_bucket_index = show_bucket_count -(size%show_bucket_count)
+
+                bucket_index = 0
+
+                while bucket_index < show_bucket_count:
+                    start_buckets.append(start_bucket)
+                    if bucket_index == additional_bucket_index:
+                        bucket_width += 1
+                    start_bucket += bucket_width
+                    bucket_index += 1
+                start_buckets.append(start_bucket)
+
+            columns = []
+            need_to_show = {}
+            for i,bucket in enumerate(start_buckets):
+                if i==len(start_buckets)-1:
+                    break
+                key = self.get_bucket_range(bucket,start_buckets[i+1],width,rblock_size_bytes)
+                need_to_show[key] = False
+                columns.append(key)
+            for host_id, data in host_data.iteritems():
+                rblock_size_bytes = 128
+                try:
+                    as_version = builds[host_id]
+                    if LooseVersion(as_version) < LooseVersion("2.7.0") or (LooseVersion(as_version) >= LooseVersion("3.0.0") and LooseVersion(as_version) < LooseVersion("3.1.3")):
+                        rblock_size_bytes = 512
+                except:
+                    pass
+                hist = data['data']
+                width = data['width']
+                data['values'] = {}
+                for i, s in enumerate(start_buckets):
+                    if i == len(start_buckets)-1:
+                        break
+                    b_index = s
+                    key = self.get_bucket_range(s,start_buckets[i+1],width,rblock_size_bytes)
+                    if key not in columns:
+                        columns.append(key)
+                    if key not in data["values"]:
+                        data["values"][key] = 0
+                    while b_index < start_buckets[i+1]:
+                        data["values"][key] += hist[b_index]
+                        b_index += 1
+
+                    if data["values"][key] > 0:
+                        need_to_show[key] = True
+                    else:
+                        if key not in need_to_show:
+                            need_to_show[key] = False
+            host_data["columns"] = []
+            for column in columns:
+                if need_to_show[column]:
+                    host_data["columns"].append(column)
+
+        return util.Future(self.view.showObjectDistribution
+                           , title
+                           , histogram
+                           , unit
+                           , histogram_name
+                           , show_bucket_count
+                           , set_bucket_count
+                           , self.cluster
+                           , **self.mods)
+
+    def get_bucket_range(self, current_bucket, next_bucket, width, rblock_size_bytes):
+        s_b = "0 B"
+        if current_bucket>0:
+            last_bucket_last_rblock_end = ((current_bucket*width)-1)*rblock_size_bytes
+            if last_bucket_last_rblock_end<1:
+                last_bucket_last_rblock_end = 0
+            else:
+                last_bucket_last_rblock_end += 1
+            s_b = filesize.size(last_bucket_last_rblock_end,filesize.byte)
+            if current_bucket==99 or next_bucket>99:
+                return ">%s"%(s_b.replace(" ",""))
+
+        bucket_last_rblock_end = ((next_bucket*width)-1)*rblock_size_bytes
+        e_b = filesize.size(bucket_last_rblock_end, filesize.byte)
+        return "%s to %s"%(s_b.replace(" ",""),e_b.replace(" ",""))
 
 class ShowLatencyController(CommandController):
     def __init__(self):
@@ -747,7 +886,9 @@ class ShowStatisticsController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Displays bin, set, service, and namespace statistics')
+    @CommandHelp('Displays bin, set, service, and namespace statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end. It contains node wise sum for statistics.')
     def _do_default(self, line):
         actions = (util.Future(self.do_bins, line).start()
                    , util.Future(self.do_sets, line).start()
@@ -757,15 +898,35 @@ class ShowStatisticsController(CommandController):
 
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays service statistics')
+    def clear_option_from_mods(self, option):
+        for mod in self.modifiers:
+            if mod in self.mods and option in self.mods[mod]:
+                    self.mods[mod].remove(option)
+
+    def need_to_show_total(self, line):
+        show_total = False
+        try:
+            if "-t" in line:
+                show_total = True
+                self.clear_option_from_mods("-t")
+        except:
+            pass
+        return show_total
+
+    @CommandHelp('Displays service statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_service(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
-
-        return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster
+        show_total = self.need_to_show_total(line)
+        return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster, show_total=show_total
                             , **self.mods)
 
-    @CommandHelp('Displays namespace statistics')
+    @CommandHelp('Displays namespace statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_namespace(self, line):
+        show_total = self.need_to_show_total(line)
         namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
 
         namespaces = namespaces.values()
@@ -785,21 +946,29 @@ class ShowStatisticsController(CommandController):
                             , "%s Namespace Statistics"%(namespace)
                             , ns_stats[namespace].result()
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
                 for namespace in sorted(namespace_set)]
 
-    @CommandHelp('Displays sindex statistics')
+    @CommandHelp('Displays sindex statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_sindex(self, line):
+        show_total = self.need_to_show_total(line)
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
         return [util.Future(self.view.showStats
                             , "%s Sindex Statistics"%(ns_set_sindex)
                             , sindex_stats[ns_set_sindex]
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
                 for ns_set_sindex in sorted(sindex_stats.keys())]
 
-    @CommandHelp('Displays set statistics')
+    @CommandHelp('Displays set statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_sets(self, line):
+        show_total = self.need_to_show_total(line)
         sets = self.cluster.infoSetStatistics(nodes=self.nodes)
 
         set_stats = {}
@@ -819,11 +988,15 @@ class ShowStatisticsController(CommandController):
         return [util.Future(self.view.showStats, "%s %s Set Statistics"%(namespace, set_name)
                             , stats
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
                 for (namespace, set_name), stats in set_stats.iteritems()]
 
-    @CommandHelp('Displays bin statistics')
+    @CommandHelp('Displays bin statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_bins(self, line):
+        show_total = self.need_to_show_total(line)
         bin_stats = self.cluster.infoBinStatistics(nodes=self.nodes)
         new_bin_stats = {}
 
@@ -845,20 +1018,28 @@ class ShowStatisticsController(CommandController):
         return [util.Future(self.view.showStats, "%s Bin Statistics"%(namespace)
                             , bin_stats
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
                 for namespace, bin_stats in new_bin_stats.iteritems()]
 
-    @CommandHelp('Displays xdr statistics')
+    @CommandHelp('Displays XDR statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_xdr(self, line):
+        show_total = self.need_to_show_total(line)
         xdr_stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
 
         return util.Future(self.view.showStats, "XDR Statistics"
                             , xdr_stats
                             , self.cluster
+                            , show_total=show_total
                             , **self.mods)
 
-    @CommandHelp('Displays datacenter statistics')
+    @CommandHelp('Displays datacenter statistics'
+                 , '  Options:'
+                 , '    -t - Set to show total column at the end.')
     def do_dc(self, line):
+        show_total = self.need_to_show_total(line)
         all_dc_stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
         dc_stats = {}
         for host, stats in all_dc_stats.iteritems():
@@ -873,7 +1054,7 @@ class ShowStatisticsController(CommandController):
                 except KeyError:
                     dc_stats[dc][host] = stat
         return [util.Future(self.view.showConfig, "%s DC Statistics"%(dc)
-                            , stats, self.cluster, **self.mods)
+                            , stats, self.cluster, show_total=show_total, **self.mods)
                 for dc, stats in dc_stats.iteritems()]
 
 class ClusterController(CommandController):
@@ -1094,6 +1275,9 @@ class CollectinfoController(CommandController):
         f.write(str(collectedinfo))
         return f.close()
 
+    def write_version(self,line):
+        print "asadm version " + str(self.asadm_version)
+
     def get_metadata(self,response_str,prefix=''):
         aws_c = ''
         aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
@@ -1121,6 +1305,7 @@ class CollectinfoController(CommandController):
         aws_timeout = 1
         socket.setdefaulttimeout(aws_timeout)
         aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
+        print "['AWS']"
         try:
             req = urllib2.Request(aws_metadata_base_url)
             r = urllib2.urlopen(req)
@@ -1255,7 +1440,6 @@ class CollectinfoController(CommandController):
         return namespaces
 
     def main_collectinfo(self, show_all=False, verbose=False):
-
         # getting service port to use in ss/netstat command
         port = 3000
         try:
@@ -1276,7 +1460,6 @@ class CollectinfoController(CommandController):
         global aslogdir, aslogfile, output_time
         output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
         aslogdir = '/tmp/collectInfo_' + output_time
-        # as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
         as_logfile_prefix = aslogdir + '/' + output_time + '_'
 
         # cmd and alternative cmds are stored in list of list instead of dic to maintain proper order for output
@@ -1285,33 +1468,14 @@ class CollectinfoController(CommandController):
                       ['uname -a',''],
                       ['lsb_release -a','ls /etc|grep release|xargs -I f cat /etc/f'],
                       ['cat /proc/meminfo','vmstat -s'],
+                      ['cat /proc/interrupts',''],
                       ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',''],
                       ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',''],
                       ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
                       ['ip addr',''],
                       ['ip -s link',''],
                       ['sudo iptables -L',''],
-                      ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"','']
-                      ]
-        sys_info_params = ['network','service', 'set', 'namespace', 'xdr', 'dc', 'sindex']
-        sys_show_params = ['distribution', 'config diff']
-        sys_features_params = ['features']
-        sys_cluster_params = ['pmap']
-        dignostic_show_params = ['config', 'config xdr', 'config dc', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
-        dignostic_cluster_params = ['service', 'services']
-        dignostic_cluster_params_additional = [
-                          'partition-info',
-                          'dump-msgs:',
-                          'dump-wr:'
-                          ]
-        dignostic_cluster_params_additional_verbose = [
-                          'dump-fabric:',
-                          'dump-hb:',
-                          'dump-migrates:',
-                          'dump-paxos:',
-                          'dump-smd:'
-                          ]
-        dignostic_shell_cmds = [
+                      ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"',''],
                       ['iostat -x 1 10',''],
                       ['sar -n DEV',''],
                       ['sar -n EDEV',''],
@@ -1325,6 +1489,24 @@ class CollectinfoController(CommandController):
                       ['ss -pant | grep %d | grep CLOSE-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)],
                       ['ss -pant | grep %d | grep ESTAB | wc -l'%(port),'netstat -pant | grep %d | grep ESTABLISHED | wc -l'%(port)]
                       ]
+        dignostic_info_params = ['network', 'set', 'namespace', 'xdr', 'dc', 'sindex']
+        dignostic_features_params = ['features']
+        dignostic_cluster_params = ['pmap']
+        dignostic_show_params = ['config', 'config xdr', 'config dc', 'config diff', 'distribution', 'distribution eviction', 'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
+        dignostic_aerospike_cluster_params = ['service', 'services']
+        dignostic_aerospike_cluster_params_additional = [
+                          'partition-info',
+                          'dump-msgs:',
+                          'dump-wr:'
+                          ]
+        dignostic_aerospike_cluster_params_additional_verbose = [
+                          'dump-fabric:',
+                          'dump-hb:',
+                          'dump-migrates:',
+                          'dump-paxos:',
+                          'dump-smd:'
+                          ]
+
         _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
 
         if show_all:
@@ -1339,17 +1521,17 @@ class CollectinfoController(CommandController):
                 # dump-wb dumps debug information about Write Bocks, it needs namespace, device-id and write-block-id as a parameter
                 # dignostic_cluster_params_additional.append('dump-wb:ns=' + ns)
 
-                dignostic_cluster_params_additional.append('dump-wb-summary:ns=' + ns)
+                dignostic_aerospike_cluster_params_additional.append('dump-wb-summary:ns=' + ns)
 
             if verbose:
-                for index, param in enumerate(dignostic_cluster_params_additional_verbose):
+                for index, param in enumerate(dignostic_aerospike_cluster_params_additional_verbose):
                     if param.startswith("dump"):
                         if not param.endswith(":"):
                             param = param + ";"
                         param = param + "verbose=true"
-                    dignostic_cluster_params_additional_verbose[index]=param
+                    dignostic_aerospike_cluster_params_additional_verbose[index]=param
 
-            dignostic_cluster_params = dignostic_cluster_params + dignostic_cluster_params_additional + dignostic_cluster_params_additional_verbose
+            dignostic_aerospike_cluster_params = dignostic_aerospike_cluster_params + dignostic_aerospike_cluster_params_additional + dignostic_aerospike_cluster_params_additional_verbose
 
         if 'ubuntu' == (platform.linux_distribution()[0]).lower():
             cmd_dmesg  = 'cat /var/log/syslog'
@@ -1365,25 +1547,18 @@ class CollectinfoController(CommandController):
         self.write_log(collect_output)
 
         try:
-            for cmds in dignostic_shell_cmds:
-                self.collectinfo_content('shell',[cmds[0]],[cmds[1]])
-
+            self.collectinfo_content(self.write_version)
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
 
         try:
-            self.collectinfo_content(self.collect_lsof)
+            info_controller = InfoController()
+            for info_param in dignostic_info_params:
+                self.collectinfo_content(info_controller,[info_param])
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
-
-        if show_all and verbose:
-            try:
-                self.collectinfo_content(self.collect_lsof,verbose)
-            except Exception as e:
-                self.write_log(str(e))
-                sys.stdout = sys.__stdout__
 
         try:
             show_controller = ShowController()
@@ -1394,7 +1569,23 @@ class CollectinfoController(CommandController):
             sys.stdout = sys.__stdout__
 
         try:
+            features_controller = FeaturesController()
+            for cmd in dignostic_features_params:
+                self.collectinfo_content(features_controller, [cmd])
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            cluster_controller = ClusterController()
             for cmd in dignostic_cluster_params:
+                self.collectinfo_content(cluster_controller, [cmd])
+        except Exception as e:
+            self.write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            for cmd in dignostic_aerospike_cluster_params:
                 self.collectinfo_content('cluster', cmd)
         except Exception as e:
             self.write_log(str(e))
@@ -1426,37 +1617,17 @@ class CollectinfoController(CommandController):
             sys.stdout = sys.__stdout__
 
         try:
-            info_controller = InfoController()
-            for info_param in sys_info_params:
-                self.collectinfo_content(info_controller,[info_param])
+            self.collectinfo_content(self.collect_lsof)
         except Exception as e:
             self.write_log(str(e))
             sys.stdout = sys.__stdout__
 
-        try:
-            show_controller = ShowController()
-            for show_param in sys_show_params:
-                self.collectinfo_content(show_controller,show_param.split())
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            features_controller = FeaturesController()
-            for cmd in sys_features_params:
-                self.collectinfo_content(features_controller, [cmd])
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            cluster_controller = ClusterController()
-            for cmd in sys_cluster_params:
-                self.collectinfo_content(cluster_controller, [cmd])
-        except Exception as e:
-            self.write_log(str(e))
-            sys.stdout = sys.__stdout__
-
+        if show_all and verbose:
+            try:
+                self.collectinfo_content(self.collect_lsof,verbose)
+            except Exception as e:
+                self.write_log(str(e))
+                sys.stdout = sys.__stdout__
 
         ####### Logs and conf ########
 
@@ -1578,7 +1749,6 @@ class FeaturesController(CommandController):
 
     def _do_default(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
-        # ns_stats = self.logger.infoStatistics(stanza="namespace")
         features = {}
         for node, stats in service_stats.iteritems():
             features[node] = {}
@@ -1656,3 +1826,24 @@ class FeaturesController(CommandController):
         return util.Future(self.view.showConfig, "Features"
                     , features
                     , self.cluster, **self.mods)
+
+@CommandHelp("Set pager for output")
+class PagerController(CommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    def _do_default(self, line):
+        self.executeHelp(line)
+
+    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as Linux 'less' command."
+                 " We can use arrow keys to scroll output and 'q' to end page for table.")
+    def do_less(self, line):
+        CliView.pager = CliView.LESS
+
+    @CommandHelp("Removes pager and prints output normally.")
+    def do_remove(self, line):
+        CliView.pager = CliView.NO_PAGER
+
+    @CommandHelp("Displays current selected pager option.")
+    def do_show(self, line):
+        CliView.print_pager()

@@ -35,9 +35,7 @@ class TestInfo(unittest.TestCase):
         TestInfo.output_list = test_util.get_separate_output(actual_out, 'Information')
         # TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex']))            
         for item in TestInfo.output_list:
-            if "~~Service Information~~" in item:
-                TestInfo.service_info = item           
-            elif "~~Network Information~~" in item:
+            if "~~Network Information~~" in item:
                 TestInfo.network_info = item           
             elif "~~Namespace Information~~" in item:
                 TestInfo.namespace_info = item               
@@ -50,33 +48,6 @@ class TestInfo(unittest.TestCase):
     def tearDownClass(self):
         self.rc = None    
 
-    def test_service(self):
-        """
-        This test will assert <b> info Service </b> output for heading, headerline1, headerline2
-        and no of row displayed in output
-        ToDo: test for values as well
-        """
-        exp_heading = "~~Service Information~~"
-        exp_header= ['Node',
-                     'Build',
-                     'Cluster Size',
-                     'Cluster Key',
-                     'Cluster Visibility',
-                     'Cluster Integrity',
-                     'Free Disk%',
-                     'Free Mem%',
-                     'Migrates (tx,rx,a)',
-                     'Principal',
-                     'Objects',
-                     'Uptime'] 
-        exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
-        
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.service_info, horizontal = True)        
-        
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-    
     def test_network(self):
         """
         This test will assert <b> info Network </b> output for heading, headerline1, headerline2
@@ -86,12 +57,15 @@ class TestInfo(unittest.TestCase):
         exp_heading = "~~Network Information~~"
         exp_header = [   'Node',
                          'Node Id',
-                         'Fqdn',
                          'Ip',
+                         'Build',
+                         'Enterprise',
+                         'Cluster Size',
+                         'Cluster Key',
+                         'Cluster Integrity',
+                         'Principal',
                          'Client Conns',
-                         'Current Time',
-                         'HB Self',
-                         'HB Foreign' ]
+                         'Uptime']
         exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.network_info, horizontal = True)        

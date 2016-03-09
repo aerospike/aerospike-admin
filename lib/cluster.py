@@ -84,12 +84,32 @@ class Cluster(object):
 
     def getExpectedPrincipal(self):
         try:
-            return max([n.node_id for n in self.nodes.itervalues()])
-        except:
+            principal = "0"
+            for n in self.nodes.itervalues():
+                if n.node_id.zfill(16) > principal.zfill(16):
+                    principal = n.node_id
+            return principal
+            #return max([n.node_id for n in self.nodes.itervalues()])
+        except Exception as e:
+            print e
             return ''
 
-    def getVisibility(self):
+    def getLiveNodes(self):
         return self._live_nodes
+
+    def getClusterVisibilityErrorNodes(self):
+        visible = self.getLiveNodes()
+        cluster_visibility_error_nodes = []
+        for node in self.nodes.values():
+            service_list = node.infoServices()
+            if isinstance(service_list, Exception):
+                continue
+
+            service_set = set(service_list)
+            if len((visible | service_set) - service_set) != 1:
+                cluster_visibility_error_nodes.append(node.key)
+
+        return cluster_visibility_error_nodes
 
     def _shouldCrawl(self):
         """

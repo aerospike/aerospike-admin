@@ -441,13 +441,13 @@ class CitrusleafCluster:
 	"""Citrusleaf Cluster contains state information about all hosts in a cluster, suitable for sending and receiving requests"""
 	
 	def __init__(self):
-		# this host set contain lists objects: (host, port) that have been externally assocated with the cluster 
+		# this host set contain lists objects: (host, port) that have been externally associated with the cluster
 		self.host_names = set()
 		# Unique list of good hosts: list for random access  
 		self.hosts_good = [ ]
 		# try to round-robbin the hosts for now
 		self.last_good_host_index = 0
-		# this list has hosts that are known-bad. Don't need random as much, but nice to keep consistant 
+		# this list has hosts that are known-bad. Don't need random as much, but nice to keep consistent
 		self.hosts_bad = [ ]
 		# another list of hosts. 
 		self.hosts_unknown = [ ]
@@ -1223,7 +1223,7 @@ def parse_body( n_fields, n_ops, buf, debug = False ):
 
 
 # put is more and more complicated!
-# return a result code only, whether the put suceeded or not
+# return a result code only, whether the put succeeded or not
 #
 # record_ttl is the time from now, in seconds, when the database will auto-remove the record
 # transaction_ttl is the lifetime of the transaction, in milliseconds (currently not implemented)

@@ -62,8 +62,7 @@ class ControllerTest(unittest.TestCase):
 
         ic.preCommand([""])
     
-        ic.do_service(["service"])
-        #ic.do_network(["network"]) # TODO: view.infoNetwork needs a "real" node
+        ic.do_network(["network"]) # TODO: view.infoNetwork needs a "real" node
         ic.do_namespace(["namespace"])
         ic.do_xdr(["xdr"])
 
@@ -74,6 +73,7 @@ class ControllerTest(unittest.TestCase):
         sdc.do_time_to_live(["time_to_live"])
         sdc.do_eviction(["evict"])
         sdc.do_object_size(["object_size"])
+        sdc.do_object_size(["object_size","-b"])
 
     def test_showConfigController(self):
         scc = ShowConfigController()
