@@ -109,7 +109,7 @@ class RootController(BaseController):
                  , '   --no-diff:  Do not do diff highlighting'
                  , 'Example 1: Show "info network" 3 times with 1 second pause'
                  , '           watch 1 3 info network'
-                 , 'Example 2: Show "info namespace" with 5 second pause until'
+                 , 'Example 2: Show "info namespace" with 5 seconds pause until'
                  , '           interrupted'
                  , '           watch 5 info namespace')
     def do_watch(self, line):
@@ -121,7 +121,7 @@ class InfoController(CommandController):
     def __init__(self):
         self.modifiers = set(['with'])
 
-    @CommandHelp('Displays network, namespace, and xdr summary'
+    @CommandHelp('Displays network, namespace, and XDR summary'
                  , 'information.')
     def _do_default(self, line):
         actions = (util.Future(self.do_network, line).start()
@@ -323,9 +323,9 @@ class ShowDistributionController(CommandController):
 
     @CommandHelp('Shows the distributions of Time to Live and Object Size'
                  , '  Options(only for Object Size distribution):'
-                 , '    -b               - Force to show bytewise distribution of Object Sizes. Default is rblock wise distribution in percentage'
+                 , '    -b               - Force to show byte wise distribution of Object Sizes. Default is rblock wise distribution in percentage'
                  , '    -k <buckets>     - Maximum number of buckets to show if -b is set.'
-                   ' It distributes objects in k same size buckets and display only buckets which has objects in it. Default is 5.')
+                   ' It distributes objects in same size k buckets and display only buckets which has objects in it. Default is 5.')
     def _do_default(self, line):
         actions = (util.Future(self.do_time_to_live, line[:]).start()
                    , util.Future(self.do_object_size, line[:]).start())
@@ -390,7 +390,7 @@ class ShowDistributionController(CommandController):
 
     @CommandHelp('Shows the distribution of Object sizes for namespaces'
                  , '  Options:'
-                 , '    -b               - Force to show bytewise distribution of Object Sizes. Default is rblock wise distribution in percentage'
+                 , '    -b               - Force to show byte wise distribution of Object Sizes. Default is rblock wise distribution in percentage'
                  , '    -k <buckets>     - Maximum number of buckets to show if -b is set.'
                    ' It distributes objects in k same size buckets and display only buckets which has objects in it. Default is 5.')
     def do_object_size(self, line):
@@ -888,7 +888,7 @@ class ShowStatisticsController(CommandController):
 
     @CommandHelp('Displays bin, set, service, and namespace statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end. It contains nodewise sum for statistics.')
+                 , '    -t - Set to show total column at the end. It contains node wise sum for statistics.')
     def _do_default(self, line):
         actions = (util.Future(self.do_bins, line).start()
                    , util.Future(self.do_sets, line).start()
@@ -1022,7 +1022,7 @@ class ShowStatisticsController(CommandController):
                             , **self.mods)
                 for namespace, bin_stats in new_bin_stats.iteritems()]
 
-    @CommandHelp('Displays xdr statistics'
+    @CommandHelp('Displays XDR statistics'
                  , '  Options:'
                  , '    -t - Set to show total column at the end.')
     def do_xdr(self, line):
@@ -1460,7 +1460,6 @@ class CollectinfoController(CommandController):
         global aslogdir, aslogfile, output_time
         output_time = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
         aslogdir = '/tmp/collectInfo_' + output_time
-        # as_sysinfo_logdir = os.path.join(aslogdir, 'sysInformation')
         as_logfile_prefix = aslogdir + '/' + output_time + '_'
 
         # cmd and alternative cmds are stored in list of list instead of dic to maintain proper order for output
@@ -1750,7 +1749,6 @@ class FeaturesController(CommandController):
 
     def _do_default(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
-        # ns_stats = self.logger.infoStatistics(stanza="namespace")
         features = {}
         for node, stats in service_stats.iteritems():
             features[node] = {}
@@ -1837,7 +1835,7 @@ class PagerController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as linux 'less' command."
+    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as Linux 'less' command."
                  " We can use arrow keys to scroll output and 'q' to end page for table.")
     def do_less(self, line):
         CliView.pager = CliView.LESS

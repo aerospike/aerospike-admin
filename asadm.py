@@ -196,7 +196,7 @@ class AerospikeShell(cmd.Cmd):
             return None
 
     def emptyline(self):
-        # do onthing
+        # do nothing
         return
 
     # Other

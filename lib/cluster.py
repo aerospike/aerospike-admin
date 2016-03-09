@@ -15,7 +15,6 @@
 from lib import util
 from lib.node import Node
 from lib.prefixdict import PrefixDict
-from lib import terminal
 import re
 
 class Cluster(object):

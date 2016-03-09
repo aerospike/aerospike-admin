@@ -127,7 +127,6 @@ class CliView(object):
 
             t.insertRow(row)
 
-        #print t
         CliView.print_result(t)
 
     @staticmethod
@@ -174,7 +173,7 @@ class CliView(object):
             row['node'] = prefixes[node_key]
             row['real_node_id'] = node.node_id
             t.insertRow(row)
-        #print t
+
         CliView.print_result(t)
 
     @staticmethod
@@ -380,7 +379,6 @@ class CliView(object):
 
             t.insertRow(row)
 
-        #print t
         CliView.print_result(t)
 
     @staticmethod
@@ -471,7 +469,6 @@ class CliView(object):
 
             t.insertRow(row)
 
-        #print t
         CliView.print_result(t)
 
     @staticmethod
@@ -547,7 +544,6 @@ class CliView(object):
             row['node'] = prefixes[node_key]
 
             t.insertRow(row)
-        #print t
         CliView.print_result(t)
 
     @staticmethod
@@ -591,7 +587,6 @@ class CliView(object):
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 t.insertRow(row)
-        #print t
         CliView.print_result(t)
 
     @staticmethod
@@ -628,7 +623,6 @@ class CliView(object):
                 row['node'] = node
                 t.insertRow(row)
 
-        #print t
         CliView.print_result(t)
 
 
@@ -668,7 +662,6 @@ class CliView(object):
 
                 t.insertRow(row)
 
-            #print t
             CliView.print_result(t)
 
     @staticmethod
@@ -710,7 +703,6 @@ class CliView(object):
                 row['node'] = prefixes[node_id]
                 t.insertRow(row)
 
-            #print t
             CliView.print_result(t)
             if set_bucket_count and (len(columns)-1)<show_bucket_count:
                 print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n"%(terminal.fg_green(),(len(columns)-1),"s" if (len(columns)-1)>1 else "",terminal.fg_clear())
@@ -751,7 +743,6 @@ class CliView(object):
                 node_data['node'] = prefixes[node_id]
                 t.insertRow(node_data)
 
-            #print t
             CliView.print_result(t)
 
     @staticmethod
@@ -810,7 +801,6 @@ class CliView(object):
             rowTotal['NODE'] = "Total"
             t.insertRow(rowTotal)
 
-        #print t
         CliView.print_result(t)
 
     @staticmethod
@@ -876,7 +866,6 @@ class CliView(object):
                 row['Master Discrepancy Partitions'] = ns_stats['master_disc_part']
                 row['Replica Discrepancy Partitions'] = ns_stats['replica_disc_part']
                 t.insertRow(row)
-        #print t
         CliView.print_result(t)
 
     @staticmethod
@@ -898,7 +887,6 @@ class CliView(object):
                 row['Replica QNode Without Data'] = ns_stats['RQ_without_data']
                 row['Replica QNode With Data'] = ns_stats['RQ_data']
                 t.insertRow(row)
-        #print t
         CliView.print_result(t)
 
     @staticmethod
