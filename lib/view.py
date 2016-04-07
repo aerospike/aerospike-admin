@@ -503,7 +503,7 @@ class CliView(object):
                             ('esmt-bytes-shipped', 'esmt_bytes_shipped')))
 
         t.addDataSource('_lag-secs',
-                        Extractors.timeExtractor('timediff_lastship_cur_secs'))
+                        Extractors.timeExtractor('xdr_timelag'))
 
         t.addDataSource('_req-outstanding',
                         Extractors.sifExtractor('stat_recs_outstanding'))
@@ -516,7 +516,7 @@ class CliView(object):
 
         # Highligh red if lag is more than 30 seconds
         t.addCellAlert('_lag-secs'
-                       , lambda data: int(data['timediff_lastship_cur_secs']) >= 300)
+                       , lambda data: int(data['xdr_timelag']) >= 300)
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
@@ -535,6 +535,8 @@ class CliView(object):
                         row['_free-dlog-pct'] = row['free_dlog_pct'][:-1]
                     else:
                         row['_free-dlog-pct'] = row['free-dlog-pct'][:-1]
+
+                    row['xdr_timelag'] = CliView.getValueFromRow(row,('xdr_timelag','timediff_lastship_cur_secs'))
                 else:
                     row = {}
                     row['node-id'] = node.node_id
@@ -546,6 +548,15 @@ class CliView(object):
 
             t.insertRow(row)
         CliView.print_result(t)
+
+    @staticmethod
+    def getValueFromRow(row, keys):
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        for key in keys:
+            if key in row:
+                return row[key]
+        return None
 
     @staticmethod
     def infoDC(stats, cluster, **ignore):
@@ -566,7 +577,7 @@ class CliView(object):
         t = Table(title, column_names, group_by=1)
 
         t.addDataSource('_lag-secs',
-                        Extractors.timeExtractor(('xdr-dc-timelag','xdr_dc_timelag')))
+                        Extractors.timeExtractor(('xdr-dc-timelag','xdr_dc_timelag','dc_timelag')))
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
@@ -581,10 +592,10 @@ class CliView(object):
                 if isinstance(row, Exception):
                     row = {}
                 if row:
-                    if 'xdr_dc_state' in row:
-                        row['_xdr-dc-state'] = row['xdr_dc_state']
-                    else:
-                        row['_xdr-dc-state'] = row['xdr-dc-state']
+                    row['_xdr-dc-state'] = CliView.getValueFromRow(row,('xdr_dc_state','xdr-dc-state','dc_state'))
+                    row['xdr_dc_remote_ship_ok'] = CliView.getValueFromRow(row,('xdr_dc_remote_ship_ok','dc_remote_ship_ok'))
+                    row['xdr_dc_size'] = CliView.getValueFromRow(row,('xdr_dc_size','dc_size'))
+                    row['latency_avg_ship_ema'] = CliView.getValueFromRow(row,('latency_avg_ship_ema','dc_latency_avg_ship'))
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 t.insertRow(row)

@@ -63,8 +63,7 @@ class TestShowConfig(unittest.TestCase):
     
         exp_heading = "~~Network Configuration~~"
         exp_header = "NODE"
-        exp_params = ['enable-fastpath', 
-                    'fabric-keepalive-enabled', 
+        exp_params = ['fabric-keepalive-enabled',
                     'fabric-keepalive-intvl', 
                     'fabric-keepalive-probes', 
                     'fabric-keepalive-time', 
@@ -95,31 +94,18 @@ class TestShowConfig(unittest.TestCase):
         exp_heading = "~~Service Configuration~~"
         exp_header = "NODE"
         exp_params = [  'allow-inline-transactions',
-                        'auto-dun',
-                        'auto-undun',
                         'batch-max-requests',
                         'batch-priority',
                         'batch-threads',
-                        'dump-message-above-size',
                         'fabric-workers',
-                        'fb-health-bad-pct',
-                        'fb-health-good-pct',
-                        'fb-health-msg-per-burst',
-                        'fb-health-msg-timeout',
                         'info-threads',
                         'ldt-benchmarks',
                         'max-msgs-per-type',
                         'memory-accounting',
                         'microbenchmarks',
                         'migrate-max-num-incoming',
-                        'migrate-read-priority',
-                        'migrate-read-sleep',
                         'migrate-rx-lifetime-ms',
                         'migrate-threads',
-                        'migrate-xmit-hwm',
-                        'migrate-xmit-lwm',
-                        'migrate-xmit-priority',
-                        'migrate-xmit-sleep',
                         'nsup-delete-sleep',
                         'nsup-period',
                         'nsup-startup-evict',
@@ -270,12 +256,10 @@ class TestShowConfig(unittest.TestCase):
                         'xdr-max-recs-inflight',
                         'xdr-namedpipe-path',
                         'xdr-nw-timeout',
-                        'xdr-read-batch-size',
                         'xdr-read-mode',
                         'xdr-read-threads',
                         'xdr-ship-delay',
                         'xdr-shipping-enabled',
-                        'xdr-threads',
                         'xdr-timeout',
                         'xdr-write-batch-size'
                       ] 
@@ -595,12 +579,10 @@ class TestShowStatistics(unittest.TestCase):
                         'err_write_fail_bin_not_found',
                         'err_write_fail_forbidden',
                         'err_write_fail_generation',
-                        'err_write_fail_generation_xdr',
                         'err_write_fail_incompatible_type',
                         'err_write_fail_key_exists',
                         'err_write_fail_key_mismatch',
                         'err_write_fail_not_found',
-                        'err_write_fail_noxdr',
                         'err_write_fail_parameter',
                         'err_write_fail_prole_delete',
                         'err_write_fail_prole_generation',
@@ -684,12 +666,6 @@ class TestShowStatistics(unittest.TestCase):
                         'sindex_gc_objects_validated',
                         'sindex_ucgarbage_found',
                         'stat_cluster_key_err_ack_dup_trans_reenqueue',
-                        'stat_cluster_key_err_ack_rw_trans_reenqueue',
-                        'stat_cluster_key_partition_transaction_queue_count',
-                        'stat_cluster_key_prole_retry',
-                        'stat_cluster_key_regular_processed',
-                        'stat_cluster_key_trans_to_proxy_retry',
-                        'stat_cluster_key_transaction_reenqueue',
                         'stat_delete_success',
                         'stat_deleted_set_objects',
                         'stat_duplicate_operation',
@@ -714,8 +690,6 @@ class TestShowStatistics(unittest.TestCase):
                         'stat_write_reqs',
                         'stat_write_reqs_xdr',
                         'stat_write_success',
-                        'stat_xdr_pipe_miss',
-                        'stat_xdr_pipe_writes',
                         'stat_zero_bin_records',
                         'storage_defrag_corrupt_record',
                         'sub-records',
@@ -747,7 +721,6 @@ class TestShowStatistics(unittest.TestCase):
                     ]
         
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.service_stats)
-        #print actual_params
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
         self.assertTrue(set(exp_params).issubset(set(actual_params)))
