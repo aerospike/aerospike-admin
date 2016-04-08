@@ -531,10 +531,9 @@ class CliView(object):
             if xdr_enable[node_key]:
                 if row:
                     row['build'] = builds[node_key]
-                    if 'free_dlog_pct' in row:
-                        row['_free-dlog-pct'] = row['free_dlog_pct'][:-1]
-                    else:
-                        row['_free-dlog-pct'] = row['free-dlog-pct'][:-1]
+                    row['_free-dlog-pct'] = CliView.getValueFromRow(row,('free_dlog_pct','free-dlog-pct'))
+                    if row['_free-dlog-pct'].endswith("%"):
+                        row['_free-dlog-pct'] = row['_free-dlog-pct'][:-1]
 
                     row['xdr_timelag'] = CliView.getValueFromRow(row,('xdr_timelag','timediff_lastship_cur_secs'))
                 else:
