@@ -596,3 +596,16 @@ class Node(object):
         dict -- {stat_name : stat_value, ...}
         """
         return util.info_to_dict(self.info("sindex/%s/%s"%(namespace,indexname)))
+
+    @return_exceptions
+    def infoXDRBuildVersion(self):
+        """
+        Get Build Version for XDR
+
+        Returns:
+        string -- build version
+        """
+        if self.isFeaturePresent('xdr'): # for new aerospike version (>=3.8) with xdr-in-asd stats available on service port
+            return self.info('build')
+
+        return self.xdrInfo('build')

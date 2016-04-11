@@ -207,7 +207,7 @@ class InfoController(CommandController):
                  , 'Replication (XDR).')
     def do_xdr(self, line):
         stats = util.Future(self.cluster.infoXDRStatistics, nodes=self.nodes).start()
-        builds = util.Future(self.cluster.xdrInfo, 'build', nodes=self.nodes).start()
+        builds = util.Future(self.cluster.infoXDRBuildVersion, nodes=self.nodes).start()
         xdr_enable = util.Future(self.cluster.isXDREnabled, nodes=self.nodes).start()
 
         stats = stats.result()
