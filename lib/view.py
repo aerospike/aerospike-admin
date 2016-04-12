@@ -531,11 +531,11 @@ class CliView(object):
             if xdr_enable[node_key]:
                 if row:
                     row['build'] = builds[node_key]
-                    row['_free-dlog-pct'] = CliView.getValueFromRow(row,('free_dlog_pct','free-dlog-pct'))
+                    CliView.setValueInRow(row, '_free-dlog-pct', CliView.getValueFromRow(row,('free_dlog_pct','free-dlog-pct')))
                     if row['_free-dlog-pct'].endswith("%"):
                         row['_free-dlog-pct'] = row['_free-dlog-pct'][:-1]
 
-                    row['xdr_timelag'] = CliView.getValueFromRow(row,('xdr_timelag','timediff_lastship_cur_secs'))
+                    CliView.setValueInRow(row, 'xdr_timelag', CliView.getValueFromRow(row,('xdr_timelag','timediff_lastship_cur_secs')))
                 else:
                     row = {}
                     row['node-id'] = node.node_id
@@ -556,6 +556,12 @@ class CliView(object):
             if key in row:
                 return row[key]
         return None
+
+    @staticmethod
+    def setValueInRow(row, key, value):
+        if not row or not key or not value or isinstance(value,Exception):
+            return
+        row[key] = value
 
     @staticmethod
     def infoDC(stats, cluster, **ignore):
@@ -591,10 +597,10 @@ class CliView(object):
                 if isinstance(row, Exception):
                     row = {}
                 if row:
-                    row['_xdr-dc-state'] = CliView.getValueFromRow(row,('xdr_dc_state','xdr-dc-state','dc_state'))
-                    row['xdr_dc_remote_ship_ok'] = CliView.getValueFromRow(row,('xdr_dc_remote_ship_ok','dc_remote_ship_ok'))
-                    row['xdr_dc_size'] = CliView.getValueFromRow(row,('xdr_dc_size','dc_size'))
-                    row['latency_avg_ship_ema'] = CliView.getValueFromRow(row,('latency_avg_ship_ema','dc_latency_avg_ship'))
+                    CliView.setValueInRow(row, '_xdr-dc-state', CliView.getValueFromRow(row,('xdr_dc_state','xdr-dc-state','dc_state')))
+                    CliView.setValueInRow(row, 'xdr_dc_remote_ship_ok', CliView.getValueFromRow(row,('xdr_dc_remote_ship_ok','dc_remote_ship_ok')))
+                    CliView.setValueInRow(row, 'xdr_dc_size', CliView.getValueFromRow(row,('xdr_dc_size','dc_size')))
+                    CliView.setValueInRow(row, 'latency_avg_ship_ema', CliView.getValueFromRow(row,('latency_avg_ship_ema','dc_latency_avg_ship','dc_latency_avg_ship_ema')))
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 t.insertRow(row)
@@ -624,14 +630,18 @@ class CliView(object):
                         , ('query_avg_rec_count', 's'))
 
         t = Table(title, column_names, group_by=1)
+        t.addCellAlert('node'
+                       ,lambda data: data['real_node_id'] == principal
+                       , color=terminal.fg_green)
         for stat in stats.values():
             for node_key, n_stats in stat.iteritems():
-                node = prefixes[node_key]
+                node = cluster.getNode(node_key)[0]
                 if isinstance(n_stats, Exception):
                     row = {}
                 else:
                     row = n_stats
-                row['node'] = node
+                row['real_node_id'] = node.node_id
+                row['node'] = prefixes[node_key]
                 t.insertRow(row)
 
         CliView.print_result(t)
