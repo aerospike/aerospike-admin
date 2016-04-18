@@ -57,12 +57,12 @@ class CliView(object):
              print "NO PAGER"
 
     @staticmethod
-    def infoNetwork(stats, versions, builds, cluster, **ignore):
+    def infoNetwork(stats, versions, builds, cluster, title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
         hosts = cluster.nodes
 
-        title = "Network Information"
+        title = "Network Information%s"%(title_suffix)
         column_names = ('node'
                         , 'node_id'
                         , 'ip'
@@ -94,8 +94,8 @@ class CliView(object):
                        , color=terminal.fg_green)
 
         t.addDataSource('Enterprise'
-                        , lambda data:
-                        True if "Enterprise" in data['version'] else False)
+                        , lambda data: 'N/E' if data['version'] == 'N/E' else(
+                        True if "Enterprise" in data['version'] else False))
 
         for node_key, n_stats in stats.iteritems():
             if isinstance(n_stats, Exception):
@@ -117,15 +117,19 @@ class CliView(object):
                     row['_paxos_principal'] = row['paxos_principal']
                 except KeyError:
                     pass
+            try:
+                build = builds[node_key]
+                if not isinstance(build, Exception):
+                    row['build'] = build
+            except:
+                pass
 
-            build = builds[node_key]
-            if not isinstance(build, Exception):
-                row['build'] = build
-
-            version = versions[node_key]
-            if not isinstance(version, Exception):
-                row['version'] = version
-
+            try:
+                version = versions[node_key]
+                if not isinstance(version, Exception):
+                    row['version'] = version
+            except:
+                pass
             t.insertRow(row)
 
         CliView.print_result(t)
@@ -178,11 +182,11 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def infoNamespace(stats, cluster, **ignore):
+    def infoNamespace(stats, cluster, title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
-        title = "Namespace Information"
+        title = "Namespace Information%s"%(title_suffix)
         column_names = ('namespace'
                         , 'node'
                         , ('available_pct', 'Avail%')
@@ -275,6 +279,7 @@ class CliView(object):
                 continue
 
             for ns, ns_stats in n_stats.iteritems():
+
                 if isinstance(ns_stats, Exception):
                     row = {}
                 else:
@@ -383,11 +388,11 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def infoSet(stats, cluster, **ignore):
+    def infoSet(stats, cluster, title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
-        title = "Set Information"
+        title = "Set Information%s"%(title_suffix)
         column_names = ( 'set'
                         , 'namespace'
                         , 'node'
@@ -473,14 +478,14 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def infoXDR(stats, builds, xdr_enable, cluster, **ignore):
+    def infoXDR(stats, builds, xdr_enable, cluster, title_suffix="", **ignore):
         if not max(xdr_enable.itervalues()):
             return
 
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
-        title = "XDR Information"
+        title = "XDR Information%s"%(title_suffix)
         column_names = ('node'
                         ,'build'
                         ,('_bytes-shipped', 'Data Shipped')
@@ -564,11 +569,11 @@ class CliView(object):
         row[key] = value
 
     @staticmethod
-    def infoDC(stats, cluster, **ignore):
+    def infoDC(stats, cluster, title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
 
-        title = "DC Information"
+        title = "DC Information%s"%(title_suffix)
         column_names = ('node'
                         ,('DC_Name','DC')
                         ,('xdr_dc_size','DC size')
@@ -607,11 +612,10 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def infoSIndex(stats, cluster, **ignore):
+    def infoSIndex(stats, cluster, title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
-
-        title = "Secondary Index Information"
+        title = "Secondary Index Information%s"%(title_suffix)
         column_names = ('node'
                         , ('indexname', 'Index Name')
                         ,('ns', 'Namespace')
@@ -646,6 +650,12 @@ class CliView(object):
 
         CliView.print_result(t)
 
+    @staticmethod
+    def infoString(title, summary):
+        if not summary or len(summary.strip())==0:
+            return
+        print "************************** %s **************************" % (title)
+        CliView.print_result(summary)
 
     @staticmethod
     def showDistribution(title
@@ -654,7 +664,7 @@ class CliView(object):
                          , hist
                          , cluster
                          , like=None
-                         , **ignore):
+                         , title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
 
         likes = CliView.compileLikes(like)
@@ -671,7 +681,7 @@ class CliView(object):
             if namespace not in namespaces:
                 continue
 
-            t = Table("%s - %s in %s"%(namespace, title, unit)
+            t = Table("%s - %s in %s%s"%(namespace, title, unit, title_suffix)
                       , columns
                       , description=description)
             for node_id, data in node_data.iteritems():
@@ -694,7 +704,7 @@ class CliView(object):
                          , set_bucket_count
                          , cluster
                          , like=None
-                         , **ignore):
+                         , title_suffix="", loganalyser_mode=False, **ignore):
         prefixes = cluster.getNodeNames()
 
         likes = CliView.compileLikes(like)
@@ -709,12 +719,13 @@ class CliView(object):
                 continue
             columns = node_data["columns"]
             columns.insert(0, 'node')
-            t = Table("%s - %s in %s"%(namespace, title, unit)
+            t = Table("%s - %s in %s%s"%(namespace, title, unit, title_suffix)
                       , columns
                       , description=description)
-            for column in columns:
-                if column is not 'node':
-                    t.addDataSource(column,Extractors.sifExtractor(column))
+            if not loganalyser_mode:
+                for column in columns:
+                    if column is not 'node':
+                        t.addDataSource(column,Extractors.sifExtractor(column))
 
             for node_id, data in node_data.iteritems():
                 if node_id=="columns":
@@ -811,6 +822,7 @@ class CliView(object):
 
             row['NODE'] = prefixes[node_id]
             t.insertRow(row)
+
             if show_total:
                 for key, val in row.iteritems():
                     if (val.isdigit()):
@@ -818,10 +830,112 @@ class CliView(object):
                             rowTotal[key] = rowTotal[key] + int(val)
                         except:
                             rowTotal[key] = int(val)
+
         if show_total:
             rowTotal['NODE'] = "Total"
             t.insertRow(rowTotal)
 
+        CliView.print_result(t)
+
+    @staticmethod
+    def showGrepDiff(title, grep_result, like=None, diff=None, **ignore):
+        column_names = set()
+
+        if grep_result:
+            if grep_result[grep_result.keys()[0]]:
+                column_names = sorted(grep_result[grep_result.keys()[0]]["value"].keys())
+
+        if len(column_names) == 0:
+            return ''
+
+        column_names.insert(0, ".")
+        column_names.insert(0, "NODE")
+
+        t = Table(title
+                  , column_names
+                  , title_format=TitleFormats.noChange
+                  , style=Styles.VERTICAL)
+
+        row = None
+        for file in sorted(grep_result.keys()):
+            if isinstance(grep_result[file], Exception):
+                row1 = {}
+                row2 = {}
+                row3 = {}
+            else:
+                row1 = grep_result[file]["value"]
+                row2 = grep_result[file]["diff"]
+                row3 = {}
+                for key in grep_result[file]["value"].keys():
+                    row3[key] = "|"
+
+            row1['NODE'] = file
+            row1['.'] = "Total"
+
+            row2['NODE'] = "."
+            row2['.'] = "Diff"
+
+            row3['NODE'] = "|"
+            row3['.'] = "|"
+
+            t.insertRow(row1)
+            t.insertRow(row2)
+            t.insertRow(row3)
+        t._need_sort = False
+        #print t
+        CliView.print_result(t)
+
+    @staticmethod
+    def showLogLatency(title, grep_result, like=None, diff=None, **ignore):
+        column_names = set()
+
+        if grep_result:
+            if grep_result[grep_result.keys()[0]]:
+                column_names = sorted(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
+
+        if len(column_names) == 0:
+            return ''
+
+        column_names.insert(0, ".")
+        column_names.insert(0, "NODE")
+
+        t = Table(title
+                  , column_names
+                  , title_format=TitleFormats.noChange
+                  , style=Styles.VERTICAL)
+
+        row = None
+        for file in sorted(grep_result.keys()):
+            if isinstance(grep_result[file], Exception):
+                continue
+            else:
+                is_first = True
+                for key in sorted(grep_result[file].keys()):
+                    if key=="ops/sec":
+                        continue
+                    row = grep_result[file][key]
+                    if is_first:
+                        row['NODE'] = file
+                        is_first = False
+                    else:
+                        row['NODE'] = "."
+                    row['.'] = "%% >%dms"%(key)
+                    t.insertRow(row)
+
+                row = grep_result[file]["ops/sec"]
+                row['NODE'] = "."
+                row['.'] = key
+                t.insertRow(row)
+
+                row = {}
+                for key in grep_result[file]["ops/sec"].keys():
+                    row[key] = "|"
+
+                row['NODE'] = "|"
+                row['.'] = "|"
+                t.insertRow(row)
+        t._need_sort = False
+        #print t
         CliView.print_result(t)
 
     @staticmethod

@@ -56,8 +56,11 @@ class Cluster(object):
 
     def __str__(self):
         nodes = self.nodes.values()
-        online = [node.key for node in nodes if node.alive]
-        offline = [node.key for node in nodes if not node.alive]
+        if len(nodes) == 0:
+            return None
+
+        online = [n.key for n in filter(lambda n: n.alive, nodes)]
+        offline = [n.key for n in filter(lambda n: not n.alive, nodes)]
 
         retval = "Found %s nodes"%(len(nodes))
         if online:

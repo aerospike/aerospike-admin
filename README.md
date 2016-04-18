@@ -10,8 +10,12 @@ make
 sudo make install
 ```
 
-## Running Aerospike Admin
-asadmin -h <Aerospike Server Address>
+## Running Aerospike Admin Against Cluster
+asadm -h <Aerospike Server Address>
+Admin> help
+
+## Running Aerospike Admin for logs
+asadm -f [-l <location of logs>]
 Admin> help
 
 ## Dependencies

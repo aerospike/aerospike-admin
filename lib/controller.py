@@ -392,7 +392,7 @@ class ShowDistributionController(CommandController):
                  , '  Options:'
                  , '    -b               - Force to show byte wise distribution of Object Sizes. Default is rblock wise distribution in percentage'
                  , '    -k <buckets>     - Maximum number of buckets to show if -b is set.'
-                   ' It distributes objects in k same size buckets and display only buckets which has objects in it. Default is 5.')
+                   ' It distributes objects in same size k buckets and display only buckets which has objects in it. Default is 5.')
     def do_object_size(self, line):
         if "-b" not in line:
             return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')

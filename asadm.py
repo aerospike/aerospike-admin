@@ -13,6 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+import glob
 
 import readline
 import cmd
@@ -23,22 +25,32 @@ import getpass
 import shlex
 from lib import citrusleaf
 from lib.controller import *
+from lib.logcontroller import *
 from lib import terminal
 
 __version__ = '$$__version__$$'
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, telnet, user=None, password=None, use_services=False):
+    def __init__(self, seed, telnet, user=None, password=None, use_services=False, log_path="", log_analyser=False):
+
         cmd.Cmd.__init__(self)
 
-        self.ctrl = RootController(seed_nodes=[seed]
+        if log_analyser:
+            if not log_path:
+                log_path = " "
+            self.ctrl = LogRootController(seed_nodes=[seed]
+                                   , use_telnet=telnet
+                                   , user=user
+                                   , password=password, log_path=log_path)
+        else:
+            self.ctrl = RootController(seed_nodes=[seed]
                                    , use_telnet=telnet
                                    , user=user
                                    , password=password, use_services=use_services, asadm_version=__version__)
 
         try:
             readline.read_history_file(ADMINHIST)
-        except Exception, i:
+        except:
             readline.write_history_file(ADMINHIST)
 
         self.prompt = "Admin> "
@@ -49,19 +61,26 @@ class AerospikeShell(cmd.Cmd):
 
         self.name = 'Aerospike Interactive Shell'
         self.intro = terminal.bold() + self.name + ', version ' +\
-                     __version__ + terminal.reset() + "\n" +\
-                     str(self.ctrl.cluster) + "\n"
+                     __version__ + terminal.reset() + "\n"
 
-        cluster_visibility_error_nodes = self.ctrl.cluster.getClusterVisibilityErrorNodes()
-        if cluster_visibility_error_nodes:
-            self.intro += terminal.fg_red() + "Cluster Visibility error (Please check services list): %s"%(", ".join(cluster_visibility_error_nodes)) + terminal.fg_clear() + "\n"
+        if log_analyser:
+            self.intro += terminal.fg_red() + ">>>>> Working on log files <<<<<<\n" + terminal.fg_clear()
+            self.intro += str(self.ctrl.logger) + "\n"
+        else:
+            if log_path:
+                self.intro += terminal.fg_red() + ">>>>> -l not specified -f ignored. Running in normal asadm mode. Use -l for log analyser mode !! <<<<< \n" + terminal.fg_clear()
+                log_path = ""
+            self.intro += str(self.ctrl.cluster) + "\n"
+            cluster_visibility_error_nodes = self.ctrl.cluster.getClusterVisibilityErrorNodes()
+            if cluster_visibility_error_nodes:
+                self.intro += terminal.fg_red() + "Cluster Visibility error (Please check services list): %s"%(", ".join(cluster_visibility_error_nodes)) + terminal.fg_clear() + "\n"
 
 
-        if not self.ctrl.cluster.getLiveNodes():
-            print self.intro
-            print terminal.fg_red() + "Not able to connect any cluster." + terminal.fg_clear()
-            self.do_exit('')
-            exit(0)
+            if not self.ctrl.cluster.getLiveNodes():
+                print self.intro
+                print terminal.fg_red() + "Not able to connect any cluster." + terminal.fg_clear()
+                self.do_exit('')
+                exit(0)
         self.commands = set()
 
         regex = re.compile("^do_(.*)$")
@@ -79,7 +98,7 @@ class AerospikeShell(cmd.Cmd):
 
         command = []
         build_token = ''
-        lexer.wordchars+=".-:"
+        lexer.wordchars+=".-:/_"
         for token in lexer:
             build_token += token
             if token == '-':
@@ -129,6 +148,47 @@ class AerospikeShell(cmd.Cmd):
                 print "%sERR: %s%s"%(terminal.fg_red(), e, terminal.fg_clear())
         return "" # line was handled by execute
 
+    def _listdir(self, root):
+        "List directory 'root' appending the path separator to subdirs."
+        res = []
+        for name in os.listdir(root):
+            path = os.path.join(root, name)
+            if os.path.isdir(path):
+                name += os.sep
+            res.append(name)
+        return res
+
+    def _complete_path(self, path=None):
+        "Perform completion of filesystem path."
+        if not path:
+            return self._listdir('.')
+        dirname, rest = os.path.split(path)
+        tmp = dirname if dirname else '.'
+        res = [os.path.join(dirname, p)
+                    for p in self._listdir(tmp) if p.startswith(rest)]
+        # more than one match, or single match which does not exist (typo)
+        if len(res) > 1 or not os.path.exists(path):
+            return res
+        # resolved to a single directory, so return list of files below it
+        if os.path.isdir(path):
+            return [os.path.join(path, p) for p in self._listdir(path)]
+        # exact file match terminates this completion
+        return [path + ' ']
+
+    def complete_path(self, args):
+        "Completions for the 'extra' command."
+        if not args:
+            return []
+
+        if args[-1].startswith("\'"):
+            names = map( lambda v : "\'"+v, self._complete_path(args[-1].split("\'")[-1]))
+            return names
+        if args[-1].startswith("\""):
+            names = map( lambda v : "\""+v, self._complete_path(args[-1].split("\"")[-1]))
+            return names
+        # treat the last arg as a path and complete it
+        return self._complete_path(args[-1])
+
     def completenames(self, text, line, begidx, endidx):
         try:
             origline = line
@@ -159,13 +219,16 @@ class AerospikeShell(cmd.Cmd):
                             line.pop(0)
                     except:
                         pass
-
+            line_copy = copy.deepcopy(line)
             names = self.ctrl.complete(line)
             if watch:
                 try:
                     names.remove('watch')
                 except:
                     pass
+            if not names:
+                names = self.complete_path(line_copy)+[None]
+                return names
 
         except Exception as e:
             return []
@@ -254,7 +317,6 @@ def do_ctrl_c(*args, **kwargs):
     print "Please press ctrl+d or type exit"
 
 def main():
-
     try:
         import argparse
         parser = argparse.ArgumentParser(add_help=False, conflict_handler='resolve')
@@ -306,6 +368,15 @@ def main():
                             , dest="use_services"
                             , action="store_true"
                             , help="Enable use of services-list instead of services-alumni-list")
+        parser.add_option("-l"
+                        , "--log_analyser"
+                        , dest="log_analyser"
+                        , action="store_true"
+                        , help="Start asadm in log-analyser mode and analyse data from log files")
+        parser.add_option("-f"
+                            , "--file-path"
+                            , dest="log_path"
+                            , help="Path of cluster collectinfo file or directory containing collectinfo files.")
 
         cli_args = parser.parse_args()
     except:
@@ -361,6 +432,15 @@ def main():
                             , dest="use_services"
                             , action="store_true"
                             , help="Enable use of services-list instead of services-alumni-list")
+        parser.add_option("-l"
+                        , "--log_analyser"
+                        , dest="log_analyser"
+                        , action="store_true"
+                        , help="Start asadm in log-analyser mode and analyse data from log files")
+        parser.add_option("-f"
+                            , "--file-path"
+                            , dest="log_path"
+                            , help="Path of cluster collectinfo file or directory containing collectinfo files.")
 
         (cli_args, args) = parser.parse_args()
 
@@ -394,10 +474,23 @@ def main():
 
     seed = (cli_args.host, cli_args.port)
     telnet = False # telnet currently not working, hardcoding to off
+
     use_services = False
     if cli_args.use_services:
         use_services = True
-    shell = AerospikeShell(seed, telnet, user=user, password=password, use_services=use_services)
+
+    log_path = ""
+    log_analyser = False;
+    if cli_args.log_analyser:
+        log_analyser = True
+    if cli_args.log_path:
+        log_path = cli_args.log_path
+        if log_analyser:
+            os.chdir(log_path)
+
+
+    readline.set_completer_delims(' \t\n;')
+    shell = AerospikeShell(seed, telnet, user=user, password=password, use_services=use_services, log_path=log_path, log_analyser=log_analyser)
 
     use_yappi = False
     if cli_args.profile:
@@ -413,24 +506,31 @@ def main():
 
     func = None
     args = ()
+    single_command = True
     if not cli_args.execute:
         func = shell.cmdloop
+        single_command = False
     else:
         line = shell.precmd(cli_args.execute)
         shell.onecmd(line)
         func = shell.onecmd
         args = (line,)
 
+    cmdloop(shell, func, args, use_yappi, single_command)
+
+def cmdloop(shell, func, args, use_yappi, single_command):
     try:
         if use_yappi:
+            import yappi
             yappi.start()
             func(*args)
             yappi.get_func_stats().print_all()
         else:
             func(*args)
     except (KeyboardInterrupt, SystemExit):
-        shell.do_exit('')
-        exit(0)
+        if not single_command:
+            shell.intro = terminal.fg_red() + "\nTo exit asadm utility please run exit command" + terminal.fg_clear()
+        cmdloop(shell, func, args, use_yappi, single_command)
 
 if __name__ == '__main__':
     main()

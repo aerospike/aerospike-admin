@@ -14,6 +14,8 @@
 
 from lib import view, terminal
 from lib.cluster import Cluster
+from lib.logger import Logger
+from lib.controllerlib import *
 from lib.prefixdict import PrefixDict
 from lib import util
 import inspect
@@ -68,15 +70,19 @@ class ShellException(Exception):
 class BaseController(object):
     view = None
     cluster = None
+    logger = None
     asadm_version = ''
 
     def __init__(self, seed_nodes=[('127.0.0.1',3000)]
-                 , use_telnet=False, user=None, password=None, use_services=False, asadm_version=''):
+                 , use_telnet=False, user=None, password=None, use_services=False, asadm_version='', log_path=""):
 
         cls = BaseController
         cls.view = view.CliView()
-        cls.cluster = Cluster(seed_nodes, use_telnet, user, password, use_services)
-        cls.asadm_version = asadm_version
+        if log_path:
+            cls.logger = Logger(log_path)
+        else:
+            cls.cluster = Cluster(seed_nodes, use_telnet, user, password, use_services)
+            cls.asadm_version = asadm_version
 
         # instance vars
         self.modifiers = set()
