@@ -1,8 +1,8 @@
 # Aerospike Admin
 ## Description
-Aerospike Admin provides and interface for Aerospike users to view the current
-stat of their Aerospike Cluster. Start the tool with *python asadmin.py* and
-run the *help* command to get started.
+Aerospike Admin provides an interface for Aerospike users to view the stat
+of their Aerospike Cluster by fetching information from running cluster (Cluster mode) or logs (Log-analyser mode).
+Start the tool with *asadm* and run the *help* command to get started.
 
 ## Installing Aerospike Admin
 ```
@@ -10,16 +10,16 @@ make
 sudo make install
 ```
 
-## Running Aerospike Admin Against Cluster
+## Running Aerospike Admin in Cluster Mode
 asadm -h <Aerospike Server Address>
 Admin> help
 
-## Running Aerospike Admin for logs
-asadm -f [-l <location of logs>]
+## Running Aerospike Admin in Log-analyser Mode
+asadm -l [-f <location of logs>]
 Admin> help
 
 ## Dependencies
-- python 2.6+
+- python 2.6+ (< 3)
 
 ## Tests
 ### Dependencies
@@ -34,5 +34,5 @@ Admin> help
 - yappi: 0.92
 
 ### Run Profiler
-python asadmin.py --profile
+asadm --profile
 Do not exit with 'ctrl+c' exit with the *exit* command
