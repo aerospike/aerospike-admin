@@ -1835,8 +1835,9 @@ class PagerController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as Linux 'less' command."
-                 " We can use arrow keys to scroll output and 'q' to end page for table.")
+    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as linux 'less' command.",
+                 "We can use arrow keys to scroll output and 'q' to end page for table.",
+                 "All linux less commands can work in this pager option.")
     def do_less(self, line):
         CliView.pager = CliView.LESS
 

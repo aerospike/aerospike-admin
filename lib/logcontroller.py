@@ -98,7 +98,7 @@ class InfoController(CommandController):
         self.modifiers = set()
 
     @CommandHelp(
-        'Displays service, network, namespace, and xdr summary',
+        'Displays network, namespace, and xdr summary',
         'information.')
     def _do_default(self, line):
         self.do_network(line)
@@ -213,7 +213,7 @@ class InfoController(CommandController):
                     dc_stats[timestamp][node] = dc_config[timestamp][node]
             self.view.infoDC(flip_keys(dc_stats[timestamp]), self.logger.get_log_snapshot(timestamp=timestamp), title_suffix=" (%s)"%(timestamp), **self.mods)
 
-    @CommandHelp('Displays summary information for Seconday Indexes (SIndex).')
+    @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):
         sindex_infos = self.logger.infoSummary(stanza='sindex')
         sindex_stats = self.logger.infoStatistics(stanza='sindex')
@@ -228,7 +228,7 @@ class InfoController(CommandController):
             self.view.infoSIndex(sindex_stats[timestamp], self.logger.get_log_snapshot(timestamp=timestamp), title_suffix=" (%s)"%(timestamp), **self.mods)
 
 @CommandHelp(
-    '"show" is used to display Raw Aerospike Statistics and',
+    '"show" is used to display Aerospike Statistics and',
     'configuration.')
 class ShowController(CommandController):
 
@@ -298,7 +298,7 @@ class ShowConfigController(CommandController):
                 xdr_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp),
                 **self.mods)
 
-    @CommandHelp('Displays DC configuration')
+    @CommandHelp('Displays datacenter configuration')
     def do_dc(self, line):
         dc_configs = self.logger.infoGetConfig(stanza='dc')
 
@@ -308,9 +308,6 @@ class ShowConfigController(CommandController):
                     "%s DC Configuration (%s)" %
                     (dc, timestamp), configs,self.logger.get_log_snapshot(timestamp=timestamp),**self.mods)
 
-    def do_help(self, line):
-        self.executeHelp(line)
-
 @CommandHelp(
     '"distribution" is used to show the distribution of object sizes',
     'and time to live for node and a namespace.')
@@ -319,7 +316,9 @@ class ShowDistributionController(CommandController):
     def __init__(self):
         self.modifiers = set(['like'])
 
-    @CommandHelp('Displays ttl, object, and eviction distribution')
+    @CommandHelp('Shows the distributions of Time to Live and Object Size'
+                 , '  Options(only for Object Size distribution):'
+                 , '    -b   - Displays byte wise distribution of Object Sizes if it is collected in collectinfo.')
     def _do_default(self, line):
         self.do_time_to_live(line)
         self.do_object_size(line)
@@ -340,7 +339,7 @@ class ShowDistributionController(CommandController):
 
     @CommandHelp('Shows the distribution of Object sizes for namespaces'
                  , '  Options:'
-                 , '    -b               - Displays byte wise distribution of Object Sizes if it is collected in collectinfo.')
+                 , '    -b   - Displays byte wise distribution of Object Sizes if it is collected in collectinfo.')
     def do_object_size(self, line):
         if '-b' in line:
             histogram = self.logger.infoGetHistogram("objsz-b")
@@ -355,6 +354,7 @@ class ShowDistributionController(CommandController):
     def do_eviction(self, line):
         return self._do_distribution('evict','Eviction Distribution','Seconds')
 
+@CommandHelp('Displays latency information for Aerospike server log.')
 class LogLatencyController(CommandController):
 
     def __init__(self):
@@ -362,16 +362,18 @@ class LogLatencyController(CommandController):
         self.grepFile = GrepFile(False, self.modifiers)
 
     @CommandHelp(
-        'Displays latency information for Aerospike cluster log.',
+        'Displays latency information for Aerospike server log.',
         '  Options:',
         '    -h <string>  - Histogram Name, MANDATORY - NO DEFAULT',
         '    -t <string>  - Analysis slice interval, default: 10,  e.g. 3600 or 1:00:00',
-        '    -f <string>  - Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00',
+        '    -f <string>  - Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00,',
+        '                   default: head',
         '    -d <string>  - Maximum duration for which to analyze, e.g. 3600 or 1:00:00',
         '    -b <string>  - Number of buckets to display, default: 3',
-        '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'',
+        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'',
+        '                   If not set then runs on all server logs in selected list.',
         '    -e <string>  - Show 0-th then every e-th bucket, default: 3',
-        '    -o           - Showing original timing for slices. Default is showing time with seconds value rounded to next nearest multiple of 10')
+        '    -o           - Showing original time range for slices. Default is showing time with seconds value rounded to next nearest multiple of 10.')
     def _do_default(self, line):
         self.grepFile.do_latency(line)
 
@@ -449,7 +451,7 @@ class ShowStatisticsController(CommandController):
                     "%s Bin Statistics (%s)" %
                     (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
 
-    @CommandHelp('Displays xdr statistics'
+    @CommandHelp('Displays XDR statistics'
                  , '  Options:'
                  , '    -t - Set to show total column at the end.')
     def do_xdr(self, line):
@@ -462,7 +464,7 @@ class ShowStatisticsController(CommandController):
                 xdr_stats[timestamp], self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total,
                 **self.mods)
 
-    @CommandHelp('Displays dc statistics'
+    @CommandHelp('Displays datacenter statistics'
                  , '  Options:'
                  , '    -t - Set to show total column at the end.')
     def do_dc(self, line):
@@ -486,12 +488,12 @@ class ShowStatisticsController(CommandController):
                     "%s Sindex Statistics (%s)" %
                     (sindex, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
 
+@CommandHelp('Displays features used in Aerospike cluster.')
 class FeaturesController(CommandController):
 
     def __init__(self):
         self.modifiers = set(['like'])
 
-    @CommandHelp('Displays features of Aerospike cluster.')
     def _do_default(self, line):
         service_stats = self.logger.infoStatistics(stanza="service")
         ns_stats = self.logger.infoStatistics(stanza="namespace")
@@ -592,8 +594,7 @@ class FeaturesController(CommandController):
                 self.logger.get_log_snapshot(timestamp=timestamp),
                 **self.mods)
 
-@CommandHelp(
-    'Displays grep results for input string on the logs')
+@CommandHelp('Displays and analyse lines matched with input strings.')
 class LogGrepController(CommandController):
 
     def __init__(self):
@@ -605,8 +606,7 @@ class LogGrepController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-@CommandHelp(
-    'Displays grep results for input strings on the server logs(aerospike.log)')
+@CommandHelp('Displays all lines from server logs matched with input pattern, count those lines and analyse them.')
 class LogGrepServerController(CommandController):
 
     def __init__(self):
@@ -617,47 +617,61 @@ class LogGrepServerController(CommandController):
         self.grepFile.do_show(line)
 
     @CommandHelp(
-        'Display all lines with input strings in server logs(aerospike.log).',
+        'Displays all lines from server logs matched with input strings.',
         '  Options:',
-        '    -s <string>  - Space seprated Strings to search in log files. Format -s \'string1\' \'string2\'',
-        '    -a           - \'AND\'ing of search strings (provided with -s). If not provided then default is \'OR\'ing',
-        '    -v <string>  - The non-matching string',
-        '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'',
-        '    -f <string>  - Log time from which to analyze.'
-        ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'',
-        '    -d <string>  - Maximum time period to analyze.'
-        ' May use the following formats: 3600 or 1:00:00',
-        '    -u           - if account only for unique lines',
+        '    -s <string>  - Space seprated Strings to search in log files, MANDATORY - NO DEFAULT',
+        '                   Format -s \'string1\' \'string2\'... \'stringn\'',
+        '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
+        '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
+        '    -v <string>  - The non-matching string.',
+        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all server logs in selected list.',
+        '    -f <string>  - Log time from which to analyze.',
+        '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
+        '                   Default: head',
+        '    -d <string>  - Maximum time period to analyze.',
+        '                   May use the following formats: 3600 or 1:00:00.',
+        '    -u           - Set to find only for unique lines.',
         '    -i           - Perform case insensitive matching. By default it is case sensitive.')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
     @CommandHelp(
-        'Display count of lines with input strings in server logs(aerospike.log).',
+        'Displays count of lines from server logs matched with input strings.',
         '  Options:',
-        '    -s <string>  - Space seprated Strings to search in log files. Format -s \'string1\' \'string2\'',
-        '    -a           - \'AND\'ing of search strings (provided with -s). If not provided then default is \'OR\'ing',
-        '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'',
-        '    -v <string>  - The non-matching string',
-        '    -u           - if account only for unique lines',
+        '    -s <string>  - Space seprated Strings to search in log files, MANDATORY - NO DEFAULT',
+        '                   Format -s \'string1\' \'string2\'... \'stringn\'',
+        '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
+        '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
+        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all server logs in selected list.',
+        '    -v <string>  - The non-matching string.',
+        '    -u           - Set to find only for unique lines.',
         '    -i           - Perform case insensitive matching. By default it is case sensitive.')
     def do_count(self, line):
         self.grepFile.do_count(line)
 
     @CommandHelp(
-        'Display values and diff for input string in server logs(aerospike.log).',
-        'Currently it is working for format KEY<space>VALUE and KEY<space>(Comma separated VALUE list).',
+        'Displays set of values and difference between consecutive values for input string in server logs.',
+        'Currently it is working for following KEY and VALUE patterns:',
+        '        1) KEY<space>VALUE',
+        '        2) KEY<space>(VALUE)',
+        '        3) KEY<space>(Comma separated VALUE list)',
+        '        4) KEY<space>(VALUE',
+        '        5) VALUE1<space>(VALUE2)<space>KEY',
         '  Options:',
-        '    -s <string>  - The String to search in log files',
-        '    -v <string>  - The non-matching string',
-        '    -n <string>  - Comma separated node numbers. You can get this numbers by list command. Format : -n \'1,2,5\'',
-        '    -f <string>  - Log time from which to analyze.'
-        ' May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'',
-        '    -d <string>  - Maximum time period to analyze.'
-        ' May use the following formats: 3600 or 1:00:00',
-        '    -k <string>  - Show 0-th then every k-th result. default: 1'
-        '    -l <string>  - Show results with at least one diff value greater than or equal to limit',
-        '    -t <string>  - Analysis slice interval in seconds or time format. default: 60 seconds',
+        '    -s <string>  - The String to search in log files, MANDATORY - NO DEFAULT',
+        '    -v <string>  - The non-matching string.',
+        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all server logs in selected list.',
+        '    -f <string>  - Log time from which to analyze.',
+        '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
+        '                   Default: head',
+        '    -d <string>  - Maximum time period to analyze.',
+        '                   May use the following formats: 3600 or 1:00:00.',
+        '    -k <string>  - Show 0-th then every k-th result. default: 1.',
+        '    -l <string>  - Show results with at least one diff value greater than or equal to limit.',
+        '    -t <string>  - Analysis slice interval in seconds or time format. default: 60 seconds.',
         '    -i           - Perform case insensitive matching. By default it is case sensitive.')
     def do_diff(self, line):
         self.grepFile.do_diff(line)
@@ -961,7 +975,7 @@ class GrepFile(CommandController):
                     no_time_rounding)
                 self.view.showLogLatency(timestamp, latency_res)
 
-@CommandHelp('Displays grep results for input strings on the cluster logs(ascollectinfo.log)')
+@CommandHelp('Displays all lines from cluster logs (collectinfos) matched with input pattern, and count those lines.')
 class LogGrepClusterController(CommandController):
 
     def __init__(self):
@@ -972,25 +986,31 @@ class LogGrepClusterController(CommandController):
         self.grepFile.do_show(line)
 
     @CommandHelp(
-        'Display all lines with input strings in cluster logs(ascollectinfo.log).',
+        'Displays all lines from cluster logs (collectinfos) matched with input strings.',
         '  Options:',
-        '    -s <string>  - Space seprated Strings to search in log files. Format -s \'string1\' \'string2\'',
-        '    -a           - \'AND\'ing of search strings (provided with -s). If not provided then default is \'OR\'ing',
-        '    -v <string>  - The non-matching string',
-        '    -n <string>  - Comma separated cluster snapshot numbers. You can get this numbers by list command. Format : -n \'1,2,5\'',
-        '    -u           - if account only for unique lines',
+        '    -s <string>  - Space seprated Strings to search in collectinfos, MANDATORY - NO DEFAULT',
+        '                   Format -s \'string1\' \'string2\'... \'stringn\'',
+        '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
+        '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
+        '    -v <string>  - The non-matching string.',
+        '    -n <string>  - Comma separated cluster snapshot numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all cluster snapshots in selected list.',
+        '    -u           - Set to find only for unique lines.',
         '    -i           - Perform case insensitive matching. By default it is case sensitive.')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
     @CommandHelp(
-        'Display count of lines with input strings in cluster logs(ascollectinfo.log).',
+        'Displays count of lines from cluster logs (collectinfos) matched with input strings.',
         '  Options:',
-        '    -s <string>  - Space seprated Strings to search in log files. Format -s \'string1\' \'string2\'',
-        '    -a           - \'AND\'ing of search strings (provided with -s). If not provided then default is \'OR\'ing',
-        '    -n <string>  - Comma separated cluster snapshot numbers. You can get this numbers by list command. Format : -n \'1,2,5\'',
-        '    -v <string>  - The non-matching string',
-        '    -u           - if account only for unique lines',
+        '    -s <string>  - Space seprated Strings to search in collectinfos, MANDATORY - NO DEFAULT',
+        '                   Format -s \'string1\' \'string2\'... \'stringn\'',
+        '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
+        '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
+        '    -n <string>  - Comma separated cluster snapshot numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all cluster snapshots in selected list.',
+        '    -v <string>  - The non-matching string.',
+        '    -u           - Set to find only for unique lines.',
         '    -i           - Perform case insensitive matching. By default it is case sensitive.')
     def do_count(self, line):
         self.grepFile.do_count(line)
@@ -1007,7 +1027,7 @@ class HealthController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-@CommandHelp('Display list of snapshots')
+@CommandHelp('Displays list of cluster collectinfos and server logs.')
 class ListController(CommandController):
 
     def __init__(self):
@@ -1017,8 +1037,7 @@ class ListController(CommandController):
     def _do_default(self, line):
         self.do_all(line)
 
-    @CommandHelp(
-        'Displays list of all available snapshots from which tool can read data')
+    @CommandHelp('Displays list of all added cluster collectinfos and server logs')
     def do_all(self, line):
         print "*************************** CLUSTER ***************************"
         index = 1
@@ -1033,7 +1052,7 @@ class ListController(CommandController):
             print str(index) + "  : " + node + "\t" + all_server_files[node]
             index += 1
 
-    @CommandHelp('Displays list of snapshots from which tool is reading data')
+    @CommandHelp('Displays list of cluster collectinfos and server logs selected for analysis')
     def do_selected(self, line):
         print "*************************** CLUSTER ***************************"
         index = 1
@@ -1048,7 +1067,7 @@ class ListController(CommandController):
             print str(index) + "  : " + node + "\t" + selected_server_files[node]
             index += 1
 
-@CommandHelp('Select list of snapshots')
+@CommandHelp('Select cluster snapshots (collectinfos) and server logs from all list to selected list.')
 class SelectController(CommandController):
 
     def __init__(self):
@@ -1056,14 +1075,14 @@ class SelectController(CommandController):
         self.modifiers = set()
 
     @CommandHelp(
-        'Select list of snapshots.',
+        'Select list of cluster snapshots (collectinfos) in specific time range.',
         '  Options:',
-        '    -y - Expected year of snapshot. May use the following formats: \'2015\', \'2011-2015\' or \'2011,2013,2015\'',
-        '    -m - Expected month of snapshot. May use the following formats: \'10\', \'5-10\' or \'1,6,12\'',
-        '    -d - Expected date of snapshot. May use the following formats: \'27\', \'20-25\' or \'11,13,29\'',
-        '    -hh - Expected hour value of snapshot. May use the following formats: \'15\', \'1-8\' or \'11,22\'',
-        '    -mm - Expected minute value of snapshot. May use the following formats: \'55\', \'30-55\' or \'1,4,45\'',
-        '    -ss - Expected second value of snapshot. May use the following formats: \'43\', \'3-23\' or \'6,8,58\'')
+        '    -y     - Expected year of snapshot. Formats: \'2015\', \'2011-2015\' or \'2011,2013,2015\'',
+        '    -m     - Expected month of snapshot. Formats: \'10\', \'5-10\' or \'1,6,12\'',
+        '    -d     - Expected date of snapshot. Formats: \'27\', \'20-25\' or \'11,13,29\'',
+        '    -hh    - Expected hour value of snapshot. Formats: \'15\', \'1-8\' or \'11,22\'',
+        '    -mm    - Expected minute value of snapshot. Formats: \'55\', \'30-55\' or \'1,4,45\'',
+        '    -ss    - Expected second value of snapshot. Formats: \'43\', \'3-23\' or \'6,8,58\'')
     def do_time(self, line):
         tline = line[:]
         year = ""
@@ -1105,12 +1124,14 @@ class SelectController(CommandController):
             sec)
 
     @CommandHelp(
-        'Select list of cluster snapshots. You can get cluster snapshot number from list command. May use the following formats: select cluster 1 2 3')
+        'Select list of cluster snapshots. You can get cluster snapshot number from \'list\' command.',
+        'Example : select cluster 1 2 3')
     def do_cluster(self, line):
         self.logger.select_logs(line, cluster_snapshot=True)
 
     @CommandHelp(
-        'Select list of servers. You can get server number from list command. May use the following formats: select server 1 2 3')
+        'Select list of server logs. You can get server number from \'list\' command.',
+        'Example : select server 1 2 3')
     def do_server(self, line):
         self.logger.select_logs(line, cluster_snapshot=False)
 
@@ -1158,7 +1179,8 @@ class HealthServersController(CommandController):
         print "Todo"
 
 @CommandHelp(
-    'Allow users to add cluster and server logs. After adding new log file by using this command also update the selected file list with new input')
+    'Allow users to add cluster collectinfos and server logs.',
+    'After adding new log file by using this command, it will also update the selected file list.')
 class AddController(CommandController):
 
     def __init__(self):
@@ -1170,8 +1192,9 @@ class AddController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-@CommandHelp(
-    "Adds cluster logs. Format : add cluster \'cluster log path1\' \'cluster log path2\' \'cluster log directory path\' ...")
+@CommandHelp("Adds cluster logs (collectinfos).",
+             "Format : add cluster \'cluster log path1\' \'cluster log path2\' \'cluster log directory path\' ...",
+             "Ex. add cluster \'/temp/test/\' \'/abcd/collectinfo1.log\' \'/abcd/collecinfo2\'")
 class AddClusterController(CommandController):
 
     def __init__(self):
@@ -1190,8 +1213,12 @@ class AddClusterController(CommandController):
                 print "\n" + terminal.fg_red() + error + terminal.fg_clear()
 
 @CommandHelp(
-    "Adds server logs. For directory it adds all log files with names starting with given prefix appended with file index. Format : add server \'server_name1\' \'server log path1\' \'server_name2\' \'server log path2\' \'server_name_prefix\' \'server log directory path\' ..."
-    " Ex. add server log1 \'/var/log/abcd.log\' nodes \'/var/log/xyz\'")
+    "Adds server logs.",
+    "It requires to provide display name which we want to set in list for logs.",
+    "For log file of server (version >=3.7.1), "
+    "asadm fetches node id from log and set it as a display name.",
+    "Format : add server \'server_display_name1\' \'server log path1\' \'server_display_name2\' \'server log path2\' \'server_display_name_prefix\' \'server log directory path\' ...",
+    "Ex. add server log1 \'/var/log/abcd.log\' nodes \'/var/log/xyz\'")
 class AddServerController(CommandController):
 
     def __init__(self):
@@ -1229,7 +1256,7 @@ class RemoveController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-@CommandHelp("Remove cluster logs.")
+@CommandHelp("Remove cluster logs (collectinfos).")
 class RemoveClusterController(CommandController):
 
     def __init__(self):
@@ -1237,11 +1264,12 @@ class RemoveClusterController(CommandController):
 
     @CommandHelp('Remove cluster logs.',
         '  Options:',
-        '    -s <string>  - Comma separated selected log file numbers. You can get this numbers by \'list selected\' command. This will remove file from selected'
-        '    file list'
-        '    Format : -s \'1,2,5\'',
-        '    -a <string>  - Comma separated log file numbers. You can get this numbers by \'list\' command. This will remove file from all lists'
-        '    Format : -a \'1,2,5\'')
+        '    -s <string>  - Comma separated selected cluster log file numbers. You can get these numbers by \'list selected\' command.',
+        '                   This will remove files from selected file list',
+        '                   Format : -s \'1,2,5\'',
+        '    -a <string>  - Comma separated cluster log file numbers. You can get these numbers by \'list\' command.',
+        '                   This will remove files from all and selected lists',
+        '                   Format : -a \'1,2,5\'')
     def _do_default(self, line):
         if not line:
             raise ShellException(
@@ -1289,11 +1317,12 @@ class RemoveServerController(CommandController):
 
     @CommandHelp('Remove server logs.',
         '  Options:',
-        '    -s <string>  - Comma separated selected log file numbers. You can get this numbers by \'list selected\' command. This will remove file from selected'
-        '    file list'
-        '    Format : -s \'1,2,5\'',
-        '    -a <string>  - Comma separated log file numbers. You can get this numbers by \'list\' command. This will remove file from all lists'
-        '    Format : -a \'1,2,5\'')
+        '    -s <string>  - Comma separated selected server log file numbers. You can get these numbers by \'list selected\' command.',
+        '                   This will remove files from selected file list',
+        '                   Format : -s \'1,2,5\'',
+        '    -a <string>  - Comma separated server log file numbers. You can get these numbers by \'list\' command.',
+        '                   This will remove files from all and selected lists',
+        '                   Format : -a \'1,2,5\'')
     def _do_default(self, line):
         if not line:
             raise ShellException(
@@ -1340,26 +1369,16 @@ class PagerController(CommandController):
     def _do_default(self, line):
         self.executeHelp(line)
 
-    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as linux 'less' command."
-                 " All less commands can work in output.",
-                 "Following are few useful commands:",
-                 "  arrow keys : scrolling up/down/left/right",
-                 "  u : up half page",
-                 "  d : down half page",
-                 "  / : search forward",
-                 "  ? : search backward",
-                 "  q : quit")
+    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as linux 'less' command.",
+                 "We can use arrow keys to scroll output and 'q' to end page for table.",
+                 "All linux less commands can work in this pager option.")
     def do_less(self, line):
         CliView.pager = CliView.LESS
-
-    # @CommandHelp("Displays output with vertical paging same as linux 'more' command. We can use enter key to scroll")
-    # def do_more(self, line):
-    #     CliView.pager = CliView.MORE
 
     @CommandHelp("Removes pager and prints output normally")
     def do_remove(self, line):
         CliView.pager = CliView.NO_PAGER
 
-    @CommandHelp("Displays current selected option.")
+    @CommandHelp("Displays current selected pager option.")
     def do_show(self, line):
         CliView.print_pager()
