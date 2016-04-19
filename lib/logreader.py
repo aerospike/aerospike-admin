@@ -43,7 +43,7 @@ class LogReader(object):
     latencyPattern = "\[\'latency\'\]"
     cluster_log_file_identifier = ["=ASCOLLECTINFO=", "Configuration~~~", "Statistics~"]
     server_log_file_identifier = ["thr_info.c::", "heartbeat_received", "ClusterSize"]
-    server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_]+\): \([a-z_\.]+::[\d]+\)"
+    server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT.*: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_]+\): \([a-z_\.]+::[\d]+\)"
 
     @staticmethod
     def getPrefixes(path):
