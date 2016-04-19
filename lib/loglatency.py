@@ -216,7 +216,7 @@ def ceilTime(dt):
 
 
 def parse_dt(line):
-    prefix = line[0: line.find(" GMT:")]
+    prefix = line[0: line.find(" GMT")]
     return datetime.datetime(
         *(time.strptime(prefix.split(",")[0], DT_FMT)[0:6]))
 
