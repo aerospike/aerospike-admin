@@ -59,7 +59,6 @@ class TestInfo(unittest.TestCase):
                          'Node Id',
                          'Ip',
                          'Build',
-                         'Enterprise',
                          'Cluster Size',
                          'Cluster Key',
                          'Cluster Integrity',

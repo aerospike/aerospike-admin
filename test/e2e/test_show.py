@@ -114,7 +114,6 @@ class TestShowConfig(unittest.TestCase):
                         'paxos-recovery-policy',
                         'paxos-retransmit-period',
                         'paxos-single-replica-limit',
-                        'pidfile',
                         'prole-extra-ttl',
                         'proto-fd-idle-ms',
                         'proto-fd-max',

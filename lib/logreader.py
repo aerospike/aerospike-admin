@@ -43,7 +43,7 @@ class LogReader(object):
     latencyPattern = "\[\'latency\'\]"
     cluster_log_file_identifier = ["=ASCOLLECTINFO=", "Configuration~~~", "Statistics~"]
     server_log_file_identifier = ["thr_info.c::", "heartbeat_received", "ClusterSize"]
-    server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT.*: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_]+\): \([a-z_\.]+::[\d]+\)"
+    server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_]+\): \([a-z_\.]+:{1,2}[\d]+\)"
 
     @staticmethod
     def getPrefixes(path):
@@ -100,7 +100,7 @@ class LogReader(object):
             return False
         for search_string in self.cluster_log_file_identifier:
             try:
-                out, err = shell_command(["grep -m 1 %s %s"%(search_string, file)])
+                out, err = shell_command(['grep -m 1 %s "%s"'%(search_string, file)])
             except:
                 return False
             if err or not out:
@@ -111,7 +111,7 @@ class LogReader(object):
         if not file:
             return False
         try:
-            out, err = shell_command(["head -n 10 %s"%(file)])
+            out, err = shell_command(['head -n 10 "%s"'%(file)])
         except:
             return False
         if err or not out:
@@ -563,13 +563,13 @@ class LogReader(object):
             grep_cmd += "-i "
         g_str = strs[0]
         if is_and:
-            search_str = "%s \"%s\" %s" % (grep_cmd, g_str, file)
+            search_str = "%s \"%s\" \"%s\"" % (grep_cmd, g_str, file)
             for str in strs[1:len(strs)]:
                 search_str += "|" + "%s \"%s\"" % (grep_cmd, str)
         else:
             for str in strs[1:len(strs)]:
                 g_str += "\\|" + str
-            search_str = "%s \"%s\" %s" % (grep_cmd, g_str, file)
+            search_str = "%s \"%s\" \"%s\"" % (grep_cmd, g_str, file)
         return search_str
 
     def grep(self, strs, ignore_str, unique, file, is_and=False, is_casesensitive=True):
@@ -660,10 +660,10 @@ class LogReader(object):
         return init_dt
 
     def get_dt(self, line):
-        return line[0: line.find(" GMT:")]
+        return line[0: line.find(" GMT")]
 
     def parse_dt(self, line):
-        prefix = line[0: line.find(" GMT:")].split(",")[0]
+        prefix = line[0: line.find(" GMT")].split(",")[0]
         return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:6]))
 
     def grepDiff(
@@ -849,8 +849,6 @@ class LogReader(object):
                 m = re.search(pattern, line, re.IGNORECASE)
 
             if m:
-                tm = self.get_dt(line)
-                current = None
                 if pattern_type == 2:
                     current = map(lambda x: int(x), list(m.groups()))
                 else:

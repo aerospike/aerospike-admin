@@ -35,17 +35,18 @@ def flip_keys(orig_data):
 
     return new_data
 
-def get_sindex_stats(cluster, nodes='all'):
+def get_sindex_stats(cluster, nodes='all', for_mods=[]):
     stats = cluster.infoSIndex(nodes=nodes)
 
     sindex_stats = {}
-
     if stats:
         for host, stat_list in stats.iteritems():
             if not stat_list or isinstance(stat_list, Exception):
                 continue
+            namespace_list = [stat['ns'] for stat in stat_list]
+            namespace_list = util.filter_list(namespace_list, for_mods)
             for stat in stat_list:
-                if not stat:
+                if not stat or stat['ns'] not in namespace_list:
                     continue
                 ns = stat['ns']
                 set = stat['set']
@@ -884,7 +885,7 @@ class ShowHealthController(CommandController):
 @CommandHelp('Displays statistics for Aerospike components.')
 class ShowStatisticsController(CommandController):
     def __init__(self):
-        self.modifiers = set(['with', 'like'])
+        self.modifiers = set(['with', 'like', 'for'])
 
     @CommandHelp('Displays bin, set, service, and namespace statistics'
                  , '  Options:'
@@ -936,6 +937,8 @@ class ShowStatisticsController(CommandController):
                 continue
             namespace_set.update(namespace)
 
+        namespace_set = set(util.filter_list(list(namespace_set), self.mods['for']))
+
         ns_stats = {}
         for namespace in namespace_set:
             ns_stats[namespace] = util.Future(self.cluster.infoNamespaceStatistics
@@ -955,7 +958,7 @@ class ShowStatisticsController(CommandController):
                  , '    -t - Set to show total column at the end.')
     def do_sindex(self, line):
         show_total = self.need_to_show_total(line)
-        sindex_stats = get_sindex_stats(self.cluster, self.nodes)
+        sindex_stats = get_sindex_stats(self.cluster, self.nodes, self.mods['for'])
         return [util.Future(self.view.showStats
                             , "%s Sindex Statistics"%(ns_set_sindex)
                             , sindex_stats[ns_set_sindex]
@@ -973,9 +976,13 @@ class ShowStatisticsController(CommandController):
 
         set_stats = {}
         for host_id, key_values in sets.iteritems():
-            if isinstance(key_values, Exception):
+            if isinstance(key_values, Exception) or not key_values:
                 continue
+            namespace_list = [ns_set[0] for ns_set in key_values.keys()]
+            namespace_list = util.filter_list(namespace_list, self.mods['for'])
             for key, values in key_values.iteritems():
+                if key[0] not in namespace_list:
+                    continue
                 if key not in set_stats:
                     set_stats[key] = {}
                 host_vals = set_stats[key]
@@ -1001,9 +1008,12 @@ class ShowStatisticsController(CommandController):
         new_bin_stats = {}
 
         for node_id, bin_stat in bin_stats.iteritems():
-            if isinstance(bin_stat, Exception):
+            if not bin_stat or isinstance(bin_stat, Exception) :
                 continue
+            namespace_list = util.filter_list(bin_stat.keys(), self.mods['for'])
             for namespace, stats in bin_stat.iteritems():
+                if namespace not in namespace_list:
+                    continue
                 if namespace not in new_bin_stats:
                     new_bin_stats[namespace] = {}
                 ns_stats = new_bin_stats[namespace]
@@ -1236,7 +1246,7 @@ class CollectinfoController(CommandController):
             name = func.func_name
         except Exception:
             pass
-        info_line = "[INFO] Data collection for " + name +str(parm) + " in progress.."
+        info_line = "[INFO] Data collection for " + name +"%s"%(" %s"%(str(parm)) if parm else "") + " in progress.."
         print info_line
         if parm:
             sep += str(parm)+"\n"
@@ -1341,8 +1351,8 @@ class CollectinfoController(CommandController):
             for key in cpu_info.keys():
                 print key + "\t" + str(cpu_info[key])
 
-    def collect_lsof(self, verbose=False):
-        print "['lsof']"
+    def get_asd_pids(self):
+        pids = []
         ps_cmd = 'sudo ps aux|grep -v grep|grep -E "asd|cld"'
         ps_o,ps_e = util.shell_command([ps_cmd])
         if ps_o:
@@ -1352,54 +1362,75 @@ class CollectinfoController(CommandController):
                 vals = item.strip().split()
                 if len(vals)>=2:
                     pids.append(vals[1])
+        return pids
 
-            if pids and len(pids)>0:
-                search_str = pids[0]
-                for _str in pids[1:len(pids)]:
-                    search_str += "\\|" + _str
-                lsof_cmd='sudo lsof -n |grep "%s"'%(search_str)
-                lsof_o,lsof_e = util.shell_command([lsof_cmd])
-                if lsof_e :
-                    print lsof_e
-                    self.cmds_error.add(lsof_cmd)
-                if lsof_o:
-                    if verbose:
-                        print lsof_o
-                    else:
-                        lsof_dic = {}
-                        unidentified_protocol_count = 0
-                        lsof_list = lsof_o.strip().split("\n")
-                        type_ljust_parm = 20
-                        desc_ljust_parm = 20
-                        for row in lsof_list:
-                            try:
-                                if "can't identify protocol" in row:
-                                    unidentified_protocol_count = unidentified_protocol_count + 1
-                            except:
-                                pass
+    def collect_logs_from_systemd_journal(self, as_logfile_prefix):
+        global aslogfile
+        asd_pids = self.get_asd_pids()
+        for pid in asd_pids:
+            try:
+                journalctl_cmd = ['journalctl _PID=%s --since "24 hours ago" -q -o cat'%(pid)]
+                aslogfile = as_logfile_prefix + 'aerospike_%s.log'%(pid)
+                print "[INFO] Data collection for %s to %s in progress..." %(str(journalctl_cmd), aslogfile)
+                o,e = util.shell_command(journalctl_cmd)
+                if e:
+                    print e
+                else:
+                    self.write_log(o)
+            except Exception as e1:
+                print str(e1)
+                sys.stdout = sys.__stdout__
 
-                            try:
-                                type = row.strip().split()[4]
-                                if type not in lsof_dic:
-                                    if len(type)>type_ljust_parm:
-                                        type_ljust_parm = len(type)
-                                    if type in lsof_file_type_desc and len(lsof_file_type_desc[type])>desc_ljust_parm:
-                                        desc_ljust_parm = len(lsof_file_type_desc[type])
-                                    lsof_dic[type] = 1
-                                else:
-                                    lsof_dic[type] = lsof_dic[type] + 1
+    def collect_lsof(self, verbose=False):
+        print "['lsof']"
+        pids = self.get_asd_pids()
+        if pids and len(pids)>0:
+            search_str = pids[0]
+            for _str in pids[1:len(pids)]:
+                search_str += "\\|" + _str
+            lsof_cmd='sudo lsof -n |grep "%s"'%(search_str)
+            lsof_o,lsof_e = util.shell_command([lsof_cmd])
+            if lsof_e :
+                print lsof_e
+                self.cmds_error.add(lsof_cmd)
+            if lsof_o:
+                if verbose:
+                    print lsof_o
+                else:
+                    lsof_dic = {}
+                    unidentified_protocol_count = 0
+                    lsof_list = lsof_o.strip().split("\n")
+                    type_ljust_parm = 20
+                    desc_ljust_parm = 20
+                    for row in lsof_list:
+                        try:
+                            if "can't identify protocol" in row:
+                                unidentified_protocol_count = unidentified_protocol_count + 1
+                        except:
+                            pass
 
-                            except:
-                                continue
+                        try:
+                            type = row.strip().split()[4]
+                            if type not in lsof_dic:
+                                if len(type)>type_ljust_parm:
+                                    type_ljust_parm = len(type)
+                                if type in lsof_file_type_desc and len(lsof_file_type_desc[type])>desc_ljust_parm:
+                                    desc_ljust_parm = len(lsof_file_type_desc[type])
+                                lsof_dic[type] = 1
+                            else:
+                                lsof_dic[type] = lsof_dic[type] + 1
 
-                        print "FileType".ljust(type_ljust_parm)+"Description".ljust(desc_ljust_parm)+"fd count"
-                        for ftype in sorted(lsof_dic.keys()):
-                            desc = "Unknown"
-                            if ftype in lsof_file_type_desc:
-                                desc = lsof_file_type_desc[ftype]
-                            print ftype.ljust(type_ljust_parm)+desc.ljust(desc_ljust_parm) + str(lsof_dic[ftype])
+                        except:
+                            continue
 
-                        print "\nUnidentified Protocols = " + str(unidentified_protocol_count)
+                    print "FileType".ljust(type_ljust_parm)+"Description".ljust(desc_ljust_parm)+"fd count"
+                    for ftype in sorted(lsof_dic.keys()):
+                        desc = "Unknown"
+                        if ftype in lsof_file_type_desc:
+                            desc = lsof_file_type_desc[ftype]
+                        print ftype.ljust(type_ljust_parm)+desc.ljust(desc_ljust_parm) + str(lsof_dic[ftype])
+
+                    print "\nUnidentified Protocols = " + str(unidentified_protocol_count)
 
     def zip_files(self, dir_path, _size = 1):
         """
@@ -1685,15 +1716,22 @@ class CollectinfoController(CommandController):
                     log_locations = [i.split(':')[1] for i in self.cluster._callNodeMethod([tempNode.ip], "info", "logs").popitem()[1].split(';')]
                 file_name_used = {}
                 for log in log_locations:
-                    file_name_base = os.path.basename(log)
-                    if file_name_base in file_name_used:
-                        file_name_used[file_name_base] = file_name_used[file_name_base] + 1
-                        file_name, ext = os.path.splitext(file_name_base)
-                        file_name_base = file_name + "-" + str(file_name_used[file_name_base]) + ext
-                    else:
-                        file_name_used[file_name_base] = 1
+                    if os.path.exists(log):
+                        file_name_base = os.path.basename(log)
+                        if file_name_base in file_name_used:
+                            file_name_used[file_name_base] = file_name_used[file_name_base] + 1
+                            file_name, ext = os.path.splitext(file_name_base)
+                            file_name_base = file_name + "-" + str(file_name_used[file_name_base]) + ext
+                        else:
+                            file_name_used[file_name_base] = 1
 
-                    self.collect_local_file(log, as_logfile_prefix + file_name_base)
+                        self.collect_local_file(log, as_logfile_prefix + file_name_base)
+                    else:  # machine is running with systemd, so need to read logs from systemd journal
+                        try:
+                            self.collect_logs_from_systemd_journal(as_logfile_prefix)
+                        except Exception as e1:
+                            self.write_log(str(e1))
+                            sys.stdout = sys.__stdout__
             except Exception as e:
                 self.write_log(str(e))
                 sys.stdout = sys.__stdout__

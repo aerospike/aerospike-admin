@@ -67,7 +67,6 @@ class CliView(object):
                         , 'node_id'
                         , 'ip'
                         , 'build'
-                        , 'Enterprise'
                         , 'cluster_size'
                         , 'cluster_key'
                         , '_cluster_integrity'
@@ -120,16 +119,21 @@ class CliView(object):
             try:
                 build = builds[node_key]
                 if not isinstance(build, Exception):
-                    row['build'] = build
+                    try:
+                        version = versions[node_key]
+                        if not isinstance(version, Exception):
+                            if 'enterprise' in version.lower():
+                                row['build'] = "E-%s"%(str(build))
+                            elif 'community' in version.lower():
+                                row['build'] = "C-%s"%(str(build))
+                            else:
+                                row['build'] = build
+                    except:
+                        pass
             except:
                 pass
 
-            try:
-                version = versions[node_key]
-                if not isinstance(version, Exception):
-                    row['version'] = version
-            except:
-                pass
+
             t.insertRow(row)
 
         CliView.print_result(t)
@@ -271,7 +275,14 @@ class CliView(object):
 
         total_res = {}
 
-        for node_key, n_stats in stats.iteritems():
+        # Need to maintain Node column ascending order per namespace. If set sort_by in table, it will affect total rows.
+        # So we need to add rows as Nodes ascending order. So need to sort stats.keys as per respective Node value (prefixes[node_key]).
+        node_key_list = stats.keys()
+        node_column_list = [prefixes[key] for key in node_key_list]
+        sorted_node_list = [x for (y,x) in sorted(zip(node_column_list,node_key_list), key=lambda pair: pair[0])]
+
+        for node_key in sorted_node_list:
+            n_stats = stats[node_key]
             node = cluster.getNode(node_key)[0]
             if isinstance(n_stats, Exception):
                 t.insertRow({'real_node_id':node.node_id
@@ -428,7 +439,15 @@ class CliView(object):
                        , color=terminal.fg_blue)
 
         total_res = {}
-        for node_key, s_stats in stats.iteritems():
+
+        # Need to maintain Node column ascending order per <set,namespace>. If set sort_by in table, it will affect total rows.
+        # So we need to add rows as Nodes ascending order. So need to sort stats.keys as per respective Node value (prefixes[node_key]).
+        node_key_list = stats.keys()
+        node_column_list = [prefixes[key] for key in node_key_list]
+        sorted_node_list = [x for (y,x) in sorted(zip(node_column_list,node_key_list), key=lambda pair: pair[0])]
+
+        for node_key in sorted_node_list:
+            s_stats = stats[node_key]
             node = cluster.getNode(node_key)[0]
             if isinstance(s_stats, Exception):
                 t.insertRow({'real_node_id':node.node_id
@@ -541,6 +560,9 @@ class CliView(object):
                         row['_free-dlog-pct'] = row['_free-dlog-pct'][:-1]
 
                     CliView.setValueInRow(row, 'xdr_timelag', CliView.getValueFromRow(row,('xdr_timelag','timediff_lastship_cur_secs')))
+                    CliView.setValueInRow(row, 'stat_recs_shipped', str(int(CliView.getValueFromRow(row,('stat_recs_shipped','stat-recs-shipped'),0))
+                                          - int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
+                                          - int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
                 else:
                     row = {}
                     row['node-id'] = node.node_id
@@ -554,13 +576,13 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def getValueFromRow(row, keys):
+    def getValueFromRow(row, keys, default_value=None):
         if not isinstance(keys, tuple):
             keys = (keys,)
         for key in keys:
             if key in row:
                 return row[key]
-        return None
+        return default_value
 
     @staticmethod
     def setValueInRow(row, key, value):
@@ -606,9 +628,9 @@ class CliView(object):
                     CliView.setValueInRow(row, 'xdr_dc_remote_ship_ok', CliView.getValueFromRow(row,('xdr_dc_remote_ship_ok','dc_remote_ship_ok')))
                     CliView.setValueInRow(row, 'xdr_dc_size', CliView.getValueFromRow(row,('xdr_dc_size','dc_size')))
                     CliView.setValueInRow(row, 'latency_avg_ship_ema', CliView.getValueFromRow(row,('latency_avg_ship_ema','dc_latency_avg_ship','dc_latency_avg_ship_ema')))
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                t.insertRow(row)
+                    row['real_node_id'] = node.node_id
+                    row['node'] = prefixes[node_key]
+                    t.insertRow(row)
         CliView.print_result(t)
 
     @staticmethod
@@ -633,7 +655,7 @@ class CliView(object):
                         , ('stat_delete_success','d')
                         , ('query_avg_rec_count', 's'))
 
-        t = Table(title, column_names, group_by=1)
+        t = Table(title, column_names, group_by=1, sort_by=2)
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
@@ -1132,15 +1154,15 @@ class CliView(object):
                                     next_peeked.append(next_group)
                                     break
                                 if highlight:
-                                    result += terminal.bg_clear()
+                                    result += terminal.uninverse()
                                     highlight = False
                             elif prev_group == next_group:
                                 if highlight:
-                                    result += terminal.bg_clear()
+                                    result += terminal.uninverse()
                                     highlight = False
                             else:
                                 if not highlight:
-                                    result += terminal.bg_blue()
+                                    result += terminal.inverse()
                                     highlight = True
 
                             result += next_group
@@ -1152,11 +1174,11 @@ class CliView(object):
                     for next_group in next_iterator:
                         if next_group == ' ' or next_group == '\n':
                             if highlight:
-                                result += terminal.bg_clear()
+                                result += terminal.uninverse()
                                 highlight = False
                         else:
                             if not highlight:
-                                result += terminal.bg_blue()
+                                result += terminal.inverse()
                                 highlight = True
 
                         result += next_group

@@ -293,7 +293,7 @@ class Logger(object):
         for snapshot in snapshots:
             self.selected_cluster_files[snapshot] = self.all_cluster_files[snapshot]
 
-    def select_logs(self, indices, cluster_snapshot=True):
+    def select_logs(self, indices="all", cluster_snapshot=True):
         if not indices or not isinstance(indices,list):
             return
         if cluster_snapshot:
@@ -304,6 +304,8 @@ class Logger(object):
             selected_list = self.selected_server_files
 
         all_log_keys = sorted(all_list.keys())
+        if indices=='all' or 'all' in indices:
+            indices = range(len(all_log_keys))
         selected_list.clear()
 
         for index in indices:
@@ -429,19 +431,27 @@ class Logger(object):
         return grep_res
 
     def grepCount(self, files, search_str, ignore_str,
-                  unique, grep_cluster_logs, is_and=False, is_casesensitive=True):
+                  unique, grep_cluster_logs, start_tm="", duration="", is_and=False, is_casesensitive=True):
         res_dic = {}
         try:
             for file in files:
                 try:
-                    res_dic[
-                        self.get_node(file)] = int(
-                        self.log_reader.grepCount(
-                            search_str,
-                            ignore_str,
-                            unique,
-                            file,
-                            is_and, is_casesensitive))
+                    if start_tm or duration:
+                        if not start_tm:
+                            start_tm = "head"
+                        res_lines = self.grep([file], search_str, ignore_str, unique, grep_cluster_logs, start_tm, duration, is_and, is_casesensitive)
+                        if res_lines:
+                            res_dic[self.get_node(file)] = len(res_lines)
+                        else:
+                            res_dic[self.get_node(file)] = 0
+                    else:
+                        res_dic[self.get_node(file)] = int(
+                            self.log_reader.grepCount(
+                                search_str,
+                                ignore_str,
+                                unique,
+                                file,
+                                is_and, is_casesensitive))
                 except:
                     res_dic[self.get_node(file)] = 0
             return res_dic

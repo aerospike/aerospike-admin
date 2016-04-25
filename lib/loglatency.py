@@ -208,6 +208,8 @@ def percentage_over(bucket, percentages):
 
 def ceilTime(dt):
    seconds = 10 - (dt.second  % 10)
+   if seconds == 10:
+       return dt
    return dt + datetime.timedelta(0, seconds, -dt.microsecond)
 
 #------------------------------------------------

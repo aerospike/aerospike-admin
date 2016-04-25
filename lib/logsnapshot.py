@@ -35,10 +35,12 @@ class LogNode(object):
         self.asd_build = asd_build
 
     def set_asd_version(self, asd_version):
-        if asd_version.lower in ['enterprise', 'true']:
+        if asd_version.lower() in ['enterprise', 'true']:
             self.asd_version = "Enterprise"
-        else:
+        elif asd_version.lower() in ['community', 'false']:
             self.asd_version = "Community"
+        else:
+            self.asd_version = "N/E"
 
 class LogSnapshot(object):
 
@@ -175,14 +177,21 @@ class LogSnapshot(object):
             asd_builds = self.fetch_columns_for_nodes(type="summary", stanza="network", header_columns=['Node','Build'],column_to_find=['Build'],symbol_to_neglct='.')
         if asd_builds:
             for node in asd_builds:
-                if node in self.nodes:
-                    self.nodes[node].set_asd_build(asd_builds[node])
+                if node in self.nodes and asd_builds[node]:
+                    if asd_builds[node].startswith("E-"):
+                        self.nodes[node].set_asd_build(asd_builds[node][2:])
+                        self.nodes[node].set_asd_version("Enterprise")
+                    elif asd_builds[node].startswith("C-"):
+                        self.nodes[node].set_asd_build(asd_builds[node][2:])
+                        self.nodes[node].set_asd_version("Community")
+                    else:
+                        self.nodes[node].set_asd_build(asd_builds[node])
 
     def set_asd_version(self):
         asd_versions = self.fetch_columns_for_nodes(type="summary", stanza="network", header_columns=['Node','Enterprise'],column_to_find=['Enterprise'],symbol_to_neglct='.')
         if asd_versions:
             for node in asd_versions:
-                if node in self.nodes:
+                if node in self.nodes and asd_versions[node]:
                     self.nodes[node].set_asd_version(asd_versions[node])
 
     def fetch_columns_for_nodes(self, type, stanza, header_columns, column_to_find, symbol_to_neglct):

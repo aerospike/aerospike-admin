@@ -17,7 +17,7 @@ from inspect import isfunction
 
 def enable_color(is_enable):
     global _add_it, _remove_it, _reset
-    global sclear, sbold, sdim, snormal, sunderline
+    global sclear, sbold, sdim, snormal, sunderline, sinverse, siclear
     global fgblack, fgred, fggreen, fgyellow, fgblue, fgmagenta, fgcyan, fgwhite
     global bgblack, bgred, bggreen, bgyellow, bgblue, bgmagenta, bgcyan, bgwhite
     global esc, term
@@ -32,6 +32,8 @@ def enable_color(is_enable):
         sdim       = '2'
         snormal    = '22'
         sunderline = '4'
+        sinverse   = '7'
+        siclear    = '27'
 
         fgblack    = '30;90'
         fgred      = '31;91'
@@ -64,10 +66,13 @@ def enable_color(is_enable):
                 cur_format.add(decoration)
                 return esc + ';'.join(cur_format) + term
 
-        def _remove_it(decoration):
+        def _remove_it(decoration, decoration_clear=''):
             if decoration in cur_format:
                 cur_format.remove(decoration)
-                return esc + sclear + ';' + ';'.join(cur_format) + term
+                if decoration_clear:
+                    return esc + decoration_clear + term
+                else:
+                    return esc + sclear + ';' + ';'.join(cur_format) + term
             else:
                 return '' # nothing to do
 
@@ -81,6 +86,8 @@ def enable_color(is_enable):
         sdim          = ''
         snormal       = ''
         sunderline    = ''
+        sinverse      = ''
+        siclear       = ''
 
         fgblack        = ''
         fgred          = ''
@@ -110,7 +117,7 @@ def enable_color(is_enable):
                 cur_format.append(decoration)
                 return decoration
 
-        def _remove_it(decoration):
+        def _remove_it(decoration, decoration_clear=''):
             if decoration in cur_format:
                 cur_format.remove(decoration)
                 return decoration
@@ -145,6 +152,12 @@ def underline():
 
 def ununderline():
     return _remove_it(sunderline)
+
+def inverse():
+    return _add_it(sinverse)
+
+def uninverse():
+    return _remove_it(sinverse, siclear)
 
 def reset():
     return _reset()

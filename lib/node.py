@@ -144,10 +144,12 @@ class Node(object):
         config = self.infoGetConfig('xdr')
         if isinstance(config, Exception):
             return False
-
-
-        xdr_enabled = config['xdr']['enable-xdr']
-        return xdr_enabled == 'true'
+        try:
+            xdr_enabled = config['xdr']['enable-xdr']
+            return xdr_enabled == 'true'
+        except:
+            pass
+        return False
 
     def isFeaturePresent(self, feature):
         features = self.info('features')

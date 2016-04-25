@@ -486,7 +486,10 @@ def main():
     if cli_args.log_path:
         log_path = cli_args.log_path
         if log_analyser:
-            os.chdir(log_path)
+            if os.path.isdir(log_path):
+                os.chdir(log_path)
+            elif os.path.isfile(log_path):
+                os.chdir(os.path.dirname(log_path))
 
 
     readline.set_completer_delims(' \t\n;')

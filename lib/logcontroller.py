@@ -381,7 +381,7 @@ class LogLatencyController(CommandController):
 class ShowStatisticsController(CommandController):
 
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set(['like','for'])
 
     def need_to_show_total(self, line):
         show_total = False
@@ -421,8 +421,11 @@ class ShowStatisticsController(CommandController):
     def do_namespace(self, line):
         show_total = self.need_to_show_total(line)
         ns_stats = self.logger.infoStatistics(stanza="namespace")
+
         for timestamp in sorted(ns_stats.keys()):
-            for ns, stats in ns_stats[timestamp].iteritems():
+            namespace_list = util.filter_list(ns_stats[timestamp].keys(), self.mods['for'])
+            for ns in sorted(namespace_list):
+                stats = ns_stats[timestamp][ns]
                 self.view.showStats(
                     "%s Namespace Statistics (%s)" %
                     (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
@@ -434,7 +437,13 @@ class ShowStatisticsController(CommandController):
         show_total = self.need_to_show_total(line)
         set_stats = self.logger.infoStatistics(stanza="sets")
         for timestamp in sorted(set_stats.keys()):
+            if not set_stats[timestamp]:
+                continue
+            namespace_list = [ns_set.split()[0] for ns_set in set_stats[timestamp].keys()]
+            namespace_list = util.filter_list(namespace_list, self.mods['for'])
             for ns_set, stats in set_stats[timestamp].iteritems():
+                if ns_set.split()[0] not in namespace_list:
+                    continue
                 self.view.showStats(
                     "%s Set Statistics (%s)" %
                     (ns_set, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
@@ -446,7 +455,12 @@ class ShowStatisticsController(CommandController):
         show_total = self.need_to_show_total(line)
         new_bin_stats = self.logger.infoStatistics(stanza="bins")
         for timestamp in sorted(new_bin_stats.keys()):
+            if not new_bin_stats[timestamp] or isinstance(new_bin_stats[timestamp], Exception) :
+                continue
+            namespace_list = util.filter_list(new_bin_stats[timestamp].keys(), self.mods['for'])
             for ns, stats in new_bin_stats[timestamp].iteritems():
+                if ns not in namespace_list:
+                    continue
                 self.view.showStats(
                     "%s Bin Statistics (%s)" %
                     (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
@@ -483,7 +497,13 @@ class ShowStatisticsController(CommandController):
         show_total = self.need_to_show_total(line)
         sindex_stats = self.logger.infoStatistics(stanza="sindex")
         for timestamp in sorted(sindex_stats.keys()):
+            if not sindex_stats[timestamp] or isinstance(sindex_stats[timestamp], Exception):
+                continue
+            namespace_list = [ns_set_sindex.split()[0] for ns_set_sindex in sindex_stats[timestamp].keys()]
+            namespace_list = util.filter_list(namespace_list, self.mods['for'])
             for sindex, stats in sindex_stats[timestamp].iteritems():
+                if sindex.split()[0] not in namespace_list:
+                    continue
                 self.view.showStats(
                     "%s Sindex Statistics (%s)" %
                     (sindex, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
@@ -645,6 +665,11 @@ class LogGrepServerController(CommandController):
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
         '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
         '                   If not set then runs on all server logs in selected list.',
+        '    -f <string>  - Log time from which to analyze.',
+        '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
+        '                   Default: head',
+        '    -d <string>  - Maximum time period to analyze.',
+        '                   May use the following formats: 3600 or 1:00:00.',
         '    -v <string>  - The non-matching string.',
         '    -u           - Set to find only for unique lines.',
         '    -i           - Perform case insensitive matching. By default it is case sensitive.')
@@ -671,7 +696,7 @@ class LogGrepServerController(CommandController):
         '                   May use the following formats: 3600 or 1:00:00.',
         '    -k <string>  - Show 0-th then every k-th result. default: 1.',
         '    -l <string>  - Show results with at least one diff value greater than or equal to limit.',
-        '    -t <string>  - Analysis slice interval in seconds or time format. default: 60 seconds.',
+        '    -t <string>  - Analysis slice interval in seconds or time format. default: 10 seconds.',
         '    -i           - Perform case insensitive matching. By default it is case sensitive.')
     def do_diff(self, line):
         self.grepFile.do_diff(line)
@@ -779,6 +804,8 @@ class GrepFile(CommandController):
         unique = False
         is_and = False
         is_casesensitive=True
+        start_tm = ""
+        duration = ""
         sources = []
         reading_search_strings = False
         search_string_read = False
@@ -801,6 +828,12 @@ class GrepFile(CommandController):
             elif word == '-v':
                 ignore_str = tline.pop(0)
                 ignore_str = strip_string(ignore_str)
+            elif word == '-f' and not self.grep_cluster:
+                start_tm = tline.pop(0)
+                start_tm = strip_string(start_tm)
+            elif word == '-d' and not self.grep_cluster:
+                duration = tline.pop(0)
+                duration = strip_string(duration)
             elif word == '-n':
                 try:
                     sources = [
@@ -827,10 +860,9 @@ class GrepFile(CommandController):
             for timestamp in sorted(files.keys()):
                 res = self.logger.grepCount(
                     files[timestamp],
-                    search_strs,
-                    ignore_str,
-                    unique,
-                    self.grep_cluster,
+                    search_strs, ignore_str,
+                    unique, self.grep_cluster,
+                    start_tm, duration,
                     is_and, is_casesensitive)
                 merged_res = ""
                 for key in sorted(res.keys()):
@@ -853,7 +885,7 @@ class GrepFile(CommandController):
         search_str = ""
         start_tm = "head"
         duration = ""
-        slice_tm = "60"
+        slice_tm = "10"
         show_count = 1
         limit = ""
         sources = []
@@ -1124,14 +1156,18 @@ class SelectController(CommandController):
             sec)
 
     @CommandHelp(
-        'Select list of cluster snapshots. You can get cluster snapshot number from \'list\' command.',
-        'Example : select cluster 1 2 3')
+        'Select list of cluster snapshots. We can give \'all\' as a input to add all snapshots from all list',
+        'or we can give selective cluster snapshot numbers',
+        'We can get cluster snapshot number from \'list\' command.',
+        'Example : select cluster all   OR   select cluster 1 2 3')
     def do_cluster(self, line):
         self.logger.select_logs(line, cluster_snapshot=True)
 
     @CommandHelp(
-        'Select list of server logs. You can get server number from \'list\' command.',
-        'Example : select server 1 2 3')
+        'Select list of server logs. We can give \'all\' as a input to add all server logs from all list',
+        'or we can give selective server log numbers',
+        'We can get server log number from \'list\' command.',
+        'Example : select server all   OR   select server 1 2 3')
     def do_server(self, line):
         self.logger.select_logs(line, cluster_snapshot=False)
 
