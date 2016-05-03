@@ -35,13 +35,13 @@ class LogReader(object):
     serviceStartPattern = 'Service Configuration'
     networkEndPattern = 'Number of rows'
     section_separator = "(=+)ASCOLLECTINFO(=+)"
-    section_separator_with_date = "(=+)ASCOLLECTINFO[*](=+)"
+    section_separator_with_date = "(=+)ASCOLLECTINFO\(([\d_]*)\)(=+)"
     statsPattern = "\[\'statistics\'"
     configPattern = "\[\'config\'"
     configDiffPattern = "\[\'config\',[\s]*\'diff\'"
     distributionPattern = "\[\'distribution\'"
     latencyPattern = "\[\'latency\'\]"
-    cluster_log_file_identifier = ["=ASCOLLECTINFO=", "Configuration~~~", "Statistics~"]
+    cluster_log_file_identifier = ["=ASCOLLECTINFO", "Configuration~~~", "Statistics~"]
     server_log_file_identifier = ["thr_info.c::", "heartbeat_received", "ClusterSize"]
     server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_]+\): \([a-z_\.]+:{1,2}[\d]+\)"
 
@@ -62,12 +62,18 @@ class LogReader(object):
     def get_timestamp(self, file):
         file_id = open(file, "r")
         file_id.seek(0, 0)
-        line = file_id.readline()
-        timestamp = line.strip().strip("\n").strip()
+        timestamp = ""
+        while not timestamp:
+            line = file_id.readline()
+            timestamp = line.strip().strip("\n").strip()
         if timestamp.endswith("UTC"):
             return timestamp
-        elif timestamp == "===ASCOLLECTINFO===":
+        elif "===ASCOLLECTINFO===" in timestamp:
             return self.getTime(file)
+        elif re.search(self.section_separator_with_date,timestamp):
+            dt_tm_str = re.search(self.section_separator_with_date,timestamp).group(2)
+            date_object = datetime.datetime.strptime(dt_tm_str, '%Y%m%d_%H%M%S')
+            return date_object.strftime('%Y-%m-%d %H:%M:%S UTC')
         return ""
 
     def get_server_node_id(self, file):
@@ -298,7 +304,7 @@ class LogReader(object):
         sindexPattern = '~([^~]+) Sindex Statistics'
 
         line = file_id.readline()
-        while(not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
+        while(line and not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
             if line.strip().__len__() != 0:
                 dic = {}
                 key = "key"
@@ -335,9 +341,10 @@ class LogReader(object):
                     key = re.search(sindexPattern, line).group(1)
 
                 dic[key] = self.htableToDic(file_id)
+
             try:
                 line = file_id.readline()
-            except IndexError:
+            except:
                 break
 
         return statDic
@@ -352,7 +359,7 @@ class LogReader(object):
 
         line = file_id.readline()
 
-        while(not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
+        while(line and not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
             if line.strip().__len__() != 0:
                 dic = {}
                 key = "key"
@@ -390,7 +397,7 @@ class LogReader(object):
 
         line = file_id.readline()
 
-        while(not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
+        while(line and not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
             if line.strip().__len__() != 0:
                 m1 = re.search(pattern, line)
 
@@ -470,7 +477,7 @@ class LogReader(object):
     def readSummaryStr(self, file_id):
         line = file_id.readline()
         summaryStr = ""
-        while(not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
+        while(line and not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
             if line.strip().__len__() != 0:
                 summaryStr += line
             try:
@@ -490,7 +497,7 @@ class LogReader(object):
 
         line = file_id.readline()
         bytewise_distribution = False
-        while(not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
+        while(line and not re.search(self.section_separator, line) and not re.search(self.section_separator_with_date,line)):
             if line.strip().__len__() != 0 :
                 m1 = re.search(ttlPattern, line)
                 m2 = re.search(evictPattern, line)
