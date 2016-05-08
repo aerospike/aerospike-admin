@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
+from lib.logger import DT_FMT
+from lib.logreader import TOTAL_ROW_HEADER, COUNT_RESULT_KEY
 
 from lib.table import Table, Extractors, TitleFormats, Styles
 import sys
@@ -676,7 +678,8 @@ class CliView(object):
     def infoString(title, summary):
         if not summary or len(summary.strip())==0:
             return
-        print "************************** %s **************************" % (title)
+        if title:
+            print "************************** %s **************************" % (title)
         CliView.print_result(summary)
 
     @staticmethod
@@ -860,12 +863,51 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
+    def showGrepCount(title, grep_result, like=None, diff=None, **ignore):
+        column_names = set()
+
+        if grep_result:
+            if grep_result[grep_result.keys()[0]]:
+                column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]][COUNT_RESULT_KEY].keys())
+
+        if len(column_names) == 0:
+            return ''
+
+        column_names.insert(0, "NODE")
+
+        t = Table(title
+                  , column_names
+                  , title_format=TitleFormats.noChange
+                  , style=Styles.VERTICAL)
+
+        row = None
+        for file in sorted(grep_result.keys()):
+            if isinstance(grep_result[file], Exception):
+                row1 = {}
+                row2 = {}
+            else:
+                row1 = grep_result[file]["count_result"]
+                row2 = {}
+                for key in grep_result[file]["count_result"].keys():
+                    row2[key] = "|"
+
+            row1['NODE'] = file
+
+            row2['NODE'] = "|"
+
+            t.insertRow(row1)
+            t.insertRow(row2)
+        t._need_sort = False
+        #print t
+        CliView.print_result(t)
+
+    @staticmethod
     def showGrepDiff(title, grep_result, like=None, diff=None, **ignore):
         column_names = set()
 
         if grep_result:
             if grep_result[grep_result.keys()[0]]:
-                column_names = sorted(grep_result[grep_result.keys()[0]]["value"].keys())
+                column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]]["value"].keys())
 
         if len(column_names) == 0:
             return ''
@@ -908,18 +950,45 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
+    def sort_list_with_string_and_datetime(keys):
+        if not keys:
+            return keys
+        dt_list = []
+        remove_list = []
+        for key in keys:
+            try:
+                dt_list.append(datetime.datetime.strptime(key, DT_FMT))
+                remove_list.append(key)
+            except:
+                pass
+        for rm_key in remove_list:
+            keys.remove(rm_key)
+        if keys:
+            keys = sorted(keys)
+        if dt_list:
+            dt_list = [k.strftime(DT_FMT) for k in sorted(dt_list)]
+        if keys and not dt_list:
+            return keys
+        if dt_list and not keys:
+            return dt_list
+        dt_list.extend(keys)
+        return dt_list
+
+    @staticmethod
     def showLogLatency(title, grep_result, like=None, diff=None, **ignore):
         column_names = set()
 
+        # print grep_result[grep_result.keys()[0]]["ops/sec"].keys()
+        # print sorted(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
         if grep_result:
             if grep_result[grep_result.keys()[0]]:
-                column_names = sorted(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
-
+                column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
         if len(column_names) == 0:
             return ''
-
         column_names.insert(0, ".")
         column_names.insert(0, "NODE")
+
+        # print column_names
 
         t = Table(title
                   , column_names

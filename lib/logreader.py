@@ -25,6 +25,14 @@ HH = 0
 MM = 1
 SS = 2
 
+INDEX_DT_LEN = 4
+STEP = 1000
+
+SHOW_RESULT_KEY = "show_result"
+COUNT_RESULT_KEY = "count_result"
+TOTAL_ROW_HEADER = "total"
+END_ROW_KEY = "End"
+
 
 class LogReader(object):
     ascollectinfoExt1 = "/ascollectinfo.log"
@@ -41,7 +49,8 @@ class LogReader(object):
     configDiffPattern = "\[\'config\',[\s]*\'diff\'"
     distributionPattern = "\[\'distribution\'"
     latencyPattern = "\[\'latency\'\]"
-    cluster_log_file_identifier = ["=ASCOLLECTINFO", "Configuration~~~", "Statistics~"]
+    cluster_log_file_identifier_key = "=ASCOLLECTINFO"
+    cluster_log_file_identifier = ["Configuration~~~", "Statistics~"]
     server_log_file_identifier = ["thr_info.c::", "heartbeat_received", "ClusterSize"]
     server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_]+\): \([a-z_\.]+:{1,2}[\d]+\)"
 
@@ -86,7 +95,14 @@ class LogReader(object):
         if not file:
             return not_found
         try:
-            for line in reversed(open(file).readlines()):
+            out, err = shell_command(['tail -n 1000 "%s"'%(file)])
+        except:
+            return not_found
+        if err or not out:
+            return not_found
+        lines = out.strip().split('\n')
+        try:
+            for line in reversed(lines):
                 if server_log_node_identifier in line:
                     try:
                         node_id = re.search(server_node_id_pattern, line.strip()).group(1)
@@ -103,6 +119,23 @@ class LogReader(object):
 
     def is_cluster_log_file(self, file=""):
         if not file:
+            return False
+        try:
+            out, err = shell_command(['head -n 30 "%s"'%(file)])
+        except:
+            return False
+        if err or not out:
+            return False
+        lines = out.strip().split('\n')
+        found = False
+        for line in lines:
+            try:
+                if self.cluster_log_file_identifier_key in line:
+                    found = True
+                    break
+            except:
+                pass
+        if not found:
             return False
         for search_string in self.cluster_log_file_identifier:
             try:
@@ -669,9 +702,9 @@ class LogReader(object):
     def get_dt(self, line):
         return line[0: line.find(" GMT")]
 
-    def parse_dt(self, line):
+    def parse_dt(self, line, dt_len = 6):
         prefix = line[0: line.find(" GMT")].split(",")[0]
-        return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:6]))
+        return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:dt_len]))
 
     def grepDiff(
             self,
@@ -893,6 +926,101 @@ class LogReader(object):
         result["diff"] = diff
 
         return start_tm, result
-#l = LogReader("/var/log/aerospike/asla/as_log_1444289465.19")
-# print
-# l.getPrefixes("/var/log/aerospike/asla/as_log_1444289465.19/ascollectinfo.log")
+
+    def seek_to(self, f,c):
+        if f and c:
+            if f.tell() <= 0:
+                f.seek(0,0)
+            else:
+                tmp = f.read(1)
+                while tmp != c:
+                    if f.tell() <= 1:
+                        f.seek(0,0)
+                        break
+                    f.seek(-2,1)
+                    tmp = f.read(1)
+
+    def set_next_line(self, file_stream, jump=STEP, whence=1):
+        file_stream.seek(int(jump), whence)
+        self.seek_to(file_stream,"\n")
+
+    def read_next_line(self, file_stream, jump=STEP, whence=1):
+        file_stream.seek(int(jump), whence)
+        self.seek_to(file_stream,"\n")
+        ln = file_stream.readline()
+        return ln
+
+    def get_next_timestamp(self, f, min, max, last):
+        self.set_next_line(f, max, 0)
+        max = f.tell()
+        self.set_next_line(f, min, 0)
+        min = f.tell()
+        if min>=max:
+            f.seek(max)
+            tm = self.parse_dt(f.readline(), dt_len=INDEX_DT_LEN)
+            if tm > last:
+                return max, tm
+            else:
+                return None, None
+        if min==max:
+            f.seek(min)
+            tm = self.parse_dt(f.readline(), dt_len=INDEX_DT_LEN)
+
+            if tm > last:
+                return min, tm
+            else:
+                return None, None
+
+        jump = (max-min)/2
+        f.seek(int(jump)+min,0)
+        self.seek_to(f,'\n')
+        last_read = f.tell()
+        ln = f.readline()
+        tm = self.parse_dt(ln, dt_len=INDEX_DT_LEN)
+        if tm<=last:
+            return self.get_next_timestamp(f, f.tell(), max, last)
+        else:
+            return self.get_next_timestamp(f, min, last_read, last)
+
+    def generate_server_log_indices(self, file_path):
+        indices = {}
+        try:
+            f = open(file_path, 'r')
+            start_timestamp = self.parse_dt(f.readline(), dt_len=INDEX_DT_LEN)
+            indices[start_timestamp.strftime(DT_FMT)] = 0
+            min_seek_pos = 0
+            f.seek(0,2)
+            self.set_next_line(f,0)
+            last_pos = f.tell()
+            f.seek(0,0)
+            last_timestamp = start_timestamp
+
+            while True:
+                if last_pos<(min_seek_pos+STEP):
+                    ln = self.read_next_line(f, last_pos, 0)
+                else:
+                    ln = self.read_next_line(f)
+                current_jump = 1000
+                while(self.parse_dt(ln, dt_len=INDEX_DT_LEN)<=last_timestamp):
+                    min_seek_pos = f.tell()
+                    if last_pos<(min_seek_pos+current_jump):
+                        ln = self.read_next_line(f, last_pos, 0)
+                        break
+                    else:
+                        ln = self.read_next_line(f,current_jump)
+                    current_jump *= 2
+
+                if self.parse_dt(ln, dt_len=INDEX_DT_LEN)<=last_timestamp:
+                    break
+
+                max_seek_pos = f.tell()
+                pos, tm = self.get_next_timestamp(f, min_seek_pos, max_seek_pos, last_timestamp)
+                if not tm and not pos:
+                    break
+                indices[tm.strftime(DT_FMT)] = pos
+                f.seek(pos)
+                min_seek_pos = pos
+                last_timestamp = tm
+        except:
+            pass
+        return indices

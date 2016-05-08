@@ -19,7 +19,6 @@ from time import time
 import subprocess
 import pipes
 import sys, StringIO
-from lib.view import CliView
 
 def info_to_dict(value, delimiter = ';'):
     """
@@ -187,8 +186,14 @@ def capture_stdout(func,line=''):
     sys.stdout = old
     return output
 
+def compileLikes(likes):
+    likes = map(re.escape, likes)
+    likes = "|".join(likes)
+    likes = re.compile(likes)
+    return likes
+
 def filter_list(ilist, pattern_list):
     if not ilist or not pattern_list:
         return ilist
-    likes = CliView.compileLikes(pattern_list)
+    likes = compileLikes(pattern_list)
     return filter(likes.search, ilist)

@@ -51,6 +51,7 @@ class LogSnapshot(object):
         self.nodes = {}
         self.prefixes = {}
         self.cluster_data = {}
+        self.file_stream = open(self.cluster_file, "r")
 
     def destroy(self):
         try:
@@ -266,3 +267,72 @@ class LogSnapshot(object):
         except:
             pass
         return asd_version
+
+    def set_input(self, search_strs, ignore_str="", is_and=False, is_casesensitive=True):
+        if is_casesensitive:
+            self.search_strings=[search_str for search_str in search_strs]
+        else:
+            self.search_strings=[search_str.lower() for search_str in search_strs]
+        self.ignore_str = ignore_str
+        self.is_and = is_and
+        self.is_casesensitive = is_casesensitive
+        self.file_stream.seek(0,0)
+        self.show_it = self.show()
+        self.count_it = self.count()
+
+    def next_line(self, read_all_lines=None):
+        while True:
+            fail = False
+            line = self.file_stream.readline()
+            if not line:
+                return None
+            if read_all_lines:
+                return line
+            if self.search_strings:
+                tmp_line = copy.deepcopy(line)
+                if not self.is_casesensitive:
+                    tmp_line = tmp_line.lower()
+                for search_str in self.search_strings:
+                    if search_str in tmp_line:
+                        if not self.is_and:
+                            fail = False
+                            break
+                    else:
+                        fail = True
+                        if self.is_and:
+                            break
+                if fail:
+                    continue
+            if self.ignore_str and self.ignore_str in line:
+                continue
+            if not fail:
+                break
+
+        return line
+
+    def show(self):
+        line = self.next_line()
+        show_result = ""
+        while line:
+            try:
+                show_result += line
+            except:
+                show_result = line
+            line = self.next_line()
+
+        yield show_result
+
+    def show_iterator(self):
+        return self.show_it
+
+    def count(self):
+        line = self.next_line()
+        count_result = 0
+        while line:
+            count_result += 1
+            line = self.next_line()
+
+        yield count_result
+
+    def count_iterator(self):
+        return self.count_it
