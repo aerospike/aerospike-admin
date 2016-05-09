@@ -19,6 +19,7 @@ from distutils.version import StrictVersion, LooseVersion
 import zipfile
 import copy
 from lib.data import lsof_file_type_desc
+from lib.util import clear_val_from_dict, fetch_line_clear_dict
 from lib.view import CliView
 from lib import filesize
 
@@ -67,7 +68,6 @@ def get_sindex_stats(cluster, nodes='all', for_mods=[]):
                         sindex_stats[sindex_key][node][key] = value
 
     return sindex_stats
-
 
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
@@ -559,8 +559,13 @@ class ShowLatencyController(CommandController):
 class ShowConfigController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'diff'])
+        self.title_every_nth_arg = "-r"
+        self.title_every_nth_default = 0
 
-    @CommandHelp('Displays service, network, and namespace configuration')
+    @CommandHelp('Displays service, network, and namespace configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def _do_default(self, line):
         actions = (util.Future(self.do_service, line).start()
                    , util.Future(self.do_network, line).start()
@@ -568,8 +573,20 @@ class ShowConfigController(CommandController):
                    )
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays service configuration')
+    def get_title_every_nth_arg(self, line):
+        try:
+            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
+                                                         keys=self.modifiers, d=self.mods))
+        except:
+            title_every_nth = self.title_every_nth_default
+        return title_every_nth
+
+    @CommandHelp('Displays service configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_service(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         service_configs = self.cluster.infoGetConfig(nodes=self.nodes
                                                      , stanza='service')
         for node in service_configs:
@@ -579,11 +596,15 @@ class ShowConfigController(CommandController):
                 service_configs[node] = service_configs[node]['service']
 
         return util.Future(self.view.showConfig, "Service Configuration"
-                    , service_configs
-                    , self.cluster, **self.mods)
+                    , service_configs, self.cluster, title_every_nth=title_every_nth
+                    , **self.mods)
 
-    @CommandHelp('Displays network configuration')
+    @CommandHelp('Displays network configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_network(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         hb_configs = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
                                                 , stanza='network.heartbeat').start()
         info_configs  = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
@@ -605,10 +626,14 @@ class ShowConfigController(CommandController):
                 network_configs[node].update(info_configs[node]['network.info'])
 
         return util.Future(self.view.showConfig, "Network Configuration", network_configs
-                             , self.cluster, **self.mods)
+                             , self.cluster, title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays namespace configuration')
+    @CommandHelp('Displays namespace configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_namespace(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         namespace_configs = self.cluster.infoGetConfig(nodes=self.nodes
                                                        , stanza='namespace')
         for node in namespace_configs:
@@ -629,11 +654,15 @@ class ShowConfigController(CommandController):
                     ns_configs[ns][host] = config
 
         return [util.Future(self.view.showConfig, "%s Namespace Configuration"%(ns)
-                            , configs, self.cluster, **self.mods)
+                            , configs, self.cluster, title_every_nth=title_every_nth, **self.mods)
                 for ns, configs in ns_configs.iteritems()]
 
-    @CommandHelp('Displays XDR configuration')
+    @CommandHelp('Displays XDR configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_xdr(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         configs = self.cluster.infoXDRGetConfig(nodes=self.nodes)
 
         xdr_configs = {}
@@ -644,10 +673,14 @@ class ShowConfigController(CommandController):
             xdr_configs[node] = config['xdr']
 
         return util.Future(self.view.showConfig, "XDR Configuration", xdr_configs, self.cluster
-                             , **self.mods)
+                           , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays datacenter configuration')
+    @CommandHelp('Displays datacenter configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_dc(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         all_dc_configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
         dc_configs = {}
         for host, configs in all_dc_configs.iteritems():
@@ -663,7 +696,7 @@ class ShowConfigController(CommandController):
                     dc_configs[dc][host] = config
 
         return [util.Future(self.view.showConfig, "%s DC Configuration"%(dc)
-                            , configs, self.cluster, **self.mods)
+                            , configs, self.cluster, title_every_nth=title_every_nth, **self.mods)
                 for dc, configs in dc_configs.iteritems()]
 
 @CommandHelp('"show health" is used to display Aerospike configuration health')
@@ -886,10 +919,14 @@ class ShowHealthController(CommandController):
 class ShowStatisticsController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'for'])
+        self.title_every_nth_arg = "-r"
+        self.title_every_nth_default = 0
 
     @CommandHelp('Displays bin, set, service, and namespace statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end. It contains node wise sum for statistics.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def _do_default(self, line):
         actions = (util.Future(self.do_bins, line).start()
                    , util.Future(self.do_sets, line).start()
@@ -899,35 +936,44 @@ class ShowStatisticsController(CommandController):
 
         return [action.result() for action in actions]
 
-    def clear_option_from_mods(self, option):
-        for mod in self.modifiers:
-            if mod in self.mods and option in self.mods[mod]:
-                    self.mods[mod].remove(option)
-
     def need_to_show_total(self, line):
         show_total = False
         try:
             if "-t" in line:
                 show_total = True
-                self.clear_option_from_mods("-t")
+                clear_val_from_dict(self.modifiers, self.mods, "-t")
         except:
             pass
         return show_total
 
+    def get_title_every_nth_arg(self, line):
+        try:
+            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
+                                                         keys=self.modifiers, d=self.mods))
+        except:
+            title_every_nth = self.title_every_nth_default
+        return title_every_nth
+
     @CommandHelp('Displays service statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_service(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster, show_total=show_total
-                            , **self.mods)
+                            , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays namespace statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_namespace(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
 
         namespaces = namespaces.values()
@@ -949,29 +995,35 @@ class ShowStatisticsController(CommandController):
                             , "%s Namespace Statistics"%(namespace)
                             , ns_stats[namespace].result()
                             , self.cluster
-                            , show_total=show_total
+                            , show_total=show_total, title_every_nth=title_every_nth
                             , **self.mods)
                 for namespace in sorted(namespace_set)]
 
     @CommandHelp('Displays sindex statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_sindex(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         sindex_stats = get_sindex_stats(self.cluster, self.nodes, self.mods['for'])
         return [util.Future(self.view.showStats
                             , "%s Sindex Statistics"%(ns_set_sindex)
                             , sindex_stats[ns_set_sindex]
                             , self.cluster
-                            , show_total=show_total
+                            , show_total=show_total, title_every_nth=title_every_nth
                             , **self.mods)
                 for ns_set_sindex in sorted(sindex_stats.keys())]
 
     @CommandHelp('Displays set statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_sets(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         sets = self.cluster.infoSetStatistics(nodes=self.nodes)
 
         set_stats = {}
@@ -995,15 +1047,18 @@ class ShowStatisticsController(CommandController):
         return [util.Future(self.view.showStats, "%s %s Set Statistics"%(namespace, set_name)
                             , stats
                             , self.cluster
-                            , show_total=show_total
+                            , show_total=show_total, title_every_nth=title_every_nth
                             , **self.mods)
                 for (namespace, set_name), stats in set_stats.iteritems()]
 
     @CommandHelp('Displays bin statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_bins(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         bin_stats = self.cluster.infoBinStatistics(nodes=self.nodes)
         new_bin_stats = {}
 
@@ -1028,28 +1083,34 @@ class ShowStatisticsController(CommandController):
         return [util.Future(self.view.showStats, "%s Bin Statistics"%(namespace)
                             , bin_stats
                             , self.cluster
-                            , show_total=show_total
+                            , show_total=show_total, title_every_nth=title_every_nth
                             , **self.mods)
                 for namespace, bin_stats in new_bin_stats.iteritems()]
 
     @CommandHelp('Displays XDR statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_xdr(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         xdr_stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
 
         return util.Future(self.view.showStats, "XDR Statistics"
                             , xdr_stats
                             , self.cluster
-                            , show_total=show_total
+                            , show_total=show_total, title_every_nth=title_every_nth
                             , **self.mods)
 
     @CommandHelp('Displays datacenter statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_dc(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         all_dc_stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
         dc_stats = {}
         for host, stats in all_dc_stats.iteritems():
@@ -1064,7 +1125,7 @@ class ShowStatisticsController(CommandController):
                 except KeyError:
                     dc_stats[dc][host] = stat
         return [util.Future(self.view.showConfig, "%s DC Statistics"%(dc)
-                            , stats, self.cluster, show_total=show_total, **self.mods)
+                            , stats, self.cluster, show_total=show_total, title_every_nth=title_every_nth, **self.mods)
                 for dc, stats in dc_stats.iteritems()]
 
 class ClusterController(CommandController):

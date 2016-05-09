@@ -16,6 +16,7 @@ from lib.controller import ShellController
 from lib.controllerlib import *
 from lib import terminal
 from lib.logreader import SHOW_RESULT_KEY
+from lib.util import fetch_line_clear_dict, clear_val_from_dict
 from lib.view import CliView
 
 
@@ -250,65 +251,100 @@ class ShowConfigController(CommandController):
 
     def __init__(self):
         self.modifiers = set(['like', 'diff'])
+        self.title_every_nth_arg = "-r"
+        self.title_every_nth_default = 0
 
-    @CommandHelp('Displays service, network, and namespace configuration')
+    @CommandHelp('Displays service, network, and namespace configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def _do_default(self, line):
         self.do_service(line)
         self.do_network(line)
         self.do_namespace(line)
 
-    @CommandHelp('Displays service configuration')
+    def get_title_every_nth_arg(self, line):
+        try:
+            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
+                                                         keys=self.modifiers, d=self.mods))
+        except:
+            title_every_nth = self.title_every_nth_default
+        return title_every_nth
+
+    @CommandHelp('Displays service configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_service(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         service_configs = self.logger.infoGetConfig(stanza='service')
 
         for timestamp in sorted(service_configs.keys()):
             self.view.showConfig(
                 "Service Configuration (%s)" %
                 (timestamp),
-                service_configs[timestamp], self.logger.get_log_snapshot(timestamp=timestamp),
-                **self.mods)
+                service_configs[timestamp], self.logger.get_log_snapshot(timestamp=timestamp)
+                , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays network configuration')
+    @CommandHelp('Displays network configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_network(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         service_configs = self.logger.infoGetConfig(stanza='network')
 
         for timestamp in sorted(service_configs.keys()):
             self.view.showConfig(
                 "Network Configuration (%s)" %
                 (timestamp),
-                service_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp),
-                **self.mods)
+                service_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp)
+                , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays namespace configuration')
+    @CommandHelp('Displays namespace configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_namespace(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         ns_configs = self.logger.infoGetConfig(stanza='namespace')
 
         for timestamp in sorted(ns_configs.keys()):
             for ns, configs in ns_configs[timestamp].iteritems():
                 self.view.showConfig(
                     "%s Namespace Configuration (%s)" %
-                    (ns, timestamp), configs, self.logger.get_log_snapshot(timestamp=timestamp), **self.mods)
+                    (ns, timestamp), configs, self.logger.get_log_snapshot(timestamp=timestamp)
+                    , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays XDR configuration')
+    @CommandHelp('Displays XDR configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_xdr(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         xdr_configs = self.logger.infoGetConfig(stanza='xdr')
 
         for timestamp in sorted(xdr_configs.keys()):
             self.view.showConfig(
                 "XDR Configuration (%s)" %
                 (timestamp),
-                xdr_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp),
-                **self.mods)
+                xdr_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp)
+                , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays datacenter configuration')
+    @CommandHelp('Displays datacenter configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_dc(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         dc_configs = self.logger.infoGetConfig(stanza='dc')
 
         for timestamp in sorted(dc_configs.keys()):
             for dc, configs in dc_configs[timestamp].iteritems():
                 self.view.showConfig(
                     "%s DC Configuration (%s)" %
-                    (dc, timestamp), configs,self.logger.get_log_snapshot(timestamp=timestamp),**self.mods)
+                    (dc, timestamp), configs,self.logger.get_log_snapshot(timestamp=timestamp)
+                    , title_every_nth=title_every_nth,**self.mods)
 
 @CommandHelp(
     '"distribution" is used to show the distribution of object sizes',
@@ -328,7 +364,6 @@ class ShowDistributionController(CommandController):
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.logger.infoGetHistogram(histogram_name)
         for timestamp in sorted(histogram.keys()):
-            #print "************************** %s for %s **************************" % (title, timestamp)
             self.view.showDistribution(title,
                 histogram[timestamp],
                 unit,
@@ -376,7 +411,9 @@ class LogLatencyController(CommandController):
         '    -o           - Showing original time range for slices. Default is showing time with seconds value rounded to next nearest multiple of 10.',
         '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'',
         '                   If not set then runs on all server logs in selected list.',
-        '    -p <int>     - Showing output in pages with p entries per page. default: 10.')
+        '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
+        '    -r <int>     - Repeating output table title and row header after every r node columns.',
+        '                   default: 0, no repetition.')
     def _do_default(self, line):
         self.grepFile.do_latency(line)
 
@@ -385,20 +422,32 @@ class ShowStatisticsController(CommandController):
 
     def __init__(self):
         self.modifiers = set(['like','for'])
+        self.title_every_nth_arg = "-r"
+        self.title_every_nth_default = 0
 
     def need_to_show_total(self, line):
         show_total = False
         try:
             if "-t" in line:
                 show_total = True
-                clear_option_from_mods("-t")
+                clear_val_from_dict(self.modifiers, self.mods, "-t")
         except:
             pass
         return show_total
 
+    def get_title_every_nth_arg(self, line):
+        try:
+            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
+                                                         keys=self.modifiers, d=self.mods))
+        except:
+            title_every_nth = self.title_every_nth_default
+        return title_every_nth
+
     @CommandHelp('Displays bin, set, service, and namespace statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end. It contains node wise sum for statistics.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def _do_default(self, line):
         self.do_bins(line)
         self.do_sets(line)
@@ -407,22 +456,28 @@ class ShowStatisticsController(CommandController):
 
     @CommandHelp('Displays service statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_service(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         service_stats = self.logger.infoStatistics(stanza="service")
         for timestamp in sorted(service_stats.keys()):
             self.view.showConfig(
                 "Service Statistics (%s)" %
                 (timestamp),
-                service_stats[timestamp],self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total,
-                **self.mods)
+                service_stats[timestamp],self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays namespace statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_namespace(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         ns_stats = self.logger.infoStatistics(stanza="namespace")
 
         for timestamp in sorted(ns_stats.keys()):
@@ -431,13 +486,17 @@ class ShowStatisticsController(CommandController):
                 stats = ns_stats[timestamp][ns]
                 self.view.showStats(
                     "%s Namespace Statistics (%s)" %
-                    (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                    , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays set statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_sets(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         set_stats = self.logger.infoStatistics(stanza="sets")
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
@@ -449,13 +508,17 @@ class ShowStatisticsController(CommandController):
                     continue
                 self.view.showStats(
                     "%s Set Statistics (%s)" %
-                    (ns_set, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (ns_set, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                    , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays bin statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_bins(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         new_bin_stats = self.logger.infoStatistics(stanza="bins")
         for timestamp in sorted(new_bin_stats.keys()):
             if not new_bin_stats[timestamp] or isinstance(new_bin_stats[timestamp], Exception) :
@@ -466,38 +529,49 @@ class ShowStatisticsController(CommandController):
                     continue
                 self.view.showStats(
                     "%s Bin Statistics (%s)" %
-                    (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp)
+                    , show_total=show_total, title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays XDR statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_xdr(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         xdr_stats = self.logger.infoStatistics(stanza="xdr")
         for timestamp in sorted(xdr_stats.keys()):
             self.view.showConfig(
                 "XDR Statistics (%s)" %
                 (timestamp),
-                xdr_stats[timestamp], self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total,
-                **self.mods)
+                xdr_stats[timestamp], self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays datacenter statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_dc(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         dc_stats = self.logger.infoStatistics(stanza="dc")
         for timestamp in sorted(dc_stats.keys()):
             for dc, stats in dc_stats[timestamp].iteritems():
                 self.view.showStats(
                     "%s DC Statistics (%s)" %
-                    (dc, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (dc, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                    , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays sindex statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_sindex(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         sindex_stats = self.logger.infoStatistics(stanza="sindex")
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp] or isinstance(sindex_stats[timestamp], Exception):
@@ -509,7 +583,8 @@ class ShowStatisticsController(CommandController):
                     continue
                 self.view.showStats(
                     "%s Sindex Statistics (%s)" %
-                    (sindex, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (sindex, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                    , title_every_nth=title_every_nth, **self.mods)
 
 @CommandHelp('Displays features used in Aerospike cluster.')
 class FeaturesController(CommandController):
@@ -670,14 +745,16 @@ class LogGrepServerController(CommandController):
         '    -i           - Perform case insensitive matching. By default it is case sensitive.',
         '    -f <string>  - Log time from which to analyze.',
         '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
-        '                   Default: head',
+        '                   default: head',
         '    -d <string>  - Maximum time period to analyze.',
         '                   May use the following formats: 3600 or 1:00:00.',
         '    -t <string>  - Counting matched lines per interval of t.',
         '                   May use the following formats: 60 or 1:00:00. default: 600 seconds.',
         '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
         '                   If not set then runs on all server logs in selected list.',
-        '    -p <int>     - Showing output in pages with p entries per page. default: 10.')
+        '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
+        '    -r <int>     - Repeating output table title and row header after every r columns.',
+        '                   default: 0, no repetition.')
     def do_count(self, line):
         self.grepFile.do_count(line)
 
@@ -695,7 +772,7 @@ class LogGrepServerController(CommandController):
         '    -i           - Perform case insensitive matching. By default it is case sensitive.',
         '    -f <string>  - Log time from which to analyze.',
         '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
-        '                   Default: head',
+        '                   default: head',
         '    -d <string>  - Maximum time period to analyze.',
         '                   May use the following formats: 3600 or 1:00:00.',
         '    -t <string>  - Analysis slice interval in seconds or time format (hh:mm:ss). default: 10 seconds.',
@@ -703,7 +780,9 @@ class LogGrepServerController(CommandController):
         '    -k <string>  - Show 0-th then every k-th result. default: 1.',
         '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
         '                   If not set then runs on all server logs in selected list.',
-        '    -p <int>     - Showing output in pages with p entries per page. default: 10.')
+        '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
+        '    -r <int>     - Repeating output table title and row header after every r node columns.',
+        '                   default: 0, no repetition.')
     def do_diff(self, line):
         self.grepFile.do_diff(line)
 
@@ -807,7 +886,6 @@ class GrepFile(CommandController):
         search_strs = []
         ignore_str = ""
         output_page_size = 10
-        unique = False
         is_and = False
         is_casesensitive=True
         start_tm = "head"
@@ -816,6 +894,7 @@ class GrepFile(CommandController):
         sources = []
         reading_search_strings = False
         search_string_read = False
+        title_every_nth = 0
         while tline:
             search_string_read = False
             word = tline.pop(0)
@@ -828,8 +907,6 @@ class GrepFile(CommandController):
                     search_strs = []
             elif word == '-a':
                 is_and = True
-            elif word == '-u':
-                unique = True
             elif word == '-i':
                 is_casesensitive = False
             elif word == '-v':
@@ -840,6 +917,11 @@ class GrepFile(CommandController):
                     output_page_size = int(strip_string(tline.pop(0)))
                 except:
                     print "Wrong output page size, setting default value"
+            elif word == '-r' and not self.grep_cluster:
+                try:
+                    title_every_nth = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output title repetition value, setting default value"
             elif word == '-f' and not self.grep_cluster:
                 start_tm = tline.pop(0)
                 start_tm = strip_string(start_tm)
@@ -879,7 +961,7 @@ class GrepFile(CommandController):
                 page_index = 1
                 for count_res in count_results:
                     if count_res:
-                        self.view.showGrepCount("%s(Page-%d)"%(display_name, page_index), count_res)
+                        self.view.showGrepCount("%s(Page-%d)"%(display_name, page_index), count_res, title_every_nth=title_every_nth)
                         page_index += 1
                 count_results.close()
 
@@ -901,6 +983,7 @@ class GrepFile(CommandController):
         limit = ""
         sources = []
         is_casesensitive = True
+        title_every_nth = 0
         while tline:
             word = tline.pop(0)
             if word == '-s':
@@ -925,6 +1008,11 @@ class GrepFile(CommandController):
                     output_page_size = int(strip_string(tline.pop(0)))
                 except:
                     print "Wrong output page size, setting default value"
+            elif word == '-r' and not self.grep_cluster:
+                try:
+                    title_every_nth = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output title repetition value, setting default value"
             elif word == '-n':
                 try:
                     sources = [
@@ -948,7 +1036,7 @@ class GrepFile(CommandController):
                 page_index = 1
                 for diff_res in diff_results:
                     if diff_res:
-                        self.view.showGrepDiff("%s(Page-%d)"%(display_name, page_index), diff_res)
+                        self.view.showGrepDiff("%s(Page-%d)"%(display_name, page_index), diff_res, title_every_nth=title_every_nth)
                         page_index += 1
                 diff_results.close()
 
@@ -969,6 +1057,7 @@ class GrepFile(CommandController):
         every_nth_bucket = 3
         sources = []
         time_rounding = True
+        title_every_nth = 0
         while tline:
             word = tline.pop(0)
             if word == '-h':
@@ -994,6 +1083,11 @@ class GrepFile(CommandController):
                     output_page_size = int(strip_string(tline.pop(0)))
                 except:
                     print "Wrong output page size, setting default value"
+            elif word == '-r' and not self.grep_cluster:
+                try:
+                    title_every_nth = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output title repetition value, setting default value"
             elif word == '-n':
                 try:
                     sources = [
@@ -1017,7 +1111,7 @@ class GrepFile(CommandController):
                 page_index = 1
                 for latency_res in latency_results:
                     if latency_res:
-                        self.view.showLogLatency("%s(Page-%d)"%(display_name, page_index), latency_res)
+                        self.view.showLogLatency("%s(Page-%d)"%(display_name, page_index), latency_res, title_every_nth=title_every_nth)
                         page_index += 1
                 latency_results.close()
 

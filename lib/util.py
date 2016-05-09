@@ -170,6 +170,7 @@ def shell_command(command):
         return out, err
 
     # Redirecting the stdout to use the output elsewhere
+
 def capture_stdout(func,line=''):
     """
     Redirecting the stdout to use the output elsewhere
@@ -197,3 +198,28 @@ def filter_list(ilist, pattern_list):
         return ilist
     likes = compileLikes(pattern_list)
     return filter(likes.search, ilist)
+
+def clear_val_from_dict(keys, d, val):
+    for key in keys:
+        if key in d and val in d[key]:
+            d[key].remove(val)
+
+def fetch_argument(line, arg, default):
+    success = True
+    try:
+        if arg in line:
+            i = line.index(arg)
+            val = line[i+1]
+            return success, val
+    except:
+        pass
+    return not success, default
+
+def fetch_line_clear_dict(line, arg, default, keys, d):
+    if not line:
+        return default
+    success, val = fetch_argument(line, arg, default)
+    if success and keys and d:
+        clear_val_from_dict(keys, d, arg)
+        clear_val_from_dict(keys, d, val)
+    return val

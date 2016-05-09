@@ -803,7 +803,7 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def showConfig(title, service_configs, cluster, like=None, diff=None, show_total=False, **ignore):
+    def showConfig(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, **ignore):
         prefixes = cluster.getNodeNames()
         column_names = set()
 
@@ -855,17 +855,15 @@ class CliView(object):
                             rowTotal[key] = rowTotal[key] + int(val)
                         except:
                             rowTotal[key] = int(val)
-
         if show_total:
             rowTotal['NODE'] = "Total"
             t.insertRow(rowTotal)
 
-        CliView.print_result(t)
+        CliView.print_result(t.__str__(horizontal_title_every_nth=title_every_nth))
 
     @staticmethod
-    def showGrepCount(title, grep_result, like=None, diff=None, **ignore):
+    def showGrepCount(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
-
         if grep_result:
             if grep_result[grep_result.keys()[0]]:
                 column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]][COUNT_RESULT_KEY].keys())
@@ -899,10 +897,10 @@ class CliView(object):
             t.insertRow(row2)
         t._need_sort = False
         #print t
-        CliView.print_result(t)
+        CliView.print_result(t.__str__(horizontal_title_every_nth=2*title_every_nth))
 
     @staticmethod
-    def showGrepDiff(title, grep_result, like=None, diff=None, **ignore):
+    def showGrepDiff(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
 
         if grep_result:
@@ -947,7 +945,7 @@ class CliView(object):
             t.insertRow(row3)
         t._need_sort = False
         #print t
-        CliView.print_result(t)
+        CliView.print_result(t.__str__(horizontal_title_every_nth=title_every_nth*3))
 
     @staticmethod
     def sort_list_with_string_and_datetime(keys):
@@ -975,7 +973,7 @@ class CliView(object):
         return dt_list
 
     @staticmethod
-    def showLogLatency(title, grep_result, like=None, diff=None, **ignore):
+    def showLogLatency(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
 
         # print grep_result[grep_result.keys()[0]]["ops/sec"].keys()
@@ -996,11 +994,13 @@ class CliView(object):
                   , style=Styles.VERTICAL)
 
         row = None
+        sub_columns_per_column = 0
         for file in sorted(grep_result.keys()):
             if isinstance(grep_result[file], Exception):
                 continue
             else:
                 is_first = True
+                sub_columns_per_column = len(grep_result[file].keys())
                 for key in sorted(grep_result[file].keys()):
                     if key=="ops/sec":
                         continue
@@ -1027,7 +1027,7 @@ class CliView(object):
                 t.insertRow(row)
         t._need_sort = False
         #print t
-        CliView.print_result(t)
+        CliView.print_result(t.__str__(horizontal_title_every_nth=title_every_nth*(sub_columns_per_column+1)))
 
     @staticmethod
     def showStats(*args, **kwargs):
