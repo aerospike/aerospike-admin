@@ -368,12 +368,12 @@ def main():
                             , dest="use_services"
                             , action="store_true"
                             , help="Enable use of services-list instead of services-alumni-list")
-        parser.add_option("-l"
-                        , "--log_analyser"
-                        , dest="log_analyser"
-                        , action="store_true"
-                        , help="Start asadm in log-analyser mode and analyse data from log files")
-        parser.add_option("-f"
+        parser.add_argument("-l"
+                            , "--log_analyser"
+                            , dest="log_analyser"
+                            , action="store_true"
+                            , help="Start asadm in log-analyser mode and analyse data from log files")
+        parser.add_argument("-f"
                             , "--file-path"
                             , dest="log_path"
                             , help="Path of cluster collectinfo file or directory containing collectinfo files.")

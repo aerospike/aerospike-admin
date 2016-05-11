@@ -250,6 +250,8 @@ class Logger(object):
 
         if isinstance(indices, int):
             indices = [indices]
+        if indices=='all' or 'all' in indices:
+            indices = range(len(log_names))
         if isinstance(indices, list):
             for index in indices:
                 try:
@@ -331,7 +333,7 @@ class Logger(object):
         all_log_keys = sorted(all_list.keys())
         if indices=='all' or 'all' in indices:
             indices = range(len(all_log_keys))
-        selected_list.clear()
+        #selected_list.clear()
 
         for index in indices:
             try:

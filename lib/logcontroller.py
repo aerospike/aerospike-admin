@@ -765,7 +765,7 @@ class LogGrepServerController(CommandController):
         '        2) KEY<space>(VALUE)',
         '        3) KEY<space>(Comma separated VALUE list)',
         '        4) KEY<space>(VALUE',
-        '        5) VALUE1<space>(VALUE2)<space>KEY',
+        '        5) VALUE1(VALUE2)<space>KEY',
         '  Options:',
         '    -s <string>  - The String to search in log files, MANDATORY - NO DEFAULT',
         '    -v <string>  - The non-matching string.',
@@ -870,7 +870,8 @@ class GrepFile(CommandController):
                 page_index = 1
                 for show_res in show_results:
                     if show_res:
-                        self.view.infoString("%s(Page-%d)"%(display_name, page_index), show_res[SHOW_RESULT_KEY])
+                        self.view.infoString(display_name, show_res[SHOW_RESULT_KEY])
+                        display_name = ""
                         page_index += 1
                 show_results.close()
 
@@ -1406,12 +1407,12 @@ class RemoveClusterController(CommandController):
 
     @CommandHelp('Remove cluster logs.',
         '  Options:',
-        '    -s <string>  - Comma separated selected cluster log file numbers. You can get these numbers by \'list selected\' command.',
+        '    -s <string>  - Space separated selected cluster log file numbers. You can get these numbers by \'list selected\' command.',
         '                   This will remove files from selected file list',
-        '                   Format : -s \'1,2,5\'',
-        '    -a <string>  - Comma separated cluster log file numbers. You can get these numbers by \'list\' command.',
+        '                   Format : -s all    OR   -s 1 2 5',
+        '    -a <string>  - Space separated cluster log file numbers. You can get these numbers by \'list\' command.',
         '                   This will remove files from all and selected lists',
-        '                   Format : -a \'1,2,5\'')
+        '                   Format : -a all    OR   -a 1 2 5')
     def _do_default(self, line):
         if not line:
             raise ShellException(
@@ -1423,22 +1424,26 @@ class RemoveClusterController(CommandController):
         tline = line[:]
         selected_remove_list = []
         all_remove_list = []
+        list_ptr = None
         while tline:
             word = tline.pop(0)
             if word == '-a':
                 try:
-                    values = strip_string(tline.pop(0))
-                    for i in values.split(","):
-                        index = int(i)-1
-                        all_remove_list.append(index)
+                    list_ptr = all_remove_list
                 except:
                     pass
             elif word == '-s':
                 try:
-                    values = strip_string(tline.pop(0))
-                    for i in values.split(","):
-                        index = int(i)-1
-                        selected_remove_list.append(index)
+                    list_ptr = selected_remove_list
+                except:
+                    pass
+            elif list_ptr is not None:
+                try:
+                    if word=="all":
+                        list_ptr.append("all")
+                    else:
+                        index = int(word)-1
+                        list_ptr.append(index)
                 except:
                     pass
             else:
@@ -1459,12 +1464,12 @@ class RemoveServerController(CommandController):
 
     @CommandHelp('Remove server logs.',
         '  Options:',
-        '    -s <string>  - Comma separated selected server log file numbers. You can get these numbers by \'list selected\' command.',
+        '    -s <string>  - Space separated selected server log file numbers. You can get these numbers by \'list selected\' command.',
         '                   This will remove files from selected file list',
-        '                   Format : -s \'1,2,5\'',
-        '    -a <string>  - Comma separated server log file numbers. You can get these numbers by \'list\' command.',
+        '                   Format : -s all    OR   -s  1 2 5',
+        '    -a <string>  - Space separated server log file numbers. You can get these numbers by \'list\' command.',
         '                   This will remove files from all and selected lists',
-        '                   Format : -a \'1,2,5\'')
+        '                   Format : -a all    OR   -a 1 2 5')
     def _do_default(self, line):
         if not line:
             raise ShellException(
@@ -1476,22 +1481,26 @@ class RemoveServerController(CommandController):
         tline = line[:]
         selected_remove_list = []
         all_remove_list = []
+        list_ptr = None
         while tline:
             word = tline.pop(0)
             if word == '-a':
                 try:
-                    values = strip_string(tline.pop(0))
-                    for i in values.split(","):
-                        index = int(i)-1
-                        all_remove_list.append(index)
+                    list_ptr = all_remove_list
                 except:
                     pass
             elif word == '-s':
                 try:
-                    values = strip_string(tline.pop(0))
-                    for i in values.split(","):
-                        index = int(i)-1
-                        selected_remove_list.append(index)
+                    list_ptr = selected_remove_list
+                except:
+                    pass
+            elif list_ptr is not None:
+                try:
+                    if word=="all":
+                        list_ptr.append("all")
+                    else:
+                        index = int(word)-1
+                        list_ptr.append(index)
                 except:
                     pass
             else:
