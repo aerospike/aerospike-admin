@@ -547,9 +547,9 @@ class Logger(object):
                 if file_key in min_keys:
                     if return_strings:
                         try:
-                            merge_result[SHOW_RESULT_KEY] += "%s%s%s::" % (self.fg_colors[colors[(file_streams.keys().index(file_key))][0]][1](), file_key, terminal.reset())
+                            merge_result[SHOW_RESULT_KEY] += "%s  %s%s::" % (self.bg_colors[colors[(file_streams.keys().index(file_key))][0]][1](), terminal.reset(), file_key)
                         except:
-                            merge_result[SHOW_RESULT_KEY] = "%s%s%s::" % (self.fg_colors[colors[(file_streams.keys().index(file_key))][0]][1](), file_key, terminal.reset())
+                            merge_result[SHOW_RESULT_KEY] = "%s  %s%s::" % (self.bg_colors[colors[(file_streams.keys().index(file_key))][0]][1](), terminal.reset(), file_key)
                         merge_result[SHOW_RESULT_KEY] += result[file_key]
                     else:
                         if merge_result[file_key]:
