@@ -356,11 +356,11 @@ class CliView(object):
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 try:
-                    row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.floor((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100))
+                    row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.ceil((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100))
                 except:
                     row["migrate-rx-partitions-remaining-pct"] = "0"
                 try:
-                    row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.floor((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100))
+                    row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.ceil((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100))
                 except:
                     row["migrate-tx-partitions-remaining-pct"] = "0"
                 t.insertRow(row)
@@ -388,11 +388,11 @@ class CliView(object):
             row["migrate-rx-partitions-remaining"] = str(total_res[ns]["migrate-rx-partitions-remaining"])
 
             try:
-                row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.floor((float(total_res[ns]["migrate-rx-partitions-remaining"])/float(total_res[ns]["migrate-rx-partitions-initial"]))*100))
+                row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate-rx-partitions-remaining"])/float(total_res[ns]["migrate-rx-partitions-initial"]))*100))
             except:
                 row["migrate-rx-partitions-remaining-pct"] = "0"
             try:
-                row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.floor((float(total_res[ns]["migrate-tx-partitions-remaining"])/float(total_res[ns]["migrate-tx-partitions-initial"]))*100))
+                row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate-tx-partitions-remaining"])/float(total_res[ns]["migrate-tx-partitions-initial"]))*100))
             except:
                 row["migrate-tx-partitions-remaining-pct"] = "0"
 
@@ -513,8 +513,8 @@ class CliView(object):
                         ,'_free-dlog-pct'
                         ,('_lag-secs', 'Lag (sec)')
                         ,'_req-outstanding'
-                        ,'_req-relog'
-                        ,'_req-shipped'
+                        ,'_req-shipped-success'
+                        ,'_req-shipped-errors'
                         ,'cur_throughput'
                         ,('latency_avg_ship', 'Avg Latency (ms)')
                         ,'_xdr-uptime')
@@ -534,11 +534,11 @@ class CliView(object):
         t.addDataSource('_req-outstanding',
                         Extractors.sifExtractor('stat_recs_outstanding'))
 
-        t.addDataSource('_req-relog',
-                        Extractors.sifExtractor('stat_recs_relogged'))
+        t.addDataSource('_req-shipped-errors',
+                        Extractors.sifExtractor('stat_recs_ship_errors'))
 
-        t.addDataSource('_req-shipped',
-                        Extractors.sifExtractor('stat_recs_shipped'))
+        t.addDataSource('_req-shipped-success',
+                        Extractors.sifExtractor('stat_recs_shipped_ok'))
 
         # Highligh red if lag is more than 30 seconds
         t.addCellAlert('_lag-secs'
@@ -562,9 +562,12 @@ class CliView(object):
                         row['_free-dlog-pct'] = row['_free-dlog-pct'][:-1]
 
                     CliView.setValueInRow(row, 'xdr_timelag', CliView.getValueFromRow(row,('xdr_timelag','timediff_lastship_cur_secs')))
-                    CliView.setValueInRow(row, 'stat_recs_shipped', str(int(CliView.getValueFromRow(row,('stat_recs_shipped','stat-recs-shipped'),0))
-                                          - int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
-                                          - int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
+                    if 'stat_recs_shipped_ok' not in row:
+                        CliView.setValueInRow(row, 'stat_recs_shipped_ok', str(int(CliView.getValueFromRow(row,('stat_recs_shipped','stat-recs-shipped'),0))
+                                              - int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
+                                              - int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
+                    CliView.setValueInRow(row, 'stat_recs_ship_errors', str(int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
+                                          + int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
                 else:
                     row = {}
                     row['node-id'] = node.node_id
@@ -642,7 +645,8 @@ class CliView(object):
         title = "Secondary Index Information%s"%(title_suffix)
         column_names = ('node'
                         , ('indexname', 'Index Name')
-                        ,('ns', 'Namespace')
+                        , ('indextype', 'Index Type')
+                        , ('ns', 'Namespace')
                         , 'set'
                         , 'bins'
                         , 'num_bins'
