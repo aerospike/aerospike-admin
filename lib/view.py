@@ -746,7 +746,9 @@ class CliView(object):
         for namespace, node_data in histogram.iteritems():
             if namespace not in namespaces:
                 continue
-            columns = node_data["columns"]
+            columns = []
+            for column in node_data["columns"]:
+                columns.append((column,column))      # Tuple is required to give specific column display name, otherwise it will print same column name but in title_format (ex. KB -> Kb)
             columns.insert(0, 'node')
             t = Table("%s - %s in %s%s"%(namespace, title, unit, title_suffix)
                       , columns
