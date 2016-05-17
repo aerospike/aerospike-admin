@@ -18,9 +18,6 @@ import glob
 
 import readline
 import cmd
-import sys
-import os
-import re
 import getpass
 import shlex
 from lib import citrusleaf
@@ -29,6 +26,9 @@ from lib.logcontroller import *
 from lib import terminal
 
 __version__ = '$$__version__$$'
+CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
+CMD_FILE_MULTI_LINE_COMMENT_START = "/*"
+CMD_FILE_MULTI_LINE_COMMENT_END = "*/"
 
 class AerospikeShell(cmd.Cmd):
     def __init__(self, seed, telnet, user=None, password=None, use_services=False, log_path="", log_analyser=False):
@@ -119,7 +119,7 @@ class AerospikeShell(cmd.Cmd):
 
         return commands
 
-    def precmd(self, line):
+    def precmd(self, line, max_commands_to_print_header=1, command_index_to_print_from=1):
         lines = None
         try:
             lines = self.cleanLine(line)
@@ -134,9 +134,9 @@ class AerospikeShell(cmd.Cmd):
             if line[0] in self.commands:
                 return " ".join(line)
 
-            if len(lines) > 1:
+            if len(lines) > max_commands_to_print_header:
                 print "~~~ %s%s%s ~~~"%(terminal.bold()
-                                        , ' '.join(line[1:])
+                                        , ' '.join(line[command_index_to_print_from:])
                                         , terminal.reset())
 
             sys.stdout.write(terminal.reset())
@@ -344,7 +344,11 @@ def main():
         parser.add_argument("-e"
                             , "--execute"
                             , dest="execute"
-                            , help="Execute a single asadmin command and exit")
+                            , help="Execute a single or multiple asadm commands and exit. The input value is either string of ';' separated asadm commands or path of file which has asadm commands (ends with ';')")
+        parser.add_argument("-o"
+                            , "--out_file"
+                            , dest="out_file"
+                            , help="Path of file to write output of -e command/s")
         parser.add_argument("--no-color"
                             , dest="no_color"
                             , action="store_true"
@@ -360,9 +364,9 @@ def main():
                             , action="store_true"
                             , help="show program usage")
         parser.add_argument("--version"
-                          , dest="show_version"
-                          , action="store_true"
-                          , help="Show the version of asadm and exit")
+                            , dest="show_version"
+                            , action="store_true"
+                            , help="Show the version of asadm and exit")
         parser.add_argument("-s"
                             , "--services"
                             , dest="use_services"
@@ -408,7 +412,11 @@ def main():
         parser.add_option("-e"
                             , "--execute"
                             , dest="execute"
-                            , help="Execute a single asadmin command and exit")
+                            , help="Execute a single or multiple asadm commands and exit. The input value is either string of ';' separated asadm commands or path of file which has asadm commands (ends with ';')")
+        parser.add_option("-o"
+                            , "--out_file"
+                            , dest="out_file"
+                            , help="Path of file to write output of -e command/s")
         parser.add_option("--no-color"
                             , dest="no_color"
                             , action="store_true"
@@ -424,19 +432,19 @@ def main():
                             , action="store_true"
                             , help="show program usage")
         parser.add_option("--version"
-                          , dest="show_version"
-                          , action="store_true"
-                          , help="Show the version of asadm and exit")
+                            , dest="show_version"
+                            , action="store_true"
+                            , help="Show the version of asadm and exit")
         parser.add_option("-s"
                             , "--services"
                             , dest="use_services"
                             , action="store_true"
                             , help="Enable use of services-list instead of services-alumni-list")
         parser.add_option("-l"
-                        , "--log_analyser"
-                        , dest="log_analyser"
-                        , action="store_true"
-                        , help="Start asadm in log-analyser mode and analyse data from log files")
+                            , "--log_analyser"
+                            , dest="log_analyser"
+                            , action="store_true"
+                            , help="Start asadm in log-analyser mode and analyse data from log files")
         parser.add_option("-f"
                             , "--file-path"
                             , dest="log_path"
@@ -453,8 +461,7 @@ def main():
         exit(0)
 
     if cli_args.no_color:
-        from lib import terminal
-        terminal.enable_color(False)
+        disable_coloring()
 
     user = None
     password = None
@@ -510,16 +517,44 @@ def main():
     func = None
     args = ()
     single_command = True
+    real_stdout = sys.stdout
     if not cli_args.execute:
         func = shell.cmdloop
         single_command = False
     else:
-        line = shell.precmd(cli_args.execute)
+        commands_arg = cli_args.execute
+        max_commands_to_print_header = 1
+        command_index_to_print_from = 1
+        if os.path.isfile(commands_arg):
+            commands_arg = parse_commands(commands_arg)
+            max_commands_to_print_header = 0
+            command_index_to_print_from = 0
+
+        if cli_args.out_file:
+            try:
+                f = open(str(cli_args.out_file), "w")
+                sys.stdout = f
+                disable_coloring()
+                max_commands_to_print_header = 0
+                command_index_to_print_from = 0
+            except Exception as e:
+                print e
+        line = shell.precmd(commands_arg, max_commands_to_print_header=max_commands_to_print_header, command_index_to_print_from=command_index_to_print_from)
         shell.onecmd(line)
         func = shell.onecmd
         args = (line,)
 
     cmdloop(shell, func, args, use_yappi, single_command)
+    try:
+        sys.stdout = real_stdout
+        if f:
+            f.close()
+    except:
+        pass
+
+def disable_coloring():
+    from lib import terminal
+    terminal.enable_color(False)
 
 def cmdloop(shell, func, args, use_yappi, single_command):
     try:
@@ -534,6 +569,28 @@ def cmdloop(shell, func, args, use_yappi, single_command):
         if not single_command:
             shell.intro = terminal.fg_red() + "\nTo exit asadm utility please run exit command" + terminal.fg_clear()
         cmdloop(shell, func, args, use_yappi, single_command)
+
+def parse_commands(file):
+    commands = ""
+    commented = False
+    for line in open(file, 'r').readlines():
+        if not line or not line.strip():
+            continue
+        if commented:
+            if line.strip().endswith(CMD_FILE_MULTI_LINE_COMMENT_END):
+                commented = False
+            continue
+        if line.strip().startswith(CMD_FILE_SINGLE_LINE_COMMENT_START):
+            continue
+        if line.strip().startswith(CMD_FILE_MULTI_LINE_COMMENT_START):
+            if not line.strip().endswith(CMD_FILE_MULTI_LINE_COMMENT_END):
+                commented = True
+            continue
+        try:
+            commands = commands + line
+        except:
+            commands = line
+    return commands
 
 if __name__ == '__main__':
     main()
