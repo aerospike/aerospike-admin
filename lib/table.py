@@ -335,7 +335,7 @@ class Table(object):
         output = "\n".join(map(lambda r: "".join(r), output))
         return output
 
-    def __str__(self):
+    def __str__(self, horizontal_title_every_nth=0):
         if len(self._render_column_ids) == 0:
             return ''
         if self._need_sort:
@@ -345,7 +345,7 @@ class Table(object):
         if self._style == Styles.HORIZONTAL:
             return self._str_horizontal()
         elif self._style == Styles.VERTICAL:
-            return self._str_vertical()
+            return self._str_vertical(title_every_nth=horizontal_title_every_nth)
         else:
             raise ValueError("Invalid style, must be either " +
                              "table.HORIZONTAL or table.VERTICAL")
@@ -381,16 +381,43 @@ class Table(object):
         output.append("Number of rows: %s"%(len(self._data)))
         return "\n".join(output) + '\n'
 
-    def _str_vertical(self):
+    def _str_vertical(self, title_every_nth=0):
         output = []
+        title_width = []
+        total_titles = 1
+        if title_every_nth:
+            total_columns = len(self._render_column_widths) - 1
+            extra_header_columns = (total_columns-1)/title_every_nth
+            total_titles = extra_header_columns + 1 # 1 for default
+        if total_titles > 1:
+            slice_title_width = self._render_column_widths[0] + 1
+            n_columns = 0
+            for i, c_width in enumerate(self._render_column_widths[1:]):
+                slice_title_width += c_width
+                n_columns += 1
+                if (i+1)%title_every_nth==0:
+                    temp_width = slice_title_width
+                    temp_width += len(self._column_padding) * (n_columns)
+                    if i != len(self._render_column_widths)-2:
+                        temp_width += len(self._column_padding)
+                    title_width.append(temp_width)
+                    slice_title_width = self._render_column_widths[0] + 1
+                    n_columns = 0
+            if n_columns:
+                temp_width = slice_title_width
+                temp_width += len(self._column_padding) * (n_columns)
+                title_width.append(temp_width)
+        else:
+            temp_width = sum(self._render_column_widths) + 1  # 1 for ":"
+            temp_width += len(self._column_padding) * (len(self._render_column_widths) - 1)
+            title_width.append(temp_width)
 
-        title_width = sum(self._render_column_widths) + 1 # 1 for ":"
-        title_width += len(self._column_padding) * (len(self._render_column_widths) - 1)
         output = [terminal.bold()]
-        output.append(self._title.center(title_width, '~'))
+        for t_width in title_width:
+            output.append(self._title.center(t_width, '~'))
         output.append(terminal.reset())
         output = [''.join(output)]
-        output.extend(self.genDescription(title_width, title_width - 10))
+        output.extend(self.genDescription(sum(title_width), sum(title_width) - 10))
 
         for i, column_name in enumerate(self._render_column_names):
             row = []
@@ -404,11 +431,17 @@ class Table(object):
             row.append(column_title.ljust(self._render_column_widths[0]))
             row.append(":")
             row.append(self._column_padding)
+            added_columns = 0
             for j, (cell_format, cell) in enumerate((raw_data[i]
                                                      for raw_data in self._data), 1):
+                if title_every_nth and added_columns>0 and added_columns%title_every_nth==0:
+                    row.append(column_title.ljust(self._render_column_widths[0]))
+                    row.append(":")
+                    row.append(self._column_padding)
                 cell = cell.ljust(self._render_column_widths[j])
                 row.append("%s%s"%(cell_format(), cell))
                 row.append(self._column_padding)
+                added_columns +=1
 
             if column_name == "NODE":
                 row.append(terminal.reset())

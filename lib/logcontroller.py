@@ -11,9 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 from lib.controller import ShellController
 from lib.controllerlib import *
 from lib import terminal
+from lib.logreader import SHOW_RESULT_KEY
+from lib.util import fetch_line_clear_dict, clear_val_from_dict
 from lib.view import CliView
 
 
@@ -248,65 +251,100 @@ class ShowConfigController(CommandController):
 
     def __init__(self):
         self.modifiers = set(['like', 'diff'])
+        self.title_every_nth_arg = "-r"
+        self.title_every_nth_default = 0
 
-    @CommandHelp('Displays service, network, and namespace configuration')
+    @CommandHelp('Displays service, network, and namespace configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def _do_default(self, line):
         self.do_service(line)
         self.do_network(line)
         self.do_namespace(line)
 
-    @CommandHelp('Displays service configuration')
+    def get_title_every_nth_arg(self, line):
+        try:
+            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
+                                                         keys=self.modifiers, d=self.mods))
+        except:
+            title_every_nth = self.title_every_nth_default
+        return title_every_nth
+
+    @CommandHelp('Displays service configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_service(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         service_configs = self.logger.infoGetConfig(stanza='service')
 
         for timestamp in sorted(service_configs.keys()):
             self.view.showConfig(
                 "Service Configuration (%s)" %
                 (timestamp),
-                service_configs[timestamp], self.logger.get_log_snapshot(timestamp=timestamp),
-                **self.mods)
+                service_configs[timestamp], self.logger.get_log_snapshot(timestamp=timestamp)
+                , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays network configuration')
+    @CommandHelp('Displays network configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_network(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         service_configs = self.logger.infoGetConfig(stanza='network')
 
         for timestamp in sorted(service_configs.keys()):
             self.view.showConfig(
                 "Network Configuration (%s)" %
                 (timestamp),
-                service_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp),
-                **self.mods)
+                service_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp)
+                , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays namespace configuration')
+    @CommandHelp('Displays namespace configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_namespace(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         ns_configs = self.logger.infoGetConfig(stanza='namespace')
 
         for timestamp in sorted(ns_configs.keys()):
             for ns, configs in ns_configs[timestamp].iteritems():
                 self.view.showConfig(
                     "%s Namespace Configuration (%s)" %
-                    (ns, timestamp), configs, self.logger.get_log_snapshot(timestamp=timestamp), **self.mods)
+                    (ns, timestamp), configs, self.logger.get_log_snapshot(timestamp=timestamp)
+                    , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays XDR configuration')
+    @CommandHelp('Displays XDR configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_xdr(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         xdr_configs = self.logger.infoGetConfig(stanza='xdr')
 
         for timestamp in sorted(xdr_configs.keys()):
             self.view.showConfig(
                 "XDR Configuration (%s)" %
                 (timestamp),
-                xdr_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp),
-                **self.mods)
+                xdr_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp)
+                , title_every_nth=title_every_nth, **self.mods)
 
-    @CommandHelp('Displays datacenter configuration')
+    @CommandHelp('Displays datacenter configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_dc(self, line):
+        title_every_nth = self.get_title_every_nth_arg(line)
         dc_configs = self.logger.infoGetConfig(stanza='dc')
 
         for timestamp in sorted(dc_configs.keys()):
             for dc, configs in dc_configs[timestamp].iteritems():
                 self.view.showConfig(
                     "%s DC Configuration (%s)" %
-                    (dc, timestamp), configs,self.logger.get_log_snapshot(timestamp=timestamp),**self.mods)
+                    (dc, timestamp), configs,self.logger.get_log_snapshot(timestamp=timestamp)
+                    , title_every_nth=title_every_nth,**self.mods)
 
 @CommandHelp(
     '"distribution" is used to show the distribution of object sizes',
@@ -326,7 +364,6 @@ class ShowDistributionController(CommandController):
     def _do_distribution(self, histogram_name, title, unit):
         histogram = self.logger.infoGetHistogram(histogram_name)
         for timestamp in sorted(histogram.keys()):
-            #print "************************** %s for %s **************************" % (title, timestamp)
             self.view.showDistribution(title,
                 histogram[timestamp],
                 unit,
@@ -365,15 +402,18 @@ class LogLatencyController(CommandController):
         'Displays latency information for Aerospike server log.',
         '  Options:',
         '    -h <string>  - Histogram Name, MANDATORY - NO DEFAULT',
-        '    -t <string>  - Analysis slice interval, default: 10,  e.g. 3600 or 1:00:00',
         '    -f <string>  - Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00,',
         '                   default: head',
         '    -d <string>  - Maximum duration for which to analyze, e.g. 3600 or 1:00:00',
+        '    -t <string>  - Analysis slice interval, default: 10,  e.g. 3600 or 1:00:00',
         '    -b <string>  - Number of buckets to display, default: 3',
+        '    -e <string>  - Show 0-th then every e-th bucket, default: 3',
+        '    -o           - Showing original time range for slices. Default is showing time with seconds value rounded to next nearest multiple of 10.',
         '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'',
         '                   If not set then runs on all server logs in selected list.',
-        '    -e <string>  - Show 0-th then every e-th bucket, default: 3',
-        '    -o           - Showing original time range for slices. Default is showing time with seconds value rounded to next nearest multiple of 10.')
+        '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
+        '    -r <int>     - Repeating output table title and row header after every r node columns.',
+        '                   default: 0, no repetition.')
     def _do_default(self, line):
         self.grepFile.do_latency(line)
 
@@ -382,20 +422,32 @@ class ShowStatisticsController(CommandController):
 
     def __init__(self):
         self.modifiers = set(['like','for'])
+        self.title_every_nth_arg = "-r"
+        self.title_every_nth_default = 0
 
     def need_to_show_total(self, line):
         show_total = False
         try:
             if "-t" in line:
                 show_total = True
-                clear_option_from_mods("-t")
+                clear_val_from_dict(self.modifiers, self.mods, "-t")
         except:
             pass
         return show_total
 
+    def get_title_every_nth_arg(self, line):
+        try:
+            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
+                                                         keys=self.modifiers, d=self.mods))
+        except:
+            title_every_nth = self.title_every_nth_default
+        return title_every_nth
+
     @CommandHelp('Displays bin, set, service, and namespace statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end. It contains node wise sum for statistics.')
+                 , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def _do_default(self, line):
         self.do_bins(line)
         self.do_sets(line)
@@ -404,22 +456,28 @@ class ShowStatisticsController(CommandController):
 
     @CommandHelp('Displays service statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_service(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         service_stats = self.logger.infoStatistics(stanza="service")
         for timestamp in sorted(service_stats.keys()):
             self.view.showConfig(
                 "Service Statistics (%s)" %
                 (timestamp),
-                service_stats[timestamp],self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total,
-                **self.mods)
+                service_stats[timestamp],self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays namespace statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_namespace(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         ns_stats = self.logger.infoStatistics(stanza="namespace")
 
         for timestamp in sorted(ns_stats.keys()):
@@ -428,13 +486,17 @@ class ShowStatisticsController(CommandController):
                 stats = ns_stats[timestamp][ns]
                 self.view.showStats(
                     "%s Namespace Statistics (%s)" %
-                    (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                    , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays set statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_sets(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         set_stats = self.logger.infoStatistics(stanza="sets")
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
@@ -446,13 +508,17 @@ class ShowStatisticsController(CommandController):
                     continue
                 self.view.showStats(
                     "%s Set Statistics (%s)" %
-                    (ns_set, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (ns_set, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                    , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays bin statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_bins(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         new_bin_stats = self.logger.infoStatistics(stanza="bins")
         for timestamp in sorted(new_bin_stats.keys()):
             if not new_bin_stats[timestamp] or isinstance(new_bin_stats[timestamp], Exception) :
@@ -463,38 +529,49 @@ class ShowStatisticsController(CommandController):
                     continue
                 self.view.showStats(
                     "%s Bin Statistics (%s)" %
-                    (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (ns, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp)
+                    , show_total=show_total, title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays XDR statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_xdr(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         xdr_stats = self.logger.infoStatistics(stanza="xdr")
         for timestamp in sorted(xdr_stats.keys()):
             self.view.showConfig(
                 "XDR Statistics (%s)" %
                 (timestamp),
-                xdr_stats[timestamp], self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total,
-                **self.mods)
+                xdr_stats[timestamp], self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays datacenter statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_dc(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         dc_stats = self.logger.infoStatistics(stanza="dc")
         for timestamp in sorted(dc_stats.keys()):
             for dc, stats in dc_stats[timestamp].iteritems():
                 self.view.showStats(
                     "%s DC Statistics (%s)" %
-                    (dc, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (dc, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                    , title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays sindex statistics'
                  , '  Options:'
-                 , '    -t - Set to show total column at the end.')
+                 , '    -t           - Set to show total column at the end.'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
     def do_sindex(self, line):
         show_total = self.need_to_show_total(line)
+        title_every_nth = self.get_title_every_nth_arg(line)
         sindex_stats = self.logger.infoStatistics(stanza="sindex")
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp] or isinstance(sindex_stats[timestamp], Exception):
@@ -506,7 +583,8 @@ class ShowStatisticsController(CommandController):
                     continue
                 self.view.showStats(
                     "%s Sindex Statistics (%s)" %
-                    (sindex, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total, **self.mods)
+                    (sindex, timestamp), stats, self.logger.get_log_snapshot(timestamp=timestamp), show_total=show_total
+                    , title_every_nth=title_every_nth, **self.mods)
 
 @CommandHelp('Displays features used in Aerospike cluster.')
 class FeaturesController(CommandController):
@@ -644,15 +722,15 @@ class LogGrepServerController(CommandController):
         '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
         '    -v <string>  - The non-matching string.',
-        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
-        '                   If not set then runs on all server logs in selected list.',
+        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
         '    -f <string>  - Log time from which to analyze.',
         '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
         '                   Default: head',
         '    -d <string>  - Maximum time period to analyze.',
         '                   May use the following formats: 3600 or 1:00:00.',
-        '    -u           - Set to find only for unique lines.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.')
+        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all server logs in selected list.',
+        '    -p <int>     - Showing output in pages with p entries per page. default: 10.')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
@@ -663,16 +741,20 @@ class LogGrepServerController(CommandController):
         '                   Format -s \'string1\' \'string2\'... \'stringn\'',
         '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
-        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
-        '                   If not set then runs on all server logs in selected list.',
+        '    -v <string>  - The non-matching string.',
+        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
         '    -f <string>  - Log time from which to analyze.',
         '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
-        '                   Default: head',
+        '                   default: head',
         '    -d <string>  - Maximum time period to analyze.',
         '                   May use the following formats: 3600 or 1:00:00.',
-        '    -v <string>  - The non-matching string.',
-        '    -u           - Set to find only for unique lines.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.')
+        '    -t <string>  - Counting matched lines per interval of t.',
+        '                   May use the following formats: 60 or 1:00:00. default: 600 seconds.',
+        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all server logs in selected list.',
+        '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
+        '    -r <int>     - Repeating output table title and row header after every r columns.',
+        '                   default: 0, no repetition.')
     def do_count(self, line):
         self.grepFile.do_count(line)
 
@@ -683,21 +765,24 @@ class LogGrepServerController(CommandController):
         '        2) KEY<space>(VALUE)',
         '        3) KEY<space>(Comma separated VALUE list)',
         '        4) KEY<space>(VALUE',
-        '        5) VALUE1<space>(VALUE2)<space>KEY',
+        '        5) VALUE1(VALUE2)<space>KEY',
         '  Options:',
         '    -s <string>  - The String to search in log files, MANDATORY - NO DEFAULT',
         '    -v <string>  - The non-matching string.',
-        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
-        '                   If not set then runs on all server logs in selected list.',
+        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
         '    -f <string>  - Log time from which to analyze.',
         '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
-        '                   Default: head',
+        '                   default: head',
         '    -d <string>  - Maximum time period to analyze.',
         '                   May use the following formats: 3600 or 1:00:00.',
-        '    -k <string>  - Show 0-th then every k-th result. default: 1.',
+        '    -t <string>  - Analysis slice interval in seconds or time format (hh:mm:ss). default: 10 seconds.',
         '    -l <string>  - Show results with at least one diff value greater than or equal to limit.',
-        '    -t <string>  - Analysis slice interval in seconds or time format. default: 10 seconds.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.')
+        '    -k <string>  - Show 0-th then every k-th result. default: 1.',
+        '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all server logs in selected list.',
+        '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
+        '    -r <int>     - Repeating output table title and row header after every r node columns.',
+        '                   default: 0, no repetition.')
     def do_diff(self, line):
         self.grepFile.do_diff(line)
 
@@ -709,19 +794,19 @@ class GrepFile(CommandController):
 
     def do_show(self, line):
         if not line:
-            raise ShellException("Could not understand grep request, " +
-                                 "see 'help grep'")
+            raise ShellException("Could not understand loggrep request, " +
+                                 "see 'help loggrep'")
 
-        mods = self.parseModifiers(line)
+        mods = self.parseModifiers(line, duplicates_in_line_allowed=True)
         line = mods['line']
 
         tline = line[:]
         search_strs = []
         ignore_str = ""
+        output_page_size = 10
         start_tm = "head"
         duration = ""
         sources = []
-        unique = False
         is_and = False
         is_casesensitive = True
         reading_search_strings = False
@@ -741,8 +826,6 @@ class GrepFile(CommandController):
             elif word == '-v':
                 ignore_str = tline.pop(0)
                 ignore_str = strip_string(ignore_str)
-            elif word == '-u':
-                unique = True
             elif word == '-i':
                 is_casesensitive = False
             elif word == '-f' and not self.grep_cluster:
@@ -751,6 +834,11 @@ class GrepFile(CommandController):
             elif word == '-d' and not self.grep_cluster:
                 duration = tline.pop(0)
                 duration = strip_string(duration)
+            elif word == '-p' and not self.grep_cluster:
+                try:
+                    output_page_size = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output page size, setting default value"
             elif word == '-n':
                 try:
                     sources = [
@@ -771,44 +859,43 @@ class GrepFile(CommandController):
                 reading_search_strings = False
 
         if search_strs:
-            files = self.logger.get_files_by_index(
+            file_handlers = self.logger.get_files_by_index(
                 self.grep_cluster,
                 sources)
-            for timestamp in sorted(files.keys()):
-                grepRes = self.logger.grep(
-                    files[timestamp],
-                    search_strs,
-                    ignore_str,
-                    unique,
-                    self.grep_cluster,
-                    start_tm,
-                    duration,
-                    is_and, is_casesensitive)
-                merged_res = ""
-                for key in sorted(grepRes.keys()):
-                    merged_res += grepRes[key]
-                    merged_res += "\n"
-                self.view.infoString(timestamp, merged_res)
+            for display_name in sorted(file_handlers.keys()):
+                show_results = self.logger.grep(file_handlers[display_name],
+                    search_strs=search_strs, ignore_str=ignore_str, is_and=is_and, is_casesensitive=is_casesensitive,
+                    start_tm_arg=start_tm, duration_arg=duration, grep_cluster_logs=self.grep_cluster, output_page_size=output_page_size
+                    )
+                page_index = 1
+                for show_res in show_results:
+                    if show_res:
+                        self.view.infoString(display_name, show_res[SHOW_RESULT_KEY])
+                        display_name = ""
+                        page_index += 1
+                show_results.close()
 
     def do_count(self, line):
         if not line:
-            raise ShellException("Could not understand grep request, " +
-                                 "see 'help grep'")
+            raise ShellException("Could not understand loggrep request, " +
+                                 "see 'help loggrep'")
 
-        mods = self.parseModifiers(line)
+        mods = self.parseModifiers(line, duplicates_in_line_allowed=True)
         line = mods['line']
 
         tline = line[:]
         search_strs = []
         ignore_str = ""
-        unique = False
+        output_page_size = 10
         is_and = False
         is_casesensitive=True
-        start_tm = ""
+        start_tm = "head"
         duration = ""
+        slice_duration = "600"
         sources = []
         reading_search_strings = False
         search_string_read = False
+        title_every_nth = 0
         while tline:
             search_string_read = False
             word = tline.pop(0)
@@ -821,19 +908,30 @@ class GrepFile(CommandController):
                     search_strs = []
             elif word == '-a':
                 is_and = True
-            elif word == '-u':
-                unique = True
             elif word == '-i':
                 is_casesensitive = False
             elif word == '-v':
                 ignore_str = tline.pop(0)
                 ignore_str = strip_string(ignore_str)
+            elif word == '-p' and not self.grep_cluster:
+                try:
+                    output_page_size = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output page size, setting default value"
+            elif word == '-r' and not self.grep_cluster:
+                try:
+                    title_every_nth = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output title repetition value, setting default value"
             elif word == '-f' and not self.grep_cluster:
                 start_tm = tline.pop(0)
                 start_tm = strip_string(start_tm)
             elif word == '-d' and not self.grep_cluster:
                 duration = tline.pop(0)
                 duration = strip_string(duration)
+            elif word == '-t' and not self.grep_cluster:
+                slice_duration = tline.pop(0)
+                slice_duration = strip_string(slice_duration)
             elif word == '-n':
                 try:
                     sources = [
@@ -854,31 +952,26 @@ class GrepFile(CommandController):
                 reading_search_strings = False
 
         if search_strs:
-            files = self.logger.get_files_by_index(
+            file_handlers = self.logger.get_files_by_index(
                 self.grep_cluster,
                 sources)
-            for timestamp in sorted(files.keys()):
-                res = self.logger.grepCount(
-                    files[timestamp],
-                    search_strs, ignore_str,
-                    unique, self.grep_cluster,
-                    start_tm, duration,
-                    is_and, is_casesensitive)
-                merged_res = ""
-                for key in sorted(res.keys()):
-                    str = " "
-                    if not self.grep_cluster:
-                        str = key + " : "
-                    merged_res += str + "Count of %s is : %s" % (search_strs, res[key])
-                    merged_res += "\n"
-                self.view.infoString(timestamp, merged_res)
+            for display_name in sorted(file_handlers.keys()):
+                count_results = self.logger.grepCount(
+                    file_handlers[display_name], search_strs, ignore_str, is_and, is_casesensitive,
+                    start_tm, duration, slice_duration=slice_duration, grep_cluster_logs=self.grep_cluster, output_page_size =output_page_size)
+                page_index = 1
+                for count_res in count_results:
+                    if count_res:
+                        self.view.showGrepCount("%s(Page-%d)"%(display_name, page_index), count_res, title_every_nth=title_every_nth)
+                        page_index += 1
+                count_results.close()
 
     def do_diff(self, line):
         if not line:
-            raise ShellException("Could not understand grep request, " +
-                                 "see 'help grep'")
+            raise ShellException("Could not understand loggrep request, " +
+                                 "see 'help loggrep'")
 
-        mods = self.parseModifiers(line)
+        mods = self.parseModifiers(line, duplicates_in_line_allowed=True)
         line = mods['line']
 
         tline = line[:]
@@ -886,10 +979,12 @@ class GrepFile(CommandController):
         start_tm = "head"
         duration = ""
         slice_tm = "10"
+        output_page_size = 10
         show_count = 1
         limit = ""
         sources = []
         is_casesensitive = True
+        title_every_nth = 0
         while tline:
             word = tline.pop(0)
             if word == '-s':
@@ -909,6 +1004,16 @@ class GrepFile(CommandController):
                 show_count = int(strip_string(show_count))
             elif word == '-i':
                 is_casesensitive = False
+            elif word == '-p' and not self.grep_cluster:
+                try:
+                    output_page_size = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output page size, setting default value"
+            elif word == '-r' and not self.grep_cluster:
+                try:
+                    title_every_nth = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output title repetition value, setting default value"
             elif word == '-n':
                 try:
                     sources = [
@@ -922,41 +1027,38 @@ class GrepFile(CommandController):
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'" % (word, " ".join(line)))
-        grepRes = {}
         if search_str:
-            files = self.logger.get_files_by_index(
+            file_handlers = self.logger.get_files_by_index(
                 self.grep_cluster,
                 sources)
-            for timestamp in sorted(files.keys()):
-                grep_res = self.logger.grepDiff(
-                    files[timestamp],
-                    search_str,
-                    self.grep_cluster,
-                    start_tm,
-                    duration,
-                    slice_tm,
-                    show_count,
-                    limit, is_casesensitive)
-                self.view.showGrepDiff(timestamp, grep_res)
+            for display_name in sorted(file_handlers.keys()):
+                diff_results = self.logger.grepDiff(file_handlers[display_name], search_str, is_casesensitive,
+                    start_tm, duration, slice_tm, show_count, limit, output_page_size=output_page_size)
+                page_index = 1
+                for diff_res in diff_results:
+                    if diff_res:
+                        self.view.showGrepDiff("%s(Page-%d)"%(display_name, page_index), diff_res, title_every_nth=title_every_nth)
+                        page_index += 1
+                diff_results.close()
 
     def do_latency(self, line):
         if not line:
             raise ShellException(
                 "Could not understand latency request, " +
                 "see 'help loglatency'")
-
-        mods = self.parseModifiers(line)
+        mods = self.parseModifiers(line, duplicates_in_line_allowed=True)
         line = mods['line']
-
         tline = line[:]
         hist = ""
         start_tm = "head"
-        duration = None
+        duration = ""
         slice_tm = "10"
+        output_page_size = 10
         bucket_count = 3
-        show_count = 3
+        every_nth_bucket = 3
         sources = []
-        no_time_rounding = False
+        time_rounding = True
+        title_every_nth = 0
         while tline:
             word = tline.pop(0)
             if word == '-h':
@@ -972,11 +1074,21 @@ class GrepFile(CommandController):
                 slice_tm = tline.pop(0)
                 slice_tm = strip_string(slice_tm)
             elif word == '-e':
-                show_count = tline.pop(0)
-                show_count = int(strip_string(show_count))
+                every_nth_bucket = tline.pop(0)
+                every_nth_bucket = int(strip_string(every_nth_bucket))
             elif word == '-b':
                 bucket_count = tline.pop(0)
                 bucket_count = int(strip_string(bucket_count))
+            elif word == '-p' and not self.grep_cluster:
+                try:
+                    output_page_size = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output page size, setting default value"
+            elif word == '-r' and not self.grep_cluster:
+                try:
+                    title_every_nth = int(strip_string(tline.pop(0)))
+                except:
+                    print "Wrong output title repetition value, setting default value"
             elif word == '-n':
                 try:
                     sources = [
@@ -985,27 +1097,24 @@ class GrepFile(CommandController):
                 except:
                     sources = []
             elif word == '-o':
-                no_time_rounding = True
+                time_rounding = False
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'" % (word, " ".join(line)))
 
         if hist:
-            files = self.logger.get_files_by_index(
-                self.grep_cluster,
-                sources)
+            file_handlers = self.logger.get_files_by_index(self.grep_cluster, sources)
 
-            for timestamp in sorted(files.keys()):
-                latency_res = self.logger.loglatency(
-                    files[timestamp],
-                    hist,
-                    slice_tm,
-                    start_tm,
-                    duration,
-                    bucket_count,
-                    show_count,
-                    no_time_rounding)
-                self.view.showLogLatency(timestamp, latency_res)
+            for display_name in sorted(file_handlers.keys()):
+                latency_results = self.logger.loglatency(file_handlers[display_name],
+                    hist, start_tm, duration, slice_tm, bucket_count,
+                    every_nth_bucket, time_rounding, output_page_size=output_page_size)
+                page_index = 1
+                for latency_res in latency_results:
+                    if latency_res:
+                        self.view.showLogLatency("%s(Page-%d)"%(display_name, page_index), latency_res, title_every_nth=title_every_nth)
+                        page_index += 1
+                latency_results.close()
 
 @CommandHelp('Displays all lines from cluster logs (collectinfos) matched with input pattern, and count those lines.')
 class LogGrepClusterController(CommandController):
@@ -1025,10 +1134,9 @@ class LogGrepClusterController(CommandController):
         '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
         '    -v <string>  - The non-matching string.',
+        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
         '    -n <string>  - Comma separated cluster snapshot numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
-        '                   If not set then runs on all cluster snapshots in selected list.',
-        '    -u           - Set to find only for unique lines.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.')
+        '                   If not set then runs on all cluster snapshots in selected list.')
     def do_show(self, line):
         self.grepFile.do_show(line)
 
@@ -1039,11 +1147,10 @@ class LogGrepClusterController(CommandController):
         '                   Format -s \'string1\' \'string2\'... \'stringn\'',
         '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
-        '    -n <string>  - Comma separated cluster snapshot numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
-        '                   If not set then runs on all cluster snapshots in selected list.',
         '    -v <string>  - The non-matching string.',
-        '    -u           - Set to find only for unique lines.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.')
+        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
+        '    -n <string>  - Comma separated cluster snapshot numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
+        '                   If not set then runs on all cluster snapshots in selected list.')
     def do_count(self, line):
         self.grepFile.do_count(line)
 
@@ -1300,39 +1407,43 @@ class RemoveClusterController(CommandController):
 
     @CommandHelp('Remove cluster logs.',
         '  Options:',
-        '    -s <string>  - Comma separated selected cluster log file numbers. You can get these numbers by \'list selected\' command.',
+        '    -s <string>  - Space separated selected cluster log file numbers. You can get these numbers by \'list selected\' command.',
         '                   This will remove files from selected file list',
-        '                   Format : -s \'1,2,5\'',
-        '    -a <string>  - Comma separated cluster log file numbers. You can get these numbers by \'list\' command.',
+        '                   Format : -s all    OR   -s 1 2 5',
+        '    -a <string>  - Space separated cluster log file numbers. You can get these numbers by \'list\' command.',
         '                   This will remove files from all and selected lists',
-        '                   Format : -a \'1,2,5\'')
+        '                   Format : -a all    OR   -a 1 2 5')
     def _do_default(self, line):
         if not line:
             raise ShellException(
                 "Could not understand remove request, " +
                 "see 'help remove'")
-        mods = self.parseModifiers(line)
+        mods = self.parseModifiers(line, duplicates_in_line_allowed=True)
         line = mods['line']
 
         tline = line[:]
         selected_remove_list = []
         all_remove_list = []
+        list_ptr = None
         while tline:
             word = tline.pop(0)
             if word == '-a':
                 try:
-                    values = strip_string(tline.pop(0))
-                    for i in values.split(","):
-                        index = int(i)-1
-                        all_remove_list.append(index)
+                    list_ptr = all_remove_list
                 except:
                     pass
             elif word == '-s':
                 try:
-                    values = strip_string(tline.pop(0))
-                    for i in values.split(","):
-                        index = int(i)-1
-                        selected_remove_list.append(index)
+                    list_ptr = selected_remove_list
+                except:
+                    pass
+            elif list_ptr is not None:
+                try:
+                    if word=="all":
+                        list_ptr.append("all")
+                    else:
+                        index = int(word)-1
+                        list_ptr.append(index)
                 except:
                     pass
             else:
@@ -1353,39 +1464,43 @@ class RemoveServerController(CommandController):
 
     @CommandHelp('Remove server logs.',
         '  Options:',
-        '    -s <string>  - Comma separated selected server log file numbers. You can get these numbers by \'list selected\' command.',
+        '    -s <string>  - Space separated selected server log file numbers. You can get these numbers by \'list selected\' command.',
         '                   This will remove files from selected file list',
-        '                   Format : -s \'1,2,5\'',
-        '    -a <string>  - Comma separated server log file numbers. You can get these numbers by \'list\' command.',
+        '                   Format : -s all    OR   -s  1 2 5',
+        '    -a <string>  - Space separated server log file numbers. You can get these numbers by \'list\' command.',
         '                   This will remove files from all and selected lists',
-        '                   Format : -a \'1,2,5\'')
+        '                   Format : -a all    OR   -a 1 2 5')
     def _do_default(self, line):
         if not line:
             raise ShellException(
                 "Could not understand remove request, " +
                 "see 'help remove'")
-        mods = self.parseModifiers(line)
+        mods = self.parseModifiers(line, duplicates_in_line_allowed=True)
         line = mods['line']
 
         tline = line[:]
         selected_remove_list = []
         all_remove_list = []
+        list_ptr = None
         while tline:
             word = tline.pop(0)
             if word == '-a':
                 try:
-                    values = strip_string(tline.pop(0))
-                    for i in values.split(","):
-                        index = int(i)-1
-                        all_remove_list.append(index)
+                    list_ptr = all_remove_list
                 except:
                     pass
             elif word == '-s':
                 try:
-                    values = strip_string(tline.pop(0))
-                    for i in values.split(","):
-                        index = int(i)-1
-                        selected_remove_list.append(index)
+                    list_ptr = selected_remove_list
+                except:
+                    pass
+            elif list_ptr is not None:
+                try:
+                    if word=="all":
+                        list_ptr.append("all")
+                    else:
+                        index = int(word)-1
+                        list_ptr.append(index)
                 except:
                     pass
             else:

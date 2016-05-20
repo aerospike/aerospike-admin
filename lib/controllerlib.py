@@ -266,7 +266,7 @@ class CommandController(BaseController):
         # Root controller configs class vars
         self.modifiers = set()
 
-    def parseModifiers(self, line):
+    def parseModifiers(self, line, duplicates_in_line_allowed=False):
         mods = self.modifiers
 
         groups = {}
@@ -285,8 +285,9 @@ class CommandController(BaseController):
                 if mod == 'diff':      # Special case for handling diff modifier of show config
                     groups[mod].append(True)
             else:
-                if word not in groups[mod]:
+                if duplicates_in_line_allowed or word not in groups[mod]:
                     groups[mod].append(word)
+
 
         if 'with' in mods and 'all' in groups['with']:
             groups['with'] = 'all'

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
+from lib.logger import DT_FMT
+from lib.logreader import TOTAL_ROW_HEADER, COUNT_RESULT_KEY
 
 from lib.table import Table, Extractors, TitleFormats, Styles
 import sys
@@ -354,11 +356,11 @@ class CliView(object):
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
                 try:
-                    row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.floor((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100))
+                    row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.ceil((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100))
                 except:
                     row["migrate-rx-partitions-remaining-pct"] = "0"
                 try:
-                    row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.floor((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100))
+                    row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.ceil((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100))
                 except:
                     row["migrate-tx-partitions-remaining-pct"] = "0"
                 t.insertRow(row)
@@ -386,11 +388,11 @@ class CliView(object):
             row["migrate-rx-partitions-remaining"] = str(total_res[ns]["migrate-rx-partitions-remaining"])
 
             try:
-                row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.floor((float(total_res[ns]["migrate-rx-partitions-remaining"])/float(total_res[ns]["migrate-rx-partitions-initial"]))*100))
+                row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate-rx-partitions-remaining"])/float(total_res[ns]["migrate-rx-partitions-initial"]))*100))
             except:
                 row["migrate-rx-partitions-remaining-pct"] = "0"
             try:
-                row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.floor((float(total_res[ns]["migrate-tx-partitions-remaining"])/float(total_res[ns]["migrate-tx-partitions-initial"]))*100))
+                row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate-tx-partitions-remaining"])/float(total_res[ns]["migrate-tx-partitions-initial"]))*100))
             except:
                 row["migrate-tx-partitions-remaining-pct"] = "0"
 
@@ -511,8 +513,8 @@ class CliView(object):
                         ,'_free-dlog-pct'
                         ,('_lag-secs', 'Lag (sec)')
                         ,'_req-outstanding'
-                        ,'_req-relog'
-                        ,'_req-shipped'
+                        ,'_req-shipped-success'
+                        ,'_req-shipped-errors'
                         ,'cur_throughput'
                         ,('latency_avg_ship', 'Avg Latency (ms)')
                         ,'_xdr-uptime')
@@ -532,11 +534,11 @@ class CliView(object):
         t.addDataSource('_req-outstanding',
                         Extractors.sifExtractor('stat_recs_outstanding'))
 
-        t.addDataSource('_req-relog',
-                        Extractors.sifExtractor('stat_recs_relogged'))
+        t.addDataSource('_req-shipped-errors',
+                        Extractors.sifExtractor('stat_recs_ship_errors'))
 
-        t.addDataSource('_req-shipped',
-                        Extractors.sifExtractor('stat_recs_shipped'))
+        t.addDataSource('_req-shipped-success',
+                        Extractors.sifExtractor('stat_recs_shipped_ok'))
 
         # Highligh red if lag is more than 30 seconds
         t.addCellAlert('_lag-secs'
@@ -560,9 +562,12 @@ class CliView(object):
                         row['_free-dlog-pct'] = row['_free-dlog-pct'][:-1]
 
                     CliView.setValueInRow(row, 'xdr_timelag', CliView.getValueFromRow(row,('xdr_timelag','timediff_lastship_cur_secs')))
-                    CliView.setValueInRow(row, 'stat_recs_shipped', str(int(CliView.getValueFromRow(row,('stat_recs_shipped','stat-recs-shipped'),0))
-                                          - int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
-                                          - int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
+                    if 'stat_recs_shipped_ok' not in row:
+                        CliView.setValueInRow(row, 'stat_recs_shipped_ok', str(int(CliView.getValueFromRow(row,('stat_recs_shipped','stat-recs-shipped'),0))
+                                              - int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
+                                              - int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
+                    CliView.setValueInRow(row, 'stat_recs_ship_errors', str(int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
+                                          + int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
                 else:
                     row = {}
                     row['node-id'] = node.node_id
@@ -640,7 +645,8 @@ class CliView(object):
         title = "Secondary Index Information%s"%(title_suffix)
         column_names = ('node'
                         , ('indexname', 'Index Name')
-                        ,('ns', 'Namespace')
+                        , ('indextype', 'Index Type')
+                        , ('ns', 'Namespace')
                         , 'set'
                         , 'bins'
                         , 'num_bins'
@@ -676,7 +682,8 @@ class CliView(object):
     def infoString(title, summary):
         if not summary or len(summary.strip())==0:
             return
-        print "************************** %s **************************" % (title)
+        if title:
+            print "************************** %s **************************" % (title)
         CliView.print_result(summary)
 
     @staticmethod
@@ -739,7 +746,9 @@ class CliView(object):
         for namespace, node_data in histogram.iteritems():
             if namespace not in namespaces:
                 continue
-            columns = node_data["columns"]
+            columns = []
+            for column in node_data["columns"]:
+                columns.append((column,column))      # Tuple is required to give specific column display name, otherwise it will print same column name but in title_format (ex. KB -> Kb)
             columns.insert(0, 'node')
             t = Table("%s - %s in %s%s"%(namespace, title, unit, title_suffix)
                       , columns
@@ -800,7 +809,7 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def showConfig(title, service_configs, cluster, like=None, diff=None, show_total=False, **ignore):
+    def showConfig(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, **ignore):
         prefixes = cluster.getNodeNames()
         column_names = set()
 
@@ -852,20 +861,57 @@ class CliView(object):
                             rowTotal[key] = rowTotal[key] + int(val)
                         except:
                             rowTotal[key] = int(val)
-
         if show_total:
             rowTotal['NODE'] = "Total"
             t.insertRow(rowTotal)
 
-        CliView.print_result(t)
+        CliView.print_result(t.__str__(horizontal_title_every_nth=title_every_nth))
 
     @staticmethod
-    def showGrepDiff(title, grep_result, like=None, diff=None, **ignore):
+    def showGrepCount(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
+        column_names = set()
+        if grep_result:
+            if grep_result[grep_result.keys()[0]]:
+                column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]][COUNT_RESULT_KEY].keys())
+
+        if len(column_names) == 0:
+            return ''
+
+        column_names.insert(0, "NODE")
+
+        t = Table(title
+                  , column_names
+                  , title_format=TitleFormats.noChange
+                  , style=Styles.VERTICAL)
+
+        row = None
+        for file in sorted(grep_result.keys()):
+            if isinstance(grep_result[file], Exception):
+                row1 = {}
+                row2 = {}
+            else:
+                row1 = grep_result[file]["count_result"]
+                row2 = {}
+                for key in grep_result[file]["count_result"].keys():
+                    row2[key] = "|"
+
+            row1['NODE'] = file
+
+            row2['NODE'] = "|"
+
+            t.insertRow(row1)
+            t.insertRow(row2)
+        t._need_sort = False
+        #print t
+        CliView.print_result(t.__str__(horizontal_title_every_nth=2*title_every_nth))
+
+    @staticmethod
+    def showGrepDiff(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
 
         if grep_result:
             if grep_result[grep_result.keys()[0]]:
-                column_names = sorted(grep_result[grep_result.keys()[0]]["value"].keys())
+                column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]]["value"].keys())
 
         if len(column_names) == 0:
             return ''
@@ -905,21 +951,48 @@ class CliView(object):
             t.insertRow(row3)
         t._need_sort = False
         #print t
-        CliView.print_result(t)
+        CliView.print_result(t.__str__(horizontal_title_every_nth=title_every_nth*3))
 
     @staticmethod
-    def showLogLatency(title, grep_result, like=None, diff=None, **ignore):
+    def sort_list_with_string_and_datetime(keys):
+        if not keys:
+            return keys
+        dt_list = []
+        remove_list = []
+        for key in keys:
+            try:
+                dt_list.append(datetime.datetime.strptime(key, DT_FMT))
+                remove_list.append(key)
+            except:
+                pass
+        for rm_key in remove_list:
+            keys.remove(rm_key)
+        if keys:
+            keys = sorted(keys)
+        if dt_list:
+            dt_list = [k.strftime(DT_FMT) for k in sorted(dt_list)]
+        if keys and not dt_list:
+            return keys
+        if dt_list and not keys:
+            return dt_list
+        dt_list.extend(keys)
+        return dt_list
+
+    @staticmethod
+    def showLogLatency(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
 
+        # print grep_result[grep_result.keys()[0]]["ops/sec"].keys()
+        # print sorted(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
         if grep_result:
             if grep_result[grep_result.keys()[0]]:
-                column_names = sorted(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
-
+                column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
         if len(column_names) == 0:
             return ''
-
         column_names.insert(0, ".")
         column_names.insert(0, "NODE")
+
+        # print column_names
 
         t = Table(title
                   , column_names
@@ -927,11 +1000,13 @@ class CliView(object):
                   , style=Styles.VERTICAL)
 
         row = None
+        sub_columns_per_column = 0
         for file in sorted(grep_result.keys()):
             if isinstance(grep_result[file], Exception):
                 continue
             else:
                 is_first = True
+                sub_columns_per_column = len(grep_result[file].keys())
                 for key in sorted(grep_result[file].keys()):
                     if key=="ops/sec":
                         continue
@@ -958,7 +1033,7 @@ class CliView(object):
                 t.insertRow(row)
         t._need_sort = False
         #print t
-        CliView.print_result(t)
+        CliView.print_result(t.__str__(horizontal_title_every_nth=title_every_nth*(sub_columns_per_column+1)))
 
     @staticmethod
     def showStats(*args, **kwargs):
