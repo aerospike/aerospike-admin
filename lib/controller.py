@@ -144,56 +144,6 @@ class InfoController(CommandController):
 
         return util.Future(self.view.infoNetwork, stats, versions, builds, self.cluster, **self.mods)
 
-    @CommandHelp('Displays summary information for the Aerospike service.')
-    def _do_service(self, line):
-        stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
-        # get current time from namespace
-        ns_stats = util.Future(self.cluster.infoAllNamespaceStatistics, nodes=self.nodes).start()
-
-        hosts = self.cluster.nodes
-
-        ns_stats = ns_stats.result()
-
-        migrations = {}
-        for node in ns_stats:
-            if isinstance(ns_stats[node], Exception):
-                continue
-
-            migrations[node] = node_migrations = {}
-            node_migrations['rx'] = 0
-            node_migrations['tx'] = 0
-            for ns_stat in ns_stats[node].itervalues():
-                if not isinstance(ns_stat, Exception):
-                    node_migrations['rx'] += int(ns_stat.get("migrate-rx-partitions-remaining", 0))
-                    node_migrations['tx'] += int(ns_stat.get("migrate-tx-partitions-remaining", 0))
-                else:
-                    node_migrations['rx'] = 0
-                    node_migrations['tx'] = 0
-
-        stats = stats.result()
-
-        for node in stats:
-            if isinstance(stats[node], Exception):
-                continue
-
-            node_stats = stats[node]
-            node_stats['rx_migrations'] = migrations.get(node,{}).get('rx', 0)
-            node_stats['tx_migrations'] = migrations.get(node,{}).get('tx',0)
-
-        for host, configs in ns_stats.iteritems():
-
-            if isinstance(configs, Exception):
-                continue
-            ns = configs.keys()[0]
-
-            if ns:
-                # lets just add it to stats
-                if not isinstance(configs[ns], Exception) and \
-                   not isinstance(stats[host], Exception):
-                    stats[host]['current-time'] = configs[ns]['current-time']
-
-        return util.Future(self.view.infoService, stats, hosts, self.cluster, **self.mods)
-
     @CommandHelp('Displays summary information for each set.')
     def do_set(self, line):
         stats = self.cluster.infoSetStatistics(nodes=self.nodes)

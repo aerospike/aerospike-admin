@@ -141,53 +141,6 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def infoService(stats, hosts, cluster, **ignore):
-        prefixes = cluster.getNodeNames()
-        principal = cluster.getExpectedPrincipal()
-
-        title = "Service Information"
-        column_names = ('node'
-                        , ('system_free_mem_pct', 'Free Mem%')
-                        , ('_migrates', 'Migrates (tx,rx,a)')
-                        , '_objects')
-
-        principal = cluster.getExpectedPrincipal()
-
-        t = Table(title, column_names)
-
-
-        t.addCellAlert('node'
-                       ,lambda data: data['real_node_id'] == principal
-                       , color=terminal.fg_green)
-
-        t.addDataSource('_migrates'
-                        ,lambda data:
-                        "(%s,%s,%s)"%(row.get('tx_migrations', 'N/E')
-                                      , row.get('rx_migrations', 'N/E')
-                                      , int(row.get('migrate_progress_send',0)) + int(row.get('migrate_progress_recv',0))
-                                            if (row.has_key('migrate_progress_send')
-                                                and row.has_key('migrate_progress_recv')) else 'N/E'))
-
-        t.addDataSource('_objects'
-                        ,Extractors.sifExtractor('objects'))
-
-        t.addCellAlert('system_free_mem_pct'
-                       ,lambda data: int(data['free-pct-memory']) < 40)
-
-
-
-        for node_key, n_stats in stats.iteritems():
-            if isinstance(n_stats, Exception):
-                n_stats = {}
-            node = cluster.getNode(node_key)[0]
-            row = n_stats
-            row['node'] = prefixes[node_key]
-            row['real_node_id'] = node.node_id
-            t.insertRow(row)
-
-        CliView.print_result(t)
-
-    @staticmethod
     def infoNamespace(stats, cluster, title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
