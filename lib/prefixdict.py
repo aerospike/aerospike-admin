@@ -58,7 +58,7 @@ class PrefixDict(object):
         try:
             self.getKey(prefix)
             return True
-        except:
+        except Exception:
             return False
 
     def remove(self, prefix):

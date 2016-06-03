@@ -189,7 +189,7 @@ class Cluster(object):
             if all_services:
                 self._seed_nodes = all_services
             self._refreshNodeLiveliness()
-        except:
+        except Exception:
             pass
         finally:
             self._enable_crawler = True
@@ -221,7 +221,7 @@ class Cluster(object):
         """
         try:
             addr, port = addr_port
-        except:
+        except Exception:
             print "ip_port is expected to be a tuple of len 2, " + \
                 "instead it is of type %s and str value of %s"%(type(addr_port)
                                                                 , str(addr_port))
@@ -245,7 +245,7 @@ class Cluster(object):
 
             self.updateNode(new_node)
             return new_node
-        except:
+        except Exception:
             return None
 
     @staticmethod
@@ -279,7 +279,7 @@ class Cluster(object):
                         use_nodes.extend(self.getNode(node))
                     else:
                         use_nodes.append(self.getNode(node))
-                except: # Ignore ambiguous and key errors
+                except Exception: # Ignore ambiguous and key errors
                     continue
         else:
             raise TypeError(

@@ -39,7 +39,7 @@ def check_time(val, date_string, segment, index=""):
                 else:
                     if int(date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]) == int(val):
                         return True
-        except:
+        except Exception:
             pass
 
         return False
@@ -48,7 +48,7 @@ def get_dirs(path=""):
         try:
             return [name for name in os.listdir(path)
                     if os.path.isdir(os.path.join(path, name))]
-        except:
+        except Exception:
             return []
 
 def get_all_files(dir_path=""):
@@ -59,7 +59,7 @@ def get_all_files(dir_path=""):
             for root,sub_dir,files in os.walk(dir_path):
                 for file in files:
                     file_list.append(os.path.join(root, file))
-        except:
+        except Exception:
             pass
 
         return file_list

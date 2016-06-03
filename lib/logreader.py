@@ -33,6 +33,8 @@ COUNT_RESULT_KEY = "count_result"
 TOTAL_ROW_HEADER = "total"
 END_ROW_KEY = "End"
 
+SERVER_ID_FETCH_READ_SIZE = 10000
+FILE_READ_ENDS = ["tail","head"]
 
 class LogReader(object):
     ascollectinfoExt1 = "/ascollectinfo.log"
@@ -85,36 +87,47 @@ class LogReader(object):
             return date_object.strftime('%Y-%m-%d %H:%M:%S UTC')
         return ""
 
-    def get_server_node_id(self, file):
+    def get_server_node_id(self, file, fetch_end="tail", read_block_size = SERVER_ID_FETCH_READ_SIZE):
+        if not fetch_end or fetch_end not in FILE_READ_ENDS:
+            fetch_end = "tail"
+        if not read_block_size:
+            read_block_size = SERVER_ID_FETCH_READ_SIZE
         not_found=""
-        max_attempts = 10
-        match_count = 0
         server_log_node_identifier = "node id "
         server_node_id_pattern = "node id ([0-9a-fA-F]+(\s|$))"
+        block_to_check = 100
 
         if not file:
             return not_found
         try:
-            out, err = shell_command(['tail -n 1000 "%s"'%(file)])
-        except:
+            out, err = shell_command(['%s -n %d "%s"'%(fetch_end, read_block_size, file)])
+        except Exception:
             return not_found
         if err or not out:
             return not_found
         lines = out.strip().split('\n')
         try:
-            for line in reversed(lines):
-                if server_log_node_identifier in line:
-                    try:
-                        node_id = re.search(server_node_id_pattern, line.strip()).group(1)
-                        if node_id:
-                            return node_id
-                    except:
-                        pass
-                    match_count += 1
-                    if match_count > max_attempts:
-                        return not_found
-        except:
+            if lines:
+                fetched_line_count = len(lines)
+                end_index = fetched_line_count
+                start_index = end_index - (block_to_check if block_to_check<end_index else end_index)
+                while start_index>=0 and start_index<end_index:
+                    one_string = " ".join(lines[start_index:end_index])
+                    if server_log_node_identifier in one_string:
+                        for line in reversed(lines[start_index:end_index]):
+                            if server_log_node_identifier in line:
+                                try:
+                                    node_id = re.search(server_node_id_pattern, line.strip()).group(1)
+                                    if node_id:
+                                        return node_id
+                                except Exception:
+                                    pass
+                    end_index = start_index
+                    start_index = end_index - (block_to_check if block_to_check<end_index else end_index)
+        except Exception:
             pass
+        if fetch_end == "tail":
+            return self.get_server_node_id(file=file, fetch_end="head",read_block_size=read_block_size)
         return not_found
 
     def is_cluster_log_file(self, file=""):
@@ -122,7 +135,7 @@ class LogReader(object):
             return False
         try:
             out, err = shell_command(['head -n 30 "%s"'%(file)])
-        except:
+        except Exception:
             return False
         if err or not out:
             return False
@@ -133,14 +146,14 @@ class LogReader(object):
                 if self.cluster_log_file_identifier_key in line:
                     found = True
                     break
-            except:
+            except Exception:
                 pass
         if not found:
             return False
         for search_string in self.cluster_log_file_identifier:
             try:
                 out, err = shell_command(['grep -m 1 %s "%s"'%(search_string, file)])
-            except:
+            except Exception:
                 return False
             if err or not out:
                 return False
@@ -151,7 +164,7 @@ class LogReader(object):
             return False
         try:
             out, err = shell_command(['head -n 10 "%s"'%(file)])
-        except:
+        except Exception:
             return False
         if err or not out:
             return False
@@ -161,7 +174,7 @@ class LogReader(object):
             try:
                 if re.search(self.server_log_file_identifier_pattern, line):
                     matched_count += 1
-            except:
+            except Exception:
                 pass
         if matched_count==len(lines):
             return True
@@ -170,7 +183,7 @@ class LogReader(object):
     def get_time(self, path):
         try:
             filename = re.split("/", path)[-2]
-        except:
+        except Exception:
             filename = path
         try:
             return time.strftime(
@@ -180,7 +193,7 @@ class LogReader(object):
                         re.split(
                             '_',
                             filename)[2])))
-        except:
+        except Exception:
             return filename
 
     def get_nodes(self, path):
@@ -217,27 +230,27 @@ class LogReader(object):
                 try:
                     if not re.search(self.configDiffPattern, line):
                         logInfo["config"].update(self.readConfig(file_id))
-                except:
+                except Exception:
                     pass
             elif distribution_pattern_matched:
                 try:
                     logInfo["distribution"].update(self.readDistribution(file_id))
-                except:
+                except Exception:
                     pass
             elif latency_pattern_matched:
                 try:
                     logInfo["latency"] = self.readLatency(file_id)
-                except:
+                except Exception:
                     pass
             elif stats_pattern_matched:
                 try:
                     logInfo["statistics"].update(self.readStats(file_id))
-                except:
+                except Exception:
                     pass
             elif summary_pattern_matched:
                 try:
                     logInfo["summary"].update(self.readSummary(file_id, line))
-                except:
+                except Exception:
                     pass
             try:
                 line = file_id.readline()
@@ -311,7 +324,7 @@ class LogReader(object):
                     temp_val = temp_val.strip()
                     try:
                         test_value = float(temp_val)  # bytewise distribution values are in K,M format... to fix this issue we need to differentiate between float and string
-                    except:
+                    except Exception:
                         current_column -= 1
                     column = columns[current_column]
                     if column in temp_dic:
@@ -377,7 +390,7 @@ class LogReader(object):
 
             try:
                 line = file_id.readline()
-            except:
+            except Exception:
                 break
 
         return statDic
@@ -483,7 +496,7 @@ class LogReader(object):
                     vals[i] = float(vals[i])
                 result[vals[0]] = (header, vals[1:len(vals)])
                 line = file_id.readline()
-            except:
+            except Exception:
                 continue
 
         file_id.seek(1, 1)
@@ -677,7 +690,7 @@ class LogReader(object):
                 arg_seconds = arg_seconds + (60 * long(toks[1].strip()))
             if num_toks > 2:
                 arg_seconds = arg_seconds + (3600 * long(toks[2].strip()))
-        except:
+        except Exception:
             return 0
         return datetime.timedelta(seconds=arg_seconds)
 
@@ -686,7 +699,7 @@ class LogReader(object):
             # Relative start time:
             try:
                 init_dt = tail_dt - self.parse_timedelta(arg_from.strip("- "))
-            except:
+            except Exception:
                 print "can't parse relative start time " + arg_from
                 return 0
         else:
@@ -694,7 +707,7 @@ class LogReader(object):
             try:
                 init_dt = datetime.datetime(
                     *(time.strptime(arg_from, DT_FMT)[0:6]))
-            except:
+            except Exception:
                 print "can't parse absolute start time " + arg_from
                 return 0
         return init_dt
@@ -727,7 +740,7 @@ class LogReader(object):
         line = lines.pop(0)
         try:
             tail_line = lines[-1]
-        except:
+        except Exception:
             tail_line = line
         tail_tm = self.parse_dt(tail_line)
         if global_start_tm:
@@ -744,7 +757,7 @@ class LogReader(object):
         while(self.parse_dt(line) < start_tm):
             try:
                 line = lines.pop(0)
-            except:
+            except Exception:
                 # print "Wrong start time"
                 return global_start_tm, result
 
@@ -771,7 +784,7 @@ class LogReader(object):
                 line = lines.pop(0)
                 if self.parse_dt(line) >= end_tm:
                     return global_start_tm, result
-            except:
+            except Exception:
                 return global_start_tm, result
             if is_casesensitive:
                 m1 = re.search(latencyPattern1 % (grep_str), line)
@@ -1021,6 +1034,6 @@ class LogReader(object):
                 f.seek(pos)
                 min_seek_pos = pos
                 last_timestamp = tm
-        except:
+        except Exception:
             pass
         return indices

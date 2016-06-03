@@ -19,7 +19,8 @@ from distutils.version import StrictVersion, LooseVersion
 import zipfile
 import copy
 from lib.data import lsof_file_type_desc
-from lib.util import clear_val_from_dict, fetch_line_clear_dict
+from lib.util import clear_val_from_dict, fetch_line_clear_dict, get_arg_and_delete_from_mods, \
+    check_arg_and_delete_from_mods
 from lib.view import CliView
 from lib import filesize
 
@@ -225,7 +226,7 @@ class ASInfoController(CommandController):
                     raise ShellException(
                         "Do not understand '%s' in '%s'"%(word
                                                        , " ".join(line)))
-        except:
+        except Exception:
             print  "Do not understand '%s' in '%s'"%(word
                                               , " ".join(line))
             return
@@ -334,37 +335,22 @@ class ShowDistributionController(CommandController):
     def do_eviction(self, line):
         return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
 
-    def clear_option_from_mods(self, option):
-        for mod in self.modifiers:
-            if mod in self.mods and option in self.mods[mod]:
-                    self.mods[mod].remove(option)
-
     @CommandHelp('Shows the distribution of Object sizes for namespaces'
                  , '  Options:'
                  , '    -b               - Force to show byte wise distribution of Object Sizes. Default is rblock wise distribution in percentage'
                  , '    -k <buckets>     - Maximum number of buckets to show if -b is set.'
                    ' It distributes objects in same size k buckets and display only buckets which has objects in it. Default is 5.')
     def do_object_size(self, line):
-        if "-b" not in line:
+        byte_distribution = check_arg_and_delete_from_mods(line=line, arg="-b", default=False, modifiers=self.modifiers, mods=self.mods)
+        if not byte_distribution:
             return self._do_distribution('objsz', 'Object Size Distribution', 'Record Blocks')
-        else:
-            self.clear_option_from_mods("-b")
 
         histogram_name = 'objsz'
         title = 'Object Size Distribution'
         unit = 'Bytes'
-        show_bucket_count = 5
-        set_bucket_count = False
+        set_bucket_count = True
+        show_bucket_count = get_arg_and_delete_from_mods(line=line, arg="-k", return_type=int, default=5, modifiers=self.modifiers, mods=self.mods)
 
-        try:
-            if "-k" in line:
-                i = line.index("-k")
-                show_bucket_count = int(line[i+1])
-                set_bucket_count = True
-                self.clear_option_from_mods("-k")
-                self.clear_option_from_mods(str(show_bucket_count))
-        except:
-            pass
         histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start().result()
         histogram = flip_keys(histogram)
@@ -378,7 +364,7 @@ class ShowDistributionController(CommandController):
                     as_version = builds[host_id]
                     if LooseVersion(as_version) < LooseVersion("2.7.0") or (LooseVersion(as_version) >= LooseVersion("3.0.0") and LooseVersion(as_version) < LooseVersion("3.1.3")):
                         rblock_size_bytes = 512
-                except:
+                except Exception:
                     pass
 
                 hist = data['data']
@@ -428,7 +414,7 @@ class ShowDistributionController(CommandController):
                     as_version = builds[host_id]
                     if LooseVersion(as_version) < LooseVersion("2.7.0") or (LooseVersion(as_version) >= LooseVersion("3.0.0") and LooseVersion(as_version) < LooseVersion("3.1.3")):
                         rblock_size_bytes = 512
-                except:
+                except Exception:
                     pass
                 hist = data['data']
                 width = data['width']
@@ -486,31 +472,41 @@ class ShowLatencyController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
-    @CommandHelp('Displays latency information for Aerospike cluster.')
+    @CommandHelp('Displays latency information for Aerospike cluster.'
+                 , '  Options:'
+                 , '    -b <int>     - Number of seconds (before now) to look back to.'
+                 , '                   default: Minimum to get last slice'
+                 , '    -d <int>     - Duration, the number of seconds from start to search.'
+                 , '                   default: everything to present'
+                 , '    -t <int>     - Interval in seconds to analyze.'
+                 , '                   default: 0, everything as one slice'
+                 , '    -m           - Set to display the output group by machine names.')
     def _do_default(self, line):
-        self.modifiers.add('like')
-        self.modifiers.remove('like')
+        back = get_arg_and_delete_from_mods(line=line, arg="-b", return_type=int, default=None, modifiers=self.modifiers, mods=self.mods)
+        duration = get_arg_and_delete_from_mods(line=line, arg="-d", return_type=int, default=None, modifiers=self.modifiers, mods=self.mods)
+        slice = get_arg_and_delete_from_mods(line=line, arg="-t", return_type=int, default=None, modifiers=self.modifiers, mods=self.mods)
+        machine_wise_display = check_arg_and_delete_from_mods(line=line, arg="-m", default=False, modifiers=self.modifiers, mods=self.mods)
 
-        latency = self.cluster.infoLatency(nodes=self.nodes)
+        latency = self.cluster.infoLatency(nodes=self.nodes, back=back, duration=duration, slice=slice)
 
         hist_latency = {}
-        for node_id, hist_data in latency.iteritems():
-            if isinstance(hist_data, Exception):
-                continue
-            for hist_name, data in hist_data.iteritems():
-                if hist_name not in hist_latency:
-                    hist_latency[hist_name] = {node_id:data}
-                else:
-                    hist_latency[hist_name][node_id] = data
-
-        self.view.showLatency(hist_latency, self.cluster, **self.mods)
+        if machine_wise_display:
+            hist_latency = latency
+        else:
+            for node_id, hist_data in latency.iteritems():
+                if isinstance(hist_data, Exception):
+                    continue
+                for hist_name, data in hist_data.iteritems():
+                    if hist_name not in hist_latency:
+                        hist_latency[hist_name] = {node_id:data}
+                    else:
+                        hist_latency[hist_name][node_id] = data
+        self.view.showLatency(hist_latency, self.cluster, machine_wise_display=machine_wise_display, **self.mods)
 
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'diff'])
-        self.title_every_nth_arg = "-r"
-        self.title_every_nth_default = 0
 
     @CommandHelp('Displays service, network, and namespace configuration'
                  , '  Options:'
@@ -523,20 +519,12 @@ class ShowConfigController(CommandController):
                    )
         return [action.result() for action in actions]
 
-    def get_title_every_nth_arg(self, line):
-        try:
-            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
-                                                         keys=self.modifiers, d=self.mods))
-        except:
-            title_every_nth = self.title_every_nth_default
-        return title_every_nth
-
     @CommandHelp('Displays service configuration'
                  , '  Options:'
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_service(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         service_configs = self.cluster.infoGetConfig(nodes=self.nodes
                                                      , stanza='service')
         for node in service_configs:
@@ -554,7 +542,7 @@ class ShowConfigController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_network(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         hb_configs = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
                                                 , stanza='network.heartbeat').start()
         info_configs  = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
@@ -583,7 +571,7 @@ class ShowConfigController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_namespace(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         namespace_configs = self.cluster.infoGetConfig(nodes=self.nodes
                                                        , stanza='namespace')
         for node in namespace_configs:
@@ -612,7 +600,7 @@ class ShowConfigController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_xdr(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         configs = self.cluster.infoXDRGetConfig(nodes=self.nodes)
 
         xdr_configs = {}
@@ -630,7 +618,7 @@ class ShowConfigController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_dc(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         all_dc_configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
         dc_configs = {}
         for host, configs in all_dc_configs.iteritems():
@@ -869,8 +857,6 @@ class ShowHealthController(CommandController):
 class ShowStatisticsController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'for'])
-        self.title_every_nth_arg = "-r"
-        self.title_every_nth_default = 0
 
     @CommandHelp('Displays bin, set, service, and namespace statistics'
                  , '  Options:'
@@ -886,24 +872,6 @@ class ShowStatisticsController(CommandController):
 
         return [action.result() for action in actions]
 
-    def need_to_show_total(self, line):
-        show_total = False
-        try:
-            if "-t" in line:
-                show_total = True
-                clear_val_from_dict(self.modifiers, self.mods, "-t")
-        except:
-            pass
-        return show_total
-
-    def get_title_every_nth_arg(self, line):
-        try:
-            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
-                                                         keys=self.modifiers, d=self.mods))
-        except:
-            title_every_nth = self.title_every_nth_default
-        return title_every_nth
-
     @CommandHelp('Displays service statistics'
                  , '  Options:'
                  , '    -t           - Set to show total column at the end. It contains node wise sum for statistics.'
@@ -911,8 +879,8 @@ class ShowStatisticsController(CommandController):
                  , '                   default: 0, no repetition.')
     def do_service(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         return util.Future(self.view.showStats, "Service Statistics", service_stats, self.cluster, show_total=show_total
                             , title_every_nth=title_every_nth, **self.mods)
 
@@ -922,8 +890,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_namespace(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
 
         namespaces = namespaces.values()
@@ -955,8 +923,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_sindex(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         sindex_stats = get_sindex_stats(self.cluster, self.nodes, self.mods['for'])
         return [util.Future(self.view.showStats
                             , "%s Sindex Statistics"%(ns_set_sindex)
@@ -972,8 +940,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_sets(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         sets = self.cluster.infoSetStatistics(nodes=self.nodes)
 
         set_stats = {}
@@ -1007,8 +975,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_bins(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         bin_stats = self.cluster.infoBinStatistics(nodes=self.nodes)
         new_bin_stats = {}
 
@@ -1043,8 +1011,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_xdr(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         xdr_stats = self.cluster.infoXDRStatistics(nodes=self.nodes)
 
         return util.Future(self.view.showStats, "XDR Statistics"
@@ -1059,8 +1027,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_dc(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         all_dc_stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
         dc_stats = {}
         for host, stats in all_dc_stats.iteritems():
@@ -1417,7 +1385,7 @@ class CollectinfoController(CommandController):
                         try:
                             if "can't identify protocol" in row:
                                 unidentified_protocol_count = unidentified_protocol_count + 1
-                        except:
+                        except Exception:
                             pass
 
                         try:
@@ -1431,7 +1399,7 @@ class CollectinfoController(CommandController):
                             else:
                                 lsof_dic[type] = lsof_dic[type] + 1
 
-                        except:
+                        except Exception:
                             continue
 
                     print "FileType".ljust(type_ljust_parm)+"Description".ljust(desc_ljust_parm)+"fd count"
@@ -1486,7 +1454,7 @@ class CollectinfoController(CommandController):
         port = 3000
         try:
             host,port = list(self.cluster._original_seed_nodes)[0]
-        except:
+        except Exception:
             port = 3000
 
         # Unfortunately timestamp can not be printed in Centos with dmesg,
@@ -1554,7 +1522,7 @@ class CollectinfoController(CommandController):
         if show_all:
             try:
                 namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
-            except:
+            except Exception:
                 from lib.node import Node
                 tempNode = Node(_ip)
                 namespaces = self.parse_namespace(self.cluster._callNodeMethod([tempNode.ip], "info", "namespaces"))
@@ -1677,7 +1645,7 @@ class CollectinfoController(CommandController):
 
         try:
             as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
-        except:
+        except Exception:
             from lib.node import Node
             tempNode = Node(_ip)
             as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
@@ -1697,7 +1665,7 @@ class CollectinfoController(CommandController):
                     is_xdr_in_asd_version = False
                     try:
                         is_xdr_in_asd_version = self.cluster._callNodeMethod([_ip], "isFeaturePresent", "xdr").popitem()[1]
-                    except:
+                    except Exception:
                         from lib.node import Node
                         tempNode = Node(_ip)
                         is_xdr_in_asd_version = self.cluster._callNodeMethod([tempNode.ip], "isFeaturePresent", "xdr").popitem()[1]
@@ -1709,7 +1677,7 @@ class CollectinfoController(CommandController):
                                 xdr_log_location = '/var/log/aerospike/*xdr.log'
                             else:
                                 xdr_log_location = o.split()[1]
-                        except:
+                        except Exception:
                             xdr_log_location = '/var/log/aerospike/*xdr.log'
 
                         aslogfile = as_logfile_prefix + 'asxdr.log'
@@ -1721,7 +1689,7 @@ class CollectinfoController(CommandController):
             try:
                 try:
                     log_locations = [i.split(':')[1] for i in self.cluster._callNodeMethod([_ip], "info", "logs").popitem()[1].split(';')]
-                except:
+                except Exception:
                     from lib.node import Node
                     tempNode = Node(_ip)
                     log_locations = [i.split(':')[1] for i in self.cluster._callNodeMethod([tempNode.ip], "info", "logs").popitem()[1].split(';')]
@@ -1805,49 +1773,49 @@ class FeaturesController(CommandController):
             try:
                 if int(stats["stat_read_reqs"]) > 0 or int(stats["stat_write_reqs"]) > 0:
                     features[node]["KVS"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["UDF"] = "NO"
             try:
                 if int(stats["udf_read_reqs"]) > 0 or int(stats["udf_write_reqs"]) > 0:
                     features[node]["UDF"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["BATCH"] = "NO"
             try:
                 if int(stats["batch_initiate"]) > 0:
                     features[node]["BATCH"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["SCAN"] = "NO"
             try:
                 if int(stats["tscan_initiate"]) > 0:
                     features[node]["SCAN"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["SINDEX"] = "NO"
             try:
                 if int(stats["sindex-used-bytes-memory"]) > 0:
                     features[node]["SINDEX"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["QUERY"] = "NO"
             try:
                 if int(stats["query_reqs"]) > 0 or int(stats["query_success"]) > 0:
                     features[node]["QUERY"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["AGGREGATION"] = "NO"
             try:
                 if int(stats["query_agg"]) > 0 or int(stats["query_agg_success"]) > 0:
                     features[node]["AGGREGATION"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["LDT"] = "NO"
@@ -1855,21 +1823,21 @@ class FeaturesController(CommandController):
                 if int(stats["sub-records"]) > 0 or int(stats["ldt-writes"]) > 0 or int(
                             stats["ldt-reads"]) > 0 or int(stats["ldt-deletes"]) > 0:
                     features[node]["LDT"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["XDR ENABLED"] = "NO"
             try:
                 if int(stats["stat_read_reqs_xdr"]) > 0:
                     features[node]["XDR ENABLED"] = "YES"
-            except:
+            except Exception:
                 pass
 
             features[node]["XDR DESTINATION"] = "NO"
             try:
                 if int(stats["stat_write_reqs_xdr"]) > 0:
                     features[node]["XDR DESTINATION"] = "YES"
-            except:
+            except Exception:
                 pass
 
         return util.Future(self.view.showConfig, "Features"

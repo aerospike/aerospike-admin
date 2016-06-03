@@ -33,7 +33,7 @@ class CommandHelp(object):
                 self.message[0] = "%sDefault%s: %s"%(terminal.underline()
                                                      , terminal.reset()
                                                      , self.message[0])
-        except:
+        except Exception:
             pass
 
         func._command_help = self.message
@@ -53,7 +53,7 @@ class CommandHelp(object):
         indent = "  " * indent
         try:
             print "\n".join(map(lambda l: indent+l, func._command_help))
-        except:
+        except Exception:
             pass
 
     @staticmethod
@@ -100,7 +100,7 @@ class BaseController(object):
         for command, controller in self.controller_map.items():
             try:
                 controller = controller()
-            except:
+            except Exception:
                 pass
 
             self.commands.add(command, controller)
@@ -119,7 +119,7 @@ class BaseController(object):
 
         try:
             return self.controller_map[commands[0]]().complete(line)
-        except:
+        except Exception:
             # The line contains an ambiguous entry
             # or exact match
             return []
@@ -131,7 +131,7 @@ class BaseController(object):
         try: # define controller map if not defined
             if self.controller_map:
                 pass
-        except:
+        except Exception:
             self.controller_map = {}
 
     def _init(self):
@@ -216,7 +216,7 @@ class BaseController(object):
             try:
                 try:
                     method_name = method.__name__
-                except:
+                except Exception:
                     #method_name = method.__class__.__name__
                     method_name = None
 
@@ -298,7 +298,7 @@ class CommandController(BaseController):
         try:
             if self.nodes:
                 return
-        except:
+        except Exception:
             self.mods = self.parseModifiers(line)
 
             if not self.modifiers:
@@ -312,6 +312,6 @@ class CommandController(BaseController):
                         self.nodes = self.default_nodes
                 else:
                     self.nodes = self.default_nodes
-            except:
+            except Exception:
                 self.nodes = 'all' # default not set use all
 

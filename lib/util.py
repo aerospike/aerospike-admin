@@ -33,7 +33,7 @@ def info_to_dict(value, delimiter = ';'):
             value = map(lambda v: v[1], g[1])
             value = ",".join(sorted(value)) if len(value) > 1 else value[0]
             stat_dict[g[0]] = value
-        except:
+        except Exception:
             # NOTE: 3.0 had a bug in stats at least prior to 3.0.44. This will
             # ignore that bug.
 
@@ -211,15 +211,46 @@ def fetch_argument(line, arg, default):
             i = line.index(arg)
             val = line[i+1]
             return success, val
-    except:
+    except Exception:
         pass
     return not success, default
 
-def fetch_line_clear_dict(line, arg, default, keys, d):
+def fetch_line_clear_dict(line, arg, return_type, default, keys, d):
     if not line:
         return default
-    success, val = fetch_argument(line, arg, default)
-    if success and keys and d:
-        clear_val_from_dict(keys, d, arg)
-        clear_val_from_dict(keys, d, val)
+    try:
+        success, _val = fetch_argument(line, arg, default)
+        val = return_type(_val)
+        if success and keys and d:
+            clear_val_from_dict(keys, d, arg)
+            clear_val_from_dict(keys, d, _val)
+    except Exception:
+        val = default
     return val
+
+def get_arg_and_delete_from_mods(line, arg, return_type, default, modifiers, mods):
+    try:
+        val = fetch_line_clear_dict(line=line, arg=arg, return_type=return_type, default=default, keys=modifiers, d=mods)
+    except Exception:
+        val = default
+    return val
+
+def check_arg_and_delete_from_mods(line, arg, default, modifiers, mods):
+    try:
+        if arg in line:
+            val = True
+            clear_val_from_dict(modifiers, mods, arg)
+        else:
+            val = False
+    except Exception:
+        val = default
+    return val
+
+def remove_suffix(input_string, suffix):
+    try:
+        input_string = input_string.strip()
+        if not input_string.endswith(suffix):
+            return input_string
+        return input_string[0: input_string.rfind(suffix)]
+    except Exception:
+        return input_string

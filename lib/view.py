@@ -130,9 +130,9 @@ class CliView(object):
                                 row['build'] = "C-%s"%(str(build))
                             else:
                                 row['build'] = build
-                    except:
+                    except Exception:
                         pass
-            except:
+            except Exception:
                 pass
 
 
@@ -264,45 +264,45 @@ class CliView(object):
                     total_res[ns]["migrate-rx-partitions-initial"] = 0
                 try:
                     total_res[ns]["master-objects"] += int(ns_stats["master-objects"])
-                except:
+                except Exception:
                     pass
                 try:
                     total_res[ns]["prole-objects"] += int(ns_stats["prole-objects"])
-                except:
+                except Exception:
                     pass
 
                 try:
                     total_res[ns]["used-bytes-memory"] += int(ns_stats["used-bytes-memory"])
-                except:
+                except Exception:
                     pass
                 try:
                     total_res[ns]["used-bytes-disk"] += int(ns_stats["used-bytes-disk"])
-                except:
+                except Exception:
                     pass
 
                 try:
                     total_res[ns]["evicted-objects"] += int(ns_stats["evicted-objects"])
-                except:
+                except Exception:
                     pass
 
                 try:
                     total_res[ns]["migrate-tx-partitions-remaining"] += int(ns_stats["migrate-tx-partitions-remaining"])
-                except:
+                except Exception:
                     pass
 
                 try:
                     total_res[ns]["migrate-rx-partitions-remaining"] += int(ns_stats["migrate-rx-partitions-remaining"])
-                except:
+                except Exception:
                     pass
 
                 try:
                     total_res[ns]["migrate-tx-partitions-initial"] += int(ns_stats["migrate-tx-partitions-initial"])
-                except:
+                except Exception:
                     pass
 
                 try:
                     total_res[ns]["migrate-rx-partitions-initial"] += int(ns_stats["migrate-rx-partitions-initial"])
-                except:
+                except Exception:
                     pass
 
                 row['namespace'] = ns
@@ -310,11 +310,11 @@ class CliView(object):
                 row['node'] = prefixes[node_key]
                 try:
                     row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.ceil((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100))
-                except:
+                except Exception:
                     row["migrate-rx-partitions-remaining-pct"] = "0"
                 try:
                     row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.ceil((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100))
-                except:
+                except Exception:
                     row["migrate-tx-partitions-remaining-pct"] = "0"
                 t.insertRow(row)
 
@@ -342,11 +342,11 @@ class CliView(object):
 
             try:
                 row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate-rx-partitions-remaining"])/float(total_res[ns]["migrate-rx-partitions-initial"]))*100))
-            except:
+            except Exception:
                 row["migrate-rx-partitions-remaining-pct"] = "0"
             try:
                 row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate-tx-partitions-remaining"])/float(total_res[ns]["migrate-tx-partitions-initial"]))*100))
-            except:
+            except Exception:
                 row["migrate-tx-partitions-remaining-pct"] = "0"
 
             t.insertRow(row)
@@ -421,11 +421,11 @@ class CliView(object):
                     total_res[(ns,set)]["n_objects"] = 0
                 try:
                     total_res[(ns,set)]["n-bytes-memory"] += int(set_stats["n-bytes-memory"])
-                except:
+                except Exception:
                     pass
                 try:
                     total_res[(ns,set)]["n_objects"] += int(set_stats["n_objects"])
-                except:
+                except Exception:
                     pass
 
                 row['set'] = set
@@ -607,7 +607,7 @@ class CliView(object):
                         , 'state'
                         , 'sync_state'
                         , 'keys'
-                        , 'objects'
+                        , 'entries'
                         , ('ibtr_memory_used','si_accounted_memory')
                         , ('query_reqs','q')
                         , ('stat_write_success','w')
@@ -615,6 +615,8 @@ class CliView(object):
                         , ('query_avg_rec_count', 's'))
 
         t = Table(title, column_names, group_by=1, sort_by=2)
+        t.addDataSource('entries'
+                        ,Extractors.sifExtractor(('entries','objects')))
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
@@ -724,25 +726,27 @@ class CliView(object):
                 print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n"%(terminal.fg_green(),(len(columns)-1),"s" if (len(columns)-1)>1 else "",terminal.fg_clear())
 
     @staticmethod
-    def showLatency(latency, cluster, like=None, **ignore):
+    def showLatency(latency, cluster, machine_wise_display=False, like=None, **ignore):
         prefixes = cluster.getNodeNames()
-
         if like:
             likes = CliView.compileLikes(like)
+        if not machine_wise_display:
+            if like:
+                histograms = set(filter(likes.search, latency.keys()))
+            else:
+                histograms = set(latency.keys())
 
-            histograms = set(filter(likes.search, latency.keys()))
-        else:
-            histograms = set(latency.keys())
-
-        for hist_name, node_data in sorted(latency.iteritems()):
-            if hist_name not in histograms:
+        for hist_or_node, data in sorted(latency.iteritems()):
+            if not machine_wise_display and hist_or_node not in histograms:
                 continue
 
-            title = "%s Latency"%(hist_name)
+            title = "%s Latency"%(hist_or_node)
             all_columns = set()
 
-            for _, (columns, _) in node_data.iteritems():
-                for column in columns:
+            for _, _data in data.iteritems():
+                if "columns" not in _data or not _data["columns"]:
+                    continue
+                for column in _data["columns"]:
                     if column[0] == '>':
                         column = int(column[1:-2])
                         all_columns.add(column)
@@ -750,14 +754,32 @@ class CliView(object):
             all_columns = [">%sms"%(c) for c in sorted(all_columns)]
             all_columns.insert(0, 'ops/sec')
             all_columns.insert(0, 'Time Span')
-            all_columns.insert(0, 'node')
+            if machine_wise_display:
+                all_columns.insert(0, 'histogram')
+            else:
+                all_columns.insert(0, 'node')
 
             t = Table(title, all_columns)
 
-            for node_id, (columns, data) in node_data.iteritems():
-                node_data = dict(itertools.izip(columns, data))
-                node_data['node'] = prefixes[node_id]
-                t.insertRow(node_data)
+            if machine_wise_display:
+                if like:
+                    histograms = set(filter(likes.search, data.keys()))
+                else:
+                    histograms = set(data.keys())
+
+            for node_or_hist_id, _data in data.iteritems():
+                if machine_wise_display and node_or_hist_id not in histograms:
+                    continue
+                if "columns" not in _data or not _data["columns"]:
+                    continue
+                columns = _data.pop("columns", None)
+                for _data_item in _data["values"]:
+                    row = dict(itertools.izip(columns, _data_item))
+                    if machine_wise_display:
+                        row['histogram'] = node_or_hist_id
+                    else:
+                        row['node'] = prefixes[node_or_hist_id]
+                    t.insertRow(row)
 
             CliView.print_result(t)
 
@@ -812,7 +834,7 @@ class CliView(object):
                     if (val.isdigit()):
                         try:
                             rowTotal[key] = rowTotal[key] + int(val)
-                        except:
+                        except Exception:
                             rowTotal[key] = int(val)
         if show_total:
             rowTotal['NODE'] = "Total"
@@ -916,7 +938,7 @@ class CliView(object):
             try:
                 dt_list.append(datetime.datetime.strptime(key, DT_FMT))
                 remove_list.append(key)
-            except:
+            except Exception:
                 pass
         for rm_key in remove_list:
             keys.remove(rm_key)
@@ -1131,13 +1153,13 @@ class CliView(object):
         try:
             sleep = float(line[0])
             line.pop(0)
-        except:
+        except Exception:
             pass
         else:
             try:
                 num_iterations = int(line[0])
                 line.pop(0)
-            except:
+            except Exception:
                 pass
 
         if "".join(line[0:2]) == "--no-diff":

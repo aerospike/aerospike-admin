@@ -50,7 +50,7 @@ class AerospikeShell(cmd.Cmd):
 
         try:
             readline.read_history_file(ADMINHIST)
-        except:
+        except Exception:
             readline.write_history_file(ADMINHIST)
 
         self.prompt = "Admin> "
@@ -217,14 +217,14 @@ class AerospikeShell(cmd.Cmd):
                         for _ in (1,2):
                             int(line[0])
                             line.pop(0)
-                    except:
+                    except Exception:
                         pass
             line_copy = copy.deepcopy(line)
             names = self.ctrl.complete(line)
             if watch:
                 try:
                     names.remove('watch')
-                except:
+                except Exception:
                     pass
             if not names:
                 names = self.complete_path(line_copy)+[None]
@@ -383,7 +383,7 @@ def main():
                             , help="Path of cluster collectinfo file or directory containing collectinfo files.")
 
         cli_args = parser.parse_args()
-    except:
+    except Exception:
         import optparse
         usage = "usage: %prog [options]"
         parser = optparse.OptionParser(usage, add_help_option=False)
@@ -549,7 +549,7 @@ def main():
         sys.stdout = real_stdout
         if f:
             f.close()
-    except:
+    except Exception:
         pass
 
 def disable_coloring():
@@ -588,7 +588,7 @@ def parse_commands(file):
             continue
         try:
             commands = commands + line
-        except:
+        except Exception:
             commands = line
     return commands
 

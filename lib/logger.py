@@ -114,13 +114,13 @@ class Logger(object):
                 for index in indices:
                     try:
                         files[timestamps[index -1]] = [self.all_cluster_files[timestamps[index-1]]]
-                    except:
+                    except Exception:
                         continue
             else:
                 for timestamp in self.selected_cluster_files:
                     try:
                         files[timestamp] = [self.selected_cluster_files[timestamp]]
-                    except:
+                    except Exception:
                         continue
             return files
         else:
@@ -130,13 +130,13 @@ class Logger(object):
                 for index in indices:
                     try:
                         files.append(self.all_server_files[nodes[index - 1]])
-                    except:
+                    except Exception:
                         continue
             else:
                 for node in sorted(self.selected_server_files.keys()):
                     try:
                         files.append(self.selected_server_files[node])
-                    except:
+                    except Exception:
                         continue
             return {"cluster": files}
 
@@ -151,7 +151,7 @@ class Logger(object):
                     try:
                         if self.log_reader.is_cluster_log_file(file):
                             cluster_files.append(file)
-                    except:
+                    except Exception:
                         pass
                 return cluster_files
             else:
@@ -160,10 +160,10 @@ class Logger(object):
                     try:
                         if self.log_reader.is_server_log_file(file):
                             server_files.append(file)
-                    except:
+                    except Exception:
                         pass
                 return server_files
-        except:
+        except Exception:
             return []
 
     def add_cluster_snapshots(self, path=""):
@@ -256,7 +256,7 @@ class Logger(object):
             for index in indices:
                 try:
                     selected_names.append(log_names[index])
-                except:
+                except Exception:
                     continue
         return selected_names
 
@@ -279,7 +279,7 @@ class Logger(object):
                             del self.all_server_files[log]
                     if log in self.selected_server_files:
                             del self.selected_server_files[log]
-            except:
+            except Exception:
                 continue
 
     def get_list(self, cluster_snapshot=True, all_list=True):
@@ -338,7 +338,7 @@ class Logger(object):
         for index in indices:
             try:
                 selected_list[all_log_keys[int(index) - 1]] = all_list[all_log_keys[int(index) - 1]]
-            except:
+            except Exception:
                 continue
 
     def get_data(self, type="", stanza=""):
@@ -349,7 +349,7 @@ class Logger(object):
         for timestamp in sorted(self.selected_cluster_files.keys()):
             try:
                 res_dic[timestamp] = self.selected_cluster_files[timestamp].get_data(type=type, stanza=stanza)
-            except:
+            except Exception:
                 continue
 
         return res_dic
@@ -451,9 +451,9 @@ class Logger(object):
                         for it in count_its:
                             count_its[it].close()
                         merger.close()
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
 
     def grepDiff(self,
@@ -476,7 +476,7 @@ class Logger(object):
                 for it in diff_its:
                     diff_its[it].close()
                 merger.close()
-        except:
+        except Exception:
             pass
 
     def loglatency(self,
@@ -499,7 +499,7 @@ class Logger(object):
                 for it in latency_its:
                     latency_its[it].close()
                 merger.close()
-        except:
+        except Exception:
             pass
 
     def server_log_merger(self, file_streams, output_page_size=3, return_strings=False, end_key=END_ROW_KEY, default_value=[]):
@@ -520,7 +520,7 @@ class Logger(object):
                 if tm == end_key:
                     latency_end[key] = res
                     continue
-            except:
+            except Exception:
                 continue
             need_to_process = True
             result[key] = {}
@@ -538,7 +538,7 @@ class Logger(object):
             need_to_process = False
             try:
                 min_keys = [k for k, x in tm_keys.items() if not any(y < x for y in tm_keys.values())]
-            except:
+            except Exception:
                 break
             if not min_keys:
                 break
@@ -548,7 +548,7 @@ class Logger(object):
                     if return_strings:
                         try:
                             merge_result[SHOW_RESULT_KEY] += "%s  %s%s::" % (self.bg_colors[colors[(file_streams.keys().index(file_key))][0]][1](), terminal.reset(), file_key)
-                        except:
+                        except Exception:
                             merge_result[SHOW_RESULT_KEY] = "%s  %s%s::" % (self.bg_colors[colors[(file_streams.keys().index(file_key))][0]][1](), terminal.reset(), file_key)
                         merge_result[SHOW_RESULT_KEY] += result[file_key]
                     else:
@@ -566,7 +566,7 @@ class Logger(object):
                         if tm == end_key:
                             latency_end[file_key] = res
                             continue
-                    except:
+                    except Exception:
                         continue
                     need_to_process = True
                     tm_keys[file_key] = tm

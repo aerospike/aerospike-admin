@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
 
 from lib import citrusleaf
 from lib import util
@@ -20,6 +21,8 @@ from time import time
 import socket
 import threading
 from distutils.version import LooseVersion
+from lib.util import remove_suffix
+
 
 def getfqdn(address, timeout=0.5):
     # note: cannot use timeout lib because signal must be run from the
@@ -96,7 +99,7 @@ class Node(object):
             self._serviceIPPort = self.createKey(self.ip, self.port)
             self._key = hash(self._serviceIPPort)
             self.alive = True
-        except:
+        except Exception:
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -147,7 +150,7 @@ class Node(object):
         try:
             xdr_enabled = config['xdr']['enable-xdr']
             return xdr_enabled == 'true'
-        except:
+        except Exception:
             pass
         return False
 
@@ -166,7 +169,7 @@ class Node(object):
             port = self.port
         try:
             self.sock == self.sock # does self.sock exist?
-        except:
+        except Exception:
             self.sock = Telnet(self.ip, port)
 
         self.sock.write("%s\n"%command)
@@ -262,7 +265,7 @@ class Node(object):
         try:
             service = self.info("service")
             return tuple(service.split(':'))
-        except:
+        except Exception:
             return [address]
 
     @return_exceptions
@@ -418,23 +421,62 @@ class Node(object):
         return config
 
     @return_exceptions
-    def infoLatency(self):
-        tdata = self.info('latency:').split(';')[:-1]
+    def infoLatency(self, back=None, duration=None, slice=None):
+        cmd = 'latency:'
+        try:
+            if back or back==0:
+                cmd += "back=%d"%(back) + ";"
+        except Exception:
+            pass
+
+        try:
+            if duration or duration==0:
+                cmd += "duration=%d"%(duration) + ";"
+        except Exception:
+            pass
+
+        try:
+            if slice or slice==0:
+                cmd += "slice=%d"%(slice) + ";"
+        except Exception:
+            pass
         data = {}
+
+        try:
+            hist_info = self.info(cmd)
+        except Exception:
+            return data
+        tdata = hist_info.split(';')[:-1]
+        hist_list = ['reads', 'writes_master', 'writes_reply', 'proxy', 'udf', 'query']
+        hist_name = None
+        start_time = None
+        columns = []
         while tdata != []:
-            columns = tdata.pop(0)
             row = tdata.pop(0)
-
-            hist_name, columns = columns.split(':', 1)
-            columns = columns.split(',')
-            row = row.split(',')
-            start_time = columns.pop(0)
-            end_time = row.pop(0)
-            columns.insert(0, 'Time Span')
-            row = [float(r) for r in row]
-            row.insert(0, "%s->%s"%(start_time, end_time))
-
-            data[hist_name] = (columns, row)
+            new_hist_name, new_columns = row.split(':', 1)
+            if new_hist_name in hist_list:
+                hist_name = new_hist_name
+                columns = new_columns.split(',')
+                start_time = columns.pop(0)
+                start_time = remove_suffix(start_time, "-GMT")
+                columns.insert(0, 'Time Span')
+                continue
+            if not hist_name or not start_time:
+                continue
+            try:
+                row = row.split(',')
+                end_time = row.pop(0)
+                end_time = remove_suffix(end_time, "-GMT")
+                row = [float(r) for r in row]
+                row.insert(0, "%s->%s"%(start_time, end_time))
+                if hist_name not in data:
+                    data[hist_name] = {}
+                    data[hist_name]["columns"] = columns
+                    data[hist_name]["values"] = []
+                data[hist_name]["values"].append(row)
+                start_time = end_time
+            except Exception:
+                pass
 
         return data
 
@@ -534,7 +576,7 @@ class Node(object):
                 data[namespace] = {'histogram':histogram
                                    , 'width':width
                                    , 'data':datum}
-            except:
+            except Exception:
                 pass
         return data
 

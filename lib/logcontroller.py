@@ -16,7 +16,8 @@ from lib.controller import ShellController
 from lib.controllerlib import *
 from lib import terminal
 from lib.logreader import SHOW_RESULT_KEY
-from lib.util import fetch_line_clear_dict, clear_val_from_dict
+from lib.util import fetch_line_clear_dict, clear_val_from_dict, get_arg_and_delete_from_mods, \
+    check_arg_and_delete_from_mods
 from lib.view import CliView
 
 
@@ -26,12 +27,6 @@ def strip_string(search_str):
         return search_str[1:len(search_str) - 1]
     else:
         return search_str
-
-def clear_option_from_mods(self, option):
-        for mod in self.modifiers:
-            if mod in self.mods and option in self.mods[mod]:
-                    self.mods[mod].remove(option)
-
 
 def flip_keys(orig_data):
     new_data = {}
@@ -126,12 +121,12 @@ class InfoController(CommandController):
                 try:
                     if service_infos[timestamp]:
                         self.view.infoString(timestamp, service_infos[timestamp])
-                except:
+                except Exception:
                     pass
                 try:
                     if network_infos[timestamp]:
                         self.view.infoString(timestamp, network_infos[timestamp])
-                except:
+                except Exception:
                     pass
                 continue
             logsnapshot_controller = self.logger.get_log_snapshot(timestamp=timestamp)
@@ -148,7 +143,7 @@ class InfoController(CommandController):
                 try:
                     if ns_infos[timestamp]:
                         self.view.infoString(timestamp, ns_infos[timestamp])
-                except:
+                except Exception:
                     pass
                 continue
             self.view.infoNamespace(flip_keys(ns_stats[timestamp]), self.logger.get_log_snapshot(timestamp=timestamp), title_suffix=" (%s)"%(timestamp), **self.mods)
@@ -168,7 +163,7 @@ class InfoController(CommandController):
                 try:
                     if set_infos[timestamp]:
                         self.view.infoString(timestamp, set_infos[timestamp])
-                except:
+                except Exception:
                     pass
                 continue
             self.convert_key_to_tuple(set_stats[timestamp])
@@ -184,7 +179,7 @@ class InfoController(CommandController):
                 try:
                     if xdr_infos[timestamp]:
                         self.view.infoString(timestamp, xdr_infos[timestamp])
-                except:
+                except Exception:
                     pass
                 continue
             xdr_enable = {}
@@ -205,7 +200,7 @@ class InfoController(CommandController):
                 try:
                     if dc_infos[timestamp]:
                         self.view.infoString(timestamp, dc_infos[timestamp])
-                except:
+                except Exception:
                     pass
                 continue
             for node in dc_stats[timestamp].keys():
@@ -225,7 +220,7 @@ class InfoController(CommandController):
                 try:
                     if sindex_infos[timestamp]:
                         self.view.infoString(timestamp, sindex_infos[timestamp])
-                except:
+                except Exception:
                     pass
                 continue
             self.view.infoSIndex(sindex_stats[timestamp], self.logger.get_log_snapshot(timestamp=timestamp), title_suffix=" (%s)"%(timestamp), **self.mods)
@@ -251,8 +246,6 @@ class ShowConfigController(CommandController):
 
     def __init__(self):
         self.modifiers = set(['like', 'diff'])
-        self.title_every_nth_arg = "-r"
-        self.title_every_nth_default = 0
 
     @CommandHelp('Displays service, network, and namespace configuration'
                  , '  Options:'
@@ -263,20 +256,12 @@ class ShowConfigController(CommandController):
         self.do_network(line)
         self.do_namespace(line)
 
-    def get_title_every_nth_arg(self, line):
-        try:
-            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
-                                                         keys=self.modifiers, d=self.mods))
-        except:
-            title_every_nth = self.title_every_nth_default
-        return title_every_nth
-
     @CommandHelp('Displays service configuration'
                  , '  Options:'
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_service(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         service_configs = self.logger.infoGetConfig(stanza='service')
 
         for timestamp in sorted(service_configs.keys()):
@@ -291,7 +276,7 @@ class ShowConfigController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_network(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         service_configs = self.logger.infoGetConfig(stanza='network')
 
         for timestamp in sorted(service_configs.keys()):
@@ -306,7 +291,7 @@ class ShowConfigController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_namespace(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         ns_configs = self.logger.infoGetConfig(stanza='namespace')
 
         for timestamp in sorted(ns_configs.keys()):
@@ -321,7 +306,7 @@ class ShowConfigController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_xdr(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         xdr_configs = self.logger.infoGetConfig(stanza='xdr')
 
         for timestamp in sorted(xdr_configs.keys()):
@@ -336,7 +321,7 @@ class ShowConfigController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_dc(self, line):
-        title_every_nth = self.get_title_every_nth_arg(line)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         dc_configs = self.logger.infoGetConfig(stanza='dc')
 
         for timestamp in sorted(dc_configs.keys()):
@@ -378,7 +363,8 @@ class ShowDistributionController(CommandController):
                  , '  Options:'
                  , '    -b   - Displays byte wise distribution of Object Sizes if it is collected in collectinfo.')
     def do_object_size(self, line):
-        if '-b' in line:
+        byte_distribution = check_arg_and_delete_from_mods(line=line, arg="-b", default=False, modifiers=self.modifiers, mods=self.mods)
+        if byte_distribution:
             histogram = self.logger.infoGetHistogram("objsz-b")
             for timestamp in histogram:
                 self.view.showObjectDistribution('Object Size Distribution',histogram[timestamp], 'Bytes', 'objsz', 10, False,
@@ -422,26 +408,6 @@ class ShowStatisticsController(CommandController):
 
     def __init__(self):
         self.modifiers = set(['like','for'])
-        self.title_every_nth_arg = "-r"
-        self.title_every_nth_default = 0
-
-    def need_to_show_total(self, line):
-        show_total = False
-        try:
-            if "-t" in line:
-                show_total = True
-                clear_val_from_dict(self.modifiers, self.mods, "-t")
-        except:
-            pass
-        return show_total
-
-    def get_title_every_nth_arg(self, line):
-        try:
-            title_every_nth = int(fetch_line_clear_dict(line=line, arg=self.title_every_nth_arg, default=self.title_every_nth_default,
-                                                         keys=self.modifiers, d=self.mods))
-        except:
-            title_every_nth = self.title_every_nth_default
-        return title_every_nth
 
     @CommandHelp('Displays bin, set, service, and namespace statistics'
                  , '  Options:'
@@ -460,8 +426,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_service(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         service_stats = self.logger.infoStatistics(stanza="service")
         for timestamp in sorted(service_stats.keys()):
             self.view.showConfig(
@@ -476,8 +442,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_namespace(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         ns_stats = self.logger.infoStatistics(stanza="namespace")
 
         for timestamp in sorted(ns_stats.keys()):
@@ -495,8 +461,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_sets(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         set_stats = self.logger.infoStatistics(stanza="sets")
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
@@ -517,8 +483,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_bins(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         new_bin_stats = self.logger.infoStatistics(stanza="bins")
         for timestamp in sorted(new_bin_stats.keys()):
             if not new_bin_stats[timestamp] or isinstance(new_bin_stats[timestamp], Exception) :
@@ -538,8 +504,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_xdr(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         xdr_stats = self.logger.infoStatistics(stanza="xdr")
         for timestamp in sorted(xdr_stats.keys()):
             self.view.showConfig(
@@ -554,8 +520,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_dc(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         dc_stats = self.logger.infoStatistics(stanza="dc")
         for timestamp in sorted(dc_stats.keys()):
             for dc, stats in dc_stats[timestamp].iteritems():
@@ -570,8 +536,8 @@ class ShowStatisticsController(CommandController):
                  , '    -r <int>     - Repeating output table title and row header after every r columns.'
                  , '                   default: 0, no repetition.')
     def do_sindex(self, line):
-        show_total = self.need_to_show_total(line)
-        title_every_nth = self.get_title_every_nth_arg(line)
+        show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
         sindex_stats = self.logger.infoStatistics(stanza="sindex")
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp] or isinstance(sindex_stats[timestamp], Exception):
@@ -605,7 +571,7 @@ class FeaturesController(CommandController):
                             stats["stat_read_reqs"]) > 0 or int(
                             stats["stat_write_reqs"]) > 0:
                         features[node]["KVS"] = "YES"
-                except:
+                except Exception:
                     pass
 
                 features[node]["UDF"] = "NO"
@@ -614,28 +580,28 @@ class FeaturesController(CommandController):
                             stats["udf_read_reqs"]) > 0 or int(
                             stats["udf_write_reqs"]) > 0:
                         features[node]["UDF"] = "YES"
-                except:
+                except Exception:
                     pass
 
                 features[node]["BATCH"] = "NO"
                 try:
                     if int(stats["batch_initiate"]) > 0:
                         features[node]["BATCH"] = "YES"
-                except:
+                except Exception:
                     pass
 
                 features[node]["SCAN"] = "NO"
                 try:
                     if int(stats["tscan_initiate"]) > 0:
                         features[node]["SCAN"] = "YES"
-                except:
+                except Exception:
                     pass
 
                 features[node]["SINDEX"] = "NO"
                 try:
                     if int(stats["sindex-used-bytes-memory"]) > 0:
                         features[node]["SINDEX"] = "YES"
-                except:
+                except Exception:
                     pass
 
                 features[node]["QUERY"] = "NO"
@@ -644,7 +610,7 @@ class FeaturesController(CommandController):
                             stats["query_reqs"]) > 0 or int(
                             stats["query_success"]) > 0:
                         features[node]["QUERY"] = "YES"
-                except:
+                except Exception:
                     pass
 
                 features[node]["AGGREGATION"] = "NO"
@@ -653,7 +619,7 @@ class FeaturesController(CommandController):
                             stats["query_agg"]) > 0 or int(
                             stats["query_agg_success"]) > 0:
                         features[node]["AGGREGATION"] = "YES"
-                except:
+                except Exception:
                     pass
 
                 try:
@@ -666,23 +632,23 @@ class FeaturesController(CommandController):
                                         namespace_stats[ns][node].get("ldt-reads","0")) > 0 or int(namespace_stats[ns][node].get("ldt_reads","0")) > 0 or int(
                                         namespace_stats[ns][node].get("ldt-deletes","0")) > 0 or int(namespace_stats[ns][node].get("ldt_deletes","0")) > 0:
                                         features[node]["LDT(%s)" % (ns)] = "YES"
-                            except:
+                            except Exception:
                                 pass
-                except:
+                except Exception:
                     pass
 
                 features[node]["XDR ENABLED"] = "NO"
                 try:
                     if int(stats["stat_read_reqs_xdr"]) > 0:
                         features[node]["XDR ENABLED"] = "YES"
-                except:
+                except Exception:
                     pass
 
                 features[node]["XDR DESTINATION"] = "NO"
                 try:
                     if int(stats["stat_write_reqs_xdr"]) > 0:
                         features[node]["XDR DESTINATION"] = "YES"
-                except:
+                except Exception:
                     pass
 
             self.view.showConfig(
@@ -819,7 +785,7 @@ class GrepFile(CommandController):
                     search_strs.append(strip_string(tline.pop(0)))
                     reading_search_strings = True
                     search_string_read = True
-                except:
+                except Exception:
                     search_strs = []
             elif word == '-a':
                 is_and = True
@@ -837,19 +803,19 @@ class GrepFile(CommandController):
             elif word == '-p' and not self.grep_cluster:
                 try:
                     output_page_size = int(strip_string(tline.pop(0)))
-                except:
+                except Exception:
                     print "Wrong output page size, setting default value"
             elif word == '-n':
                 try:
                     sources = [
                         int(i) for i in strip_string(
                             tline.pop(0)).split(",")]
-                except:
+                except Exception:
                     sources = []
             elif reading_search_strings:
                 try:
                     search_strs.append(strip_string(word))
-                except:
+                except Exception:
                     pass
                 search_string_read = True
             else:
@@ -904,7 +870,7 @@ class GrepFile(CommandController):
                     search_strs.append(strip_string(tline.pop(0)))
                     reading_search_strings = True
                     search_string_read = True
-                except:
+                except Exception:
                     search_strs = []
             elif word == '-a':
                 is_and = True
@@ -916,12 +882,12 @@ class GrepFile(CommandController):
             elif word == '-p' and not self.grep_cluster:
                 try:
                     output_page_size = int(strip_string(tline.pop(0)))
-                except:
+                except Exception:
                     print "Wrong output page size, setting default value"
             elif word == '-r' and not self.grep_cluster:
                 try:
                     title_every_nth = int(strip_string(tline.pop(0)))
-                except:
+                except Exception:
                     print "Wrong output title repetition value, setting default value"
             elif word == '-f' and not self.grep_cluster:
                 start_tm = tline.pop(0)
@@ -937,12 +903,12 @@ class GrepFile(CommandController):
                     sources = [
                         int(i) for i in strip_string(
                             tline.pop(0)).split(",")]
-                except:
+                except Exception:
                     sources = []
             elif reading_search_strings:
                 try:
                     search_strs.append(strip_string(word))
-                except:
+                except Exception:
                     pass
                 search_string_read = True
             else:
@@ -1007,19 +973,19 @@ class GrepFile(CommandController):
             elif word == '-p' and not self.grep_cluster:
                 try:
                     output_page_size = int(strip_string(tline.pop(0)))
-                except:
+                except Exception:
                     print "Wrong output page size, setting default value"
             elif word == '-r' and not self.grep_cluster:
                 try:
                     title_every_nth = int(strip_string(tline.pop(0)))
-                except:
+                except Exception:
                     print "Wrong output title repetition value, setting default value"
             elif word == '-n':
                 try:
                     sources = [
                         int(i) for i in strip_string(
                             tline.pop(0)).split(",")]
-                except:
+                except Exception:
                     sources = []
             elif word == '-l' and tline:
                 limit = tline.pop(0)
@@ -1082,19 +1048,19 @@ class GrepFile(CommandController):
             elif word == '-p' and not self.grep_cluster:
                 try:
                     output_page_size = int(strip_string(tline.pop(0)))
-                except:
+                except Exception:
                     print "Wrong output page size, setting default value"
             elif word == '-r' and not self.grep_cluster:
                 try:
                     title_every_nth = int(strip_string(tline.pop(0)))
-                except:
+                except Exception:
                     print "Wrong output title repetition value, setting default value"
             elif word == '-n':
                 try:
                     sources = [
                         int(i) for i in strip_string(
                             tline.pop(0)).split(",")]
-                except:
+                except Exception:
                     sources = []
             elif word == '-o':
                 time_rounding = False
@@ -1430,12 +1396,12 @@ class RemoveClusterController(CommandController):
             if word == '-a':
                 try:
                     list_ptr = all_remove_list
-                except:
+                except Exception:
                     pass
             elif word == '-s':
                 try:
                     list_ptr = selected_remove_list
-                except:
+                except Exception:
                     pass
             elif list_ptr is not None:
                 try:
@@ -1444,7 +1410,7 @@ class RemoveClusterController(CommandController):
                     else:
                         index = int(word)-1
                         list_ptr.append(index)
-                except:
+                except Exception:
                     pass
             else:
                 raise ShellException("Do not understand '%s' in '%s'" % (word, " ".join(line)))
@@ -1487,12 +1453,12 @@ class RemoveServerController(CommandController):
             if word == '-a':
                 try:
                     list_ptr = all_remove_list
-                except:
+                except Exception:
                     pass
             elif word == '-s':
                 try:
                     list_ptr = selected_remove_list
-                except:
+                except Exception:
                     pass
             elif list_ptr is not None:
                 try:
@@ -1501,7 +1467,7 @@ class RemoveServerController(CommandController):
                     else:
                         index = int(word)-1
                         list_ptr.append(index)
-                except:
+                except Exception:
                     pass
             else:
                 raise ShellException("Do not understand '%s' in '%s'" % (word, " ".join(line)))

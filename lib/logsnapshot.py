@@ -24,7 +24,7 @@ class LogNode(object):
         try:
             if node_id.startswith("*"):
                 node_id = node_id[1:]
-        except:
+        except Exception:
             pass
         self.node_id = node_id
 
@@ -55,13 +55,15 @@ class LogSnapshot(object):
 
     def destroy(self):
         try:
+            if self.file_stream:
+                self.file_stream.close()
             del self.timestamp
             del self.cluster_file
             del self.log_reader
             del self.cluster_data
             del self.nodes
             del self.prefixes
-        except:
+        except Exception:
             pass
 
     def get_prefixes(self):
@@ -102,7 +104,7 @@ class LogSnapshot(object):
                 self.cluster_data.update(self.log_reader.read(self.cluster_file))
 
             return copy.deepcopy(self.cluster_data[type][stanza])
-        except:
+        except Exception:
             pass
         return {}
 
@@ -215,7 +217,7 @@ class LogSnapshot(object):
                            xdr_build = line_list[indices[0]].strip()
                            if node in self.nodes:
                                node_value[node] = xdr_build
-                    except:
+                    except Exception:
                         pass
                 elif all(column in line for column in header_columns) or header_search_incomplete:
                     line_list = line.split()
@@ -240,7 +242,7 @@ class LogSnapshot(object):
 
             for node in self.nodes:
                 xdr_build[node] = self.nodes[node].xdr_build
-        except:
+        except Exception:
             pass
         return xdr_build
 
@@ -252,7 +254,7 @@ class LogSnapshot(object):
 
             for node in self.nodes:
                 asd_build[node] = self.nodes[node].asd_build
-        except:
+        except Exception:
             pass
         return asd_build
 
@@ -264,7 +266,7 @@ class LogSnapshot(object):
 
             for node in self.nodes:
                 asd_version[node] = self.nodes[node].asd_version
-        except:
+        except Exception:
             pass
         return asd_version
 
@@ -316,7 +318,7 @@ class LogSnapshot(object):
         while line:
             try:
                 show_result += line
-            except:
+            except Exception:
                 show_result = line
             line = self.next_line()
 

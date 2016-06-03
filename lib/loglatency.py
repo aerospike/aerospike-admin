@@ -70,7 +70,7 @@ class LogLatency(object):
             if not line:
                 return None
             return line
-        except:
+        except Exception:
             return None
 
     #------------------------------------------------
