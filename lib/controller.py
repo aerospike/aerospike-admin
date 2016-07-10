@@ -20,7 +20,7 @@ import zipfile
 import copy
 from lib.data import lsof_file_type_desc
 from lib.util import clear_val_from_dict, fetch_line_clear_dict, get_arg_and_delete_from_mods, \
-    check_arg_and_delete_from_mods
+    check_arg_and_delete_from_mods, get_value_from_dict
 from lib.view import CliView
 from lib import filesize
 
@@ -82,7 +82,6 @@ class RootController(BaseController):
             'info':InfoController
             , 'show':ShowController
             , 'asinfo':ASInfoController
-            , 'clinfo':ASInfoController
             , 'cluster':ClusterController
             , '!':ShellController
             , 'shell':ShellController
@@ -271,7 +270,7 @@ class ShowController(CommandController):
              , 'and time to live for node and a namespace.')
 class ShowDistributionController(CommandController):
     def __init__(self):
-        self.modifiers = set(['with', 'like'])
+        self.modifiers = set(['with', 'for'])
 
     @CommandHelp('Shows the distributions of Time to Live and Object Size'
                  , '  Options(only for Object Size distribution):'
@@ -318,14 +317,13 @@ class ShowDistributionController(CommandController):
                     data['percentiles'] = [(r * width)-1 if r>0 else r for r in result]
                 else:
                     data['percentiles'] = [r * width for r in result]
-
         return util.Future(self.view.showDistribution
                            , title
                            , histogram
                            , unit
                            , histogram_name
                            , self.cluster
-                           , **self.mods)
+                           , like=self.mods['for'])
 
     @CommandHelp('Shows the distribution of TTLs for namespaces')
     def do_time_to_live(self, line):
@@ -441,7 +439,6 @@ class ShowDistributionController(CommandController):
             for column in columns:
                 if need_to_show[column]:
                     host_data["columns"].append(column)
-
         return util.Future(self.view.showObjectDistribution
                            , title
                            , histogram
@@ -450,7 +447,7 @@ class ShowDistributionController(CommandController):
                            , show_bucket_count
                            , set_bucket_count
                            , self.cluster
-                           , **self.mods)
+                           , like=self.mods['for'])
 
     def get_bucket_range(self, current_bucket, next_bucket, width, rblock_size_bytes):
         s_b = "0 B"
@@ -470,11 +467,11 @@ class ShowDistributionController(CommandController):
 
 class ShowLatencyController(CommandController):
     def __init__(self):
-        self.modifiers = set(['with', 'like'])
+        self.modifiers = set(['with', 'like', 'for'])
 
     @CommandHelp('Displays latency information for Aerospike cluster.'
                  , '  Options:'
-                 , '    -b <int>     - Number of seconds (before now) to look back to.'
+                 , '    -f <int>     - Number of seconds (before now) to look back to.'
                  , '                   default: Minimum to get last slice'
                  , '    -d <int>     - Duration, the number of seconds from start to search.'
                  , '                   default: everything to present'
@@ -482,12 +479,22 @@ class ShowLatencyController(CommandController):
                  , '                   default: 0, everything as one slice'
                  , '    -m           - Set to display the output group by machine names.')
     def _do_default(self, line):
-        back = get_arg_and_delete_from_mods(line=line, arg="-b", return_type=int, default=None, modifiers=self.modifiers, mods=self.mods)
+        back = get_arg_and_delete_from_mods(line=line, arg="-f", return_type=int, default=None, modifiers=self.modifiers, mods=self.mods)
         duration = get_arg_and_delete_from_mods(line=line, arg="-d", return_type=int, default=None, modifiers=self.modifiers, mods=self.mods)
         slice = get_arg_and_delete_from_mods(line=line, arg="-t", return_type=int, default=None, modifiers=self.modifiers, mods=self.mods)
         machine_wise_display = check_arg_and_delete_from_mods(line=line, arg="-m", default=False, modifiers=self.modifiers, mods=self.mods)
 
-        latency = self.cluster.infoLatency(nodes=self.nodes, back=back, duration=duration, slice=slice)
+        namespace_set = set()
+        if self.mods['for']:
+            namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
+            namespaces = namespaces.values()
+            for namespace in namespaces:
+                if isinstance(namespace, Exception):
+                    continue
+                namespace_set.update(namespace)
+            namespace_set = set(util.filter_list(list(namespace_set), self.mods['for']))
+
+        latency = self.cluster.infoLatency(nodes=self.nodes, back=back, duration=duration, slice=slice, ns_set=namespace_set)
 
         hist_latency = {}
         if machine_wise_display:
@@ -501,7 +508,7 @@ class ShowLatencyController(CommandController):
                         hist_latency[hist_name] = {node_id:data}
                     else:
                         hist_latency[hist_name][node_id] = data
-        self.view.showLatency(hist_latency, self.cluster, machine_wise_display=machine_wise_display, **self.mods)
+        self.view.showLatency(hist_latency, self.cluster, machine_wise_display=machine_wise_display, show_ns_details=True if namespace_set else False, **self.mods)
 
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(CommandController):
@@ -547,6 +554,8 @@ class ShowConfigController(CommandController):
                                                 , stanza='network.heartbeat').start()
         info_configs  = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
                                                    , stanza='network.info').start()
+        nw_configs = util.Future(self.cluster.infoGetConfig, nodes=self.nodes
+                                                   , stanza='network').start()
 
         network_configs = {}
         hb_configs = hb_configs.result()
@@ -562,6 +571,13 @@ class ShowConfigController(CommandController):
                 continue
             else:
                 network_configs[node].update(info_configs[node]['network.info'])
+
+        nw_configs = nw_configs.result()
+        for node in nw_configs:
+            if isinstance(nw_configs[node], Exception):
+                continue
+            else:
+                network_configs[node].update(nw_configs[node]['network'])
 
         return util.Future(self.view.showConfig, "Network Configuration", network_configs
                              , self.cluster, title_every_nth=title_every_nth, **self.mods)
@@ -1081,8 +1097,8 @@ class ClusterController(CommandController):
             for params in nodes.values():
                 if isinstance(params, Exception):
                     continue
-                master_objs += int(params['master-objects'])
-                replica_objs += int(params['prole-objects'])
+                master_objs += get_value_from_dict(params,('master-objects','master_objects'),0,int)
+                replica_objs += get_value_from_dict(params,('prole-objects','prole_objects'),0,int)
                 repl_factor = max(repl_factor, int(params['repl-factor']))
             ns_info[ns]['avg_master_objs'] = master_objs / 4096
             ns_info[ns]['avg_replica_objs'] = replica_objs / 4096
@@ -1097,25 +1113,43 @@ class ClusterController(CommandController):
             ns_info[ns]['diff_replica'] = diff_replica
         return ns_info
 
-    def get_pmap_data(self, pmap_info, ns_info):
+    def get_pmap_data(self, pmap_info, ns_info, versions):
         # TODO: check if node not have master & replica objects
         pid_range = 4096        # each namespace is divided into 4096 partition
         is_dist_delta_exeeds = lambda exp, act, diff: abs(exp - act) > diff
         pmap_data = {}
         ns_missing_part = {}
         visited_ns = set()
+        # required fields
+        # format : (index_ptr, field_name, default_index)
+        required_fields = [("ns_index","namespace",0),("pid_index","partition",1),("state_index","state",2),
+                           ("pindex_index","replica",3),("objects_index","records",9)]
         for _node, partitions in pmap_info.items():
             node_pmap = dict()
             if isinstance(partitions, Exception):
                 continue
+            f_indices = {}
+            # default index in partition fields for server < 3.6.1
+            for t in required_fields:
+                f_indices[t[0]] = t[2]
+            index_set = False
             for item in partitions.split(';'):
                 fields = item.split(':')
-                ns, pid, state, pindex = fields[0], int(fields[1]), fields[2], int(fields[3])
-                # pmap format is changed(1 field is removed) in aerospike 3.6.1
-                if len(fields) == 11:
-                    objects = int(fields[8])
-                else:
-                    objects = int(fields[9])
+                if not index_set:
+                    index_set = True
+                    if all(i[1] in fields for i in required_fields):
+                        # pmap format contains headers from server 3.9 onwards
+                        for t in required_fields:
+                            f_indices[t[0]] = fields.index(t[1])
+                        continue
+                    elif LooseVersion(versions[_node]) >= LooseVersion("3.6.1"):
+                        # pmap format is changed(1 field is removed) in aerospike 3.6.1
+                        # In 3.7.5, one new field got added but at the end of the fields. So it doesn't affect required indices
+                        f_indices["objects_index"]=8
+                ns, pid, state, pindex, objects = fields[f_indices["ns_index"]], int(fields[f_indices["pid_index"]]),\
+                                         fields[f_indices["state_index"]], int(fields[f_indices["pindex_index"]]),\
+                                         int(fields[f_indices["objects_index"]])
+
                 if ns not in node_pmap:
                     node_pmap[ns] = { 'pri_index' : 0,
                                       'sec_index' : 0,
@@ -1127,6 +1161,7 @@ class ClusterController(CommandController):
                     ns_missing_part[ns]['missing_part'] = [range(ns_info[ns]['repl_factor']) for i in range(pid_range)]
                     visited_ns.add(ns)
                 if state == 'S':
+                    # partition state is SYNC
                     try:
                         if  pindex == 0:
                             node_pmap[ns]['pri_index'] += 1
@@ -1144,8 +1179,8 @@ class ClusterController(CommandController):
                                 node_pmap[ns]['replica_disc_part'].append(pid)
 
                         ns_missing_part[ns]['missing_part'][pid].remove(pindex)
-                    except Exception as e:
-                        print e
+                    except Exception:
+                        pass
                 if pid not in range(pid_range):
                     print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
             pmap_data[_node] = node_pmap
@@ -1156,8 +1191,12 @@ class ClusterController(CommandController):
     
     @CommandHelp('"pmap" command is used for displaying partition map analysis of cluster')
     def do_pmap(self, line):
-        pmap_info = self.cluster.info("partition-info", nodes = self.nodes)
-        namespaces = self.cluster.infoNamespaces(nodes=self.nodes)
+        versions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
+        pmap_info = util.Future(self.cluster.info, 'partition-info', nodes=self.nodes).start()
+        namespaces = util.Future(self.cluster.infoNamespaces, nodes=self.nodes).start()
+        versions = versions.result()
+        pmap_info = pmap_info.result()
+        namespaces = namespaces.result()
         namespaces = namespaces.values()
         namespace_set = set()
         namespace_stats = dict()
@@ -1169,7 +1208,7 @@ class ClusterController(CommandController):
             ns_stats = self.cluster.infoNamespaceStatistics(namespace
                                                             , nodes=self.nodes)
             namespace_stats[namespace] = ns_stats
-        pmap_data = self.get_pmap_data(pmap_info, self.get_namespace_data(namespace_stats))
+        pmap_data = self.get_pmap_data(pmap_info, self.get_namespace_data(namespace_stats), versions)
         return util.Future(self.view.clusterPMap, pmap_data, self.cluster)
 
     def get_qnode_data(self, qnode_config=''):
@@ -1499,7 +1538,7 @@ class CollectinfoController(CommandController):
                       ['ss -pant | grep %d | grep CLOSE-WAIT | wc -l'%(port),'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l'%(port)],
                       ['ss -pant | grep %d | grep ESTAB | wc -l'%(port),'netstat -pant | grep %d | grep ESTABLISHED | wc -l'%(port)]
                       ]
-        dignostic_info_params = ['network', 'set', 'namespace', 'xdr', 'dc', 'sindex']
+        dignostic_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
         dignostic_features_params = ['features']
         dignostic_cluster_params = ['pmap']
         dignostic_show_params = ['config', 'config xdr', 'config dc', 'config diff', 'distribution', 'distribution eviction', 'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
@@ -1764,81 +1803,111 @@ class FeaturesController(CommandController):
     def __init__(self):
         self.modifiers = set(['with', 'like'])
 
+    def check_key_for_gt(self, d={}, keys=(), v=0, is_and=False, type_check=int):
+        if not keys:
+            return True
+        if not d:
+            return False
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        if is_and:
+            if all(get_value_from_dict(d,k,v,type_check)>v for k in keys):
+                return True
+        else:
+            if any(get_value_from_dict(d,k,v,type_check)>v for k in keys):
+                return True
+        return False
+
     def _do_default(self, line):
         service_stats = self.cluster.infoStatistics(nodes=self.nodes)
+        ns_stats = self.cluster.infoAllNamespaceStatistics(nodes=self.nodes)
+
         features = {}
         for node, stats in service_stats.iteritems():
             features[node] = {}
             features[node]["KVS"] = "NO"
-            try:
-                if int(stats["stat_read_reqs"]) > 0 or int(stats["stat_write_reqs"]) > 0:
-                    features[node]["KVS"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('stat_read_reqs','stat_write_reqs')):
+                features[node]["KVS"] = "YES"
+            elif node in ns_stats:
+                for ns, nsval in ns_stats[node].iteritems():
+                    if self.check_key_for_gt(nsval,('client_read_error','client_read_success','client_write_error','client_write_success')):
+                        features[node]["KVS"] = "YES"
+                        break
 
             features[node]["UDF"] = "NO"
-            try:
-                if int(stats["udf_read_reqs"]) > 0 or int(stats["udf_write_reqs"]) > 0:
-                    features[node]["UDF"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('udf_read_reqs','udf_write_reqs')):
+                features[node]["UDF"] = "YES"
+            elif node in ns_stats:
+                for ns, nsval in ns_stats[node].iteritems():
+                    if self.check_key_for_gt(nsval,('client_udf_complete','client_udf_error')):
+                        features[node]["UDF"] = "YES"
+                        break
 
             features[node]["BATCH"] = "NO"
-            try:
-                if int(stats["batch_initiate"]) > 0:
-                    features[node]["BATCH"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('batch_initiate')):
+                features[node]["BATCH"] = "YES"
 
             features[node]["SCAN"] = "NO"
-            try:
-                if int(stats["tscan_initiate"]) > 0:
-                    features[node]["SCAN"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('tscan_initiate','basic_scans_succeeded','basic_scans_failed','aggr_scans_succeeded'
+                                            'aggr_scans_failed','udf_bg_scans_succeeded','udf_bg_scans_failed')):
+                features[node]["SCAN"] = "YES"
+            elif node in ns_stats:
+                for ns, nsval in ns_stats[node].iteritems():
+                    if self.check_key_for_gt(nsval,('scan_basic_complete','scan_basic_error','scan_aggr_complete',
+                                                    'scan_aggr_error','scan_udf_bg_complete','scan_udf_bg_error')):
+                        features[node]["SCAN"] = "YES"
+                        break
 
             features[node]["SINDEX"] = "NO"
-            try:
-                if int(stats["sindex-used-bytes-memory"]) > 0:
-                    features[node]["SINDEX"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('sindex-used-bytes-memory')):
+                features[node]["SINDEX"] = "YES"
+            elif node in ns_stats:
+                for ns, nsval in ns_stats[node].iteritems():
+                    if self.check_key_for_gt(nsval,('memory_used_sindex_bytes')):
+                        features[node]["SINDEX"] = "YES"
+                        break
 
             features[node]["QUERY"] = "NO"
-            try:
-                if int(stats["query_reqs"]) > 0 or int(stats["query_success"]) > 0:
-                    features[node]["QUERY"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('query_reqs','query_success')):
+                features[node]["QUERY"] = "YES"
+            elif node in ns_stats:
+                for ns, nsval in ns_stats[node].iteritems():
+                    if self.check_key_for_gt(nsval,('query_reqs','query_success')):
+                        features[node]["QUERY"] = "YES"
+                        break
 
             features[node]["AGGREGATION"] = "NO"
-            try:
-                if int(stats["query_agg"]) > 0 or int(stats["query_agg_success"]) > 0:
-                    features[node]["AGGREGATION"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('query_agg','query_agg_success')):
+                features[node]["AGGREGATION"] = "YES"
+            elif node in ns_stats:
+                for ns, nsval in ns_stats[node].iteritems():
+                    if self.check_key_for_gt(nsval,('query_agg','query_agg_success')):
+                        features[node]["AGGREGATION"] = "YES"
+                        break
 
             features[node]["LDT"] = "NO"
-            try:
-                if int(stats["sub-records"]) > 0 or int(stats["ldt-writes"]) > 0 or int(
-                            stats["ldt-reads"]) > 0 or int(stats["ldt-deletes"]) > 0:
-                    features[node]["LDT"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('sub-records','ldt-writes','ldt-reads','ldt-deletes'
+                                            ,'ldt_writes','ldt_reads','ldt_deletes','sub_objects')):
+                features[node]["LDT"] = "YES"
+            elif node in ns_stats:
+                for ns, nsval in ns_stats[node].iteritems():
+                    if self.check_key_for_gt(nsval,('ldt-writes','ldt-reads','ldt-deletes','ldt_writes','ldt_reads','ldt_deletes')):
+                        features[node]["LDT"] = "YES"
+                        break
 
             features[node]["XDR ENABLED"] = "NO"
-            try:
-                if int(stats["stat_read_reqs_xdr"]) > 0:
-                    features[node]["XDR ENABLED"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('stat_read_reqs_xdr','xdr_read_success','xdr_read_error')):
+                features[node]["XDR ENABLED"] = "YES"
 
             features[node]["XDR DESTINATION"] = "NO"
-            try:
-                if int(stats["stat_write_reqs_xdr"]) > 0:
-                    features[node]["XDR DESTINATION"] = "YES"
-            except Exception:
-                pass
+            if self.check_key_for_gt(stats,('stat_write_reqs_xdr')):
+                features[node]["XDR DESTINATION"] = "YES"
+            elif node in ns_stats:
+                for ns, nsval in ns_stats[node].iteritems():
+                    if self.check_key_for_gt(nsval,('xdr_write_success')):
+                        features[node]["XDR DESTINATION"] = "YES"
+                        break
+
 
         return util.Future(self.view.showConfig, "Features"
                     , features

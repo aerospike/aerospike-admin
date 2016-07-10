@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import datetime
+import re
 
 from lib import citrusleaf
 from lib import util
@@ -335,11 +337,10 @@ class Node(object):
         stats = util.info_to_list(stats)
         stats.pop()
         stats = [util.info_colon_to_dict(stat) for stat in stats]
-
         sets = {}
         for stat in stats:
-            ns_name = stat['ns_name']
-            set_name = stat['set_name']
+            ns_name = util.get_value_from_dict(d=stat, keys=('ns_name','namespace','ns'))
+            set_name = util.get_value_from_dict(d=stat, keys=('set_name','set'))
 
             key = (ns_name, set_name)
             if key not in sets:
@@ -420,8 +421,35 @@ class Node(object):
             # config["network"] = self.infoGetConfig("network")
         return config
 
+    def update_total_latency(self, t_rows, row):
+        if not row or not isinstance(row, list):
+            return t_rows
+        if not t_rows:
+            t_rows = []
+            t_rows.append(row)
+            return t_rows
+
+        tm_range = row[0]
+        updated = False
+        for t_row in t_rows:
+            if t_row[0]==tm_range:
+                n_sum = float(row[1])
+                if n_sum>0:
+                    o_sum = float(t_row[1])
+                    for i, t_p in enumerate(t_row[2:]):
+                        o_t = float((o_sum*t_p)/100.00)
+                        n_t = float((n_sum*row[i+2])/100.00)
+                        t_row[i+2] = round(float(((o_t+n_t)*100)/(o_sum+n_sum)), 2)
+                    t_row[1] = round(o_sum+n_sum, 2)
+                updated = True
+                break
+
+        if not updated:
+            t_rows.append(copy.deepcopy(row))
+        return t_rows
+
     @return_exceptions
-    def infoLatency(self, back=None, duration=None, slice=None):
+    def infoLatency(self, back=None, duration=None, slice=None, ns_set=None):
         cmd = 'latency:'
         try:
             if back or back==0:
@@ -446,38 +474,67 @@ class Node(object):
             hist_info = self.info(cmd)
         except Exception:
             return data
-        tdata = hist_info.split(';')[:-1]
-        hist_list = ['reads', 'writes_master', 'writes_reply', 'proxy', 'udf', 'query']
+        #tdata = hist_info.split(';')[:-1]
+        tdata = hist_info.split(';')
         hist_name = None
+        ns = None
         start_time = None
         columns = []
+        ns_hist_pattern = '{([A-Za-z_\d-]+)}-([A-Za-z_-]+)'
+        total_key = (" ", "total")
+
         while tdata != []:
             row = tdata.pop(0)
-            new_hist_name, new_columns = row.split(':', 1)
-            if new_hist_name in hist_list:
-                hist_name = new_hist_name
-                columns = new_columns.split(',')
-                start_time = columns.pop(0)
+            if not row:
+                continue
+            row = row.split(",")
+            if len(row)<2:
+                continue
+
+            s1, s2 = row[0].split(':', 1)
+
+            if not s1.isdigit():
+                m = re.search(ns_hist_pattern, s1)
+                if m:
+                    ns = m.group(1)
+                    hist_name = m.group(2)
+                else:
+                    ns = None
+                    hist_name = s1
+                if ns_set and (not ns or ns not in ns_set):
+                    hist_name = None
+                    continue
+                columns = row[1:]
+                start_time = s2
                 start_time = remove_suffix(start_time, "-GMT")
                 columns.insert(0, 'Time Span')
                 continue
+
             if not hist_name or not start_time:
                 continue
             try:
-                row = row.split(',')
                 end_time = row.pop(0)
                 end_time = remove_suffix(end_time, "-GMT")
                 row = [float(r) for r in row]
                 row.insert(0, "%s->%s"%(start_time, end_time))
                 if hist_name not in data:
                     data[hist_name] = {}
-                    data[hist_name]["columns"] = columns
-                    data[hist_name]["values"] = []
-                data[hist_name]["values"].append(row)
+                if ns:
+                    ns_key = (ns, "namespace")
+                    if ns_key not in data[hist_name]:
+                        data[hist_name][ns_key]={}
+                        data[hist_name][ns_key]["columns"] = columns
+                        data[hist_name][ns_key]["values"] = []
+                    data[hist_name][ns_key]["values"].append(copy.deepcopy(row))
+                if total_key not in data[hist_name]:
+                    data[hist_name][total_key]={}
+                    data[hist_name][total_key]["columns"] = columns
+                    data[hist_name][total_key]["values"] = []
+
+                data[hist_name][total_key]["values"] = self.update_total_latency(data[hist_name][total_key]["values"], row)
                 start_time = end_time
             except Exception:
                 pass
-
         return data
 
     @return_exceptions

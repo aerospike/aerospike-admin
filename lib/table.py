@@ -378,7 +378,8 @@ class Table(object):
                 row.append(self._column_padding)
 
             output.append(''.join(row))
-        output.append("Number of rows: %s"%(len(self._data)))
+
+        output.append("%sNumber of rows: %s"%(terminal.style(terminal.bg_clear,terminal.fg_clear),len(self._data)))
         return "\n".join(output) + '\n'
 
     def _str_vertical(self, title_every_nth=0):

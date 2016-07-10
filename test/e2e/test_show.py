@@ -63,27 +63,27 @@ class TestShowConfig(unittest.TestCase):
     
         exp_heading = "~~Network Configuration~~"
         exp_header = "NODE"
-        exp_params = ['fabric-keepalive-enabled',
-                    'fabric-keepalive-intvl', 
-                    'fabric-keepalive-probes', 
-                    'fabric-keepalive-time', 
-                    'fabric-port', 
-                    'heartbeat-address', 
-                    'heartbeat-interval', 
-                    'heartbeat-mode', 
-                    'heartbeat-port', 
-                    'heartbeat-protocol', 
-                    'heartbeat-timeout', 
-                    'network-info-port', 
-                    'reuse-address', 
-                    'service-address', 
-                    'service-port']
+        exp_params = [('fabric-keepalive-enabled', 'fabric.keepalive-enabled'),
+                      ('fabric-keepalive-intvl', 'fabric.keepalive-intvl'),
+                      ('fabric-keepalive-probes', 'fabric.keepalive-probes'),
+                      ('fabric-keepalive-time', 'fabric.keepalive-time'),
+                      ('fabric-port', 'fabric.port'),
+                      ('heartbeat-address', 'heartbeat.address'),
+                      ('heartbeat-interval', 'heartbeat.interval'),
+                      ('heartbeat-mode', 'heartbeat.mode'),
+                      ('heartbeat-port', 'heartbeat.port'),
+                      ('heartbeat-protocol', 'heartbeat.protocol'),
+                      ('heartbeat-timeout', 'heartbeat.timeout'),
+                      ('network-info-port', 'info.port'),
+                      ('reuse-address', 'service.reuse-address'),
+                      ('service-address', 'service.address'),
+                      ('service-port','service.port')]
 
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.network_config)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertTrue(set(exp_params).issubset(set(actual_params)))
+        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
 
     def test_service(self):
         """
@@ -102,7 +102,7 @@ class TestShowConfig(unittest.TestCase):
                         'ldt-benchmarks',
                         'max-msgs-per-type',
                         'memory-accounting',
-                        'microbenchmarks',
+                        ('microbenchmarks', None),
                         'migrate-max-num-incoming',
                         'migrate-rx-lifetime-ms',
                         'migrate-threads',
@@ -130,12 +130,12 @@ class TestShowConfig(unittest.TestCase):
                         'query-threads',
                         'query-threshold',
                         'query-worker-threads',
-                        'replication-fire-and-forget',
+                        ('replication-fire-and-forget', None),
                         'respond-client-on-master-completion',
                         'service-threads',
                         'sindex-data-max-memory',
                         'snub-nodes',
-                        'storage-benchmarks',
+                        ('storage-benchmarks', None),
                         'ticker-interval',
                         'transaction-max-ms',
                         'transaction-pending-limit',
@@ -143,17 +143,17 @@ class TestShowConfig(unittest.TestCase):
                         'transaction-repeatable-read',
                         'transaction-retry-ms',
                         'transaction-threads-per-queue',
-                        'udf-runtime-gmax-memory',
-                        'udf-runtime-max-memory',
+                        ('udf-runtime-gmax-memory', None),
+                        ('udf-runtime-max-memory', None),
                         'use-queue-per-device',
                         'write-duplicate-resolution-disable',
                     ]
 
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowConfig.service_config)        
-        
+
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertTrue(set(exp_params).issubset(set(actual_params)))
+        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
 
     def test_test_namespace(self):
         """
@@ -183,7 +183,7 @@ class TestShowConfig(unittest.TestCase):
                         'sets-enable-xdr',
                         'single-bin',
                         'stop-writes-pct',
-                        'total-bytes-memory',
+                        ('total-bytes-memory', None),
                         'write-commit-level-override'
                       ] 
         
@@ -191,7 +191,7 @@ class TestShowConfig(unittest.TestCase):
        
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertTrue(set(exp_params_test).issubset(set(actual_params)))
+        self.assertTrue(test_util.check_for_subset(actual_params, exp_params_test))
 
     def test_bar_namespace(self):
         """
@@ -223,7 +223,7 @@ class TestShowConfig(unittest.TestCase):
                             'sets-enable-xdr',
                             'single-bin',
                             'stop-writes-pct',
-                            'total-bytes-memory',
+                            ('total-bytes-memory', None),
                             'write-commit-level-override'
                         ] 
         
@@ -231,7 +231,7 @@ class TestShowConfig(unittest.TestCase):
        
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertTrue(set(exp_params_bar).issubset(set(actual_params)))
+        self.assertTrue(test_util.check_for_subset(actual_params, exp_params_bar))
 
     @unittest.skip("Will enable only when xdr is configuired")   
     def test_xdr(self):
@@ -276,7 +276,8 @@ class TestShowLatency(unittest.TestCase):
     udf_latency = ''
     writes_master_latency = ''
     writes_reply_latency = ''
-    
+    write_latency = ''
+
     @classmethod
     def setUpClass(cls):
         TestShowLatency.rc = controller.RootController()
@@ -288,7 +289,7 @@ class TestShowLatency(unittest.TestCase):
                 TestShowLatency.proxy_latency = item           
             elif "~~query Latency~~" in item:
                 TestShowLatency.query_latency = item           
-            elif "~~reads Latency~~" in item:
+            elif "~~reads Latency~~" in item or "~~read Latency~~" in item:
                 TestShowLatency.reads_latency = item               
             elif "~~udf Latency~~" in item:
                 TestShowLatency.udf_latency = item              
@@ -296,6 +297,8 @@ class TestShowLatency(unittest.TestCase):
                 TestShowLatency.writes_master_latency = item
             elif "~~writes_reply Latency~~" in item:
                 TestShowLatency.writes_reply_latency = item
+            elif "~~write Latency~~" in item:
+                TestShowLatency.write_latency = item
               
     @classmethod    
     def tearDownClass(self):
@@ -317,10 +320,15 @@ class TestShowLatency(unittest.TestCase):
         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.proxy_latency, horizontal = True)        
-       
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+
+        if actual_heading:
+            self.assertTrue(exp_heading in actual_heading)
+
+        if actual_header:
+            self.assertEqual(exp_header, actual_header)
+
+        if actual_no_of_rows:
+            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_query_latency(self):      
             """
@@ -339,16 +347,21 @@ class TestShowLatency(unittest.TestCase):
             
             actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.query_latency, horizontal = True)        
            
-            self.assertTrue(exp_heading in actual_heading)
-            self.assertEqual(exp_header, actual_header)
-            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+            if actual_heading:
+                self.assertTrue(exp_heading in actual_heading)
+
+            if actual_header:
+                self.assertEqual(exp_header, actual_header)
+
+            if actual_no_of_rows:
+                self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_reads_latency(self):      
         """
         Asserts <b> reads latency <b> output with heading, header & no of node processed(based on row count).
         ToDo: test for values as well
         """
-        exp_heading = "~~reads Latency~~"
+        exp_heading = [("~~reads Latency~~", "~~read Latency~~")]
         exp_header= ['Node', 
                      'Time Span', 
                      'Ops/Sec', 
@@ -360,9 +373,14 @@ class TestShowLatency(unittest.TestCase):
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.reads_latency, horizontal = True)        
        
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+        if actual_heading:
+            self.assertTrue(test_util.check_for_subset(actual_heading, exp_heading))
+
+        if actual_header:
+            self.assertEqual(exp_header, actual_header)
+
+        if actual_no_of_rows:
+            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_udf_latency(self):      
         """
@@ -381,9 +399,14 @@ class TestShowLatency(unittest.TestCase):
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.udf_latency, horizontal = True)        
        
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+        if actual_heading:
+            self.assertTrue(exp_heading in actual_heading)
+
+        if actual_header:
+            self.assertEqual(exp_header, actual_header)
+
+        if actual_no_of_rows:
+            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_writes_master_latency(self):      
         """
@@ -400,11 +423,42 @@ class TestShowLatency(unittest.TestCase):
         
         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
         
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_master_latency, horizontal = True)        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_master_latency, horizontal = True)
        
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+        if actual_heading:
+            self.assertTrue(exp_heading in actual_heading)
+
+        if actual_header:
+            self.assertEqual(exp_header, actual_header)
+
+        if actual_no_of_rows:
+            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+
+    def test_write_latency(self):
+        """
+        Asserts <b> writes_master latency <b> output with heading, header & no of node processed(based on row count).
+        ToDo: test for values as well
+        """
+        exp_heading = "~~write Latency~~"
+        exp_header= ['Node',
+                     'Time Span',
+                     'Ops/Sec',
+                     '>1Ms',
+                     '>8Ms',
+                     '>64Ms']
+
+        exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
+
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.write_latency, horizontal = True)
+
+        if actual_heading:
+            self.assertTrue(exp_heading in actual_heading)
+
+        if actual_header:
+            self.assertEqual(exp_header, actual_header)
+
+        if actual_no_of_rows:
+            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
 class TestShowDistribution(unittest.TestCase):
     output_list = list()
@@ -519,13 +573,13 @@ class TestShowStatistics(unittest.TestCase):
         """
         exp_heading = "~test Bin Statistics~"
         exp_header = "NODE"
-        exp_params = ['bin-names-quota', 'num-bin-names']
+        exp_params = [('bin-names-quota','bin_names_quota'), ('num-bin-names','bin_names')]
         
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.test_bin_stats)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params))
+        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
         
     def test_bar_bin(self):
         """
@@ -536,13 +590,13 @@ class TestShowStatistics(unittest.TestCase):
             return
         exp_heading = "~bar Bin Statistics~"
         exp_header = "NODE"
-        exp_params = ['bin-names-quota', 'num-bin-names']
+        exp_params = [('bin-names-quota','bin_names_quota'), ('num-bin-names','bin_names')]
         
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.bar_bin_stats)
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertEqual(set(exp_params), set(actual_params))  
+        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
           
     def test_service(self):
         """
@@ -551,101 +605,101 @@ class TestShowStatistics(unittest.TestCase):
         """
         exp_heading = "~Service Statistics~"
         exp_header = "NODE"
-        exp_params = [  'batch_errors',
+        exp_params = [  ('batch_errors', 'batch_error'),
                         'batch_initiate',
                         'batch_queue',
                         'batch_timeout',
-                        'batch_tree_count',
+                        ('batch_tree_count', None),
                         'client_connections',
                         'cluster_integrity',
                         'cluster_key',
                         'cluster_size',
-                        'data-used-bytes-memory',
+                        ('data-used-bytes-memory', None),
                         'delete_queue',
-                        'err_duplicate_proxy_request',
-                        'err_out_of_space',
-                        'err_replica_non_null_node',
-                        'err_replica_null_node',
-                        'err_rw_cant_put_unique',
-                        'err_rw_pending_limit',
-                        'err_rw_request_not_found',
-                        'err_storage_queue_full',
-                        'err_sync_copy_null_master',
-                        'err_tsvc_requests',
-                        'err_write_fail_bin_exists',
-                        'err_write_fail_bin_name',
-                        'err_write_fail_bin_not_found',
-                        'err_write_fail_forbidden',
-                        'err_write_fail_generation',
-                        'err_write_fail_incompatible_type',
-                        'err_write_fail_key_exists',
-                        'err_write_fail_key_mismatch',
-                        'err_write_fail_not_found',
-                        'err_write_fail_parameter',
-                        'err_write_fail_prole_delete',
-                        'err_write_fail_prole_generation',
-                        'err_write_fail_prole_unknown',
-                        'err_write_fail_record_too_big',
-                        'err_write_fail_unknown',
+                        ('err_duplicate_proxy_request', None),
+                        ('err_out_of_space', None),
+                        ('err_replica_non_null_node', None),
+                        ('err_replica_null_node', None),
+                        ('err_rw_cant_put_unique', None),
+                        ('err_rw_pending_limit', None),
+                        ('err_rw_request_not_found', None),
+                        ('err_storage_queue_full', None),
+                        ('err_sync_copy_null_master', None),
+                        ('err_tsvc_requests', None),
+                        ('err_write_fail_bin_exists', None),
+                        ('err_write_fail_bin_name', None),
+                        ('err_write_fail_bin_not_found', None),
+                        ('err_write_fail_forbidden', None),
+                        ('err_write_fail_generation', None),
+                        ('err_write_fail_incompatible_type', None),
+                        ('err_write_fail_key_exists', None),
+                        ('err_write_fail_key_mismatch', None),
+                        ('err_write_fail_not_found', None),
+                        ('err_write_fail_parameter', None),
+                        ('err_write_fail_prole_delete', None),
+                        ('err_write_fail_prole_generation', None),
+                        ('err_write_fail_prole_unknown', None),
+                        ('err_write_fail_record_too_big', None),
+                        ('err_write_fail_unknown', None),
                         'fabric_msgs_rcvd',
                         'fabric_msgs_sent',
-                        'free-pct-disk',
-                        'free-pct-memory',
+                        ('free-pct-disk', None),
+                        ('free-pct-memory', None),
                         'heartbeat_received_foreign',
                         'heartbeat_received_self',
-                        'index-used-bytes-memory',
+                        ('index-used-bytes-memory', None),
                         'info_queue',
                         'objects',
-                        'ongoing_write_reqs',
-                        'partition_absent',
-                        'partition_actual',
-                        'partition_desync',
-                        'partition_object_count',
-                        'partition_ref_count',
-                        'partition_replica',
+                        ('ongoing_write_reqs', None),
+                        ('partition_absent', None),
+                        ('partition_actual', None),
+                        ('partition_desync', None),
+                        ('partition_object_count', None),
+                        ('partition_ref_count', None),
+                        ('partition_replica', None),
                         'paxos_principal',
-                        'proxy_action',
+                        ('proxy_action', None),
                         'proxy_in_progress',
-                        'proxy_initiate',
-                        'proxy_retry',
-                        'proxy_retry_new_dest',
-                        'proxy_retry_q_full',
-                        'proxy_retry_same_dest',
-                        'proxy_unproxy',
-                        'query_abort',
-                        'query_agg',
-                        'query_agg_abort',
-                        'query_agg_avg_rec_count',
-                        'query_agg_err',
-                        'query_agg_success',
-                        'query_avg_rec_count',
-                        'query_fail',
-                        'query_long_queue_full',
+                        ('proxy_initiate', None),
+                        ('proxy_retry', None),
+                        ('proxy_retry_new_dest', None),
+                        ('proxy_retry_q_full', None),
+                        ('proxy_retry_same_dest', None),
+                        ('proxy_unproxy', None),
+                        ('query_abort', None),
+                        ('query_agg', None),
+                        ('query_agg_abort', None),
+                        ('query_agg_avg_rec_count', None),
+                        ('query_agg_err', None),
+                        ('query_agg_success', None),
+                        ('query_avg_rec_count', None),
+                        ('query_fail', None),
+                        ('query_long_queue_full', None),
                         'query_long_running',
-                        'query_lookup_abort',
-                        'query_lookup_avg_rec_count',
-                        'query_lookup_err',
-                        'query_lookup_success',
-                        'query_lookups',
-                        'query_reqs',
-                        'query_short_queue_full',
+                        ('query_lookup_abort', None),
+                        ('query_lookup_avg_rec_count', None),
+                        ('query_lookup_err', None),
+                        ('query_lookup_success', None),
+                        ('query_lookups', None),
+                        ('query_reqs', None),
+                        ('query_short_queue_full', None),
                         'query_short_running',
-                        'query_success',
-                        'queue',
-                        'read_dup_prole',
+                        ('query_success', None),
+                        ('queue', 'tsvc_queue'),
+                        ('read_dup_prole', None),
                         'reaped_fds',
-                        'record_locks',
+                        ('record_locks', None),
                         'record_refs',
-                        'rw_err_ack_badnode',
-                        'rw_err_ack_internal',
-                        'rw_err_ack_nomatch',
-                        'rw_err_dup_cluster_key',
-                        'rw_err_dup_internal',
-                        'rw_err_dup_send',
-                        'rw_err_write_cluster_key',
-                        'rw_err_write_internal',
-                        'rw_err_write_send',
-                        'sindex-used-bytes-memory',
+                        ('rw_err_ack_badnode', None),
+                        ('rw_err_ack_internal', None),
+                        ('rw_err_ack_nomatch', None),
+                        ('rw_err_dup_cluster_key', None),
+                        ('rw_err_dup_internal', None),
+                        ('rw_err_dup_send', None),
+                        ('rw_err_write_cluster_key', None),
+                        ('rw_err_write_internal', None),
+                        ('rw_err_write_send', None),
+                        ('sindex-used-bytes-memory', None),
                         'sindex_gc_activity_dur',
                         'sindex_gc_garbage_cleaned',
                         'sindex_gc_garbage_found',
@@ -655,65 +709,65 @@ class TestShowStatistics(unittest.TestCase):
                         'sindex_gc_locktimedout',
                         'sindex_gc_objects_validated',
                         'sindex_ucgarbage_found',
-                        'stat_cluster_key_err_ack_dup_trans_reenqueue',
-                        'stat_delete_success',
-                        'stat_deleted_set_objects',
-                        'stat_duplicate_operation',
-                        'stat_evicted_objects',
-                        'stat_evicted_objects_time',
-                        'stat_expired_objects',
-                        'stat_ldt_proxy',
-                        'stat_nsup_deletes_not_shipped',
-                        'stat_proxy_errs',
-                        'stat_proxy_reqs',
-                        'stat_proxy_reqs_xdr',
-                        'stat_proxy_success',
-                        'stat_read_errs_notfound',
-                        'stat_read_errs_other',
-                        'stat_read_reqs',
-                        'stat_read_reqs_xdr',
-                        'stat_read_success',
-                        'stat_rw_timeout',
-                        'stat_write_errs',
-                        'stat_write_errs_notfound',
-                        'stat_write_errs_other',
-                        'stat_write_reqs',
-                        'stat_write_reqs_xdr',
-                        'stat_write_success',
-                        'stat_zero_bin_records',
-                        'storage_defrag_corrupt_record',
-                        'sub-records',
+                        ('stat_cluster_key_err_ack_dup_trans_reenqueue', None),
+                        ('stat_delete_success', None),
+                        ('stat_deleted_set_objects', None),
+                        ('stat_duplicate_operation', None),
+                        ('stat_evicted_objects', None),
+                        ('stat_evicted_objects_time', None),
+                        ('stat_expired_objects', None),
+                        ('stat_ldt_proxy', None),
+                        ('stat_nsup_deletes_not_shipped', None),
+                        ('stat_proxy_errs', None),
+                        ('stat_proxy_reqs', None),
+                        ('stat_proxy_reqs_xdr', None),
+                        ('stat_proxy_success', None),
+                        ('stat_read_errs_notfound', None),
+                        ('stat_read_errs_other', None),
+                        ('stat_read_reqs', None),
+                        ('stat_read_reqs_xdr', None),
+                        ('stat_read_success', None),
+                        ('stat_rw_timeout', None),
+                        ('stat_write_errs', None),
+                        ('stat_write_errs_notfound', None),
+                        ('stat_write_errs_other', None),
+                        ('stat_write_reqs', None),
+                        ('stat_write_reqs_xdr', None),
+                        ('stat_write_success', None),
+                        ('stat_zero_bin_records', None),
+                        ('storage_defrag_corrupt_record', None),
+                        ('sub-records', 'sub_objects'),
                         'system_free_mem_pct',
                         'system_swapping',
-                        'total-bytes-disk',
-                        'total-bytes-memory',
-                        'transactions',
-                        'tree_count',
-                        'udf_delete_err_others',
-                        'udf_delete_reqs',
-                        'udf_delete_success',
-                        'udf_lua_errs',
-                        'udf_query_rec_reqs',
-                        'udf_read_errs_other',
-                        'udf_read_reqs',
-                        'udf_read_success',
-                        'udf_replica_writes',
-                        'udf_scan_rec_reqs',
-                        'udf_write_err_others',
-                        'udf_write_reqs',
-                        'udf_write_success',
+                        ('total-bytes-disk', None),
+                        ('total-bytes-memory', None),
+                        ('transactions', None),
+                        ('tree_count', None),
+                        ('udf_delete_err_others', None),
+                        ('udf_delete_reqs', None),
+                        ('udf_delete_success', None),
+                        ('udf_lua_errs', None),
+                        ('udf_query_rec_reqs', None),
+                        ('udf_read_errs_other', None),
+                        ('udf_read_reqs', None),
+                        ('udf_read_success', None),
+                        ('udf_replica_writes', None),
+                        ('udf_scan_rec_reqs', None),
+                        ('udf_write_err_others', None),
+                        ('udf_write_reqs', None),
+                        ('udf_write_success', None),
                         'uptime',
-                        'used-bytes-disk',
-                        'used-bytes-memory',
-                        'waiting_transactions',
-                        'write_master',
-                        'write_prole',  
+                        ('used-bytes-disk', None),
+                        ('used-bytes-memory', None),
+                        ('waiting_transactions', None),
+                        ('write_master', None),
+                        ('write_prole', None)
                     ]
         
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.service_stats)
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertTrue(set(exp_params).issubset(set(actual_params)))
+        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
                       
     def test_bar_namespace(self):
         """
@@ -726,53 +780,53 @@ class TestShowStatistics(unittest.TestCase):
         exp_header = "NODE"
         exp_params = [  'allow-nonxdr-writes',
                         'allow-xdr-writes',
-                        'available-bin-names',
+                        ('available-bin-names','available_bin_names'),
                         'cold-start-evict-ttl',
                         'conflict-resolution-policy',
-                        'current-time',
-                        'data-used-bytes-memory',
+                        ('current-time','current_time'),
+                        ('data-used-bytes-memory','memory_used_data_bytes'),
                         'default-ttl',
                         'disallow-null-setname',
                         'enable-xdr',
                         'evict-tenths-pct',
-                        'evicted-objects',
-                        'expired-objects',
-                        'free-pct-memory',
+                        ('evicted-objects','evicted_objects'),
+                        ('expired-objects','expired_objects'),
+                        ('free-pct-memory','memory_free_pct'),
                         'high-water-disk-pct',
                         'high-water-memory-pct',
-                        'hwm-breached',
-                        'index-used-bytes-memory',
+                        ('hwm-breached','hwm_breached'),
+                        ('index-used-bytes-memory','memory_used_index_bytes'),
                         'ldt-enabled',
                         'ldt-page-size',
-                        'master-objects',
-                        'master-sub-objects',
+                        ('master-objects','master_objects'),
+                        ('master-sub-objects','master_sub_objects'),
                         'max-ttl',
-                        'max-void-time',
+                        ('max-void-time','max_void_time'),
                         'memory-size',
-                        'migrate-rx-partitions-initial',
-                        'migrate-rx-partitions-remaining',
-                        'migrate-tx-partitions-imbalance',
-                        'migrate-tx-partitions-initial',
-                        'migrate-tx-partitions-remaining',
-                        'non-expirable-objects',
+                        ('migrate-rx-partitions-initial','migrate_rx_partitions_initial', None),
+                        ('migrate-rx-partitions-remaining','migrate_rx_partitions_remaining', None),
+                        ('migrate-tx-partitions-imbalance','migrate_tx_partitions_imbalance', None),
+                        ('migrate-tx-partitions-initial','migrate_tx_partitions_initial', None),
+                        ('migrate-tx-partitions-remaining','migrate_tx_partitions_remaining', None),
+                        ('non-expirable-objects','non_expirable_objects'),
                         'ns-forward-xdr-writes',
-                        'nsup-cycle-duration',
-                        'nsup-cycle-sleep-pct',
+                        ('nsup-cycle-duration','nsup_cycle_duration'),
+                        ('nsup-cycle-sleep-pct','nsup_cycle_sleep_pct'),
                         'objects',
-                        'prole-objects',
-                        'prole-sub-objects',
+                        ('prole-objects','prole_objects'),
+                        ('prole-sub-objects','prole_sub_objects'),
                         'read-consistency-level-override',
                         'repl-factor',
-                        'set-deleted-objects',
+                        ('set-deleted-objects','set_deleted_objects'),
                         'sets-enable-xdr',
-                        'sindex-used-bytes-memory',
+                        ('sindex-used-bytes-memory','memory_used_sindex_bytes'),
                         'single-bin',
-                        'stop-writes',
+                        ('stop-writes','stop_writes'),
                         'stop-writes-pct',
-                        'sub-objects',
-                        'total-bytes-memory',
-                        'type',
-                        'used-bytes-memory',
+                        ('sub-objects','sub_objects'),
+                        ('total-bytes-memory',None),
+                        ('type',None),
+                        ('used-bytes-memory','memory_used_bytes'),
                         'write-commit-level-override',
                     ]
         
@@ -780,7 +834,7 @@ class TestShowStatistics(unittest.TestCase):
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertTrue(set(exp_params).issubset(set(actual_params)))
+        self.assertTrue(test_util.check_for_subset(actual_params,exp_params))
 
     def test_test_namespace(self):
         """
@@ -791,48 +845,53 @@ class TestShowStatistics(unittest.TestCase):
         exp_header = "NODE"
         exp_params = [  'allow-nonxdr-writes',
                         'allow-xdr-writes',
-                        'available-bin-names',
+                        ('available-bin-names', 'available_bin_names'),
                         'cold-start-evict-ttl',
                         'conflict-resolution-policy',
-                        'current-time',
-                        'data-used-bytes-memory',
+                        ('current-time', 'current_time'),
+                        ('data-used-bytes-memory', 'memory_used_data_bytes'),
                         'default-ttl',
                         'disallow-null-setname',
                         'enable-xdr',
                         'evict-tenths-pct',
-                        'evicted-objects',
-                        'expired-objects',
-                        'free-pct-memory',
+                        ('evicted-objects', 'evicted_objects'),
+                        ('expired-objects', 'expired_objects'),
+                        ('free-pct-memory', 'memory_free_pct'),
                         'high-water-disk-pct',
                         'high-water-memory-pct',
-                        'hwm-breached',
-                        'index-used-bytes-memory',
+                        ('hwm-breached', 'hwm_breached'),
+                        ('index-used-bytes-memory', 'memory_used_index_bytes'),
                         'ldt-enabled',
                         'ldt-page-size',
-                        'master-objects',
-                        'master-sub-objects',
+                        ('master-objects', 'master_objects'),
+                        ('master-sub-objects', 'master_sub_objects'),
                         'max-ttl',
-                        'max-void-time',
+                        ('max-void-time', 'max_void_time'),
                         'memory-size',
-                        'non-expirable-objects',
+                        ('migrate-rx-partitions-initial','migrate_rx_partitions_initial', None),
+                        ('migrate-rx-partitions-remaining','migrate_rx_partitions_remaining', None),
+                        ('migrate-tx-partitions-imbalance','migrate_tx_partitions_imbalance', None),
+                        ('migrate-tx-partitions-initial','migrate_tx_partitions_initial', None),
+                        ('migrate-tx-partitions-remaining','migrate_tx_partitions_remaining', None),
+                        ('non-expirable-objects', 'non_expirable_objects'),
                         'ns-forward-xdr-writes',
-                        'nsup-cycle-duration',
-                        'nsup-cycle-sleep-pct',
+                        ('nsup-cycle-duration', 'nsup_cycle_duration'),
+                        ('nsup-cycle-sleep-pct', 'nsup_cycle_sleep_pct'),
                         'objects',
-                        'prole-objects',
-                        'prole-sub-objects',
+                        ('prole-objects', 'prole_objects'),
+                        ('prole-sub-objects', 'prole_sub_objects'),
                         'read-consistency-level-override',
                         'repl-factor',
-                        'set-deleted-objects',
+                        ('set-deleted-objects', 'set_deleted_objects'),
                         'sets-enable-xdr',
-                        'sindex-used-bytes-memory',
+                        ('sindex-used-bytes-memory', 'memory_used_sindex_bytes'),
                         'single-bin',
-                        'stop-writes',
+                        ('stop-writes', 'stop_writes'),
                         'stop-writes-pct',
-                        'sub-objects',
-                        'total-bytes-memory',
-                        'type',
-                        'used-bytes-memory',
+                        ('sub-objects', 'sub_objects'),
+                        ('total-bytes-memory', None),
+                        ('type', None),
+                        ('used-bytes-memory', 'memory_used_bytes'),
                         'write-commit-level-override',
                     ]
         
@@ -840,7 +899,7 @@ class TestShowStatistics(unittest.TestCase):
         
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertTrue(set(exp_params).issubset(set(actual_params)))
+        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
     
     @unittest.skip("Will enable only when xdr is configuired")
     def test_xdr(self):

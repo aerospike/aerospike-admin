@@ -22,9 +22,13 @@ def parse_output(actual_out = "", horizontal = False, mearge_header = True):
         @param params: list of parameters 
     
     """
+    data =  actual_out.split('\n')
+    if not data:
+        return None, None, None
+    heading = data.pop(0)
+    if not data:
+        return None, None, None
     if horizontal:
-        data =  actual_out.split('\n')
-        heading = data.pop(0)
         header_line1 = data.pop(0)
         header_line2 = data.pop(0)
         row_data = data[-3]
@@ -38,8 +42,6 @@ def parse_output(actual_out = "", horizontal = False, mearge_header = True):
         else:
             return(heading, header_line1 + header_line2, no_of_rows)
     else:
-        data =  actual_out.split('\n')
-        heading = data.pop(0)
         header = data.pop(0)
         params = [item.split(':')[0].strip() for item in  data if item.split(':')[0].strip()]
         # handled beast color code
@@ -71,3 +73,24 @@ def get_merged_header(h1, h2):
             header.append(h1[i] + ' ' + h2[i])
     return header
 
+def check_for_subset(actual_list, expected_sub_list):
+    if not expected_sub_list:
+        return True
+    if not actual_list:
+        return False
+    for i in expected_sub_list:
+        if isinstance(i, tuple):
+            found = False
+            for s_i in i:
+                if s_i is None:
+                    found=True
+                    break
+                if s_i in actual_list:
+                    found=True
+                    break
+            if not found:
+                return False
+        else:
+            if i not in actual_list:
+                return False
+    return True

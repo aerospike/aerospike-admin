@@ -52,6 +52,9 @@ DT_FMT = "%b %d %Y %H:%M:%S"
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
 DT_TIME_FMT = "%H:%M:%S"
 HIST_TAG_PREFIX = "histogram dump: "
+HIST_TAG_PATTERNS = [HIST_TAG_PREFIX+"%s ",HIST_TAG_PREFIX+"{[a-zA-Z0-9_-]+}-%s "]
+NS_HIST_TAG_PATTERNS = [HIST_TAG_PREFIX+"{%s}-%s "]
+NS_SLICE_SECONDS=5
 SCAN_SIZE = 1024 * 1024
 
 class LogLatency(object):
@@ -125,6 +128,17 @@ class LogLatency(object):
         return slice_values
 
     #------------------------------------------------
+    # Add one set of bucket values to another.
+    #
+
+
+    def add_buckets(self, b1_values, b2_values):
+        slice_values = {}
+        for b in range(ALL_BUCKETS):
+            slice_values[b] = b1_values[b] + b2_values[b]
+        return slice_values
+
+    #------------------------------------------------
     # Get the percentage of operations within every bucket.
     #
 
@@ -160,27 +174,33 @@ class LogLatency(object):
     #
 
 
-    def read_hist(self, hist_tag, after_dt, file_itr, line=0):
-        prefix_to_minute = after_dt.strftime(DT_TO_MINUTE_FMT)
+    def read_hist(self, hist_tags, after_dt, file_itr, line=0, end_dt=None, before_dt=None):
         if not line:
             line = self.read_line(file_itr)
         while True:
             if not line:
                 return 0, 0, 0, 0
-            if line.startswith(prefix_to_minute):
+            dt = self.log_reader.parse_dt(line)
+            if dt<after_dt:
+                line = self.read_line(file_itr)
+                continue
+            if end_dt and dt>end_dt:
+                return 0, 0, dt, line
+            if before_dt and dt>before_dt:
+                return 0, 0, dt, line
+            if any(re.search(ht, line) for ht in hist_tags):
                 break
             line = self.read_line(file_itr)
-        while True:
-            if hist_tag in line:
-                dt = self.log_reader.parse_dt(line)
-                if dt >= after_dt:
-                    break
-            line = self.read_line(file_itr)
-            if not line:
-                return 0, 0, 0, 0
+
         total, values, line = self.read_bucket_values(line, file_itr)
         if not line:
             return 0, 0, 0, 0
+        if not before_dt:
+            before_dt = dt+datetime.timedelta(seconds=NS_SLICE_SECONDS)
+        r_total, r_values, r_dt, line = self.read_hist(hist_tags,after_dt,file_itr,line,end_dt,before_dt)
+        total += r_total
+        if r_values:
+            values = self.add_buckets(values, r_values)
         return total, values, dt, line
 
     #------------------------------------------------
@@ -202,7 +222,7 @@ class LogLatency(object):
             pad = pad + what
         return pad
 
-    def compute_latency(self, arg_log_itr, arg_hist, arg_slice, arg_from, arg_end_date, arg_num_buckets, arg_every_nth, arg_rounding_time=True):
+    def compute_latency(self, arg_log_itr, arg_hist, arg_slice, arg_from, arg_end_date, arg_num_buckets, arg_every_nth, arg_rounding_time=True, arg_ns=None):
         latency = {}
         latency["ops/sec"] = {}
 
@@ -222,11 +242,14 @@ class LogLatency(object):
             file_itr = arg_log_itr
 
             # Set histogram tag:
-            hist_tag = HIST_TAG_PREFIX + arg_hist + " "
+            if arg_ns:
+                hist_tags = [s%(arg_ns,arg_hist) for s in NS_HIST_TAG_PATTERNS]
+            else:
+                hist_tags = [s%(arg_hist) for s in HIST_TAG_PATTERNS]
 
             init_dt = arg_from
             # Find first histogram:
-            old_total, old_values, old_dt, line = self.read_hist(hist_tag, init_dt, file_itr)
+            old_total, old_values, old_dt, line = self.read_hist(hist_tags, init_dt, file_itr, end_dt=arg_end_date)
             if line:
                 end_dt = arg_end_date
 
@@ -246,9 +269,9 @@ class LogLatency(object):
 
                 # Process all the time slices:
                 while end_dt > old_dt:
-                    new_total, new_values, new_dt, line = self.read_hist(hist_tag, after_dt, file_itr, line)
-                    if not line:
-                        # Note - we ignore the (possible) incomplete slice at the end.
+                    new_total, new_values, new_dt, line = self.read_hist(hist_tags, after_dt, file_itr, line, end_dt=arg_end_date)
+                    if not new_values:
+                        # This can happen in either eof or end of input time range
                         break
 
                     # Get the "deltas" for this slice:
@@ -292,7 +315,7 @@ class LogLatency(object):
                     after_dt = new_dt + slice_timedelta
                     old_total, old_values, old_dt = new_total, new_values, new_dt
 
-                # Print averages and maximums:
+                # Compute averages and maximums:
                 if which_slice > 0:
                     for i in range(max_bucket):
                         if i % arg_every_nth == 0:

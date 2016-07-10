@@ -393,13 +393,13 @@ class Logger(object):
 
     def grep(
             self,
-            file_handlers, search_strs, ignore_str="", is_and=False, is_casesensitive=True,start_tm_arg="head", duration_arg="",
-            grep_cluster_logs=True, output_page_size = 10
+            file_handlers, search_strs, ignore_strs=[], is_and=False, is_casesensitive=True, start_tm_arg="head", duration_arg="",
+            uniq=False, grep_cluster_logs=True, output_page_size = 10, system_grep=False
             ):
         if file_handlers and search_strs:
             if grep_cluster_logs:
                 for file_handler in file_handlers:
-                    file_handler.set_input(search_strs=search_strs, ignore_str=ignore_str, is_and=is_and, is_casesensitive=is_casesensitive)
+                    file_handler.set_input(search_strs=search_strs, ignore_strs=ignore_strs, is_and=is_and, is_casesensitive=is_casesensitive)
                     show_it = file_handler.show_iterator()
                     show_result = {}
                     show_result[SHOW_RESULT_KEY] = show_it.next()
@@ -409,8 +409,8 @@ class Logger(object):
                 show_its = {}
                 min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg) for s in file_handlers)
                 for file_handler in file_handlers:
-                    file_handler.set_input(search_strs=search_strs, ignore_str=ignore_str, is_and=is_and, is_casesensitive=is_casesensitive,
-                                           start_tm=min_start_tm, duration=duration_arg)
+                    file_handler.set_input(search_strs=search_strs, ignore_strs=ignore_strs, is_and=is_and, is_casesensitive=is_casesensitive,
+                                           start_tm=min_start_tm, duration=duration_arg, system_grep=system_grep, uniq=uniq)
                     show_its[file_handler.display_name] = file_handler.show_iterator()
                 merger = self.server_log_merger(show_its, return_strings=True, output_page_size=output_page_size)
                 for val in merger:
@@ -421,15 +421,15 @@ class Logger(object):
 
 
     def grepCount(self,
-                  file_handlers, search_strs, ignore_str="", is_and=False, is_casesensitive=True, start_tm_arg="head", duration_arg="",
-                  slice_duration="600", grep_cluster_logs=True, output_page_size=10
+                  file_handlers, search_strs, ignore_strs=[], is_and=False, is_casesensitive=True, start_tm_arg="head", duration_arg="",
+                  uniq=False, slice_duration="600", grep_cluster_logs=True, output_page_size=10, system_grep=False
                   ):
         try:
             if file_handlers and search_strs:
                 try:
                     if grep_cluster_logs:
                         for file_handler in file_handlers:
-                            file_handler.set_input(search_strs=search_strs, ignore_str=ignore_str, is_and=is_and, is_casesensitive=is_casesensitive)
+                            file_handler.set_input(search_strs=search_strs, ignore_strs=ignore_strs, is_and=is_and, is_casesensitive=is_casesensitive)
                             count_it = file_handler.count_iterator()
                             count_result = {}
                             count_result[file_handler.timestamp] = {}
@@ -441,8 +441,8 @@ class Logger(object):
                         count_its = {}
                         min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg) for s in file_handlers)
                         for file_handler in file_handlers:
-                            file_handler.set_input(search_strs=search_strs, ignore_str=ignore_str, is_and=is_and, is_casesensitive=is_casesensitive,
-                                                   start_tm=min_start_tm, duration=duration_arg, slice_duration=slice_duration)
+                            file_handler.set_input(search_strs=search_strs, ignore_strs=ignore_strs, is_and=is_and, is_casesensitive=is_casesensitive,
+                                                   start_tm=min_start_tm, duration=duration_arg, slice_duration=slice_duration, uniq=uniq, system_grep=system_grep)
                             count_its[file_handler.display_name] = file_handler.count_iterator()
 
                         merger = self.server_log_merger(count_its, output_page_size=output_page_size, default_value=0)
@@ -465,7 +465,7 @@ class Logger(object):
                 diff_its = {}
                 min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg) for s in file_handlers)
                 for file_handler in file_handlers:
-                    file_handler.set_input(search_strs=search_strs, is_casesensitive=is_casesensitive,
+                    file_handler.set_input(search_strs=search_strs, is_casesensitive=is_casesensitive, is_and=True,
                                            start_tm=min_start_tm, duration=duration_arg, slice_duration=slice_duration, upper_limit_check=upper_limit_check,
                                            every_nth_slice=every_nth_slice)
                     diff_its[file_handler.display_name] = file_handler.diff_iterator()
@@ -481,7 +481,7 @@ class Logger(object):
 
     def loglatency(self,
                    file_handlers, hist, start_tm_arg="head", duration_arg="", slice_duration="10",
-                   bucket_count=3, every_nth_bucket=1, rounding_time=True, output_page_size=10
+                   bucket_count=3, every_nth_bucket=1, rounding_time=True, output_page_size=10, ns=None
                    ):
         try:
             if file_handlers and hist:
@@ -490,7 +490,7 @@ class Logger(object):
                 for file_handler in file_handlers:
                     file_handler.set_input(search_strs=hist, start_tm=min_start_tm, duration=duration_arg, slice_duration=slice_duration,
                                            bucket_count=bucket_count, every_nth_bucket=every_nth_bucket,
-                                           read_all_lines=True, rounding_time=rounding_time)
+                                           read_all_lines=True, rounding_time=rounding_time, ns=ns)
                     latency_its[file_handler.display_name] = file_handler.latency_iterator()
 
                 merger = self.server_log_merger(latency_its, output_page_size=output_page_size)

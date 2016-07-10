@@ -220,10 +220,10 @@ def fetch_line_clear_dict(line, arg, return_type, default, keys, d):
         return default
     try:
         success, _val = fetch_argument(line, arg, default)
-        val = return_type(_val)
         if success and keys and d:
             clear_val_from_dict(keys, d, arg)
             clear_val_from_dict(keys, d, _val)
+        val = return_type(_val)
     except Exception:
         val = default
     return val
@@ -254,3 +254,22 @@ def remove_suffix(input_string, suffix):
         return input_string[0: input_string.rfind(suffix)]
     except Exception:
         return input_string
+
+def get_value_from_dict(d, keys, default_value=None, return_type=None):
+    if not isinstance(keys, tuple):
+        keys = (keys,)
+    for key in keys:
+        if key in d:
+            val = d[key]
+            if return_type and val:
+                try:
+                    return return_type(val)
+                except:
+                    pass
+            return val
+    return default_value
+
+def set_value_in_dict(d, key, value):
+    if not d or not key or (not value and value!=0 and value!=False) or isinstance(value,Exception):
+        return
+    d[key] = value

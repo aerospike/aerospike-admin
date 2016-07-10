@@ -54,7 +54,7 @@ class LogReader(object):
     cluster_log_file_identifier_key = "=ASCOLLECTINFO"
     cluster_log_file_identifier = ["Configuration~~~", "Statistics~"]
     server_log_file_identifier = ["thr_info.c::", "heartbeat_received", "ClusterSize"]
-    server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_]+\): \([A-Za-z_\.\[\]]+:{1,2}-?[\d]+\)"
+    server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \([A-Za-z_\.\[\]]+:{1,2}-?[\d]+\)"
 
     @staticmethod
     def getPrefixes(path):
@@ -93,8 +93,11 @@ class LogReader(object):
         if not read_block_size:
             read_block_size = SERVER_ID_FETCH_READ_SIZE
         not_found=""
-        server_log_node_identifier = "node id "
-        server_node_id_pattern = "node id ([0-9a-fA-F]+(\s|$))"
+        # pattern for logs of old server (< 3.9) is "node id "
+        # pattern for logs of new server (>= 3.9) is "NODE-ID "
+        server_log_node_identifiers = ["node id ","NODE-ID "]
+        server_node_id_pattern = "%s([0-9a-fA-F]+(\s|$))"
+
         block_to_check = 100
 
         if not file:
@@ -113,15 +116,16 @@ class LogReader(object):
                 start_index = end_index - (block_to_check if block_to_check<end_index else end_index)
                 while start_index>=0 and start_index<end_index:
                     one_string = " ".join(lines[start_index:end_index])
-                    if server_log_node_identifier in one_string:
+                    if any(id in one_string for id in server_log_node_identifiers):
                         for line in reversed(lines[start_index:end_index]):
-                            if server_log_node_identifier in line:
-                                try:
-                                    node_id = re.search(server_node_id_pattern, line.strip()).group(1)
-                                    if node_id:
-                                        return node_id
-                                except Exception:
-                                    pass
+                            for id in server_log_node_identifiers:
+                                if id in line:
+                                    try:
+                                        node_id = re.search(server_node_id_pattern%(id), line.strip()).group(1)
+                                        if node_id:
+                                            return node_id
+                                    except Exception:
+                                        pass
                     end_index = start_index
                     start_index = end_index - (block_to_check if block_to_check<end_index else end_index)
         except Exception:
@@ -275,22 +279,24 @@ class LogReader(object):
             if currentLine == 0:
                 tempNodes = line.split()
                 nodes = tempNodes[2:len(tempNodes)]
+                for node in nodes:
+                    resDir[node] = {}
             else:
                 tempList = line.split()
                 currentNode = 0
-                dirEmpty = 0
-                if len(resDir) == 0:
-                    dirEmpty = 1
                 beg = 2
-                if tempList[1] != ":":
+                if len(tempList)>1 and tempList[1] != ":":
                     beg = 1
                     tempList[0] = tempList[0][0:len(tempList[0]) - 1]
                 for tempVal in tempList[beg:len(tempList)]:
                     tempVal = tempVal.strip()
                     if tempVal.strip() == 'N/E':   #need to make same scenario as cluster mode, in cluster mode we do not get any value with 'N/E'
+                        currentNode += 1
                         continue
                     tempDir = {}
-                    if not dirEmpty:
+                    if resDir:
+                        if nodes[currentNode] not in resDir:
+                            resDir[nodes[currentNode]] = {}
                         tempDir = resDir[nodes[currentNode]]
                     tempDir[tempList[0]] = tempVal
                     resDir[nodes[currentNode]] = tempDir

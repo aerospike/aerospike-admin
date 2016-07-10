@@ -26,6 +26,8 @@ from cStringIO import StringIO
 import sys
 import itertools
 from pydoc import pipepager
+from lib.util import get_value_from_dict, set_value_in_dict
+
 
 class CliView(object):
     NO_PAGER, LESS, MORE = range(3)
@@ -149,58 +151,56 @@ class CliView(object):
         column_names = ('namespace'
                         , 'node'
                         , ('available_pct', 'Avail%')
-                        , ('evicted-objects', 'Evictions')
-                        , ('_master-objects', 'Master Objects')
-                        , ('_prole-objects', 'Replica Objects')
+                        , ('_evicted_objects', 'Evictions')
+                        , ('_master_objects', 'Master Objects')
+                        , ('_prole_objects', 'Replica Objects')
                         , 'repl-factor'
-                        , 'stop-writes'
+                        , 'stop_writes'
                         , ('_migrates', 'Pending Migrates (tx%,rx%)')
-                        , ('_used-bytes-disk', 'Disk Used')
-                        , ('_used-disk-pct', 'Disk Used%')
+                        , ('_used_bytes_disk', 'Disk Used')
+                        , ('_used_disk_pct', 'Disk Used%')
                         , ('high-water-disk-pct', 'HWM Disk%')
-                        , ('_used-bytes-memory', 'Mem Used')
-                        , ('_used-mem-pct', 'Mem Used%')
+                        , ('_used_bytes_memory', 'Mem Used')
+                        , ('_used_mem_pct', 'Mem Used%')
                         , ('high-water-memory-pct', 'HWM Mem%')
                         , ('stop-writes-pct', 'Stop Writes%'))
 
         t = Table(title, column_names, sort_by=0)
-        t.addDataSource('_used-bytes-disk'
-                        ,Extractors.byteExtractor('used-bytes-disk'))
-        t.addDataSource('_used-bytes-memory'
-                        ,Extractors.byteExtractor(
-                            'used-bytes-memory'))
+        t.addDataSource('_evicted_objects'
+                        ,Extractors.sifExtractor(('evicted-objects','evicted_objects')))
+        t.addDataSource('_used_bytes_disk'
+                        ,Extractors.byteExtractor(('used-bytes-disk','device_used_bytes')))
+        t.addDataSource('_used_bytes_memory'
+                        ,Extractors.byteExtractor(('used-bytes-memory','memory_used_bytes')))
 
-        t.addDataSource('_master-objects'
-                        ,Extractors.sifExtractor('master-objects'))
+        t.addDataSource('_master_objects'
+                        ,Extractors.sifExtractor(('master-objects','master_objects')))
 
-        t.addDataSource('_prole-objects'
-                        ,Extractors.sifExtractor('prole-objects'))
+        t.addDataSource('_prole_objects'
+                        ,Extractors.sifExtractor(('prole-objects','prole_objects')))
 
-        t.addDataSource('_used-disk-pct'
-                        , lambda data: 100 - int(data['free-pct-disk']) if data['free-pct-disk'] is not " " else " ")
+        t.addDataSource('_used_disk_pct'
+                        , lambda data: 100 - int(data['free_pct_disk']) if data['free_pct_disk'] is not " " else " ")
 
-        t.addDataSource('_used-mem-pct'
-                        , lambda data: 100 - int(data['free-pct-memory']) if data['free-pct-memory'] is not " " else " ")
+        t.addDataSource('_used_mem_pct'
+                        , lambda data: 100 - int(data['free_pct_memory']) if data['free_pct_memory'] is not " " else " ")
 
         t.addCellAlert('available_pct'
                        , lambda data: int(data['available_pct']) <= 10 if data['available_pct'] is not " " else " ")
 
-        t.addCellAlert('stop-writes'
-                       , lambda data: data['stop-writes'] != 'false')
+        t.addCellAlert('stop_writes'
+                       , lambda data: data['stop_writes'] != 'false')
 
         t.addDataSource('_migrates'
                         , lambda data:
-                        "(%s,%s)"%(data.get('migrate-tx-partitions-remaining-pct', 'N/E')
-                                      , data.get('migrate-rx-partitions-remaining-pct','N/E')))
+                        "(%s,%s)"%(data.get('migrate_tx_partitions_remaining_pct', 'N/E')
+                                      , data.get('migrate_rx_partitions_remaining_pct','N/E')))
 
-        t.addCellAlert('_used-disk-pct'
-                       , lambda data: int(data['_used-disk-pct']) >= int(data['high-water-disk-pct']) if data['_used-disk-pct'] is not " " else " ")
+        t.addCellAlert('_used_mem_pct'
+                       , lambda data: (100 - int(data['free_pct_memory'])) >= int(data['high-water-memory-pct']) if data['free_pct_memory'] is not " " else " ")
 
-        t.addCellAlert('_used-mem-pct'
-                       , lambda data: (100 - int(data['free-pct-memory'])) >= int(data['high-water-memory-pct']) if data['free-pct-memory'] is not " " else " ")
-
-        t.addCellAlert('_used-disk-pct'
-                       , lambda data: (100 - int(data['free-pct-disk'])) >= int(data['high-water-disk-pct']) if data['free-pct-disk'] is not " " else " ")
+        t.addCellAlert('_used_disk_pct'
+                       , lambda data: (100 - int(data['free_pct_disk'])) >= int(data['high-water-disk-pct']) if data['free_pct_disk'] is not " " else " ")
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
@@ -209,19 +209,19 @@ class CliView(object):
         t.addCellAlert('namespace'
                        ,lambda data: data['node'] is " "
                        , color=terminal.fg_blue)
-        t.addCellAlert('_master-objects'
+        t.addCellAlert('_master_objects'
                        ,lambda data: data['node'] is " "
                        , color=terminal.fg_blue)
-        t.addCellAlert('_prole-objects'
+        t.addCellAlert('_prole_objects'
                        ,lambda data: data['node'] is " "
                        , color=terminal.fg_blue)
-        t.addCellAlert('_used-bytes-memory'
+        t.addCellAlert('_used_bytes_memory'
                        ,lambda data: data['node'] is " "
                        , color=terminal.fg_blue)
-        t.addCellAlert('_used-bytes-disk'
+        t.addCellAlert('_used_bytes_disk'
                        ,lambda data: data['node'] is " "
                        , color=terminal.fg_blue)
-        t.addCellAlert('evicted-objects'
+        t.addCellAlert('_evicted_objects'
                        ,lambda data: data['node'] is " "
                        , color=terminal.fg_blue)
         t.addCellAlert('_migrates'
@@ -253,69 +253,73 @@ class CliView(object):
 
                 if ns not in total_res:
                     total_res[ns] = {}
-                    total_res[ns]["master-objects"] = 0
-                    total_res[ns]["prole-objects"] = 0
+                    total_res[ns]["master_objects"] = 0
+                    total_res[ns]["prole_objects"] = 0
                     total_res[ns]["used-bytes-memory"] = 0
                     total_res[ns]["used-bytes-disk"] = 0
-                    total_res[ns]["evicted-objects"] = 0
-                    total_res[ns]["migrate-tx-partitions-remaining"] = 0
-                    total_res[ns]["migrate-rx-partitions-remaining"] = 0
-                    total_res[ns]["migrate-tx-partitions-initial"] = 0
-                    total_res[ns]["migrate-rx-partitions-initial"] = 0
+                    total_res[ns]["evicted_objects"] = 0
+                    total_res[ns]["migrate_tx_partitions_remaining"] = 0
+                    total_res[ns]["migrate_rx_partitions_remaining"] = 0
+                    total_res[ns]["migrate_tx_partitions_initial"] = 0
+                    total_res[ns]["migrate_rx_partitions_initial"] = 0
                 try:
-                    total_res[ns]["master-objects"] += int(ns_stats["master-objects"])
+                    total_res[ns]["master_objects"] += get_value_from_dict(ns_stats,('master-objects','master_objects'),return_type=int)
                 except Exception:
                     pass
                 try:
-                    total_res[ns]["prole-objects"] += int(ns_stats["prole-objects"])
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["used-bytes-memory"] += int(ns_stats["used-bytes-memory"])
-                except Exception:
-                    pass
-                try:
-                    total_res[ns]["used-bytes-disk"] += int(ns_stats["used-bytes-disk"])
+                    total_res[ns]["prole_objects"] += get_value_from_dict(ns_stats,('prole-objects','prole_objects'),return_type=int)
                 except Exception:
                     pass
 
                 try:
-                    total_res[ns]["evicted-objects"] += int(ns_stats["evicted-objects"])
+                    total_res[ns]["used-bytes-memory"] += get_value_from_dict(ns_stats,('used-bytes-memory','memory_used_bytes'),return_type=int)
+                except Exception:
+                    pass
+                try:
+                    total_res[ns]["used-bytes-disk"] += get_value_from_dict(ns_stats,('used-bytes-disk','device_used_bytes'),return_type=int)
                 except Exception:
                     pass
 
                 try:
-                    total_res[ns]["migrate-tx-partitions-remaining"] += int(ns_stats["migrate-tx-partitions-remaining"])
+                    total_res[ns]["evicted_objects"] += get_value_from_dict(ns_stats,('evicted-objects','evicted_objects'),return_type=int)
                 except Exception:
                     pass
 
                 try:
-                    total_res[ns]["migrate-rx-partitions-remaining"] += int(ns_stats["migrate-rx-partitions-remaining"])
+                    total_res[ns]["migrate_tx_partitions_remaining"] += get_value_from_dict(ns_stats,('migrate-tx-partitions-remaining','migrate_tx_partitions_remaining'),return_type=int)
                 except Exception:
                     pass
 
                 try:
-                    total_res[ns]["migrate-tx-partitions-initial"] += int(ns_stats["migrate-tx-partitions-initial"])
+                    total_res[ns]["migrate_rx_partitions_remaining"] += get_value_from_dict(ns_stats,('migrate-rx-partitions-remaining','migrate_rx_partitions_remaining'),return_type=int)
                 except Exception:
                     pass
 
                 try:
-                    total_res[ns]["migrate-rx-partitions-initial"] += int(ns_stats["migrate-rx-partitions-initial"])
+                    total_res[ns]["migrate_tx_partitions_initial"] += get_value_from_dict(ns_stats,('migrate-tx-partitions-initial','migrate_tx_partitions_initial'),return_type=int)
+                except Exception:
+                    pass
+
+                try:
+                    total_res[ns]["migrate_rx_partitions_initial"] += get_value_from_dict(ns_stats,('migrate-rx-partitions-initial','migrate_rx_partitions_initial'),return_type=int)
                 except Exception:
                     pass
 
                 row['namespace'] = ns
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
+                set_value_in_dict(row,"available_pct",get_value_from_dict(row,('available_pct','device_available_pct')))
+                set_value_in_dict(row,"free_pct_disk",get_value_from_dict(row,('free-pct-disk','device_free_pct')))
+                set_value_in_dict(row,"free_pct_memory",get_value_from_dict(row,('free-pct-memory','memory_free_pct')))
+                set_value_in_dict(row,"stop_writes",get_value_from_dict(row,('stop-writes','stop_writes')))
                 try:
-                    row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.ceil((float(ns_stats["migrate-rx-partitions-remaining"])/float(ns_stats["migrate-rx-partitions-initial"]))*100))
+                    row["migrate_rx_partitions_remaining_pct"] = "%d"%(math.ceil((get_value_from_dict(ns_stats,('migrate-rx-partitions-remaining','migrate_rx_partitions_remaining'),return_type=float)/get_value_from_dict(ns_stats,('migrate-rx-partitions-initial','migrate_rx_partitions_initial'),return_type=float))*100))
                 except Exception:
-                    row["migrate-rx-partitions-remaining-pct"] = "0"
+                    row["migrate_rx_partitions_remaining_pct"] = "0"
                 try:
-                    row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.ceil((float(ns_stats["migrate-tx-partitions-remaining"])/float(ns_stats["migrate-tx-partitions-initial"]))*100))
+                    row["migrate_tx_partitions_remaining_pct"] = "%d"%(math.ceil((get_value_from_dict(ns_stats,('migrate-tx-partitions-remaining','migrate_tx_partitions_remaining'),return_type=float)/get_value_from_dict(ns_stats,('migrate-tx-partitions-initial','migrate_tx_partitions_initial'),return_type=float))*100))
                 except Exception:
-                    row["migrate-tx-partitions-remaining-pct"] = "0"
+                    row["migrate_tx_partitions_remaining_pct"] = "0"
                 t.insertRow(row)
 
         for ns in total_res:
@@ -323,31 +327,30 @@ class CliView(object):
             row['node'] = " "
             row['available_pct'] = " "
             row["repl-factor"] = " "
-            row["stop-writes"] = " "
-            row["evicted-objects"] = " "
+            row["stop_writes"] = " "
             row["high-water-disk-pct"] = " "
-            row["free-pct-disk"] = " "
-            row["free-pct-memory"] = " "
+            row["free_pct_disk"] = " "
+            row["free_pct_memory"] = " "
             row["high-water-memory-pct"] = " "
             row["stop-writes-pct"] = " "
 
             row['namespace'] = ns
-            row["master-objects"] = str(total_res[ns]["master-objects"])
-            row["prole-objects"] = str(total_res[ns]["prole-objects"])
+            row["master_objects"] = str(total_res[ns]["master_objects"])
+            row["prole_objects"] = str(total_res[ns]["prole_objects"])
             row["used-bytes-memory"] = str(total_res[ns]["used-bytes-memory"])
             row["used-bytes-disk"] = str(total_res[ns]["used-bytes-disk"])
-            row["evicted-objects"] = str(total_res[ns]["evicted-objects"])
-            row["migrate-tx-partitions-remaining"] = str(total_res[ns]["migrate-tx-partitions-remaining"])
-            row["migrate-rx-partitions-remaining"] = str(total_res[ns]["migrate-rx-partitions-remaining"])
+            row["evicted_objects"] = str(total_res[ns]["evicted_objects"])
+            row["migrate_tx_partitions_remaining"] = str(total_res[ns]["migrate_tx_partitions_remaining"])
+            row["migrate_rx_partitions_remaining"] = str(total_res[ns]["migrate_rx_partitions_remaining"])
 
             try:
-                row["migrate-rx-partitions-remaining-pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate-rx-partitions-remaining"])/float(total_res[ns]["migrate-rx-partitions-initial"]))*100))
+                row["migrate_rx_partitions_remaining_pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate_rx_partitions_remaining"])/float(total_res[ns]["migrate_rx_partitions_initial"]))*100))
             except Exception:
-                row["migrate-rx-partitions-remaining-pct"] = "0"
+                row["migrate_rx_partitions_remaining_pct"] = "0"
             try:
-                row["migrate-tx-partitions-remaining-pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate-tx-partitions-remaining"])/float(total_res[ns]["migrate-tx-partitions-initial"]))*100))
+                row["migrate_tx_partitions_remaining_pct"] = "%d"%(math.ceil((float(total_res[ns]["migrate_tx_partitions_remaining"])/float(total_res[ns]["migrate_tx_partitions_initial"]))*100))
             except Exception:
-                row["migrate-tx-partitions-remaining-pct"] = "0"
+                row["migrate_tx_partitions_remaining_pct"] = "0"
 
             t.insertRow(row)
 
@@ -362,8 +365,8 @@ class CliView(object):
         column_names = ( 'set'
                         , 'namespace'
                         , 'node'
-                        , 'set-delete'
-                        , ('_n-bytes-memory', 'Mem used')
+                        , ('_set-delete', 'Set Delete')
+                        , ('_n-bytes-memory', 'Mem Used')
                         , ('_n_objects', 'Objects')
                         , 'stop-writes-count'
                         , 'disable-eviction'
@@ -372,9 +375,12 @@ class CliView(object):
 
         t = Table(title, column_names, sort_by=1, group_by=0)
         t.addDataSource('_n-bytes-memory'
-                        ,Extractors.byteExtractor('n-bytes-memory'))
+                        ,Extractors.byteExtractor(('n-bytes-memory','memory_data_bytes')))
         t.addDataSource('_n_objects'
-                        ,Extractors.sifExtractor('n_objects'))
+                        ,Extractors.sifExtractor(('n_objects','objects')))
+
+        t.addDataSource('_set-delete'
+                        ,lambda data: get_value_from_dict(data,('set-delete','deleting')))
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
@@ -420,11 +426,11 @@ class CliView(object):
                     total_res[(ns,set)]["n-bytes-memory"] = 0
                     total_res[(ns,set)]["n_objects"] = 0
                 try:
-                    total_res[(ns,set)]["n-bytes-memory"] += int(set_stats["n-bytes-memory"])
+                    total_res[(ns,set)]["n-bytes-memory"] += get_value_from_dict(set_stats, ('n-bytes-memory','memory_data_bytes'), 0, int)
                 except Exception:
                     pass
                 try:
-                    total_res[(ns,set)]["n_objects"] += int(set_stats["n_objects"])
+                    total_res[(ns,set)]["n_objects"] += get_value_from_dict(set_stats, ('n_objects','objects'), 0, int)
                 except Exception:
                     pass
 
@@ -468,8 +474,8 @@ class CliView(object):
                         ,'_req-outstanding'
                         ,'_req-shipped-success'
                         ,'_req-shipped-errors'
-                        ,'cur_throughput'
-                        ,('latency_avg_ship', 'Avg Latency (ms)')
+                        ,('_cur_throughput', 'Cur Throughput')
+                        ,('_latency_avg_ship', 'Avg Latency (ms)')
                         ,'_xdr-uptime')
 
         t = Table(title, column_names, group_by=1)
@@ -479,21 +485,27 @@ class CliView(object):
 
         t.addDataSource('_bytes-shipped',
                         Extractors.byteExtractor(
-                            ('esmt-bytes-shipped', 'esmt_bytes_shipped')))
+                            ('esmt-bytes-shipped', 'esmt_bytes_shipped', 'xdr_ship_bytes')))
 
         t.addDataSource('_lag-secs',
                         Extractors.timeExtractor('xdr_timelag'))
 
         t.addDataSource('_req-outstanding',
-                        Extractors.sifExtractor('stat_recs_outstanding'))
+                        Extractors.sifExtractor(('stat_recs_outstanding', 'xdr_ship_outstanding_objects')))
 
         t.addDataSource('_req-shipped-errors',
                         Extractors.sifExtractor('stat_recs_ship_errors'))
 
         t.addDataSource('_req-shipped-success',
-                        Extractors.sifExtractor('stat_recs_shipped_ok'))
+                        Extractors.sifExtractor(('stat_recs_shipped_ok', 'xdr_ship_success')))
 
-        # Highligh red if lag is more than 30 seconds
+        t.addDataSource('_cur_throughput',
+                        lambda data: get_value_from_dict(data,('cur_throughput', 'xdr_throughput')))
+
+        t.addDataSource('_latency_avg_ship',
+                        lambda data: get_value_from_dict(data,('latency_avg_ship', 'xdr_ship_latency_avg')))
+
+        # Highlight red if lag is more than 30 seconds
         t.addCellAlert('_lag-secs'
                        , lambda data: int(data['xdr_timelag']) >= 300)
 
@@ -510,17 +522,17 @@ class CliView(object):
             if xdr_enable[node_key]:
                 if row:
                     row['build'] = builds[node_key]
-                    CliView.setValueInRow(row, '_free-dlog-pct', CliView.getValueFromRow(row,('free_dlog_pct','free-dlog-pct')))
+                    set_value_in_dict(row, '_free-dlog-pct', get_value_from_dict(row,('free_dlog_pct','free-dlog-pct','dlog_free_pct')))
                     if row['_free-dlog-pct'].endswith("%"):
                         row['_free-dlog-pct'] = row['_free-dlog-pct'][:-1]
 
-                    CliView.setValueInRow(row, 'xdr_timelag', CliView.getValueFromRow(row,('xdr_timelag','timediff_lastship_cur_secs')))
-                    if 'stat_recs_shipped_ok' not in row:
-                        CliView.setValueInRow(row, 'stat_recs_shipped_ok', str(int(CliView.getValueFromRow(row,('stat_recs_shipped','stat-recs-shipped'),0))
-                                              - int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
-                                              - int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
-                    CliView.setValueInRow(row, 'stat_recs_ship_errors', str(int(CliView.getValueFromRow(row,('err_ship_client','err-ship-client'),0))
-                                          + int(CliView.getValueFromRow(row,('err_ship_server','err-ship-server'),0))))
+                    set_value_in_dict(row, 'xdr_timelag', get_value_from_dict(row,('xdr_timelag','timediff_lastship_cur_secs')))
+                    if not get_value_from_dict(row, ('stat_recs_shipped_ok','xdr_ship_success')):
+                        set_value_in_dict(row, 'stat_recs_shipped_ok', str(int(get_value_from_dict(row,('stat_recs_shipped','stat-recs-shipped'),0))
+                                              - int(get_value_from_dict(row,('err_ship_client','err-ship-client'),0))
+                                              - int(get_value_from_dict(row,('err_ship_server','err-ship-server'),0))))
+                    set_value_in_dict(row, 'stat_recs_ship_errors', str(int(get_value_from_dict(row,('err_ship_client','err-ship-client','xdr_ship_source_error'),0))
+                                          + int(get_value_from_dict(row,('err_ship_server','err-ship-server','xdr_ship_destination_error'),0))))
                 else:
                     row = {}
                     row['node-id'] = node.node_id
@@ -534,21 +546,6 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def getValueFromRow(row, keys, default_value=None):
-        if not isinstance(keys, tuple):
-            keys = (keys,)
-        for key in keys:
-            if key in row:
-                return row[key]
-        return default_value
-
-    @staticmethod
-    def setValueInRow(row, key, value):
-        if not row or not key or not value or isinstance(value,Exception):
-            return
-        row[key] = value
-
-    @staticmethod
     def infoDC(stats, cluster, title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
@@ -556,18 +553,30 @@ class CliView(object):
         title = "DC Information%s"%(title_suffix)
         column_names = ('node'
                         ,('DC_Name','DC')
-                        ,('xdr_dc_size','DC size')
+                        ,('_xdr_dc_size','DC size')
                         ,'namespaces'
                         ,('_lag-secs', 'Lag (sec)')
-                        ,('xdr_dc_remote_ship_ok', 'Records Shipped')
-                        ,('latency_avg_ship_ema', 'Avg Latency (ms)')
+                        ,('_xdr_dc_remote_ship_ok', 'Records Shipped')
+                        ,('_latency_avg_ship_ema', 'Avg Latency (ms)')
                         ,('_xdr-dc-state', 'Status')
                         )
 
         t = Table(title, column_names, group_by=1)
 
-        t.addDataSource('_lag-secs',
-                        Extractors.timeExtractor(('xdr-dc-timelag','xdr_dc_timelag','dc_timelag')))
+        t.addDataSource('_xdr_dc_size'
+                        ,lambda data: get_value_from_dict(data,('xdr_dc_size','dc_size')))
+
+        t.addDataSource('_lag-secs'
+                        ,Extractors.timeExtractor(('xdr-dc-timelag','xdr_dc_timelag','dc_timelag')))
+
+        t.addDataSource('_xdr_dc_remote_ship_ok'
+                        ,lambda data: get_value_from_dict(data,('xdr_dc_remote_ship_ok','dc_remote_ship_ok','dc_recs_shipped_ok','dc_ship_success')))
+
+        t.addDataSource('_latency_avg_ship_ema'
+                        ,lambda data: get_value_from_dict(data,('latency_avg_ship_ema','dc_latency_avg_ship','dc_latency_avg_ship_ema','dc_ship_latency_avg')))
+
+        t.addDataSource('_xdr-dc-state'
+                        ,lambda data: get_value_from_dict(data,('xdr_dc_state','xdr-dc-state','dc_state')))
 
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
@@ -582,10 +591,6 @@ class CliView(object):
                 if isinstance(row, Exception):
                     row = {}
                 if row:
-                    CliView.setValueInRow(row, '_xdr-dc-state', CliView.getValueFromRow(row,('xdr_dc_state','xdr-dc-state','dc_state')))
-                    CliView.setValueInRow(row, 'xdr_dc_remote_ship_ok', CliView.getValueFromRow(row,('xdr_dc_remote_ship_ok','dc_remote_ship_ok')))
-                    CliView.setValueInRow(row, 'xdr_dc_size', CliView.getValueFromRow(row,('xdr_dc_size','dc_size')))
-                    CliView.setValueInRow(row, 'latency_avg_ship_ema', CliView.getValueFromRow(row,('latency_avg_ship_ema','dc_latency_avg_ship','dc_latency_avg_ship_ema')))
                     row['real_node_id'] = node.node_id
                     row['node'] = prefixes[node_key]
                     t.insertRow(row)
@@ -601,22 +606,34 @@ class CliView(object):
                         , ('indextype', 'Index Type')
                         , ('ns', 'Namespace')
                         , 'set'
-                        , 'bins'
-                        , 'num_bins'
+                        , ('_bins', 'Bins')
+                        , ('_num_bins', 'Num Bins')
                         , ('type', 'Bin Type')
                         , 'state'
                         , 'sync_state'
                         , 'keys'
                         , 'entries'
-                        , ('ibtr_memory_used','si_accounted_memory')
-                        , ('query_reqs','q')
-                        , ('stat_write_success','w')
-                        , ('stat_delete_success','d')
-                        , ('query_avg_rec_count', 's'))
+                        , 'si_accounted_memory'
+                        , ('_query_reqs','q')
+                        , ('_stat_write_success','w')
+                        , ('_stat_delete_success','d')
+                        , ('_query_avg_rec_count', 's'))
 
         t = Table(title, column_names, group_by=1, sort_by=2)
+        t.addDataSource('_bins'
+                        ,lambda data: get_value_from_dict(data,('bins','bin')))
+        t.addDataSource('_num_bins'
+                        ,lambda data: get_value_from_dict(data,('num_bins'),default_value=1))
         t.addDataSource('entries'
                         ,Extractors.sifExtractor(('entries','objects')))
+        t.addDataSource('_query_reqs'
+                        ,Extractors.sifExtractor(('query_reqs')))
+        t.addDataSource('_stat_write_success'
+                        ,Extractors.sifExtractor(('stat_write_success','write_success')))
+        t.addDataSource('_stat_delete_success'
+                        ,Extractors.sifExtractor(('stat_delete_success','delete_success')))
+        t.addDataSource('_query_avg_rec_count'
+                        ,Extractors.sifExtractor(('query_avg_rec_count')))
         t.addCellAlert('node'
                        ,lambda data: data['real_node_id'] == principal
                        , color=terminal.fg_green)
@@ -726,7 +743,7 @@ class CliView(object):
                 print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n"%(terminal.fg_green(),(len(columns)-1),"s" if (len(columns)-1)>1 else "",terminal.fg_clear())
 
     @staticmethod
-    def showLatency(latency, cluster, machine_wise_display=False, like=None, **ignore):
+    def showLatency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, **ignore):
         prefixes = cluster.getNodeNames()
         if like:
             likes = CliView.compileLikes(like)
@@ -739,47 +756,60 @@ class CliView(object):
         for hist_or_node, data in sorted(latency.iteritems()):
             if not machine_wise_display and hist_or_node not in histograms:
                 continue
-
             title = "%s Latency"%(hist_or_node)
-            all_columns = set()
-
-            for _, _data in data.iteritems():
-                if "columns" not in _data or not _data["columns"]:
-                    continue
-                for column in _data["columns"]:
-                    if column[0] == '>':
-                        column = int(column[1:-2])
-                        all_columns.add(column)
-
-            all_columns = [">%sms"%(c) for c in sorted(all_columns)]
-            all_columns.insert(0, 'ops/sec')
-            all_columns.insert(0, 'Time Span')
-            if machine_wise_display:
-                all_columns.insert(0, 'histogram')
-            else:
-                all_columns.insert(0, 'node')
-
-            t = Table(title, all_columns)
 
             if machine_wise_display:
                 if like:
                     histograms = set(filter(likes.search, data.keys()))
                 else:
                     histograms = set(data.keys())
-
+            all_columns = set()
             for node_or_hist_id, _data in data.iteritems():
                 if machine_wise_display and node_or_hist_id not in histograms:
                     continue
-                if "columns" not in _data or not _data["columns"]:
+
+                for ns, ns_data in _data.iteritems():
+                    if "columns" not in ns_data or not ns_data["columns"]:
+                        continue
+                    for column in ns_data["columns"]:
+                        if column[0] == '>':
+                            column = int(column[1:-2])
+                            all_columns.add(column)
+
+            all_columns = [">%sms"%(c) for c in sorted(all_columns)]
+            all_columns.insert(0, 'ops/sec')
+            all_columns.insert(0, 'Time Span')
+            if show_ns_details:
+                all_columns.insert(0, 'namespace')
+            if machine_wise_display:
+                all_columns.insert(0, 'histogram')
+            else:
+                all_columns.insert(0, 'node')
+
+            t = Table(title, all_columns)
+            if show_ns_details:
+                for c in all_columns:
+                    t.addCellAlert(c, lambda data: data['namespace'] is " ", color=terminal.fg_blue)
+            for node_or_hist_id, _data in data.iteritems():
+                if machine_wise_display and node_or_hist_id not in histograms:
                     continue
-                columns = _data.pop("columns", None)
-                for _data_item in _data["values"]:
-                    row = dict(itertools.izip(columns, _data_item))
-                    if machine_wise_display:
-                        row['histogram'] = node_or_hist_id
-                    else:
-                        row['node'] = prefixes[node_or_hist_id]
-                    t.insertRow(row)
+
+                for ns,type in [i for i in sorted(_data.keys(), key=lambda x:str(x[1])+"-"+str(x[0]))]:
+                    if not show_ns_details and type=="namespace":
+                        continue
+                    ns_data = _data[(ns,type)]
+
+                    if "columns" not in ns_data or not ns_data["columns"]:
+                        continue
+                    columns = ns_data.pop("columns", None)
+                    for _data_item in ns_data["values"]:
+                        row = dict(itertools.izip(columns, _data_item))
+                        row['namespace'] = ns
+                        if machine_wise_display:
+                            row['histogram'] = node_or_hist_id
+                        else:
+                            row['node'] = prefixes[node_or_hist_id]
+                        t.insertRow(row)
 
             CliView.print_result(t)
 

@@ -17,7 +17,7 @@ from lib.controllerlib import *
 from lib import terminal
 from lib.logreader import SHOW_RESULT_KEY
 from lib.util import fetch_line_clear_dict, clear_val_from_dict, get_arg_and_delete_from_mods, \
-    check_arg_and_delete_from_mods
+    check_arg_and_delete_from_mods, get_value_from_dict
 from lib.view import CliView
 
 
@@ -203,12 +203,13 @@ class InfoController(CommandController):
                 except Exception:
                     pass
                 continue
-            for node in dc_stats[timestamp].keys():
-                if dc_stats[timestamp][node] and not isinstance(dc_stats[timestamp][node],Exception) and dc_config[timestamp][node] and not isinstance(dc_config[timestamp][node],Exception):
-                    for dc in dc_stats[timestamp][node].keys():
-                        dc_stats[timestamp][node][dc].update(dc_config[timestamp][node][dc])
-                elif (not dc_stats[timestamp][node] or isinstance(dc_stats[timestamp][node],Exception)) and dc_config[timestamp][node] and not isinstance(dc_config[timestamp][node],Exception):
-                    dc_stats[timestamp][node] = dc_config[timestamp][node]
+            for dc in dc_stats[timestamp].keys():
+                if dc_stats[timestamp][dc] and not isinstance(dc_stats[timestamp][dc],Exception) and dc_config[timestamp][dc] and not isinstance(dc_config[timestamp][dc],Exception):
+                    for node in dc_stats[timestamp][dc].keys():
+                        if node in dc_config[timestamp][dc]:
+                            dc_stats[timestamp][dc][node].update(dc_config[timestamp][dc][node])
+                elif (not dc_stats[timestamp][dc] or isinstance(dc_stats[timestamp][dc],Exception)) and dc_config[timestamp][dc] and not isinstance(dc_config[timestamp][dc],Exception):
+                    dc_stats[timestamp][dc] = dc_config[timestamp][dc]
             self.view.infoDC(flip_keys(dc_stats[timestamp]), self.logger.get_log_snapshot(timestamp=timestamp), title_suffix=" (%s)"%(timestamp), **self.mods)
 
     @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
@@ -337,7 +338,7 @@ class ShowConfigController(CommandController):
 class ShowDistributionController(CommandController):
 
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set(['for'])
 
     @CommandHelp('Shows the distributions of Time to Live and Object Size'
                  , '  Options(only for Object Size distribution):'
@@ -353,7 +354,7 @@ class ShowDistributionController(CommandController):
                 histogram[timestamp],
                 unit,
                 histogram_name,self.logger.get_log_snapshot(timestamp=timestamp),
-                title_suffix=" (%s)"%(timestamp), **self.mods)
+                title_suffix=" (%s)"%(timestamp), like=self.mods['for'])
 
     @CommandHelp('Shows the distribution of TTLs for namespaces')
     def do_time_to_live(self, line):
@@ -369,7 +370,7 @@ class ShowDistributionController(CommandController):
             for timestamp in histogram:
                 self.view.showObjectDistribution('Object Size Distribution',histogram[timestamp], 'Bytes', 'objsz', 10, False,
                            self.logger.get_log_snapshot(timestamp=timestamp), title_suffix=" (%s)"%(timestamp), loganalyser_mode=True
-                           , **self.mods)
+                           , like=self.mods['for'])
         else:
             return self._do_distribution('objsz','Object Size Distribution','Record Blocks')
 
@@ -399,7 +400,9 @@ class LogLatencyController(CommandController):
         '                   If not set then runs on all server logs in selected list.',
         '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
         '    -r <int>     - Repeating output table title and row header after every r node columns.',
-        '                   default: 0, no repetition.')
+        '                   default: 0, no repetition.',
+        '    -ns <string> - Namespace name. It will display histogram latency for ns namespace.',
+        '                   This feature is available for namespace level histograms in server >= 3.9.')
     def _do_default(self, line):
         self.grepFile.do_latency(line)
 
@@ -558,98 +561,114 @@ class FeaturesController(CommandController):
     def __init__(self):
         self.modifiers = set(['like'])
 
+    def check_key_for_gt(self, d={}, keys=(), v=0, is_and=False, type_check=int):
+        if not keys:
+            return True
+        if not d:
+            return False
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        if is_and:
+            if all(get_value_from_dict(d,k,v,type_check)>v for k in keys):
+                return True
+        else:
+            if any(get_value_from_dict(d,k,v,type_check)>v for k in keys):
+                return True
+        return False
+
     def _do_default(self, line):
         service_stats = self.logger.infoStatistics(stanza="service")
-        ns_stats = self.logger.infoStatistics(stanza="namespace")
+        namespace_stats = self.logger.infoStatistics(stanza="namespace")
         for timestamp in sorted(service_stats.keys()):
             features = {}
+            ns_stats = {}
+            if timestamp in namespace_stats:
+                ns_stats = namespace_stats[timestamp]
+                ns_stats = flip_keys(ns_stats)
             for node, stats in service_stats[timestamp].iteritems():
                 features[node] = {}
                 features[node]["KVS"] = "NO"
-                try:
-                    if int(
-                            stats["stat_read_reqs"]) > 0 or int(
-                            stats["stat_write_reqs"]) > 0:
-                        features[node]["KVS"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('stat_read_reqs','stat_write_reqs')):
+                    features[node]["KVS"] = "YES"
+                elif node in ns_stats:
+                    for ns, nsval in ns_stats[node].iteritems():
+                        if self.check_key_for_gt(nsval,('client_read_error','client_read_success','client_write_error','client_write_success')):
+                            features[node]["KVS"] = "YES"
+                            break
 
                 features[node]["UDF"] = "NO"
-                try:
-                    if int(
-                            stats["udf_read_reqs"]) > 0 or int(
-                            stats["udf_write_reqs"]) > 0:
-                        features[node]["UDF"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('udf_read_reqs','udf_write_reqs')):
+                    features[node]["UDF"] = "YES"
+                elif node in ns_stats:
+                    for ns, nsval in ns_stats[node].iteritems():
+                        if self.check_key_for_gt(nsval,('client_udf_complete','client_udf_error')):
+                            features[node]["UDF"] = "YES"
+                            break
 
                 features[node]["BATCH"] = "NO"
-                try:
-                    if int(stats["batch_initiate"]) > 0:
-                        features[node]["BATCH"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('batch_initiate')):
+                    features[node]["BATCH"] = "YES"
 
                 features[node]["SCAN"] = "NO"
-                try:
-                    if int(stats["tscan_initiate"]) > 0:
-                        features[node]["SCAN"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('tscan_initiate','basic_scans_succeeded','basic_scans_failed','aggr_scans_succeeded'
+                                                'aggr_scans_failed','udf_bg_scans_succeeded','udf_bg_scans_failed')):
+                    features[node]["SCAN"] = "YES"
+                elif node in ns_stats:
+                    for ns, nsval in ns_stats[node].iteritems():
+                        if self.check_key_for_gt(nsval,('scan_basic_complete','scan_basic_error','scan_aggr_complete',
+                                                        'scan_aggr_error','scan_udf_bg_complete','scan_udf_bg_error')):
+                            features[node]["SCAN"] = "YES"
+                            break
 
                 features[node]["SINDEX"] = "NO"
-                try:
-                    if int(stats["sindex-used-bytes-memory"]) > 0:
-                        features[node]["SINDEX"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('sindex-used-bytes-memory')):
+                    features[node]["SINDEX"] = "YES"
+                elif node in ns_stats:
+                    for ns, nsval in ns_stats[node].iteritems():
+                        if self.check_key_for_gt(nsval,('memory_used_sindex_bytes')):
+                            features[node]["SINDEX"] = "YES"
+                            break
 
                 features[node]["QUERY"] = "NO"
-                try:
-                    if int(
-                            stats["query_reqs"]) > 0 or int(
-                            stats["query_success"]) > 0:
-                        features[node]["QUERY"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('query_reqs','query_success')):
+                    features[node]["QUERY"] = "YES"
+                elif node in ns_stats:
+                    for ns, nsval in ns_stats[node].iteritems():
+                        if self.check_key_for_gt(nsval,('query_reqs','query_success')):
+                            features[node]["QUERY"] = "YES"
+                            break
 
                 features[node]["AGGREGATION"] = "NO"
-                try:
-                    if int(
-                            stats["query_agg"]) > 0 or int(
-                            stats["query_agg_success"]) > 0:
-                        features[node]["AGGREGATION"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('query_agg','query_agg_success')):
+                    features[node]["AGGREGATION"] = "YES"
+                elif node in ns_stats:
+                    for ns, nsval in ns_stats[node].iteritems():
+                        if self.check_key_for_gt(nsval,('query_agg','query_agg_success')):
+                            features[node]["AGGREGATION"] = "YES"
+                            break
 
-                try:
-                    if (timestamp in ns_stats):
-                        namespace_stats = ns_stats[timestamp]
-                        for ns in namespace_stats:
-                            features[node]["LDT(%s)"%(ns)] = "NO"
-                            try:
-                                if int(namespace_stats[ns][node].get("ldt-writes","0")) > 0 or int(namespace_stats[ns][node].get("ldt_writes","0")) > 0 or int(
-                                        namespace_stats[ns][node].get("ldt-reads","0")) > 0 or int(namespace_stats[ns][node].get("ldt_reads","0")) > 0 or int(
-                                        namespace_stats[ns][node].get("ldt-deletes","0")) > 0 or int(namespace_stats[ns][node].get("ldt_deletes","0")) > 0:
-                                        features[node]["LDT(%s)" % (ns)] = "YES"
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+                features[node]["LDT"] = "NO"
+                if self.check_key_for_gt(stats,('sub-records','ldt-writes','ldt-reads','ldt-deletes'
+                                                ,'ldt_writes','ldt_reads','ldt_deletes','sub_objects')):
+                    features[node]["LDT"] = "YES"
+                elif node in ns_stats:
+                    for ns, nsval in ns_stats[node].iteritems():
+                        if self.check_key_for_gt(nsval,('ldt-writes','ldt-reads','ldt-deletes','ldt_writes','ldt_reads','ldt_deletes')):
+                            features[node]["LDT"] = "YES"
+                            break
 
                 features[node]["XDR ENABLED"] = "NO"
-                try:
-                    if int(stats["stat_read_reqs_xdr"]) > 0:
-                        features[node]["XDR ENABLED"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('stat_read_reqs_xdr','xdr_read_success','xdr_read_error')):
+                    features[node]["XDR ENABLED"] = "YES"
 
                 features[node]["XDR DESTINATION"] = "NO"
-                try:
-                    if int(stats["stat_write_reqs_xdr"]) > 0:
-                        features[node]["XDR DESTINATION"] = "YES"
-                except Exception:
-                    pass
+                if self.check_key_for_gt(stats,('stat_write_reqs_xdr')):
+                    features[node]["XDR DESTINATION"] = "YES"
+                elif node in ns_stats:
+                    for ns, nsval in ns_stats[node].iteritems():
+                        if self.check_key_for_gt(nsval,('xdr_write_success')):
+                            features[node]["XDR DESTINATION"] = "YES"
+                            break
 
             self.view.showConfig(
                 "(%s) Features" %
@@ -687,8 +706,10 @@ class LogGrepServerController(CommandController):
         '                   Format -s \'string1\' \'string2\'... \'stringn\'',
         '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
-        '    -v <string>  - The non-matching string.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
+        '    -v <string>  - Non-matching strings (space separated).',
+        '    -i           - Perform case insensitive matching of search strings (-s) and non-matching strings (-v).',
+        '                   By default it is case sensitive.',
+        '    -u           - Set to find unique lines.',
         '    -f <string>  - Log time from which to analyze.',
         '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
         '                   Default: head',
@@ -707,8 +728,10 @@ class LogGrepServerController(CommandController):
         '                   Format -s \'string1\' \'string2\'... \'stringn\'',
         '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
-        '    -v <string>  - The non-matching string.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
+        '    -v <string>  - Non-matching strings (space separated).',
+        '    -i           - Perform case insensitive matching of search strings (-s) and non-matching strings (-v).',
+        '                   By default it is case sensitive.',
+        '    -u           - Set to find unique lines.',
         '    -f <string>  - Log time from which to analyze.',
         '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
         '                   default: head',
@@ -733,8 +756,11 @@ class LogGrepServerController(CommandController):
         '        4) KEY<space>(VALUE',
         '        5) VALUE1(VALUE2)<space>KEY',
         '  Options:',
-        '    -s <string>  - The String to search in log files, MANDATORY - NO DEFAULT',
-        '    -v <string>  - The non-matching string.',
+        '    -s <string>  - The Key to search in log files, MANDATORY - NO DEFAULT',
+        '                   We can give multiple strings to analyse actual context, but these multiple search strings should',
+        '                   present in same line and in same order as they mentioned here.',
+        '                   Ex. to analyse key "avail pct" across all namespace : -s "avail pct" ',
+        '                       to analyse key "avail pct" for namespace test : -s test "avail pct"',
         '    -i           - Perform case insensitive matching. By default it is case sensitive.',
         '    -f <string>  - Log time from which to analyze.',
         '                   May use the following formats:  \'Sep 22 2011 22:40:14\', -3600, or \'-1:00:00\'.',
@@ -768,32 +794,33 @@ class GrepFile(CommandController):
 
         tline = line[:]
         search_strs = []
-        ignore_str = ""
+        ignore_strs = []
         output_page_size = 10
         start_tm = "head"
         duration = ""
         sources = []
         is_and = False
         is_casesensitive = True
-        reading_search_strings = False
-        search_string_read = False
+        reading_strings = None
+        uniq = False
+        system_grep = False
         while tline:
-            search_string_read = False
+            string_read = False
             word = tline.pop(0)
             if word == '-s':
-                try:
-                    search_strs.append(strip_string(tline.pop(0)))
-                    reading_search_strings = True
-                    search_string_read = True
-                except Exception:
-                    search_strs = []
+                reading_strings = search_strs
+                string_read = True
             elif word == '-a':
                 is_and = True
             elif word == '-v':
-                ignore_str = tline.pop(0)
-                ignore_str = strip_string(ignore_str)
+                reading_strings = ignore_strs
+                string_read = True
             elif word == '-i':
                 is_casesensitive = False
+            elif word == '-u' and not self.grep_cluster:
+                uniq = True
+            elif word == '-sg' and not self.grep_cluster:
+                system_grep = True
             elif word == '-f' and not self.grep_cluster:
                 start_tm = tline.pop(0)
                 start_tm = strip_string(start_tm)
@@ -812,17 +839,17 @@ class GrepFile(CommandController):
                             tline.pop(0)).split(",")]
                 except Exception:
                     sources = []
-            elif reading_search_strings:
+            elif reading_strings is not None:
                 try:
-                    search_strs.append(strip_string(word))
+                    reading_strings.append(strip_string(word))
                 except Exception:
                     pass
-                search_string_read = True
+                string_read = True
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'" % (word, " ".join(line)))
-            if not search_string_read:
-                reading_search_strings = False
+            if not string_read:
+                reading_strings = None
 
         if search_strs:
             file_handlers = self.logger.get_files_by_index(
@@ -830,8 +857,9 @@ class GrepFile(CommandController):
                 sources)
             for display_name in sorted(file_handlers.keys()):
                 show_results = self.logger.grep(file_handlers[display_name],
-                    search_strs=search_strs, ignore_str=ignore_str, is_and=is_and, is_casesensitive=is_casesensitive,
-                    start_tm_arg=start_tm, duration_arg=duration, grep_cluster_logs=self.grep_cluster, output_page_size=output_page_size
+                    search_strs=search_strs, ignore_strs=ignore_strs, is_and=is_and, is_casesensitive=is_casesensitive,
+                    start_tm_arg=start_tm, duration_arg=duration, uniq=uniq, system_grep=system_grep,
+                    grep_cluster_logs=self.grep_cluster, output_page_size=output_page_size
                     )
                 page_index = 1
                 for show_res in show_results:
@@ -851,7 +879,7 @@ class GrepFile(CommandController):
 
         tline = line[:]
         search_strs = []
-        ignore_str = ""
+        ignore_strs = []
         output_page_size = 10
         is_and = False
         is_casesensitive=True
@@ -859,26 +887,27 @@ class GrepFile(CommandController):
         duration = ""
         slice_duration = "600"
         sources = []
-        reading_search_strings = False
-        search_string_read = False
+        reading_strings = None
         title_every_nth = 0
+        uniq = False
+        system_grep = False
         while tline:
-            search_string_read = False
+            string_read = False
             word = tline.pop(0)
             if word == '-s':
-                try:
-                    search_strs.append(strip_string(tline.pop(0)))
-                    reading_search_strings = True
-                    search_string_read = True
-                except Exception:
-                    search_strs = []
+                reading_strings = search_strs
+                string_read = True
             elif word == '-a':
                 is_and = True
+            elif word == '-v':
+                reading_strings = ignore_strs
+                string_read = True
             elif word == '-i':
                 is_casesensitive = False
-            elif word == '-v':
-                ignore_str = tline.pop(0)
-                ignore_str = strip_string(ignore_str)
+            elif word == '-u' and not self.grep_cluster:
+                uniq = True
+            elif word == '-sg' and not self.grep_cluster:
+                system_grep = True
             elif word == '-p' and not self.grep_cluster:
                 try:
                     output_page_size = int(strip_string(tline.pop(0)))
@@ -905,26 +934,27 @@ class GrepFile(CommandController):
                             tline.pop(0)).split(",")]
                 except Exception:
                     sources = []
-            elif reading_search_strings:
+            elif reading_strings is not None:
                 try:
-                    search_strs.append(strip_string(word))
+                    reading_strings.append(strip_string(word))
                 except Exception:
                     pass
-                search_string_read = True
+                string_read = True
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'" % (word, " ".join(line)))
-            if not search_string_read:
-                reading_search_strings = False
+            if not string_read:
+                reading_strings = None
 
         if search_strs:
             file_handlers = self.logger.get_files_by_index(
                 self.grep_cluster,
                 sources)
             for display_name in sorted(file_handlers.keys()):
-                count_results = self.logger.grepCount(
-                    file_handlers[display_name], search_strs, ignore_str, is_and, is_casesensitive,
-                    start_tm, duration, slice_duration=slice_duration, grep_cluster_logs=self.grep_cluster, output_page_size =output_page_size)
+                count_results = self.logger.grepCount(file_handlers[display_name],
+                    search_strs=search_strs, ignore_strs=ignore_strs, is_and=is_and, is_casesensitive=is_casesensitive,
+                    start_tm_arg=start_tm, duration_arg=duration, slice_duration=slice_duration, uniq=uniq, system_grep=system_grep,
+                    grep_cluster_logs=self.grep_cluster, output_page_size =output_page_size)
                 page_index = 1
                 for count_res in count_results:
                     if count_res:
@@ -941,7 +971,7 @@ class GrepFile(CommandController):
         line = mods['line']
 
         tline = line[:]
-        search_str = ""
+        search_strs = []
         start_tm = "head"
         duration = ""
         slice_tm = "10"
@@ -951,11 +981,19 @@ class GrepFile(CommandController):
         sources = []
         is_casesensitive = True
         title_every_nth = 0
+        reading_search_strings = False
+        search_string_read = False
+
         while tline:
+            search_string_read = False
             word = tline.pop(0)
             if word == '-s':
-                search_str = tline.pop(0)
-                search_str = strip_string(search_str)
+                try:
+                    search_strs.append(strip_string(tline.pop(0)))
+                    reading_search_strings = True
+                    search_string_read = True
+                except Exception:
+                    search_strs = []
             elif word == '-f':
                 start_tm = tline.pop(0)
                 start_tm = strip_string(start_tm)
@@ -990,20 +1028,29 @@ class GrepFile(CommandController):
             elif word == '-l' and tline:
                 limit = tline.pop(0)
                 limit = int(strip_string(limit))
+            elif reading_search_strings:
+                try:
+                    search_strs.append(strip_string(word))
+                except Exception:
+                    pass
+                search_string_read = True
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'" % (word, " ".join(line)))
-        if search_str:
+            if not search_string_read:
+                reading_search_strings = False
+
+        if search_strs:
             file_handlers = self.logger.get_files_by_index(
                 self.grep_cluster,
                 sources)
             for display_name in sorted(file_handlers.keys()):
-                diff_results = self.logger.grepDiff(file_handlers[display_name], search_str, is_casesensitive,
+                diff_results = self.logger.grepDiff(file_handlers[display_name], search_strs, is_casesensitive,
                     start_tm, duration, slice_tm, show_count, limit, output_page_size=output_page_size)
                 page_index = 1
                 for diff_res in diff_results:
                     if diff_res:
-                        self.view.showGrepDiff("%s(Page-%d)"%(display_name, page_index), diff_res, title_every_nth=title_every_nth)
+                        self.view.showGrepDiff("%s Diff (Page-%d)"%(search_strs[-1], page_index), diff_res, title_every_nth=title_every_nth)
                         page_index += 1
                 diff_results.close()
 
@@ -1025,6 +1072,7 @@ class GrepFile(CommandController):
         sources = []
         time_rounding = True
         title_every_nth = 0
+        ns=None
         while tline:
             word = tline.pop(0)
             if word == '-h':
@@ -1064,21 +1112,31 @@ class GrepFile(CommandController):
                     sources = []
             elif word == '-o':
                 time_rounding = False
+            elif word == '-ns':
+                try:
+                    ns = tline.pop(0)
+                    ns = strip_string(ns)
+                except:
+                    pass
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'" % (word, " ".join(line)))
 
         if hist:
             file_handlers = self.logger.get_files_by_index(self.grep_cluster, sources)
+            ns_hist = ""
+            if ns:
+                ns_hist += "%s - "%(ns)
+            ns_hist += "%s"%(hist)
 
             for display_name in sorted(file_handlers.keys()):
                 latency_results = self.logger.loglatency(file_handlers[display_name],
                     hist, start_tm, duration, slice_tm, bucket_count,
-                    every_nth_bucket, time_rounding, output_page_size=output_page_size)
+                    every_nth_bucket, time_rounding, output_page_size=output_page_size, ns=ns)
                 page_index = 1
                 for latency_res in latency_results:
                     if latency_res:
-                        self.view.showLogLatency("%s(Page-%d)"%(display_name, page_index), latency_res, title_every_nth=title_every_nth)
+                        self.view.showLogLatency("%s Latency (Page-%d)"%(ns_hist, page_index), latency_res, title_every_nth=title_every_nth)
                         page_index += 1
                 latency_results.close()
 
@@ -1099,8 +1157,9 @@ class LogGrepClusterController(CommandController):
         '                   Format -s \'string1\' \'string2\'... \'stringn\'',
         '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
-        '    -v <string>  - The non-matching string.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
+        '    -v <string>  - Non-matching strings (space separated).',
+        '    -i           - Perform case insensitive matching of search strings (-s) and non-matching strings (-v).',
+        '                   By default it is case sensitive.',
         '    -n <string>  - Comma separated cluster snapshot numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
         '                   If not set then runs on all cluster snapshots in selected list.')
     def do_show(self, line):
@@ -1113,8 +1172,9 @@ class LogGrepClusterController(CommandController):
         '                   Format -s \'string1\' \'string2\'... \'stringn\'',
         '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
         '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
-        '    -v <string>  - The non-matching string.',
-        '    -i           - Perform case insensitive matching. By default it is case sensitive.',
+        '    -v <string>  - Non-matching strings (space separated).',
+        '    -i           - Perform case insensitive matching of search strings (-s) and non-matching strings (-v).',
+        '                   By default it is case sensitive.',
         '    -n <string>  - Comma separated cluster snapshot numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
         '                   If not set then runs on all cluster snapshots in selected list.')
     def do_count(self, line):
