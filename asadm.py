@@ -473,7 +473,7 @@ def main():
 
 
     global ADMINHOME, ADMINHIST
-    ADMINHOME = os.environ['HOME'] + '/.aerospike/'
+    ADMINHOME = os.path.expanduser('~') + '/.aerospike/'
     ADMINHIST = ADMINHOME + 'admin_hist'
 
     if not os.path.isdir(ADMINHOME):
