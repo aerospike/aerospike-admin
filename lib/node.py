@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import datetime
 import re
 
-from lib import citrusleaf
+from lib import info
 from lib import util
 import lib
 from telnetlib import Telnet
@@ -57,7 +56,7 @@ class Node(object):
     dns_cache = {}
 
     def __init__(self, address, port=3000, timeout=3, use_telnet=False
-                 , user=None, password=None):
+                 , user=None, password=None, tls=None, tls_cert=None, consider_alumni=False):
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -71,35 +70,63 @@ class Node(object):
         access port. Can we detect from the socket?
         ALSO NOTE: May be better to just use telnet instead?
         """
-        self._updateIP(address)
+        self._updateIP(address, port)
         self.port = port
         self.xdr_port = 3004 # TODO: Find the xdr port
         self._timeout = timeout
         self._use_telnet = use_telnet
         self.user = user
         self.password = password
+        self.tls = tls
+        self.tls_cert = tls_cert
+        if tls and tls_cert:
+            self.use_tls = True
+        else:
+            self.use_tls = False
+        self.consider_alumni = consider_alumni
         # hack, _key needs to be defines before info calls... but may have
         # wrong (localhost) address before infoService is called. Will set
         # again after that call.
 
         self._key = hash(self.createKey(address, self.port))
+        self.peers_generation = -1
+        self.service_addresses = []
+        self.connect(address, port)
 
+    def connect(self, address, port):
         try:
-            self.node_id = self.infoNode()
-            if isinstance(self.node_id, Exception):
-                raise self.node_id
-
             # Original address may not be the service address, the
             # following will ensure we have the service address
-            address = self.infoService(address)[0]
-            if isinstance(address, Exception):
-                raise address
+            service_addresses = self.infoService(address, return_None=True)
+            if service_addresses and not isinstance(self.service_addresses, Exception):
+                self.service_addresses = service_addresses
+            #else : might be it's IP is not available, node should try all old service addresses
 
-            # calling update ip again because infoService may have provided a
-            # different IP than what was seeded.
-            self._updateIP(address)
+            if not self.service_addresses or (self.ip,self.port,self.tls) not in self.service_addresses:
+                # if asd >= 3.10 and node has only IPv6 address
+                self.service_addresses.append((self.ip,self.port,self.tls))
+            for s in self.service_addresses:
+                try:
+                    address = s[0]
+                    # calling update ip again because infoService may have provided a
+                    # different IP than what was seeded.
+                    self._updateIP(address, self.port)
+                    self.node_id = self.infoNode()
+                    if not isinstance(self.node_id, Exception):
+                        break
+                except Exception:
+                    # Sometime unavailable address might be present in service list, for ex. Down NIC address (server < 3.10).
+                    # In such scenario, we want to try all addresses from service list till we get available address
+                    pass
+
+            if isinstance(self.node_id, Exception):
+                raise self.node_id
             self._serviceIPPort = self.createKey(self.ip, self.port)
             self._key = hash(self._serviceIPPort)
+            self.features = self.info('features')
+            self.use_peers_list = self.isFeaturePresent(feature="peers")
+            if self.isPeersChanged():
+                self.peers = self.findFriendNodes()
             self.alive = True
         except Exception:
             # Node is offline... fake a node
@@ -110,7 +137,14 @@ class Node(object):
             self._key = hash(self._serviceIPPort)
 
             self.node_id = "000000000000000"
+            self.service_addresses = [(self.ip, self.port, self.tls)]
+            self.features = ""
+            self.use_peers_list = False
+            self.peers = []
             self.alive = False
+
+    def refresh_connection(self):
+        self.connect(self.ip, self.port)
 
     @property
     def key(self):
@@ -119,6 +153,9 @@ class Node(object):
 
     @staticmethod
     def createKey(address, port):
+        if address and ":" in address:
+            #IPv6 format
+            return "[%s]:%s"%(address, port)
         return "%s:%s"%(address, port)
 
     def __hash__(self):
@@ -127,11 +164,10 @@ class Node(object):
     def __eq__(self, other):
         return self._key == other._key
 
-    def _updateIP(self, address):
+    def _updateIP(self, address, port):
         if address not in self.dns_cache:
-            self.dns_cache[address] = (socket.gethostbyname(address)
+            self.dns_cache[address] = (socket.getaddrinfo(address, port, socket.AF_UNSPEC, socket.SOCK_STREAM)[0][4][0]
                                        , getfqdn(address))
-
         self.ip, self.fqdn = self.dns_cache[address]
 
     def sockName(self, use_fqdn = False):
@@ -157,11 +193,24 @@ class Node(object):
         return False
 
     def isFeaturePresent(self, feature):
-        features = self.info('features')
-        if isinstance(features, Exception):
+        if not self.features or isinstance(self.features, Exception):
             return False
 
-        return (feature in features)
+        return (feature in self.features)
+
+    def isPeersChanged(self):
+        try:
+            if not self.use_peers_list:
+                # old server code < 3.10
+                return True
+            new_generation = self.info("peers-generation")
+            if self.peers_generation != new_generation:
+                self.peers_generation = new_generation
+                return True
+            else:
+                return False
+        except Exception:
+            return True
 
     @return_exceptions
     @util.cached
@@ -192,9 +241,9 @@ class Node(object):
         if port == None:
             port = self.port
 
-        result = citrusleaf.citrusleaf_info(self.ip, port, command
+        result = info.info(self.ip, port, command
                                             , user=self.user
-                                            , password=self.password)
+                                            , password=self.password, tls_subject=self.tls, tls_cert=self.tls_cert)
         if result != -1 and result is not None:
             return result
         else:
@@ -241,6 +290,86 @@ class Node(object):
         return self.info("node")
 
     @return_exceptions
+    def _infoPeersListHelper(self, peers):
+        """
+        Takes an info peers list response and returns a list.
+        """
+        gen_port_peers = util._parse_string(peers)
+        if not gen_port_peers or len(gen_port_peers)<3:
+            return []
+        default_port = 3000
+        generation = gen_port_peers[0]
+        if (gen_port_peers[1]):
+            default_port = int(gen_port_peers[1])
+
+        peers_list = util._parse_string(gen_port_peers[2])
+        if not peers_list or len(peers_list) < 1:
+            return []
+        p_list = []
+        for p in peers_list:
+            p_data = util._parse_string(p)
+            if not p_data or len(p_data) < 3:
+                continue
+            node_name = p_data[0]
+            tls_name = None
+            if p_data[1] and len(p_data[1]) > 0:
+                tls_name = p_data[1]
+
+            endpoints = util._parse_string(p_data[2])
+            if not endpoints or len(endpoints)<1:
+                continue
+
+            if not tls_name:
+                tls_name = util.find_dns(endpoints)
+            endpoint_list = []
+            for e in endpoints:
+                if "[" in e and not "]:" in e:
+                    addr_port = util._parse_string(e, delim=",")
+                else:
+                    addr_port = util._parse_string(e, delim=":")
+                addr = addr_port[0]
+                if addr.startswith("["):
+                    addr = addr[1:]
+                if addr.endswith("]"):
+                    addr = addr[:-1].strip()
+
+                if(len(addr_port)>1 and addr_port[1] and len(addr_port[1])>0):
+                    port = addr_port[1]
+                else:
+                    port = default_port
+                try:
+                    port = int(port)
+                except Exception:
+                    port = default_port
+                endpoint_list.append((addr, port, tls_name))
+            p_list.append(tuple(endpoint_list))
+        return p_list
+
+    @return_exceptions
+    def infoPeersList(self):
+        """
+        Get peers this node knows of that are active
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        if self.use_tls:
+            return self._infoPeersListHelper(self.info("peers-tls-std"))
+        return self._infoPeersListHelper(self.info("peers-clear-std"))
+
+    @return_exceptions
+    def infoAlumniPeersList(self):
+        """
+        Get peers this node has ever know of
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        if self.use_tls:
+            return self._infoPeersListHelper(self.info("alumni-tls-std"))
+        return self._infoPeersListHelper(self.info("alumni-clear-std"))
+
+    @return_exceptions
     def _infoServicesHelper(self, services):
         """
         Takes an info services response and returns a list.
@@ -249,7 +378,7 @@ class Node(object):
             return []
 
         s = map(util.info_to_tuple, util.info_to_list(services))
-        return map(lambda v: (v[0], int(v[1])), s)
+        return map(lambda v: (v[0], int(v[1]), self.tls), s)
 
     @return_exceptions
     def infoServices(self):
@@ -263,12 +392,16 @@ class Node(object):
         return self._infoServicesHelper(self.info("services"))
 
     @return_exceptions
-    def infoService(self, address):
+    def infoService(self, address, return_None=False):
         try:
             service = self.info("service")
-            return tuple(service.split(':'))
+            s = map(util.info_to_tuple, util.info_to_list(service))
+            return map(lambda v: (v[0], int(v[1]), self.tls), s)
         except Exception:
-            return [address]
+            pass
+        if return_None:
+            return None
+        return [(address, self.port, self.tls)]
 
     @return_exceptions
     def infoServicesAlumni(self):
@@ -284,6 +417,21 @@ class Node(object):
         except IOError:
             # Possibly old asd without alumni feature
             return self.infoServices()
+
+    @return_exceptions
+    def findFriendNodes(self):
+        if self.use_peers_list:
+            peers = self.infoPeersList()
+            if not self.consider_alumni:
+                return peers
+            return peers + self.infoAlumniPeersList()
+        else:
+            services = None
+            if self.consider_alumni:
+                services = self.infoServicesAlumni()
+            if services and not isinstance(services,Exception):
+                    return services
+            return self.infoServices() # either want to avoid alumni or alumni list is empty (compatible for version without alumni)
 
     @return_exceptions
     def infoStatistics(self):
@@ -522,7 +670,7 @@ class Node(object):
                 if ns:
                     ns_key = (ns, "namespace")
                     if ns_key not in data[hist_name]:
-                        data[hist_name][ns_key]={}
+                        data[hist_name][ns_key] = {}
                         data[hist_name][ns_key]["columns"] = columns
                         data[hist_name][ns_key]["values"] = []
                     data[hist_name][ns_key]["values"].append(copy.deepcopy(row))

@@ -25,10 +25,13 @@ class Extractors(object):
             columns = (columns,)
 
         def si_extractor(data):
+            found = False
             for column in columns:
                 if column in data:
+                    found = True
                     break
-
+            if not found:
+                return "N/E"
             if system == int:
                 return int(data[column])
             elif system == float:

@@ -11,22 +11,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+import threading
 
 from lib import util
 from lib.node import Node
 from lib.prefixdict import PrefixDict
+from lib import info
 import re
 
 class Cluster(object):
     # Kinda like a singleton... All instantiated classes will share the same
     # state... This makes the class no
     cluster_state = {}
-    use_services = False
+    use_services = True
+    tls_cert = None
+    crawl_lock = threading.Lock()
 
-    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None, use_services=False):
+    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None, use_services=True, tls_cert=None):
         """
         Want to be able to support multiple nodes on one box (for testing)
-        seed_nodes should be the form (address,port) address can be fqdn or ip.
+        seed_nodes should be the form (address,port,tls) address can be fqdn or ip.
         """
 
         self.__dict__ = self.cluster_state
@@ -39,9 +44,13 @@ class Cluster(object):
         self.user = user
         self.password = password
         Cluster.use_services = use_services
+        Cluster.tls_cert = tls_cert
 
         # self.nodes is a dict from Node ID -> Node objects
         self.nodes = {}
+
+        # to avoid multiple entries of endpoints for same server we are keeping this pointers
+        self.aliases = {}
 
         # self.node_lookup is a dict of (fqdn, port) -> Node
         # and (ip, port) -> Node, and node.node_id -> Node
@@ -51,13 +60,12 @@ class Cluster(object):
         self._seed_nodes = set(seed_nodes)
         self._live_nodes = set()
         # crawl the cluster search for nodes in addition to the seed nodes.
-        self._enable_crawler = True
-        self._crawl()
+        self._refreshCluster()
 
     def __str__(self):
         nodes = self.nodes.values()
         if len(nodes) == 0:
-            return None
+            return ""
 
         online = [n.key for n in filter(lambda n: n.alive, nodes)]
         offline = [n.key for n in filter(lambda n: not n.alive, nodes)]
@@ -88,7 +96,8 @@ class Cluster(object):
     def getExpectedPrincipal(self):
         try:
             principal = "0"
-            for n in self.nodes.itervalues():
+            for k in self.nodes.keys():
+                n = self.nodes[k]
                 if n.node_id.zfill(16) > principal.zfill(16):
                     principal = n.node_id
             return principal
@@ -103,79 +112,87 @@ class Cluster(object):
     def getClusterVisibilityErrorNodes(self):
         visible = self.getLiveNodes()
         cluster_visibility_error_nodes = []
-        for node in self.nodes.values():
-            service_list = node.infoServices()
-            if isinstance(service_list, Exception):
+        for k in self.nodes.keys():
+            node = self.nodes[k]
+            if not node.alive:
+                # in case of using alumni services, we might have offline nodes which can't detect online nodes
                 continue
-
-            service_set = set(service_list)
-            if len((visible | service_set) - service_set) != 1:
+            peers = util.flatten(node.peers)
+            not_visible = set(visible) - set(peers)
+            if len(not_visible) != 1:
                 cluster_visibility_error_nodes.append(node.key)
 
         return cluster_visibility_error_nodes
 
-    def _shouldCrawl(self):
-        """
-        Determine if we need to do a crawl.
+    def update_aliases(self, aliases, endpoints, key):
+        for e in endpoints:
+            try:
+                addr = e[0]
+                port = e[1]
+                node_key = Node.createKey(addr, port)
+                if len(aliases) == 0 or not node_key in aliases:
+                    # same node's service addresses not added already
+                    aliases[node_key] = key
+                else:
+                    # same node's service addresses added already
+                    # Ex. NIC down IP available in service list
+                    # We want to avoid creation of two nodes
+                    aliases_node_key = aliases[node_key]
+                    if aliases_node_key != key:
+                        node = self.nodes[aliases_node_key]
+                        if not node.alive:
+                            aliases[node_key] = key
+            except Exception:
+                pass
 
-        We crawl if the union of all services lists is not equal to the set
-        of nodes that this tool percieves as alive.
-        """
-        if not self._enable_crawler:
-            return False
-        self._enable_crawler = False
-        current_services = set()
+    def find_new_nodes(self):
+        added_endpoints = []
+        peers = []
+        aliases = {}
+        if self.nodes:
+            for node_key in self.nodes.keys():
+                node = self.nodes[node_key]
+                node.refresh_connection()
+                if node.key != node_key:
+                    # change in service list
+                    self.nodes.pop(node_key)
+                    self.updateNode(node)
+                _endpoints = node.service_addresses
+                self.update_aliases(aliases, _endpoints, node.key)
+                added_endpoints = added_endpoints + _endpoints
+                peers = peers + node.peers
+        else:
+            peers = self._original_seed_nodes
 
-        self._refreshNodeLiveliness()
+        if not added_endpoints:
+            return peers
+        else:
+            # IPv6 addresses are not available in service list we need to check those missing endpoints and add into aliases list
+            # following set operation removes only single IPv4 addresses which are present in both list( for old server code < 3.10)
+            # But it will keep peers-list as it is, so we will check it again while crawling and update missing endpoints(IPv6) to aliases
+            nodes_to_add = list(set(peers) - set(added_endpoints))
+            self.aliases = copy.deepcopy(aliases)
 
-        try:
-            for services in self.infoServices().itervalues():
-                if isinstance(services, Exception):
-                    continue
-                current_services |= set(services)
-
-            if current_services and current_services == self._live_nodes:
-                # services have not changed, do not crawl
-                # if services are empty they crawl regardless
-                return False
-            else:
-                # services have changed
-                return True
-
-        except IOError:
-            # We aren't connected yet, definitely crawl.
-            return True
-
-        finally:
-            # Re-enable crawler before exiting
-            self._enable_crawler = True
+        return nodes_to_add
 
     def _crawl(self):
         """
         Find all the nodes in the cluster and add them to self.nodes.
         """
-        if not self._shouldCrawl():
+        nodes_to_add = self.find_new_nodes()
+        if not nodes_to_add or len(nodes_to_add) == 0:
             return
-        self._enable_crawler = False
-
         try:
-            if self._seed_nodes:
-                seed_nodes = self._seed_nodes
-            else:
-                seed_nodes = self._original_seed_nodes
-
-            # clear the current lookup and node list
             all_services = set()
             visited = set()
-            unvisited = set(seed_nodes)
+            unvisited = set(nodes_to_add)
+
             while unvisited - visited:
                 l_unvisited = list(unvisited)
-
-                nodes = util.concurrent_map(self._registerNode, l_unvisited)
+                nodes = map(self._registerNode, l_unvisited)
                 live_nodes = [node
                               for node in nodes
                               if node is not None and node.alive and node not in visited]
-
                 visited |= unvisited
                 unvisited.clear()
 
@@ -184,20 +201,26 @@ class Cluster(object):
                     if isinstance(services, Exception):
                         continue
                     all_services.update(set(services))
-                    all_services.add((node.ip, node.port))
+                    all_services.add((node.ip, node.port, node.tls))
                 unvisited = all_services - visited
-            if all_services:
-                self._seed_nodes = all_services
             self._refreshNodeLiveliness()
         except Exception:
             pass
         finally:
-            self._enable_crawler = True
+            self.clear_node_list()
+
+    def clear_node_list(self):
+        # remove old entries from self.nodes
+        # helps to remove multiple entries of same node ( in case of service list change or node is up after going down)
+        service_nodes = set(self.aliases.values())
+        for n in self.nodes.keys():
+            if n not in service_nodes:
+                self.nodes.pop(n)
 
     def _refreshNodeLiveliness(self):
         live_nodes = [node for node in self.nodes.itervalues() if node.alive]
         self._live_nodes.clear()
-        self._live_nodes.update(((node.ip, node.port) for node in live_nodes))
+        self._live_nodes.update(((node.ip, node.port, node.tls) for node in live_nodes))
 
     def updateNode(self, node):
         self.nodes[node.key] = node
@@ -210,40 +233,99 @@ class Cluster(object):
     def getNode(self, node):
         return self.node_lookup[node]
 
-    def _registerNode(self, addr_port):
+    def _registerNode(self, addr_port_tls):
+        if not addr_port_tls:
+            return None
+        if not isinstance(addr_port_tls, tuple):
+            return None
+        if not isinstance(addr_port_tls[0], tuple):
+            return self._createNode(addr_port_tls, force=True)
+
+        new_node = None
+        for i, a_p_t in enumerate(addr_port_tls):
+            if i == len(addr_port_tls)-1:
+                new_node = self._createNode(a_p_t, force=True)
+            else:
+                new_node = self._createNode(a_p_t)
+            if not new_node:
+                continue
+            else:
+                break
+        self.update_aliases(self.aliases, addr_port_tls, new_node.key)
+        return new_node
+
+    def info_request(self, command, addr, port = None, user = None, password = None, tls_subject = None, tls_cert = None ):
+        # TODO: citrusleaf.py does not support passing a timeout default is 0.5s
+        if port == None:
+            port = 3000
+
+        result = info.info(addr, port, command
+                                            , user=user
+                                            , password=password, tls_subject=tls_subject, tls_cert=tls_cert)
+        if result != -1 and result is not None:
+            return result
+        else:
+            return -1
+
+    def is_present_as_alias(self, addr, port, aliases=None):
+        if not aliases:
+            aliases = self.aliases
+        return Node.createKey(addr, port) in aliases
+
+    def get_node_for_alias(self, addr, port):
+        try:
+            if self.is_present_as_alias(addr, port):
+                return self.nodes[self.aliases[Node.createKey(addr, port)]]
+        except Exception:
+            pass
+        return None
+
+    def _createNode(self, addr_port_tls, force=False):
         """
         Instantiate and return a new node
 
         If cannot instantiate node, return None.
         Creates a new node if:
-           1) node.key doesn't already exist
-           2) node.key exists but existing node is not alive
+           1) key(addr,port) is not available in self.aliases
         """
         try:
-            addr, port = addr_port
+            # tuple of length 3 for server version >= 3.10.0 (with tls name)
+            addr, port, tls = addr_port_tls
         except Exception:
-            print "ip_port is expected to be a tuple of len 2, " + \
-                "instead it is of type %s and str value of %s"%(type(addr_port)
-                                                                , str(addr_port))
-            return None
-
+            try:
+                # tuple of length 2 for server version < 3.10.0 ( without tls name)
+                addr, port = addr_port_tls
+                tls = None
+            except Exception:
+                print "ip_port is expected to be a tuple of len 2, " + \
+                    "instead it is of type %s and str value of %s"%(type(addr_port_tls)
+                                                                    , str(addr_port_tls))
+                return None
         try:
-            node_key = Node.createKey(addr, port)
-            existing = self.nodes.get(node_key, None)
+            if self.is_present_as_alias(addr, port):
+                # Alias entry already added for this endpoint
+                n = self.get_node_for_alias(addr, port)
+                if n:
+                    # Node already added for this endpoint
+                    # No need to check for offline/online as we already did this while finding new nodes to add
+                    return n
+                # else
+                # Will create node again
 
-            if not existing or not existing.alive:
-                new_node = Node(addr,
-                                port,
-                                use_telnet=self.use_telnet,
-                                user=self.user,
-                                password=self.password)
 
-                if existing and not new_node.alive:
-                    new_node = existing
-            else:
-                return existing
-
+            # if not existing:
+            new_node = Node(addr, port, use_telnet=self.use_telnet,
+                            user=self.user, password=self.password,
+                            tls=tls, tls_cert=Cluster.tls_cert,
+                            consider_alumni=not Cluster.use_services)
+            if not new_node:
+                return new_node
+            if not new_node.alive:
+                if not force:
+                    # We can check other endpoints
+                    return None
             self.updateNode(new_node)
+            self.update_aliases(self.aliases, new_node.service_addresses, new_node.key)
             return new_node
         except Exception:
             return None
@@ -251,15 +333,20 @@ class Cluster(object):
     @staticmethod
     def _getServices(node):
         """
-        Given a node object return its services list
+        Given a node object return its services list / peers list
         """
-        if Cluster.use_services:
-            return node.infoServices()
+        try:
+            return node.peers
+        except Exception:
+            return []
 
-        services = node.infoServicesAlumni()
-        if services:
-            return services
-        return node.infoServices() # compatible for version without alumni
+    def _refreshCluster(self):
+        with Cluster.crawl_lock:
+            try:
+                self._crawl()
+            except Exception as e:
+                print e
+                raise e
 
     def _callNodeMethod(self, nodes, method_name, *args, **kwargs):
         """
@@ -267,7 +354,8 @@ class Cluster(object):
         nodes is a list of nodes to to run the command against.
         if nodes is None then we run on all nodes.
         """
-        self._crawl()
+        self._refreshCluster()
+
         if nodes == 'all':
             use_nodes = self.nodes.values()
         elif isinstance(nodes, list):
@@ -286,7 +374,6 @@ class Cluster(object):
                 "nodes should be 'all' or list found %s"%type(nodes))
         if len(use_nodes) == 0:
             raise IOError('Unable to find any Aerospike nodes')
-
         return dict(
             util.concurrent_map(
                 lambda node:
@@ -298,6 +385,30 @@ class Cluster(object):
 
     def isFeaturePresent(self, feature, nodes='all'):
         return self._callNodeMethod(nodes, 'isFeaturePresent', feature)
+
+    def getIP2NodeMap(self):
+        self._refreshCluster()
+        ipMap = {}
+        for a in self.aliases.keys():
+            try:
+                ipMap[a] = self.nodes.get(self.aliases[a]).node_id
+            except Exception:
+                pass
+        return ipMap
+
+    def getNode2IPMap(self):
+        self._refreshCluster()
+        ipMap = {}
+        for a in self.aliases.keys():
+            try:
+                id = self.nodes.get(self.aliases[a]).node_id
+                if id in ipMap:
+                    ipMap[id] = ipMap[id] + ", " + a
+                else:
+                    ipMap[id] = a
+            except Exception:
+                pass
+        return ipMap
 
     def __getattr__(self, name):
         regex = re.compile("^info.*$|^xdr.*$")

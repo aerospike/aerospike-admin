@@ -13,11 +13,8 @@
 # limitations under the License.
 import math
 from lib.logger import DT_FMT
-from lib.logreader import TOTAL_ROW_HEADER, COUNT_RESULT_KEY
-
+from lib.logreader import COUNT_RESULT_KEY
 from lib.table import Table, Extractors, TitleFormats, Styles
-import sys
-from cStringIO import StringIO
 import re
 from lib import terminal
 import time
@@ -44,9 +41,9 @@ class CliView(object):
     def print_result(out):
         if type(out) is not str:
             out = str(out)
-        if CliView.pager==CliView.LESS:
+        if CliView.pager == CliView.LESS:
             pipepager(out, cmd='less -RSX')
-        elif CliView.pager==CliView.MORE:
+        elif CliView.pager == CliView.MORE:
             pipepager(out, cmd='more -d')
         else:
              print out
@@ -61,13 +58,13 @@ class CliView(object):
              print "NO PAGER"
 
     @staticmethod
-    def infoNetwork(stats, versions, builds, cluster, title_suffix="", **ignore):
+    def infoNetwork(stats, cluster_names, versions, builds, cluster, title_suffix="", **ignore):
         prefixes = cluster.getNodeNames()
         principal = cluster.getExpectedPrincipal()
         hosts = cluster.nodes
-
         title = "Network Information%s"%(title_suffix)
-        column_names = ('node'
+        column_names = ( ('cluster-name', 'Cluster Name')
+                        , 'node'
                         , 'node_id'
                         , 'ip'
                         , 'build'
@@ -137,6 +134,13 @@ class CliView(object):
             except Exception:
                 pass
 
+            try:
+                cluster_name = cluster_names[node_key]
+                if not isinstance(cluster_name, Exception) and cluster_name not in ["null"]:
+                    row["cluster-name"] = cluster_name
+            except Exception:
+                pass
+
 
             t.insertRow(row)
 
@@ -152,8 +156,8 @@ class CliView(object):
                         , 'node'
                         , ('available_pct', 'Avail%')
                         , ('_evicted_objects', 'Evictions')
-                        , ('_master_objects', 'Master Objects')
-                        , ('_prole_objects', 'Replica Objects')
+                        , ('_master_objects', 'Master (Objects,Tombstones)')
+                        , ('_prole_objects', 'Replica (Objects,Tombstones)')
                         , 'repl-factor'
                         , 'stop_writes'
                         , ('_migrates', 'Pending Migrates (tx%,rx%)')
@@ -174,10 +178,14 @@ class CliView(object):
                         ,Extractors.byteExtractor(('used-bytes-memory','memory_used_bytes')))
 
         t.addDataSource('_master_objects'
-                        ,Extractors.sifExtractor(('master-objects','master_objects')))
+                        , lambda data:
+                        "(%s,%s)"%(Extractors.sifExtractor(('master-objects','master_objects'))(data)
+                                      , Extractors.sifExtractor(('master_tombstones'))(data)))
 
         t.addDataSource('_prole_objects'
-                        ,Extractors.sifExtractor(('prole-objects','prole_objects')))
+                        , lambda data:
+                        "(%s,%s)"%(Extractors.sifExtractor(('prole-objects','prole_objects'))(data)
+                                      , Extractors.sifExtractor(('prole_tombstones'))(data)))
 
         t.addDataSource('_used_disk_pct'
                         , lambda data: 100 - int(data['free_pct_disk']) if data['free_pct_disk'] is not " " else " ")
@@ -212,7 +220,13 @@ class CliView(object):
         t.addCellAlert('_master_objects'
                        ,lambda data: data['node'] is " "
                        , color=terminal.fg_blue)
+        t.addCellAlert('_master_tombstones'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
         t.addCellAlert('_prole_objects'
+                       ,lambda data: data['node'] is " "
+                       , color=terminal.fg_blue)
+        t.addCellAlert('_prole_tombstones'
                        ,lambda data: data['node'] is " "
                        , color=terminal.fg_blue)
         t.addCellAlert('_used_bytes_memory'
@@ -254,7 +268,9 @@ class CliView(object):
                 if ns not in total_res:
                     total_res[ns] = {}
                     total_res[ns]["master_objects"] = 0
+                    total_res[ns]["master_tombstones"] = 0
                     total_res[ns]["prole_objects"] = 0
+                    total_res[ns]["prole_tombstones"] = 0
                     total_res[ns]["used-bytes-memory"] = 0
                     total_res[ns]["used-bytes-disk"] = 0
                     total_res[ns]["evicted_objects"] = 0
@@ -267,7 +283,15 @@ class CliView(object):
                 except Exception:
                     pass
                 try:
+                    total_res[ns]["master_tombstones"] += get_value_from_dict(ns_stats,('master_tombstones'),return_type=int)
+                except Exception:
+                    pass
+                try:
                     total_res[ns]["prole_objects"] += get_value_from_dict(ns_stats,('prole-objects','prole_objects'),return_type=int)
+                except Exception:
+                    pass
+                try:
+                    total_res[ns]["prole_tombstones"] += get_value_from_dict(ns_stats,('prole_tombstones'),return_type=int)
                 except Exception:
                     pass
 
@@ -336,7 +360,9 @@ class CliView(object):
 
             row['namespace'] = ns
             row["master_objects"] = str(total_res[ns]["master_objects"])
+            row["master_tombstones"] = str(total_res[ns]["master_tombstones"])
             row["prole_objects"] = str(total_res[ns]["prole_objects"])
+            row["prole_tombstones"] = str(total_res[ns]["prole_tombstones"])
             row["used-bytes-memory"] = str(total_res[ns]["used-bytes-memory"])
             row["used-bytes-disk"] = str(total_res[ns]["used-bytes-disk"])
             row["evicted_objects"] = str(total_res[ns]["evicted_objects"])
@@ -731,7 +757,7 @@ class CliView(object):
                         t.addDataSource(column,Extractors.sifExtractor(column))
 
             for node_id, data in node_data.iteritems():
-                if node_id=="columns":
+                if node_id == "columns":
                     continue
 
                 row = data['values']
@@ -795,7 +821,7 @@ class CliView(object):
                     continue
 
                 for ns,type in [i for i in sorted(_data.keys(), key=lambda x:str(x[1])+"-"+str(x[0]))]:
-                    if not show_ns_details and type=="namespace":
+                    if not show_ns_details and type == "namespace":
                         continue
                     ns_data = _data[(ns,type)]
 
@@ -907,7 +933,6 @@ class CliView(object):
             t.insertRow(row1)
             t.insertRow(row2)
         t._need_sort = False
-        #print t
         CliView.print_result(t.__str__(horizontal_title_every_nth=2*title_every_nth))
 
     @staticmethod
@@ -955,7 +980,6 @@ class CliView(object):
             t.insertRow(row2)
             t.insertRow(row3)
         t._need_sort = False
-        #print t
         CliView.print_result(t.__str__(horizontal_title_every_nth=title_every_nth*3))
 
     @staticmethod
@@ -1013,7 +1037,7 @@ class CliView(object):
                 is_first = True
                 sub_columns_per_column = len(grep_result[file].keys())
                 for key in sorted(grep_result[file].keys()):
-                    if key=="ops/sec":
+                    if key == "ops/sec":
                         continue
                     row = grep_result[file][key]
                     if is_first:
@@ -1043,6 +1067,34 @@ class CliView(object):
     @staticmethod
     def showStats(*args, **kwargs):
         CliView.showConfig(*args, **kwargs)
+
+    @staticmethod
+    def showMapping(col1, col2, mapping, like=None, **ignore):
+        if not mapping:
+            return
+        column_names = []
+        column_names.insert(0, col2)
+        column_names.insert(0, col1)
+
+        t = Table("%s to %s Mapping"%(col1,col2)
+                   , column_names
+                   , title_format=TitleFormats.noChange
+                   , style=Styles.HORIZONTAL)
+        if like:
+            likes = CliView.compileLikes(like)
+            filtered_keys = filter(likes.search, mapping.keys())
+        else:
+            filtered_keys = mapping.keys()
+
+        for col1_val, col2_val in mapping.iteritems():
+            if not col1_val in filtered_keys:
+                continue
+            row = {}
+            if not isinstance(col2_val, Exception):
+                row[col1] = col1_val
+                row[col2] = col2_val
+            t.insertRow(row)
+        CliView.print_result(t)
 
     @staticmethod
     def showHealth(*args, **kwargs):
@@ -1192,9 +1244,8 @@ class CliView(object):
             except Exception:
                 pass
 
-        if "".join(line[0:2]) == "--no-diff":
+        if line[0] == "--no-diff":
             diff_highlight = False
-            line.pop(0)
             line.pop(0)
 
         if not terminal.color_enabled:

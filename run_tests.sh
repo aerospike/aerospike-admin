@@ -14,4 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-unit2 discover
+echo "Running unit test cases :"
+unit2 discover -s test/unit -t .
+
+echo
+echo "Running e2e test cases :"
+unit2 discover -s test/e2e -t .

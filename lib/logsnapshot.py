@@ -12,6 +12,7 @@ class LogNode(object):
         self.xdr_build = "N/E"
         self.asd_build = "N/E"
         self.asd_version = "N/E"
+        self.cluster_name = "null"
         self.ip = "N/E"
 
     def sockName(self, use_fqdn):
@@ -33,6 +34,9 @@ class LogNode(object):
 
     def set_asd_build(self, asd_build):
         self.asd_build = asd_build
+
+    def set_cluster_name(self, cluster_name):
+        self.cluster_name = cluster_name
 
     def set_asd_version(self, asd_version):
         if asd_version.lower() in ['enterprise', 'true']:
@@ -100,6 +104,7 @@ class LogSnapshot(object):
                 self.set_xdr_build()
                 self.set_asd_build()
                 self.set_asd_version()
+                self.set_cluster_name()
             elif type not in self.cluster_data:
                 self.cluster_data.update(self.log_reader.read(self.cluster_file))
 
@@ -197,41 +202,60 @@ class LogSnapshot(object):
                 if node in self.nodes and asd_versions[node]:
                     self.nodes[node].set_asd_version(asd_versions[node])
 
+    def set_cluster_name(self):
+        cluster_names = self.fetch_columns_for_nodes(type="summary", stanza="network", header_columns=['Cluster','Node'],column_to_find=['Cluster', 'Name'],symbol_to_neglct='.')
+        if cluster_names:
+            for node in cluster_names:
+                if node in self.nodes:
+                    self.nodes[node].set_cluster_name(cluster_names[node])
+
+    def find_column_num(self, lines, column_to_find, header_columns):
+        if not lines:
+            return lines, None
+        column_found = False
+        column_to_find_index = 0
+        header_search_incomplete = False
+        indices = []
+
+        while not column_found and lines:
+            line = lines.pop(0)
+            if all(column in line for column in header_columns) or header_search_incomplete:
+                line_list = line.split()
+                temp_indices = [i for i, x in enumerate(line_list) if x == column_to_find[column_to_find_index]]
+                if not indices:
+                    indices = temp_indices
+                else:
+                    indices = logutil.intersect_list(indices, temp_indices)
+                column_to_find_index += 1
+                if column_to_find_index == len(column_to_find):
+                    column_found = True
+                    header_search_incomplete = False
+                else:
+                    header_search_incomplete = True
+        return lines,indices
+
     def fetch_columns_for_nodes(self, type, stanza, header_columns, column_to_find, symbol_to_neglct):
         summary = self.get_data(type=type, stanza=stanza)
         node_value = {}
         if summary and isinstance(summary, str):
             lines = summary.split('\n')
-            column_found = False
-            header_search_incomplete = False
-            column_to_find_index = 0
-            indices = []
+            lines, node_col = self.find_column_num(lines, ['Node','.'], header_columns)
+
+            lines = summary.split('\n')
+            lines, indices = self.find_column_num(lines, column_to_find, header_columns)
             for line in lines:
-                if column_found:
                     try:
-                       if(line.split()[0].strip()==symbol_to_neglct):
+
+                       if(line.split()[node_col[0]].strip()==symbol_to_neglct):
                            continue
                        else:
                            line_list = line.split()
-                           node = line_list[0].strip()
-                           xdr_build = line_list[indices[0]].strip()
+                           node = line_list[node_col[0]].strip()
+                           col_val = line_list[indices[0]].strip()
                            if node in self.nodes:
-                               node_value[node] = xdr_build
+                               node_value[node] = col_val
                     except Exception:
                         pass
-                elif all(column in line for column in header_columns) or header_search_incomplete:
-                    line_list = line.split()
-                    temp_indices = [i for i, x in enumerate(line_list) if x == column_to_find[column_to_find_index]]
-                    if not indices:
-                        indices = temp_indices
-                    else:
-                        indices = logutil.intersect_list(indices, temp_indices)
-                    column_to_find_index += 1
-                    if column_to_find_index == len(column_to_find):
-                        column_found = True
-                        header_search_incomplete = False
-                    else:
-                        header_search_incomplete = True
         return node_value
 
     def get_xdr_build(self):
@@ -269,6 +293,18 @@ class LogSnapshot(object):
         except Exception:
             pass
         return asd_version
+
+    def get_cluster_name(self):
+        cluster_name = {}
+        try:
+            if not self.cluster_data:
+                self.set_cluster_name()
+
+            for node in self.nodes:
+                cluster_name[node] = self.nodes[node].cluster_name
+        except Exception:
+            pass
+        return cluster_name
 
     def set_input(self, search_strs, ignore_str="", is_and=False, is_casesensitive=True):
         if is_casesensitive:

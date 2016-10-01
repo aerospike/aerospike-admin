@@ -16,7 +16,7 @@ from lib.controller import ShellController
 from lib.controllerlib import *
 from lib import terminal
 from lib.logreader import SHOW_RESULT_KEY
-from lib.util import fetch_line_clear_dict, clear_val_from_dict, get_arg_and_delete_from_mods, \
+from lib.util import get_arg_and_delete_from_mods, \
     check_arg_and_delete_from_mods, get_value_from_dict
 from lib.view import CliView
 
@@ -132,7 +132,8 @@ class InfoController(CommandController):
             logsnapshot_controller = self.logger.get_log_snapshot(timestamp=timestamp)
             builds = logsnapshot_controller.get_asd_build()
             versions = logsnapshot_controller.get_asd_version()
-            self.view.infoNetwork(network_stats[timestamp], versions, builds, logsnapshot_controller, title_suffix=" (%s)"%(timestamp), **self.mods)
+            cluster_names = logsnapshot_controller.get_cluster_name()
+            self.view.infoNetwork(network_stats[timestamp], cluster_names, versions, builds, logsnapshot_controller, title_suffix=" (%s)"%(timestamp), **self.mods)
 
     @CommandHelp('Displays summary information for each namespace.')
     def do_namespace(self, line):
@@ -401,7 +402,7 @@ class LogLatencyController(CommandController):
         '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
         '    -r <int>     - Repeating output table title and row header after every r node columns.',
         '                   default: 0, no repetition.',
-        '    -ns <string> - Namespace name. It will display histogram latency for ns namespace.',
+        '    -N <string>  - Namespace name. It will display histogram latency for ns namespace.',
         '                   This feature is available for namespace level histograms in server >= 3.9.')
     def _do_default(self, line):
         self.grepFile.do_latency(line)
@@ -606,7 +607,7 @@ class FeaturesController(CommandController):
                             break
 
                 features[node]["BATCH"] = "NO"
-                if self.check_key_for_gt(stats,('batch_initiate')):
+                if self.check_key_for_gt(stats,('batch_initiate','batch_index_initiate')):
                     features[node]["BATCH"] = "YES"
 
                 features[node]["SCAN"] = "NO"
@@ -1072,7 +1073,7 @@ class GrepFile(CommandController):
         sources = []
         time_rounding = True
         title_every_nth = 0
-        ns=None
+        ns = None
         while tline:
             word = tline.pop(0)
             if word == '-h':
@@ -1112,7 +1113,7 @@ class GrepFile(CommandController):
                     sources = []
             elif word == '-o':
                 time_rounding = False
-            elif word == '-ns':
+            elif word == '-N':
                 try:
                     ns = tline.pop(0)
                     ns = strip_string(ns)
@@ -1373,9 +1374,9 @@ class AddClusterController(CommandController):
         for path in line:
             path = strip_string(path)
             snapshots_added, error = self.logger.add_cluster_snapshots(path)
-            if snapshots_added==1:
+            if snapshots_added == 1:
                 print "%d collectinfo added for cluster analysis."%(snapshots_added)
-            elif snapshots_added>1:
+            elif snapshots_added > 1:
                 print "%d collectinfos added for cluster analysis."%(snapshots_added)
 
             if error:
@@ -1404,9 +1405,9 @@ class AddServerController(CommandController):
             path = strip_string(line[index + 1])
             prefix = strip_string(line[index])
             server_logs_added, error = self.logger.add_server_logs(prefix, path)
-            if server_logs_added==1:
+            if server_logs_added == 1:
                 print "%d server log added for server analysis."%(server_logs_added)
-            elif server_logs_added>1:
+            elif server_logs_added > 1:
                 print "%d server logs added for server analysis."%(server_logs_added)
 
             if error:
@@ -1465,7 +1466,7 @@ class RemoveClusterController(CommandController):
                     pass
             elif list_ptr is not None:
                 try:
-                    if word=="all":
+                    if word == "all":
                         list_ptr.append("all")
                     else:
                         index = int(word)-1
@@ -1522,7 +1523,7 @@ class RemoveServerController(CommandController):
                     pass
             elif list_ptr is not None:
                 try:
-                    if word=="all":
+                    if word == "all":
                         list_ptr.append("all")
                     else:
                         index = int(word)-1

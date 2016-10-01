@@ -31,19 +31,19 @@ class NodeTest(unittest.TestCase):
         info_cinfo = patch('lib.node.Node._infoCInfo')
         info_telnet = patch('lib.node.Node._infoTelnet')
         getfqdn = patch('lib.node.getfqdn')
-        gethostbyname = patch('socket.gethostbyname')
+        getaddrinfo = patch('socket.getaddrinfo')
 
         self.addCleanup(patch.stopall)
 
         Node._infoCInfo = info_cinfo.start()
         Node._infoTelnet = info_telnet.start()
         lib.node.getfqdn = getfqdn.start()
-        socket.gethostbyname = gethostbyname.start()
+        socket.getaddrinfo = getaddrinfo.start()
 
         Node._infoCInfo.return_value = ""
         Node._infoTelnet.return_value = ""
         lib.node.getfqdn.return_value = "host.domain.local"
-        socket.gethostbyname.return_value = "192.1.1.1"
+        socket.getaddrinfo.return_value = [(2, 1, 6, '', ('192.1.1.1', 3000))]
 
     #@unittest.skip("Known Failure")
     def testInitNode(self):
@@ -81,7 +81,7 @@ class NodeTest(unittest.TestCase):
         """
         n = self.getInfoMock("192.168.120.111:3000;127.0.0.1:3000")
         services = n.infoServices()
-        expected = [("192.168.120.111",3000), ("127.0.0.1",3000)]
+        expected = [("192.168.120.111",3000,None), ("127.0.0.1",3000,None)]
         self.assertEqual(services, expected, "infoServices did not return the expected result")
 
     def testInfoServicesAlumni(self):
@@ -90,7 +90,7 @@ class NodeTest(unittest.TestCase):
         """
         n = self.getInfoMock("192.168.120.111:3000;127.0.0.1:3000")
         services = n.infoServicesAlumni()
-        expected = [("192.168.120.111",3000), ("127.0.0.1",3000)]
+        expected = [("192.168.120.111",3000,None), ("127.0.0.1",3000,None)]
         self.assertEqual(services, expected,
             "infoServicesAlumni did not return the expected result")
 

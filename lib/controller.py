@@ -15,11 +15,11 @@
 from lib.controllerlib import *
 from lib import util
 import time, os, sys, platform, shutil, urllib2, socket
-from distutils.version import StrictVersion, LooseVersion
+from distutils.version import LooseVersion
 import zipfile
 import copy
 from lib.data import lsof_file_type_desc
-from lib.util import clear_val_from_dict, fetch_line_clear_dict, get_arg_and_delete_from_mods, \
+from lib.util import get_arg_and_delete_from_mods, \
     check_arg_and_delete_from_mods, get_value_from_dict
 from lib.view import CliView
 from lib import filesize
@@ -72,8 +72,8 @@ def get_sindex_stats(cluster, nodes='all', for_mods=[]):
 
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
-    def __init__(self, seed_nodes=[('127.0.0.1',3000)]
-                 , use_telnet=False, user=None, password=None, use_services=False, asadm_version=''):
+    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)]
+                 , use_telnet=False, user=None, password=None, use_services=True, asadm_version=''):
         super(RootController, self).__init__(seed_nodes=seed_nodes
                                              , use_telnet=use_telnet
                                              , user=user
@@ -134,15 +134,16 @@ class InfoController(CommandController):
     @CommandHelp('Displays network information for Aerospike.')
     def do_network(self, line):
         stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
+        cluster_names = util.Future(self.cluster.info, 'cluster-name', nodes=self.nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
         versions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
 
         stats = stats.result()
-
+        cluster_names = cluster_names.result()
         builds = builds.result()
         versions = versions.result()
 
-        return util.Future(self.view.infoNetwork, stats, versions, builds, self.cluster, **self.mods)
+        return util.Future(self.view.infoNetwork, stats, cluster_names, versions, builds, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each set.')
     def do_set(self, line):
@@ -258,6 +259,7 @@ class ShowController(CommandController):
             , 'statistics':ShowStatisticsController
             , 'latency':ShowLatencyController
             , 'distribution':ShowDistributionController
+            , 'mapping':ShowMappingController
             #, 'health':ShowHealthController
         }
 
@@ -349,9 +351,10 @@ class ShowDistributionController(CommandController):
         set_bucket_count = True
         show_bucket_count = get_arg_and_delete_from_mods(line=line, arg="-k", return_type=int, default=5, modifiers=self.modifiers, mods=self.mods)
 
-        histogram = self.cluster.infoHistogram(histogram_name, nodes=self.nodes)
-        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start().result()
-        histogram = flip_keys(histogram)
+        histogram = util.Future(self.cluster.infoHistogram, histogram_name, nodes=self.nodes).start()
+        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
+        histogram = flip_keys(histogram.result())
+        builds = builds.result()
 
         for namespace, host_data in histogram.iteritems():
             result = []
@@ -386,7 +389,7 @@ class ShowDistributionController(CommandController):
                 size = result[len(result)-1]-result[0]+1
 
                 bucket_width = size/show_bucket_count
-                additional_bucket_index = show_bucket_count -(size%show_bucket_count)
+                additional_bucket_index = show_bucket_count - (size%show_bucket_count)
 
                 bucket_index = 0
 
@@ -401,7 +404,7 @@ class ShowDistributionController(CommandController):
             columns = []
             need_to_show = {}
             for i,bucket in enumerate(start_buckets):
-                if i==len(start_buckets)-1:
+                if i == len(start_buckets)-1:
                     break
                 key = self.get_bucket_range(bucket,start_buckets[i+1],width,rblock_size_bytes)
                 need_to_show[key] = False
@@ -453,12 +456,12 @@ class ShowDistributionController(CommandController):
         s_b = "0 B"
         if current_bucket>0:
             last_bucket_last_rblock_end = ((current_bucket*width)-1)*rblock_size_bytes
-            if last_bucket_last_rblock_end<1:
+            if last_bucket_last_rblock_end < 1:
                 last_bucket_last_rblock_end = 0
             else:
                 last_bucket_last_rblock_end += 1
             s_b = filesize.size(last_bucket_last_rblock_end,filesize.byte)
-            if current_bucket==99 or next_bucket>99:
+            if current_bucket == 99 or next_bucket > 99:
                 return ">%s"%(s_b.replace(" ",""))
 
         bucket_last_rblock_end = ((next_bucket*width)-1)*rblock_size_bytes
@@ -652,6 +655,30 @@ class ShowConfigController(CommandController):
         return [util.Future(self.view.showConfig, "%s DC Configuration"%(dc)
                             , configs, self.cluster, title_every_nth=title_every_nth, **self.mods)
                 for dc, configs in dc_configs.iteritems()]
+
+@CommandHelp('"show mapping" is used to display Aerospike mapping from IP to NodeId and NodeId to IPs')
+class ShowMappingController(CommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+
+    @CommandHelp('Displays mapping IPs to NodeId and NodeId to IPs')
+    def _do_default(self, line):
+        actions = (util.Future(self.do_ip, line).start()
+                   , util.Future(self.do_node, line).start()
+                   )
+        return [action.result() for action in actions]
+
+    @CommandHelp('Displays IP to NodeId mapping')
+    def do_ip(self, line):
+        ip2node_map = self.cluster.getIP2NodeMap()
+        return util.Future(self.view.showMapping, "IP", "NODE-ID"
+                    , ip2node_map, **self.mods)
+
+    @CommandHelp('Displays NodeId to IPs mapping')
+    def do_node(self, line):
+        node2ip_map = self.cluster.getNode2IPMap()
+        return util.Future(self.view.showMapping, "NODE-ID", "IPs"
+                    , node2ip_map, **self.mods)
 
 @CommandHelp('"show health" is used to display Aerospike configuration health')
 class ShowHealthController(CommandController):
@@ -923,11 +950,11 @@ class ShowStatisticsController(CommandController):
         for namespace in namespace_set:
             ns_stats[namespace] = util.Future(self.cluster.infoNamespaceStatistics
                                               , namespace
-                                              , nodes=self.nodes).start()
+                                              , nodes=self.nodes).start().result()
 
         return [util.Future(self.view.showStats
                             , "%s Namespace Statistics"%(namespace)
-                            , ns_stats[namespace].result()
+                            , ns_stats[namespace]
                             , self.cluster
                             , show_total=show_total, title_every_nth=title_every_nth
                             , **self.mods)
@@ -1359,7 +1386,7 @@ class CollectinfoController(CommandController):
             cpu_info = {}
             for item in o:
                 items = item.strip().split(":")
-                if len(items)== 2:
+                if len(items) == 2:
                     key = items[1].strip()
                     if key in cpu_info.keys():
                         cpu_info[key] = cpu_info[key] + 1
@@ -1378,7 +1405,7 @@ class CollectinfoController(CommandController):
             pids = []
             for item in ps_o:
                 vals = item.strip().split()
-                if len(vals)>=2:
+                if len(vals) >= 2:
                     pids.append(vals[1])
         return pids
 
@@ -1430,9 +1457,9 @@ class CollectinfoController(CommandController):
                         try:
                             type = row.strip().split()[4]
                             if type not in lsof_dic:
-                                if len(type)>type_ljust_parm:
+                                if len(type) > type_ljust_parm:
                                     type_ljust_parm = len(type)
-                                if type in lsof_file_type_desc and len(lsof_file_type_desc[type])>desc_ljust_parm:
+                                if type in lsof_file_type_desc and len(lsof_file_type_desc[type]) > desc_ljust_parm:
                                     desc_ljust_parm = len(lsof_file_type_desc[type])
                                 lsof_dic[type] = 1
                             else:
@@ -1446,7 +1473,7 @@ class CollectinfoController(CommandController):
                         desc = "Unknown"
                         if ftype in lsof_file_type_desc:
                             desc = lsof_file_type_desc[ftype]
-                        print ftype.ljust(type_ljust_parm)+desc.ljust(desc_ljust_parm) + str(lsof_dic[ftype])
+                        print ftype.ljust(type_ljust_parm) + desc.ljust(desc_ljust_parm) + str(lsof_dic[ftype])
 
                     print "\nUnidentified Protocols = " + str(unidentified_protocol_count)
 
@@ -1492,7 +1519,7 @@ class CollectinfoController(CommandController):
         # getting service port to use in ss/netstat command
         port = 3000
         try:
-            host,port = list(self.cluster._original_seed_nodes)[0]
+            host,port,tls = list(self.cluster._original_seed_nodes)[0]
         except Exception:
             port = 3000
 
@@ -1556,15 +1583,34 @@ class CollectinfoController(CommandController):
                           'dump-smd:'
                           ]
 
-        _ip = ((util.shell_command(["hostname -I"])[0]).split(' ')[0].strip())
+        hist_list = ['ttl','objsz']
+        hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
+
+        my_ips = (util.shell_command(["hostname -I"])[0]).split(' ')
+        _ip = my_ips[0].strip()
+        as_version = None
+
+        # Need to find correct IP as per the configuration
+        for ip in my_ips:
+            try:
+                as_version = self.cluster._callNodeMethod([ip.strip()], "info", "build").popitem()[1]
+                if not as_version or isinstance(as_version, Exception):
+                    continue
+                _ip = ip.strip()
+                break
+            except Exception:
+                pass
+
+        try:
+            namespaces = self.parse_namespace(self.cluster.info("namespaces"))
+        except Exception:
+            namespaces = []
+
+        for ns in namespaces:
+            for hist in hist_list:
+                dignostic_aerospike_cluster_params.append(hist_dump_info_str%(ns,hist))
 
         if show_all:
-            try:
-                namespaces = self.parse_namespace(self.cluster._callNodeMethod([_ip], "info", "namespaces"))
-            except Exception:
-                from lib.node import Node
-                tempNode = Node(_ip)
-                namespaces = self.parse_namespace(self.cluster._callNodeMethod([tempNode.ip], "info", "namespaces"))
 
             for ns in namespaces:
                 # dump-wb dumps debug information about Write Bocks, it needs namespace, device-id and write-block-id as a parameter
@@ -1681,13 +1727,6 @@ class CollectinfoController(CommandController):
         ####### Logs and conf ########
 
         ##### aerospike logs #####
-
-        try:
-            as_version = self.cluster._callNodeMethod([_ip], "info", "build").popitem()[1]
-        except Exception:
-            from lib.node import Node
-            tempNode = Node(_ip)
-            as_version = self.cluster._callNodeMethod([tempNode.ip], "info", "build").popitem()[1]
 
         conf_path = '/etc/aerospike/aerospike.conf'
         #Comparing with this version because prior to this it was citrusleaf.conf
@@ -1844,7 +1883,7 @@ class FeaturesController(CommandController):
                         break
 
             features[node]["BATCH"] = "NO"
-            if self.check_key_for_gt(stats,('batch_initiate')):
+            if self.check_key_for_gt(stats,('batch_initiate','batch_index_initiate')):
                 features[node]["BATCH"] = "YES"
 
             features[node]["SCAN"] = "NO"

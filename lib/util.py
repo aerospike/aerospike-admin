@@ -68,6 +68,57 @@ def info_to_list(value, delimiter = ";"):
 def info_to_tuple(value, delimiter = ":"):
     return tuple(info_to_list(value, delimiter))
 
+def find_dns(endpoints):
+    if not endpoints:
+        return None
+
+    for e in endpoints:
+        if not e:
+            continue
+        if e.startswith("[") or e[0].isdigit():
+            continue
+        try:
+            return e.split(":")[0].strip()
+        except Exception:
+            pass
+    return None
+
+def _parse_string(s, delim=",", ignore_chars_start="[", ignore_chars_end="]"):
+    o = []
+    if not s:
+        return o
+    s = s.strip()
+    if not s:
+        return o
+    if s[0] in ignore_chars_start and s[-1] in ignore_chars_end:
+        s = s[1:-1]
+    if not s:
+        return o
+    push_bracket = ignore_chars_start
+    pop_bracket = ignore_chars_end
+    b_stack = []
+    current_str = ""
+    for i in s:
+        if i == delim:
+            if len(b_stack)>0:
+                current_str += i
+            else:
+                o.append(current_str.strip())
+                current_str = ""
+            continue
+        if i in push_bracket:
+            current_str += i
+            b_stack.append(i)
+            continue
+        if i in pop_bracket:
+            current_str += i
+            b_stack.pop()
+            continue
+        current_str += i
+    if current_str:
+        o.append(current_str.strip())
+    return o
+
 def concurrent_map(func, data):
     """
     Similar to the builtin function map(). But spawn a thread for each argument
@@ -273,3 +324,13 @@ def set_value_in_dict(d, key, value):
     if not d or not key or (not value and value!=0 and value!=False) or isinstance(value,Exception):
         return
     d[key] = value
+
+def flatten(list1):
+    f_list = []
+    for i in list1:
+        if isinstance(i[0], tuple):
+            for j in i:
+                f_list.append(j)
+        else:
+            f_list.append(i)
+    return f_list

@@ -73,8 +73,8 @@ class BaseController(object):
     logger = None
     asadm_version = ''
 
-    def __init__(self, seed_nodes=[('127.0.0.1',3000)]
-                 , use_telnet=False, user=None, password=None, use_services=False, asadm_version='', log_path=""):
+    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)]
+                 , use_telnet=False, user=None, password=None, use_services=True, asadm_version='', log_path=""):
 
         cls = BaseController
         cls.view = view.CliView()

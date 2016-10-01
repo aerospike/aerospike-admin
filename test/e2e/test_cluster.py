@@ -33,6 +33,8 @@ class TestCluster(unittest.TestCase):
         exp_total_nodes = len(TestCluster.rc.cluster.nodes)
         
         actual_out = util.capture_stdout(TestCluster.rc.execute, ['cluster', 'dun', 'all'])
+        if 'Invalid command' in actual_out:
+            return
         actual_live_nodes = actual_out.count('ok')
         actual_total_nodes = actual_out.count('returned')
         
@@ -43,6 +45,8 @@ class TestCluster(unittest.TestCase):
         exp_no_of_live_nodes = len(TestCluster.rc.cluster._live_nodes)
         exp_total_nodes = len(TestCluster.rc.cluster.nodes)
         actual_out = util.capture_stdout(TestCluster.rc.execute, ['cluster', 'undun', 'all'])
+        if 'Invalid command' in actual_out:
+            return
         actual_live_nodes = actual_out.count('ok')
         actual_total_nodes = actual_out.count('returned')
         

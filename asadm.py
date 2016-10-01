@@ -20,7 +20,7 @@ import readline
 import cmd
 import getpass
 import shlex
-from lib import citrusleaf
+from lib import info
 from lib.controller import *
 from lib.logcontroller import *
 from lib import terminal
@@ -31,7 +31,7 @@ CMD_FILE_MULTI_LINE_COMMENT_START = "/*"
 CMD_FILE_MULTI_LINE_COMMENT_END = "*/"
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, telnet, user=None, password=None, use_services=False, log_path="", log_analyser=False):
+    def __init__(self, seed, telnet, user=None, password=None, use_services=True, log_path="", log_analyser=False):
 
         cmd.Cmd.__init__(self)
 
@@ -98,7 +98,7 @@ class AerospikeShell(cmd.Cmd):
 
         command = []
         build_token = ''
-        lexer.wordchars+=".-:/_"
+        lexer.wordchars += ".-:/_{}"
         for token in lexer:
             build_token += token
             if token == '-':
@@ -368,10 +368,10 @@ def main():
                             , action="store_true"
                             , help="Show the version of asadm and exit")
         parser.add_argument("-s"
-                            , "--services"
-                            , dest="use_services"
+                            , "--services_alumni"
+                            , dest="use_services_alumni"
                             , action="store_true"
-                            , help="Enable use of services-list instead of services-alumni-list")
+                            , help="Enable use of services-alumni-list instead of services-list")
         parser.add_argument("-l"
                             , "--log_analyser"
                             , dest="log_analyser"
@@ -436,10 +436,10 @@ def main():
                             , action="store_true"
                             , help="Show the version of asadm and exit")
         parser.add_option("-s"
-                            , "--services"
-                            , dest="use_services"
+                            , "--services_alumni"
+                            , dest="use_services_alumni"
                             , action="store_true"
-                            , help="Enable use of services-list instead of services-alumni-list")
+                            , help="Enable use of services-alumni-list instead of services-list")
         parser.add_option("-l"
                             , "--log_analyser"
                             , dest="log_analyser"
@@ -469,7 +469,7 @@ def main():
         user = cli_args.user
         if cli_args.password == "prompt":
             cli_args.password = getpass.getpass("Enter Password:")
-        password = citrusleaf.hashpassword(cli_args.password)
+        password = info.hashpassword(cli_args.password)
 
 
     global ADMINHOME, ADMINHIST
@@ -479,12 +479,13 @@ def main():
     if not os.path.isdir(ADMINHOME):
         os.makedirs(ADMINHOME)
 
-    seed = (cli_args.host, cli_args.port)
+    # ToDo :: tls parameter passing
+    seed = (cli_args.host, cli_args.port, None)
     telnet = False # telnet currently not working, hardcoding to off
 
-    use_services = False
-    if cli_args.use_services:
-        use_services = True
+    use_services = True
+    if cli_args.use_services_alumni:
+        use_services = False
 
     log_path = ""
     log_analyser = False;
