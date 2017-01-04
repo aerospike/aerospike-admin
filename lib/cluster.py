@@ -17,18 +17,20 @@ import threading
 from lib import util
 from lib.node import Node
 from lib.prefixdict import PrefixDict
-from lib import info
 import re
+from time import time
+
+# interval time in second for cluster refreshing
+CLUSTER_REFRESH_INTERVAL = 3
 
 class Cluster(object):
     # Kinda like a singleton... All instantiated classes will share the same
     # state... This makes the class no
     cluster_state = {}
     use_services = True
-    tls_cert = None
     crawl_lock = threading.Lock()
 
-    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None, use_services=True, tls_cert=None):
+    def __init__(self, seed_nodes, use_telnet=False, user=None, password=None, use_services=True, ssl_context=None, only_connect_seed=False):
         """
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port,tls) address can be fqdn or ip.
@@ -44,7 +46,6 @@ class Cluster(object):
         self.user = user
         self.password = password
         Cluster.use_services = use_services
-        Cluster.tls_cert = tls_cert
 
         # self.nodes is a dict from Node ID -> Node objects
         self.nodes = {}
@@ -59,7 +60,11 @@ class Cluster(object):
         self._original_seed_nodes = set(seed_nodes)
         self._seed_nodes = set(seed_nodes)
         self._live_nodes = set()
+        self.ssl_context = ssl_context
+
         # crawl the cluster search for nodes in addition to the seed nodes.
+        self.last_cluster_refresh_time = 0
+        self.only_connect_seed = only_connect_seed
         self._refreshCluster()
 
     def __str__(self):
@@ -101,7 +106,6 @@ class Cluster(object):
                 if n.node_id.zfill(16) > principal.zfill(16):
                     principal = n.node_id
             return principal
-            #return max([n.node_id for n in self.nodes.itervalues()])
         except Exception as e:
             print e
             return ''
@@ -160,7 +164,8 @@ class Cluster(object):
                 _endpoints = node.service_addresses
                 self.update_aliases(aliases, _endpoints, node.key)
                 added_endpoints = added_endpoints + _endpoints
-                peers = peers + node.peers
+                if not self.only_connect_seed:
+                    peers = peers + node.peers
         else:
             peers = self._original_seed_nodes
 
@@ -189,19 +194,20 @@ class Cluster(object):
 
             while unvisited - visited:
                 l_unvisited = list(unvisited)
-                nodes = map(self._registerNode, l_unvisited)
+                nodes = util.concurrent_map(self._registerNode, l_unvisited)
                 live_nodes = [node
                               for node in nodes
                               if node is not None and node.alive and node not in visited]
                 visited |= unvisited
                 unvisited.clear()
 
-                services_list = util.concurrent_map(self._getServices, live_nodes)
-                for node, services in zip(live_nodes, services_list):
-                    if isinstance(services, Exception):
-                        continue
-                    all_services.update(set(services))
-                    all_services.add((node.ip, node.port, node.tls))
+                if not self.only_connect_seed:
+                    services_list = util.concurrent_map(self._getServices, live_nodes)
+                    for node, services in zip(live_nodes, services_list):
+                        if isinstance(services, Exception):
+                            continue
+                        all_services.update(set(services))
+                        all_services.add((node.ip, node.port, node.tls_name))
                 unvisited = all_services - visited
             self._refreshNodeLiveliness()
         except Exception:
@@ -220,7 +226,7 @@ class Cluster(object):
     def _refreshNodeLiveliness(self):
         live_nodes = [node for node in self.nodes.itervalues() if node.alive]
         self._live_nodes.clear()
-        self._live_nodes.update(((node.ip, node.port, node.tls) for node in live_nodes))
+        self._live_nodes.update(((node.ip, node.port, node.tls_name) for node in live_nodes))
 
     def updateNode(self, node):
         self.nodes[node.key] = node
@@ -254,19 +260,6 @@ class Cluster(object):
         self.update_aliases(self.aliases, addr_port_tls, new_node.key)
         return new_node
 
-    def info_request(self, command, addr, port = None, user = None, password = None, tls_subject = None, tls_cert = None ):
-        # TODO: citrusleaf.py does not support passing a timeout default is 0.5s
-        if port == None:
-            port = 3000
-
-        result = info.info(addr, port, command
-                                            , user=user
-                                            , password=password, tls_subject=tls_subject, tls_cert=tls_cert)
-        if result != -1 and result is not None:
-            return result
-        else:
-            return -1
-
     def is_present_as_alias(self, addr, port, aliases=None):
         if not aliases:
             aliases = self.aliases
@@ -290,12 +283,12 @@ class Cluster(object):
         """
         try:
             # tuple of length 3 for server version >= 3.10.0 (with tls name)
-            addr, port, tls = addr_port_tls
+            addr, port, tls_name = addr_port_tls
         except Exception:
             try:
                 # tuple of length 2 for server version < 3.10.0 ( without tls name)
                 addr, port = addr_port_tls
-                tls = None
+                tls_name = None
             except Exception:
                 print "ip_port is expected to be a tuple of len 2, " + \
                     "instead it is of type %s and str value of %s"%(type(addr_port_tls)
@@ -314,15 +307,15 @@ class Cluster(object):
 
 
             # if not existing:
-            new_node = Node(addr, port, use_telnet=self.use_telnet,
-                            user=self.user, password=self.password,
-                            tls=tls, tls_cert=Cluster.tls_cert,
-                            consider_alumni=not Cluster.use_services)
+            new_node = Node(addr, port, tls_name=tls_name, use_telnet=self.use_telnet,
+                            user=self.user, password=self.password, consider_alumni=not Cluster.use_services,
+                            ssl_context=self.ssl_context)
             if not new_node:
                 return new_node
             if not new_node.alive:
                 if not force:
                     # We can check other endpoints
+                    new_node.close()
                     return None
             self.updateNode(new_node)
             self.update_aliases(self.aliases, new_node.service_addresses, new_node.key)
@@ -340,10 +333,17 @@ class Cluster(object):
         except Exception:
             return []
 
+    def need_to_refresh_cluster(self):
+        if time() - self.last_cluster_refresh_time > CLUSTER_REFRESH_INTERVAL:
+            return True
+        return False
+
     def _refreshCluster(self):
         with Cluster.crawl_lock:
             try:
-                self._crawl()
+                if self.need_to_refresh_cluster():
+                    self._crawl()
+                    self.last_cluster_refresh_time = time()
             except Exception as e:
                 print e
                 raise e
@@ -354,7 +354,8 @@ class Cluster(object):
         nodes is a list of nodes to to run the command against.
         if nodes is None then we run on all nodes.
         """
-        self._refreshCluster()
+        if self.need_to_refresh_cluster():
+            self._refreshCluster()
 
         if nodes == 'all':
             use_nodes = self.nodes.values()
@@ -387,7 +388,8 @@ class Cluster(object):
         return self._callNodeMethod(nodes, 'isFeaturePresent', feature)
 
     def getIP2NodeMap(self):
-        self._refreshCluster()
+        if self.need_to_refresh_cluster():
+            self._refreshCluster()
         ipMap = {}
         for a in self.aliases.keys():
             try:
@@ -397,7 +399,8 @@ class Cluster(object):
         return ipMap
 
     def getNode2IPMap(self):
-        self._refreshCluster()
+        if self.need_to_refresh_cluster():
+            self._refreshCluster()
         ipMap = {}
         for a in self.aliases.keys():
             try:
@@ -425,3 +428,13 @@ class Cluster(object):
             return infoFunc
         else:
             raise AttributeError("Cluster has not attribute '%s'"%(name))
+
+    def close(self):
+        for node_key in self.nodes.keys():
+            try:
+                node = self.nodes[node_key]
+                node.close()
+            except Exception:
+                pass
+        self.nodes = None
+        self.node_lookup = None

@@ -11,10 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 import re
-
-from lib import info
 from lib import util
 import lib
 from telnetlib import Telnet
@@ -22,6 +21,7 @@ from time import time
 import socket
 import threading
 from distutils.version import LooseVersion
+from lib.assocket import ASSocket
 from lib.util import remove_suffix
 
 
@@ -54,9 +54,10 @@ def return_exceptions(func):
 
 class Node(object):
     dns_cache = {}
+    pool_lock = threading.Lock()
 
-    def __init__(self, address, port=3000, timeout=3, use_telnet=False
-                 , user=None, password=None, tls=None, tls_cert=None, consider_alumni=False):
+    def __init__(self, address, port=3000, tls_name=None, timeout=3, use_telnet=False
+                 , user=None, password=None,  ssl_context=None, consider_alumni=False):
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -77,12 +78,12 @@ class Node(object):
         self._use_telnet = use_telnet
         self.user = user
         self.password = password
-        self.tls = tls
-        self.tls_cert = tls_cert
-        if tls and tls_cert:
-            self.use_tls = True
+        self.tls_name = tls_name
+        self.ssl_context = ssl_context
+        if ssl_context:
+            self.enable_tls = True
         else:
-            self.use_tls = False
+            self.enable_tls = False
         self.consider_alumni = consider_alumni
         # hack, _key needs to be defines before info calls... but may have
         # wrong (localhost) address before infoService is called. Will set
@@ -91,20 +92,27 @@ class Node(object):
         self._key = hash(self.createKey(address, self.port))
         self.peers_generation = -1
         self.service_addresses = []
+        self.socket_pool = {}
+        self.socket_pool[self.port] = set()
+        self.socket_pool[self.xdr_port] = set()
         self.connect(address, port)
 
     def connect(self, address, port):
         try:
+            self.node_id = self.infoNode()
+            if isinstance(self.node_id, Exception):
+                # Not able to connect this address
+                raise self.node_id
             # Original address may not be the service address, the
             # following will ensure we have the service address
             service_addresses = self.infoService(address, return_None=True)
             if service_addresses and not isinstance(self.service_addresses, Exception):
                 self.service_addresses = service_addresses
             #else : might be it's IP is not available, node should try all old service addresses
-
-            if not self.service_addresses or (self.ip,self.port,self.tls) not in self.service_addresses:
+            self.close()
+            if not self.service_addresses or (self.ip,self.port,self.tls_name) not in self.service_addresses:
                 # if asd >= 3.10 and node has only IPv6 address
-                self.service_addresses.append((self.ip,self.port,self.tls))
+                self.service_addresses.append((self.ip,self.port,self.tls_name))
             for s in self.service_addresses:
                 try:
                     address = s[0]
@@ -112,6 +120,7 @@ class Node(object):
                     # different IP than what was seeded.
                     self._updateIP(address, self.port)
                     self.node_id = self.infoNode()
+
                     if not isinstance(self.node_id, Exception):
                         break
                 except Exception:
@@ -126,7 +135,7 @@ class Node(object):
             self.features = self.info('features')
             self.use_peers_list = self.isFeaturePresent(feature="peers")
             if self.isPeersChanged():
-                self.peers = self.findFriendNodes()
+                self.peers = self._findFriendNodes()
             self.alive = True
         except Exception:
             # Node is offline... fake a node
@@ -137,7 +146,7 @@ class Node(object):
             self._key = hash(self._serviceIPPort)
 
             self.node_id = "000000000000000"
-            self.service_addresses = [(self.ip, self.port, self.tls)]
+            self.service_addresses = [(self.ip, self.port, self.tls_name)]
             self.features = ""
             self.use_peers_list = False
             self.peers = []
@@ -212,16 +221,24 @@ class Node(object):
         except Exception:
             return True
 
+    # We need to provide ip to _infoTelnet and _infoCInfo as to maintain unique key for cache. When we run cluster on VM and
+    # asadm on Host then services returns all endpoints of server but some of them might not allowed by Host and VM connection. If we
+    # do not provide IP here, then we will get same result from cache for that IP to which asadm can't connect. If this happens while
+    # setting ip (connection process) then node will get that ip to which asadm can't connect. It will create new
+    # issues in future process.
+
     @return_exceptions
     @util.cached
-    def _infoTelnet(self, command, port = None):
+    def _infoTelnet(self, command, ip = None, port = None):
         # TODO: Handle socket failures
+        if ip == None:
+            ip = self.ip
         if port == None:
             port = self.port
         try:
             self.sock == self.sock # does self.sock exist?
         except Exception:
-            self.sock = Telnet(self.ip, port)
+            self.sock = Telnet(ip, port)
 
         self.sock.write("%s\n"%command)
 
@@ -231,24 +248,67 @@ class Node(object):
             result = self.sock.read_very_eager().strip()
             if starttime + self._timeout < time():
                 # TODO: rasie appropriate exception
-                raise IOError("Could not connect to node %s"%self.ip)
+                raise IOError("Could not connect to node %s"%ip)
         return result
+
+    def _get_connection(self, ip, port):
+        sock = None
+        with Node.pool_lock:
+            try:
+                while True:
+                    sock = self.socket_pool[port].pop()
+                    if sock.is_connected():
+                        if not self.ssl_context:
+                            sock.settimeout(5.0)
+                        break
+                    sock.close(force=True)
+            except Exception:
+                pass
+        if sock:
+            return sock
+        sock = ASSocket(self, ip, port)
+        if sock.connect():
+            return sock
+        return None
+
+    def close(self):
+        try:
+            while True:
+                sock = self.socket_pool[self.port].pop()
+                sock.close(force=True)
+        except Exception:
+            pass
+
+        try:
+            while True:
+                sock = self.socket_pool[self.xdr_port].pop()
+                sock.close(force=True)
+        except Exception:
+            pass
+        self.socket_pool = None
 
     @return_exceptions
     @util.cached
-    def _infoCInfo(self, command, port = None):
+    def _infoCInfo(self, command, ip = None, port = None):
         # TODO: citrusleaf.py does not support passing a timeout default is 0.5s
+        if ip == None:
+            ip = self.ip
         if port == None:
             port = self.port
-
-        result = info.info(self.ip, port, command
-                                            , user=self.user
-                                            , password=self.password, tls_subject=self.tls, tls_cert=self.tls_cert)
-        if result != -1 and result is not None:
-            return result
-        else:
-            raise IOError(
-                "Invalid command or Could not connect to node %s "%self.ip)
+        result = None
+        sock = self._get_connection(ip, port)
+        try:
+            if sock:
+                result = sock.execute(command)
+                sock.close()
+            if result != -1 and result is not None:
+                return result
+            else:
+                raise IOError("Invalid command or Could not connect to node %s "%ip)
+        except Exception:
+            if sock:
+                sock.close()
+            raise IOError("Invalid command or Could not connect to node %s "%ip)
 
     @return_exceptions
     def info(self, command):
@@ -259,9 +319,9 @@ class Node(object):
         command -- the info command to execute on this node
         """
         if self._use_telnet:
-            return self._infoTelnet(command)
+            return self._infoTelnet(command, self.ip)
         else:
-            return self._infoCInfo(command)
+            return self._infoCInfo(command, self.ip)
 
     @return_exceptions
     @util.cached
@@ -274,7 +334,7 @@ class Node(object):
         """
 
         try:
-            return self._infoCInfo(command, self.xdr_port)
+            return self._infoCInfo(command, self.ip, self.xdr_port)
         except Exception as e:
             return e
 
@@ -353,7 +413,7 @@ class Node(object):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
-        if self.use_tls:
+        if self.enable_tls:
             return self._infoPeersListHelper(self.info("peers-tls-std"))
         return self._infoPeersListHelper(self.info("peers-clear-std"))
 
@@ -365,7 +425,7 @@ class Node(object):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
-        if self.use_tls:
+        if self.enable_tls:
             return self._infoPeersListHelper(self.info("alumni-tls-std"))
         return self._infoPeersListHelper(self.info("alumni-clear-std"))
 
@@ -374,11 +434,11 @@ class Node(object):
         """
         Takes an info services response and returns a list.
         """
-        if not services:
+        if not services or isinstance(services, Exception):
             return []
 
         s = map(util.info_to_tuple, util.info_to_list(services))
-        return map(lambda v: (v[0], int(v[1]), self.tls), s)
+        return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
 
     @return_exceptions
     def infoServices(self):
@@ -396,12 +456,12 @@ class Node(object):
         try:
             service = self.info("service")
             s = map(util.info_to_tuple, util.info_to_list(service))
-            return map(lambda v: (v[0], int(v[1]), self.tls), s)
+            return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
         except Exception:
             pass
         if return_None:
             return None
-        return [(address, self.port, self.tls)]
+        return [(address, self.port, self.tls_name)]
 
     @return_exceptions
     def infoServicesAlumni(self):
@@ -419,7 +479,7 @@ class Node(object):
             return self.infoServices()
 
     @return_exceptions
-    def findFriendNodes(self):
+    def _findFriendNodes(self):
         if self.use_peers_list:
             peers = self.infoPeersList()
             if not self.consider_alumni:
@@ -569,7 +629,7 @@ class Node(object):
             # config["network"] = self.infoGetConfig("network")
         return config
 
-    def update_total_latency(self, t_rows, row):
+    def _update_total_latency(self, t_rows, row):
         if not row or not isinstance(row, list):
             return t_rows
         if not t_rows:
@@ -679,7 +739,7 @@ class Node(object):
                     data[hist_name][total_key]["columns"] = columns
                     data[hist_name][total_key]["values"] = []
 
-                data[hist_name][total_key]["values"] = self.update_total_latency(data[hist_name][total_key]["values"], row)
+                data[hist_name][total_key]["values"] = self._update_total_latency(data[hist_name][total_key]["values"], row)
                 start_time = end_time
             except Exception:
                 pass
@@ -789,10 +849,10 @@ class Node(object):
         c = lib.cluster.Cluster(self.ip)
         lookup = c.node_lookup
         result = set()
-        
+
         if 'all' in dun_list:
             as_version = self.info('build')
-            # Comparing with this version because the ability 
+            # Comparing with this version because the ability
             # to specify "all" in cluster dun was added in 3.3.26
             if LooseVersion(as_version) < LooseVersion("3.3.26"):
                 for node in  c.nodes.values():

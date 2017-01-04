@@ -222,7 +222,6 @@ class Table(object):
             else:
                 cell = str(cell)
             row[i] = (cell_format, cell)
-
         self._data.append(row)
         self._updateColumnMetadata(row)
         self._need_sort = True
@@ -272,6 +271,7 @@ class Table(object):
         self._render_column_display_names = []
         self._render_column_names = []
         self._render_column_widths = []
+        self._render_column_types = []
         if self._style == Styles.VERTICAL:
             self._render_column_widths = self._column_widths
         self._render_remap = {}
@@ -281,6 +281,7 @@ class Table(object):
                 if self._style == Styles.HORIZONTAL:
                     self._render_column_widths.append(self._column_widths[i])
                 self._render_column_names.append(self._column_names[i])
+                self._render_column_types.append(self._column_types[i])
                 self._render_remap[i] = len(self._render_column_names) - 1
 
     def genDescription(self, line_width, desc_width):
@@ -314,7 +315,6 @@ class Table(object):
     def _getHorizontalHeader(self):
         width = sum(self._render_column_widths)
         width +=len(self._column_padding) * (len(self._render_column_widths) - 1)
-
         column_name_lines = map(lambda h: h.split(" ")
                                 , self._render_column_display_names)
         max_deep = max(map(len, column_name_lines))
@@ -369,9 +369,9 @@ class Table(object):
 
                 column_name = self._render_column_names[i]
 
-                if self._column_types[i] == "number":
+                if self._render_column_types[i] == "number":
                     cell = cell.rjust(self._render_column_widths[i])
-                elif self._column_types[i] == "string":
+                elif self._render_column_types[i] == "string":
                     cell = cell.ljust(self._render_column_widths[i])
                 else:
                     raise ValueError(
@@ -379,7 +379,6 @@ class Table(object):
 
                 row.append("%s%s"%(cell_format(),cell))
                 row.append(self._column_padding)
-
             output.append(''.join(row))
 
         output.append("%sNumber of rows: %s"%(terminal.style(terminal.bg_clear,terminal.fg_clear),len(self._data)))

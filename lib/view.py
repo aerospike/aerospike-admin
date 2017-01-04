@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
+import types
 from lib.logger import DT_FMT
 from lib.logreader import COUNT_RESULT_KEY
 from lib.table import Table, Extractors, TitleFormats, Styles
@@ -75,7 +76,7 @@ class CliView(object):
                         , ('client_connections', 'Client Conns')
                         , '_uptime')
 
-        t = Table(title, column_names)
+        t = Table(title, column_names, group_by=0, sort_by=1)
 
         t.addCellAlert('node_id'
                        ,lambda data: data['real_node_id'] == principal
@@ -1101,16 +1102,17 @@ class CliView(object):
         CliView.showConfig(*args, **kwargs)
 
     @staticmethod
-    def asinfo(results, line_sep, cluster, **kwargs):
+    def asinfo(results, line_sep, show_node_name, cluster, **kwargs):
         like = set(kwargs['like'])
         for node_id, value in results.iteritems():
             prefix = cluster.getNodeNames()[node_id]
             node = cluster.getNode(node_id)[0]
 
-            print "%s%s (%s) returned%s:"%(terminal.bold()
-                                           , prefix
-                                           , node.ip
-                                           , terminal.reset())
+            if show_node_name:
+                print "%s%s (%s) returned%s:"%(terminal.bold()
+                                               , prefix
+                                               , node.ip
+                                               , terminal.reset())
 
             if isinstance(value, Exception):
                 print "%s%s%s"%(terminal.fg_red()
@@ -1118,19 +1120,27 @@ class CliView(object):
                                 , terminal.reset())
                 print "\n"
             else:
-                # most info commands return a semicolon delimited list of key=value.
-                # Assuming this is the case here, later we may want to try to detect
-                # the format.
-                value = value.split(';')
-                likes = CliView.compileLikes(like)
-                value = filter(likes.search, value)
+                if type(value) == types.StringType:
+                    # most info commands return a semicolon delimited list of key=value.
+                    # Assuming this is the case here, later we may want to try to detect
+                    # the format.
+                    value = value.split(';')
+                    likes = CliView.compileLikes(like)
+                    value = filter(likes.search, value)
 
-                if not line_sep:
-                    value = [";".join(value)]
+                    if not line_sep:
+                        value = [";".join(value)]
 
-                for line in sorted(value):
-                    print line
-                print
+                    for line in sorted(value):
+                        print line
+                    print
+                else:
+                    i = 1
+                    for name, val in value.iteritems():
+                        print i,": ",name
+                        print "    ",val
+                        i += 1
+                    print
 
     @staticmethod
     def clusterPMap(pmap_data, cluster, **ignore):

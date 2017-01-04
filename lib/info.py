@@ -27,8 +27,6 @@
 #
 
 import sys					# please do not remove. used for stand alone build
-
-import socket					# socket needs no introduction
 import struct					# gives us a parser/encoder for binary data
 
 from ctypes import create_string_buffer		 # gives us pre-allocated buffers
@@ -90,15 +88,6 @@ except:
 	struct.pack_into = my_pack_into
 	g_partition = partition_old
 
-#
-# Connection / Cluster pool
-#
-# Class which contains all the currently known information about
-# the cluster. the set of hosts, the set of connections,
-# status. Eventually, it'll have hints about what connections
-# work with what digests
-#
-
 def receivedata(sock, sz):
 	pos = 0
 	while pos < sz:
@@ -143,14 +132,20 @@ def adminParseHeader(data):
 
 	return rv
 
+def buffer_to_string(buf):
+	buf_str = ""
+	for s in buf:
+		buf_str += s
+	return buf_str
+
 def authenticate(sock, user, password):
 	sz = len(user) + len(password) + 34  # 2 * 5 + 24
 	send_buf = adminWriteHeader(sz, 0, 2)
-
 	fmtStr = "! I B %ds I B %ds" % (len(user), len(password))
 	struct.pack_into(fmtStr, send_buf, 24, len(user)+1, 0, user, len(password)+1, 3, password)
-
 	try:
+		# OpenSSL wrapper doesn't support ctypes
+		send_buf = buffer_to_string(send_buf)
 		sock.sendall(send_buf)
 		recv_buff = receivedata(sock, 24)
 		rv = adminParseHeader(recv_buff)
@@ -159,37 +154,19 @@ def authenticate(sock, user, password):
 		print "Authentication exception: ", msg
 		return -1;
 
-def info_request(socket_info, buf, user=None, password=None, tls_subject=None, tls_cert=None):
+def _info_request(sock, buf):
 
 	# request over TCP
 	try:
-		# sock_info format : (family, socktype, proto, canonname, sockaddr)
-		addr_family = socket_info[0]
-		sock_addr = socket_info[4]
-
-		sock = socket.socket(addr_family, socket.SOCK_STREAM)
-		sock.settimeout(0.5)
-		sock.connect(sock_addr)
-
-		if user != None:
-			rc = authenticate(sock, user, password)
-
-			if rc != 0:
-				print "Authentication failed for ", user, ": ", rc
-				sock.close()
-				return None
-
 		sock.send(buf)
-
 		# get response
 		rsp_hdr = sock.recv(8)
 		q = struct.unpack_from("! Q",rsp_hdr, 0)
 		sz = q[0] & 0xFFFFFFFFFFFF
 		if sz > 0:
 			rsp_data = receivedata(sock, sz)
-		sock.close()
-	except Exception , ex:
-		# print "info request got exception ",type(ex)," ",ex
+	except Exception as ex:
+		print "info request got exception ",type(ex)," ",ex
 		return -1
 
 	# parse out responses
@@ -198,21 +175,9 @@ def info_request(socket_info, buf, user=None, password=None, tls_subject=None, t
 
 	return( rsp_data )
 
-#
-# Aerospike Info request
-#
-# This is a special purpose request to get informational name-value pairs
-# from a given node. It's good for discovering the rest of the cluster,
-# or trying to figure out which cluster members have which parts of the key space
-#
-# host, port are self explanatory
-# 'names' is an iterable list of values to get, or None to get all
-#  being really nice, also supporting a single string as a name instead of requiring a list
-#
-# Returns: values, a dict of with the name being the index, and the value being the value
-
-def info( host, port, names=None, user=None, password=None, tls_subject=None, tls_cert=None):
-
+def info(sock, names=None):
+	if not sock:
+		return -1
 	# Passed a set of names: created output buffer
 
 	if names == None:
@@ -239,16 +204,7 @@ def info( host, port, names=None, user=None, password=None, tls_subject=None, tl
 		fmtStr = "! Q %ds" % len(namestr)
 		buf = struct.pack(fmtStr, q, namestr )
 
-	rsp_data = None
-	for socket_info in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
-		# for DNS it will try all possible addresses
-		try:
-			rsp_data = info_request( socket_info, buf, user, password, tls_subject, tls_cert)
-			if rsp_data == -1 or rsp_data is None:
-				continue
-			break
-		except Exception:
-			pass
+	rsp_data = _info_request(sock, buf)
 
 	if rsp_data == -1 or rsp_data is None:
 		return -1
@@ -262,7 +218,7 @@ def info( host, port, names=None, user=None, password=None, tls_subject=None, tl
 			print " problem: requested name ",names," got name ",name
 			return(-1)
 		return value
-		
+
 	else:
 		rdict = dict()
 		for line in rsp_data.split("\n"):
@@ -272,3 +228,4 @@ def info( host, port, names=None, user=None, password=None, tls_subject=None, tl
 			name, sep, value = g_partition(line,"\t")
 			rdict[name] = value
 		return rdict
+

@@ -72,12 +72,10 @@ def get_sindex_stats(cluster, nodes='all', for_mods=[]):
 
 @CommandHelp('Aerospike Admin')
 class RootController(BaseController):
-    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)]
-                 , use_telnet=False, user=None, password=None, use_services=True, asadm_version=''):
-        super(RootController, self).__init__(seed_nodes=seed_nodes
-                                             , use_telnet=use_telnet
-                                             , user=user
-                                             , password=password, use_services=use_services, asadm_version=asadm_version)
+    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], use_telnet=False, user=None, password=None,
+                 use_services=True, ssl_context=None, asadm_version='', only_connect_seed=False):
+        super(RootController, self).__init__(seed_nodes=seed_nodes, use_telnet=use_telnet, user=user, password=password,
+                                             use_services=use_services, ssl_context=ssl_context, asadm_version=asadm_version, only_connect_seed=only_connect_seed)
         self.controller_map = {
             'info':InfoController
             , 'show':ShowController
@@ -89,6 +87,12 @@ class RootController(BaseController):
             , 'features':FeaturesController
             , 'pager':PagerController
         }
+
+    def close(self):
+        try:
+            self.cluster.close()
+        except Exception:
+            pass
 
     @CommandHelp('Terminate session')
     def do_exit(self, line):
@@ -142,7 +146,6 @@ class InfoController(CommandController):
         cluster_names = cluster_names.result()
         builds = builds.result()
         versions = versions.result()
-
         return util.Future(self.view.infoNetwork, stats, cluster_names, versions, builds, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each set.')
@@ -169,8 +172,10 @@ class InfoController(CommandController):
 
     @CommandHelp('Displays summary information for each datacenter.')
     def do_dc(self, line):
-        stats = self.cluster.infoAllDCStatistics(nodes=self.nodes)
-        configs = self.cluster.infoDCGetConfig(nodes=self.nodes)
+        stats = util.Future(self.cluster.infoAllDCStatistics, nodes=self.nodes).start()
+        configs = util.Future(self.cluster.infoDCGetConfig, nodes=self.nodes).start()
+        stats = stats.result()
+        configs = configs.result()
         for node in stats.keys():
             if stats[node] and not isinstance(stats[node],Exception) and configs[node] and not isinstance(configs[node],Exception):
                 for dc in stats[node].keys():
@@ -197,9 +202,6 @@ class ASInfoController(CommandController):
 
     @CommandHelp('Executes an info command.')
     def _do_default(self, line):
-        if not line:
-            raise ShellException("Could not understand asinfo request, " + \
-                                 "see 'help asinfo'")
         mods = self.parseModifiers(line)
         line = mods['line']
         like = mods['like']
@@ -208,6 +210,7 @@ class ASInfoController(CommandController):
         value = None
         line_sep = False
         xdr = False
+        show_node_name = True
 
         tline = line[:]
 
@@ -222,6 +225,8 @@ class ASInfoController(CommandController):
                     port = tline.pop(0)
                     if port == '3004': # ugly Hack
                         xdr = True
+                elif word == '--no_node_name':
+                    show_node_name = False
                 else:
                     raise ShellException(
                         "Do not understand '%s' in '%s'"%(word
@@ -230,14 +235,14 @@ class ASInfoController(CommandController):
             print  "Do not understand '%s' in '%s'"%(word
                                               , " ".join(line))
             return
-
-        value = value.translate(None, "'\"")
+        if value is not None:
+            value = value.translate(None, "'\"")
         if xdr:
             results = self.cluster.xdrInfo(value, nodes=nodes)
         else:
             results = self.cluster.info(value, nodes=nodes)
 
-        return util.Future(self.view.asinfo, results, line_sep, self.cluster, **mods)
+        return util.Future(self.view.asinfo, results, line_sep, show_node_name, self.cluster, **mods)
 
 @CommandHelp('"shell" is used to run shell commands on the local node.')
 class ShellController(CommandController):
@@ -1547,6 +1552,7 @@ class CollectinfoController(CommandController):
                       ['cat /proc/interrupts',''],
                       ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"',''],
                       ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"',''],
+                      ['ls /sys/block/{sd*,xvd*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"',''],
                       ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
                       ['ip addr',''],
                       ['ip -s link',''],

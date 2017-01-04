@@ -6,6 +6,7 @@ Start the tool with *asadm* and run the *help* command to get started.
 
 ## Installing Aerospike Admin
 ```
+sudo ./asadm-deps/install.sh
 make
 sudo make install
 ```
@@ -20,6 +21,14 @@ Admin> help
 
 ## Dependencies
 - python 2.6+ (< 3)
+
+### Python Modules
+- pyOpenSSL: 16.2.0
+
+### Installing Python Module Dependencies
+```
+sudo ./asadm-deps/install.sh
+```
 
 ## Tests
 ### Dependencies

@@ -73,15 +73,15 @@ class BaseController(object):
     logger = None
     asadm_version = ''
 
-    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)]
-                 , use_telnet=False, user=None, password=None, use_services=True, asadm_version='', log_path=""):
+    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], use_telnet=False, user=None, password=None,
+                 use_services=True, ssl_context=None, asadm_version='', log_path="", only_connect_seed=False):
 
         cls = BaseController
         cls.view = view.CliView()
         if log_path:
             cls.logger = Logger(log_path)
         else:
-            cls.cluster = Cluster(seed_nodes, use_telnet, user, password, use_services)
+            cls.cluster = Cluster(seed_nodes, use_telnet, user, password, use_services, ssl_context=ssl_context, only_connect_seed=only_connect_seed)
             cls.asadm_version = asadm_version
 
         # instance vars

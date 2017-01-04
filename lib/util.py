@@ -85,7 +85,7 @@ def find_dns(endpoints):
 
 def _parse_string(s, delim=",", ignore_chars_start="[", ignore_chars_end="]"):
     o = []
-    if not s:
+    if not s or isinstance(s, Exception):
         return o
     s = s.strip()
     if not s:
