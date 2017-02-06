@@ -1,14 +1,22 @@
-from lib import logutil
+# Copyright 2013-2017 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-__author__ = 'aerospike'
-
-import os
-import glob
 import re
 import time
 import datetime
 from lib.util import shell_command
-import copy
+from lib.logconstants import *
 
 DT_FMT = "%b %d %Y %H:%M:%S"
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
@@ -361,35 +369,35 @@ class LogReader(object):
                 dic = {}
                 key = "key"
                 if re.search(binPattern, line):
-                    if "bins" not in statDic:
-                        statDic["bins"] = {}
-                    dic = statDic["bins"]
+                    if STAT_BINS not in statDic:
+                        statDic[STAT_BINS] = {}
+                    dic = statDic[STAT_BINS]
                     key = re.search(binPattern, line).group(1)
                 elif re.search(setPattern, line):
-                    if "sets" not in statDic:
-                        statDic["sets"] = {}
-                    dic = statDic["sets"]
+                    if STAT_SETS not in statDic:
+                        statDic[STAT_SETS] = {}
+                    dic = statDic[STAT_SETS]
                     key = re.search(setPattern, line).group(1)
                 elif re.search(servicePattern, line):
                     dic = statDic
-                    key = "service"
+                    key = STAT_SERVICE
                 elif re.search(nsPattern, line):
-                    if "namespace" not in statDic:
-                        statDic["namespace"] = {}
-                    dic = statDic["namespace"]
+                    if STAT_NAMESPACE not in statDic:
+                        statDic[STAT_NAMESPACE] = {}
+                    dic = statDic[STAT_NAMESPACE]
                     key = re.search(nsPattern, line).group(1)
                 elif re.search(xdrPattern, line):
                     dic = statDic
-                    key = "xdr"
+                    key = STAT_XDR
                 elif re.search(dcPattern, line):
-                    if "dc" not in statDic:
-                        statDic["dc"] = {}
-                    dic = statDic["dc"]
+                    if STAT_DC not in statDic:
+                        statDic[STAT_DC] = {}
+                    dic = statDic[STAT_DC]
                     key = re.search(dcPattern, line).group(1)
                 elif re.search(sindexPattern, line):
-                    if "sindex" not in statDic:
-                        statDic["sindex"] = {}
-                    dic = statDic["sindex"]
+                    if STAT_SINDEX not in statDic:
+                        statDic[STAT_SINDEX] = {}
+                    dic = statDic[STAT_SINDEX]
                     key = re.search(sindexPattern, line).group(1)
 
                 dic[key] = self.htableToDic(file_id)
@@ -408,6 +416,7 @@ class LogReader(object):
         nsPattern = '~([^~]+)Namespace Configuration(~+)'
         xdrPattern = '(~+)XDR Configuration(~+)'
         dcPattern = '~([^~]+)DC Configuration(~+)'
+        clusterPattern = '(~+)Cluster Configuration(~+)'
 
         line = file_id.readline()
 
@@ -417,23 +426,26 @@ class LogReader(object):
                 key = "key"
                 if re.search(servicePattern, line):
                     dic = configDic
-                    key = "service"
+                    key = CONFIG_SERVICE
                 elif re.search(netPattern, line):
                     dic = configDic
-                    key = "network"
+                    key = CONFIG_NETWORK
                 elif re.search(nsPattern, line):
-                    if "namespace" not in configDic:
-                        configDic["namespace"] = {}
-                    dic = configDic["namespace"]
+                    if CONFIG_NAMESPACE not in configDic:
+                        configDic[CONFIG_NAMESPACE] = {}
+                    dic = configDic[CONFIG_NAMESPACE]
                     key = re.search(nsPattern, line).group(1).strip()
                 elif re.search(xdrPattern, line):
                     dic = configDic
-                    key = "xdr"
+                    key = CONFIG_XDR
                 elif re.search(dcPattern, line):
-                    if "dc" not in configDic:
-                        configDic["dc"] = {}
-                    dic = configDic["dc"]
+                    if CONFIG_DC not in configDic:
+                        configDic[CONFIG_DC] = {}
+                    dic = configDic[CONFIG_DC]
                     key = re.search(dcPattern, line).group(1).strip()
+                elif re.search(clusterPattern, line):
+                    dic = configDic
+                    key = CONFIG_CLUSTER
 
                 dic[key] = self.htableToDic(file_id)
             try:
@@ -517,10 +529,10 @@ class LogReader(object):
         stanza = summary_pattern_matched.group(1)
         stanza = stanza.lower()
         if stanza:
-            if stanza=="secondary index":
-                stanza="sindex"
-            elif stanza=="set":
-                stanza="sets"
+            if stanza == "secondary index":
+                stanza = SUMMARY_SINDEX
+            elif stanza == "set":
+                stanza = SUMMARY_SETS
 
             summaryInfo[stanza] = header + self.readSummaryStr(file_id)
 

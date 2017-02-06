@@ -1,4 +1,4 @@
-# Copyright 2013-2014 Aerospike, Inc.
+# Copyright 2013-2017 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
+
 from lib.controller import ShellController
 from lib.controllerlib import *
 from lib import terminal
+from lib.logconstants import *
 from lib.logreader import SHOW_RESULT_KEY
 from lib.util import get_arg_and_delete_from_mods, \
     check_arg_and_delete_from_mods, get_value_from_dict
@@ -103,19 +104,13 @@ class InfoController(CommandController):
         self.do_namespace(line)
         self.do_xdr(line)
 
-    # @CommandHelp('Displays summary information for the Aerospike service.')
-    # def do_service(self, line):
-    #     service_infos = self.logger.infoSummary(stanza='service')
-    #
-    #     for timestamp in sorted(service_infos.keys()):
-    #         self.view.infoString(timestamp, service_infos[timestamp])
-
     @CommandHelp(
         'Displays network information for Aerospike.')
     def do_network(self, line):
-        network_infos = self.logger.infoSummary(stanza='network')
-        service_infos = self.logger.infoSummary(stanza='service')
-        network_stats = self.logger.infoStatistics(stanza='service')
+        network_infos = self.logger.infoSummary(stanza=SUMMARY_NETWORK)
+        service_infos = self.logger.infoSummary(stanza=SUMMARY_SERVICE)
+        network_stats = self.logger.infoStatistics(stanza=STAT_SERVICE)
+        cluster_configs = self.logger.infoGetConfig(stanza=CONFIG_CLUSTER)
         for timestamp in sorted(network_stats.keys()):
             if not network_stats[timestamp]:
                 try:
@@ -129,6 +124,12 @@ class InfoController(CommandController):
                 except Exception:
                     pass
                 continue
+            for node in network_stats[timestamp]:
+                try:
+                    if not isinstance(cluster_configs[timestamp][node]["mode"], Exception):
+                        network_stats[timestamp][node]["rackaware_mode"] = cluster_configs[timestamp][node]["mode"]
+                except Exception:
+                    pass
             logsnapshot_controller = self.logger.get_log_snapshot(timestamp=timestamp)
             builds = logsnapshot_controller.get_asd_build()
             versions = logsnapshot_controller.get_asd_version()
@@ -137,8 +138,8 @@ class InfoController(CommandController):
 
     @CommandHelp('Displays summary information for each namespace.')
     def do_namespace(self, line):
-        ns_infos = self.logger.infoSummary(stanza='namespace')
-        ns_stats = self.logger.infoStatistics(stanza='namespace')
+        ns_infos = self.logger.infoSummary(stanza=SUMMARY_NAMESPACE)
+        ns_stats = self.logger.infoStatistics(stanza=STAT_NAMESPACE)
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
                 try:
@@ -157,8 +158,8 @@ class InfoController(CommandController):
 
     @CommandHelp('Displays summary information for each set.')
     def do_set(self, line):
-        set_infos = self.logger.infoSummary(stanza='sets')
-        set_stats = self.logger.infoStatistics(stanza='sets')
+        set_infos = self.logger.infoSummary(stanza=SUMMARY_SETS)
+        set_stats = self.logger.infoStatistics(stanza=STAT_SETS)
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
                 try:
@@ -173,8 +174,8 @@ class InfoController(CommandController):
     @CommandHelp('Displays summary information for Cross Datacenter',
         'Replication (XDR).')
     def do_xdr(self, line):
-        xdr_infos = self.logger.infoSummary(stanza='xdr')
-        xdr_stats = self.logger.infoStatistics(stanza='xdr')
+        xdr_infos = self.logger.infoSummary(stanza=SUMMARY_XDR)
+        xdr_stats = self.logger.infoStatistics(stanza=STAT_XDR)
         for timestamp in sorted(xdr_stats.keys()):
             if not xdr_stats[timestamp]:
                 try:
@@ -193,9 +194,9 @@ class InfoController(CommandController):
 
     @CommandHelp('Displays summary information for each datacenter.')
     def do_dc(self, line):
-        dc_infos = self.logger.infoSummary(stanza='dc')
-        dc_stats = self.logger.infoStatistics(stanza='dc')
-        dc_config = self.logger.infoGetConfig(stanza='dc')
+        dc_infos = self.logger.infoSummary(stanza=SUMMARY_DC)
+        dc_stats = self.logger.infoStatistics(stanza=STAT_DC)
+        dc_config = self.logger.infoGetConfig(stanza=CONFIG_DC)
         for timestamp in sorted(dc_stats.keys()):
             if not dc_stats[timestamp]:
                 try:
@@ -215,8 +216,8 @@ class InfoController(CommandController):
 
     @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):
-        sindex_infos = self.logger.infoSummary(stanza='sindex')
-        sindex_stats = self.logger.infoStatistics(stanza='sindex')
+        sindex_infos = self.logger.infoSummary(stanza=SUMMARY_SINDEX)
+        sindex_stats = self.logger.infoStatistics(stanza=STAT_SINDEX)
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp]:
                 try:
@@ -264,7 +265,7 @@ class ShowConfigController(CommandController):
                  , '                   default: 0, no repetition.')
     def do_service(self, line):
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        service_configs = self.logger.infoGetConfig(stanza='service')
+        service_configs = self.logger.infoGetConfig(stanza=CONFIG_SERVICE)
 
         for timestamp in sorted(service_configs.keys()):
             self.view.showConfig(
@@ -279,7 +280,7 @@ class ShowConfigController(CommandController):
                  , '                   default: 0, no repetition.')
     def do_network(self, line):
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        service_configs = self.logger.infoGetConfig(stanza='network')
+        service_configs = self.logger.infoGetConfig(stanza=CONFIG_NETWORK)
 
         for timestamp in sorted(service_configs.keys()):
             self.view.showConfig(
@@ -294,7 +295,7 @@ class ShowConfigController(CommandController):
                  , '                   default: 0, no repetition.')
     def do_namespace(self, line):
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        ns_configs = self.logger.infoGetConfig(stanza='namespace')
+        ns_configs = self.logger.infoGetConfig(stanza=CONFIG_NAMESPACE)
 
         for timestamp in sorted(ns_configs.keys()):
             for ns, configs in ns_configs[timestamp].iteritems():
@@ -309,7 +310,7 @@ class ShowConfigController(CommandController):
                  , '                   default: 0, no repetition.')
     def do_xdr(self, line):
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        xdr_configs = self.logger.infoGetConfig(stanza='xdr')
+        xdr_configs = self.logger.infoGetConfig(stanza=CONFIG_XDR)
 
         for timestamp in sorted(xdr_configs.keys()):
             self.view.showConfig(
@@ -324,7 +325,7 @@ class ShowConfigController(CommandController):
                  , '                   default: 0, no repetition.')
     def do_dc(self, line):
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        dc_configs = self.logger.infoGetConfig(stanza='dc')
+        dc_configs = self.logger.infoGetConfig(stanza=CONFIG_DC)
 
         for timestamp in sorted(dc_configs.keys()):
             for dc, configs in dc_configs[timestamp].iteritems():
@@ -332,6 +333,21 @@ class ShowConfigController(CommandController):
                     "%s DC Configuration (%s)" %
                     (dc, timestamp), configs,self.logger.get_log_snapshot(timestamp=timestamp)
                     , title_every_nth=title_every_nth,**self.mods)
+
+    @CommandHelp('Displays Cluster configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
+    def do_cluster(self, line):
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
+        cl_configs = self.logger.infoGetConfig(stanza=CONFIG_CLUSTER)
+
+        for timestamp in sorted(cl_configs.keys()):
+            self.view.showConfig(
+                "Cluster Configuration (%s)" %
+                (timestamp),
+                cl_configs[timestamp],self.logger.get_log_snapshot(timestamp=timestamp)
+                , title_every_nth=title_every_nth, **self.mods)
 
 @CommandHelp(
     '"distribution" is used to show the distribution of object sizes',
@@ -432,7 +448,7 @@ class ShowStatisticsController(CommandController):
     def do_service(self, line):
         show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        service_stats = self.logger.infoStatistics(stanza="service")
+        service_stats = self.logger.infoStatistics(stanza=STAT_SERVICE)
         for timestamp in sorted(service_stats.keys()):
             self.view.showConfig(
                 "Service Statistics (%s)" %
@@ -448,7 +464,7 @@ class ShowStatisticsController(CommandController):
     def do_namespace(self, line):
         show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        ns_stats = self.logger.infoStatistics(stanza="namespace")
+        ns_stats = self.logger.infoStatistics(stanza=STAT_NAMESPACE)
 
         for timestamp in sorted(ns_stats.keys()):
             namespace_list = util.filter_list(ns_stats[timestamp].keys(), self.mods['for'])
@@ -467,7 +483,7 @@ class ShowStatisticsController(CommandController):
     def do_sets(self, line):
         show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        set_stats = self.logger.infoStatistics(stanza="sets")
+        set_stats = self.logger.infoStatistics(stanza=STAT_SETS)
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
                 continue
@@ -489,7 +505,7 @@ class ShowStatisticsController(CommandController):
     def do_bins(self, line):
         show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        new_bin_stats = self.logger.infoStatistics(stanza="bins")
+        new_bin_stats = self.logger.infoStatistics(stanza=STAT_BINS)
         for timestamp in sorted(new_bin_stats.keys()):
             if not new_bin_stats[timestamp] or isinstance(new_bin_stats[timestamp], Exception) :
                 continue
@@ -510,7 +526,7 @@ class ShowStatisticsController(CommandController):
     def do_xdr(self, line):
         show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        xdr_stats = self.logger.infoStatistics(stanza="xdr")
+        xdr_stats = self.logger.infoStatistics(stanza=STAT_XDR)
         for timestamp in sorted(xdr_stats.keys()):
             self.view.showConfig(
                 "XDR Statistics (%s)" %
@@ -526,7 +542,7 @@ class ShowStatisticsController(CommandController):
     def do_dc(self, line):
         show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        dc_stats = self.logger.infoStatistics(stanza="dc")
+        dc_stats = self.logger.infoStatistics(stanza=STAT_DC)
         for timestamp in sorted(dc_stats.keys()):
             for dc, stats in dc_stats[timestamp].iteritems():
                 self.view.showStats(
@@ -542,7 +558,7 @@ class ShowStatisticsController(CommandController):
     def do_sindex(self, line):
         show_total = check_arg_and_delete_from_mods(line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods)
         title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
-        sindex_stats = self.logger.infoStatistics(stanza="sindex")
+        sindex_stats = self.logger.infoStatistics(stanza=STAT_SINDEX)
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp] or isinstance(sindex_stats[timestamp], Exception):
                 continue
@@ -578,8 +594,8 @@ class FeaturesController(CommandController):
         return False
 
     def _do_default(self, line):
-        service_stats = self.logger.infoStatistics(stanza="service")
-        namespace_stats = self.logger.infoStatistics(stanza="namespace")
+        service_stats = self.logger.infoStatistics(stanza=STAT_SERVICE)
+        namespace_stats = self.logger.infoStatistics(stanza=STAT_NAMESPACE)
         for timestamp in sorted(service_stats.keys()):
             features = {}
             ns_stats = {}
@@ -1181,18 +1197,6 @@ class LogGrepClusterController(CommandController):
     def do_count(self, line):
         self.grepFile.do_count(line)
 
-@CommandHelp('Checks for common inconsistencies and print if there is any')
-class HealthController(CommandController):
-
-    def __init__(self):
-        self.controller_map = {
-            'cluster': HealthClusterController,
-            'servers': HealthServersController}
-        self.modifiers = set()
-
-    def _do_default(self, line):
-        self.executeHelp(line)
-
 @CommandHelp('Displays list of cluster collectinfos and server logs.')
 class ListController(CommandController):
 
@@ -1304,49 +1308,6 @@ class SelectController(CommandController):
         'Example : select server all   OR   select server 1 2 3')
     def do_server(self, line):
         self.logger.select_logs(line, cluster_snapshot=False)
-
-class HealthClusterController(CommandController):
-
-    def __init__(self):
-        self.modifiers = set()
-        self.grepFile = GrepFile(True, self.modifiers)
-
-    @CommandHelp('Displays All Cluster Level Assetions !!')
-    def _do_default(self, line):
-        service_stats = self.logger.infoStatistics(stanza="service")
-        namespace_stats = self.logger.infoStatistics(stanza="namespace")
-        asserts = {}
-
-        NOT_OK = 0
-        WARNING = 0
-        CRITICAL = 0
-
-        for timestamp in sorted(service_stats.keys()):
-            asserts[timestamp] = {}
-            tot_objects = 0
-            tot_refs = 0
-            for node, stats in service_stats[timestamp].iteritems():
-                tot_objects += int(stats["objects"])
-                tot_refs += int(stats["record_refs"])
-            if tot_objects != tot_refs:
-                asserts[timestamp]["Object Count"] = ": objects=" + \
-                    str(tot_objects) + " != refs=" + str(tot_refs)
-                WARNING += 1
-
-        for timestamp in sorted(service_stats.keys()):
-            print terminal.fg_blue() + "************************** Assertions for %s **************************" % (timestamp) + terminal.fg_clear()
-            for node, string in asserts[timestamp].iteritems():
-                print terminal.bold() + node + terminal.unbold() + terminal.fg_red() + string + terminal.fg_clear()
-
-class HealthServersController(CommandController):
-
-    def __init__(self):
-        self.modifiers = set()
-        self.grepFile = GrepFile(False, self.modifiers)
-
-    @CommandHelp('Displays all possible results from logs')
-    def _do_default(self, line):
-        print "Todo"
 
 @CommandHelp(
     'Allow users to add cluster collectinfos and server logs.',

@@ -1,4 +1,4 @@
-# Copyright 2013-2016 Aerospike, Inc.
+# Copyright 2013-2017 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -138,14 +138,23 @@ class InfoController(CommandController):
     @CommandHelp('Displays network information for Aerospike.')
     def do_network(self, line):
         stats = util.Future(self.cluster.infoStatistics, nodes=self.nodes).start()
+        cluster_configs = util.Future(self.cluster.infoGetConfig, nodes=self.nodes, stanza='cluster').start()
         cluster_names = util.Future(self.cluster.info, 'cluster-name', nodes=self.nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
         versions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
 
         stats = stats.result()
+        cluster_configs = cluster_configs.result()
         cluster_names = cluster_names.result()
         builds = builds.result()
         versions = versions.result()
+
+        for node in stats:
+            try:
+                if not isinstance(cluster_configs[node]["cluster"]["mode"], Exception):
+                    stats[node]["rackaware_mode"] = cluster_configs[node]["cluster"]["mode"]
+            except Exception:
+                pass
         return util.Future(self.view.infoNetwork, stats, cluster_names, versions, builds, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each set.')
@@ -660,6 +669,23 @@ class ShowConfigController(CommandController):
         return [util.Future(self.view.showConfig, "%s DC Configuration"%(dc)
                             , configs, self.cluster, title_every_nth=title_every_nth, **self.mods)
                 for dc, configs in dc_configs.iteritems()]
+
+    @CommandHelp('Displays Cluster configuration'
+                 , '  Options:'
+                 , '    -r <int>     - Repeating output table title and row header after every r columns.'
+                 , '                   default: 0, no repetition.')
+    def do_cluster(self, line):
+        title_every_nth = get_arg_and_delete_from_mods(line=line, arg="-r", return_type=int, default=0, modifiers=self.modifiers, mods=self.mods)
+        configs = util.Future(self.cluster.infoGetConfig, nodes=self.nodes, stanza='cluster').start()
+        configs = configs.result()
+        cl_configs = {}
+        for node, config in configs.iteritems():
+            if isinstance(config, Exception):
+                continue
+            cl_configs[node] = config['cluster']
+
+        return util.Future(self.view.showConfig, "Cluster Configuration", cl_configs
+                             , self.cluster, title_every_nth=title_every_nth, **self.mods)
 
 @CommandHelp('"show mapping" is used to display Aerospike mapping from IP to NodeId and NodeId to IPs')
 class ShowMappingController(CommandController):
@@ -1574,7 +1600,7 @@ class CollectinfoController(CommandController):
         dignostic_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
         dignostic_features_params = ['features']
         dignostic_cluster_params = ['pmap']
-        dignostic_show_params = ['config', 'config xdr', 'config dc', 'config diff', 'distribution', 'distribution eviction', 'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
+        dignostic_show_params = ['config', 'config xdr', 'config dc', 'config cluster', 'distribution', 'distribution eviction', 'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex' ]
         dignostic_aerospike_cluster_params = ['service', 'services']
         dignostic_aerospike_cluster_params_additional = [
                           'partition-info',

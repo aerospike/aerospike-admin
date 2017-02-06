@@ -1,10 +1,10 @@
-# Copyright 2013-2016 Aerospike, Inc.
+# Copyright 2013-2017 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http:#www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -479,19 +479,29 @@ class Node(object):
             return self.infoServices()
 
     @return_exceptions
-    def _findFriendNodes(self):
+    def get_alumni_peers(self):
         if self.use_peers_list:
-            peers = self.infoPeersList()
-            if not self.consider_alumni:
-                return peers
-            return peers + self.infoAlumniPeersList()
+            alumni_peers = self.infoPeersList()
+            return alumni_peers + self.infoAlumniPeersList()
         else:
-            services = None
-            if self.consider_alumni:
-                services = self.infoServicesAlumni()
-            if services and not isinstance(services,Exception):
-                    return services
-            return self.infoServices() # either want to avoid alumni or alumni list is empty (compatible for version without alumni)
+            alumni_services = self.infoServicesAlumni()
+            if alumni_services and not isinstance(alumni_services,Exception):
+                return alumni_services
+            return self.infoServices()
+
+    @return_exceptions
+    def get_peers(self):
+        if self.use_peers_list:
+            return self.infoPeersList()
+        else:
+            return self.infoServices()
+
+    @return_exceptions
+    def _findFriendNodes(self):
+        if self.consider_alumni:
+            return self.get_alumni_peers()
+        else:
+            return self.get_peers()
 
     @return_exceptions
     def infoStatistics(self):

@@ -6,81 +6,123 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http:#www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# The _dnsname_match function is under the terms and
-# conditions of the Python Software Foundation License.  It was taken from
-# the Python3 standard library and adapted for use in Python2.  See comments in the
-# source for which code precisely is under this License.  PSF License text
-# follows:
-#
-# PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
-# --------------------------------------------
-#
-# 1. This LICENSE AGREEMENT is between the Python Software Foundation
-# ("PSF"), and the Individual or Organization ("Licensee") accessing and
-# otherwise using this software ("Python") in source or binary form and
-# its associated documentation.
-#
-# 2. Subject to the terms and conditions of this License Agreement, PSF hereby
-# grants Licensee a nonexclusive, royalty-free, world-wide license to reproduce,
-# analyze, test, perform and/or display publicly, prepare derivative works,
-# distribute, and otherwise use Python alone or in any derivative version,
-# provided, however, that PSF's License Agreement and PSF's notice of copyright,
-# i.e., "Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-# 2011, 2012, 2013, 2014 Python Software Foundation; All Rights Reserved" are
-# retained in Python alone or in any derivative version prepared by Licensee.
-#
-# 3. In the event Licensee prepares a derivative work that is based on
-# or incorporates Python or any part thereof, and wants to make
-# the derivative work available to others as provided herein, then
-# Licensee hereby agrees to include in any such work a brief summary of
-# the changes made to Python.
-#
-# 4. PSF is making Python available to Licensee on an "AS IS"
-# basis.  PSF MAKES NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR
-# IMPLIED.  BY WAY OF EXAMPLE, BUT NOT LIMITATION, PSF MAKES NO AND
-# DISCLAIMS ANY REPRESENTATION OR WARRANTY OF MERCHANTABILITY OR FITNESS
-# FOR ANY PARTICULAR PURPOSE OR THAT THE USE OF PYTHON WILL NOT
-# INFRINGE ANY THIRD PARTY RIGHTS.
-#
-# 5. PSF SHALL NOT BE LIABLE TO LICENSEE OR ANY OTHER USERS OF PYTHON
-# FOR ANY INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES OR LOSS AS
-# A RESULT OF MODIFYING, DISTRIBUTING, OR OTHERWISE USING PYTHON,
-# OR ANY DERIVATIVE THEREOF, EVEN IF ADVISED OF THE POSSIBILITY THEREOF.
-#
-# 6. This License Agreement will automatically terminate upon a material
-# breach of its terms and conditions.
-#
-# 7. Nothing in this License Agreement shall be deemed to create any
-# relationship of agency, partnership, or joint venture between PSF and
-# Licensee.  This License Agreement does not grant permission to use PSF
-# trademarks or trade name in a trademark sense to endorse or promote
-# products or services of Licensee, or any third party.
-#
-# 8. By copying, installing or otherwise using Python, Licensee
-# agrees to be bound by the terms and conditions of this License
-# Agreement.
 
-import re
-import warnings
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    from OpenSSL import crypto, SSL
+from lib.ssl_util import dnsname_match
 from os import listdir
 from os.path import isfile, join
+import warnings
+
+try:
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        from OpenSSL import crypto, SSL
+    HAVE_PYOPENSSL = True
+except ImportError:
+    HAVE_PYOPENSSL = False
+try:
+    from pyasn1.type import univ, constraint, char, namedtype, tag
+    from pyasn1.codec.der import decoder as der_decoder
+    HAVE_PYASN1 = True
+except ImportError:
+    HAVE_PYASN1 = False
+
+if HAVE_PYASN1:
+    # Helper code for ASN.1 decoding
+    MAX = 64
+    class DirectoryString(univ.Choice):
+        componentType = namedtype.NamedTypes(
+            namedtype.NamedType(
+                'teletexString', char.TeletexString().subtype(
+                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX))),
+            namedtype.NamedType(
+                'printableString', char.PrintableString().subtype(
+                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX))),
+            namedtype.NamedType(
+                'universalString', char.UniversalString().subtype(
+                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX))),
+            namedtype.NamedType(
+                'utf8String', char.UTF8String().subtype(
+                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX))),
+            namedtype.NamedType(
+                'bmpString', char.BMPString().subtype(
+                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX))),
+            namedtype.NamedType(
+                'ia5String', char.IA5String().subtype(
+                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX))),
+            )
+
+    class AttributeTypeAndValue(univ.Sequence):
+        componentType = namedtype.NamedTypes(
+            namedtype.NamedType('type', univ.ObjectIdentifier()),
+            namedtype.NamedType('value', DirectoryString()),
+            )
+
+    class RelativeDistinguishedName(univ.SetOf):
+        componentType = AttributeTypeAndValue()
+
+    class RDNSequence(univ.SequenceOf):
+        componentType = RelativeDistinguishedName()
+
+    class AnotherName(univ.Sequence):
+        componentType = namedtype.NamedTypes(
+            namedtype.NamedType('type-id', univ.ObjectIdentifier()),
+            namedtype.NamedType('value', univ.Any().subtype(
+                                explicitTag=tag.Tag(tag.tagClassContext,
+                                                    tag.tagFormatSimple, 0)))
+    )
+
+    class Name(univ.Choice):
+        componentType = namedtype.NamedTypes(
+            namedtype.NamedType('', RDNSequence()),
+    )
+
+    class GeneralName(univ.Choice):
+        componentType = namedtype.NamedTypes(
+            namedtype.NamedType('otherName', AnotherName().subtype(
+                                implicitTag=tag.Tag(tag.tagClassContext,
+                                                    tag.tagFormatSimple, 0))),
+            namedtype.NamedType('rfc822Name', char.IA5String().subtype(
+                                implicitTag=tag.Tag(tag.tagClassContext,
+                                                    tag.tagFormatSimple, 1))),
+            namedtype.NamedType('dNSName', char.IA5String().subtype(
+                                implicitTag=tag.Tag(tag.tagClassContext,
+                                                    tag.tagFormatSimple, 2))),
+            namedtype.NamedType('directoryName', Name().subtype(
+                                implicitTag=tag.Tag(tag.tagClassContext,
+                                                    tag.tagFormatSimple, 4))),
+            namedtype.NamedType('uniformResourceIdentifier', char.IA5String().subtype(
+                                implicitTag=tag.Tag(tag.tagClassContext,
+                                                    tag.tagFormatSimple, 6))),
+            namedtype.NamedType('iPAddress', univ.OctetString().subtype(
+                                implicitTag=tag.Tag(tag.tagClassContext,
+                                                    tag.tagFormatSimple, 7))),
+            namedtype.NamedType('registeredID', univ.ObjectIdentifier().subtype(
+                                implicitTag=tag.Tag(tag.tagClassContext,
+                                                    tag.tagFormatSimple, 8))),
+            )
+
+    class SubjectAltGeneralNames(univ.SequenceOf):
+        componentType = GeneralName()
+        sizeSpec = univ.SequenceOf.sizeSpec + constraint.ValueSizeConstraint(1, MAX)
 
 class SSLContext(object):
 
     def __init__(self, enable_tls=False, encrypt_only=False, cafile=None, capath=None,
                  keyfile=None, certfile=None, protocols=None, cipher_suite=None, cert_blacklist=None,
                  crl_check=False, crl_check_all=False):
+        self.ctx = None
+        if not enable_tls:
+            return
+        if not HAVE_PYOPENSSL:
+            raise ImportError("No module named pyOpenSSL")
+
         self._create_ssl_context(enable_tls=enable_tls, encrypt_only=encrypt_only, cafile=cafile, capath=capath,
                                  keyfile=keyfile, certfile=certfile, protocols=protocols, cipher_suite=cipher_suite)
         self._crl_check = crl_check
@@ -220,63 +262,6 @@ class SSLContext(object):
         if serial_number in self._crl_checklist:
             raise Exception("Server Certificate is in revoked list: (Serial Number: %s)"%(str(hex(serial_number_int))))
 
-    ###
-    ### The following block of code is under the terms and conditions of the
-    ### Python Software Foundation License
-    ###
-
-    def _dnsname_match(self, dn, hostname, max_wildcards=1):
-        """Matching according to RFC 6125, section 6.4.3
-
-        http://tools.ietf.org/html/rfc6125#section-6.4.3
-        """
-        pats = []
-        if not dn:
-            return False
-
-        p = dn.split(r'.')
-        leftmost = p[0]
-        remainder = p[1:]
-        wildcards = leftmost.count('*')
-        if wildcards > max_wildcards:
-            # Issue #17980: avoid denials of service by refusing more
-            # than one wildcard per fragment.  A survery of established
-            # policy among SSL implementations showed it to be a
-            # reasonable choice.
-            raise Exception("too many wildcards in certificate Subject: " + repr(dn))
-
-        # speed up common case w/o wildcards
-        if not wildcards:
-            return dn.lower() == hostname.lower()
-
-        # RFC 6125, section 6.4.3, subitem 1.
-        # The client SHOULD NOT attempt to match a presented identifier in which
-        # the wildcard character comprises a label other than the left-most label.
-        if leftmost == '*':
-            # When '*' is a fragment by itself, it matches a non-empty dotless
-            # fragment.
-            pats.append('[^.]+')
-        elif leftmost.startswith('xn--') or hostname.startswith('xn--'):
-            # RFC 6125, section 6.4.3, subitem 3.
-            # The client SHOULD NOT attempt to match a presented identifier
-            # where the wildcard character is embedded within an A-label or
-            # U-label of an internationalized domain name.
-            pats.append(re.escape(leftmost))
-        else:
-            # Otherwise, '*' matches any dotless string, e.g. www*
-            pats.append(re.escape(leftmost).replace(r'\*', '[^.]*'))
-
-        # add the remaining fragments, ignore any wildcards
-        for frag in remainder:
-            pats.append(re.escape(frag))
-
-        pat = re.compile(r'\A' + r'\.'.join(pats) + r'\Z', re.IGNORECASE)
-        return pat.match(hostname)
-
-    ###
-    ### End of Python Software Foundation Licensed code
-    ###
-
     def _get_common_names(self, components):
         common_names = []
         if not components:
@@ -287,6 +272,21 @@ class SSLContext(object):
 
         return common_names
 
+    def _get_subject_alt_names(self, cert):
+        alt_names = []
+        for i in range(cert.get_extension_count()):
+            e = cert.get_extension(i)
+            e_name = e.get_short_name()
+            if e_name == "subjectAltName":
+                e_data = e.get_data()
+                decoded_data = der_decoder.decode(e_data, SubjectAltGeneralNames())
+                for name in decoded_data:
+                    if isinstance(name, SubjectAltGeneralNames):
+                        for entry in range(len(name)):
+                            component = name.getComponentByPosition(entry)
+                            alt_names.append(str(component.getComponent()))
+        return alt_names
+
     def _match_tlsname(self, cert, tls_name):
         if not cert:
             raise ValueError("empty or no certificate, match_tlsname needs a "
@@ -296,14 +296,26 @@ class SSLContext(object):
             components = cert.get_subject().get_components()
         except Exception:
             raise ("Wrong peer certificate for match_tlsname.")
-        cnnames = []
+        cnnames = set()
         for value in self._get_common_names(components):
             try:
-                if self._dnsname_match(value, tls_name):
+                if dnsname_match(value, tls_name):
                     return
             except Exception:
                 pass
-            cnnames.append(value)
+            cnnames.add(value)
+
+        if HAVE_PYASN1:
+            for value in self._get_subject_alt_names(cert):
+                try:
+                    if dnsname_match(value, tls_name):
+                        return
+                except Exception:
+                    pass
+                cnnames.add(value)
+        else:
+            raise ImportError("No module named pyasn1")
+
         if len(cnnames) > 1:
             raise Exception("tls_name %r doesn't match either of %s"% (tls_name, ', '.join(map(repr, cnnames))))
         elif len(cnnames) == 1:
@@ -315,6 +327,7 @@ class SSLContext(object):
         if depth == 0:
             tls_name = conn.get_app_data()
             self._match_tlsname(cert=cert, tls_name=tls_name)
+
         self._cert_blacklist_check(cert=cert)
         if self._crl_check_all or (self._crl_check and depth == 0):
             self._cert_crl_check(cert=cert)
@@ -381,12 +394,12 @@ class SSLContext(object):
                 try:
                     method = SSL.TLSv1_1_METHOD
                 except Exception:
-                    raise Exception("No support to protocol %s. Wrong OpenSSL or Python version. Please use Python-2.7.13."%("TLSv1.1"))
+                    raise Exception("No support to protocol %s. Wrong OpenSSL or Python version. Please use PyOpenSSL >= 0.15."%("TLSv1.1"))
             elif protocols_to_enable[0] == "TLSv1.2":
                 try:
                     method = SSL.TLSv1_2_METHOD
                 except Exception:
-                    raise Exception("No support to protocol %s. Wrong OpenSSL or Python version. Please use Python-2.7.13."%("TLSv1.2"))
+                    raise Exception("No support to protocol %s. Wrong OpenSSL or Python version. Please use PyOpenSSL >= 0.15."%("TLSv1.2"))
         protocols_to_disable = list(set(protocols_to_disable) - set(protocols_to_enable))
         return method, protocols_to_disable
 
@@ -411,7 +424,6 @@ class SSLContext(object):
 
     def _create_ssl_context(self, enable_tls=False, encrypt_only=False, cafile=None, capath=None,
                            keyfile=None, certfile=None, protocols=None, cipher_suite=None):
-        self.ctx = None
         if not enable_tls:
             return
         method, protocols_to_disable = self._parse_protocols(protocols)

@@ -1,16 +1,17 @@
-# Copyright 2013-2016 Aerospike, Inc.
+# Copyright 2013-2017 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http:#www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import math
 import types
 from lib.logger import DT_FMT
@@ -73,6 +74,7 @@ class CliView(object):
                         , 'cluster_key'
                         , '_cluster_integrity'
                         , ('_paxos_principal', 'Principal')
+                        , 'rackaware_mode'
                         , ('client_connections', 'Client Conns')
                         , '_uptime')
 
@@ -1011,18 +1013,14 @@ class CliView(object):
     @staticmethod
     def showLogLatency(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
-
-        # print grep_result[grep_result.keys()[0]]["ops/sec"].keys()
-        # print sorted(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
+        tps_key = ("ops/sec", None)
         if grep_result:
             if grep_result[grep_result.keys()[0]]:
-                column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]]["ops/sec"].keys())
+                column_names = CliView.sort_list_with_string_and_datetime(grep_result[grep_result.keys()[0]][tps_key].keys())
         if len(column_names) == 0:
             return ''
         column_names.insert(0, ".")
         column_names.insert(0, "NODE")
-
-        # print column_names
 
         t = Table(title
                   , column_names
@@ -1037,25 +1035,25 @@ class CliView(object):
             else:
                 is_first = True
                 sub_columns_per_column = len(grep_result[file].keys())
-                for key in sorted(grep_result[file].keys()):
-                    if key == "ops/sec":
+                for key,unit in sorted(grep_result[file].keys(), key=lambda tup: tup[0]):
+                    if key == tps_key[0]:
                         continue
-                    row = grep_result[file][key]
+                    row = grep_result[file][(key, unit)]
                     if is_first:
                         row['NODE'] = file
                         is_first = False
                     else:
                         row['NODE'] = "."
-                    row['.'] = "%% >%dms"%(key)
+                    row['.'] = "%% >%d%s"%(key, unit)
                     t.insertRow(row)
 
-                row = grep_result[file]["ops/sec"]
+                row = grep_result[file][tps_key]
                 row['NODE'] = "."
-                row['.'] = key
+                row['.'] = tps_key[0]
                 t.insertRow(row)
 
                 row = {}
-                for key in grep_result[file]["ops/sec"].keys():
+                for key in grep_result[file][tps_key].keys():
                     row[key] = "|"
 
                 row['NODE'] = "|"
@@ -1124,23 +1122,28 @@ class CliView(object):
                     # most info commands return a semicolon delimited list of key=value.
                     # Assuming this is the case here, later we may want to try to detect
                     # the format.
-                    value = value.split(';')
-                    likes = CliView.compileLikes(like)
-                    value = filter(likes.search, value)
+                    if like:
+                        value = value.split(';')
+                        likes = CliView.compileLikes(like)
+                        value = filter(likes.search, value)
+                        if line_sep:
+                            value = "\n".join(value)
+                        else:
+                            value = ";".join(value)
+                    elif line_sep:
+                        value = value.replace(';', '\n')
 
-                    if not line_sep:
-                        value = [";".join(value)]
-
-                    for line in sorted(value):
-                        print line
-                    print
+                    print value
+                    if show_node_name:
+                        print
                 else:
                     i = 1
                     for name, val in value.iteritems():
                         print i,": ",name
                         print "    ",val
                         i += 1
-                    print
+                    if show_node_name:
+                        print
 
     @staticmethod
     def clusterPMap(pmap_data, cluster, **ignore):

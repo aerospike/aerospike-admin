@@ -1,10 +1,10 @@
-# Copyright 2013-2016 Aerospike, Inc.
+# Copyright 2013-2017 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http:#www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -93,7 +93,7 @@ class TestShowConfig(unittest.TestCase):
         
         exp_heading = "~~Service Configuration~~"
         exp_header = "NODE"
-        exp_params = [  'allow-inline-transactions',
+        exp_params = [  ('allow-inline-transactions', None),
                         'batch-max-requests',
                         'batch-priority',
                         'batch-threads',
@@ -104,7 +104,7 @@ class TestShowConfig(unittest.TestCase):
                         'memory-accounting',
                         ('microbenchmarks', None),
                         'migrate-max-num-incoming',
-                        'migrate-rx-lifetime-ms',
+                        ('migrate-rx-lifetime-ms', None),
                         'migrate-threads',
                         'nsup-delete-sleep',
                         'nsup-period',
@@ -133,7 +133,7 @@ class TestShowConfig(unittest.TestCase):
                         ('replication-fire-and-forget', None),
                         'respond-client-on-master-completion',
                         'service-threads',
-                        'sindex-data-max-memory',
+                        ('sindex-data-max-memory', None),
                         ('snub-nodes', None),
                         ('storage-benchmarks', None),
                         'ticker-interval',
@@ -145,7 +145,7 @@ class TestShowConfig(unittest.TestCase):
                         'transaction-threads-per-queue',
                         ('udf-runtime-gmax-memory', None),
                         ('udf-runtime-max-memory', None),
-                        'use-queue-per-device',
+                        ('use-queue-per-device', None),
                         'write-duplicate-resolution-disable',
                     ]
 
@@ -316,7 +316,6 @@ class TestShowLatency(unittest.TestCase):
                      '>1Ms', 
                      '>8Ms', 
                      '>64Ms'] 
-        
         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.proxy_latency, horizontal = True)        
@@ -763,7 +762,7 @@ class TestShowStatistics(unittest.TestCase):
                         ('write_master', None),
                         ('write_prole', None)
                     ]
-        
+
         actual_heading, actual_header, actual_params = test_util.parse_output(TestShowStatistics.service_stats)
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
@@ -801,7 +800,7 @@ class TestShowStatistics(unittest.TestCase):
                         ('master-objects','master_objects'),
                         ('master-sub-objects','master_sub_objects'),
                         'max-ttl',
-                        ('max-void-time','max_void_time'),
+                        ('max-void-time','max_void_time', None),
                         'memory-size',
                         ('migrate-rx-partitions-initial','migrate_rx_partitions_initial', None),
                         ('migrate-rx-partitions-remaining','migrate_rx_partitions_remaining', None),
@@ -866,7 +865,7 @@ class TestShowStatistics(unittest.TestCase):
                         ('master-objects', 'master_objects'),
                         ('master-sub-objects', 'master_sub_objects'),
                         'max-ttl',
-                        ('max-void-time', 'max_void_time'),
+                        ('max-void-time', 'max_void_time', None),
                         'memory-size',
                         ('migrate-rx-partitions-initial','migrate_rx_partitions_initial', None),
                         ('migrate-rx-partitions-remaining','migrate_rx_partitions_remaining', None),

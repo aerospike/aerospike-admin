@@ -1,25 +1,19 @@
 #!/usr/bin/python
 ####
 #
-#  Copyright (c) 2008-2012 Aerospike, Inc. All rights reserved.
+# Copyright 2013-2017 Aerospike, Inc.
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy of
-# this software and associated documentation files (the "Software"), to deal in
-# the Software without restriction, including without limitation the rights to
-# use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-# of the Software, and to permit persons to whom the Software is furnished to do
-# so, subject to the following conditions:
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# http://www.apache.org/licenses/LICENSE-2.0
 #
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 ####
 
@@ -45,9 +39,6 @@ import types
 #
 from lib.logreader import END_ROW_KEY
 
-BUCKET_LABELS = ("00", "01", "02", "03", "04", "05", "06", "07", "08", "09",
-                 "10", "11", "12", "13", "14", "15", "16")
-ALL_BUCKETS = len(BUCKET_LABELS)
 DT_FMT = "%b %d %Y %H:%M:%S"
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
 DT_TIME_FMT = "%H:%M:%S"
@@ -56,15 +47,42 @@ HIST_TAG_PATTERNS = [HIST_TAG_PREFIX+"%s ",HIST_TAG_PREFIX+"{[a-zA-Z0-9_-]+}-%s 
 NS_HIST_TAG_PATTERNS = [HIST_TAG_PREFIX+"{%s}-%s "]
 NS_SLICE_SECONDS=5
 SCAN_SIZE = 1024 * 1024
+HIST_BUCKET_LINE_SUBSTRING = "hist.c:"
+SIZE_HIST_LIST = ["device-read-size", "device-write-size"]
+COUNT_HIST_LIST = ["query-rec-count"]
+
+#===========================================================
 
 class LogLatency(object):
 
     def __init__(self, log_reader):
         self.log_reader = log_reader
+
     #------------------------------------------------
     # Read a complete line from the log file.
     #
 
+    #------------------------------------------------
+    # Set bucket details.
+    #
+    def _set_bucket_details(self, hist):
+        if any(ht in hist for ht in SIZE_HIST_LIST):
+            self._bucket_labels = ("00", "01", "02", "03", "04", "05", "06", "07", "08", "09", \
+                            "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", \
+                             "21", "22", "23", "24", "25")
+            self._all_buckets = len(self._bucket_labels)
+            self._bucket_unit = "bytes"
+        elif any(ht in hist for ht in COUNT_HIST_LIST):
+            self._bucket_labels = ("00", "01", "02", "03", "04", "05", "06", "07", "08", "09", \
+                            "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", \
+                             "21", "22", "23", "24", "25")
+            self._all_buckets = len(self._bucket_labels)
+            self._bucket_unit = "records"
+        else:
+            self._bucket_labels = ("00", "01", "02", "03", "04", "05", "06", "07", "08", "09", \
+            "10", "11", "12", "13", "14", "15", "16")
+            self._all_buckets = len(self._bucket_labels)
+            self._bucket_unit = "ms"
 
     def read_line(self, file_itr):
         line = ""
@@ -84,6 +102,7 @@ class LogLatency(object):
     def parse_total_ops(self, line):
         return long(line[line.rfind("(") + 1: line.rfind(" total)")])
 
+
     #------------------------------------------------
     # Get one set of bucket values.
     #
@@ -91,26 +110,36 @@ class LogLatency(object):
 
     def read_bucket_values(self, line, file_itr):
         values = {}
-        for b in range(ALL_BUCKETS):
+        for b in range(self._all_buckets):
             values[b] = 0
         total = self.parse_total_ops(line)
         line = self.read_line(file_itr)
         if not line:
             return 0, 0, 0
         b_min = 0
+        b_total = 0
         while True:
             found = 0
-            for b in range(b_min, ALL_BUCKETS):
-                pattern = '.*?\(' + BUCKET_LABELS[b] + ': (.*?)\).*?'
-                r = re.compile(pattern)
-                if r.search(line):
-                    found = found + 1
-                    values[b] = long(r.search(line).group(1))
-            if found == 0:
-                break
+            if HIST_BUCKET_LINE_SUBSTRING in line:
+                for b in range(b_min, self._all_buckets):
+                    pattern = '.*?\(' + self._bucket_labels[b] + ': (.*?)\).*?'
+                    r = re.compile(pattern)
+                    if r.search(line):
+                        found = found + 1
+                        values[b] = long(r.search(line).group(1))
+                        b_total = b_total + values[b]
+                if found == 0:
+                    break
             line = self.read_line(file_itr)
             if not line:
-                return 0, 0, 0
+                if b_total < total:
+                    # Incomplete bucket details
+                    return 0, 0, 0
+                else:
+                    line = 0
+                    break
+            if b_total >= total:
+                break
             b_min = b_min + found
         return total, values, line
 
@@ -121,7 +150,7 @@ class LogLatency(object):
 
     def subtract_buckets(self, new_values, old_values):
         slice_values = {}
-        for b in range(ALL_BUCKETS):
+        for b in range(self._all_buckets):
             if new_values[b] < old_values[b]:
                 new_values[b] = old_values[b]
             slice_values[b] = new_values[b] - old_values[b]
@@ -134,7 +163,7 @@ class LogLatency(object):
 
     def add_buckets(self, b1_values, b2_values):
         slice_values = {}
-        for b in range(ALL_BUCKETS):
+        for b in range(self._all_buckets):
             slice_values[b] = b1_values[b] + b2_values[b]
         return slice_values
 
@@ -144,9 +173,9 @@ class LogLatency(object):
 
 
     def bucket_percentages(self, total, values):
-        percentages = [0.0] * ALL_BUCKETS
+        percentages = [0.0] * self._all_buckets
         if total > 0:
-            for b in range(ALL_BUCKETS):
+            for b in range(self._all_buckets):
                 percentages[b] = (float(values[b]) / total) * 100
         return percentages
 
@@ -157,7 +186,7 @@ class LogLatency(object):
 
     def percentage_over(self, bucket, percentages):
         percentage = 0.0
-        for b in range(ALL_BUCKETS):
+        for b in range(self._all_buckets):
             if b > bucket:
                 percentage = percentage + percentages[b]
         return percentage
@@ -224,15 +253,19 @@ class LogLatency(object):
 
     def compute_latency(self, arg_log_itr, arg_hist, arg_slice, arg_from, arg_end_date, arg_num_buckets, arg_every_nth, arg_rounding_time=True, arg_ns=None):
         latency = {}
-        latency["ops/sec"] = {}
+        tps_key = ("ops/sec", None)
+        latency[tps_key] = {}
 
         # Sanity-check some arguments:
         if arg_hist is None or arg_num_buckets < 1 or arg_every_nth < 1 or not arg_slice:
             yield None, None
         else:
+            # Set buckets
+            self._set_bucket_details(arg_hist)
+
             slice_timedelta = arg_slice
             # Find index + 1 of last bucket to display:
-            for b in range(ALL_BUCKETS):
+            for b in range(self._all_buckets):
                 if b % arg_every_nth == 0:
                     max_bucket = b + 1
                     if arg_num_buckets == 1:
@@ -258,7 +291,7 @@ class LogLatency(object):
                     labels.append(0)
                     if i % arg_every_nth == 0:
                         labels[i] = pow(2, i)
-                        latency[pow(2, i)] = {}
+                        latency[(pow(2, i), self._bucket_unit)] = {}
 
                 # Other initialization before processing time slices:
                 which_slice = 0
@@ -304,9 +337,9 @@ class LogLatency(object):
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
-                        latency[labels[i]][key_dt.strftime(DT_FMT)] = "%.2f" % (overs[i])
+                        latency[(labels[i], self._bucket_unit)][key_dt.strftime(DT_FMT)] = "%.2f" % (overs[i])
 
-                    latency["ops/sec"][key_dt.strftime(DT_FMT)] = "%.1f" % (rate)
+                    latency[tps_key][key_dt.strftime(DT_FMT)] = "%.1f" % (rate)
                     yield key_dt, latency
                     for key in latency:
                         latency[key] = {}
@@ -324,9 +357,9 @@ class LogLatency(object):
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
-                        latency[labels[i]]["avg"] = "%.2f" % (avg_overs[i])
-                        latency[labels[i]]["max"] = "%.2f" % (max_overs[i])
-                    latency["ops/sec"]["avg"] = "%.1f" % (avg_rate)
-                    latency["ops/sec"]["max"] = "%.1f" % (max_rate)
+                        latency[(labels[i], self._bucket_unit)]["avg"] = "%.2f" % (avg_overs[i])
+                        latency[(labels[i], self._bucket_unit)]["max"] = "%.2f" % (max_overs[i])
+                    latency[tps_key]["avg"] = "%.1f" % (avg_rate)
+                    latency[tps_key]["max"] = "%.1f" % (max_rate)
 
                 yield END_ROW_KEY, latency

@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
-# Copyright 2013-2016 Aerospike, Inc.
+# Copyright 2013-2017 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http:#www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import readline
 import cmd
 import getpass
 import shlex
@@ -50,12 +49,14 @@ class AerospikeShell(cmd.Cmd):
         except Exception as ctrle:
             print terminal.fg_red() + "Exception while creating controller: " + str(ctrle) + terminal.fg_clear()
             self.do_exit('')
-            exit(0)
+            exit(1)
 
-        try:
-            readline.read_history_file(ADMINHIST)
-        except Exception:
-            readline.write_history_file(ADMINHIST)
+        if not execute_only_mode:
+            import readline
+            try:
+                readline.read_history_file(ADMINHIST)
+            except Exception:
+                readline.write_history_file(ADMINHIST)
 
         self.prompt = "Admin> "
         if self.use_rawinput:
@@ -73,11 +74,15 @@ class AerospikeShell(cmd.Cmd):
             if log_path:
                 self.intro += terminal.fg_red() + ">>>>> -l not specified -f ignored. Running in normal asadm mode. Use -l for log analyser mode !! <<<<< \n" + terminal.fg_clear()
                 log_path = ""
-            self.intro += str(self.ctrl.cluster) + "\n"
-            cluster_visibility_error_nodes = self.ctrl.cluster.getClusterVisibilityErrorNodes()
-            if cluster_visibility_error_nodes:
-                self.intro += terminal.fg_red() + "Cluster Visibility error (Please check services list): %s"%(", ".join(cluster_visibility_error_nodes)) + terminal.fg_clear() + "\n"
+            if not execute_only_mode:
+                self.intro += str(self.ctrl.cluster) + "\n"
+                cluster_visibility_error_nodes = self.ctrl.cluster.getVisibilityErrorNodes()
+                if cluster_visibility_error_nodes:
+                    self.intro += terminal.fg_red() + "Cluster Visibility error (Please check services list): %s"%(", ".join(cluster_visibility_error_nodes)) + terminal.fg_clear() + "\n"
 
+                cluster_down_nodes = self.ctrl.cluster.getDownNodes()
+                if cluster_down_nodes:
+                    self.intro += terminal.fg_red() + "Extra nodes in alumni list: %s"%(", ".join(cluster_down_nodes)) + terminal.fg_clear() + "\n"
 
             if not self.ctrl.cluster.getLiveNodes():
                 if execute_only_mode:
@@ -128,6 +133,7 @@ class AerospikeShell(cmd.Cmd):
 
     def precmd(self, line, max_commands_to_print_header=1, command_index_to_print_from=1):
         lines = None
+
         try:
             lines = self.cleanLine(line)
 
@@ -278,6 +284,7 @@ class AerospikeShell(cmd.Cmd):
     # Other
     def do_exit(self, line):
         self.close()
+        import readline
         readline.write_history_file(ADMINHIST)
         print "\nConfig files location: " + str(ADMINHOME)
         return True
@@ -338,7 +345,7 @@ def parse_tls_input(cli_args):
                        cipher_suite=cli_args.cipher_suite, cert_blacklist=cli_args.cert_blacklist,
                        crl_check=cli_args.crl_check, crl_check_all=cli_args.crl_check_all).ctx
     except Exception as e:
-        print terminal.fg_red() + "Wrong TLS inputs: " + str(e) + terminal.fg_clear()
+        print terminal.fg_red() + "SSLContext creation Exception: " + str(e) + terminal.fg_clear()
         exit(1)
 
 
@@ -431,7 +438,7 @@ def main():
         parser.add_argument("--tls_protocols"
                             , dest="protocols"
                             , help="Set the TLS protocol selection criteria. This format is the same as Apache's SSLProtocol documented "
-                                   "at https://httpd.apache.org/docs/current/mod/mod_ssl.html#sslprotocol"
+                                   "at https://httpd.apache.org/docs/current/mod/mod_ssl.html#sslprotocol . "
                                    "If not specified the asadm will use '-all +TLSv1.2' if has support for TLSv1.2,"
                                    "otherwise it will be '-all +TLSv1'.")
         parser.add_argument("--tls_cipher_suite"
@@ -553,7 +560,7 @@ def main():
         parser.add_option("--tls_protocols"
                             , dest="protocols"
                             , help="Set the TLS protocol selection criteria. This format is the same as Apache's SSLProtocol documented "
-                                   "at https://httpd.apache.org/docs/current/mod/mod_ssl.html#sslprotocol"
+                                   "at https://httpd.apache.org/docs/current/mod/mod_ssl.html#sslprotocol . "
                                    "If not specified the asadm will use '-all +TLSv1.2' if has support for TLSv1.2,"
                                    "otherwise it will be '-all +TLSv1'.")
         parser.add_option("--tls_cipher_suite"
@@ -642,7 +649,9 @@ def main():
         execute_only_mode = True
 
     ssl_context = parse_tls_input(cli_args)
-    readline.set_completer_delims(' \t\n;')
+    if not execute_only_mode:
+        import readline
+        readline.set_completer_delims(' \t\n;')
     shell = AerospikeShell(seed, telnet, user=user, password=password, use_services=use_services, log_path=log_path,
                            log_analyser=log_analyser, ssl_context=ssl_context, only_connect_seed=only_connect_seed, execute_only_mode=execute_only_mode)
 

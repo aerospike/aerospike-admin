@@ -1,5 +1,3 @@
-#!/usr/bin/env sh
-
 # Copyright 2013-2017 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,13 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-echo "Running unit test cases :"
-unit2 discover -s test/unit -t .
+CONFIG_SERVICE = "service"
+CONFIG_NETWORK = "network"
+CONFIG_NAMESPACE = "namespace"
+CONFIG_XDR = "xdr"
+CONFIG_DC = "dc"
+CONFIG_CLUSTER = "cluster"
 
-echo
-echo "Running e2e test cases :"
-unit2 discover -s test/e2e -t .
+STAT_SERVICE = "service"
+STAT_SETS = "sets"
+STAT_NAMESPACE = "namespace"
+STAT_XDR = "xdr"
+STAT_DC = "dc"
+STAT_BINS = "bins"
+STAT_SINDEX = "sindex"
 
-echo
-echo "Running asinfo test cases :"
-./test/test_asinfo.sh
+SUMMARY_SERVICE = "service"
+SUMMARY_NETWORK = "network"
+SUMMARY_NAMESPACE = "namespace"
+SUMMARY_SETS = "sets"
+SUMMARY_XDR = "xdr"
+SUMMARY_DC = "dc"
+SUMMARY_SINDEX = "sindex"

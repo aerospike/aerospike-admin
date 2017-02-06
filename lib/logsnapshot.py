@@ -1,8 +1,21 @@
+# Copyright 2013-2017 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import copy
 from lib import logutil
+from lib.logconstants import *
 from lib.logreader import LogReader
-
-__author__ = 'aerospike'
 
 class LogNode(object):
     def __init__(self, timestamp, node_name, node_id="N/E"):
@@ -72,8 +85,8 @@ class LogSnapshot(object):
 
     def get_prefixes(self):
         if not self.prefixes:
-            if self.cluster_data and "config" in self.cluster_data and "service" in self.cluster_data["config"]:
-                prefixes = self.cluster_data["config"]["service"].keys()
+            if self.cluster_data and "config" in self.cluster_data and CONFIG_SERVICE in self.cluster_data["config"]:
+                prefixes = self.cluster_data["config"][CONFIG_SERVICE].keys()
             else:
                 prefixes = LogReader.getPrefixes(self.cluster_file)
             for prefix in prefixes:
@@ -95,10 +108,10 @@ class LogSnapshot(object):
         try:
             if not self.cluster_data:
                 self.cluster_data = self.log_reader.read(self.cluster_file)
-                if self.cluster_data and "config" in self.cluster_data and "service" in self.cluster_data["config"]:
-                    self.set_nodes(self.cluster_data["config"]["service"].keys())
-                elif self.cluster_data and "statistics" in self.cluster_data and "service" in self.cluster_data["statistics"]:
-                    self.set_nodes(self.cluster_data["statistics"]["service"].keys())
+                if self.cluster_data and "config" in self.cluster_data and CONFIG_SERVICE in self.cluster_data["config"]:
+                    self.set_nodes(self.cluster_data["config"][CONFIG_SERVICE].keys())
+                elif self.cluster_data and "statistics" in self.cluster_data and STAT_SERVICE in self.cluster_data["statistics"]:
+                    self.set_nodes(self.cluster_data["statistics"][STAT_SERVICE].keys())
                 self.set_node_id()
                 self.set_ip()
                 self.set_xdr_build()
@@ -151,11 +164,11 @@ class LogSnapshot(object):
         return len(self.nodes.keys())
 
     def set_node_id(self):
-        node_ids = self.fetch_columns_for_nodes(type="summary", stanza="service", header_columns=['Node'],column_to_find=['Node','Id'],symbol_to_neglct='.')
+        node_ids = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_SERVICE, header_columns=['Node'],column_to_find=['Node','Id'],symbol_to_neglct='.')
         if not node_ids:
-            node_ids = self.fetch_columns_for_nodes(type="summary", stanza="network", header_columns=['Node'],column_to_find=['Node','Id'],symbol_to_neglct='.')
+            node_ids = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_NETWORK, header_columns=['Node'],column_to_find=['Node','Id'],symbol_to_neglct='.')
         if not node_ids and self.get_node_count()==1:
-            service_stats = self.get_data(type="statistics", stanza="service")
+            service_stats = self.get_data(type="statistics", stanza=STAT_SERVICE)
             for node in self.nodes:
                 self.nodes[node].set_node_id(logutil.fetch_value_from_dic(service_stats, [node, 'paxos_principal']))
         elif node_ids:
@@ -164,25 +177,25 @@ class LogSnapshot(object):
                     self.nodes[node].set_node_id(node_ids[node])
 
     def set_ip(self):
-        ips = self.fetch_columns_for_nodes(type="summary", stanza="service", header_columns=['Node','Ip'],column_to_find=['Ip'],symbol_to_neglct='.')
+        ips = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_SERVICE, header_columns=['Node','Ip'],column_to_find=['Ip'],symbol_to_neglct='.')
         if not ips:
-            ips = self.fetch_columns_for_nodes(type="summary", stanza="network", header_columns=['Node','Ip'],column_to_find=['Ip'],symbol_to_neglct='.')
+            ips = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_NETWORK, header_columns=['Node','Ip'],column_to_find=['Ip'],symbol_to_neglct='.')
         if ips:
             for node in ips:
                 if node in self.nodes:
                     self.nodes[node].set_ip(ips[node])
 
     def set_xdr_build(self):
-        xdr_builds = self.fetch_columns_for_nodes(type="summary", stanza="xdr", header_columns=['Node','Build'],column_to_find=['Build'],symbol_to_neglct='.')
+        xdr_builds = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_XDR, header_columns=['Node','Build'],column_to_find=['Build'],symbol_to_neglct='.')
         if xdr_builds:
             for node in xdr_builds:
                 if node in self.nodes:
                     self.nodes[node].set_xdr_build(xdr_builds[node])
 
     def set_asd_build(self):
-        asd_builds = self.fetch_columns_for_nodes(type="summary", stanza="service", header_columns=['Node','Build'],column_to_find=['Build'],symbol_to_neglct='.')
+        asd_builds = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_SERVICE, header_columns=['Node','Build'],column_to_find=['Build'],symbol_to_neglct='.')
         if not asd_builds:
-            asd_builds = self.fetch_columns_for_nodes(type="summary", stanza="network", header_columns=['Node','Build'],column_to_find=['Build'],symbol_to_neglct='.')
+            asd_builds = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_NETWORK, header_columns=['Node','Build'],column_to_find=['Build'],symbol_to_neglct='.')
         if asd_builds:
             for node in asd_builds:
                 if node in self.nodes and asd_builds[node]:
@@ -196,14 +209,14 @@ class LogSnapshot(object):
                         self.nodes[node].set_asd_build(asd_builds[node])
 
     def set_asd_version(self):
-        asd_versions = self.fetch_columns_for_nodes(type="summary", stanza="network", header_columns=['Node','Enterprise'],column_to_find=['Enterprise'],symbol_to_neglct='.')
+        asd_versions = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_NETWORK, header_columns=['Node','Enterprise'],column_to_find=['Enterprise'],symbol_to_neglct='.')
         if asd_versions:
             for node in asd_versions:
                 if node in self.nodes and asd_versions[node]:
                     self.nodes[node].set_asd_version(asd_versions[node])
 
     def set_cluster_name(self):
-        cluster_names = self.fetch_columns_for_nodes(type="summary", stanza="network", header_columns=['Cluster','Node'],column_to_find=['Cluster', 'Name'],symbol_to_neglct='.')
+        cluster_names = self.fetch_columns_for_nodes(type="summary", stanza=SUMMARY_NETWORK, header_columns=['Cluster','Node'],column_to_find=['Cluster', 'Name'],symbol_to_neglct='.')
         if cluster_names:
             for node in cluster_names:
                 if node in self.nodes:

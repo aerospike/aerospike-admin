@@ -1,16 +1,17 @@
-# Copyright 2013-2016 Aerospike, Inc.
+# Copyright 2013-2017 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http:#www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 import threading
 
@@ -113,7 +114,7 @@ class Cluster(object):
     def getLiveNodes(self):
         return self._live_nodes
 
-    def getClusterVisibilityErrorNodes(self):
+    def getVisibilityErrorNodes(self):
         visible = self.getLiveNodes()
         cluster_visibility_error_nodes = []
         for k in self.nodes.keys():
@@ -127,6 +128,27 @@ class Cluster(object):
                 cluster_visibility_error_nodes.append(node.key)
 
         return cluster_visibility_error_nodes
+
+    def getDownNodes(self):
+        cluster_down_nodes = []
+        for k in self.nodes.keys():
+            try:
+                node = self.nodes[k]
+                if not node.alive:
+                    # in case of using alumni services, we might have offline nodes which can't detect online nodes
+                    continue
+                alumni_peers = util.flatten(node.get_alumni_peers())
+                peers = util.flatten(node.get_peers())
+                not_visible = set(alumni_peers) - set(peers)
+                if len(not_visible) >= 1:
+                    for n in not_visible:
+                        _key = Node.createKey(n[0], n[1])
+                        if _key not in cluster_down_nodes:
+                            cluster_down_nodes.append(_key)
+            except Exception:
+                pass
+
+        return cluster_down_nodes
 
     def update_aliases(self, aliases, endpoints, key):
         for e in endpoints:

@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http:#www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,9 +16,14 @@ from lib import terminal
 from lib.info import authenticate, info
 import socket
 import warnings
-with warnings.catch_warnings():
-	warnings.filterwarnings("ignore", category=DeprecationWarning)
-	from OpenSSL import SSL
+
+try:
+	with warnings.catch_warnings():
+		warnings.filterwarnings("ignore", category=DeprecationWarning)
+		from OpenSSL import SSL
+	HAVE_PYOPENSSL = True
+except ImportError:
+	HAVE_PYOPENSSL = False
 
 class ASSocket:
 	def __init__(self, node, ip, port, pool_size=3):
@@ -30,7 +35,10 @@ class ASSocket:
 
 	def _wrap_socket(self, sock, ctx):
 		if ctx:
-			sock = SSL.Connection(ctx, sock)
+			if HAVE_PYOPENSSL:
+				sock = SSL.Connection(ctx, sock)
+			else:
+				raise ImportError("No module named pyOpenSSL")
 
 		return sock
 
