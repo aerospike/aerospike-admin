@@ -14,8 +14,9 @@
 
 import test_util
 import unittest2 as unittest
-import lib.util as util
-import lib.controller as controller
+
+import lib.basiccontroller as controller
+import lib.utils.util as util
 
 
 class TestInfo(unittest.TestCase):
@@ -30,7 +31,7 @@ class TestInfo(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        TestInfo.rc = controller.RootController()
+        TestInfo.rc = controller.BasicRootController()
         actual_out = util.capture_stdout(TestInfo.rc.execute, ['info'])
         TestInfo.output_list = test_util.get_separate_output(actual_out, 'Information')
         # TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex']))            
@@ -52,7 +53,7 @@ class TestInfo(unittest.TestCase):
         """
         This test will assert <b> info Network </b> output for heading, headerline1, headerline2
         and no of row displayed in output
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~Network Information~~"
         exp_header = [   'Node',
@@ -73,12 +74,12 @@ class TestInfo(unittest.TestCase):
         self.assertTrue(set(exp_header).issubset(actual_header))
         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
-    @unittest.skip("Skipping by default, to make it work please enable in setupClass also")
+    @unittest.skip("Skipping by default, to make it work please enable in setup_class also")
     def test_sindex(self):
         """
         This test will assert <b> info sindex </b> output for heading, headerline1, headerline2
         and no of row displayed in output
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = '~~Secondary Index Information~~'
         exp_header = ['Node', 
@@ -101,7 +102,7 @@ class TestInfo(unittest.TestCase):
         """
         This test will assert <b> info Namespace </b> output for heading, headerline1, headerline2
         and no of row displayed in output
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~Namespace Information~~"
         exp_header = [   'Node',
@@ -128,7 +129,7 @@ class TestInfo(unittest.TestCase):
         """
         This test will assert <b> info Namespace </b> output for heading, headerline1, headerline2
         and no of row displayed in output
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~XDR Information~~"
         exp_header = ['Node', 

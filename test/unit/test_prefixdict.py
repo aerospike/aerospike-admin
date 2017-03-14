@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from mock import patch, Mock
 import unittest2 as unittest
-from lib.prefixdict import PrefixDict, SuffixDict
+from lib.utils.prefixdict import PrefixDict, SuffixDict
 
 class PrefixDictTest(unittest.TestCase):
     def setUp(self):
@@ -48,11 +47,11 @@ class PrefixDictTest(unittest.TestCase):
         self.assertRaises(KeyError, self.test_dict.__getitem__, 'asdf')
 
     def test_getkey(self):
-        keys = self.test_dict.getKey('u0')
+        keys = self.test_dict.get_key('u0')
         self.assertTrue('u01.citrusleaf.local' in keys)
         self.assertTrue('u02.citrusleaf.local' in keys)
         self.assertEqual(len(keys), 2)
-        self.assertRaises(KeyError, self.test_dict.getKey, 'asdf')
+        self.assertRaises(KeyError, self.test_dict.get_key, 'asdf')
 
     def test_keys(self):
         keys = self.test_dict.keys()
@@ -64,14 +63,14 @@ class PrefixDictTest(unittest.TestCase):
         self.assertTrue('u01.citrusleaf.local' in self.test_dict)
         self.assertFalse('asdf' in self.test_dict)
 
-    def test_getPrefix(self):
-        prefix = self.test_dict.getPrefix('u01')
+    def test_get_prefix(self):
+        prefix = self.test_dict.get_prefix('u01')
         self.assertEqual(prefix, 'u01')
 
-        prefix = self.test_dict.getPrefix('u01.cit')
+        prefix = self.test_dict.get_prefix('u01.cit')
         self.assertEqual(prefix, 'u01')
 
-        self.assertRaises(KeyError, self.test_dict.getPrefix, 'asdf')
+        self.assertRaises(KeyError, self.test_dict.get_prefix, 'asdf')
 
     def test_setitem(self):
         self.test_dict['u33'] = 5
@@ -81,7 +80,7 @@ class PrefixDictTest(unittest.TestCase):
         self.assertTrue(1 in self.test_dict['u01'])
         self.assertTrue(10 in self.test_dict['u01'])
 
-class SuffixDictTest(unittest.TestCase):
+class SuffixDict_test(unittest.TestCase):
     def setUp(self):
         self.test_dict = t = SuffixDict()
 
@@ -114,11 +113,11 @@ class SuffixDictTest(unittest.TestCase):
         self.assertRaises(KeyError, self.test_dict.__getitem__, 'asdf')
 
     def test_getkey(self):
-        keys = self.test_dict.getKey('1')
+        keys = self.test_dict.get_key('1')
         self.assertTrue('192.168.0.11' in keys)
         self.assertTrue('192.168.0.21' in keys)
         self.assertEqual(len(keys), 2)
-        self.assertRaises(KeyError, self.test_dict.getKey, 'asdf')
+        self.assertRaises(KeyError, self.test_dict.get_key, 'asdf')
 
     def test_keys(self):
         keys = self.test_dict.keys()
@@ -130,14 +129,14 @@ class SuffixDictTest(unittest.TestCase):
         self.assertTrue('192.168.0.11' in self.test_dict)
         self.assertFalse('asdf' in self.test_dict)
 
-    def test_getPrefix(self):
-        prefix = self.test_dict.getPrefix('192.168.0.11')
+    def test_get_prefix(self):
+        prefix = self.test_dict.get_prefix('192.168.0.11')
         self.assertEqual(prefix, '11')
 
-        prefix = self.test_dict.getPrefix('0.12')
+        prefix = self.test_dict.get_prefix('0.12')
         self.assertEqual(prefix, '12')
 
-        self.assertRaises(KeyError, self.test_dict.getPrefix, 'asdf')
+        self.assertRaises(KeyError, self.test_dict.get_prefix, 'asdf')
 
     def test_setitem(self):
         self.test_dict['192.168.0.31'] = 5

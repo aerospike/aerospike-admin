@@ -7,22 +7,29 @@ Start the tool with *asadm* and run the *help* command to get started.
 ## Installing Aerospike Admin
 ```
 sudo ./asadm-deps/install.sh
-make
+sudo make
 sudo make install
 ```
 
-## Running Aerospike Admin in Cluster Mode
+## Running Aerospike Admin in Live Cluster Mode.
 asadm -h <Aerospike Server Address>
 Admin> help
 
-## Running Aerospike Admin in Log-analyser Mode
+## Running Aerospike Admin in Log-analyser Mode.
 asadm -l [-f <location of logs>]
 Admin> help
+
+## Running Aerospike Admin in Collectinfo Mode.
+asadm -c [-f <location of collectinfo>]
+Admin> help
+
 
 ## Dependencies
 - python 2.6+ (< 3)
 
 ### Python Modules
+- ply: >= 3.4
+- pexpect: >= 3.0
 - pyOpenSSL: 16.2.0
 
 ### Installing Python Module Dependencies

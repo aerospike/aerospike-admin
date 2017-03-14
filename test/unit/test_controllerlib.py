@@ -12,22 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from mock import patch, Mock
 import unittest2 as unittest
-from lib.controllerlib import *
-import inspect
+from lib.controllerlib import BaseController, CommandController, CommandHelp, ShellException
 
 class CommandHelpTest(unittest.TestCase):
-    def test_hasHelp(self):
+    def test_has_help(self):
         def tester():
             return
 
-        self.assertFalse(CommandHelp.hasHelp(tester))
+        self.assertFalse(CommandHelp.has_help(tester))
 
         msg = CommandHelp("test", "test", "test")
         tester = msg(tester)
 
-        self.assertTrue(CommandHelp.hasHelp(tester))
+        self.assertTrue(CommandHelp.has_help(tester))
 
 class FakeRoot(BaseController):
     def __init__(self):
@@ -79,8 +77,8 @@ class ControllerLibTest(unittest.TestCase):
             actual_completions = r.complete(line[:])
             self.assertEqual(actual_completions, expected_completions)
 
-    def test_findMethod(self):
-        z = FakeCommand2()
+    def test_find_method(self):
+        FakeCommand2()
         test_lines = [
             ([], '_do_default')
             , (['fake'], 'ShellException')
@@ -98,12 +96,12 @@ class ControllerLibTest(unittest.TestCase):
             try:
                 tline = line[:]
 
-                actual_method = r._findMethod(tline)
+                actual_method = r._find_method(tline)
                 
                 try:
                     while(True):
                         actual_method._init()
-                        actual_method = actual_method._findMethod(tline)
+                        actual_method = actual_method._find_method(tline)
                 except AttributeError:
                     pass
 
@@ -112,7 +110,7 @@ class ControllerLibTest(unittest.TestCase):
                 except AttributeError:
                     self.assertEqual(actual_method.__class__.__name__
                                      , expected_method)
-            except ShellException as actual_exception:
+            except ShellException:
                 self.assertEqual('ShellException'
                                  , expected_method)
 
@@ -137,7 +135,7 @@ class ControllerLibTest(unittest.TestCase):
             else:
                 self.assertEqual(expected_result, actual_result)
 
-    def test_preCommand(self):
+    def test_pre_command(self):
         test_lines = [
             ("cmd test like bar with a".split(' ')
              , [(set([]), {'line': "test like bar with a".split(' ')})
@@ -165,7 +163,7 @@ class ControllerLibTest(unittest.TestCase):
             for modifiers, expected in results:
                 c = FakeCommand1()
                 c.modifiers = modifiers
-                retval = c(line[:]) # preCommand is a hook
+                retval = c(line[:]) # pre_command is a hook
                 # print ""
                 # print "modifiers ", c.modifiers
                 # print "line:     ", line

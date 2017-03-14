@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import mock
 import unittest2 as unittest
-from lib import util
 import time
-from lib import timeout
+
+from lib.utils import timeout
+from lib.client import util
 
 class UtilTest(unittest.TestCase):
-    def testInfoToDict(self):
+    def test_info_to_dict(self):
         value = "a=1;b=@;c=c;d=1@"
         expected = {'a':'1', 'b':'@', 'c':'c', 'd':'1@'}
         result = util.info_to_dict(value)
@@ -28,13 +28,13 @@ class UtilTest(unittest.TestCase):
         result = util.info_to_dict(value, ':')
         self.assertEqual(result, expected)
 
-    def testInfoColonToDict(self):
+    def test_info_colon_to_dict(self):
         value = "a=1:b=@:c=c:d=1@"
         expected = {'a':'1', 'b':'@', 'c':'c', 'd':'1@'}
         result = util.info_colon_to_dict(value)
         self.assertEqual(result, expected)
 
-    def testInfoToList(self):
+    def test_info_to_list(self):
         value = "a=1;b=@;c=c;d=1@"
         expected = ['a=1', 'b=@', 'c=c', 'd=1@']
         result = util.info_to_list(value)
@@ -43,7 +43,7 @@ class UtilTest(unittest.TestCase):
         result = util.info_to_list(value, ':')
         self.assertEqual(result, expected)
 
-    def testInfoToTuple(self):
+    def test_info_to_tuple(self):
         value = "a=1;b=@;c=c;d=1@"
         expected = ('a=1', 'b=@', 'c=c', 'd=1@')
         result = util.info_to_tuple(value, ';')
@@ -52,13 +52,13 @@ class UtilTest(unittest.TestCase):
         result = util.info_to_tuple(value)
         self.assertEqual(result, expected)
 
-    def testConcurrentMap(self):
+    def test_concurrent_map(self):
         value = range(10)
         expected = map(lambda v: v*v, value)
         result = util.concurrent_map(lambda v: v*v, value)
         self.assertEqual(result, expected)
 
-    def testCached(self):
+    def test_cached(self):
         def tester(arg1, arg2, sleep):
             time.sleep(sleep)
             return arg1 + arg2

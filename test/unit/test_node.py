@@ -13,45 +13,46 @@
 # limitations under the License.
 
 from mock import patch, Mock
-import unittest2 as unittest
-from lib.node import Node
-import lib
 import socket
+import unittest2 as unittest
+
+import lib
+from lib.client.node import Node
 
 class NodeTest(unittest.TestCase):
-    def getInfoMock(self, return_value):
-        Node._infoCInfo.return_value = return_value
-        Node._infoTelnet.return_value = return_value
+    def get_info_mock(self, return_value):
+        Node._info_cinfo.return_value = return_value
+        Node._info_telnet.return_value = return_value
 
         n = Node("127.0.0.1")
 
         return n
 
     def setUp(self):
-        info_cinfo = patch('lib.node.Node._infoCInfo')
-        info_telnet = patch('lib.node.Node._infoTelnet')
-        getfqdn = patch('lib.node.getfqdn')
+        info_cinfo = patch('lib.client.node.Node._info_cinfo')
+        info_telnet = patch('lib.client.node.Node._info_telnet')
+        getfqdn = patch('lib.client.node.getfqdn')
         getaddrinfo = patch('socket.getaddrinfo')
 
         self.addCleanup(patch.stopall)
 
-        Node._infoCInfo = info_cinfo.start()
-        Node._infoTelnet = info_telnet.start()
-        lib.node.getfqdn = getfqdn.start()
+        lib.client.node.Node._info_cinfo = info_cinfo.start()
+        Node._info_telnet = info_telnet.start()
+        lib.client.node.getfqdn = getfqdn.start()
         socket.getaddrinfo = getaddrinfo.start()
 
-        Node._infoCInfo.return_value = ""
-        Node._infoTelnet.return_value = ""
-        lib.node.getfqdn.return_value = "host.domain.local"
+        Node._info_cinfo.return_value = ""
+        Node._info_telnet.return_value = ""
+        lib.client.node.getfqdn.return_value = "host.domain.local"
         socket.getaddrinfo.return_value = [(2, 1, 6, '', ('192.1.1.1', 3000))]
 
     #@unittest.skip("Known Failure")
-    def testInitNode(self):
+    def test_init_node(self):
         """
         Ensures that we can instantiate a Node and that the node acquires the
         correct information
         """
-        n = self.getInfoMock("A00000000000000")
+        n = self.get_info_mock("A00000000000000")
 
         self.assertEqual(n.ip, '192.1.1.1', 'IP address is not correct')
 
@@ -61,86 +62,86 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(n.port, 3000, 'Port is not correct')
         self.assertEqual(n.node_id, 'A00000000000000', 'Node Id is not correct')
 
-    def testInfoInit(self):
+    def test_info_init(self):
         """
         Ensure that when passed use_telnet false or true the appropriate _info
         function is called
         """
-        n = self.getInfoMock("")
+        n = self.get_info_mock("")
 
         n.info("node")
-        assert n._infoCInfo.called, "_infoCInfo was not called"
+        assert n._info_cinfo.called, "_info_cinfo was not called"
 
         n._use_telnet = True
         n.info("ndoe")
-        assert n._infoTelnet.called, "_infoTelnet was not called"
+        assert n._info_telnet.called, "_info_telnet was not called"
 
-    def testInfoServices(self):
+    def test_info_services(self):
         """
         Ensure function returns a list of tuples
         """
-        n = self.getInfoMock("192.168.120.111:3000;127.0.0.1:3000")
-        services = n.infoServices()
+        n = self.get_info_mock("192.168.120.111:3000;127.0.0.1:3000")
+        services = n.info_services()
         expected = [("192.168.120.111",3000,None), ("127.0.0.1",3000,None)]
-        self.assertEqual(services, expected, "infoServices did not return the expected result")
+        self.assertEqual(services, expected, "info_services did not return the expected result")
 
-    def testInfoServicesAlumni(self):
+    def test_info_services_alumni(self):
         """
         Ensure function returns a list of tuples
         """
-        n = self.getInfoMock("192.168.120.111:3000;127.0.0.1:3000")
-        services = n.infoServicesAlumni()
+        n = self.get_info_mock("192.168.120.111:3000;127.0.0.1:3000")
+        services = n.info_services_alumni()
         expected = [("192.168.120.111",3000,None), ("127.0.0.1",3000,None)]
         self.assertEqual(services, expected,
-            "infoServicesAlumni did not return the expected result")
+            "info_services_alumni did not return the expected result")
 
-    def testInfoStatistics(self):
-        # TODO: Currently infoStatistics is mocked and cannot be unmocked
-        n = self.getInfoMock("cs=2;ck=71;ci=false;o=5")
-        stats = n.infoStatistics()
+    def test_info_statistics(self):
+        # TODO: Currently info_statistics is mocked and cannot be unmocked
+        n = self.get_info_mock("cs=2;ck=71;ci=false;o=5")
+        stats = n.info_statistics()
         expected = {"cs":"2","ck":"71","ci":"false","o":"5"}
         self.assertEqual(stats, expected,
-            "infoStatistics error:\nExpected:\t%s\nFound:\t%s"%(expected,stats))
+            "info_statistics error:\n_expected:\t%s\n_found:\t%s"%(expected,stats))
 
-    def testInfoNamespaces(self):
-        # TODO: Currently infoNamespaces is mocked and cannot be unmocked
-        n = self.getInfoMock("test;bar")
-        namespaces = n.infoNamespaces()
+    def test_info_namespaces(self):
+        # TODO: Currently info_namespaces is mocked and cannot be unmocked
+        n = self.get_info_mock("test;bar")
+        namespaces = n.info_namespaces()
         expected = ["test", "bar"]
         self.assertEqual(namespaces, expected,
-            "infoNamespaces error:\nExpected:\t%s\nFound:\t%s"%(expected,namespaces))
+            "info_namespaces error:\n_expected:\t%s\n_found:\t%s"%(expected,namespaces))
 
-    def testInfoNode(self):
-        # TODO: Currently infoNode is mocked and cannot be unmocked
-        n = self.getInfoMock("BB96DDF04CA0568")
-        node = n.infoNode()
+    def test_info_node(self):
+        # TODO: Currently info_node is mocked and cannot be unmocked
+        n = self.get_info_mock("BB96DDF04CA0568")
+        node = n.info_node()
         expected = "BB96DDF04CA0568"
         self.assertEqual(node, expected,
-            "infoNode error:\nExpected:\t%s\nFound:\t%s"%(expected,node))
+            "info_node error:\n_expected:\t%s\n_found:\t%s"%(expected,node))
 
-    def testInfoNamespaceStatistics(self):
-        n = self.getInfoMock("asdf=1;b=b;c=!@#$%^&*()")
-        stats = n.infoNamespaceStatistics("test")
+    def test_info_namespace_statistics(self):
+        n = self.get_info_mock("asdf=1;b=b;c=!@#$%^&*()")
+        stats = n.info_namespace_statistics("test")
         expected = {"asdf":"1", "b":"b", "c":"!@#$%^&*()"}
         self.assertEqual(stats, expected,
-            "infoNamespaceStatistics error:\nExpected:\t%s\nFound:\t%s"%(expected,stats))
+            "info_namespace_statistics error:\n_expected:\t%s\n_found:\t%s"%(expected,stats))
     
     @unittest.skip("unknown Failure")
-    def testInfoGetConfig(self):
+    def test_info_get_config(self):
         # todo call getconfig with various formats
-        n = self.getInfoMock("asdf=1;b=b;c=!@#$%^&*()")
-        config = n.infoGetConfig("service")
+        n = self.get_info_mock("asdf=1;b=b;c=!@#$%^&*()")
+        config = n.info_get_config("service")
         expected = {"service":{"asdf":"1", "b":"b", "c":"!@#$%^&*()"}}
         self.assertEqual(config, expected,
-            "infoNamespaceStatistics error:\nExpected:\t%s\nFound:\t%s"%(expected,config))
-        n._infoCInfo.assert_called_with("get-config:context=service")
-        n.infoGetConfig("namespace", "test")
-        n._infoCInfo.assert_called_with("get-config:context=namespace;id=test")
-        n.infoNamespaces = Mock()
-        n.infoNamespaces.return_value = ["test_two",]
-        n.infoGetConfig("all")
-        n.infoNamespaces.assert_called()
-        n._infoCInfo.assert_anny_call(
+            "info_namespace_statistics error:\n_expected:\t%s\n_found:\t%s"%(expected,config))
+        n._info_cinfo.assert_called_with("get-config:context=service")
+        n.info_get_config("namespace", "test")
+        n._info_cinfo.assert_called_with("get-config:context=namespace;id=test")
+        n.info_namespaces = Mock()
+        n.info_namespaces.return_value = ["test_two",]
+        n.info_get_config("all")
+        n.info_namespaces.assert_called()
+        n._info_cinfo.assert_anny_call(
             "get-config:context=namespace;id=test_two")
 
 if __name__ == "__main__":

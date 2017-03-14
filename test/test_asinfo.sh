@@ -53,8 +53,9 @@ if ! run_test ${asinfo_cmd} ${output_substring} ; then
 fi
 
 asinfo_cmd="get-dc-config"
-output_substring="DC_Name"
-if ! run_test ${asinfo_cmd} ${output_substring} ; then
+output_substring1="dc-name"
+output_substring2="DC_Name"
+if ( ! run_test ${asinfo_cmd} ${output_substring1} ) && ( ! run_test ${asinfo_cmd} ${output_substring2} ) ; then
 	echo "Error while running asinfo command: ${asinfo_cmd}"
 	exit 1
 fi

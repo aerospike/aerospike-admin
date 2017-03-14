@@ -12,17 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import test_util
 import unittest2 as unittest
-import lib.util as util
-import lib.controller as controller
+
+import lib.basiccontroller as controller
 
 
 class TestCollectinfo(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        TestCollectinfo.rc = controller.RootController()
+        TestCollectinfo.rc = controller.BasicRootController()
         # actual_out = util.capture_stdout(TestCollectinfo.rc.execute, ['collectinfo'])
 
     def test_collectinfo(self):

@@ -12,27 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib import view, terminal
-from lib.cluster import Cluster
-from lib.logger import Logger
-from lib.controllerlib import *
-from lib.prefixdict import PrefixDict
-from lib import util
 import inspect
 import re
+import logging
+
+from lib.health.healthchecker import HealthChecker
+from lib.utils import util
+from lib.utils.prefixdict import PrefixDict
+from lib.view import view, terminal
 
 DEFAULT = "_do_default"
 
+
 class CommandHelp(object):
+
     def __init__(self, *message):
         self.message = list(message)
 
     def __call__(self, func):
         try:
             if func.__name__ == DEFAULT:
-                self.message[0] = "%sDefault%s: %s"%(terminal.underline()
-                                                     , terminal.reset()
-                                                     , self.message[0])
+                self.message[0] = "%sDefault%s: %s" % (
+                    terminal.underline(), terminal.reset(), self.message[0])
         except Exception:
             pass
 
@@ -41,57 +42,56 @@ class CommandHelp(object):
         return func
 
     @staticmethod
-    def hasHelp(func):
+    def has_help(func):
         try:
-            _ = func._command_help
+            func._command_help
             return True
-        except Exception as e:
+        except Exception:
             return False
 
     @staticmethod
-    def display(func, indent = 0):
+    def display(func, indent=0):
         indent = "  " * indent
         try:
-            print "\n".join(map(lambda l: indent+l, func._command_help))
+            print "\n".join(map(lambda l: indent + l, func._command_help))
         except Exception:
             pass
 
     @staticmethod
-    def printText(message, indent = 0):
+    def print_text(message, indent=0):
         indent = "  " * indent
-        print "%s%s"%(indent, message)
-            
+        print "%s%s" % (indent, message)
+
 
 class ShellException(Exception):
+
     def __call__(self, *ignore):
         # act as a callable and raise self
         raise self
 
+
 class BaseController(object):
     view = None
-    cluster = None
-    logger = None
+    health_checker = None
     asadm_version = ''
+    logger = None
 
-    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], use_telnet=False, user=None, password=None,
-                 use_services=True, ssl_context=None, asadm_version='', log_path="", only_connect_seed=False):
-
-        cls = BaseController
-        cls.view = view.CliView()
-        if log_path:
-            cls.logger = Logger(log_path)
-        else:
-            cls.cluster = Cluster(seed_nodes, use_telnet, user, password, use_services, ssl_context=ssl_context, only_connect_seed=only_connect_seed)
-            cls.asadm_version = asadm_version
-
+    def __init__(self, asadm_version=''):
+        # Create static instances of view / health_checker / asadm_version /
+        # logger
+        BaseController.view = view.CliView()
+        BaseController.health_checker = HealthChecker()
+        BaseController.asadm_version = asadm_version
+        BaseController.logger = logging.getLogger("asadm")
         # instance vars
         self.modifiers = set()
 
-    def _initCommands(self):
+    def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
         commands = map(lambda v:
-                       command_re.match(v).groups()
-                       , filter(command_re.search, dir(self)))
+                       command_re.match(v).groups(),
+                       filter(command_re.search, dir(self)))
+
         self.commands = PrefixDict()
 
         for command in commands:
@@ -110,7 +110,7 @@ class BaseController(object):
 
         command = line.pop(0) if line else ''
 
-        commands = self.commands.getKey(command)
+        commands = self.commands.get_key(command)
 
         if command != commands[0] and len(line) == 0:
             # if user has full command name and is hitting tab,
@@ -127,18 +127,18 @@ class BaseController(object):
     def __call__(self, line):
         return self.execute(line)
 
-    def _initControllerMap(self):
-        try: # define controller map if not defined
+    def _init_controller_map(self):
+        try:  # define controller map if not defined
             if self.controller_map:
                 pass
         except Exception:
             self.controller_map = {}
 
     def _init(self):
-        self._initControllerMap()
-        self._initCommands()
+        self._init_controller_map()
+        self._init_commands()
 
-    def _findMethod(self, line):
+    def _find_method(self, line):
         method = None
         try:
             command = line.pop(0)
@@ -146,29 +146,31 @@ class BaseController(object):
             # Popped last element use default
             method = getattr(self, DEFAULT)
 
-        if method is None:
-            try:
-                method = self.commands[command]
-                if len(method) > 1:
-                    # handle ambiguos commands
-                    commands = sorted(self.commands.getKey(command))
-                    commands[-1] = "or %s"%(commands[-1])
-                    if len(commands) > 2:
-                        commands = ', '.join(commands)
-                    else:
-                        commands = ' '.join(commands)
-                    raise ShellException(
-                        "Ambiguous command: '%s' may be %s."%(command
-                                                              , commands))
-                else:
-                    method = method[0]
-            except KeyError:
-                line.insert(0, command)
+        if method is not None:
+            return method
 
-                # Maybe the controller understands the command from here
-                # Have to forward it to the controller since some commands
-                # may have strange options like asinfo
-                method = getattr(self, DEFAULT)
+        try:
+            method = self.commands[command]
+            if len(method) > 1:
+                # handle ambiguos commands
+                commands = sorted(self.commands.get_key(command))
+                commands[-1] = "or %s" % (commands[-1])
+                if len(commands) > 2:
+                    commands = ', '.join(commands)
+                else:
+                    commands = ' '.join(commands)
+                raise ShellException(
+                    "Ambiguous command: '%s' may be %s." % (command, commands))
+            else:
+                method = method[0]
+
+        except KeyError:
+            line.insert(0, command)
+
+            # Maybe the controller understands the command from here
+            # Have to forward it to the controller since some commands
+            # may have strange options like asinfo
+            method = getattr(self, DEFAULT)
 
         return method
 
@@ -185,16 +187,21 @@ class BaseController(object):
         return rv
 
     def execute(self, line):
+        # Init all command controller objects
         self._init()
 
-        method = self._findMethod(line)
+        method = self._find_method(line)
 
         if method:
             try:
                 if inspect.ismethod(method):
-                    self.preCommand(line[:])
+                    self.pre_command(line[:])
+
                 results = method(line)
-                if not isinstance(results, list) and not isinstance(results, tuple):
+
+                if (not isinstance(results, list)
+                        and not isinstance(results, tuple)):
+
                     if isinstance(results, util.Future):
                         results = (results,)
                     else:
@@ -205,68 +212,73 @@ class BaseController(object):
             except IOError as e:
                 raise ShellException(str(e))
         else:
-            raise ShellException(
-                "Method was not set? %s"%(line))
+            raise ShellException("Method was not set? %s" % (line))
 
-    def executeHelp(self, line, indent=0):
+    def execute_help(self, line, indent=0):
         self._init()
 
-        method = self._findMethod(line)
+        method = self._find_method(line)
+
         if method:
             try:
                 try:
                     method_name = method.__name__
                 except Exception:
-                    #method_name = method.__class__.__name__
                     method_name = None
 
-                if method_name == DEFAULT: # Print controller help
+                if method_name == DEFAULT:  # Print controller help
                     CommandHelp.display(self, indent=indent)
                     if self.modifiers:
-                        CommandHelp.printText(
-                            "%sModifiers%s: %s"%(terminal.underline()
-                                                 , terminal.reset()
-                                                 , ", ".join(
-                                                     sorted(self.modifiers)))
-                            , indent=indent)
-                    if CommandHelp.hasHelp(method):
+                        CommandHelp.print_text(
+                            "%sModifiers%s: %s" % (terminal.underline(),
+                                                    terminal.reset(), ", ".join(
+                                sorted(self.modifiers))), indent=indent)
+
+                    if CommandHelp.has_help(method):
                         CommandHelp.display(method, indent=indent)
 
                     indent += 2
                     for command in sorted(self.commands.keys()):
-                        CommandHelp.printText("- %s%s%s:"%(terminal.bold()
-                                                           , command
-                                                           , terminal.reset())
-                                              , indent=indent-1)
-                        self.executeHelp([command], indent=indent)
+                        CommandHelp.print_text(
+                            "- %s%s%s:" % (terminal.bold(), command,
+                                           terminal.reset()), indent=indent - 1)
+
+                        self.execute_help([command], indent=indent)
                     return
+
                 elif isinstance(method, ShellException):
                     # Method not implemented
                     pass
-                elif method_name is None: # Nothing to print yet
-                    method.executeHelp(line, indent=indent)
-                else: # Print help for a command
+
+                elif method_name is None:  # Nothing to print yet
+                    method.execute_help(line, indent=indent)
+
+                else:  # Print help for a command
                     CommandHelp.display(method, indent=indent)
                     return
-            except IOError as e: 
+
+            except IOError as e:
                 raise ShellException(str(e))
         else:
             raise ShellException(
-                "Method was not set? %s"%(line))
+                "Method was not set? %s" % (line))
 
     def _do_default(self, line):
         # Override method to provide default command behavior
-        raise ShellException("Do not understand '%s'"%(" ".join(line)))
+        raise ShellException("%s: command not found." % (" ".join(line)))
 
-    def preCommand(self, line):
-        pass # Hook to be defined by subclasses
+    # Hook to be defined by subclasses
+    def pre_command(self, line):
+        pass
+
 
 class CommandController(BaseController):
+
     def __init__(self):
         # Root controller configs class vars
         self.modifiers = set()
 
-    def parseModifiers(self, line, duplicates_in_line_allowed=False):
+    def parse_modifiers(self, line, duplicates_in_line_allowed=False):
         mods = self.modifiers
 
         groups = {}
@@ -282,26 +294,26 @@ class CommandController(BaseController):
             word = line.pop(0)
             if word in self.modifiers:
                 mod = word
-                if mod == 'diff':      # Special case for handling diff modifier of show config
+                # Special case for handling diff modifier of show config
+                if mod == 'diff':
                     groups[mod].append(True)
             else:
                 if duplicates_in_line_allowed or word not in groups[mod]:
                     groups[mod].append(word)
-
 
         if 'with' in mods and 'all' in groups['with']:
             groups['with'] = 'all'
 
         return groups
 
-    def preCommand(self, line):
+    def pre_command(self, line):
         try:
             if self.nodes:
                 return
         except Exception:
-            self.mods = self.parseModifiers(line)
-
+            self.mods = self.parse_modifiers(line)
             if not self.modifiers:
+                self.nodes = 'all'
                 return
 
             try:
@@ -313,5 +325,4 @@ class CommandController(BaseController):
                 else:
                     self.nodes = self.default_nodes
             except Exception:
-                self.nodes = 'all' # default not set use all
-
+                self.nodes = 'all'  # default not set use all

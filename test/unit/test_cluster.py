@@ -12,21 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from mock import patch, Mock
+from mock import patch
 import unittest2 as unittest
-from lib.cluster import Cluster
-from lib.node import Node
+from lib.client.node import Node
 
 class ClusterTest(unittest.TestCase):
-    def getInfoMock(self, return_value):
-        Node.info = mock.Mock()
+    def get_info_mock(self, return_value):
         n = Node("127.0.0.1")
         return n
 
     def setUp(self):
-        patcher = patch('lib.node.Node')
+        patcher = patch('lib.client.node.Node')
         self.addCleanup(patcher.stop)
         Node = patcher.start()
 
-    def testInitCluster(self):
+    def test_init_cluster(self):
         pass

@@ -14,15 +14,16 @@
 
 import test_util
 import unittest2 as unittest
-import lib.util as util
-import lib.controller as controller
+
+import lib.basiccontroller as controller
+import lib.utils.util as util
 
 
 class TestWatch(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        TestWatch.rc = controller.RootController()
+        TestWatch.rc = controller.BasicRootController()
         actual_out = util.capture_stdout(TestWatch.rc.execute, ['watch', '1', '3', 'info', 'network'])
         TestWatch.output_list = test_util.get_separate_output(actual_out, 'Information')
 

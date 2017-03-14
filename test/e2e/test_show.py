@@ -14,14 +14,13 @@
 
 import os
 import sys
-sys.path.insert(1, os.getcwd())
-
 import test_util
 import unittest2 as unittest
-# from .. import *
-import lib.util as util
-import lib.controller as controller
 
+import lib.basiccontroller as controller
+import lib.utils.util as util
+
+sys.path.insert(1, os.getcwd())
 
 class TestShowConfig(unittest.TestCase):
     output_list = list()
@@ -33,7 +32,7 @@ class TestShowConfig(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        rc = controller.RootController()
+        rc = controller.BasicRootController()
         actual_out = util.capture_stdout(rc.execute, ['show', 'config'])
         TestShowConfig.output_list = test_util.get_separate_output(actual_out, 'Configuration')
         TestShowConfig.is_bar_present = False
@@ -58,7 +57,7 @@ class TestShowConfig(unittest.TestCase):
     def test_network(self):
         """
         This test will assert network output on heading, header, parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
     
         exp_heading = "~~Network Configuration~~"
@@ -88,7 +87,7 @@ class TestShowConfig(unittest.TestCase):
     def test_service(self):
         """
         Asserts service config output with heading, header & parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         
         exp_heading = "~~Service Configuration~~"
@@ -158,7 +157,7 @@ class TestShowConfig(unittest.TestCase):
     def test_test_namespace(self):
         """
         Asserts namespace config output with heading, header & parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         
         exp_heading = "~~test Namespace Configuration~~"
@@ -196,7 +195,7 @@ class TestShowConfig(unittest.TestCase):
     def test_bar_namespace(self):
         """
         Asserts namespace config output with heading, header & parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         if not TestShowConfig.is_bar_present:
             return
@@ -237,7 +236,7 @@ class TestShowConfig(unittest.TestCase):
     def test_xdr(self):
         """
         Asserts XDR config output with heading, header & parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~XDR Configuration~~"
         exp_header = "NODE"
@@ -280,7 +279,7 @@ class TestShowLatency(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        TestShowLatency.rc = controller.RootController()
+        TestShowLatency.rc = controller.BasicRootController()
         actual_out = util.capture_stdout(TestShowLatency.rc.execute, ['show', 'latency'])
         TestShowLatency.output_list = test_util.get_separate_output(actual_out, 'Latency')
                           
@@ -307,7 +306,7 @@ class TestShowLatency(unittest.TestCase):
     def test_proxy_latency(self):      
         """
         Asserts <b> proxy latency <b> output with heading, header & no of node processed(based on row count).
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~proxy Latency~~"
         exp_header= ['Node', 
@@ -332,7 +331,7 @@ class TestShowLatency(unittest.TestCase):
     def test_query_latency(self):      
             """
             Asserts <b> query latency <b> output with heading, header & no of node processed(based on row count).
-            ToDo: test for values as well
+            TODO: test for values as well
             """
             exp_heading = "~~query Latency~~"
             exp_header= ['Node', 
@@ -358,7 +357,7 @@ class TestShowLatency(unittest.TestCase):
     def test_reads_latency(self):      
         """
         Asserts <b> reads latency <b> output with heading, header & no of node processed(based on row count).
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = [("~~reads Latency~~", "~~read Latency~~")]
         exp_header= ['Node', 
@@ -384,7 +383,7 @@ class TestShowLatency(unittest.TestCase):
     def test_udf_latency(self):      
         """
         Asserts <b> udf latency <b> output with heading, header & no of node processed(based on row count).
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~udf Latency~~"
         exp_header= ['Node', 
@@ -410,7 +409,7 @@ class TestShowLatency(unittest.TestCase):
     def test_writes_master_latency(self):      
         """
         Asserts <b> writes_master latency <b> output with heading, header & no of node processed(based on row count).
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~writes_master Latency~~"
         exp_header= ['Node', 
@@ -436,7 +435,7 @@ class TestShowLatency(unittest.TestCase):
     def test_write_latency(self):
         """
         Asserts <b> writes_master latency <b> output with heading, header & no of node processed(based on row count).
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~write Latency~~"
         exp_header= ['Node',
@@ -466,7 +465,7 @@ class TestShowDistribution(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        rc = controller.RootController()
+        rc = controller.BasicRootController()
         actual_out = util.capture_stdout(rc.execute, ['show', 'distribution'])
         # use regex in get_separate_output(~.+Distribution.*~.+) 
         #if you are changing below Distribution keyword
@@ -490,7 +489,7 @@ class TestShowDistribution(unittest.TestCase):
     def test_test_ttl(self):
         """
         Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~test - TTL Distribution in Seconds~~"
         exp_header = """Percentage of records having ttl less than or equal
@@ -510,7 +509,7 @@ class TestShowDistribution(unittest.TestCase):
     def test_bar_ttl(self):
         """
         Asserts TTL Distribution in Seconds for bar namespace with heading, header & parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         if not TestShowDistribution.is_bar_present:
             return
@@ -540,7 +539,7 @@ class TestShowStatistics(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        rc = controller.RootController()
+        rc = controller.BasicRootController()
         actual_out = util.capture_stdout(rc.execute, ['show', 'statistics'])
         TestShowStatistics.output_list = test_util.get_separate_output(actual_out, 'Statistics')
         TestShowStatistics.is_bar_present = False
@@ -568,7 +567,7 @@ class TestShowStatistics(unittest.TestCase):
     def test_test_bin(self):
         """
         This test will assert <b> test Bin Statistics </b> output for heading, header and parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~test Bin Statistics~"
         exp_header = "NODE"
@@ -583,7 +582,7 @@ class TestShowStatistics(unittest.TestCase):
     def test_bar_bin(self):
         """
         This test will assert <b> bar Bin Statistics </b> output for heading, header and parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         if not TestShowStatistics.is_bar_present:
             return
@@ -600,7 +599,7 @@ class TestShowStatistics(unittest.TestCase):
     def test_service(self):
         """
         This test will assert <b> Service Statistics </b> output for heading, header and parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~Service Statistics~"
         exp_header = "NODE"
@@ -771,7 +770,7 @@ class TestShowStatistics(unittest.TestCase):
     def test_bar_namespace(self):
         """
         This test will assert <b> bar Namespace Statistics </b> output for heading, header and parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         if not TestShowStatistics.is_bar_present:
             return
@@ -838,7 +837,7 @@ class TestShowStatistics(unittest.TestCase):
     def test_test_namespace(self):
         """
         This test will assert <b> test Namespace Statistics </b> output for heading, header and parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~test Namespace Statistics~"
         exp_header = "NODE"
@@ -904,7 +903,7 @@ class TestShowStatistics(unittest.TestCase):
     def test_xdr(self):
         """
         This test will assert <b> test Namespace Statistics </b> output for heading, header and parameters.
-        ToDo: test for values as well
+        TODO: test for values as well
         """
         exp_heading = "~~XDR Statistics~~"
         exp_header = "NODE"
