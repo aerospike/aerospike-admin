@@ -50,7 +50,7 @@ ASSERT(r, False, "High system disk average wait time.", "PERFORMANCE", WARNING,
 				"Disk average wait time check.");
 r1 = group by DEVICE do SD_ANOMALY(s, ==, 3);
 ASSERT(r1, False, "Skewed cluster disk average wait time", "ANOMALY", WARNING,
-				"Listed disks show different average wait time characteristic compared to other node[s]. Please run 'iostat' command on those node[s] to confirm such behavior. Possible can be skew in workload (e.g hotkey) and/or disk issue on the specific node[s] which should anomalistic behavior."
+				"Listed disks show different average wait time characteristic compared to other node[s]. Please run 'iostat' command on those node[s] to confirm such behavior. Possible can be skew in workload (e.g hotkey) and/or disk issue on the specific node[s] which should anomalistic behavior.",
 				"Disk average wait time anomaly check.");
 
 
@@ -650,6 +650,22 @@ r = do e <= s;
 ASSERT(r, True, "High read not found errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show higher than normal read not found errors (> 50% client read success). Please run 'show statistics namespace like client_read_not_found client_read_success' to see values.",
 				"High read not found error check");
+
+e = select "xdr_write_error" from NAMESPACE.STATISTICS;
+e = do e/u on common;
+e = group by CLUSTER, NAMESPACE e;
+r = do e > 0;
+ASSERT(r, False, "Non-zero XDR write errors count.", "OPERATIONS", INFO,
+				"Listed namespace[s] have non-zero XDR write transaction failures (for nodes). Please run 'show statistics namespace like xdr_write_error' to see values.",
+				"Namespace XDR write failure check");
+
+e = select "xdr_write_timeout" from NAMESPACE.STATISTICS;
+e = do e/u on common;
+e = group by CLUSTER, NAMESPACE e;
+r = do e > 0;
+ASSERT(r, False, "Non-zero XDR write timeouts.", "OPERATIONS", INFO,
+				"Listed namespace[s] have non-zero XDR write transaction timeouts (for nodes). Please run 'show statistics namespace like xdr_write_timeout' to see values.",
+				"Namespace XDR write timeout check");
 
 SET CONSTRAINT VERSION < 3.9;
 

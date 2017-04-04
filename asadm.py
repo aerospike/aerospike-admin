@@ -73,10 +73,11 @@ CMD_FILE_MULTI_LINE_COMMENT_END = "*/"
 ADMINHOME = os.environ['HOME'] + '/.aerospike/'
 ADMINHIST = ADMINHOME + 'admin_hist'
 
+MULTILEVEL_COMMANDS = ["show", "info"]
 
 class AerospikeShell(cmd.Cmd):
 
-    def __init__(self, seed, user=None, password=None, use_services_alumni=False,
+    def __init__(self, seed, user=None, password=None, use_services_alumni=False, use_services_alt=False,
                  log_path="", log_analyser=False, collectinfo=False,
                  ssl_context=None, only_connect_seed=False, execute_only_mode=False):
 
@@ -99,7 +100,7 @@ class AerospikeShell(cmd.Cmd):
                     log_path = " "
                 self.ctrl = LogRootController(__version__, log_path)
 
-                self.prompt = terminal.fg_red() + "Log-analyzer> " + terminal.fg_clear()
+                self.prompt = "Log-analyzer> "
             elif collectinfo:
                 if not log_path:
                     logger.error(
@@ -110,7 +111,7 @@ class AerospikeShell(cmd.Cmd):
                 self.ctrl = CollectinfoRootController(__version__,
                                                       clinfo_path=log_path)
 
-                self.prompt = terminal.fg_red() + "Collectinfo-analyzer> " + terminal.fg_clear()
+                self.prompt = "Collectinfo-analyzer> "
                 if not execute_only_mode:
                     self.intro = str(self.ctrl.loghdlr)
             else:
@@ -120,7 +121,7 @@ class AerospikeShell(cmd.Cmd):
                     password = info.hashpassword(password)
 
                 self.ctrl = BasicRootController(seed_nodes=[seed], user=user,
-                                                password=password, use_services_alumni=use_services_alumni,
+                                                password=password, use_services_alumni=use_services_alumni, use_services_alt=use_services_alt,
                                                 ssl_context=ssl_context, asadm_version=__version__,
                                                 only_connect_seed=only_connect_seed)
 
@@ -129,7 +130,7 @@ class AerospikeShell(cmd.Cmd):
                     self.do_exit('')
                     exit(0)
 
-                self.prompt = terminal.fg_red() + "Admin> " + terminal.fg_clear()
+                self.prompt = "Admin> "
                 self.intro = ""
                 if not execute_only_mode:
                     self.intro += str(self.ctrl.cluster) + "\n"
@@ -145,6 +146,10 @@ class AerospikeShell(cmd.Cmd):
                         self.intro += terminal.fg_red() + "Extra nodes in alumni list: %s" % (
                             ", ".join(cluster_down_nodes)) + terminal.fg_clear() + "\n"
 
+            if self.use_rawinput:
+                self.prompt = "\001" + terminal.bold() + terminal.fg_red() + "\002" +\
+                          self.prompt + "\001" +\
+                          terminal.unbold() + terminal.fg_clear() + "\002"
         except Exception as e:
             logger.error(e)
             self.do_exit('')
@@ -216,9 +221,15 @@ class AerospikeShell(cmd.Cmd):
                 return " ".join(line)
 
             if len(lines) > max_commands_to_print_header:
-                print "~~~ %s%s%s ~~~" % (terminal.bold(),
+                if any(cmd.startswith(line[0]) for cmd in MULTILEVEL_COMMANDS):
+                    index = command_index_to_print_from
+                else:
+                    # If single level command then print from first index. For example: health, features, grep etc.
+                    index = 0
+
+                print "\n~~~ %s%s%s ~~~" % (terminal.bold(),
                                           ' '.join(
-                                              line[command_index_to_print_from:]),
+                                              line[index:]),
                                           terminal.reset())
 
             sys.stdout.write(terminal.reset())
@@ -455,6 +466,8 @@ def main():
                             action="store_true", help="Show the version of asadm and exit")
         parser.add_argument("-s", "--services_alumni", dest="use_services_alumni",
                             action="store_true", help="Enable use of services-alumni-list instead of services-list")
+        parser.add_argument("-a", "--services_alternate", dest="use_services_alternate",
+                            action="store_true", help="Enable use of services-alternate instead of services in info request during cluster tending")
         parser.add_argument("-l", "--log_analyser", dest="log_analyser", action="store_true",
                             help="Start asadm in log-analyser mode and analyse data from log files")
         parser.add_argument("-c", "--collectinfo", dest="collectinfo", action="store_true",
@@ -521,6 +534,8 @@ def main():
                           action="store_true", help="Show the version of asadm and exit")
         parser.add_option("-s", "--services_alumni", dest="use_services_alumni",
                           action="store_true", help="Enable use of services-alumni-list instead of services-list")
+        parser.add_option("-a", "--services_alternate", dest="use_services_alternate",
+                          action="store_true", help="Enable use of services-alternate instead of services in info request during cluster tending")
         parser.add_option("-l", "--log_analyser", dest="log_analyser", action="store_true",
                           help="Start asadm in log-analyser mode and analyse data from log files")
         parser.add_option("-c", "--collectinfo", dest="collectinfo", action="store_true",
@@ -572,6 +587,10 @@ def main():
     if cli_args.no_color:
         disable_coloring()
 
+    if cli_args.use_services_alumni and cli_args.use_services_alternate:
+        print "Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate."
+        exit(1)
+
     if not os.path.isdir(ADMINHOME):
         os.makedirs(ADMINHOME)
 
@@ -589,6 +608,7 @@ def main():
     shell = AerospikeShell(seed, user=cli_args.user,
                            password=cli_args.password,
                            use_services_alumni=cli_args.use_services_alumni,
+                           use_services_alt = cli_args.use_services_alternate,
                            log_path=cli_args.log_path,
                            log_analyser=cli_args.log_analyser,
                            collectinfo=cli_args.collectinfo,

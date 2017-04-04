@@ -18,6 +18,7 @@ import os
 import logging
 import shutil
 import sys
+import tarfile
 import zipfile
 
 
@@ -56,10 +57,11 @@ class CollectinfoLoghdlr(object):
     # for zipped files
     ADMINHOME = os.environ['HOME'] + '/.aerospike/'
     COLLECTINFO_DIR = ADMINHOME + 'collectinfo/'
+    COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
 
     def __init__(self, cinfo_path):
         self.cinfo_path = cinfo_path
-        self._validate_and_extract_zipped_files(cinfo_path)
+        self._validate_and_extract_compressed_files(cinfo_path, dest_dir=self.COLLECTINFO_DIR)
         self.cinfo_timestamp = None
         self.logger = logging.getLogger('asadm')
 
@@ -262,7 +264,7 @@ class CollectinfoLoghdlr(object):
 
 
         if os.path.isfile(cinfo_path):
-            if not zipfile.is_zipfile(cinfo_path):
+            if not self._is_compressed_file(cinfo_path):
                 files.append(cinfo_path)
             else:
                 files += logutil.get_all_files(self.COLLECTINFO_DIR)
@@ -402,51 +404,74 @@ class CollectinfoLoghdlr(object):
 
         return res_dict
 
-    def _extract_to(self, cinfo_path, new_dir_path):
-        if not os.path.exists(cinfo_path) or not zipfile.is_zipfile(cinfo_path):
+    def _is_compressed_file(self, file):
+        if not file or not os.path.exists(file):
+            return False
+
+        if zipfile.is_zipfile(file) or tarfile.is_tarfile(file):
+            return True
+
+        return False
+
+    def _extract_to(self, file, dest_dir):
+        if not file or not os.path.exists(file):
             return False
 
         try:
-            zip_file = zipfile.ZipFile(cinfo_path, "r")
-        except zipfile.BadZipfile:
-            return False
+            if zipfile.is_zipfile(file):
+                compressed_file =  zipfile.ZipFile(file, "r")
 
-        res = True
-        try:
-            zip_file.extractall(new_dir_path)
+            elif tarfile.is_tarfile(file):
+                compressed_file = tarfile.open(file)
+
+            else:
+                return False
+
         except Exception:
-            res = False
-        finally:
-            zip_file.close()
-        return res
-
-    def _is_required_zip_file(self, file):
-        if not file or not os.path.exists(file) or not os.path.isfile(file) or not zipfile.is_zipfile(file):
             return False
 
-        required_filename_substring = ["sysinfo.log", "ascollectinfo.log", "ascinfo.json"]
-        return any(s in os.path.basename(file) for s in required_filename_substring)
+        file_extracted = False
+        try:
+            compressed_file.extractall(path=dest_dir)
+            file_extracted = True
+        except Exception:
+            file_extracted = False
+        finally:
+            compressed_file.close()
 
-    def _validate_and_extract_zipped_files(self, cinfo_path):
+        return file_extracted
+
+    def _validate_and_extract_compressed_files(self, cinfo_path, dest_dir=None):
         if not cinfo_path or not os.path.exists(cinfo_path):
             return
 
-        if not os.path.exists(self.COLLECTINFO_DIR):
-            os.makedirs(self.COLLECTINFO_DIR)
+        if not dest_dir:
+            dest_dir = self.COLLECTINFO_DIR
+
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir)
 
         if os.path.isfile(cinfo_path):
-            if zipfile.is_zipfile(cinfo_path):
-                self._extract_to(cinfo_path, self.COLLECTINFO_DIR)
-            return
+            if not self._is_compressed_file(cinfo_path):
+                return
+
+            if self._extract_to(cinfo_path, dest_dir):
+                self._validate_and_extract_compressed_files(dest_dir, dest_dir=os.path.join(dest_dir, self.COLLECTINFO_INTERNAL_DIR))
+                return
 
         files = logutil.get_all_files(cinfo_path)
         if not files:
             return
 
+        file_extracted = False
         for file in files:
-            if not self._is_required_zip_file(file):
+            if not self._is_compressed_file(file):
                 continue
 
-            self._extract_to(file, self.COLLECTINFO_DIR)
+            if self._extract_to(file, dest_dir):
+                file_extracted = True
+
+        if file_extracted:
+            self._validate_and_extract_compressed_files(dest_dir, dest_dir=os.path.join(dest_dir, self.COLLECTINFO_INTERNAL_DIR))
 
 

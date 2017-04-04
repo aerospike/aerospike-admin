@@ -79,7 +79,7 @@ class Node(object):
     pool_lock = threading.Lock()
 
     def __init__(self, address, port=3000, tls_name=None, timeout=3, user=None,
-                 password=None,  ssl_context=None, consider_alumni=False):
+                 password=None,  ssl_context=None, consider_alumni=False, use_services_alt=False):
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -108,6 +108,7 @@ class Node(object):
         else:
             self.enable_tls = False
         self.consider_alumni = consider_alumni
+        self.use_services_alt = use_services_alt
 
         # System Details
         self.sys_ssh_port = None
@@ -494,6 +495,7 @@ class Node(object):
         """
         if self.enable_tls:
             return self._info_peers_list_helper(self.info("peers-tls-std"))
+
         return self._info_peers_list_helper(self.info("peers-clear-std"))
 
     @return_exceptions
@@ -507,6 +509,19 @@ class Node(object):
         if self.enable_tls:
             return self._info_peers_list_helper(self.info("alumni-tls-std"))
         return self._info_peers_list_helper(self.info("alumni-clear-std"))
+
+    @return_exceptions
+    def info_alternative_peers_list(self):
+        """
+        Get peers this node knows of that are active alternative addresses
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        if self.enable_tls:
+            return self._info_peers_list_helper(self.info("peers-tls-alt"))
+
+        return self._info_peers_list_helper(self.info("peers-clear-alt"))
 
     @return_exceptions
     def _info_services_helper(self, services):
@@ -531,18 +546,6 @@ class Node(object):
         return self._info_services_helper(self.info("services"))
 
     @return_exceptions
-    def info_service(self, address, return_None=False):
-        try:
-            service = self.info("service")
-            s = map(util.info_to_tuple, util.info_to_list(service))
-            return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
-        except Exception:
-            pass
-        if return_None:
-            return None
-        return [(address, self.port, self.tls_name)]
-
-    @return_exceptions
     def info_services_alumni(self):
         """
         Get other services this node has ever know of
@@ -558,6 +561,29 @@ class Node(object):
             return self.info_services()
 
     @return_exceptions
+    def info_services_alt(self):
+        """
+        Get other services_alternative this node knows of that are active
+
+        Returns:
+        list -- [(ip,port),...]
+        """
+
+        return self._info_services_helper(self.info("services-alternate"))
+
+    @return_exceptions
+    def info_service(self, address, return_None=False):
+        try:
+            service = self.info("service")
+            s = map(util.info_to_tuple, util.info_to_list(service))
+            return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
+        except Exception:
+            pass
+        if return_None:
+            return None
+        return [(address, self.port, self.tls_name)]
+
+    @return_exceptions
     def get_alumni_peers(self):
         if self.use_peers_list:
             alumni_peers = self.info_peers_list()
@@ -571,8 +597,15 @@ class Node(object):
     @return_exceptions
     def get_peers(self):
         if self.use_peers_list:
+            if self.use_services_alt:
+                return self.info_alternative_peers_list()
+
             return self.info_peers_list()
+
         else:
+            if self.use_services_alt:
+                return self.info_services_alt()
+
             return self.info_services()
 
     @return_exceptions
@@ -1085,24 +1118,31 @@ class Node(object):
 
     @return_exceptions
     def info_system_statistics(self, default_user=None, default_pwd=None,
-                               default_ssh_port=None, credential_file=None):
+                               default_ssh_port=None, credential_file=None, commands=[]):
         """
         Get statistics for a system.
 
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
+        if not commands:
+            commands = [_key for _key, cmds in self.sys_cmds]
+
         if self.localhost:
-            return self._get_localhost_system_statistics()
+            return self._get_localhost_system_statistics(commands)
         else:
             self._set_default_system_credentials(default_user, default_pwd,
                                                  default_ssh_port, credential_file)
-            return self._get_remote_host_system_statistics()
+            return self._get_remote_host_system_statistics(commands)
 
     @return_exceptions
-    def _get_localhost_system_statistics(self):
+    def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
+
         for _key, cmds in self.sys_cmds:
+            if _key not in commands:
+                continue
+
             for cmd in cmds:
                 o, e = util.shell_command([cmd])
                 if e or not o:
@@ -1110,6 +1150,7 @@ class Node(object):
                 else:
                     parse_system_live_command(_key, o, sys_stats)
                     break
+
         return sys_stats
 
     @return_exceptions
@@ -1211,7 +1252,7 @@ class Node(object):
                 conn.close()
 
     @return_exceptions
-    def _get_remote_host_system_statistics(self):
+    def _get_remote_host_system_statistics(self, commands):
         sys_stats = {}
 
         if PEXPECT_VERSION == NO_MODULE:
@@ -1243,6 +1284,9 @@ class Node(object):
 
             try:
                 for _key, cmds in self.sys_cmds:
+                    if _key not in commands:
+                        continue
+
                     for cmd in cmds:
                         try:
                             o = self._execute_system_command(s, cmd)

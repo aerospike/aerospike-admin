@@ -54,7 +54,8 @@ class CollectinfoRootController(BaseController):
             'info': InfoController,
             'features': FeaturesController,
             'pager': PagerController,
-            'health': HealthCheckController}
+            'health': HealthCheckController,
+            'summary': SummaryController}
 
     def close(self):
         try:
@@ -633,115 +634,32 @@ class FeaturesController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
 
-    def check_key_for_gt(self, d={}, keys=(), v=0, is_and=False, type_check=int):
-        if not keys:
-            return True
-        if not d:
-            return False
-        if not isinstance(keys, tuple):
-            keys = (keys,)
-        if is_and:
-            if all(util.get_value_from_dict(d, k, v, type_check) > v
-                   for k in keys):
-                return True
-        else:
-            if any(util.get_value_from_dict(d, k, v, type_check) > v
-                   for k in keys):
-                return True
-        return False
-
     def _do_default(self, line):
         service_stats = self.loghdlr.info_statistics(stanza=STAT_SERVICE)
         namespace_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE)
+
         for timestamp in sorted(service_stats.keys()):
             features = {}
             ns_stats = {}
+
             if timestamp in namespace_stats:
                 ns_stats = namespace_stats[timestamp]
                 ns_stats = util.flip_keys(ns_stats)
-            for node, stats in service_stats[timestamp].iteritems():
-                features[node] = {}
-                features[node]["KVS"] = "NO"
-                if self.check_key_for_gt(stats, ('stat_read_reqs', 'stat_write_reqs')):
-                    features[node]["KVS"] = "YES"
-                elif node in ns_stats:
-                    for ns, nsval in ns_stats[node].iteritems():
-                        if self.check_key_for_gt(nsval, ('client_read_error', 'client_read_success', 'client_write_error', 'client_write_success')):
-                            features[node]["KVS"] = "YES"
-                            break
 
-                features[node]["UDF"] = "NO"
-                if self.check_key_for_gt(stats, ('udf_read_reqs', 'udf_write_reqs')):
-                    features[node]["UDF"] = "YES"
-                elif node in ns_stats:
-                    for ns, nsval in ns_stats[node].iteritems():
-                        if self.check_key_for_gt(nsval, ('client_udf_complete', 'client_udf_error')):
-                            features[node]["UDF"] = "YES"
-                            break
+            for feature, keys in util.FEATURE_KEYS.iteritems():
+                for node, s_stats in service_stats[timestamp].iteritems():
 
-                features[node]["BATCH"] = "NO"
-                if self.check_key_for_gt(stats, ('batch_initiate', 'batch_index_initiate')):
-                    features[node]["BATCH"] = "YES"
+                    if node not in features:
+                        features[node] = {}
 
-                features[node]["SCAN"] = "NO"
-                if self.check_key_for_gt(stats, ('tscan_initiate', 'basic_scans_succeeded', 'basic_scans_failed', 'aggr_scans_succeeded'
-                                                 'aggr_scans_failed', 'udf_bg_scans_succeeded', 'udf_bg_scans_failed')):
-                    features[node]["SCAN"] = "YES"
-                elif node in ns_stats:
-                    for ns, nsval in ns_stats[node].iteritems():
-                        if self.check_key_for_gt(nsval, ('scan_basic_complete', 'scan_basic_error', 'scan_aggr_complete',
-                                                         'scan_aggr_error', 'scan_udf_bg_complete', 'scan_udf_bg_error')):
-                            features[node]["SCAN"] = "YES"
-                            break
+                    features[node][feature.upper()] = "NO"
+                    n_stats = None
 
-                features[node]["SINDEX"] = "NO"
-                if self.check_key_for_gt(stats, ('sindex-used-bytes-memory')):
-                    features[node]["SINDEX"] = "YES"
-                elif node in ns_stats:
-                    for ns, nsval in ns_stats[node].iteritems():
-                        if self.check_key_for_gt(nsval, ('memory_used_sindex_bytes')):
-                            features[node]["SINDEX"] = "YES"
-                            break
+                    if node in ns_stats and not isinstance(ns_stats[node], Exception):
+                        n_stats = ns_stats[node]
 
-                features[node]["QUERY"] = "NO"
-                if self.check_key_for_gt(stats, ('query_reqs', 'query_success')):
-                    features[node]["QUERY"] = "YES"
-                elif node in ns_stats:
-                    for ns, nsval in ns_stats[node].iteritems():
-                        if self.check_key_for_gt(nsval, ('query_reqs', 'query_success')):
-                            features[node]["QUERY"] = "YES"
-                            break
-
-                features[node]["AGGREGATION"] = "NO"
-                if self.check_key_for_gt(stats, ('query_agg', 'query_agg_success')):
-                    features[node]["AGGREGATION"] = "YES"
-                elif node in ns_stats:
-                    for ns, nsval in ns_stats[node].iteritems():
-                        if self.check_key_for_gt(nsval, ('query_agg', 'query_agg_success')):
-                            features[node]["AGGREGATION"] = "YES"
-                            break
-
-                features[node]["LDT"] = "NO"
-                if self.check_key_for_gt(stats, ('sub-records', 'ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes', 'sub_objects')):
-                    features[node]["LDT"] = "YES"
-                elif node in ns_stats:
-                    for ns, nsval in ns_stats[node].iteritems():
-                        if self.check_key_for_gt(nsval, ('ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes')):
-                            features[node]["LDT"] = "YES"
-                            break
-
-                features[node]["XDR ENABLED"] = "NO"
-                if self.check_key_for_gt(stats, ('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error')):
-                    features[node]["XDR ENABLED"] = "YES"
-
-                features[node]["XDR DESTINATION"] = "NO"
-                if self.check_key_for_gt(stats, ('stat_write_reqs_xdr')):
-                    features[node]["XDR DESTINATION"] = "YES"
-                elif node in ns_stats:
-                    for ns, nsval in ns_stats[node].iteritems():
-                        if self.check_key_for_gt(nsval, ('xdr_write_success')):
-                            features[node]["XDR DESTINATION"] = "YES"
-                            break
+                    if util.check_feature_by_keys(s_stats, keys[0], n_stats, keys[1]):
+                        features[node][feature.upper()] = "YES"
 
             self.view.show_config(
                 "(%s) Features" %
@@ -960,3 +878,27 @@ class PagerController(CollectinfoCommandController):
     @CommandHelp("Display output in scrolling mode")
     def do_scroll(self, line):
         CliView.pager = CliView.SCROLL
+
+
+@CommandHelp('Displays summary of Aerospike cluster.')
+class SummaryController(CollectinfoCommandController):
+
+    def __init__(self):
+        self.modifiers = set([])
+
+    def _do_default(self, line):
+        service_stats = self.loghdlr.get_asstat_data(stanza=STAT_SERVICE)
+        namespace_stats = self.loghdlr.get_asstat_data(stanza=STAT_NAMESPACE)
+        set_stats = self.loghdlr.get_asstat_data(stanza="set")
+
+        os_version = self.loghdlr.get_sys_data(stanza="lsb")
+        server_version = self.loghdlr.get_asmeta_data(stanza="asd_build")
+
+        last_timestamp = sorted(service_stats.keys())[-1]
+
+        metadata = {}
+        metadata["server_version"] = server_version[last_timestamp]
+        metadata["os_version"] = os_version[last_timestamp]
+
+        self.view.print_summary(util.create_summary(service_stats=service_stats[last_timestamp], namespace_stats=namespace_stats[last_timestamp],
+                                                    set_stats=set_stats[last_timestamp], metadata=metadata))

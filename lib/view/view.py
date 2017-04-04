@@ -24,6 +24,7 @@ import sys
 
 from lib.health.constants import HealthResultType, HealthResultCounter, AssertResultKey, AssertLevel
 from lib.health.util import print_dict
+from lib.utils import filesize
 from lib.utils.util import get_value_from_dict, set_value_in_dict
 from lib.utils.constants import COUNT_RESULT_KEY, DT_FMT
 from lib.view.table import Table, Extractors, TitleFormats, Styles
@@ -151,7 +152,7 @@ class CliView(object):
         principal = cluster.get_expected_principal()
 
         title = "Namespace Information%s" % (title_suffix)
-        column_names = ('namespace', 'node', ('available_pct', 'Avail%'), ('_evicted_objects', 'Evictions'), ('_master_objects', 'Master (Objects,Tombstones)'), ('_prole_objects', 'Replica (Objects,Tombstones)'), 'repl-factor', 'stop_writes', ('_migrates', 'Pending Migrates (tx%,rx%)'),
+        column_names = ('namespace', 'node', ('available_pct', 'Avail%'), ('_evicted_objects', 'Evictions'), ('_master_objects', 'Master (Objects,Tombstones)'), ('_prole_objects', 'Replica (Objects,Tombstones)'), 'repl-factor', 'stop_writes', ('_migrates', 'Pending Migrates (tx,rx)'),
                         ('_used_bytes_disk', 'Disk Used'), ('_used_disk_pct', 'Disk Used%'), ('high-water-disk-pct', 'HWM Disk%'), ('_used_bytes_memory', 'Mem Used'), ('_used_mem_pct', 'Mem Used%'), ('high-water-memory-pct', 'HWM Mem%'), ('stop-writes-pct', 'Stop Writes%'))
 
         t = Table(title, column_names, sort_by=0)
@@ -181,7 +182,7 @@ class CliView(object):
             'stop_writes', lambda data: data['stop_writes'] != 'false')
 
         t.add_data_source('_migrates', lambda data:
-                          "(%s,%s)" % (data.get('migrate_tx_partitions_remaining_pct', 'N/E'), data.get('migrate_rx_partitions_remaining_pct', 'N/E')))
+                          "(%s,%s)" % (Extractors.sif_extractor(('migrate_tx_partitions_remaining', 'migrate-tx-partitions-remaining'))(data), (Extractors.sif_extractor(('migrate_rx_partitions_remaining', 'migrate-rx-partitions-remaining'))(data))))
 
         t.add_cell_alert('_used_mem_pct', lambda data: (100 - int(data['free_pct_memory'])) >= int(
             data['high-water-memory-pct']) if data['free_pct_memory'] is not " " else " ")
@@ -247,8 +248,6 @@ class CliView(object):
                     total_res[ns]["evicted_objects"] = 0
                     total_res[ns]["migrate_tx_partitions_remaining"] = 0
                     total_res[ns]["migrate_rx_partitions_remaining"] = 0
-                    total_res[ns]["migrate_tx_partitions_initial"] = 0
-                    total_res[ns]["migrate_rx_partitions_initial"] = 0
                 try:
                     total_res[ns]["master_objects"] += get_value_from_dict(
                         ns_stats, ('master-objects', 'master_objects'), return_type=int)
@@ -299,18 +298,6 @@ class CliView(object):
                 except Exception:
                     pass
 
-                try:
-                    total_res[ns]["migrate_tx_partitions_initial"] += get_value_from_dict(
-                        ns_stats, ('migrate-tx-partitions-initial', 'migrate_tx_partitions_initial'), return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["migrate_rx_partitions_initial"] += get_value_from_dict(
-                        ns_stats, ('migrate-rx-partitions-initial', 'migrate_rx_partitions_initial'), return_type=int)
-                except Exception:
-                    pass
-
                 row['namespace'] = ns
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
@@ -322,16 +309,7 @@ class CliView(object):
                     row, ('free-pct-memory', 'memory_free_pct')))
                 set_value_in_dict(
                     row, "stop_writes", get_value_from_dict(row, ('stop-writes', 'stop_writes')))
-                try:
-                    row["migrate_rx_partitions_remaining_pct"] = "%d" % (math.ceil((get_value_from_dict(ns_stats, ('migrate-rx-partitions-remaining', 'migrate_rx_partitions_remaining'), return_type=float) / get_value_from_dict(
-                        ns_stats, ('migrate-rx-partitions-initial', 'migrate_rx_partitions_initial'), return_type=float)) * 100))
-                except Exception:
-                    row["migrate_rx_partitions_remaining_pct"] = "0"
-                try:
-                    row["migrate_tx_partitions_remaining_pct"] = "%d" % (math.ceil((get_value_from_dict(ns_stats, ('migrate-tx-partitions-remaining', 'migrate_tx_partitions_remaining'), return_type=float) / get_value_from_dict(
-                        ns_stats, ('migrate-tx-partitions-initial', 'migrate_tx_partitions_initial'), return_type=float)) * 100))
-                except Exception:
-                    row["migrate_tx_partitions_remaining_pct"] = "0"
+
                 t.insert_row(row)
 
         for ns in total_res:
@@ -354,21 +332,8 @@ class CliView(object):
             row["used-bytes-memory"] = str(total_res[ns]["used-bytes-memory"])
             row["used-bytes-disk"] = str(total_res[ns]["used-bytes-disk"])
             row["evicted_objects"] = str(total_res[ns]["evicted_objects"])
-            row["migrate_tx_partitions_remaining"] = str(
-                total_res[ns]["migrate_tx_partitions_remaining"])
-            row["migrate_rx_partitions_remaining"] = str(
-                total_res[ns]["migrate_rx_partitions_remaining"])
-
-            try:
-                row["migrate_rx_partitions_remaining_pct"] = "%d" % (math.ceil((float(total_res[ns][
-                                                                     "migrate_rx_partitions_remaining"]) / float(total_res[ns]["migrate_rx_partitions_initial"])) * 100))
-            except Exception:
-                row["migrate_rx_partitions_remaining_pct"] = "0"
-            try:
-                row["migrate_tx_partitions_remaining_pct"] = "%d" % (math.ceil((float(total_res[ns][
-                                                                     "migrate_tx_partitions_remaining"]) / float(total_res[ns]["migrate_tx_partitions_initial"])) * 100))
-            except Exception:
-                row["migrate_tx_partitions_remaining_pct"] = "0"
+            row["migrate_tx_partitions_remaining"] = str(total_res[ns]["migrate_tx_partitions_remaining"])
+            row["migrate_rx_partitions_remaining"] = str(total_res[ns]["migrate_rx_partitions_remaining"])
 
             t.insert_row(row)
 
@@ -1078,70 +1043,6 @@ class CliView(object):
                         print
 
     @staticmethod
-    def cluster_pmap(pmap_data, cluster, **ignore):
-        prefixes = cluster.get_node_names()
-        title = "Partition Map Analysis"
-        column_names = ('Node',
-                        'Namespace',
-                        'Primary Partitions',
-                        'Secondary Partitions',
-                        'Missing Partitions',
-                        'Master Discrepancy Partitions',
-                        'Replica Discrepancy Partitions')
-        t = Table(title, column_names)
-        for node_key, n_stats in pmap_data.iteritems():
-            row = {}
-            row['Node'] = prefixes[node_key]
-            for ns, ns_stats in n_stats.iteritems():
-                row['Namespace'] = ns
-                row['Primary Partitions'] = ns_stats['pri_index']
-                row['Secondary Partitions'] = ns_stats['sec_index']
-                row['Missing Partitions'] = ns_stats['missing_part']
-                row['Master Discrepancy Partitions'] = ns_stats[
-                    'master_disc_part']
-                row['Replica Discrepancy Partitions'] = ns_stats[
-                    'replica_disc_part']
-                t.insert_row(row)
-        CliView.print_result(t)
-
-    @staticmethod
-    def cluster_qnode(qnode_data, cluster, **ignore):
-        prefixes = cluster.get_node_names()
-        title = "QNode Map Analysis"
-        column_names = ('Node',
-                        'Namespace',
-                        'Master QNode Without Data',
-                        'Replica QNode Without Data',
-                        'Replica QNode With Data',)
-        t = Table(title, column_names)
-        for node_key, n_stats in qnode_data.iteritems():
-            row = {}
-            row['Node'] = prefixes[node_key]
-            for ns, ns_stats in n_stats.iteritems():
-                row['Namespace'] = ns
-                row['Master QNode Without Data'] = ns_stats['MQ_without_data']
-                row['Replica QNode Without Data'] = ns_stats['RQ_without_data']
-                row['Replica QNode With Data'] = ns_stats['RQ_data']
-                t.insert_row(row)
-        CliView.print_result(t)
-
-    @staticmethod
-    def dun(results, cluster, **kwargs):
-        for node_id, command_result in results.iteritems():
-            prefix = cluster.get_node_names()[node_id]
-            node = cluster.get_node(node_id)[0]
-
-            print "%s%s (%s) returned%s:" % (terminal.bold(), prefix, node.ip, terminal.reset())
-
-            if isinstance(command_result, Exception):
-                print "%s%s%s" % (terminal.fg_red(), command_result, terminal.reset())
-                print "\n"
-            else:
-                command, result = command_result
-                print "asinfo -v '%s'" % (command)
-                print result
-
-    @staticmethod
     def group_output(output):
         i = 0
         while i < len(output):
@@ -1576,3 +1477,97 @@ class CliView(object):
         if o_s:
             o_s.close()
         sys.stdout = sys.__stdout__
+
+    @staticmethod
+    def get_summary_line_prefix(index, key):
+        s = " " * 3
+        s += str(index)
+        s += "." + (" " * 3)
+        s += key.ljust(18)
+        s += ":" + (" " * 2)
+        return s
+
+    @staticmethod
+    def print_summary(summary):
+
+        index = 1
+        print "Cluster"
+        print "======="
+        print
+        print CliView.get_summary_line_prefix(index, "Server Version") + ", ".join(summary["CLUSTER"]["server_version"])
+        index += 1
+        print CliView.get_summary_line_prefix(index, "OS Version") + ", ".join(summary["CLUSTER"]["os_version"])
+        index += 1
+        print CliView.get_summary_line_prefix(index, "Cluster Size") + ", ".join([str(cs) for cs in summary["CLUSTER"]["cluster_size"]])
+        index += 1
+        print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d"%(summary["CLUSTER"]["device"]["count"], summary["CLUSTER"]["device"]["count_per_node"])
+        index += 1
+        print CliView.get_summary_line_prefix(index, "Memory") + "%s, %.2f%% available"%(filesize.size(summary["CLUSTER"]["memory"]["total"]),summary["CLUSTER"]["memory"]["aval_pct"])
+        index += 1
+        print CliView.get_summary_line_prefix(index, "Disk") + "%s, %.2f%% used, %.2f%% available"%(filesize.size(summary["CLUSTER"]["device"]["total"]), summary["CLUSTER"]["device"]["used_pct"],summary["CLUSTER"]["device"]["aval_pct"])
+        index += 1
+        print CliView.get_summary_line_prefix(index, "License Data") + "%s in-memory, %s on-disk"%(filesize.size(summary["CLUSTER"]["license_data"]["memory_size"]),filesize.size(summary["CLUSTER"]["license_data"]["device_size"]))
+        index += 1
+        print CliView.get_summary_line_prefix(index, "Active Namespaces") + "%d"%(summary["CLUSTER"]["active_ns"])
+        index += 1
+        print CliView.get_summary_line_prefix(index, "Features") + ", ".join(sorted(summary["CLUSTER"]["active_features"]))
+
+        print "\n"
+
+        print "Namespaces"
+        print "=========="
+        print
+        for ns in summary["FEATURES"]["NAMESPACE"]:
+            index = 1
+            print "   " + ns
+            print "   " + "=" * len(ns)
+
+            print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d"%(summary["FEATURES"]["NAMESPACE"][ns]["device"]["count"], summary["FEATURES"]["NAMESPACE"][ns]["device"]["count_per_node"])
+            index += 1
+            print CliView.get_summary_line_prefix(index, "Memory") + "%s, %.2f%% available"%(filesize.size(summary["FEATURES"]["NAMESPACE"][ns]["memory"]["total"]),summary["FEATURES"]["NAMESPACE"][ns]["memory"]["aval_pct"])
+            index += 1
+            if summary["FEATURES"]["NAMESPACE"][ns]["device"]["total"]:
+                print CliView.get_summary_line_prefix(index, "Disk") + "%s, %.2f%% used, %.2f%% available"%(filesize.size(summary["FEATURES"]["NAMESPACE"][ns]["device"]["total"]), summary["FEATURES"]["NAMESPACE"][ns]["device"]["used_pct"],summary["FEATURES"]["NAMESPACE"][ns]["device"]["aval_pct"])
+                index += 1
+            print CliView.get_summary_line_prefix(index, "Replication Factor") + "%s"%(",".join([str(rf) for rf in summary["FEATURES"]["NAMESPACE"][ns]["repl_factor"]]))
+            index += 1
+            print CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(summary["FEATURES"]["NAMESPACE"][ns]["master_objects"], filesize.sif))
+            index += 1
+            s = ""
+            if "memory_size" in summary["FEATURES"]["NAMESPACE"][ns]["license_data"]:
+                s += "%s in-memory"%(filesize.size(summary["FEATURES"]["NAMESPACE"][ns]["license_data"]["memory_size"]))
+
+            if "device_size" in summary["FEATURES"]["NAMESPACE"][ns]["license_data"]:
+                if s:
+                    s += ", "
+                s += "%s on-disk"%(filesize.size(summary["FEATURES"]["NAMESPACE"][ns]["license_data"]["device_size"]))
+            print CliView.get_summary_line_prefix(index, "License Data") + s
+            print
+
+    @staticmethod
+    def show_pmap(pmap_data, cluster, **ignore):
+        prefixes = cluster.get_node_names()
+        title = "Partition Map Analysis"
+        column_names = ('Node',
+                        'Namespace',
+                        'Primary Partitions',
+                        'Secondary Partitions',
+                        'Missing Partitions',
+                        'Master Discrepancy Partitions',
+                        'Replica Discrepancy Partitions')
+        t = Table(title, column_names)
+
+        for node_key, n_stats in pmap_data.iteritems():
+            row = {}
+            row['Node'] = prefixes[node_key]
+
+            for ns, ns_stats in n_stats.iteritems():
+                row['Namespace'] = ns
+                row['Primary Partitions'] = ns_stats['pri_index']
+                row['Secondary Partitions'] = ns_stats['sec_index']
+                row['Missing Partitions'] = ns_stats['missing_part']
+                row['Master Discrepancy Partitions'] = ns_stats['master_disc_part']
+                row['Replica Discrepancy Partitions'] = ns_stats['replica_disc_part']
+                t.insert_row(row)
+
+        CliView.print_result(t)

@@ -50,14 +50,14 @@ class BasicRootController(BaseController):
     command = None
 
     def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], user=None,
-                 password=None, use_services_alumni=False, ssl_context=None,
+                 password=None, use_services_alumni=False, use_services_alt=False, ssl_context=None,
                  asadm_version='', only_connect_seed=False):
 
         super(BasicRootController, self).__init__(asadm_version)
 
         # Create static instance of cluster
         BasicRootController.cluster = Cluster(seed_nodes, user, password,
-                                              use_services_alumni,
+                                              use_services_alumni, use_services_alt,
                                               ssl_context, only_connect_seed)
 
         # Create Basic Command Controller Object
@@ -70,7 +70,9 @@ class BasicRootController(BaseController):
             'info': InfoController,
             'features': FeaturesController,
             'pager': PagerController,
-            'health': HealthCheckController}
+            'health': HealthCheckController,
+            'summary': SummaryController,
+        }
 
     def close(self):
         try:
@@ -281,7 +283,8 @@ class ShowController(BasicCommandController):
             'statistics': ShowStatisticsController,
             'latency': ShowLatencyController,
             'distribution': ShowDistributionController,
-            'mapping': ShowMappingController
+            'mapping': ShowMappingController,
+            'pmap': ShowPmapController
         }
 
         self.modifiers = set()
@@ -692,6 +695,179 @@ class ShowStatisticsController(BasicCommandController):
 
         return [action.result() for action in actions]
 
+@CommandHelp('Displays partition map analysis of Aerospike cluster.')
+class ShowPmapController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    def _do_default(self, line):
+        versions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
+        pmap_info = util.Future(self.cluster.info, 'partition-info', nodes=self.nodes).start()
+        namespaces = util.Future(self.cluster.info_namespaces, nodes=self.nodes).start()
+        versions = versions.result()
+        pmap_info = pmap_info.result()
+        namespaces = namespaces.result()
+        namespaces = namespaces.values()
+        namespace_set = set()
+        namespace_stats = dict()
+
+        for namespace in namespaces:
+            if isinstance(namespace, Exception):
+                continue
+
+            namespace_set.update(namespace)
+
+        for namespace in sorted(namespace_set):
+            ns_stats = self.cluster.info_namespace_statistics(namespace, nodes=self.nodes)
+            namespace_stats[namespace] = ns_stats
+
+        pmap_data = self._get_pmap_data(pmap_info, self._get_namespace_data(namespace_stats), versions)
+
+        return util.Future(self.view.show_pmap, pmap_data, self.cluster)
+
+    def _format_missing_part(self, part_data):
+        missing_part = ''
+        get_part = lambda pid, pindex: str(pid) + ':S:' + str(pindex) + ','
+
+        for pid, part in enumerate(part_data):
+            if part:
+                for pindex in part:
+                    missing_part += get_part(pid, pindex)
+
+        return missing_part[:-1]
+
+    def _get_namespace_data(self, namespace_stats):
+        disc_pct_allowed = 1   # Considering Negative & Positive both discrepancy
+        ns_info = {}
+
+        for ns, nodes in namespace_stats.items():
+            ns_info[ns] = {}
+            master_objs = 0
+            replica_objs = 0
+            repl_factor = 0
+
+            for params in nodes.values():
+                if isinstance(params, Exception):
+                    continue
+
+                master_objs += util.get_value_from_dict(params,('master-objects','master_objects'),0,int)
+                replica_objs += util.get_value_from_dict(params,('prole-objects','prole_objects'),0,int)
+                repl_factor = max(repl_factor, int(params['repl-factor']))
+
+            ns_info[ns]['avg_master_objs'] = master_objs / 4096
+            ns_info[ns]['avg_replica_objs'] = replica_objs / 4096
+            ns_info[ns]['repl_factor'] = repl_factor
+            diff_master = ns_info[ns]['avg_master_objs'] * disc_pct_allowed / 100
+
+            if diff_master < 1024:
+                diff_master = 1024
+
+            diff_replica = ns_info[ns]['avg_replica_objs'] * disc_pct_allowed / 100
+
+            if diff_replica < 1024:
+                diff_replica = 1024
+
+            ns_info[ns]['diff_master'] = diff_master
+            ns_info[ns]['diff_replica'] = diff_replica
+
+        return ns_info
+
+    def _get_pmap_data(self, pmap_info, ns_info, versions):
+        pid_range = 4096        # each namespace is divided into 4096 partition
+        is_dist_delta_exeeds = lambda exp, act, diff: abs(exp - act) > diff
+        pmap_data = {}
+        ns_missing_part = {}
+        visited_ns = set()
+
+        # required fields
+        # format : (index_ptr, field_name, default_index)
+        required_fields = [("ns_index","namespace",0),("pid_index","partition",1),("state_index","state",2),
+                           ("pindex_index","replica",3),("objects_index","records",9)]
+
+        for _node, partitions in pmap_info.items():
+            node_pmap = dict()
+
+            if isinstance(partitions, Exception):
+                continue
+
+            f_indices = {}
+
+            # default index in partition fields for server < 3.6.1
+            for t in required_fields:
+                f_indices[t[0]] = t[2]
+
+            index_set = False
+
+            for item in partitions.split(';'):
+                fields = item.split(':')
+
+                if not index_set:
+                    index_set = True
+
+                    if all(i[1] in fields for i in required_fields):
+                        # pmap format contains headers from server 3.9 onwards
+                        for t in required_fields:
+                            f_indices[t[0]] = fields.index(t[1])
+
+                        continue
+
+                    elif LooseVersion(versions[_node]) >= LooseVersion("3.6.1"):
+                        # pmap format is changed(1 field is removed) in aerospike 3.6.1
+                        # In 3.7.5, one new field got added but at the end of the fields. So it doesn't affect required indices
+                        f_indices["objects_index"]=8
+
+                ns, pid, state, pindex, objects = fields[f_indices["ns_index"]], int(fields[f_indices["pid_index"]]),\
+                                         fields[f_indices["state_index"]], int(fields[f_indices["pindex_index"]]),\
+                                         int(fields[f_indices["objects_index"]])
+
+                if ns not in node_pmap:
+                    node_pmap[ns] = { 'pri_index' : 0,
+                                      'sec_index' : 0,
+                                      'master_disc_part': [],
+                                      'replica_disc_part':[]
+                                    }
+
+                if ns not in visited_ns:
+                    ns_missing_part[ns] = {}
+                    ns_missing_part[ns]['missing_part'] = [range(ns_info[ns]['repl_factor']) for i in range(pid_range)]
+                    visited_ns.add(ns)
+
+                if state == 'S':
+                    # partition state is SYNC
+                    try:
+                        if  pindex == 0:
+                            node_pmap[ns]['pri_index'] += 1
+                            exp_master_objs = ns_info[ns]['avg_master_objs']
+
+                            if exp_master_objs == 0 and objects == 0:
+                                pass
+                            elif is_dist_delta_exeeds(exp_master_objs, objects, ns_info[ns]['diff_master']):
+                                node_pmap[ns]['master_disc_part'].append(pid)
+
+                        if  pindex in range(1, ns_info[ns]['repl_factor']):
+                            node_pmap[ns]['sec_index'] += 1
+                            exp_replica_objs = ns_info[ns]['avg_replica_objs']
+
+                            if exp_replica_objs == 0 and objects == 0:
+                                pass
+
+                            elif is_dist_delta_exeeds(exp_replica_objs, objects, ns_info[ns]['diff_replica']):
+                                node_pmap[ns]['replica_disc_part'].append(pid)
+
+                        ns_missing_part[ns]['missing_part'][pid].remove(pindex)
+
+                    except Exception:
+                        pass
+                if pid not in range(pid_range):
+                    print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
+
+            pmap_data[_node] = node_pmap
+
+        for _node, _ns in pmap_data.items():
+            for ns_name, params in _ns.items():
+                params['missing_part'] = self._format_missing_part(ns_missing_part[ns_name]['missing_part'])
+
+        return pmap_data
 
 @CommandHelp('"collectinfo" is used to collect cluster info, aerospike conf file and system stats.')
 class CollectinfoController(BasicCommandController):
@@ -764,23 +940,27 @@ class CollectinfoController(BasicCommandController):
     def _get_metadata(self, response_str, prefix=''):
         aws_c = ''
         aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
-        prefix_o = prefix
-        if prefix_o == '/':
-            prefix = ''
+
         for rsp in response_str.split("\n"):
             if rsp[-1:] == '/':
-                if prefix_o == '':  # First level child
-                    rsp_p = rsp.strip('/')
-                else:
-                    rsp_p = rsp
-                self._get_metadata(rsp_p, prefix)
+                rsp_p = rsp.strip('/')
+                aws_c += self._get_metadata(rsp_p, prefix)
             else:
-                meta_url = aws_metadata_base_url + prefix + '/' + rsp
+                meta_url = aws_metadata_base_url + prefix + rsp
+
                 req = urllib2.Request(meta_url)
                 r = urllib2.urlopen(req)
                 # r = requests.get(meta_url,timeout=aws_timeout)
                 if r.code != 404:
-                    aws_c += rsp + '\n' + r.read() + "\n"
+                    response = r.read()
+                    if response.strip().endswith("/") or "\n" in response.strip() or (rsp.strip() == "placement" and response.strip() == "availability-zone"):
+                        try:
+                            aws_c += self._get_metadata(response.strip(), prefix + rsp + "/")
+                        except Exception:
+                            aws_c +=  (prefix + rsp).strip('/') + '\n' + response + "\n\n"
+                    else:
+                        aws_c +=  (prefix + rsp).strip('/') + '\n' + response + "\n\n"
+
         return aws_c
 
     def _get_awsdata(self, line):
@@ -796,7 +976,7 @@ class CollectinfoController(BasicCommandController):
             if r.code == 200:
                 rsp = r.read()
                 aws_rsp += self._get_metadata(rsp, '/')
-                print "Requesting... {0} {1}  \t Successful".format(aws_metadata_base_url, aws_rsp)
+                print "Requesting... {0} \n{1}  \t Successful".format(aws_metadata_base_url, aws_rsp)
             else:
                 aws_rsp = " Not likely in AWS"
                 print "Requesting... {0} \t FAILED {1} ".format(aws_metadata_base_url, aws_rsp)
@@ -1227,13 +1407,15 @@ class CollectinfoController(BasicCommandController):
             ['ss -pant | grep %d | grep CLOSE-WAIT | wc -l' %
                 (port), 'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l' % (port)],
             ['ss -pant | grep %d | grep ESTAB | wc -l' %
-                (port), 'netstat -pant | grep %d | grep ESTABLISHED | wc -l' % (port)]
+                (port), 'netstat -pant | grep %d | grep ESTABLISHED | wc -l' % (port)],
+            ['ss -pant | grep %d | grep LISTEN | wc -l' %
+                (port), 'netstat -pant | grep %d | grep LISTEN | wc -l' % (port)]
         ]
         dignostic_info_params = [
             'network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
         dignostic_features_params = ['features']
         dignostic_show_params = ['config', 'config xdr', 'config dc', 'config cluster', 'distribution', 'distribution eviction',
-                                 'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex']
+                                 'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex', 'pmap']
         dignostic_aerospike_cluster_params = ['service', 'services']
         dignostic_aerospike_cluster_params_additional = [
             'partition-info',
@@ -1487,7 +1669,7 @@ class CollectinfoController(BasicCommandController):
     @CommandHelp('Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.',
                  'If credentials are not available then it will collect system stats from local node only.',
                  '  Options:',
-                 '    -n <int>        - Number of snapshots. Default: 3',
+                 '    -n <int>        - Number of snapshots. Default: 1',
                  '    -s <int>        - Sleep time in seconds between each snapshot. Default: 5 sec',
                  '    -U <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
                  '    -P <string>     - Default password for remote servers. This is System password (not Aerospike password).',
@@ -1515,7 +1697,7 @@ class CollectinfoController(BasicCommandController):
                 mods=self.mods)
 
         snp_count = util.get_arg_and_delete_from_mods(line=line, arg="-n",
-                return_type=int, default=2, modifiers=self.modifiers,
+                return_type=int, default=1, modifiers=self.modifiers,
                 mods=self.mods)
 
         wait_time = util.get_arg_and_delete_from_mods(line=line, arg="-t",
@@ -1553,7 +1735,7 @@ class CollectinfoController(BasicCommandController):
                 mods=self.mods)
 
         snp_count = util.get_arg_and_delete_from_mods(line=line, arg="-sc",
-                return_type=int, default=2, modifiers=self.modifiers,
+                return_type=int, default=1, modifiers=self.modifiers,
                 mods=self.mods)
 
         wait_time = util.get_arg_and_delete_from_mods(line=line, arg="-t",
@@ -1916,3 +2098,64 @@ class HealthCheckController(BasicCommandController):
 
             except Exception as e:
                 self.logger.error(e)
+
+
+@CommandHelp(
+        'Displays summary of Aerospike cluster.',
+        '  Options:',
+        '    -U <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
+        '    -P <string>     - Default password for remote servers. This is System password (not Aerospike password).',
+        '    -sp <int>       - Default SSH port for remote servers. Default: 22',
+        '    -cf <string>    - Remote System Credentials file path. ',
+        '                      If server credentials are not available in credential file then default userid and password will be used ',
+        '                      File format : each line should contain <IP[:PORT]> <USER_ID> <PASSWORD>',
+        '                      Example:  1.2.3.4 uid pwd',
+        '                                1.2.3.4:3232 uid pwd',
+        '                                [2001::1234:10] uid pwd',
+        '                                [2001::1234:10]:3232 uid pwd',)
+class SummaryController(BasicCommandController):
+
+    def __init__(self):
+        self.modifiers = set(['with'])
+
+    def _do_default(self, line):
+        credential_file = util.get_arg_and_delete_from_mods(line=line,
+                arg="-cf", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
+        default_user = util.get_arg_and_delete_from_mods(line=line, arg="-U",
+                return_type=str, default=None, modifiers=self.modifiers,
+                mods=self.mods)
+
+        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="-P",
+                return_type=str, default=None, modifiers=self.modifiers,
+                mods=self.mods)
+
+        default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
+                arg="-sp", return_type=int, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
+        service_stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
+        namespace_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=self.nodes).start()
+        set_stats = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
+
+        os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_port=default_ssh_port,
+                                                              credential_file=credential_file, commands=["lsb"])
+        server_version = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
+
+        service_stats = service_stats.result()
+        namespace_stats = namespace_stats.result()
+        set_stats = set_stats.result()
+        server_version = server_version.result()
+
+        metadata = {}
+        metadata["server_version"] = server_version
+        try:
+            metadata["os_version"] = util.flip_keys(os_version)["lsb"]
+        except Exception:
+            metadata["os_version"] = os_version
+
+        return util.Future(self.view.print_summary, util.create_summary(service_stats=service_stats, namespace_stats=namespace_stats,
+                                                    set_stats=set_stats, metadata=metadata))
+
+

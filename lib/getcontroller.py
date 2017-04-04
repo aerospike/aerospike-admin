@@ -506,88 +506,20 @@ class GetStatisticsController():
         ns_stats = self.cluster.info_all_namespace_statistics(nodes=nodes)
 
         features = {}
-        for node, stats in service_stats.iteritems():
-            features[node] = {}
-            features[node]["KVS"] = "NO"
-            if self._check_key_for_gt(stats, ('stat_read_reqs', 'stat_write_reqs')):
-                features[node]["KVS"] = "YES"
-            elif node in ns_stats:
-                for ns, nsval in ns_stats[node].iteritems():
-                    if self._check_key_for_gt(nsval, ('client_read_error', 'client_read_success', 'client_write_error', 'client_write_success')):
-                        features[node]["KVS"] = "YES"
-                        break
+        for feature, keys in util.FEATURE_KEYS.iteritems():
+            for node, s_stats in service_stats.iteritems():
 
-            features[node]["UDF"] = "NO"
-            if self._check_key_for_gt(stats, ('udf_read_reqs', 'udf_write_reqs')):
-                features[node]["UDF"] = "YES"
-            elif node in ns_stats:
-                for ns, nsval in ns_stats[node].iteritems():
-                    if self._check_key_for_gt(nsval, ('client_udf_complete', 'client_udf_error')):
-                        features[node]["UDF"] = "YES"
-                        break
+                if node not in features:
+                    features[node] = {}
 
-            features[node]["BATCH"] = "NO"
-            if self._check_key_for_gt(stats, ('batch_initiate', 'batch_index_initiate')):
-                features[node]["BATCH"] = "YES"
+                features[node][feature.upper()] = "NO"
+                n_stats = None
 
-            features[node]["SCAN"] = "NO"
-            if self._check_key_for_gt(stats, ('tscan_initiate', 'basic_scans_succeeded', 'basic_scans_failed', 'aggr_scans_succeeded'
-                                             'aggr_scans_failed', 'udf_bg_scans_succeeded', 'udf_bg_scans_failed')):
-                features[node]["SCAN"] = "YES"
-            elif node in ns_stats:
-                for ns, nsval in ns_stats[node].iteritems():
-                    if self._check_key_for_gt(nsval, ('scan_basic_complete', 'scan_basic_error', 'scan_aggr_complete',
-                                                     'scan_aggr_error', 'scan_udf_bg_complete', 'scan_udf_bg_error')):
-                        features[node]["SCAN"] = "YES"
-                        break
+                if node in ns_stats and not isinstance(ns_stats[node], Exception):
+                    n_stats = ns_stats[node]
 
-            features[node]["SINDEX"] = "NO"
-            if self._check_key_for_gt(stats, ('sindex-used-bytes-memory')):
-                features[node]["SINDEX"] = "YES"
-            elif node in ns_stats:
-                for ns, nsval in ns_stats[node].iteritems():
-                    if self._check_key_for_gt(nsval, ('memory_used_sindex_bytes')):
-                        features[node]["SINDEX"] = "YES"
-                        break
+                if util.check_feature_by_keys(s_stats, keys[0], n_stats, keys[1]):
+                    features[node][feature.upper()] = "YES"
 
-            features[node]["QUERY"] = "NO"
-            if self._check_key_for_gt(stats, ('query_reqs', 'query_success')):
-                features[node]["QUERY"] = "YES"
-            elif node in ns_stats:
-                for ns, nsval in ns_stats[node].iteritems():
-                    if self._check_key_for_gt(nsval, ('query_reqs', 'query_success')):
-                        features[node]["QUERY"] = "YES"
-                        break
-
-            features[node]["AGGREGATION"] = "NO"
-            if self._check_key_for_gt(stats, ('query_agg', 'query_agg_success')):
-                features[node]["AGGREGATION"] = "YES"
-            elif node in ns_stats:
-                for ns, nsval in ns_stats[node].iteritems():
-                    if self._check_key_for_gt(nsval, ('query_agg', 'query_agg_success')):
-                        features[node]["AGGREGATION"] = "YES"
-                        break
-
-            features[node]["LDT"] = "NO"
-            if self._check_key_for_gt(stats, ('sub-records', 'ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes', 'sub_objects')):
-                features[node]["LDT"] = "YES"
-            elif node in ns_stats:
-                for ns, nsval in ns_stats[node].iteritems():
-                    if self._check_key_for_gt(nsval, ('ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes')):
-                        features[node]["LDT"] = "YES"
-                        break
-
-            features[node]["XDR ENABLED"] = "NO"
-            if self._check_key_for_gt(stats, ('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error')):
-                features[node]["XDR ENABLED"] = "YES"
-
-            features[node]["XDR DESTINATION"] = "NO"
-            if self._check_key_for_gt(stats, ('stat_write_reqs_xdr')):
-                features[node]["XDR DESTINATION"] = "YES"
-            elif node in ns_stats:
-                for ns, nsval in ns_stats[node].iteritems():
-                    if self._check_key_for_gt(nsval, ('xdr_write_success')):
-                        features[node]["XDR DESTINATION"] = "YES"
-                        break
         return features
 

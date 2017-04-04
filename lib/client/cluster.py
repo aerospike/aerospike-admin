@@ -31,9 +31,10 @@ class Cluster(object):
     # state... This makes the class no
     cluster_state = {}
     use_services_alumni = False
+    use_services_alt = False
     crawl_lock = threading.Lock()
 
-    def __init__(self, seed_nodes, user=None, password=None, use_services_alumni=False,
+    def __init__(self, seed_nodes, user=None, password=None, use_services_alumni=False, use_services_alt=False,
                  ssl_context=None, only_connect_seed=False):
         """
         Want to be able to support multiple nodes on one box (for testing)
@@ -47,6 +48,7 @@ class Cluster(object):
         self.user = user
         self.password = password
         Cluster.use_services_alumni = use_services_alumni
+        Cluster.use_services_alt = use_services_alt
 
         # self.nodes is a dict from Node ID -> Node objects
         self.nodes = {}
@@ -343,6 +345,7 @@ class Cluster(object):
             new_node = Node(addr, port, tls_name=tls_name, user=self.user,
                             password=self.password,
                             consider_alumni=Cluster.use_services_alumni,
+                            use_services_alt=Cluster.use_services_alt,
                             ssl_context=self.ssl_context)
 
             if not new_node:
