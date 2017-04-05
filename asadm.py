@@ -117,7 +117,10 @@ class AerospikeShell(cmd.Cmd):
             else:
                 if user != None:
                     if password == "prompt":
-                        password = getpass.getpass("Enter Password:")
+			if sys.stdin.isatty():
+				password = getpass.getpass('Enter Password:')
+			else:
+    				password = sys.stdin.readline().rstrip()
                     password = info.hashpassword(password)
 
                 self.ctrl = BasicRootController(seed_nodes=[seed], user=user,
