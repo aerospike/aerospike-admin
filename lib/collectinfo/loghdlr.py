@@ -25,7 +25,7 @@ import zipfile
 from lib.collectinfo_parser.full_parser import parse_info_all
 from lib.collectinfo.reader import CollectinfoReader
 from lib.collectinfo.cinfolog import CollectinfoLog
-from lib.utils.constants import CLUSTER_FILE, JSON_FILE, SYSTEM_FILE
+from lib.utils.constants import ADMIN_HOME, CLUSTER_FILE, JSON_FILE, SYSTEM_FILE
 from lib.utils.util import restructure_sys_data
 from lib.utils import logutil
 
@@ -55,8 +55,7 @@ class CollectinfoLoghdlr(object):
     parsed_system_data_logs = []
 
     # for zipped files
-    ADMINHOME = os.environ['HOME'] + '/.aerospike/'
-    COLLECTINFO_DIR = ADMINHOME + 'collectinfo/'
+    COLLECTINFO_DIR = ADMIN_HOME + 'collectinfo/'
     COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
 
     def __init__(self, cinfo_path):
@@ -75,6 +74,7 @@ class CollectinfoLoghdlr(object):
             sys.exit(1)
 
         health_data_updated = self._add_data_to_health_dict(cinfo_path)
+
         if not health_data_updated:
             self.logger.info("No data added for healthcheck.")
 
@@ -374,11 +374,13 @@ class CollectinfoLoghdlr(object):
 
                 for node in data:
 
-                    if node not in res_dict:
-                        res_dict[ts][node] = {}
-
                     try:
                         d = copy.deepcopy(data[node]['as_stat'][info_type])
+                        if not d or isinstance(d, Exception):
+                            continue
+
+                        if node not in res_dict[ts]:
+                            res_dict[ts][node] = {}
 
                         if stanza in ['namespace', 'bin', 'set', 'sindex']:
                             d = d["namespace"]

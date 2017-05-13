@@ -188,10 +188,12 @@ class InfoController(CollectinfoCommandController):
                 except Exception:
                     pass
                 continue
+
             xdr_enable = {}
             cinfo_log = self.loghdlr.get_cinfo_log_at(
                 timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
+
             for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
 

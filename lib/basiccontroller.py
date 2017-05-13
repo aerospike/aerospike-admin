@@ -563,11 +563,11 @@ class ShowStatisticsController(BasicCommandController):
         self.getter = GetStatisticsController(self.cluster)
 
     @CommandHelp('Displays service statistics')
-    def do_service(self, line):
+    def do_service(self, line, show_total=False):
 
         service_stats = self.getter.get_service(nodes=self.nodes)
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
@@ -579,9 +579,9 @@ class ShowStatisticsController(BasicCommandController):
                 title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays namespace statistics')
-    def do_namespace(self, line):
+    def do_namespace(self, line, show_total=False):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line, arg="-r",
@@ -597,9 +597,9 @@ class ShowStatisticsController(BasicCommandController):
             for namespace in sorted(ns_stats.keys())]
 
     @CommandHelp('Displays sindex statistics')
-    def do_sindex(self, line):
+    def do_sindex(self, line, show_total=False):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
@@ -615,9 +615,9 @@ class ShowStatisticsController(BasicCommandController):
             for ns_set_sindex in sorted(sindex_stats.keys())]
 
     @CommandHelp('Displays set statistics')
-    def do_sets(self, line):
+    def do_sets(self, line, show_total=False):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
@@ -633,9 +633,9 @@ class ShowStatisticsController(BasicCommandController):
             for (namespace, set_name), stats in set_stats.iteritems()]
 
     @CommandHelp('Displays bin statistics')
-    def do_bins(self, line):
+    def do_bins(self, line, show_total=False):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
@@ -650,9 +650,9 @@ class ShowStatisticsController(BasicCommandController):
             for namespace, new_bin_stat in new_bin_stats.iteritems()]
 
     @CommandHelp('Displays XDR statistics')
-    def do_xdr(self, line):
+    def do_xdr(self, line, show_total=False):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
@@ -666,9 +666,9 @@ class ShowStatisticsController(BasicCommandController):
                 title_every_nth=title_every_nth, **self.mods)
 
     @CommandHelp('Displays datacenter statistics')
-    def do_dc(self, line):
+    def do_dc(self, line, show_total=False):
         
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
         
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
@@ -688,10 +688,14 @@ class ShowStatisticsController(BasicCommandController):
                  '    -r <int>     - Repeating output table title and row header after every r columns.',
                  '                   default: 0, no repetition.')
     def _do_default(self, line):
-        actions = (util.Future(self.do_bins, line).start(),
-                   util.Future(self.do_sets, line).start(),
-                   util.Future(self.do_service, line).start(),
-                   util.Future(self.do_namespace, line).start())
+
+        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
+                default=False, modifiers=self.modifiers, mods=self.mods)
+
+        actions = (util.Future(self.do_bins, line, show_total).start(),
+                   util.Future(self.do_sets, line, show_total).start(),
+                   util.Future(self.do_service, line, show_total).start(),
+                   util.Future(self.do_namespace, line, show_total).start())
 
         return [action.result() for action in actions]
 
@@ -1136,48 +1140,65 @@ class CollectinfoController(BasicCommandController):
     def _restructure_set_section(self, stats):
         for node, node_data in stats.iteritems():
             if 'set' not in node_data.keys():
-                return
+                continue
+
             for key, val in node_data['set'].iteritems():
                 ns_name = key[0]
                 setname = key[1]
+
                 if ns_name not in node_data['namespace']:
                     continue
+
                 ns = node_data['namespace'][ns_name]
+
                 if 'set' not in ns.keys():
                     ns['set'] = {}
+
                 ns['set'][setname] = copy.deepcopy(val)
+
             del node_data['set']
 
     def _restructure_sindex_section(self, stats):
+        # Due to new server feature namespace add/remove with rolling restart,
+        # there is possibility that different nodes will have different namespaces and
+        # old sindex info available for node which does not have namespace for that sindex.
+
         for node, node_data in stats.iteritems():
             if 'sindex' not in node_data.keys():
-                return
+                continue
+
             for key, val in node_data['sindex'].iteritems():
                 key_list = key.split()
                 ns_name = key_list[0]
                 sindex_name = key_list[2]
 
-                if node_data['namespace'][ns_name]:
-                    ns = node_data['namespace'][ns_name]
-                    if 'sindex' not in ns.keys():
-                        ns['sindex'] = {}
-                    ns['sindex'][sindex_name] = copy.deepcopy(val)
+                if ns_name not in node_data['namespace']:
+                    continue
+
+                ns = node_data['namespace'][ns_name]
+                if 'sindex' not in ns.keys():
+                    ns['sindex'] = {}
+                ns['sindex'][sindex_name] = copy.deepcopy(val)
+
             del node_data['sindex']
 
     def _restructure_bin_section(self, stats):
         for node, node_data in stats.iteritems():
             if 'bin' not in node_data.keys():
-                return
+                continue
             for ns_name, val in node_data['bin'].iteritems():
-                if node_data['namespace'][ns_name]:
-                    ns = node_data['namespace'][ns_name]
-                    ns['bin'] = copy.deepcopy(val)
+                if ns_name not in node_data['namespace']:
+                    continue
+
+                ns = node_data['namespace'][ns_name]
+                ns['bin'] = copy.deepcopy(val)
+
             del node_data['bin']
 
     def _init_stat_ns_subsection(self, data):
         for node, node_data in data.iteritems():
             if 'namespace' not in node_data.keys():
-                return
+                continue
             ns_map = node_data['namespace']
             for ns, data in ns_map.iteritems():
                 ns_map[ns]['set'] = {}
@@ -1187,7 +1208,7 @@ class CollectinfoController(BasicCommandController):
     def _restructure_ns_section(self, data):
         for node, node_data in data.iteritems():
             if 'namespace' not in node_data.keys():
-                return
+                continue
             ns_map = node_data['namespace']
             for ns, data in ns_map.iteritems():
                 stat = {}

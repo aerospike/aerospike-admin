@@ -58,11 +58,12 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger('asadm')
 logger.setLevel(logging.INFO)
 
+from lib.basiccontroller import BasicRootController
 from lib.client import info
 from lib.client.ssl_context import SSLContext
-from lib.basiccontroller import BasicRootController
-from lib.logcontroller import LogRootController
 from lib.collectinfocontroller import CollectinfoRootController
+from lib.logcontroller import LogRootController
+from lib.utils.constants import ADMIN_HOME
 from lib.view import terminal
 
 __version__ = '$$__version__$$'
@@ -70,8 +71,7 @@ CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
 CMD_FILE_MULTI_LINE_COMMENT_START = "/*"
 CMD_FILE_MULTI_LINE_COMMENT_END = "*/"
 
-ADMINHOME = os.environ['HOME'] + '/.aerospike/'
-ADMINHIST = ADMINHOME + 'admin_hist'
+ADMINHIST = ADMIN_HOME + 'admin_hist'
 
 MULTILEVEL_COMMANDS = ["show", "info"]
 
@@ -117,7 +117,10 @@ class AerospikeShell(cmd.Cmd):
             else:
                 if user != None:
                     if password == "prompt":
-                        password = getpass.getpass("Enter Password:")
+                        if sys.stdin.isatty():
+                            password = getpass.getpass("Enter Password:")
+                        else:
+                            password = sys.stdin.readline().strip()
                     password = info.hashpassword(password)
 
                 self.ctrl = BasicRootController(seed_nodes=[seed], user=user,
@@ -369,7 +372,6 @@ class AerospikeShell(cmd.Cmd):
         self.close()
         import readline
         readline.write_history_file(ADMINHIST)
-        # print "\nConfig files location: " + str(ADMINHOME)
         return True
 
     def do_EOF(self, line):
@@ -591,8 +593,8 @@ def main():
         print "Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate."
         exit(1)
 
-    if not os.path.isdir(ADMINHOME):
-        os.makedirs(ADMINHOME)
+    if not os.path.isdir(ADMIN_HOME):
+        os.makedirs(ADMIN_HOME)
 
     seed = (cli_args.host, cli_args.port, cli_args.tls_name)
 

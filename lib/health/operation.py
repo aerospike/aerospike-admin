@@ -493,8 +493,15 @@ def do_group_by(data, group_by, keys=[]):
 
         else:
             keys.append((k, t))
-            res = deep_merge_dicts(res, do_group_by(data[(k, t)], group_by, keys))
-            keys.remove((k, t))
+
+            try:
+                res = deep_merge_dicts(res, do_group_by(data[(k, t)], group_by, keys))
+
+            except Exception as e:
+                raise e
+
+            finally:
+                keys.remove((k, t))
 
     return res
 

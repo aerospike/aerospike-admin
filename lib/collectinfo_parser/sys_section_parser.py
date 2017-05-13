@@ -173,6 +173,9 @@ def _parse_top_section(imap, parsed_map):
         if 'Ki_b' in line:
             kib_format = True
 
+        if 'KiB' in line:
+			kib_format = True
+
         # Match object to get uptime in days.
         # "top - 18:56:45 up 103 days, 13:00,  2 users,  load average: 1.29, 1.34, 1.35\n"
         matchobj_1 = re.match(r'.*up (.*?) days.*', line)

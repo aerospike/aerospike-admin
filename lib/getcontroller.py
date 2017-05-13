@@ -411,6 +411,9 @@ class GetStatisticsController():
             ns_stats[namespace] = util.Future(
                 self.cluster.info_namespace_statistics, namespace,
                 nodes=nodes).start().result()
+            for _k in ns_stats[namespace].keys():
+                if not ns_stats[namespace][_k]:
+                    ns_stats[namespace].pop(_k)
 
         return ns_stats
 

@@ -159,10 +159,8 @@ def authenticate(sock, user, password):
         recv_buff = receivedata(sock, 24)
         rv = admin_parse_header(recv_buff)
         return rv[2]
-    except Exception, msg:
-        print "Authentication exception: ", msg
-        return -1
-
+    except Exception as ex:
+        raise IOError("Error: %s" % str(ex))
 
 def _info_request(sock, buf):
 
@@ -176,8 +174,7 @@ def _info_request(sock, buf):
         if sz > 0:
             rsp_data = receivedata(sock, sz)
     except Exception as ex:
-        print "info request got exception ", type(ex), " ", ex
-        return -1
+        raise IOError("Error: %s" % str(ex))
 
     # parse out responses
     if sz == 0:
@@ -188,7 +185,7 @@ def _info_request(sock, buf):
 
 def info(sock, names=None):
     if not sock:
-        return -1
+        raise IOError("Error: Could not connect to node")
     # Passed a set of names: created output buffer
 
     if names == None:

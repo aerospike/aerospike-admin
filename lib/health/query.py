@@ -123,12 +123,14 @@ ASSERT(r, True, "Low namespace available bin names.", "LIMITS", WARNING,
 
 
 /* Holds only upto 4B key */
+SET CONSTRAINT VERSION < 3.12;
 s = select "memory-size" from NAMESPACE;
 r = group by NODE, NAMESPACE do SUM(s);
 e = do r <= 274877906944;
 ASSERT(e, True, "Namespace configured to use more than 256G.", "LIMITS", WARNING,
 				"On list nodes namespace as mentioned have configured more than 256G of memory. Namespace with data not in memory can have max upto 4billion keys and can utilize only up to 256G. Please run 'show statistics namespace like memory-size' to check configured memory.",
 				"Namespace per node memory limit check.");
+SET CONSTRAINT VERSION ALL;
 
 /*
 Following query selects assigned memory-size from namespace statistics and total ram size from system statistics.
@@ -257,6 +259,15 @@ r = group by CLUSTER, NAMESPACE do EQUAL(nsid);
 ASSERT(r, True, "Different namespace order in aerospike conf.", "OPERATIONS", CRITICAL,
 				"Listed namespace[s] have different order on different nodes. Please check aerospike conf file on all nodes and change configuration to make namespace order same.",
 				"Namespace order check.");
+
+repl = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG;
+repl = group by CLUSTER, NAMESPACE repl;
+ns_count = group by CLUSTER do COUNT(repl);
+ns_count_per_node = group by CLUSTER, NODE do COUNT(repl);
+r = do ns_count_per_node == ns_count;
+ASSERT(r, True, "Disparate namespaces.", "OPERATIONS", WARNING,
+				"Listed node[s] do not have all namespaces configured. Please check aerospike conf file on all nodes and change namespace configuration as per requirement.",
+				"Namespaces per node count check.");
 
 r = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG;
 r = group by CLUSTER, NAMESPACE r;
@@ -529,6 +540,28 @@ ASSERT(r, True, "Unstable Cluster.", "OPERATIONS", CRITICAL,
 				"Listed node[s] have cluster size not matching total number of available nodes. This indicates cluster is not completely wellformed. Please check server logs for more information. Probable cause - issue with network.",
 				"Cluster stability check.");
 
+hp = select "heartbeat.protocol", "heartbeat-protocol" from NETWORK.CONFIG;
+heartbeat_proto_v2 = do hp == "v2";
+heartbeat_proto_v2 = group by CLUSTER, NODE do OR(heartbeat_proto_v2);
+cs = select "cluster_size" from SERVICE.STATISTICS;
+mcs = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG;
+r = do cs < mcs;
+ASSERT(r, True, "Critical cluster size.", "OPERATIONS", CRITICAL,
+				"Listed node[s] have cluster size higher than configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
+				"Critical cluster size check.",
+				heartbeat_proto_v2);
+
+small_max_configured = do mcs < 20;
+critical_size = do cs >= mcs;
+correct_size = do mcs - 10;
+correct_size = do cs <= correct_size;
+r = do small_max_configured || critical_size;
+r = do r || correct_size;
+ASSERT(r, True, "Cluster size is near the max configured cluster size.", "OPERATIONS", WARNING,
+				"Listed node[s] have cluster size near the configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
+				"Cluster size check.",
+				heartbeat_proto_v2);
+
 
 /* UDF */
 
@@ -710,6 +743,5 @@ ASSERT(r, True, "Non-zero node read errors count", "OPERATIONS", INFO,
 
 
 SET CONSTRAINT VERSION ALL;
-
 
 '''

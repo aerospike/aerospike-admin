@@ -34,7 +34,7 @@ FEATURE_KEYS = {
         "Aggregation": (('query_agg', 'query_agg_success'), ('query_agg', 'query_agg_success')),
         "LDT": (('sub-records', 'ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes', 'sub_objects'),
                 ('ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes')),
-        "XDR Enabled": (('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error'), None),
+        "XDR Source": (('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error'), None),
         "XDR Destination": (('stat_write_reqs_xdr'), ('xdr_write_success')),
     }
 
@@ -246,12 +246,16 @@ def get_value_from_dict(d, keys, default_value=None, return_type=None):
     for key in keys:
         if key in d:
             val = d[key]
-            if return_type and val:
+            if val is not None:
+                if not return_type:
+                    return val
+
                 try:
                     return return_type(val)
                 except:
                     pass
-            return val
+
+            return default_value
     return default_value
 
 
@@ -509,10 +513,9 @@ def compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict)
     for ns, ns_stats in namespace_stats.iteritems():
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
-
-        repl_factor = get_value_from_second_level_of_dict(ns_stats, ("repl-factor",), default_value=0, return_type=int).values()[0]
+        repl_factor = max(get_value_from_second_level_of_dict(ns_stats, ("repl-factor",), default_value=0, return_type=int).values())
         master_objects = sum(get_value_from_second_level_of_dict(ns_stats, ("master_objects", "master-objects"), default_value=0, return_type=int).values())
-        devices_in_use = list(set(get_value_from_second_level_of_dict(ns_stats, ("storage-engine.device", "device", "storage-engine.file", "file"), default_value=None, return_type=str).values()))
+        devices_in_use = list(set(get_value_from_second_level_of_dict(ns_stats, ("storage-engine.device", "device", "storage-engine.file", "file", "dev"), default_value=None, return_type=str).values()))
         memory_data_size = None
         device_data_size = None
 
@@ -565,6 +568,8 @@ def initialize_summary_output(ns_list):
     summary_dict = {}
     summary_dict["CLUSTER"] = {}
 
+    summary_dict["CLUSTER"]["server_version"] = []
+    summary_dict["CLUSTER"]["os_version"] = []
     summary_dict["CLUSTER"]["active_features"] = []
 
     summary_dict["CLUSTER"]["device"] = {}
@@ -636,27 +641,30 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
     cl_nodewise_device_aval = {}
 
     compute_license_data_size(namespace_stats, set_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"])
-    summary_dict["CLUSTER"]["active_features"] = features
 
+    summary_dict["CLUSTER"]["active_features"] = features
     summary_dict["CLUSTER"]["cluster_size"]= list(set(get_value_from_second_level_of_dict(service_stats, ("cluster_size",), default_value=0, return_type=int).values()))
-    if metadata["server_version"]:
+
+    if "server_version" in metadata and metadata["server_version"]:
         summary_dict["CLUSTER"]["server_version"]= list(set(metadata["server_version"].values()))
 
-    if metadata["os_version"]:
+    if "os_version" in metadata and metadata["os_version"]:
         summary_dict["CLUSTER"]["os_version"]= list(set(get_value_from_second_level_of_dict(metadata["os_version"], ("description",), default_value="", return_type=str).values()))
 
     for ns, ns_stats in namespace_stats.iteritems():
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
-        device_names_str = get_value_from_second_level_of_dict(ns_stats, ("storage-engine.device", "device", "storage-engine.file", "file"), default_value="", return_type=str)
+        device_names_str = get_value_from_second_level_of_dict(ns_stats, ("storage-engine.device", "device", "storage-engine.file", "file", "dev"), default_value="", return_type=str)
         device_counts = dict([(k, len(v.split(',')) if v else 0) for k, v in device_names_str.iteritems()])
         cl_nodewise_device_counts = add_dicts(cl_nodewise_device_counts, device_counts)
 
         ns_total_devices = sum(device_counts.values())
+        ns_total_nodes = len(ns_stats.keys())
+
         if ns_total_devices:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count"] = ns_total_devices
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count_per_node"] = int((float(ns_total_devices)/float(total_nodes)) + 0.5)
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count_per_node"] = int((float(ns_total_devices)/float(ns_total_nodes)) + 0.5)
             if len(set(device_counts.values())) > 1:
                 summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count_same_across_nodes"] = False
 

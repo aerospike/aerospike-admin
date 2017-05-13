@@ -373,6 +373,9 @@ class Node(object):
             port = self.port
         result = None
         sock = self._get_connection(ip, port)
+        if not sock:
+            raise IOError("Error: Could not connect to node %s" % ip)
+
         try:
             if sock:
                 result = sock.execute(command)
@@ -380,13 +383,11 @@ class Node(object):
             if result != -1 and result is not None:
                 return result
             else:
-                raise IOError(
-                    "Invalid command or Could not connect to node %s " % ip)
-        except Exception:
+                raise IOError("Error: Invalid command '%s'" % command)
+        except Exception as ex:
             if sock:
                 sock.close()
-            raise IOError(
-                "Invalid command or Could not connect to node %s " % ip)
+            raise ex
 
     @return_exceptions
     def info(self, command):
@@ -646,7 +647,14 @@ class Node(object):
         dict -- {stat_name : stat_value, ...}
         """
 
-        return util.info_to_dict(self.info("namespace/%s" % namespace))
+        ns_stat = util.info_to_dict(self.info("namespace/%s" % namespace))
+
+        # Due to new server feature namespace add/remove with rolling restart,
+        # there is possibility that different nodes will have different namespaces.
+        # type = unknown means namespace is not available on this node, so just return empty map.
+        if ns_stat and not isinstance(ns_stat, Exception) and "type" in ns_stat and ns_stat["type"] == "unknown":
+            ns_stat = {}
+        return ns_stat
 
     @return_exceptions
     def info_all_namespace_statistics(self):
@@ -1163,6 +1171,7 @@ class Node(object):
 
     @return_exceptions
     def _spawn_remote_system(self, ip, user, pwd, port=None):
+
         global COMMAND_PROMPT
         terminal_prompt = '(?i)terminal type\?'
         terminal_type = 'vt100'
@@ -1172,21 +1181,26 @@ class Node(object):
 
         if port:
             ssh_options += " -p %s"%(str(port))
+
         s = pexpect.spawn('ssh %s -l %s %s'%(ssh_options, str(user), str(ip)))
 
         i = s.expect([pexpect.TIMEOUT, ssh_newkey, COMMAND_PROMPT, '(?i)password'])
+
         if i == 0:
             # Timeout
             return None
 
         enter_pwd = False
+
         if i == 1:
             # In this case SSH does not have the public key cached.
             s.sendline ('yes')
             s.expect ('(?i)password')
             enter_pwd = True
+
         elif i == 2:
             pass
+
         elif i == 3:
             enter_pwd = True
 
@@ -1197,16 +1211,19 @@ class Node(object):
                 s.sendline (terminal_type)
                 s.expect (COMMAND_PROMPT)
 
-        COMMAND_PROMPT = "\[PEXPECT\]\$ "
+        COMMAND_PROMPT = "\[PEXPECT\][\$\#] "
         # sh style
         s.sendline ("PS1='[PEXPECT]\$ '")
         i = s.expect ([pexpect.TIMEOUT, COMMAND_PROMPT], timeout=10)
+
         if i == 0:
             # csh-style.
             s.sendline ("set prompt='[PEXPECT]\$ '")
             i = s.expect ([pexpect.TIMEOUT, COMMAND_PROMPT], timeout=10)
+
             if i == 0:
                 return None
+
         return s
 
     @return_exceptions
