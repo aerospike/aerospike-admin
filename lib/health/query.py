@@ -711,5 +711,12 @@ ASSERT(r, True, "Non-zero node read errors count", "OPERATIONS", INFO,
 
 SET CONSTRAINT VERSION ALL;
 
+defslp= select "storage-engine.defrag-sleep" from NAMESPACE.CONFIG;
+r = do defslp == 1000;
+ASSERT(r, True, "Non-default namespace defrag-sleep configuration.", "OPERATIONS",INFO,
+				"Listed namespace[s] have non-default defrag-sleep configuration. Please run 'show config namespace like defrag' to check value. It may be a non-issue in case namespace are configureg for aggressive defrag. Ignore those.",
+				"Non-default namespace defrag-sleep check.");
+
+
 
 '''
