@@ -420,11 +420,11 @@ class CollectinfoLoghdlr(object):
             return False
 
         try:
-            if zipfile.is_zipfile(file):
-                compressed_file =  zipfile.ZipFile(file, "r")
-
-            elif tarfile.is_tarfile(file):
+            if tarfile.is_tarfile(file):
                 compressed_file = tarfile.open(file)
+
+            elif zipfile.is_zipfile(file):
+                compressed_file =  zipfile.ZipFile(file, "r")
 
             else:
                 return False

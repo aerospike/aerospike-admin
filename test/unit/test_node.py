@@ -22,7 +22,6 @@ from lib.client.node import Node
 class NodeTest(unittest.TestCase):
     def get_info_mock(self, return_value):
         Node._info_cinfo.return_value = return_value
-        Node._info_telnet.return_value = return_value
 
         n = Node("127.0.0.1")
 
@@ -30,19 +29,16 @@ class NodeTest(unittest.TestCase):
 
     def setUp(self):
         info_cinfo = patch('lib.client.node.Node._info_cinfo')
-        info_telnet = patch('lib.client.node.Node._info_telnet')
         getfqdn = patch('lib.client.node.getfqdn')
         getaddrinfo = patch('socket.getaddrinfo')
 
         self.addCleanup(patch.stopall)
 
         lib.client.node.Node._info_cinfo = info_cinfo.start()
-        Node._info_telnet = info_telnet.start()
         lib.client.node.getfqdn = getfqdn.start()
         socket.getaddrinfo = getaddrinfo.start()
 
         Node._info_cinfo.return_value = ""
-        Node._info_telnet.return_value = ""
         lib.client.node.getfqdn.return_value = "host.domain.local"
         socket.getaddrinfo.return_value = [(2, 1, 6, '', ('192.1.1.1', 3000))]
 
@@ -71,10 +67,6 @@ class NodeTest(unittest.TestCase):
 
         n.info("node")
         assert n._info_cinfo.called, "_info_cinfo was not called"
-
-        n._use_telnet = True
-        n.info("ndoe")
-        assert n._info_telnet.called, "_info_telnet was not called"
 
     def test_info_services(self):
         """

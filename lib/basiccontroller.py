@@ -51,14 +51,14 @@ class BasicRootController(BaseController):
 
     def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], user=None,
                  password=None, use_services_alumni=False, use_services_alt=False, ssl_context=None,
-                 asadm_version='', only_connect_seed=False):
+                 asadm_version='', only_connect_seed=False, timeout=5):
 
         super(BasicRootController, self).__init__(asadm_version)
 
         # Create static instance of cluster
         BasicRootController.cluster = Cluster(seed_nodes, user, password,
                                               use_services_alumni, use_services_alt,
-                                              ssl_context, only_connect_seed)
+                                              ssl_context, only_connect_seed, timeout=timeout)
 
         # Create Basic Command Controller Object
         BasicRootController.command = BasicCommandController(self.cluster)
@@ -1302,14 +1302,14 @@ class CollectinfoController(BasicCommandController):
             f.write(json.dumps(dump, indent=4, separators=(',', ':')))
 
     def _get_collectinfo_data_json(self, default_user, default_pwd,
-            default_ssh_port, credential_file):
+            default_ssh_port, default_ssh_key, credential_file):
 
         dump_map = {}
 
         meta_map = self._get_as_metadata()
 
-        sys_map = self.cluster.info_system_statistics(default_user,
-                default_pwd, default_ssh_port, credential_file, nodes=self.nodes)
+        sys_map = self.cluster.info_system_statistics(default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
+                                                      default_ssh_port=default_ssh_port, credential_file=credential_file, nodes=self.nodes)
 
         as_map = self._get_as_data_json()
 
@@ -1336,7 +1336,7 @@ class CollectinfoController(BasicCommandController):
         snp_map[cluster_name] = dump_map
         return snp_map
 
-    def _main_collectinfo(self, default_user, default_pwd, default_ssh_port,
+    def _main_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
             credential_file, snp_count, wait_time, show_all=False,
             verbose=False):
 
@@ -1363,7 +1363,7 @@ class CollectinfoController(BasicCommandController):
                 "%Y-%m-%d %H:%M:%S UTC", time.gmtime())
             print("[INFO] Data collection for Snapshot: " + str(i + 1) + " in progress..")
             snpshots[snp_timestamp] = self._get_collectinfo_data_json(
-                default_user, default_pwd, default_ssh_port, credential_file)
+                default_user, default_pwd, default_ssh_port, default_ssh_key, credential_file)
             time.sleep(wait_time)
 
         self._dump_in_file(timestamp, as_logfile_prefix, snpshots)
@@ -1693,23 +1693,22 @@ class CollectinfoController(BasicCommandController):
                  '    -n <int>        - Number of snapshots. Default: 1',
                  '    -s <int>        - Sleep time in seconds between each snapshot. Default: 5 sec',
                  '    -U <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-                 '    -P <string>     - Default password for remote servers. This is System password (not Aerospike password).',
+                 '    -P <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
                  '    -sp <int>       - Default SSH port for remote servers. Default: 22',
+                 '    -sk <string>    - Default SSH key (file path) for remote servers.',
                  '    -cf <string>    - Remote System Credentials file path. ',
-                 '                      If server credentials are not available in credential file then default userid and password will be used ',
-                 '                      File format : each line should contain <IP[:PORT]> <USER_ID> <PASSWORD>',
-                 '                      Example:  1.2.3.4 uid pwd',
-                 '                                1.2.3.4:3232 uid pwd',
-                 '                                [2001::1234:10] uid pwd',
-                 '                                [2001::1234:10]:3232 uid pwd',
+                 '                      If server credentials are not available in credential file then default credentials will be used ',
+                 '                      File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
+                 '                      Example:  1.2.3.4,uid,pwd',
+                 '                                1.2.3.4:3232,uid,pwd',
+                 '                                1.2.3.4:3232,uid,,key_path',
+                 '                                1.2.3.4:3232,uid,passphrase,key_path',
+                 '                                [2001::1234:10],uid,pwd',
+                 '                                [2001::1234:10]:3232,uid,,key_path',
                  )
     def _do_default(self, line):
 
-        credential_file = util.get_arg_and_delete_from_mods(line=line, 
-                arg="-cf", return_type=str, default=None, 
-                modifiers=self.modifiers, mods=self.mods)
-
-        default_user = util.get_arg_and_delete_from_mods(line=line, 
+        default_user = util.get_arg_and_delete_from_mods(line=line,
                 arg="-U", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
@@ -1729,8 +1728,16 @@ class CollectinfoController(BasicCommandController):
                 arg="-sp", return_type=int, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
+        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
+                arg="-sk", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
+        credential_file = util.get_arg_and_delete_from_mods(line=line,
+                arg="-cf", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
         self.cmds_error = set()
-        self._main_collectinfo(default_user, default_pwd, default_ssh_port,
+        self._main_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
                 credential_file, snp_count, wait_time, False, False)
 
         if self.cmds_error:
@@ -1865,15 +1872,18 @@ class HealthCheckController(BasicCommandController):
         '    -n <int>        - Number of snapshots. Default: 3',
         '    -s <int>        - Sleep time in seconds between each snapshot. Default: 1 sec',
         '    -U <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-        '    -P <string>     - Default password for remote servers. This is System password (not Aerospike password).',
+        '    -P <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
         '    -sp <int>       - Default SSH port for remote servers. Default: 22',
+        '    -sk <string>    - Default SSH key (file path) for remote servers.',
         '    -cf <string>    - Remote System Credentials file path. ',
-        '                      If server credentials are not available in credential file then default userid and password will be used ',
-        '                      File format : each line should contain <IP[:PORT]> <USER_ID> <PASSWORD>',
-        '                      Example:  1.2.3.4 uid pwd',
-        '                                1.2.3.4:3232 uid pwd',
-        '                                [2001::1234:10] uid pwd',
-        '                                [2001::1234:10]:3232 uid pwd',
+        '                      If server credentials are not available in credential file then default credentials will be used ',
+        '                      File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
+        '                      Example:  1.2.3.4,uid,pwd',
+        '                                1.2.3.4:3232,uid,pwd',
+        '                                1.2.3.4:3232,uid,,key_path',
+        '                                1.2.3.4:3232,uid,passphrase,key_path',
+        '                                [2001::1234:10],uid,pwd',
+        '                                [2001::1234:10]:3232,uid,,key_path',
         '    -oc <string>    - Output filter Category. ',
         '                      This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
         '                      Format : string of dot (.) separated category levels',
@@ -1914,6 +1924,10 @@ class HealthCheckController(BasicCommandController):
 
         default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
                 arg="-sp", return_type=int, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
+        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
+                arg="-sk", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
         output_filter_category = util.get_arg_and_delete_from_mods(line=line,
@@ -2017,8 +2031,8 @@ class HealthCheckController(BasicCommandController):
                 fetched_as_val = {}
 
                 # Collecting data
-                sys_stats = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_port=default_ssh_port,
-                                                              credential_file=credential_file)
+                sys_stats = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
+                                                                default_ssh_port=default_ssh_port, credential_file=credential_file)
 
                 for _key, (info_function, stanza_list) in stanza_dict.iteritems():
 
@@ -2125,25 +2139,25 @@ class HealthCheckController(BasicCommandController):
         'Displays summary of Aerospike cluster.',
         '  Options:',
         '    -U <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-        '    -P <string>     - Default password for remote servers. This is System password (not Aerospike password).',
+        '    -P <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
         '    -sp <int>       - Default SSH port for remote servers. Default: 22',
+        '    -sk <string>    - Default SSH key (file path) for remote servers.',
         '    -cf <string>    - Remote System Credentials file path. ',
-        '                      If server credentials are not available in credential file then default userid and password will be used ',
-        '                      File format : each line should contain <IP[:PORT]> <USER_ID> <PASSWORD>',
-        '                      Example:  1.2.3.4 uid pwd',
-        '                                1.2.3.4:3232 uid pwd',
-        '                                [2001::1234:10] uid pwd',
-        '                                [2001::1234:10]:3232 uid pwd',)
+        '                      If server credentials are not available in credential file then default credentials will be used ',
+        '                      File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
+        '                      Example:  1.2.3.4,uid,pwd',
+        '                                1.2.3.4:3232,uid,pwd',
+        '                                1.2.3.4:3232,uid,,key_path',
+        '                                1.2.3.4:3232,uid,passphrase,key_path',
+        '                                [2001::1234:10],uid,pwd',
+        '                                [2001::1234:10]:3232,uid,,key_path',
+        )
 class SummaryController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['with'])
 
     def _do_default(self, line):
-        credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="-cf", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
         default_user = util.get_arg_and_delete_from_mods(line=line, arg="-U",
                 return_type=str, default=None, modifiers=self.modifiers,
                 mods=self.mods)
@@ -2156,12 +2170,20 @@ class SummaryController(BasicCommandController):
                 arg="-sp", return_type=int, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
+        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
+                arg="-sk", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
+        credential_file = util.get_arg_and_delete_from_mods(line=line,
+                arg="-cf", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
         service_stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
         namespace_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=self.nodes).start()
         set_stats = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
 
-        os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_port=default_ssh_port,
-                                                              credential_file=credential_file, commands=["lsb"])
+        os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
+                                                         default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["lsb"])
         server_version = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
 
         service_stats = service_stats.result()

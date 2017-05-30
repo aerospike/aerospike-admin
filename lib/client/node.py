@@ -13,14 +13,11 @@
 # limitations under the License.
 
 import copy
+import logging
+import os
 import re
 import socket
-from telnetlib import Telnet
-from time import time
 import threading
-import logging
-import lib
-from distutils.version import LooseVersion
 from lib.client.assocket import ASSocket
 from lib.client import util
 from lib.collectinfo_parser.full_parser import parse_system_live_command
@@ -56,6 +53,7 @@ def getfqdn(address, timeout=0.5):
 
     t = threading.Thread(target=helper)
 
+    t.daemon = True
     t.start()
 
     t.join(timeout)
@@ -78,7 +76,7 @@ class Node(object):
     dns_cache = {}
     pool_lock = threading.Lock()
 
-    def __init__(self, address, port=3000, tls_name=None, timeout=3, user=None,
+    def __init__(self, address, port=3000, tls_name=None, timeout=5, user=None,
                  password=None,  ssl_context=None, consider_alumni=False, use_services_alt=False):
         """
         address -- ip or fqdn for this node
@@ -98,7 +96,6 @@ class Node(object):
         self.port = port
         self.xdr_port = 3004  # TODO: Find the xdr port
         self._timeout = timeout
-        self._use_telnet = False
         self.user = user
         self.password = password
         self.tls_name = tls_name
@@ -114,10 +111,12 @@ class Node(object):
         self.sys_ssh_port = None
         self.sys_user_id = None
         self.sys_pwd = None
+        self.sys_ssh_key = None
         self.sys_credential_file = None
         self.sys_default_ssh_port = None
         self.sys_default_user_id = None
         self.sys_default_pwd = None
+        self.sys_default_ssh_key = None
         self.sys_cmds = [
             ('hostname', ['hostname -I', 'hostname']),
             ('top', ['top -n1 -b', 'top -l 1']),
@@ -186,10 +185,11 @@ class Node(object):
                     address = s[0]
                     # calling update ip again because info_service may have provided a
                     # different IP than what was seeded.
-                    self._update_IP(address, self.port)
+                    self.ip = address
                     self.node_id = self.info_node()
 
                     if not isinstance(self.node_id, Exception):
+                        self._update_IP(address, self.port)
                         break
                 except Exception:
                     # Sometime unavailable address might be present in service
@@ -293,39 +293,6 @@ class Node(object):
         except Exception:
             return True
 
-    # Need to provide ip to _info_telnet and _info_cinfo as to maintain
-    # unique key for cache. When we run cluster on VM and asadm on Host then
-    # services returns all endpoints of server but some of them might not
-    # allowed by Host and VM connection. If we do not provide IP here, then
-    # we will get same result from cache for that IP to which asadm can't
-    # connect. If this happens while setting ip (connection process) then node
-    # will get that ip to which asadm can't connect. It will create new
-    # issues in future process.
-
-    @return_exceptions
-    @util.cached
-    def _info_telnet(self, command, ip=None, port=None):
-        # TODO: Handle socket failures
-        if ip == None:
-            ip = self.ip
-        if port == None:
-            port = self.port
-        try:
-            self.sock == self.sock  # does self.sock exist?
-        except Exception:
-            self.sock = Telnet(ip, port)
-
-        self.sock.write("%s\n" % command)
-
-        starttime = time()
-        result = ""
-        while not result:
-            result = self.sock.read_very_eager().strip()
-            if starttime + self._timeout < time():
-                # TODO: rasie appropriate exception
-                raise IOError("Could not connect to node %s" % ip)
-        return result
-
     def _get_connection(self, ip, port):
         sock = None
         with Node.pool_lock:
@@ -334,14 +301,14 @@ class Node(object):
                     sock = self.socket_pool[port].pop()
                     if sock.is_connected():
                         if not self.ssl_context:
-                            sock.settimeout(5.0)
+                            sock.settimeout(self._timeout)
                         break
                     sock.close(force=True)
             except Exception:
                 pass
         if sock:
             return sock
-        sock = ASSocket(self, ip, port)
+        sock = ASSocket(self, ip, port, timeout=self._timeout)
         if sock.connect():
             return sock
         return None
@@ -361,6 +328,15 @@ class Node(object):
         except Exception:
             pass
         self.socket_pool = None
+
+    # Need to provide ip to _info_cinfo as to maintain
+    # unique key for cache. When we run cluster on VM and asadm on Host then
+    # services returns all endpoints of server but some of them might not
+    # allowed by Host and VM connection. If we do not provide IP here, then
+    # we will get same result from cache for that IP to which asadm can't
+    # connect. If this happens while setting ip (connection process) then node
+    # will get that ip to which asadm can't connect. It will create new
+    # issues in future process.
 
     @return_exceptions
     @util.cached
@@ -397,10 +373,7 @@ class Node(object):
         Arguments:
         command -- the info command to execute on this node
         """
-        if self._use_telnet:
-            return self._info_telnet(command, self.ip)
-        else:
-            return self._info_cinfo(command, self.ip)
+        return self._info_cinfo(command, self.ip)
 
     @return_exceptions
     @util.cached
@@ -756,7 +729,7 @@ class Node(object):
                     namespace_configs[namespace] = namespace_config
                 config['namespace'] = namespace_configs
 
-        elif stanza == '':
+        elif stanza == '' or stanza == 'service':
             config['service'] = util.info_to_dict(self.info("get-config:"))
         elif stanza != 'all':
             config[stanza] = util.info_to_dict(
@@ -836,6 +809,8 @@ class Node(object):
             if not row:
                 continue
             row = row.split(",")
+            # row format : <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>
+            # only IP:PORT and USER_ID are compulsory entries, so we need to check row length for 2
             if len(row) < 2:
                 continue
 
@@ -1034,19 +1009,26 @@ class Node(object):
 
         return self.xdr_info('build')
 
-    def _set_default_system_credentials(self, default_user=None,
-                                        default_pwd=None, default_ssh_port=None, credential_file=None):
+    def _set_default_system_credentials(self, default_user=None, default_pwd=None, default_ssh_key=None,
+                                        default_ssh_port=None, credential_file=None):
         if default_user:
             self.sys_default_user_id = default_user
 
         if default_pwd:
             self.sys_default_pwd = default_pwd
 
+        if default_ssh_key:
+            self.sys_default_ssh_key = default_ssh_key
+
+        self.sys_credential_file = None
         if credential_file:
             self.sys_credential_file = credential_file
 
         if default_ssh_port:
-            self.sys_default_ssh_port = default_ssh_port
+            try:
+                self.sys_default_ssh_port = int(default_ssh_port)
+            except Exception:
+                pass
 
     def _set_system_credentials_from_file(self):
         if not self.sys_credential_file:
@@ -1063,10 +1045,9 @@ class Node(object):
             for line in f.readlines():
                 if not line or not line.strip():
                     continue
-
                 try:
-                    line = line.strip().replace('\n', ' ').strip().split()
-                    if len(line) < 3:
+                    line = line.strip().replace('\n', ' ').strip().split(",")
+                    if len(line) < 2:
                         continue
 
                     ip = None
@@ -1097,8 +1078,12 @@ class Node(object):
                             pass
 
                     if ip and self._is_any_my_ip([ip]):
-                        self.sys_user_id = line[1]
-                        self.sys_pwd = line[2]
+                        self.sys_user_id = line[1].strip()
+                        try:
+                            self.sys_pwd = line[2].strip()
+                            self.sys_ssh_key = line[3].strip()
+                        except Exception:
+                            pass
                         self.sys_ssh_port = port
                         result = True
                         break
@@ -1113,19 +1098,24 @@ class Node(object):
                 f.close()
         return result
 
-    def _set_system_credentials(self, use_cached_credentials=False):
-        if use_cached_credentials:
-            if self.sys_user_id and self.sys_pwd:
-                return
+    def _clear_sys_credentials(self):
+        self.sys_ssh_port = None
+        self.sys_user_id = None
+        self.sys_pwd = None
+        self.sys_ssh_key = None
+
+    def _set_system_credentials(self):
+        self._clear_sys_credentials()
         set = self._set_system_credentials_from_file()
         if set:
             return
         self.sys_user_id = self.sys_default_user_id
         self.sys_pwd = self.sys_default_pwd
+        self.sys_ssh_key = self.sys_default_ssh_key
         self.sys_ssh_port = self.sys_default_ssh_port
 
     @return_exceptions
-    def info_system_statistics(self, default_user=None, default_pwd=None,
+    def info_system_statistics(self, default_user=None, default_pwd=None, default_ssh_key=None,
                                default_ssh_port=None, credential_file=None, commands=[]):
         """
         Get statistics for a system.
@@ -1133,15 +1123,17 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        if not commands:
-            commands = [_key for _key, cmds in self.sys_cmds]
+        if commands:
+            cmd_list = copy.deepcopy(commands)
+        else:
+            cmd_list = [_key for _key, cmds in self.sys_cmds]
 
         if self.localhost:
-            return self._get_localhost_system_statistics(commands)
+            return self._get_localhost_system_statistics(cmd_list)
         else:
-            self._set_default_system_credentials(default_user, default_pwd,
+            self._set_default_system_credentials(default_user, default_pwd, default_ssh_key,
                                                  default_ssh_port, credential_file)
-            return self._get_remote_host_system_statistics(commands)
+            return self._get_remote_host_system_statistics(cmd_list)
 
     @return_exceptions
     def _get_localhost_system_statistics(self, commands):
@@ -1162,15 +1154,15 @@ class Node(object):
         return sys_stats
 
     @return_exceptions
-    def _login_remote_system(self, ip, user, pwd, port=None):
+    def _login_remote_system(self, ip, user, pwd, ssh_key=None, port=None):
         s = pxssh.pxssh()
         s.force_password = True
         s.SSH_OPTS = "-o 'NumberOfPasswordPrompts=1'"
-        s.login(ip, user, pwd, port=port)
+        s.login(ip, user, pwd, ssh_key=ssh_key, port=port)
         return s
 
     @return_exceptions
-    def _spawn_remote_system(self, ip, user, pwd, port=None):
+    def _spawn_remote_system(self, ip, user, pwd, ssh_key=None, port=None):
 
         global COMMAND_PROMPT
         terminal_prompt = '(?i)terminal type\?'
@@ -1182,9 +1174,17 @@ class Node(object):
         if port:
             ssh_options += " -p %s"%(str(port))
 
+        if ssh_key is not None:
+            try:
+                os.path.isfile(ssh_key)
+            except:
+                self.logger.error('private ssh key does not exist, please check and confirm ssh_key ' + str(ssh_key))
+                raise
+            ssh_options += ' -i %s' % (ssh_key)
+
         s = pexpect.spawn('ssh %s -l %s %s'%(ssh_options, str(user), str(ip)))
 
-        i = s.expect([pexpect.TIMEOUT, ssh_newkey, COMMAND_PROMPT, '(?i)password'])
+        i = s.expect([pexpect.TIMEOUT, ssh_newkey, COMMAND_PROMPT, '(?i)(?:password)|(?:passphrase for key)'])
 
         if i == 0:
             # Timeout
@@ -1195,7 +1195,7 @@ class Node(object):
         if i == 1:
             # In this case SSH does not have the public key cached.
             s.sendline ('yes')
-            s.expect ('(?i)password')
+            s.expect ('(?i)(?:password)|(?:passphrase for key)')
             enter_pwd = True
 
         elif i == 2:
@@ -1227,17 +1227,17 @@ class Node(object):
         return s
 
     @return_exceptions
-    def _create_ssh_connection(self, ip, user, pwd, port=None):
+    def _create_ssh_connection(self, ip, user, pwd, ssh_key=None, port=None):
         if PEXPECT_VERSION == NEW_MODULE:
-            return self._login_remote_system(ip, user, pwd, port)
+            return self._login_remote_system(ip, user, pwd, ssh_key, port)
 
         if PEXPECT_VERSION == OLD_MODULE:
-            return self._spawn_remote_system(ip, user, pwd, port)
+            return self._spawn_remote_system(ip, user, pwd, ssh_key, port)
 
         return None
 
     @return_exceptions
-    def _execute_system_command(self, conn, cmd):
+    def _execute_remote_system_command(self, conn, cmd):
         if not conn or not cmd or PEXPECT_VERSION == NO_MODULE:
             return None
 
@@ -1249,6 +1249,19 @@ class Node(object):
         else:
             return None
         return conn.before
+
+    @return_exceptions
+    def _execute_system_command(self, conn, cmd):
+        out = self._execute_remote_system_command(conn, cmd)
+        status = self._execute_remote_system_command(conn, "echo $?")
+        status = status.split('\r\n')
+        status = status[1].strip() if len(status) > 1 else status[0].strip()
+        try:
+            status = int(status)
+        except Exception:
+            status = 1
+
+        return status, out
 
     @return_exceptions
     def _stop_ssh_connection(self, conn):
@@ -1277,24 +1290,23 @@ class Node(object):
             return sys_stats
 
         sys_stats_collected = False
-        self._set_system_credentials(use_cached_credentials=True)
+        self._set_system_credentials()
         # 1 for previous saved credential and one from new inputs
-        max_credential_set_tries = 2
+        max_tries = 1
         tries = 0
 
-        while(tries < max_credential_set_tries and not sys_stats_collected):
+        while(tries < max_tries and not sys_stats_collected):
             tries += 1
             s = None
 
             try:
-                s = self._create_ssh_connection(self.ip, self.sys_user_id, self.sys_pwd, self.sys_ssh_port)
+                s = self._create_ssh_connection(self.ip, self.sys_user_id, self.sys_pwd, self.sys_ssh_key, self.sys_ssh_port)
                 if not s or isinstance(s, Exception):
                     s = None
                     raise
             except Exception:
-                if tries < max_credential_set_tries:
-                    self._set_system_credentials()
-                self.logger.error("Couldn't make SSH login to remote server %s:%s, please provide correct credentials."%(str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port)))
+                if tries >= max_tries:
+                    self.logger.error("Couldn't make SSH login to remote server %s:%s, please provide correct credentials."%(str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port)))
                 if s:
                     s.close()
                 continue
@@ -1306,8 +1318,8 @@ class Node(object):
 
                     for cmd in cmds:
                         try:
-                            o = self._execute_system_command(s, cmd)
-                            if not o or isinstance(o, Exception):
+                            status, o = self._execute_system_command(s, cmd)
+                            if status or not o or isinstance(o, Exception):
                                 continue
                             parse_system_live_command(_key, o, sys_stats)
                             break
@@ -1319,9 +1331,8 @@ class Node(object):
                 self._stop_ssh_connection(s)
 
             except Exception:
-                if tries < max_credential_set_tries:
-                    self._set_system_credentials()
-                self.logger.error("Couldn't get or parse remote system stats.")
+                if tries >= max_tries:
+                    self.logger.error("Couldn't get or parse remote system stats for remote server %s:%s."%(str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port)))
                 pass
 
             finally:

@@ -496,7 +496,7 @@ ASSERT(r, False, "Too many inflight objects (>5000).", "PERFORMANCE", WARNING,
 /* XDR xdr_ship_latency_avg check */
 s = select "xdr_ship_latency_avg", "latency_avg_ship" from XDR.STATISTICS;
 // Following value is not fixed yet
-r = do s > 5;
+r = do s > 5000;
 ASSERT(r, False, "Record shipping takes too long (>5 sec).", "PERFORMANCE", WARNING,
 				"Listed node[s] have more than normal (>5sec) average shipping latency to remote data center. Possible high connectivity latency or performance issue at the remote data center.",
 				"XDR average ship latency check.",

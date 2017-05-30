@@ -163,11 +163,15 @@ class CliView(object):
         t.add_data_source('_used_bytes_memory', Extractors.byte_extractor(
             ('used-bytes-memory', 'memory_used_bytes')))
 
-        t.add_data_source('_master_objects', lambda data:
-                          "(%s,%s)" % (Extractors.sif_extractor(('master-objects', 'master_objects'))(data), Extractors.sif_extractor(('master_tombstones'))(data)))
+        t.add_data_source_tuple(
+            '_master_objects',
+            Extractors.sif_extractor(('master-objects', 'master_objects')),
+            Extractors.sif_extractor(('master_tombstones')))
 
-        t.add_data_source('_prole_objects', lambda data:
-                          "(%s,%s)" % (Extractors.sif_extractor(('prole-objects', 'prole_objects'))(data), Extractors.sif_extractor(('prole_tombstones'))(data)))
+        t.add_data_source_tuple(
+            '_prole_objects',
+            Extractors.sif_extractor(('prole-objects', 'prole_objects')),
+            Extractors.sif_extractor(('prole_tombstones')))
 
         t.add_data_source('_used_disk_pct', lambda data: 100 -
                           int(data['free_pct_disk']) if data['free_pct_disk'] is not " " else " ")
@@ -181,8 +185,12 @@ class CliView(object):
         t.add_cell_alert(
             'stop_writes', lambda data: data['stop_writes'] != 'false')
 
-        t.add_data_source('_migrates', lambda data:
-                          "(%s,%s)" % (Extractors.sif_extractor(('migrate_tx_partitions_remaining', 'migrate-tx-partitions-remaining'))(data), (Extractors.sif_extractor(('migrate_rx_partitions_remaining', 'migrate-rx-partitions-remaining'))(data))))
+        t.add_data_source_tuple(
+            '_migrates',
+            Extractors.sif_extractor(('migrate_tx_partitions_remaining',
+                                      'migrate-tx-partitions-remaining')),
+            Extractors.sif_extractor(('migrate_rx_partitions_remaining',
+                                      'migrate-rx-partitions-remaining')))
 
         t.add_cell_alert('_used_mem_pct', lambda data: (100 - int(data['free_pct_memory'])) >= int(
             data['high-water-memory-pct']) if data['free_pct_memory'] is not " " else " ")
@@ -846,11 +854,20 @@ class CliView(object):
     @staticmethod
     def show_grep_diff(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
+        different_writer_info = False
 
-        if grep_result:
-            if grep_result[grep_result.keys()[0]]:
-                column_names = CliView.sort_list_with_string_and_datetime(
-                    grep_result[grep_result.keys()[0]]["value"].keys())
+        if grep_result and grep_result[grep_result.keys()[0]]:
+            if "diff_end" in grep_result[grep_result.keys()[0]]["value"]:
+                for _k in grep_result.keys():
+                    try:
+                        if grep_result[_k]["value"]["diff_end"]:
+                            different_writer_info = True
+                        grep_result[_k]["value"].pop("diff_end")
+                    except Exception:
+                        continue
+
+            column_names = CliView.sort_list_with_string_and_datetime(
+                grep_result[grep_result.keys()[0]]["value"].keys())
 
         if len(column_names) == 0:
             return ''
@@ -888,6 +905,8 @@ class CliView(object):
         t._need_sort = False
         CliView.print_result(
             t.__str__(horizontal_title_every_nth=title_every_nth * 3))
+        if different_writer_info:
+            print("\n" + terminal.fg_red() + "Input Key is not uniq, multiple writer instance (server_file:line_no) found." + terminal.fg_clear())
 
     @staticmethod
     def sort_list_with_string_and_datetime(keys):
@@ -1271,7 +1290,7 @@ class CliView(object):
     def get_header(header):
         return "\n" + terminal.bold() + ("%s:" % header).rjust(H1_offset) + \
             terminal.unbold() + " ".rjust(H2_offset - H1_offset)
-    
+
     @staticmethod
     def get_msg(msg, level=None):
         if level is not None:

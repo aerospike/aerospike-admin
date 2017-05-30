@@ -24,7 +24,7 @@ from lib.log.latency import LogLatency
 READ_BLOCK_BYTES = 4096
 RETURN_REQUIRED_EVERY_NTH_BLOCK = 5
 TIME_ZONE = "GMT"
-
+SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \((.+)\)"
 
 class ServerLog(object):
 
@@ -347,22 +347,6 @@ class ServerLog(object):
             return None
         return tm + datetime.timedelta(minutes=-tm.minute, seconds=-tm.second, microseconds=-tm.microsecond)
 
-    def get_next_slice_start_and_end_tm(self, old_slice_start, old_slice_end, slice_duration, current_line_tm):
-        slice_jump = 0
-
-        if current_line_tm < old_slice_end and current_line_tm >= old_slice_start:
-            return old_slice_start, old_slice_end, slice_jump
-        if current_line_tm >= old_slice_end and current_line_tm < (old_slice_end + slice_duration):
-            return old_slice_end, old_slice_end + slice_duration, 1
-        if current_line_tm >= old_slice_end:
-            d = current_line_tm - old_slice_start
-            slice_jump = int(
-                (d.seconds + 86400 * d.days) / slice_duration.seconds)
-            slice_start = old_slice_start + slice_duration * slice_jump
-            slice_end = slice_start + slice_duration
-            return slice_start, slice_end, slice_jump
-        return None, None, None
-
     def count(self):
         count_result = {}
         count_result[COUNT_RESULT_KEY] = {}
@@ -397,7 +381,23 @@ class ServerLog(object):
     def count_iterator(self):
         return self.count_it
 
-    def contains_substrings_in_order(self, main_str="", sub_strs=[]):
+    def _get_next_slice_start_and_end_tm(self, old_slice_start, old_slice_end, slice_duration, current_line_tm):
+        slice_jump = 0
+
+        if current_line_tm < old_slice_end and current_line_tm >= old_slice_start:
+            return old_slice_start, old_slice_end, slice_jump
+        if current_line_tm >= old_slice_end and current_line_tm < (old_slice_end + slice_duration):
+            return old_slice_end, old_slice_end + slice_duration, 1
+        if current_line_tm >= old_slice_end:
+            d = current_line_tm - old_slice_start
+            slice_jump = int(
+                (d.seconds + 86400 * d.days) / slice_duration.seconds)
+            slice_start = old_slice_start + slice_duration * slice_jump
+            slice_end = slice_start + slice_duration
+            return slice_start, slice_end, slice_jump
+        return None, None, None
+
+    def _contains_substrings_in_order(self, main_str="", sub_strs=[]):
         if not sub_strs:
             return True
         if not main_str:
@@ -412,11 +412,11 @@ class ServerLog(object):
                 main_str = ""
             if len(sub_strs) <= 1:
                 return True
-            return self.contains_substrings_in_order(main_str, sub_strs[1:])
+            return self._contains_substrings_in_order(main_str, sub_strs[1:])
         else:
             return False
 
-    def get_value_and_diff(self, prev, slice_val):
+    def _get_value_and_diff(self, prev, slice_val):
         diff = []
         value = []
         under_limit = True
@@ -436,11 +436,24 @@ class ServerLog(object):
             value = ([b for b in slice_val])
         return value, diff
 
+    def _fetch_writer_info(self, line):
+        if not line:
+            return None
+
+        m1 = re.search(SERVER_LOG_LINE_WRITER_INFO_PATTERN, line)
+        if not m1:
+            return None
+
+        return m1.group(1)
+
     def diff(self):
         latency_pattern1 = '%s (\d+)'
         latency_pattern2 = '%s \(([0-9,\s]+)\)'
         latency_pattern3 = '(\d+)\((\d+)\) %s'
         latency_pattern4 = '%s \((\d+)'
+
+        different_writer_info = False
+
         grep_str = self.search_strings[-1]
         line = self.next_line()
         if line:
@@ -456,7 +469,7 @@ class ServerLog(object):
                     break
 
         if line:
-            if self.contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+            if self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
                 if self.is_casesensitive:
                     m1 = re.search(latency_pattern1 % (grep_str), line)
                     m2 = re.search(latency_pattern2 % (grep_str), line)
@@ -477,7 +490,7 @@ class ServerLog(object):
                     line = self.next_line()
                     if not line:
                         break
-                    if not self.contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+                    if not self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
                         continue
                 except Exception:
                     break
@@ -498,9 +511,10 @@ class ServerLog(object):
                                    (grep_str), line, re.IGNORECASE)
 
         if line:
+            writer_info = self._fetch_writer_info(line)
             slice_count = 0
             if (self.reader.parse_dt(line) >= slice_end):
-                slice_start, slice_end, slice_count = self.get_next_slice_start_and_end_tm(
+                slice_start, slice_end, slice_count = self._get_next_slice_start_and_end_tm(
                     slice_start, slice_end, self.slice_duration, self.reader.parse_dt(line))
                 # slice_count -= 1
             if slice_end > self.process_end_tm:
@@ -537,12 +551,12 @@ class ServerLog(object):
                 if not line:
                     break
 
-                if not self.contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+                if not self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
                     continue
 
                 if line_tm >= self.process_end_tm:
                     if not slice_count % self.slice_show_count:
-                        value, diff = self.get_value_and_diff(prev, slice_val)
+                        value, diff = self._get_value_and_diff(prev, slice_val)
                         if value and diff:
                             tm = slice_start.strftime(DT_FMT)
                             result["value"][tm] = value
@@ -557,7 +571,7 @@ class ServerLog(object):
 
                 if line_tm >= slice_end:
                     if not slice_count % self.slice_show_count:
-                        value, diff = self.get_value_and_diff(prev, slice_val)
+                        value, diff = self._get_value_and_diff(prev, slice_val)
                         if value and diff:
                             tm = slice_start.strftime(DT_FMT)
                             result["value"][tm] = value
@@ -568,7 +582,7 @@ class ServerLog(object):
                             value = []
                             diff = []
                         prev = slice_val
-                    slice_start, slice_end, slice_count_jump = self.get_next_slice_start_and_end_tm(
+                    slice_start, slice_end, slice_count_jump = self._get_next_slice_start_and_end_tm(
                         slice_start, slice_end, self.slice_duration, line_tm)
                     slice_count = (
                         slice_count + slice_count_jump) % self.slice_show_count
@@ -583,6 +597,9 @@ class ServerLog(object):
                         m = re.search(pattern, line, re.IGNORECASE)
 
                     if m:
+                        if self._fetch_writer_info(line) != writer_info:
+                            different_writer_info = True
+
                         if pattern_type == 2:
                             current = map(lambda x: int(x), list(m.groups()))
                         else:
@@ -595,12 +612,15 @@ class ServerLog(object):
                             slice_val = ([b for b in current])
 
             if not slice_count % self.slice_show_count and slice_val:
-                value, diff = self.get_value_and_diff(prev, slice_val)
+                value, diff = self._get_value_and_diff(prev, slice_val)
                 if value and diff:
                     tm = slice_start.strftime(DT_FMT)
                     result["value"][tm] = value
                     result["diff"][tm] = diff
                     yield slice_start, result
+
+            result["value"]["diff_end"] = different_writer_info
+            yield END_ROW_KEY, result
 
     def diff_iterator(self):
         return self.diff_it

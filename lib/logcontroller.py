@@ -52,7 +52,7 @@ class LogRootController(BaseController):
             'grep': GrepController,
             'diff': DiffController,
             'count': CountController,
-            'latency': LatencyController,
+            'histogram': HistogramController,
             'pager': PagerController}
 
     @CommandHelp('Terminate session')
@@ -169,7 +169,7 @@ class DiffController(LogCommandController):
 
 
 @CommandHelp(
-    'Displays latency information for Aerospike server log.',
+    'Displays histogram information for Aerospike server log.',
     '  Options:',
     '    -h <string>  - Histogram Name, MANDATORY - NO DEFAULT',
     '    -f <string>  - Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00,',
@@ -186,7 +186,7 @@ class DiffController(LogCommandController):
     '                   default: 0, no repetition.',
     '    -N <string>  - Namespace name. It will display histogram latency for ns namespace.',
     '                   This feature is available for namespace level histograms in server >= 3.9.')
-class LatencyController(LogCommandController):
+class HistogramController(LogCommandController):
 
     def __init__(self):
         self.modifiers = set()

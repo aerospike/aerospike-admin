@@ -35,7 +35,7 @@ class Cluster(object):
     crawl_lock = threading.Lock()
 
     def __init__(self, seed_nodes, user=None, password=None, use_services_alumni=False, use_services_alt=False,
-                 ssl_context=None, only_connect_seed=False):
+                 ssl_context=None, only_connect_seed=False, timeout=5):
         """
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port,tls) address can be fqdn or ip.
@@ -44,6 +44,8 @@ class Cluster(object):
         self.__dict__ = self.cluster_state
         if self.cluster_state != {}:
             return
+
+        self._timeout = timeout
 
         self.user = user
         self.password = password
@@ -342,8 +344,8 @@ class Cluster(object):
                 # Will create node again
 
             # if not existing:
-            new_node = Node(addr, port, tls_name=tls_name, user=self.user,
-                            password=self.password,
+            new_node = Node(addr, port, tls_name=tls_name, timeout=self._timeout,
+                            user=self.user, password=self.password,
                             consider_alumni=Cluster.use_services_alumni,
                             use_services_alt=Cluster.use_services_alt,
                             ssl_context=self.ssl_context)

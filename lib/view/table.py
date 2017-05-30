@@ -179,6 +179,25 @@ class Table(object):
     def add_data_source(self, column, function):
         self._data_source[column] = function
 
+    def add_data_source_tuple(self, column, *functions, **kwargs):
+        def tuple_extractor(data):
+            args = []
+            prior_trimmed = 0
+
+            for function in functions:
+                arg = function(data)
+                orig_len = len(arg)
+                arg = arg.rstrip()
+                new_len = len(arg)
+                trimmed = orig_len - new_len
+                arg = arg.rjust(new_len + prior_trimmed)
+                prior_trimmed = trimmed if trimmed != 0 else 1
+                args.append(arg)
+
+            return '(' + ','.join(args) + ')'.ljust(prior_trimmed + 1)
+
+        self._data_source[column] = tuple_extractor
+
     def add_cell_alert(self, column_name, is_alert, color=terminal.fg_red):
         self._cell_alert[column_name] = (is_alert, color)
 

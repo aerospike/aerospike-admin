@@ -79,7 +79,7 @@ class AerospikeShell(cmd.Cmd):
 
     def __init__(self, seed, user=None, password=None, use_services_alumni=False, use_services_alt=False,
                  log_path="", log_analyser=False, collectinfo=False,
-                 ssl_context=None, only_connect_seed=False, execute_only_mode=False):
+                 ssl_context=None, only_connect_seed=False, execute_only_mode=False, timeout=5):
 
         if log_analyser:
             self.name = 'Aerospike Log Analyzer Shell'
@@ -126,7 +126,7 @@ class AerospikeShell(cmd.Cmd):
                 self.ctrl = BasicRootController(seed_nodes=[seed], user=user,
                                                 password=password, use_services_alumni=use_services_alumni, use_services_alt=use_services_alt,
                                                 ssl_context=ssl_context, asadm_version=__version__,
-                                                only_connect_seed=only_connect_seed)
+                                                only_connect_seed=only_connect_seed, timeout=timeout)
 
                 if not self.ctrl.cluster.get_live_nodes():
                     logger.error("Not able to connect any cluster.")
@@ -507,6 +507,8 @@ def main():
                             help="Enable CRL checking for leaf certificate. An error occurs if a valid CRL files cannot be found in tls_capath.")
         parser.add_argument("--tls_crl_check_all", dest="crl_check_all", action="store_true",
                             help="Enable CRL checking for entire certificate chain. An error occurs if a valid CRL files cannot be found in tls_capath.")
+        parser.add_argument("--timeout", dest="timeout", type=float, default=5,
+                          help="Set timeout value in seconds to node level operations. TLS connection does not support timeout. Default: 5 seconds")
 
         cli_args = parser.parse_args()
     except Exception:
@@ -575,6 +577,8 @@ def main():
                           help="Enable CRL checking for leaf certificate. An error occurs if a valid CRL files cannot be found in tls_capath.")
         parser.add_option("--tls_crl_check_all", dest="crl_check_all", action="store_true",
                           help="Enable CRL checking for entire certificate chain. An error occurs if a valid CRL files cannot be found in tls_capath.")
+        parser.add_option("--timeout", dest="timeout",type=float, default=5,
+                          help="Set timeout value in seconds to node level operations. TLS connection does not support timeout. Default: 5 seconds")
 
         (cli_args, args) = parser.parse_args()
 
@@ -616,7 +620,7 @@ def main():
                            collectinfo=cli_args.collectinfo,
                            ssl_context=ssl_context,
                            only_connect_seed=cli_args.only_connect_seed,
-                           execute_only_mode=execute_only_mode)
+                           execute_only_mode=execute_only_mode, timeout=cli_args.timeout)
 
     use_yappi = False
     if cli_args.profile:

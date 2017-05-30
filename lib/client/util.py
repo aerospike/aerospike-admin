@@ -24,6 +24,11 @@ def info_to_dict(value, delimiter=';'):
     """
     Simple function to convert string to dict
     """
+    if not value:
+        return {}
+
+    if isinstance(value, Exception):
+        return value
 
     stat_dict = {}
     stat_param = itertools.imap(lambda sp: info_to_tuple(sp, "="),
@@ -48,6 +53,12 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':'):
     Simple function to convert string to dict where string is format like
     field1_section1=value1<delimiter2>field2_section1=value2<delimiter2>... <delimiter1> field1_section2=value3<delimiter2>field2_section2=value4<delimiter2>...
     """
+    if not value:
+        return {}
+
+    if isinstance(value, Exception):
+        return value
+
     if isinstance(keyname, str):
         keyname = [keyname]
 

@@ -28,12 +28,13 @@ except ImportError:
 
 class ASSocket:
 
-    def __init__(self, node, ip, port, pool_size=3):
+    def __init__(self, node, ip, port, pool_size=3, timeout=5):
         self.sock = None
         self.node = node
         self.ip = ip
         self.port = port
         self.pool_size = pool_size
+        self._timeout = timeout
 
     def _wrap_socket(self, sock, ctx):
         if ctx:
@@ -54,7 +55,7 @@ class ASSocket:
 
             sock = socket.socket(addr_family, socket.SOCK_STREAM)
             if not ssl_context:
-                sock.settimeout(5.0)
+                sock.settimeout(self._timeout)
             # timeout on wrapper might give errors
             sock = self._wrap_socket(sock, ssl_context)
             sock.connect(sock_addr)
