@@ -708,8 +708,7 @@ ASSERT(r, True, "Non-zero node read errors count", "OPERATIONS", INFO,
 				"Listed read error[s] show skew in count (for nodes). It may or may not be an issue depending on the error type. Please run 'show statistics service like stat_read' to see values.",
 				"Node read errors count check");
 
-
-SET CONSTRAINT VERSION ALL;
+SET CONSTRAINT VERSION >= 3.3.17;
 
 defslp= select "storage-engine.defrag-sleep" from NAMESPACE.CONFIG;
 r = do defslp == 1000;
@@ -718,5 +717,7 @@ ASSERT(r, True, "Non-default namespace defrag-sleep configuration.", "OPERATIONS
 				"Non-default namespace defrag-sleep check.");
 
 
+
+SET CONSTRAINT VERSION ALL;
 
 '''
