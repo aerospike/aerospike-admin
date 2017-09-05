@@ -13,9 +13,7 @@
 # limitations under the License.
 
 import copy
-from lib.utils import logutil
-from lib.utils.constants import *
-from lib.collectinfo.reader import CollectinfoReader
+from lib.collectinfo_parser.full_parser import parse_info_all
 
 
 class CollectinfoNode(object):
@@ -54,30 +52,42 @@ class CollectinfoNode(object):
         self.cluster_name = cluster_name
 
     def set_asd_version(self, asd_version):
-        if asd_version.lower() in ['enterprise', 'true']:
+        if asd_version.lower() in ['enterprise', 'true', 'ee'] or 'enterprise' in asd_version.lower():
             self.asd_version = "Enterprise"
-        elif asd_version.lower() in ['community', 'false']:
+        elif asd_version.lower() in ['community', 'false', 'ce'] or 'community' in asd_version.lower():
             self.asd_version = "Community"
         else:
             self.asd_version = "N/E"
 
 
-class CollectinfoLog(object):
+class CollectinfoSnapshot(object):
 
-    def __init__(self, timestamp, cinfo_file, reader):
+    def __init__(self, cluster_name, timestamp, cinfo_data, cinfo_file):
+        self.cluster_name = cluster_name
         self.timestamp = timestamp
-        self.cinfo_file = cinfo_file
-        self.reader = reader
         self.nodes = {}
         self.node_names = {}
-        self.cinfo_data = {}
+        self.cinfo_data = cinfo_data
+        self.cinfo_file = cinfo_file
+        self._initialize_nodes()
+
+    def _initialize_nodes(self):
+        try:
+            self._set_nodes(self.get_node_names())
+            self._set_node_id()
+            self._set_ip()
+            self._set_xdr_build()
+            self._set_asd_build()
+            self._set_asd_version()
+            self._set_cluster_name()
+        except Exception:
+            pass
 
     def destroy(self):
         try:
             del self.timestamp
-            del self.cinfo_file
-            del self.reader
             del self.cinfo_data
+            del self.cinfo_file
             del self.nodes
             del self.node_names
         except Exception:
@@ -85,47 +95,101 @@ class CollectinfoLog(object):
 
     def get_node_names(self):
         if not self.node_names:
-            if (self.cinfo_data
-                    and "config" in self.cinfo_data
-                    and CONFIG_SERVICE in self.cinfo_data["config"]):
-                node_names = self.cinfo_data["config"][CONFIG_SERVICE].keys()
+            if self.cinfo_data:
+                node_names = self.cinfo_data.keys()
             else:
-                node_names = self.reader.get_node_names(self.cinfo_file)
+                return {}
 
             for node_name in node_names:
                 self.node_names[node_name] = node_name
         return copy.deepcopy(self.node_names)
 
     def get_data(self, type="", stanza=""):
-        if not type or not stanza:
-            return {}
+        data = {}
+
+        if not type or not self.cinfo_data:
+            return data
+
         try:
-            if not self.cinfo_data:
-                self.cinfo_data = self.reader.read(self.cinfo_file)
-                if (self.cinfo_data
-                        and "config" in self.cinfo_data
-                        and CONFIG_SERVICE in self.cinfo_data["config"]):
-                    self._set_nodes(
-                        self.cinfo_data["config"][CONFIG_SERVICE].keys())
-                elif (self.cinfo_data
-                        and "statistics" in self.cinfo_data
-                        and STAT_SERVICE in self.cinfo_data["statistics"]):
-                    self._set_nodes(
-                        self.cinfo_data["statistics"][STAT_SERVICE].keys())
-                self._set_node_id()
-                self._set_ip()
-                self._set_xdr_build()
-                self._set_asd_build()
-                self._set_asd_version()
-                self._set_cluster_name()
+            # return copy.deepcopy(self.cinfo_data[type][stanza])
+            for node, node_data in self.cinfo_data.iteritems():
+                try:
+                    if not node or not node_data:
+                        continue
 
-            elif type not in self.cinfo_data:
-                self.cinfo_data.update(self.reader.read(self.cinfo_file))
+                    if not 'as_stat' in node_data or type not in node_data['as_stat']:
+                        continue
 
-            return copy.deepcopy(self.cinfo_data[type][stanza])
+                    if node not in data:
+                        data[node] = {}
+
+                    d = node_data['as_stat'][type]
+
+                    if not stanza:
+                        data[node] = copy.deepcopy(d)
+                        continue
+
+                    if stanza in ['namespace', 'bin', 'bins', 'set', 'sindex']:
+                        d = d["namespace"]
+
+                        for ns_name in d.keys():
+                            try:
+                                if stanza == "namespace":
+                                    data[node][ns_name] = copy.deepcopy(d[ns_name]["service"])
+
+                                elif stanza == "bin" or stanza == "bins":
+                                    data[node][ns_name] = copy.deepcopy(d[ns_name][stanza])
+
+                                elif stanza in ["set", "sindex"]:
+
+                                    for _name in d[ns_name][stanza]:
+                                        _key = "%s %s" % (ns_name, _name)
+                                        data[node][_key] = copy.deepcopy(d[ns_name][stanza][_name])
+
+                            except Exception:
+                                pass
+
+                    elif type == "meta_data" and stanza in ["endpoints", "services"]:
+                        try:
+                            data[node] = copy.deepcopy(d[stanza]).split(';')
+                        except Exception:
+                            data[node] = copy.deepcopy(d[stanza])
+
+                    else:
+                        data[node] = copy.deepcopy(d[stanza])
+
+                except Exception:
+                    data[node] = {}
+
         except Exception:
             pass
-        return {}
+
+        return data
+
+    def get_sys_data(self, stanza=""):
+        data = {}
+
+        if not type or not stanza or not self.cinfo_data:
+            return data
+
+        try:
+            for node, node_data in self.cinfo_data.iteritems():
+                try:
+                    if not node or not node_data:
+                        continue
+
+                    if not 'sys_stat' in node_data or stanza not in node_data['sys_stat']:
+                        continue
+
+                    data[node] = node_data['sys_stat'][stanza]
+
+                except Exception:
+                    data[node] = {}
+
+        except Exception:
+            pass
+
+        return data
 
     def get_node(self, node_key):
         if node_key in self.nodes:
@@ -140,14 +204,12 @@ class CollectinfoLog(object):
         return self.get_data(type="statistics", stanza=stanza)
 
     def get_histograms(self, stanza=""):
-        return self.get_data(type="distribution", stanza=stanza)
+        return self.get_data(type="histogram", stanza=stanza)
 
     def get_summary(self, stanza=""):
         return self.get_data(type="summary", stanza=stanza)
 
     def get_expected_principal(self):
-        if not self.cinfo_data:
-            self._set_node_id()
         try:
             principal="0"
             for n in self.nodes.itervalues():
@@ -164,9 +226,6 @@ class CollectinfoLog(object):
     def get_xdr_build(self):
         xdr_build={}
         try:
-            if not self.cinfo_data:
-                self._set_xdr_build()
-
             for node in self.nodes:
                 xdr_build[node]=self.nodes[node].xdr_build
         except Exception:
@@ -176,9 +235,6 @@ class CollectinfoLog(object):
     def get_asd_build(self):
         asd_build={}
         try:
-            if not self.cinfo_data:
-                self._set_asd_build()
-
             for node in self.nodes:
                 asd_build[node]=self.nodes[node].asd_build
         except Exception:
@@ -188,9 +244,6 @@ class CollectinfoLog(object):
     def get_asd_version(self):
         asd_version={}
         try:
-            if not self.cinfo_data:
-                self._set_asd_version()
-
             for node in self.nodes:
                 asd_version[node]=self.nodes[node].asd_version
         except Exception:
@@ -200,9 +253,6 @@ class CollectinfoLog(object):
     def get_cluster_name(self):
         cluster_name={}
         try:
-            if not self.cinfo_data:
-                self._set_cluster_name()
-
             for node in self.nodes:
                 cluster_name[node]=self.nodes[node].cluster_name
         except Exception:
@@ -218,159 +268,76 @@ class CollectinfoLog(object):
         return len(self.nodes.keys())
 
     def _set_node_id(self):
-
-        node_ids=self._fetch_columns_for_nodes(type="summary",
-                stanza=SUMMARY_SERVICE, header_columns=['Node'],
-                column_to_find=['Node', 'Id'], symbol_to_neglct='.')
-
-        if not node_ids:
-            node_ids=self._fetch_columns_for_nodes(type="summary",
-                    stanza=SUMMARY_NETWORK, header_columns=['Node'],
-                    column_to_find=['Node', 'Id'], symbol_to_neglct='.')
-
-        if not node_ids and self._get_node_count() == 1:
-            service_stats=self.get_data(type="statistics",
-                    stanza=STAT_SERVICE)
-
-            for node in self.nodes:
-                self.nodes[node].set_node_id(
-                    logutil.fetch_value_from_dic(service_stats,
-                        [node, 'paxos_principal']))
-
-        elif node_ids:
-            for node in node_ids:
-                if node in self.nodes:
-                    self.nodes[node].set_node_id(node_ids[node])
+        for node in self.nodes:
+            try:
+                self.nodes[node].set_node_id(self.cinfo_data[node]['as_stat']['meta_data']['node_id'])
+            except Exception:
+                pass
 
     def _set_ip(self):
 
-        ips=self._fetch_columns_for_nodes(type="summary",
-                stanza=SUMMARY_SERVICE, header_columns=['Node', 'Ip'],
-                column_to_find=['Ip'], symbol_to_neglct='.')
-
-        if not ips:
-            ips=self._fetch_columns_for_nodes(type="summary",
-                    stanza=SUMMARY_NETWORK, header_columns=['Node', 'Ip'],
-                    column_to_find=['Ip'], symbol_to_neglct='.')
-
-        if ips:
-            for node in ips:
-                if node in self.nodes:
-                    self.nodes[node].set_ip(ips[node])
+        for node in self.nodes:
+            try:
+                self.nodes[node].set_ip(self.cinfo_data[node]['as_stat']['meta_data']['ip'])
+            except Exception:
+                pass
 
     def _set_xdr_build(self):
 
-        xdr_builds=self._fetch_columns_for_nodes(type="summary",
-                stanza=SUMMARY_XDR, header_columns=['Node', 'Build'],
-                column_to_find=['Build'], symbol_to_neglct='.')
-
-        if xdr_builds:
-            for node in xdr_builds:
-                if node in self.nodes:
-                    self.nodes[node].set_xdr_build(xdr_builds[node])
+        for node in self.nodes:
+            try:
+                self.nodes[node].set_xdr_build(self.cinfo_data[node]['as_stat']['meta_data']['xdr_build'])
+            except Exception:
+                pass
 
     def _set_asd_build(self):
 
-        asd_builds=self._fetch_columns_for_nodes(type="summary",
-                stanza=SUMMARY_SERVICE, header_columns=['Node', 'Build'],
-                column_to_find=['Build'], symbol_to_neglct='.')
-
-        if not asd_builds:
-            asd_builds=self._fetch_columns_for_nodes(type="summary",
-                    stanza=SUMMARY_NETWORK, header_columns=['Node', 'Build'],
-                    column_to_find=['Build'], symbol_to_neglct='.')
-
-        if asd_builds:
-            for node in asd_builds:
-                if node in self.nodes and asd_builds[node]:
-                    if asd_builds[node].startswith("E-"):
-                        self.nodes[node].set_asd_build(asd_builds[node][2:])
-                        self.nodes[node].set_asd_version("Enterprise")
-                    elif asd_builds[node].startswith("C-"):
-                        self.nodes[node].set_asd_build(asd_builds[node][2:])
-                        self.nodes[node].set_asd_version("Community")
-                    else:
-                        self.nodes[node].set_asd_build(asd_builds[node])
+        for node in self.nodes:
+            try:
+                self.nodes[node].set_asd_build(self.cinfo_data[node]['as_stat']['meta_data']['asd_build'])
+            except Exception:
+                pass
 
     def _set_asd_version(self):
 
-        asd_versions=self._fetch_columns_for_nodes(type="summary",
-                stanza=SUMMARY_NETWORK, header_columns=['Node', 'Enterprise'],
-                column_to_find=['Enterprise'], symbol_to_neglct='.')
-
-        if asd_versions:
-            for node in asd_versions:
-                if node in self.nodes and asd_versions[node]:
-                    self.nodes[node].set_asd_version(asd_versions[node])
+        for node in self.nodes:
+            try:
+                self.nodes[node].set_asd_version(self.cinfo_data[node]['as_stat']['meta_data']['edition'])
+            except Exception:
+                pass
 
     def _set_cluster_name(self):
 
-        cluster_names=self._fetch_columns_for_nodes(type="summary",
-                stanza=SUMMARY_NETWORK, header_columns=['Cluster', 'Node'],
-                column_to_find=['Cluster', 'Name'], symbol_to_neglct='.')
+        for node in self.nodes:
+            try:
+                self.nodes[node].set_cluster_name(self.cluster_name)
+            except Exception:
+                pass
 
-        if cluster_names:
-            for node in cluster_names:
-                if node in self.nodes:
-                    self.nodes[node].set_cluster_name(cluster_names[node])
 
-    def _find_column_num(self, lines, column_to_find, header_columns):
+class CollectinfoLog(object):
+    def __init__(self, cinfo_path, files, reader):
+        self.files = files
+        self.reader = reader
+        self.snapshots = {}
+        self.data = {}
+        parse_info_all(files, self.data, True)
+        if self.data:
+            for ts in self.data:
+                if self.data[ts]:
+                    for cl in self.data[ts]:
+                        self.snapshots[ts] = CollectinfoSnapshot(cl, ts, self.data[ts][cl], cinfo_path)
 
-        if not lines:
-            return lines, None
-        column_found=False
-        column_to_find_index=0
-        header_search_incomplete=False
-        indices=[]
+    def destroy(self):
+        try:
+            del self.files
+            del self.reader
+            for sn in self.snapshots:
+                self.snapshots[sn].destroy()
+            del self.snapshots
+            del self.data
+        except Exception:
+            pass
 
-        while not column_found and lines:
-            line=lines.pop(0)
-
-            if (all(column in line for column in header_columns)
-                    or header_search_incomplete):
-                line_list=line.split()
-
-                temp_indices=[i for i, x in enumerate(
-                    line_list) if x == column_to_find[column_to_find_index]]
-
-                if not indices:
-                    indices=temp_indices
-                else:
-                    indices=logutil.intersect_list(indices, temp_indices)
-
-                column_to_find_index += 1
-
-                if column_to_find_index == len(column_to_find):
-                    column_found=True
-                    header_search_incomplete=False
-                else:
-                    header_search_incomplete=True
-        return lines, indices
-
-    def _fetch_columns_for_nodes(self, type, stanza, header_columns,
-            column_to_find, symbol_to_neglct):
-
-        summary=self.get_data(type=type, stanza=stanza)
-        node_value={}
-        if summary and isinstance(summary, str):
-            lines=summary.split('\n')
-            lines, node_col=self._find_column_num(
-                lines, ['Node', '.'], header_columns)
-
-            lines=summary.split('\n')
-            lines, indices=self._find_column_num(
-                lines, column_to_find, header_columns)
-            for line in lines:
-                try:
-
-                    if(line.split()[node_col[0]].strip() == symbol_to_neglct):
-                        continue
-                    else:
-                        line_list=line.split()
-                        node=line_list[node_col[0]].strip()
-                        col_val=line_list[indices[0]].strip()
-                        if node in self.nodes:
-                            node_value[node]=col_val
-                except Exception:
-                    pass
-        return node_value
+    def get_snapshots(self):
+        return self.snapshots

@@ -16,19 +16,23 @@
 
 run_test(){
     unknown_option_error="Do not understand"
-    asinfo_cmd_str="asinfo --no_node_name -v \"$1\" "
-    cmd_out=`./asadm.py --single_node_cluster -e "${asinfo_cmd_str}"`
+    asinfo_cmd_str="'$1' "
+    cmd_out=`./asadm.py --asinfo -e "${asinfo_cmd_str}"`
     cmd_status="$?"
 #    echo ${cmd_out}
     if [ "$cmd_status" -ne 0 ]; then
+       echo
        return 1
     fi
     if [[ $cmd_out == *"${unknown_option_error}"* ]]; then
+       echo
        return 1
     fi
     if [[ $cmd_out != *"$2"* ]];then
+       echo
        return 1
     fi
+    echo -n "."
 }
 
 asinfo_cmd="bins"
@@ -104,9 +108,9 @@ fi
 
 # Test for invisible escape characters which can get added due to any python library like readline
 
-asinfo_cmd_str="asinfo --no_node_name -v \"STATUS\" "
+asinfo_cmd_str="\"STATUS\" "
 
-cmd_out=`./asadm.py --single_node_cluster -e "${asinfo_cmd_str}" | tr -dc '[:alnum:]\n\r'`
+cmd_out=`./asadm.py --asinfo -e "${asinfo_cmd_str}" | tr -dc '[:alnum:]\n\r'`
 cmd_status="$?"
 
 if [ "$cmd_status" -ne 0 ]; then
@@ -118,7 +122,7 @@ if [[ $cmd_out != "OK" ]];then
     exit 1
 fi
 
-cmd_out=`./asadm.py --single_node_cluster -e "${asinfo_cmd_str}" | hexdump`
+cmd_out=`./asadm.py --asinfo -e "${asinfo_cmd_str}" | hexdump`
 cmd_status="$?"
 expected_output=`echo "OK" | hexdump`
 
@@ -131,5 +135,6 @@ if [[ $cmd_out != $expected_output ]];then
     exit 1
 fi
 
+echo
 echo "OK"
 exit 0

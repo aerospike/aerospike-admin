@@ -125,7 +125,7 @@ def _imap_verify_section_count(imap, imap_old_keys, n_section, ignore_exception)
     logger.debug("imap_sec: " + str(imap_n_section) +
                  "n_section: " + str(n_section))
 
-    if imap_n_section != n_section:
+    if imap_n_section != n_section and not ignore_exception:
         logger.error(
             "Something wrong, no of section in file and no of extracted are not matching")
         logger.error("imap_sec: " + str(imap_n_section) +

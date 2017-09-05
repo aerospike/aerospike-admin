@@ -12,10 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from distutils.version import LooseVersion
-
 from lib.utils import util
-from lib.utils import filesize
 
 
 def get_sindex_stats(cluster, nodes='all', for_mods=[]):
@@ -60,175 +57,21 @@ class GetDistributionController():
 
     def do_distribution(self, histogram_name, nodes='all'):
         histogram = self.cluster.info_histogram(histogram_name, nodes=nodes)
-        histogram = util.flip_keys(histogram)
+        return util.create_histogram_output(histogram_name, histogram)
 
-        for namespace, host_data in histogram.iteritems():
-            for host_id, data in host_data.iteritems():
-                hist = data['data']
-                width = data['width']
-
-                cum_total = 0
-                total = sum(hist)
-                percentile = 0.1
-                result = []
-
-                for i, v in enumerate(hist):
-                    cum_total += float(v)
-                    if total > 0:
-                        portion = cum_total / total
-                    else:
-                        portion = 0.0
-
-                    while portion >= percentile:
-                        percentile += 0.1
-                        result.append(i + 1)
-
-                    if percentile > 1.0:
-                        break
-
-                if result == []:
-                    result = [0] * 10
-
-                if histogram_name is "objsz":
-                    data['percentiles'] = [
-                        (r * width) - 1 if r > 0 else r for r in result]
-                else:
-                    data['percentiles'] = [r * width for r in result]
-
-        return histogram
-
-    def do_object_size(self, byte_distribution=False, show_bucket_count=5, nodes='all'):
+    def do_object_size(self, byte_distribution=False, bucket_count=5, nodes='all'):
 
         histogram_name = 'objsz'
 
         if not byte_distribution:
             return self.do_distribution(histogram_name)
 
-        histogram = util.Future(
-            self.cluster.info_histogram, histogram_name, nodes=nodes).start()
-        builds = util.Future(
-            self.cluster.info, 'build', nodes=nodes).start()
-        histogram = util.flip_keys(histogram.result())
+        histogram = util.Future(self.cluster.info_histogram, histogram_name, nodes=nodes).start()
+        builds = util.Future(self.cluster.info, 'build', nodes=nodes).start()
+        histogram = histogram.result()
         builds = builds.result()
 
-        for namespace, host_data in histogram.iteritems():
-            result = []
-            rblock_size_bytes = 128
-            width = 1
-            for host_id, data in host_data.iteritems():
-                try:
-                    as_version = builds[host_id]
-                    if (LooseVersion(as_version) < LooseVersion("2.7.0")
-                            or (LooseVersion(as_version) >= LooseVersion("3.0.0")
-                                and LooseVersion(as_version) < LooseVersion("3.1.3"))):
-                        rblock_size_bytes = 512
-                except Exception:
-                    pass
-
-                hist = data['data']
-                width = data['width']
-
-                for i, v in enumerate(hist):
-                    if v and v > 0:
-                        result.append(i)
-
-            result = list(set(result))
-            result.sort()
-            start_buckets = []
-            if len(result) <= show_bucket_count:
-                # if asinfo buckets with values>0 are less than
-                # show_bucket_count then we can show all single buckets as it
-                # is, no need to merge to show big range
-                for res in result:
-                    start_buckets.append(res)
-                    start_buckets.append(res + 1)
-            else:
-                # dividing volume buckets (from min possible bucket with
-                # value>0 to max possible bucket with value>0) into same range
-                start_bucket = result[0]
-                size = result[len(result) - 1] - result[0] + 1
-
-                bucket_width = size / show_bucket_count
-                additional_bucket_index = show_bucket_count - \
-                    (size % show_bucket_count)
-
-                bucket_index = 0
-
-                while bucket_index < show_bucket_count:
-                    start_buckets.append(start_bucket)
-                    if bucket_index == additional_bucket_index:
-                        bucket_width += 1
-                    start_bucket += bucket_width
-                    bucket_index += 1
-                start_buckets.append(start_bucket)
-
-            columns = []
-            need_to_show = {}
-            for i, bucket in enumerate(start_buckets):
-                if i == len(start_buckets) - 1:
-                    break
-                key = self.get_bucket_range(
-                    bucket, start_buckets[i + 1], width, rblock_size_bytes)
-                need_to_show[key] = False
-                columns.append(key)
-            for host_id, data in host_data.iteritems():
-                rblock_size_bytes = 128
-                try:
-                    as_version = builds[host_id]
-
-                    if (LooseVersion(as_version) < LooseVersion("2.7.0")
-                            or (LooseVersion(as_version) >= LooseVersion("3.0.0")
-                                and LooseVersion(as_version) < LooseVersion("3.1.3"))):
-                        rblock_size_bytes = 512
-                except Exception:
-                    pass
-                hist = data['data']
-                width = data['width']
-                data['values'] = {}
-                for i, s in enumerate(start_buckets):
-                    if i == len(start_buckets) - 1:
-                        break
-                    b_index = s
-                    key = self.get_bucket_range(
-                        s, start_buckets[i + 1], width, rblock_size_bytes)
-                    if key not in columns:
-                        columns.append(key)
-                    if key not in data["values"]:
-                        data["values"][key] = 0
-                    while b_index < start_buckets[i + 1]:
-                        data["values"][key] += hist[b_index]
-                        b_index += 1
-
-                    if data["values"][key] > 0:
-                        need_to_show[key] = True
-                    else:
-                        if key not in need_to_show:
-                            need_to_show[key] = False
-            host_data["columns"] = []
-            for column in columns:
-                if need_to_show[column]:
-                    host_data["columns"].append(column)
-
-        return histogram
-
-    def get_bucket_range(self, current_bucket, next_bucket, width, rblock_size_bytes):
-        s_b = "0 B"
-        if current_bucket > 0:
-            last_bucket_last_rblock_end = (
-                (current_bucket * width) - 1) * rblock_size_bytes
-            if last_bucket_last_rblock_end < 1:
-                last_bucket_last_rblock_end = 0
-            else:
-                last_bucket_last_rblock_end += 1
-            s_b = filesize.size(last_bucket_last_rblock_end, filesize.byte)
-            if current_bucket == 99 or next_bucket > 99:
-                return ">%s" % (s_b.replace(" ", ""))
-
-        bucket_last_rblock_end = (
-            (next_bucket * width) - 1) * rblock_size_bytes
-        e_b = filesize.size(bucket_last_rblock_end, filesize.byte)
-        return "%s to %s" % (s_b.replace(" ", ""), e_b.replace(" ", ""))
-
+        return util.create_histogram_output(histogram_name, histogram, byte_distribution=True, bucket_count=bucket_count, builds=builds)
 
 class GetLatencyController():
 
@@ -265,7 +108,8 @@ class GetConfigController():
                       'namespace': (util.Future(self.get_namespace, nodes=nodes).start()).result(),
                       'network': (util.Future(self.get_network, nodes=nodes).start()).result(),
                       'xdr': (util.Future(self.get_xdr, nodes=nodes).start()).result(),
-                      'dc': (util.Future(self.get_dc, nodes=nodes).start()).result()
+                      'dc': (util.Future(self.get_dc, nodes=nodes).start()).result(),
+                      'cluster': (util.Future(self.get_cluster, nodes=nodes).start()).result()
                       }
         return config_map
 
@@ -526,3 +370,139 @@ class GetStatisticsController():
 
         return features
 
+class GetPmapController():
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def _get_namespace_data(self, namespace_stats, cluster_keys):
+        ns_info = {}
+
+        for ns, nodes in namespace_stats.items():
+            repl_factor = {}
+
+            for node, params in nodes.items():
+                if isinstance(params, Exception):
+                    continue
+                if cluster_keys[node] not in repl_factor:
+                    repl_factor[cluster_keys[node]] = 0
+
+                repl_factor[cluster_keys[node]] = max(repl_factor[cluster_keys[node]], int(params['repl-factor']))
+
+            for ck in repl_factor:
+                if ck not in ns_info:
+                    ns_info[ck] = {}
+                if ns not in ns_info[ck]:
+                    ns_info[ck][ns] = {}
+
+                ns_info[ck][ns]['repl_factor'] = repl_factor[ck]
+
+        return ns_info
+
+    def _get_pmap_data(self, pmap_info, ns_info, versions, cluster_keys):
+        pid_range = 4096        # each namespace is divided into 4096 partition
+        pmap_data = {}
+        ns_available_part = {}
+
+        # required fields
+        # format : (index_ptr, field_name, default_index)
+        required_fields = [("namespace_index","namespace",0),("partition_index","partition",1),("state_index","state",2),
+                           ("replica_index","replica",3),("origin_index","origin",4),("target_index","target",5)]
+
+        for _node, partitions in pmap_info.items():
+            node_pmap = dict()
+            ck = cluster_keys[_node]
+
+            if isinstance(partitions, Exception):
+                continue
+
+            f_indices = {}
+
+            # default index in partition fields for server < 3.6.1
+            for t in required_fields:
+                f_indices[t[0]] = t[2]
+
+            index_set = False
+
+            for item in partitions.split(';'):
+                fields = item.split(':')
+
+                if not index_set:
+                    index_set = True
+
+                    if all(i[1] in fields for i in required_fields):
+                        # pmap format contains headers from server 3.9 onwards
+                        for t in required_fields:
+                            f_indices[t[0]] = fields.index(t[1])
+
+                        continue
+
+                ns, pid, state, replica, origin, target = fields[f_indices["namespace_index"]], int(fields[f_indices["partition_index"]]),\
+                                         fields[f_indices["state_index"]], int(fields[f_indices["replica_index"]]),\
+                                         fields[f_indices["origin_index"]], fields[f_indices["target_index"]]
+
+                if pid not in range(pid_range):
+                    print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
+                    continue
+
+                if ns not in node_pmap:
+                    node_pmap[ns] = { 'master_partition_count' : 0,
+                                      'prole_partition_count' : 0,
+                                    }
+
+                if ck not in ns_available_part:
+                    ns_available_part[ck] = {}
+
+                if ns not in ns_available_part[ck]:
+                    ns_available_part[ck][ns] = {}
+                    ns_available_part[ck][ns]['available_partition_count'] = 0
+
+                if replica == 0:
+                    if origin == '0':
+                        node_pmap[ns]['master_partition_count'] += 1
+                    else:
+                        node_pmap[ns]['prole_partition_count'] += 1
+                else:
+                    if target == '0':
+                        if state == 'S' or state == 'D':
+                            node_pmap[ns]['prole_partition_count'] += 1
+                    else:
+                        node_pmap[ns]['master_partition_count'] += 1
+
+                if state == 'S' or state == 'D':
+                    ns_available_part[ck][ns]['available_partition_count'] += 1
+
+
+
+            pmap_data[_node] = node_pmap
+
+        for _node, _ns_data in pmap_data.items():
+            ck = cluster_keys[_node]
+            for ns, params in _ns_data.items():
+                params['missing_partition_count'] = (pid_range * ns_info[ck][ns]['repl_factor']) - ns_available_part[ck][ns]['available_partition_count']
+                params['cluster_key'] = ck
+
+        return pmap_data
+
+    def get_pmap(self, nodes='all'):
+        getter = GetStatisticsController(self.cluster)
+        versions = util.Future(self.cluster.info, 'version', nodes=nodes).start()
+        pmap_info = util.Future(self.cluster.info, 'partition-info', nodes=nodes).start()
+        service_stats = getter.get_service(nodes=nodes)
+        namespace_stats = getter.get_namespace(nodes=nodes)
+
+        versions = versions.result()
+        pmap_info = pmap_info.result()
+
+        cluster_keys = {}
+        for node in service_stats.keys():
+            if not service_stats[node] or isinstance(service_stats[node], Exception):
+                cluster_keys[node] = "N/E"
+            else:
+                cluster_keys[node] = util.get_value_from_dict(service_stats[node], ('cluster_key'), default_value="N/E")
+
+        ns_info = self._get_namespace_data(namespace_stats, cluster_keys)
+
+        pmap_data = self._get_pmap_data(pmap_info, ns_info, versions, cluster_keys)
+
+        return pmap_data

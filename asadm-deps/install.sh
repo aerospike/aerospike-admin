@@ -35,6 +35,8 @@ elif [ "$OS" == "linux" ]; then
         DISTRO="rpm"
     elif [ -f /etc/debian_version ] ; then
         DISTRO="deb"
+    elif [ -f /etc/system-release ] ; then
+        DISTRO="rpm"
     fi
 else
     echo "No support to OS {$OS}"

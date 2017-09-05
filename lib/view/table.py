@@ -106,7 +106,7 @@ class Table(object):
 
     def __init__(self, title, column_names, sort_by=0, group_by=None,
                  style=Styles.HORIZONTAL, title_format=TitleFormats.var_to_title,
-                 description=''):
+                 description='', n_last_columns_ignore_sort=0):
 
         self._data = []
         self._need_sort = False
@@ -120,6 +120,7 @@ class Table(object):
         self._group_by = group_by
         self._style = style
         self._description = description
+        self._n_last_columns_ignore_sort = n_last_columns_ignore_sort
 
         self._column_names = []
         self._column_display_names = []
@@ -178,6 +179,9 @@ class Table(object):
 
     def add_data_source(self, column, function):
         self._data_source[column] = function
+
+    def ignore_sort(self, ignore=True):
+        self._need_sort = not ignore
 
     def add_data_source_tuple(self, column, *functions, **kwargs):
         def tuple_extractor(data):
@@ -265,23 +269,40 @@ class Table(object):
         return data
 
     def _do_sort(self):
-        if self._need_sort == True:
+        if self._need_sort == True and self._n_last_columns_ignore_sort < len(self._data):
+            if self._n_last_columns_ignore_sort > 0:
+                data_len = len(self._data)
+                data_to_process = self._data[0:data_len-self._n_last_columns_ignore_sort]
+                fixed_data = self._data[data_len-self._n_last_columns_ignore_sort:data_len]
+            else:
+                data_to_process = self._data
+                fixed_data = []
+
             if self._style == Styles.HORIZONTAL:
                 sorted_data = sorted(
-                    self._data, key=lambda d: d[self._sort_by][1])
+                    data_to_process, key=lambda d: d[self._sort_by][1])
                 self._data = self._do_group(sorted_data)
                 self._need_sort = False
             else:  # style is Vertical
                 # Need to sort but messes with column widths
                 transform = sorted(
-                    range(len(self._data)), key=lambda d: self._data[d][self._sort_by][1])
+                    range(len(data_to_process)), key=lambda d: data_to_process[d][self._sort_by][1])
 
-                self._data = map(lambda i: self._data[i], transform)
+                self._data = map(lambda i: data_to_process[i], transform)
                 first = self._column_widths[0]
+
+                if self._n_last_columns_ignore_sort > 0:
+                    fixed_column_widths = self._column_widths[len(self._column_widths)-self._n_last_columns_ignore_sort:len(self._column_widths)]
+                else:
+                    fixed_column_widths = []
+
                 self._column_widths = map(lambda i:
                                           self._column_widths[i + 1], transform)
                 self._column_widths.insert(0, first)
+                self._column_widths = self._column_widths + fixed_column_widths
                 self._need_sort = False
+
+            self._data = self._data + fixed_data
 
     def _gen_render_data(self, horizontal=True):
         self._render_column_display_names = []
@@ -328,10 +349,15 @@ class Table(object):
 
         return [description, ]
 
-    def _get_horizontal_header(self):
+    def _get_horizontal_header(self, title_every_nth=0):
         width = sum(self._render_column_widths)
+        total_repeat_titles = 0
+        if title_every_nth:
+            total_columns = len(self._render_column_display_names) - 1 # Ignoring first columns of Row Header
+            total_repeat_titles = (total_columns-1)/title_every_nth
+        width += total_repeat_titles * self._render_column_widths[0] # Width is same as first column
         width += len(self._column_padding) * \
-            (len(self._render_column_widths) - 1)
+            (len(self._render_column_widths) + total_repeat_titles - 1)
         column_name_lines = map(
             lambda h: h.split(" "), self._render_column_display_names)
         max_deep = max(map(len, column_name_lines))
@@ -345,6 +371,13 @@ class Table(object):
         for r in range(max_deep):
             row = []
             for i, c in enumerate(column_name_lines):
+                if title_every_nth and (i-1) >0 and (i-1)%title_every_nth == 0:
+                    try:
+                        row.append(column_name_lines[0][r].rjust(self._render_column_widths[0]))
+                    except IndexError:
+                        row.append(".".rjust(self._render_column_widths[0]))
+                    row.append(self._column_padding)
+
                 try:
                     row.append(c[r].rjust(self._render_column_widths[i]))
                 except IndexError:
@@ -363,18 +396,31 @@ class Table(object):
         self._gen_render_data()
 
         if self._style == Styles.HORIZONTAL:
-            return self._str_horizontal()
+            return self._str_horizontal(title_every_nth=horizontal_title_every_nth)
         elif self._style == Styles.VERTICAL:
             return self._str_vertical(title_every_nth=horizontal_title_every_nth)
         else:
             raise ValueError("Invalid style, must be either " +
                              "table.HORIZONTAL or table.VERTICAL")
 
-    def _str_horizontal(self):
+    def _format_cell(self, cell, index):
+        if self._render_column_types[index] == "number":
+            cell = cell.rjust(self._render_column_widths[index])
+        elif self._render_column_types[index] == "string":
+            cell = cell.ljust(self._render_column_widths[index])
+        else:
+            raise ValueError(
+                "Unknown column type: '%s'" % self._render_column_types[index])
+        return cell
+
+    def _str_horizontal(self, title_every_nth=0):
         output = []
-        output.append(self._get_horizontal_header())
+        output.append(self._get_horizontal_header(title_every_nth=title_every_nth))
         for drow in self._data:
             row = []
+            title_cell_format = drow[0][0]
+            title_cell = self._format_cell(drow[0][1], 0)
+
             for i, (cell_format, cell) in enumerate(drow):
                 row.append(terminal.style(
                     terminal.bg_clear, terminal.fg_clear))
@@ -382,15 +428,11 @@ class Table(object):
                     continue
 
                 i = self._render_remap[i]
+                if title_every_nth and i-1 > 0 and (i-1)%title_every_nth == 0:
+                    row.append("%s%s" % (title_cell_format(), title_cell))
+                    row.append(self._column_padding)
 
-                if self._render_column_types[i] == "number":
-                    cell = cell.rjust(self._render_column_widths[i])
-                elif self._render_column_types[i] == "string":
-                    cell = cell.ljust(self._render_column_widths[i])
-                else:
-                    raise ValueError(
-                        "Unknown column type: '%s'" % self._render_column_types[i])
-
+                cell = self._format_cell(cell, i)
                 row.append("%s%s" % (cell_format(), cell))
                 row.append(self._column_padding)
             output.append(''.join(row))
@@ -440,6 +482,7 @@ class Table(object):
             self.gen_description(sum(title_width), sum(title_width) - 10))
 
         for i, column_name in enumerate(self._render_column_names):
+
             row = []
             row.append(terminal.style(
                 terminal.bg_clear, terminal.fg_clear))
@@ -451,8 +494,10 @@ class Table(object):
             row.append(":")
             row.append(self._column_padding)
             added_columns = 0
+
             for j, (cell_format, cell) in enumerate((raw_data[i]
                                                      for raw_data in self._data), 1):
+
                 if (title_every_nth and added_columns > 0
                         and added_columns % title_every_nth == 0):
                     row.append(

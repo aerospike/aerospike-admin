@@ -15,7 +15,6 @@
 import copy
 from distutils.version import LooseVersion
 import json
-import logging
 import time
 import os
 import sys
@@ -26,8 +25,10 @@ import socket
 import zipfile
 
 from lib.client.cluster import Cluster
+from lib.collectinfocontroller import CollectinfoRootController
 from lib.controllerlib import BaseController, CommandController, CommandHelp, ShellException
-from lib.getcontroller import GetConfigController, GetStatisticsController, GetDistributionController, get_sindex_stats
+from lib.getcontroller import GetConfigController, GetStatisticsController, GetDistributionController, get_sindex_stats, \
+    GetPmapController
 from lib.health.util import create_health_input_dict, h_eval, create_snapshot_key
 from lib.utils import util
 from lib.utils.data import lsof_file_type_desc
@@ -164,6 +165,12 @@ class InfoController(BasicCommandController):
     def do_namespace(self, line):
         stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
         return util.Future(self.view.info_namespace, stats, self.cluster,
+                           **self.mods)
+
+    @CommandHelp('Displays summary information for objects of each namespace.')
+    def do_object(self, line):
+        stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+        return util.Future(self.view.info_object, stats, self.cluster,
                            **self.mods)
 
     @CommandHelp('Displays summary information for Cross Datacenter',
@@ -339,7 +346,7 @@ class ShowDistributionController(BasicCommandController):
                 arg="-b", default=False, modifiers=self.modifiers,
                 mods=self.mods)
     
-        show_bucket_count = util.get_arg_and_delete_from_mods(line=line,
+        bucket_count = util.get_arg_and_delete_from_mods(line=line,
                 arg="-k", return_type=int, default=5, modifiers=self.modifiers,
                 mods=self.mods)
 
@@ -351,7 +358,7 @@ class ShowDistributionController(BasicCommandController):
                     'objsz', self.cluster, like=self.mods['for'])
         
 
-        histogram = self.getter.do_object_size(byte_distribution = True, show_bucket_count=show_bucket_count, nodes=self.nodes)
+        histogram = self.getter.do_object_size(byte_distribution = True, bucket_count=bucket_count, nodes=self.nodes)
 
         histogram_name = 'objsz'
         title = 'Object Size Distribution'
@@ -359,7 +366,7 @@ class ShowDistributionController(BasicCommandController):
         set_bucket_count = True
 
         return util.Future(self.view.show_object_distribution, title,
-                histogram, unit, histogram_name, show_bucket_count,
+                histogram, unit, histogram_name, bucket_count,
                 set_bucket_count, self.cluster, like=self.mods['for'])
 
 class ShowLatencyController(BasicCommandController):
@@ -437,11 +444,12 @@ class ShowConfigController(BasicCommandController):
     @CommandHelp('Displays service, network, and namespace configuration',
                  '  Options:',
                  '    -r <int>     - Repeating output table title and row header after every r columns.',
-                 '                   default: 0, no repetition.')
+                 '                   default: 0, no repetition.',
+                 '    -flip        - Flip output table to show Nodes on Y axis and config on X axis.')
     def _do_default(self, line):
-        actions = (util.Future(self.do_service, line).start(),
-                   util.Future(self.do_network, line).start(),
-                   util.Future(self.do_namespace, line).start())
+        actions = (util.Future(self.do_service, line[:]).start(),
+                   util.Future(self.do_network, line[:]).start(),
+                   util.Future(self.do_namespace, line[:]).start())
 
         return [action.result() for action in actions]
 
@@ -455,11 +463,15 @@ class ShowConfigController(BasicCommandController):
             modifiers=self.modifiers,
             mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
         service_configs = self.getter.get_service(nodes=self.nodes)
 
         return util.Future(self.view.show_config, "Service Configuration",
                            service_configs, self.cluster,
-                           title_every_nth=title_every_nth,
+                           title_every_nth=title_every_nth, flip_output=flip_output,
                            **self.mods)
 
     @CommandHelp('Displays network configuration')
@@ -469,10 +481,14 @@ class ShowConfigController(BasicCommandController):
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
         network_configs = self.getter.get_network(nodes=self.nodes)
 
         return util.Future(self.view.show_config, "Network Configuration",
-                network_configs, self.cluster, title_every_nth=title_every_nth,
+                network_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
                 **self.mods)
 
     @CommandHelp('Displays namespace configuration')
@@ -482,11 +498,15 @@ class ShowConfigController(BasicCommandController):
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
         ns_configs = self.getter.get_namespace(nodes=self.nodes)
 
         return [util.Future(self.view.show_config, 
             "%s Namespace Configuration" % (ns), configs, self.cluster, 
-            title_every_nth=title_every_nth, **self.mods)
+            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
                 for ns, configs in ns_configs.iteritems()]
 
     @CommandHelp('Displays XDR configuration')
@@ -496,10 +516,14 @@ class ShowConfigController(BasicCommandController):
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
         xdr_configs = self.getter.get_xdr(nodes=self.nodes)
 
         return util.Future(self.view.show_config, "XDR Configuration",
-                xdr_configs, self.cluster, title_every_nth=title_every_nth,
+                xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
                 **self.mods)
 
     @CommandHelp('Displays datacenter configuration')
@@ -509,11 +533,15 @@ class ShowConfigController(BasicCommandController):
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
         dc_configs = self.getter.get_dc(nodes=self.nodes)
 
         return [util.Future(self.view.show_config,
             "%s DC Configuration" % (dc), configs, self.cluster,
-            title_every_nth=title_every_nth, **self.mods)
+            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
             for dc, configs in dc_configs.iteritems()]
 
     @CommandHelp('Displays Cluster configuration')
@@ -523,10 +551,14 @@ class ShowConfigController(BasicCommandController):
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
         cl_configs = self.getter.get_cluster(nodes=self.nodes)
 
         return util.Future(self.view.show_config, "Cluster Configuration",
-                cl_configs, self.cluster, title_every_nth=title_every_nth,
+                cl_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
                 **self.mods)
 
 
@@ -562,48 +594,75 @@ class ShowStatisticsController(BasicCommandController):
         self.modifiers = set(['with', 'like', 'for'])
         self.getter = GetStatisticsController(self.cluster)
 
+    @CommandHelp('Displays bin, set, service, and namespace statistics',
+                 '  Options:',
+                 '    -t           - Set to show total column at the end. It contains node wise sum for statistics.',
+                 '    -r <int>     - Repeating output table title and row header after every r columns.',
+                 '                   default: 0, no repetition.',
+                 '    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.')
+    def _do_default(self, line):
+
+        actions = (util.Future(self.do_bins, line[:]).start(),
+                   util.Future(self.do_sets, line[:]).start(),
+                   util.Future(self.do_service, line[:]).start(),
+                   util.Future(self.do_namespace, line[:]).start())
+
+        return [action.result() for action in actions]
+
     @CommandHelp('Displays service statistics')
-    def do_service(self, line, show_total=False):
+    def do_service(self, line):
 
-        service_stats = self.getter.get_service(nodes=self.nodes)
-
-        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
+        service_stats = self.getter.get_service(nodes=self.nodes)
+
         return util.Future(self.view.show_stats, "Service Statistics",
                 service_stats, self.cluster, show_total=show_total,
-                title_every_nth=title_every_nth, **self.mods)
+                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
 
     @CommandHelp('Displays namespace statistics')
-    def do_namespace(self, line, show_total=False):
+    def do_namespace(self, line):
 
-        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line, arg="-r",
                 return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
         ns_stats = self.getter.get_namespace(nodes=self.nodes, for_mods=self.mods['for'])
 
-        return [util.Future(self.view.show_stats, 
+        return [util.Future(self.view.show_stats,
             "%s Namespace Statistics" % (namespace), ns_stats[namespace], 
             self.cluster, show_total=show_total, 
-            title_every_nth=title_every_nth, **self.mods)
+            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
             for namespace in sorted(ns_stats.keys())]
 
     @CommandHelp('Displays sindex statistics')
-    def do_sindex(self, line, show_total=False):
+    def do_sindex(self, line):
 
-        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
+                mods=self.mods)
+
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
         sindex_stats = self.getter.get_sindex(nodes=self.nodes, for_mods=self.mods['for'])
@@ -611,17 +670,21 @@ class ShowStatisticsController(BasicCommandController):
         return [util.Future(self.view.show_stats,
             "%s Sindex Statistics" % (ns_set_sindex),
             sindex_stats[ns_set_sindex], self.cluster, show_total=show_total,
-            title_every_nth=title_every_nth, **self.mods)
+            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
             for ns_set_sindex in sorted(sindex_stats.keys())]
 
     @CommandHelp('Displays set statistics')
-    def do_sets(self, line, show_total=False):
+    def do_sets(self, line):
 
-        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
+                mods=self.mods)
+
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
         set_stats = self.getter.get_sets(nodes=self.nodes, for_mods=self.mods['for'])
@@ -629,249 +692,81 @@ class ShowStatisticsController(BasicCommandController):
         return [util.Future(self.view.show_stats,
             "%s %s Set Statistics" % (namespace, set_name), stats,
             self.cluster, show_total=show_total,
-            title_every_nth=title_every_nth, **self.mods)
+            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
             for (namespace, set_name), stats in set_stats.iteritems()]
 
     @CommandHelp('Displays bin statistics')
-    def do_bins(self, line, show_total=False):
+    def do_bins(self, line):
 
-        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
+                mods=self.mods)
+
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
         new_bin_stats = self.getter.get_bins(nodes=self.nodes, for_mods=self.mods['for'])
 
         return [util.Future(self.view.show_stats,
             "%s Bin Statistics" % (namespace), new_bin_stat, self.cluster,
-            show_total=show_total, title_every_nth=title_every_nth, **self.mods)
+            show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
             for namespace, new_bin_stat in new_bin_stats.iteritems()]
 
     @CommandHelp('Displays XDR statistics')
-    def do_xdr(self, line, show_total=False):
+    def do_xdr(self, line):
 
-        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
+                mods=self.mods)
+
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
         xdr_stats = self.getter.get_xdr(nodes=self.nodes)
 
         return util.Future(self.view.show_stats, "XDR Statistics", xdr_stats,
                 self.cluster, show_total=show_total,
-                title_every_nth=title_every_nth, **self.mods)
+                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
 
     @CommandHelp('Displays datacenter statistics')
-    def do_dc(self, line, show_total=False):
+    def do_dc(self, line):
         
-        show_total = show_total or util.check_arg_and_delete_from_mods(line=line, arg="-t",
+        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
         
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
 
+        flip_output = util.check_arg_and_delete_from_mods(line=line,
+                arg="-flip", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
         dc_stats = self.getter.get_dc(nodes=self.nodes)
 
         return [util.Future(self.view.show_config, "%s DC Statistics" % (dc),
             stats, self.cluster, show_total=show_total,
-            title_every_nth=title_every_nth, **self.mods)
+            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
             for dc, stats in dc_stats.iteritems()]
-
-    @CommandHelp('Displays bin, set, service, and namespace statistics',
-                 '  Options:',
-                 '    -t           - Set to show total column at the end. It contains node wise sum for statistics.',
-                 '    -r <int>     - Repeating output table title and row header after every r columns.',
-                 '                   default: 0, no repetition.')
-    def _do_default(self, line):
-
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
-                default=False, modifiers=self.modifiers, mods=self.mods)
-
-        actions = (util.Future(self.do_bins, line, show_total).start(),
-                   util.Future(self.do_sets, line, show_total).start(),
-                   util.Future(self.do_service, line, show_total).start(),
-                   util.Future(self.do_namespace, line, show_total).start())
-
-        return [action.result() for action in actions]
 
 @CommandHelp('Displays partition map analysis of Aerospike cluster.')
 class ShowPmapController(BasicCommandController):
     def __init__(self):
         self.modifiers = set()
+        self.getter = GetPmapController(self.cluster)
 
     def _do_default(self, line):
-        versions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
-        pmap_info = util.Future(self.cluster.info, 'partition-info', nodes=self.nodes).start()
-        namespaces = util.Future(self.cluster.info_namespaces, nodes=self.nodes).start()
-        versions = versions.result()
-        pmap_info = pmap_info.result()
-        namespaces = namespaces.result()
-        namespaces = namespaces.values()
-        namespace_set = set()
-        namespace_stats = dict()
-
-        for namespace in namespaces:
-            if isinstance(namespace, Exception):
-                continue
-
-            namespace_set.update(namespace)
-
-        for namespace in sorted(namespace_set):
-            ns_stats = self.cluster.info_namespace_statistics(namespace, nodes=self.nodes)
-            namespace_stats[namespace] = ns_stats
-
-        pmap_data = self._get_pmap_data(pmap_info, self._get_namespace_data(namespace_stats), versions)
+        pmap_data = self.getter.get_pmap(nodes=self.nodes)
 
         return util.Future(self.view.show_pmap, pmap_data, self.cluster)
-
-    def _format_missing_part(self, part_data):
-        missing_part = ''
-        get_part = lambda pid, pindex: str(pid) + ':S:' + str(pindex) + ','
-
-        for pid, part in enumerate(part_data):
-            if part:
-                for pindex in part:
-                    missing_part += get_part(pid, pindex)
-
-        return missing_part[:-1]
-
-    def _get_namespace_data(self, namespace_stats):
-        disc_pct_allowed = 1   # Considering Negative & Positive both discrepancy
-        ns_info = {}
-
-        for ns, nodes in namespace_stats.items():
-            ns_info[ns] = {}
-            master_objs = 0
-            replica_objs = 0
-            repl_factor = 0
-
-            for params in nodes.values():
-                if isinstance(params, Exception):
-                    continue
-
-                master_objs += util.get_value_from_dict(params,('master-objects','master_objects'),0,int)
-                replica_objs += util.get_value_from_dict(params,('prole-objects','prole_objects'),0,int)
-                repl_factor = max(repl_factor, int(params['repl-factor']))
-
-            ns_info[ns]['avg_master_objs'] = master_objs / 4096
-            ns_info[ns]['avg_replica_objs'] = replica_objs / 4096
-            ns_info[ns]['repl_factor'] = repl_factor
-            diff_master = ns_info[ns]['avg_master_objs'] * disc_pct_allowed / 100
-
-            if diff_master < 1024:
-                diff_master = 1024
-
-            diff_replica = ns_info[ns]['avg_replica_objs'] * disc_pct_allowed / 100
-
-            if diff_replica < 1024:
-                diff_replica = 1024
-
-            ns_info[ns]['diff_master'] = diff_master
-            ns_info[ns]['diff_replica'] = diff_replica
-
-        return ns_info
-
-    def _get_pmap_data(self, pmap_info, ns_info, versions):
-        pid_range = 4096        # each namespace is divided into 4096 partition
-        is_dist_delta_exeeds = lambda exp, act, diff: abs(exp - act) > diff
-        pmap_data = {}
-        ns_missing_part = {}
-        visited_ns = set()
-
-        # required fields
-        # format : (index_ptr, field_name, default_index)
-        required_fields = [("ns_index","namespace",0),("pid_index","partition",1),("state_index","state",2),
-                           ("pindex_index","replica",3),("objects_index","records",9)]
-
-        for _node, partitions in pmap_info.items():
-            node_pmap = dict()
-
-            if isinstance(partitions, Exception):
-                continue
-
-            f_indices = {}
-
-            # default index in partition fields for server < 3.6.1
-            for t in required_fields:
-                f_indices[t[0]] = t[2]
-
-            index_set = False
-
-            for item in partitions.split(';'):
-                fields = item.split(':')
-
-                if not index_set:
-                    index_set = True
-
-                    if all(i[1] in fields for i in required_fields):
-                        # pmap format contains headers from server 3.9 onwards
-                        for t in required_fields:
-                            f_indices[t[0]] = fields.index(t[1])
-
-                        continue
-
-                    elif LooseVersion(versions[_node]) >= LooseVersion("3.6.1"):
-                        # pmap format is changed(1 field is removed) in aerospike 3.6.1
-                        # In 3.7.5, one new field got added but at the end of the fields. So it doesn't affect required indices
-                        f_indices["objects_index"]=8
-
-                ns, pid, state, pindex, objects = fields[f_indices["ns_index"]], int(fields[f_indices["pid_index"]]),\
-                                         fields[f_indices["state_index"]], int(fields[f_indices["pindex_index"]]),\
-                                         int(fields[f_indices["objects_index"]])
-
-                if ns not in node_pmap:
-                    node_pmap[ns] = { 'pri_index' : 0,
-                                      'sec_index' : 0,
-                                      'master_disc_part': [],
-                                      'replica_disc_part':[]
-                                    }
-
-                if ns not in visited_ns:
-                    ns_missing_part[ns] = {}
-                    ns_missing_part[ns]['missing_part'] = [range(ns_info[ns]['repl_factor']) for i in range(pid_range)]
-                    visited_ns.add(ns)
-
-                if state == 'S':
-                    # partition state is SYNC
-                    try:
-                        if  pindex == 0:
-                            node_pmap[ns]['pri_index'] += 1
-                            exp_master_objs = ns_info[ns]['avg_master_objs']
-
-                            if exp_master_objs == 0 and objects == 0:
-                                pass
-                            elif is_dist_delta_exeeds(exp_master_objs, objects, ns_info[ns]['diff_master']):
-                                node_pmap[ns]['master_disc_part'].append(pid)
-
-                        if  pindex in range(1, ns_info[ns]['repl_factor']):
-                            node_pmap[ns]['sec_index'] += 1
-                            exp_replica_objs = ns_info[ns]['avg_replica_objs']
-
-                            if exp_replica_objs == 0 and objects == 0:
-                                pass
-
-                            elif is_dist_delta_exeeds(exp_replica_objs, objects, ns_info[ns]['diff_replica']):
-                                node_pmap[ns]['replica_disc_part'].append(pid)
-
-                        ns_missing_part[ns]['missing_part'][pid].remove(pindex)
-
-                    except Exception:
-                        pass
-                if pid not in range(pid_range):
-                    print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
-
-            pmap_data[_node] = node_pmap
-
-        for _node, _ns in pmap_data.items():
-            for ns_name, params in _ns.items():
-                params['missing_part'] = self._format_missing_part(ns_missing_part[ns_name]['missing_part'])
-
-        return pmap_data
 
 @CommandHelp('"collectinfo" is used to collect cluster info, aerospike conf file and system stats.')
 class CollectinfoController(BasicCommandController):
@@ -880,7 +775,7 @@ class CollectinfoController(BasicCommandController):
         self.modifiers = set(['with'])
 
     def _collect_local_file(self, src, dest_dir):
-        print "[INFO] Copying file %s to %s" % (src, dest_dir)
+        self.logger.info("Copying file %s to %s" % (src, dest_dir))
         try:
             shutil.copy2(src, dest_dir)
         except Exception, e:
@@ -895,9 +790,9 @@ class CollectinfoController(BasicCommandController):
             name = func.func_name
         except Exception:
             pass
-        info_line = "[INFO] Data collection for " + name + \
+        info_line = "Data collection for " + name + \
             "%s" % (" %s" % (str(parm)) if parm else "") + " in progress.."
-        print info_line
+        self.logger.info(info_line)
         if parm:
             sep += str(parm) + "\n"
 
@@ -905,22 +800,25 @@ class CollectinfoController(BasicCommandController):
             o, e = util.shell_command(parm)
             if e:
                 if e:
-                    info_line = "[ERROR] " + str(e)
-                    print info_line
+                    self.logger.error(str(e))
+
                 if alt_parm and alt_parm[0]:
-                    info_line = "[INFO] Data collection for alternative command " + \
-                        name + str(alt_parm) + " in progress.."
-                    print info_line
+                    info_line = "Data collection for alternative command " + \
+                                name + str(alt_parm) + " in progress.."
+                    self.logger.info(info_line)
                     sep += str(alt_parm) + "\n"
                     o_alt, e_alt = util.shell_command(alt_parm)
+
                     if e_alt:
                         self.cmds_error.add(parm[0])
                         self.cmds_error.add(alt_parm[0])
+
                         if e_alt:
-                            info_line = "[ERROR] " + str(e_alt)
-                            print info_line
+                            self.logger.error(str(e_alt))
+
                     if o_alt:
                         o = o_alt
+
                 else:
                     self.cmds_error.add(parm[0])
 
@@ -941,14 +839,16 @@ class CollectinfoController(BasicCommandController):
     def _write_version(self, line):
         print "asadm version " + str(self.asadm_version)
 
-    def _get_metadata(self, response_str, prefix=''):
+    def _get_metadata(self, response_str, prefix='', old_response=''):
         aws_c = ''
         aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
 
+        # set of values which will give same old_response, so no need to go further
+        last_values = []
         for rsp in response_str.split("\n"):
             if rsp[-1:] == '/':
                 rsp_p = rsp.strip('/')
-                aws_c += self._get_metadata(rsp_p, prefix)
+                aws_c += self._get_metadata(rsp_p, prefix, old_response=old_response)
             else:
                 meta_url = aws_metadata_base_url + prefix + rsp
 
@@ -956,14 +856,17 @@ class CollectinfoController(BasicCommandController):
                 r = urllib2.urlopen(req)
                 # r = requests.get(meta_url,timeout=aws_timeout)
                 if r.code != 404:
-                    response = r.read()
-                    if response.strip().endswith("/") or "\n" in response.strip() or (rsp.strip() == "placement" and response.strip() == "availability-zone"):
-                        try:
-                            aws_c += self._get_metadata(response.strip(), prefix + rsp + "/")
-                        except Exception:
+                    response = r.read().strip()
+                    if response == old_response:
+                        last_values.append(rsp.strip())
+                        continue
+                    try:
+                            aws_c += self._get_metadata(response, prefix + rsp + "/", old_response=response)
+                    except Exception:
                             aws_c +=  (prefix + rsp).strip('/') + '\n' + response + "\n\n"
-                    else:
-                        aws_c +=  (prefix + rsp).strip('/') + '\n' + response + "\n\n"
+
+        if last_values:
+            aws_c += prefix.strip('/') + '\n' + '\n'.join(last_values) + "\n\n"
 
         return aws_c
 
@@ -1120,8 +1023,9 @@ class CollectinfoController(BasicCommandController):
         self._zip_files(logdir)
         util.shell_command(["tar -czvf " + logdir + ".tgz " + aslogdir])
         sys.stderr.write("\x1b[2J\x1b[H")
-        print "\n\n\nFiles in " + logdir + " and " + logdir + ".tgz saved. "
-        print "END OF ASCOLLECTINFO"
+        print "\n\n\n"
+        self.logger.info("Files in " + logdir + " and " + logdir + ".tgz saved. ")
+        self.logger.info("END OF ASCOLLECTINFO")
 
     def _parse_namespace(self, namespace_data):
         """
@@ -1284,18 +1188,45 @@ class CollectinfoController(BasicCommandController):
     def _get_as_metadata(self):
         metamap = {}
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start().result()
+        editions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start().result()
         xdr_builds = util.Future(self.cluster.info_XDR_build_version, nodes=self.nodes).start().result()
+        node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start().result()
+        ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start().result()
         udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start().result()
 
         for nodeid in builds:
             metamap[nodeid] = {}
             self._get_meta_for_sec(builds, 'asd_build', nodeid, metamap)
+            self._get_meta_for_sec(editions, 'edition', nodeid, metamap)
             self._get_meta_for_sec(xdr_builds, 'xdr_build', nodeid, metamap)
+            self._get_meta_for_sec(node_ids, 'node_id', nodeid, metamap)
+            self._get_meta_for_sec(ips, 'ip', nodeid, metamap)
             self._get_meta_for_sec(udf_data, 'udf', nodeid, metamap)
 
         return metamap
 
-    def _dump_in_file(self, timestamp, as_logfile_prefix, dump):
+    def _get_as_histograms(self):
+        histogram_map = {}
+        hist_list = ['ttl', 'objsz']
+
+        for hist in hist_list:
+            hist_dump = util.Future(self.cluster.info_histogram, hist, raw_output=True, nodes=self.nodes).start().result()
+            for node in hist_dump:
+                if node not in histogram_map:
+                    histogram_map[node] = {}
+
+                if not hist_dump[node] or isinstance(hist_dump[node], Exception):
+                    continue
+
+                histogram_map[node][hist] = hist_dump[node]
+
+        return histogram_map
+
+    def _get_as_pmap(self):
+        getter = GetPmapController(self.cluster)
+        return getter.get_pmap(nodes=self.nodes)
+
+    def _dump_in_json_file(self, as_logfile_prefix, dump):
         self.logger.info("Dumping collectinfo in JSON format.")
         aslogfile = as_logfile_prefix + 'ascinfo.json'
         with open(aslogfile, "w") as f:
@@ -1307,6 +1238,10 @@ class CollectinfoController(BasicCommandController):
         dump_map = {}
 
         meta_map = self._get_as_metadata()
+
+        histogram_map = self._get_as_histograms()
+
+        pmap_map = self._get_as_pmap()
 
         sys_map = self.cluster.info_system_statistics(default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
                                                       default_ssh_port=default_ssh_port, credential_file=credential_file, nodes=self.nodes)
@@ -1320,6 +1255,12 @@ class CollectinfoController(BasicCommandController):
                 dump_map[node]['sys_stat'] = sys_map[node]
             if node in meta_map:
                 dump_map[node]['as_stat']['meta_data'] = meta_map[node]
+
+            if node in histogram_map:
+                 dump_map[node]['as_stat']['histogram'] = histogram_map[node]
+
+            if node in pmap_map:
+                 dump_map[node]['as_stat']['pmap'] = pmap_map[node]
 
         # Get the cluster name and add one more level in map
         cluster_name = 'null'
@@ -1336,39 +1277,20 @@ class CollectinfoController(BasicCommandController):
         snp_map[cluster_name] = dump_map
         return snp_map
 
-    def _main_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
-            credential_file, snp_count, wait_time, show_all=False,
-            verbose=False):
-
-        global aslogdir, output_time
-        timestamp = time.gmtime()
-        output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
-        aslogdir = '/tmp/collect_info_' + output_time
-        as_logfile_prefix = aslogdir + '/' + output_time + '_'
-
-        os.makedirs(aslogdir)
-
-        # Pretty print collectinfo
-        self._dump_collectinfo_pretty_print(
-            timestamp, as_logfile_prefix, show_all=show_all, verbose=verbose)
-
-        # JSON collectinfo
-        if snp_count < 1:
-            self._archive_log(aslogdir)
-            return
-
+    def _dump_collectinfo_json(self, timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port, default_ssh_key, credential_file,
+                               snp_count, wait_time):
         snpshots = {}
+
         for i in range(snp_count):
-            snp_timestamp = time.strftime(
-                "%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-            print("[INFO] Data collection for Snapshot: " + str(i + 1) + " in progress..")
+
+            snp_timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+            self.logger.info("Data collection for Snapshot: " + str(i + 1) + " in progress..")
             snpshots[snp_timestamp] = self._get_collectinfo_data_json(
                 default_user, default_pwd, default_ssh_port, default_ssh_key, credential_file)
+
             time.sleep(wait_time)
 
-        self._dump_in_file(timestamp, as_logfile_prefix, snpshots)
-
-        self._archive_log(aslogdir)
+        self._dump_in_json_file(as_logfile_prefix, snpshots)
 
     def _dump_collectinfo_pretty_print(self, timestamp, as_logfile_prefix,
             show_all=False, verbose=False):
@@ -1401,6 +1323,7 @@ class CollectinfoController(BasicCommandController):
              'ls /etc|grep release|xargs -I f cat /etc/f'],
             ['cat /proc/meminfo', 'vmstat -s'],
             ['cat /proc/interrupts', ''],
+            ['cat /proc/partitions', 'fdisk -l'],
             [
                 'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"', ''],
             [
@@ -1450,6 +1373,10 @@ class CollectinfoController(BasicCommandController):
             'dump-paxos:',
             'dump-smd:'
         ]
+
+        summary_params = ['summary']
+        summary_info_params = ['network', 'namespace', 'object', 'set', 'xdr', 'dc', 'sindex']
+        health_params = ['health -v']
 
         hist_list = ['ttl', 'objsz']
         hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
@@ -1508,8 +1435,6 @@ class CollectinfoController(BasicCommandController):
         else:
             cmd_dmesg = 'cat /var/log/messages'
 
-        terminal.enable_color(False)
-
         ####### Dignostic info ########
 
         aslogfile = as_logfile_prefix + 'ascollectinfo.log'
@@ -1548,6 +1473,44 @@ class CollectinfoController(BasicCommandController):
         try:
             for cmd in dignostic_aerospike_cluster_params:
                 self._collectinfo_content('cluster', cmd)
+        except Exception as e:
+            self._write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        ####### Summary ########
+        collectinfo_root_controller = CollectinfoRootController(asadm_version=self.asadm_version, clinfo_path=as_logfile_prefix + "ascinfo.json")
+
+        aslogfile = as_logfile_prefix + 'summary.log'
+        self._write_log(collect_output)
+        try:
+            self._collectinfo_content(self._write_version)
+        except Exception as e:
+            self._write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            for summary_param in summary_params:
+                self._collectinfo_content(collectinfo_root_controller.execute, [summary_param])
+        except Exception as e:
+            self._write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        try:
+            info_controller = InfoController()
+            for info_param in summary_info_params:
+                self._collectinfo_content(info_controller, [info_param])
+        except Exception as e:
+            self._write_log(str(e))
+            sys.stdout = sys.__stdout__
+
+        ####### Health ########
+
+        aslogfile = as_logfile_prefix + 'health.log'
+        self._write_log(collect_output)
+
+        try:
+            for health_param in health_params:
+                self._collectinfo_content(collectinfo_root_controller.execute, health_param.split())
         except Exception as e:
             self._write_log(str(e))
             sys.stdout = sys.__stdout__
@@ -1687,6 +1650,38 @@ class CollectinfoController(BasicCommandController):
             self._write_log(str(e))
             sys.stdout = sys.__stdout__
 
+    def _main_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
+            credential_file, snp_count, wait_time, show_all=False,
+            verbose=False):
+        global aslogdir, output_time
+        timestamp = time.gmtime()
+        output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
+        aslogdir = '/tmp/collect_info_' + output_time
+        as_logfile_prefix = aslogdir + '/' + output_time + '_'
+
+        os.makedirs(aslogdir)
+
+        # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
+        terminal.enable_color(False)
+
+        # JSON collectinfo
+        if snp_count < 1:
+            self._archive_log(aslogdir)
+            return
+
+        self._dump_collectinfo_json(timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port, default_ssh_key,
+                                    credential_file, snp_count, wait_time,)
+
+        # Pretty print collectinfo
+        self._dump_collectinfo_pretty_print(timestamp, as_logfile_prefix, show_all=show_all, verbose=verbose)
+
+        # Archive collectinfo directory
+        self._archive_log(aslogdir)
+
+        # If multiple commands are given in execute_only mode then we might need coloring for next commands
+        terminal.enable_color(True)
+
+
     @CommandHelp('Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.',
                  'If credentials are not available then it will collect system stats from local node only.',
                  '  Options:',
@@ -1738,7 +1733,7 @@ class CollectinfoController(BasicCommandController):
 
         self.cmds_error = set()
         self._main_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
-                credential_file, snp_count, wait_time, False, False)
+                credential_file, snp_count, wait_time, show_all=False, verbose=False)
 
         if self.cmds_error:
             self.logger.error(
@@ -1750,19 +1745,15 @@ class CollectinfoController(BasicCommandController):
                  '    verbose     - Enable to collect additional stats with detailed output of "info dump-*" commands'
                  )
     def do_all(self, line):
-        credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="-cf", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
         default_user = util.get_arg_and_delete_from_mods(line=line,
-                arg="-user", return_type=str, default=None,
+                arg="-U", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
-        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="-pwd",
+        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="-P",
                 return_type=str, default=None, modifiers=self.modifiers,
                 mods=self.mods)
 
-        snp_count = util.get_arg_and_delete_from_mods(line=line, arg="-sc",
+        snp_count = util.get_arg_and_delete_from_mods(line=line, arg="-n",
                 return_type=int, default=1, modifiers=self.modifiers,
                 mods=self.mods)
 
@@ -1774,12 +1765,21 @@ class CollectinfoController(BasicCommandController):
                 arg="-sp", return_type=int, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
+        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
+                arg="-sk", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
+        credential_file = util.get_arg_and_delete_from_mods(line=line,
+                arg="-cf", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
         verbose = False
         if 'verbose' in line:
             verbose = True
+
         self.cmds_error = set()
-        self._main_collectinfo(default_user, default_pwd, default_ssh_port,
-                credential_file, snp_count, wait_time, True, verbose)
+        self._main_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
+                credential_file, snp_count, wait_time, show_all=True, verbose=verbose)
 
         if self.cmds_error:
             self.logger.error(
@@ -1851,6 +1851,10 @@ class HealthCheckController(BasicCommandController):
             return get_sindex_stats(cluster=self.cluster, nodes=self.nodes)
         elif stanza == "udf":
             return self.cluster.info_udf_list(nodes=self.nodes)
+        elif stanza == "endpoints":
+            return self.cluster.info_service(nodes=self.nodes)
+        elif stanza == "services":
+            return self.cluster.info_services(nodes=self.nodes)
 
     def _get_asconfig_data(self, stanza):
         if stanza == "xdr":
@@ -1999,6 +2003,14 @@ class HealthCheckController(BasicCommandController):
                     ("build", "METADATA", False, False, [
                      ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
                 ]),
+                "endpoints": (self._get_asstat_data, [
+                    ("endpoints", "METADATA", False, False, [
+                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "endpoints")]),
+                ]),
+                "services": (self._get_asstat_data, [
+                    ("services", "METADATA", False, False, [
+                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "services")]),
+                ]),
                 "metadata": (self._get_asstat_data, [
                     ("udf", "UDF", False, False, [
                      ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILENAME", None)]),
@@ -2096,6 +2108,9 @@ class HealthCheckController(BasicCommandController):
                             d = sys_function(sys_stats[cmd_section], cmd_section)
                         except Exception:
                             continue
+
+                        if cmd_section == "free-m":
+                            d = util.mbytes_to_bytes(d)
 
                         try:
                             new_tuple_keys = copy.deepcopy(cmd_item[4])

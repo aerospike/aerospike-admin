@@ -33,8 +33,8 @@ from lib.utils.constants import END_ROW_KEY, DT_FMT
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
 DT_TIME_FMT = "%H:%M:%S"
 HIST_TAG_PREFIX = "histogram dump: "
-HIST_TAG_PATTERNS = [
-    HIST_TAG_PREFIX + "%s ", HIST_TAG_PREFIX + "{[a-zA-Z0-9_-]+}-%s "]
+HIST_WITH_NS_PATTERN = "{.+}-[a-zA-Z0-9_-]+"
+HIST_TAG_PATTERNS = [HIST_TAG_PREFIX + "%s ", HIST_TAG_PREFIX + "{[a-zA-Z0-9_-]+}-%s "]
 NS_HIST_TAG_PATTERNS = [HIST_TAG_PREFIX + "{%s}-%s "]
 NS_SLICE_SECONDS = 5
 SCAN_SIZE = 1024 * 1024
@@ -187,7 +187,7 @@ class LogLatency(object):
     #
 
     def _read_hist(self, hist_tags, after_dt, file_itr, line=0, end_dt=None,
-                   before_dt=None):
+                   before_dt=None, read_all_dumps=False):
         if not line:
             line = self._read_line(file_itr)
         while True:
@@ -208,13 +208,16 @@ class LogLatency(object):
         total, values, line = self._read_bucket_values(line, file_itr)
         if not line:
             return 0, 0, 0, 0
-        if not before_dt:
-            before_dt = dt + datetime.timedelta(seconds=NS_SLICE_SECONDS)
-        r_total, r_values, r_dt, line = self._read_hist(
-            hist_tags, after_dt, file_itr, line, end_dt, before_dt)
-        total += r_total
-        if r_values:
-            values = self._add_buckets(values, r_values)
+
+        if read_all_dumps:
+            if not before_dt:
+                before_dt = dt + datetime.timedelta(seconds=NS_SLICE_SECONDS)
+            r_total, r_values, r_dt, line = self._read_hist(
+                hist_tags, after_dt, file_itr, line, end_dt, before_dt, read_all_dumps=read_all_dumps)
+            total += r_total
+            if r_values:
+                values = self._add_buckets(values, r_values)
+
         return total, values, dt, line
 
     #------------------------------------------------
@@ -261,17 +264,31 @@ class LogLatency(object):
                         arg_num_buckets = arg_num_buckets - 1
             file_itr = arg_log_itr
 
+            # By default reading one bucket dump for 10 second slice,
+            # In case of multiple namespaces, it will read all bucket dumps for all namepspaces for same slice
+            read_all_dumps = False
+
             # Set histogram tag:
             if arg_ns:
-                hist_tags = [s % (arg_ns, arg_hist)
-                             for s in NS_HIST_TAG_PATTERNS]
+                # Analysing latency for histogram arg_hist for specific namespace arg_ns
+                # It needs to read single bucket dump for a slice
+                hist_tags = [s % (arg_ns, arg_hist) for s in NS_HIST_TAG_PATTERNS]
+
+            elif re.match(HIST_WITH_NS_PATTERN, arg_hist):
+                # Analysing latency for specific histogram for specific namespace ({namespace}-histogram)
+                # It needs to read single bucket dump for a slice
+                hist_tags = [HIST_TAG_PREFIX+"%s "%(arg_hist)]
+
             else:
+                # Analysing latency for histogram arg_hist
+                # It needs to read all bucket dumps for a slice
                 hist_tags = [s % (arg_hist) for s in HIST_TAG_PATTERNS]
+                read_all_dumps = True
 
             init_dt = arg_from
             # Find first histogram:
             old_total, old_values, old_dt, line = self._read_hist(
-                hist_tags, init_dt, file_itr, end_dt=arg_end_date)
+                hist_tags, init_dt, file_itr, end_dt=arg_end_date, read_all_dumps=read_all_dumps)
             if line:
                 end_dt = arg_end_date
 
@@ -293,7 +310,7 @@ class LogLatency(object):
                 # Process all the time slices:
                 while end_dt > old_dt:
                     new_total, new_values, new_dt, line = self._read_hist(
-                        hist_tags, after_dt, file_itr, line, end_dt=arg_end_date)
+                        hist_tags, after_dt, file_itr, line, end_dt=arg_end_date, read_all_dumps=read_all_dumps)
                     if not new_values:
                         # This can happen in either eof or end of input time
                         # range

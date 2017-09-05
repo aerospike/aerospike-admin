@@ -23,11 +23,11 @@ CONFIG_DC = "dc"
 CONFIG_CLUSTER = "cluster"
 
 STAT_SERVICE = "service"
-STAT_SETS = "sets"
+STAT_SETS = "set"
 STAT_NAMESPACE = "namespace"
 STAT_XDR = "xdr"
 STAT_DC = "dc"
-STAT_BINS = "bins"
+STAT_BINS = "bin"
 STAT_SINDEX = "sindex"
 
 SUMMARY_SERVICE = "service"

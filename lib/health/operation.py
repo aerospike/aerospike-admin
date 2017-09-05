@@ -116,9 +116,14 @@ def vector_to_scalar_equal_operation(op, v):
 
     i0 = v[0]
     k1, v1 = get_kv(i0)
+    if v1 and isinstance(v1, list):
+        v1 = sorted(v1)
 
     for i in v[1:]:
         k2, v2 = get_kv(i)
+        if v2 and isinstance(v2, list):
+            v2 = sorted(v2)
+
         if not op(v1, v2):
             return False
 
@@ -194,25 +199,32 @@ def vector_to_vector_sd_anomaly_operation(kv, op, a):
     try:
         n = len(kv)
         if n < 3:
-            no_analogy = True
+            no_anomaly = True
             range_start = 0
             range_end = 0
         else:
             values = [get_kv(m)[1] for m in kv]
-            no_analogy = False
-            s = sum(values)
-            mean = float(s) / float(n)
-            variance = 0
-            for v in values:
-                variance += pow((v - mean), 2)
-            variance = float(variance) / float(n)
-            sd = sqrt(variance)
-            range_start = mean - (a * sd)
-            range_end = mean + (a * sd)
+            no_anomaly = False
+
+            try:
+                # We should consider int and floats only
+                s = sum(values)
+            except Exception:
+                no_anomaly = True
+
+            if not no_anomaly:
+                mean = float(s) / float(n)
+                variance = 0
+                for v in values:
+                    variance += pow((v - mean), 2)
+                variance = float(variance) / float(n)
+                sd = sqrt(variance)
+                range_start = mean - (a * sd)
+                range_end = mean + (a * sd)
 
         for x in kv:
             k, v = get_kv(x)
-            if (no_analogy or (float(v) >= float(range_start)
+            if (no_anomaly or (float(v) >= float(range_start)
                 and float(v) <= float(range_end))):
                 res[make_key(k)] = False
             else:

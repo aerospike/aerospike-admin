@@ -102,7 +102,10 @@ def _get_mem_in_byte_from_str(memstr, mem_unit_len):
 
 def _get_bytes_from_float(memstr, shift, mem_unit_len):
     try:
-        memnum = float(memstr[:-mem_unit_len])
+        if mem_unit_len == 0:
+            memnum = float(memstr)
+        else:
+            memnum = float(memstr[:-mem_unit_len])
     except ValueError:
         return memstr
     if memstr == '0':
@@ -170,11 +173,8 @@ def _parse_top_section(imap, parsed_map):
         if re.search('top -n3 -b', line):
             continue
 
-        if 'Ki_b' in line:
+        if 'Ki_b' in line or 'KiB' in line:
             kib_format = True
-
-        if 'KiB' in line:
-			kib_format = True
 
         # Match object to get uptime in days.
         # "top - 18:56:45 up 103 days, 13:00,  2 users,  load average: 1.29, 1.34, 1.35\n"
@@ -274,9 +274,15 @@ def _parse_top_section(imap, parsed_map):
     if kib_format:
 
         for key in topdata['ram']:
-            topdata['ram'][key] = topdata['ram'][key] * 1024
+            try:
+                topdata['ram'][key] = _get_bytes_from_float(topdata['ram'][key], 10, 0)
+            except Exception:
+                pass
         for key in topdata['swap']:
-            topdata['swap'][key] = topdata['swap'][key] * 1024
+            try:
+                topdata['swap'][key] = _get_bytes_from_float(topdata['swap'][key], 10, 0)
+            except Exception:
+                pass
 
     _replace_comma_from_map_value_field(topdata)
 

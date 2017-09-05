@@ -23,6 +23,7 @@ CMD_PREFIX = 'running shell command: '
 #             }
 # Param 'regex_new': regex for collectinfos having delimiter.
 # Param 'regex_old': regex for collectinfos, not having delimiter.
+# Param 'collision_allowed': True if multiple sections allowed for same final_section_name
 FILTER_LIST = {
     'ID_1': {
         'enable': True,
@@ -430,15 +431,17 @@ FILTER_LIST = {
         # TODO:----------------
         'enable': True,
         'raw_section_name': 'info_service list',
+        'final_section_name': 'endpoints',
         #'regex_new': '[INFO] Data collection for service in progress..',
         #'regex_new': "service\n|(?=.*service)(?!.*(services|'service'))"
-        'regex_new': "service\n|for service in"
+        'regex_new': "service\n|for service in",
         # 'parser_func':
     },
     'ID_56': {
         'enable': True,
         'raw_section_name': 'info_services',
-        'regex_new': 'services\n| for services in'
+        'final_section_name': 'services',
+        'regex_new': 'services\n| for services in',
         # 'parser_func':
     },
     'ID_57': {
@@ -697,13 +700,19 @@ FILTER_LIST = {
     'ID_98': {
         'enable': True,
         'raw_section_name': 'hist-dump:ttl',
-        'regex_new': "hist-dump:ns=.*;hist=ttl"
+        'final_section_name': 'ttl',
+        'regex_new': "hist-dump:ns=.*;hist=ttl",
+        'parent_section_name': 'histogram',
+        'collision_allowed': True
         # 'parser_func'
     },
     'ID_99': {
         'enable': True,
         'raw_section_name': 'hist-dump:objsz',
-        'regex_new': "hist-dump:ns=.*;hist=objsz"
+        'final_section_name': 'objsz',
+        'regex_new': "hist-dump:ns=.*;hist=objsz",
+        'parent_section_name': 'histogram',
+        'collision_allowed': True
         # 'parser_func'
     },
     # SUD: need to be added in dev code
@@ -721,6 +730,14 @@ FILTER_LIST = {
         'regex_new': "\['config', 'cluster'\]"
         # 'parser_func'
     },
+    'ID_102': {
+        'enable': True,
+        'raw_section_name': 'config_cluster',
+        'final_section_name': 'cluster',
+        'parent_section_name': 'config',
+        'regex_new': "\['config', 'cluster'\]"
+        # 'parser_func'
+    },
     #{
     #    'enable': True,
     #    'raw_section_name': 'set',
@@ -730,15 +747,18 @@ FILTER_LIST = {
 }
 
 
-SKIP_LIST = ['hist-dump', 'dump-wb-summary']
+SKIP_LIST = [ 'dump-wb-summary', 'hist-dump']
 # xdr, dc are different component, so pass them separately to parse.
 # Namespace, sindex, set, bin are basic part so they will be parsed
 # automatically.
 AS_SECTION_NAME_LIST = ['statistics', 'statistics.dc',
-                        'statistics.xdr', 'config', 'config.dc', 'config.xdr']
+                        'statistics.xdr', 'config', 'config.dc', 'config.xdr', 'config.cluster']
 # Other Available sections  ['latency', 'sindex_info', 'features']
 
 SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo',
                          'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']
 # Meta data have all meta info (asd_build, xdr_build, cluster_name)
 DERIVED_SECTION_LIST = ['features']
+
+# List of histogram dumps (raw)
+HISTOGRAM_SECTION_NAME_LIST = ['histogram.ttl', 'histogram.objsz']

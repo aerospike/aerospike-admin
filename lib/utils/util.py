@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+from distutils.version import LooseVersion
 
 import re
 import threading
@@ -22,6 +23,7 @@ import StringIO
 
 # Dictionary to contain feature and related stats to identify state of that feature
 # Format : { feature1: ((service_stat1, service_stat2, ....), (namespace_stat1, namespace_stat2, ...), ...}
+from lib.utils import filesize
 
 FEATURE_KEYS = {
         "KVS": (('stat_read_reqs', 'stat_write_reqs'), ('client_read_error', 'client_read_success', 'client_write_error', 'client_write_success')),
@@ -702,8 +704,10 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
         if len(set(cl_nodewise_device_counts.values())) > 1:
             summary_dict["CLUSTER"]["device"]["count_same_across_nodes"] = False
 
-    summary_dict["CLUSTER"]["memory"]["total"] = sum(cl_nodewise_mem_size.values())
-    summary_dict["CLUSTER"]["memory"]["aval_pct"] = (float(sum(cl_nodewise_mem_aval.values()))/float(sum(cl_nodewise_mem_size.values())))*100.0
+    cl_memory_size_total = sum(cl_nodewise_mem_size.values())
+    if cl_memory_size_total > 0:
+        summary_dict["CLUSTER"]["memory"]["total"] = cl_memory_size_total
+        summary_dict["CLUSTER"]["memory"]["aval_pct"] = (float(sum(cl_nodewise_mem_aval.values()))/float(cl_memory_size_total))*100.0
 
     cl_device_size_total = sum(cl_nodewise_device_size.values())
     if cl_device_size_total > 0:
@@ -712,3 +716,211 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
         summary_dict["CLUSTER"]["device"]["aval_pct"] = (float(sum(cl_nodewise_device_aval.values()))/float(cl_device_size_total))*100.0
 
     return summary_dict
+
+def mbytes_to_bytes(data):
+    if not data:
+        return data
+
+    if isinstance(data, int) or isinstance(data, float):
+        return data * 1048576
+
+    if isinstance(data, dict):
+        for _k in data.keys():
+            data[_k] = copy.deepcopy(mbytes_to_bytes(data[_k]))
+        return data
+
+    return data
+
+
+def _create_histogram_percentiles_output(histogram_name, histogram_data):
+    histogram_data = flip_keys(histogram_data)
+
+    for namespace, host_data in histogram_data.iteritems():
+        for host_id, data in host_data.iteritems():
+            hist = data['data']
+            width = data['width']
+
+            cum_total = 0
+            total = sum(hist)
+            percentile = 0.1
+            result = []
+
+            for i, v in enumerate(hist):
+                cum_total += float(v)
+                if total > 0:
+                    portion = cum_total / total
+                else:
+                    portion = 0.0
+
+                while portion >= percentile:
+                    percentile += 0.1
+                    result.append(i + 1)
+
+                if percentile > 1.0:
+                    break
+
+            if result == []:
+                result = [0] * 10
+
+            if histogram_name is "objsz":
+                data['percentiles'] = [(r * width) - 1 if r > 0 else r for r in result]
+            else:
+                data['percentiles'] = [r * width for r in result]
+
+    return histogram_data
+
+def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, builds):
+    histogram_data = flip_keys(histogram_data)
+
+    for namespace, host_data in histogram_data.iteritems():
+        result = []
+        rblock_size_bytes = 128
+        width = 1
+
+        for host_id, data in host_data.iteritems():
+
+            try:
+                as_version = builds[host_id]
+                if (LooseVersion(as_version) < LooseVersion("2.7.0")
+                    or (LooseVersion(as_version) >= LooseVersion("3.0.0")
+                    and LooseVersion(as_version) < LooseVersion("3.1.3"))):
+                    rblock_size_bytes = 512
+
+            except Exception:
+                pass
+
+            hist = data['data']
+            width = data['width']
+
+            for i, v in enumerate(hist):
+                if v and v > 0:
+                    result.append(i)
+
+        result = list(set(result))
+        result.sort()
+        start_buckets = []
+
+        if len(result) <= bucket_count:
+            # if asinfo buckets with values>0 are less than
+            # show_bucket_count then we can show all single buckets as it
+            # is, no need to merge to show big range
+            for res in result:
+                start_buckets.append(res)
+                start_buckets.append(res + 1)
+
+        else:
+            # dividing volume buckets (from min possible bucket with
+            # value>0 to max possible bucket with value>0) into same range
+            start_bucket = result[0]
+            size = result[len(result) - 1] - result[0] + 1
+
+            bucket_width = size / bucket_count
+            additional_bucket_index = bucket_count - (size % bucket_count)
+
+            bucket_index = 0
+
+            while bucket_index < bucket_count:
+                start_buckets.append(start_bucket)
+
+                if bucket_index == additional_bucket_index:
+                    bucket_width += 1
+
+                start_bucket += bucket_width
+                bucket_index += 1
+
+            start_buckets.append(start_bucket)
+
+        columns = []
+        need_to_show = {}
+
+        for i, bucket in enumerate(start_buckets):
+
+            if i == len(start_buckets) - 1:
+                break
+
+            key = _get_bucket_range(bucket, start_buckets[i + 1], width, rblock_size_bytes)
+            need_to_show[key] = False
+            columns.append(key)
+
+        for host_id, data in host_data.iteritems():
+
+            rblock_size_bytes = 128
+
+            try:
+                as_version = builds[host_id]
+
+                if (LooseVersion(as_version) < LooseVersion("2.7.0")
+                    or (LooseVersion(as_version) >= LooseVersion("3.0.0")
+                    and LooseVersion(as_version) < LooseVersion("3.1.3"))):
+                    rblock_size_bytes = 512
+
+            except Exception:
+                pass
+
+            hist = data['data']
+            width = data['width']
+            data['values'] = {}
+
+            for i, s in enumerate(start_buckets):
+
+                if i == len(start_buckets) - 1:
+                    break
+
+                b_index = s
+
+                key = _get_bucket_range(s, start_buckets[i + 1], width, rblock_size_bytes)
+
+                if key not in columns:
+                    columns.append(key)
+
+                if key not in data["values"]:
+                    data["values"][key] = 0
+
+                while b_index < start_buckets[i + 1]:
+                    data["values"][key] += hist[b_index]
+                    b_index += 1
+
+                if data["values"][key] > 0:
+                    need_to_show[key] = True
+
+                else:
+                    if key not in need_to_show:
+                        need_to_show[key] = False
+
+        host_data["columns"] = []
+
+        for column in columns:
+            if need_to_show[column]:
+                host_data["columns"].append(column)
+
+    return histogram_data
+
+def _get_bucket_range(current_bucket, next_bucket, width, rblock_size_bytes):
+    s_b = "0 B"
+    if current_bucket > 0:
+        last_bucket_last_rblock_end = ((current_bucket * width) - 1) * rblock_size_bytes
+
+        if last_bucket_last_rblock_end < 1:
+            last_bucket_last_rblock_end = 0
+
+        else:
+            last_bucket_last_rblock_end += 1
+
+        s_b = filesize.size(last_bucket_last_rblock_end, filesize.byte)
+
+        if current_bucket == 99 or next_bucket > 99:
+            return ">%s" % (s_b.replace(" ", ""))
+
+    bucket_last_rblock_end = ((next_bucket * width) - 1) * rblock_size_bytes
+    e_b = filesize.size(bucket_last_rblock_end, filesize.byte)
+    return "%s to %s" % (s_b.replace(" ", ""), e_b.replace(" ", ""))
+
+def create_histogram_output(histogram_name, histogram_data, **params):
+    if "byte_distribution" not in params or not params["byte_distribution"]:
+        return _create_histogram_percentiles_output(histogram_name, histogram_data)
+
+    if "bucket_count" not in params or "builds" not in params:
+        return {}
+
+    return _create_bytewise_histogram_percentiles_output(histogram_data, params["bucket_count"], params["builds"])
+

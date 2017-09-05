@@ -40,8 +40,6 @@ except ImportError:
     except ImportError:
         PEXPECT_VERSION = NO_MODULE
 
-COMMAND_PROMPT = '[#$] '
-
 def getfqdn(address, timeout=0.5):
     # note: cannot use timeout lib because signal must be run from the
     #       main thread
@@ -92,6 +90,7 @@ class Node(object):
         ALSO NOTE: May be better to just use telnet instead?
         """
         self.logger = logging.getLogger('asadm')
+        self.remote_system_command_prompt = '[#$] '
         self._update_IP(address, port)
         self.port = port
         self.xdr_port = 3004  # TODO: Find the xdr port
@@ -308,7 +307,7 @@ class Node(object):
                 pass
         if sock:
             return sock
-        sock = ASSocket(self, ip, port, timeout=self._timeout)
+        sock = ASSocket(ip, port, self.tls_name, self.user, self.password, self.ssl_context, timeout=self._timeout)
         if sock.connect():
             return sock
         return None
@@ -401,6 +400,17 @@ class Node(object):
         """
 
         return self.info("node")
+
+    @return_exceptions
+    def info_ip_port(self):
+        """
+        Get this nodes ip:port.
+
+        Returns:
+        string -- this node's ip:port.
+        """
+
+        return self.create_key(self.ip, self.port)
 
     @return_exceptions
     def _info_peers_list_helper(self, peers):
@@ -546,15 +556,22 @@ class Node(object):
         return self._info_services_helper(self.info("services-alternate"))
 
     @return_exceptions
-    def info_service(self, address, return_None=False):
+    def info_service(self, address="", return_None=False):
         try:
             service = self.info("service")
             s = map(util.info_to_tuple, util.info_to_list(service))
+
             return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
+
         except Exception:
             pass
+
         if return_None:
             return None
+
+        if not address:
+            address = self.ip
+
         return [(address, self.port, self.tls_name)]
 
     @return_exceptions
@@ -959,7 +976,7 @@ class Node(object):
         return xdr_configs
 
     @return_exceptions
-    def info_histogram(self, histogram):
+    def info_histogram(self, histogram, raw_output=False):
         namespaces = self.info_namespaces()
 
         data = {}
@@ -967,14 +984,18 @@ class Node(object):
             try:
                 datum = self.info("hist-dump:ns=%s;hist=%s" %
                                   (namespace, histogram))
-                datum = datum.split(',')
-                datum.pop(0)  # don't care about ns, hist_name, or length
-                width = int(datum.pop(0))
-                datum[-1] = datum[-1].split(';')[0]
-                datum = map(int, datum)
+                if raw_output:
+                    data[namespace] = datum
 
-                data[namespace] = {
-                    'histogram': histogram, 'width': width, 'data': datum}
+                else:
+                    datum = datum.split(',')
+                    datum.pop(0)  # don't care about ns, hist_name, or length
+                    width = int(datum.pop(0))
+                    datum[-1] = datum[-1].split(';')[0]
+                    datum = map(int, datum)
+
+                    data[namespace] = {'histogram': histogram, 'width': width, 'data': datum}
+
             except Exception:
                 pass
         return data
@@ -1164,11 +1185,14 @@ class Node(object):
     @return_exceptions
     def _spawn_remote_system(self, ip, user, pwd, ssh_key=None, port=None):
 
-        global COMMAND_PROMPT
-        terminal_prompt = '(?i)terminal type\?'
+        terminal_prompt_msg = '(?i)terminal type'
+        ssh_newkey_msg = '(?i)are you sure you want to continue connecting'
+        connection_closed_msg = "(?i)connection closed by remote host"
+        permission_denied_msg = "(?i)permission denied"
+        pwd_passphrase_msg = "(?i)(?:password)|(?:passphrase for key)"
+
         terminal_type = 'vt100'
 
-        ssh_newkey = '(?i)are you sure you want to continue connecting'
         ssh_options = "-o 'NumberOfPasswordPrompts=1' "
 
         if port:
@@ -1183,43 +1207,67 @@ class Node(object):
             ssh_options += ' -i %s' % (ssh_key)
 
         s = pexpect.spawn('ssh %s -l %s %s'%(ssh_options, str(user), str(ip)))
-
-        i = s.expect([pexpect.TIMEOUT, ssh_newkey, COMMAND_PROMPT, '(?i)(?:password)|(?:passphrase for key)'])
+        i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT, connection_closed_msg, pexpect.EOF], timeout=10)
 
         if i == 0:
-            # Timeout
+            # In this case SSH does not have the public key cached.
+            s.sendline("yes")
+            i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT])
+        if i == 2:
+            # password or passphrase
+            s.sendline(pwd)
+            i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT])
+        if i == 4:
+            s.sendline(terminal_type)
+            i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT])
+        if i == 7:
+            s.close()
             return None
 
-        enter_pwd = False
-
-        if i == 1:
-            # In this case SSH does not have the public key cached.
-            s.sendline ('yes')
-            s.expect ('(?i)(?:password)|(?:passphrase for key)')
-            enter_pwd = True
-
-        elif i == 2:
+        if i == 0:
+            # twice not expected
+            s.close()
+            return None
+        elif i == 1:
             pass
-
+        elif i == 2:
+            # password prompt again means input password is wrong
+            s.close()
+            return None
         elif i == 3:
-            enter_pwd = True
+            # permission denied means input password is wrong
+            s.close()
+            return None
+        elif i == 4:
+            # twice not expected
+            s.close()
+            return None
+        elif i == 5:
+            # timeout
+            # Two possibilities
+            # 1. couldn't login
+            # 2. couldn't match shell prompt
+            # safe option is to pass
+            pass
+        elif i == 6:
+            # connection closed by remote host
+            s.close()
+            return None
+        else:
+            # unexpected
+            s.close()
+            return None
 
-        if enter_pwd:
-            s.sendline(pwd)
-            i = s.expect ([COMMAND_PROMPT, terminal_prompt])
-            if i == 1:
-                s.sendline (terminal_type)
-                s.expect (COMMAND_PROMPT)
+        self.remote_system_command_prompt = "\[PEXPECT\][\$\#] "
+        s.sendline("unset PROMPT_COMMAND")
 
-        COMMAND_PROMPT = "\[PEXPECT\][\$\#] "
         # sh style
         s.sendline ("PS1='[PEXPECT]\$ '")
-        i = s.expect ([pexpect.TIMEOUT, COMMAND_PROMPT], timeout=10)
-
+        i = s.expect ([pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10)
         if i == 0:
             # csh-style.
             s.sendline ("set prompt='[PEXPECT]\$ '")
-            i = s.expect ([pexpect.TIMEOUT, COMMAND_PROMPT], timeout=10)
+            i = s.expect ([pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10)
 
             if i == 0:
                 return None
@@ -1245,7 +1293,7 @@ class Node(object):
         if PEXPECT_VERSION == NEW_MODULE:
             conn.prompt()
         elif PEXPECT_VERSION == OLD_MODULE:
-            conn.expect (COMMAND_PROMPT)
+            conn.expect (self.remote_system_command_prompt)
         else:
             return None
         return conn.before
@@ -1280,6 +1328,8 @@ class Node(object):
                 conn.expect(pexpect.EOF)
             if conn:
                 conn.close()
+
+        self.remote_system_command_prompt = '[#$] '
 
     @return_exceptions
     def _get_remote_host_system_statistics(self, commands):

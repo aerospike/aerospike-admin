@@ -28,11 +28,15 @@ except ImportError:
 
 class ASSocket:
 
-    def __init__(self, node, ip, port, pool_size=3, timeout=5):
+    def __init__(self, ip, port, tls_name, user, password, ssl_context, pool_size=3, timeout=5):
         self.sock = None
-        self.node = node
+
         self.ip = ip
         self.port = port
+        self.tls_name = tls_name
+        self.user = user
+        self.password = password
+        self.ssl_context = ssl_context
         self.pool_size = pool_size
         self._timeout = timeout
 
@@ -99,9 +103,9 @@ class ASSocket:
     def connect(self):
         try:
             self.sock = self._create_socket(self.ip, self.port,
-                                            tls_name=self.node.tls_name, user=self.node.user,
-                                            password=self.node.password,
-                                            ssl_context=self.node.ssl_context)
+                                            tls_name=self.tls_name, user=self.user,
+                                            password=self.password,
+                                            ssl_context=self.ssl_context)
 
             if not self.sock:
                 return False

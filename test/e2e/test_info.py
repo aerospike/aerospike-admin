@@ -26,6 +26,7 @@ class TestInfo(unittest.TestCase):
     service_info = ''
     network_info = ''
     namespace_info = ''
+    object_info = ''
     sindex_info = ''
     xdr_info = ''
     
@@ -34,7 +35,8 @@ class TestInfo(unittest.TestCase):
         TestInfo.rc = controller.BasicRootController()
         actual_out = util.capture_stdout(TestInfo.rc.execute, ['info'])
         TestInfo.output_list = test_util.get_separate_output(actual_out, 'Information')
-        # TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex']))            
+        # TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex']))
+        TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'object']))
         for item in TestInfo.output_list:
             if "~~Network Information~~" in item:
                 TestInfo.network_info = item           
@@ -44,6 +46,8 @@ class TestInfo(unittest.TestCase):
                 TestInfo.sindex_info = item              
             elif "~~XDR Information~~" in item:
                 TestInfo.xdr_info = item
+            elif "~~Object Information~~" in item:
+                TestInfo.object_info = item
         
     @classmethod    
     def tearDownClass(self):
@@ -101,26 +105,48 @@ class TestInfo(unittest.TestCase):
     def test_namespace(self):
         """
         This test will assert <b> info Namespace </b> output for heading, headerline1, headerline2
-        and no of row displayed in output
+        displayed in output
         TODO: test for values as well
         """
         exp_heading = "~~Namespace Information~~"
         exp_header = [   'Node',
                          'Namespace',
                          'Evictions',
+                         'Expirations',
                          'Repl Factor',
                          'Stop Writes',
+                         'Disk Used',
+                         'Disk Used%',
                          'HWM Disk%',
                          'Mem Used',
                          'Mem Used%',
                          'HWM Mem%',
                          'Stop Writes%',
-                         ('Master Objects', 'Master (Objects,Tombstones)'),
-                         ('Replica Objects', 'Replica (Objects,Tombstones)')
+                         'Total Objects',
+                         'Pending Migrates',
+                         'Rack ID'
                       ]
-        exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
-        
+
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_info, horizontal = True)
+        self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
+        self.assertTrue(exp_heading in actual_heading)
+
+    def test_object(self):
+        """
+        This test will assert <b> info Object </b> output for heading, headerline1, headerline2
+        displayed in output
+        TODO: test for values as well
+        """
+        exp_heading = "~~Object Information~~"
+        exp_header = [   'Namespace',
+                         'Node',
+                         'Master (Objects,Tombstones)',
+                         'Replica (Objects,Tombstones)',
+                         'Non-Replica (Objects,Tombstones)',
+                         'Migration'
+                      ]
+
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.object_info, horizontal = True)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
         self.assertTrue(exp_heading in actual_heading)
 

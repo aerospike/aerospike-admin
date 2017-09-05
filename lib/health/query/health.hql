@@ -124,7 +124,7 @@ group by for system stats helps to remove key, this is requirement for proper ma
 */
 s = select "memory-size" from NAMESPACE;
 n = group by NODE do SUM(s);
-s = select "total" from SYSTEM.RAM;
+s = select "total" from SYSTEM.FREE.MEM;
 m = group by NODE do SUM(s);
 r = do n <= m on common;
 ASSERT(r, True, "Namespace memory misconfiguration.", "LIMITS", WARNING,
@@ -135,7 +135,7 @@ r = do m - n on common;
 r = do r >= 5368709120;
 ASSERT(r, True, "Aerospike runtime memory configured < 5G.", "LIMITS", INFO,
 				"Listed node[s] have less than 5G free memory available for Aerospike runtime. Please run 'show statistics namespace like memory-size' to check configured memory and check output of 'free' for system memory. Possible misconfiguration.",
-				"Namespace memory configuration check.");
+				"Runtime memory configuration check.");
 
 
 /*
@@ -587,6 +587,19 @@ ASSERT(r, False, "Deprecated feature LDT in use.", "OPERATIONS", WARNING,
 				"Listed nodes[s] have non-zero LDT statistics. This feature is deprecated. Please visit Aerospike Homepage for details.",
 				"LDT statistics check.");
 
+
+/* ENDPOINTS */
+
+service = select "endpoints" as "e" from METADATA.ENDPOINTS;
+services = select "services" as "e" from METADATA.SERVICES;
+all_endpoints = do service + services;
+
+r = group by CLUSTER do EQUAL(all_endpoints);
+ASSERT(r, True, "Services list discrepancy.", "OPERATIONS", WARNING,
+				"Listed Cluster[s] shows different services list for different nodes. Please run 'asinfo -v services' to get all services.",
+				"Services list discrepancy test.");
+
+
 /*
 	Different queries for different versions. All version constraint sections should be at the bottom of file, it will avoid extra version reset at the end.
 */
@@ -726,5 +739,14 @@ ASSERT(r, True, "Non-zero node read errors count", "OPERATIONS", INFO,
 				"Listed read error[s] show skew in count (for nodes). It may or may not be an issue depending on the error type. Please run 'show statistics service like stat_read' to see values.",
 				"Node read errors count check");
 
+
+SET CONSTRAINT VERSION >= 3.3.17;
+
+defslp= select "defrag-sleep", "storage-engine.defrag-sleep" from NAMESPACE.CONFIG;
+defslp = group by CLUSTER, NAMESPACE defslp;
+r = do defslp == 1000;
+ASSERT(r, True, "Non-default namespace defrag-sleep configuration.", "OPERATIONS",INFO,
+                "Listed namespace[s] have non-default defrag-sleep configuration. Please run 'show config namespace like defrag' to check value. It may be a non-issue in case namespaces are configured for aggressive defrag. Ignore those.",
+                "Non-default namespace defrag-sleep check.");
 
 SET CONSTRAINT VERSION ALL;

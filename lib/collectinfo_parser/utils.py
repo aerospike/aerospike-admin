@@ -92,8 +92,16 @@ def get_section_name_from_id(sec_id):
     parent_section_name = FILTER_LIST[sec_id]['parent_section_name'] if 'parent_section_name' in FILTER_LIST[sec_id] else ''
     return raw_section_name, final_section_name, parent_section_name
 
+def is_collision_allowed_for_section(sec_id):
+    if "collision_allowed" not in FILTER_LIST[sec_id]:
+        return False
 
-def is_valid_section(imap, raw_section_name, final_section_name):
+    if FILTER_LIST[sec_id]["collision_allowed"] == True:
+        return True
+
+    return False
+
+def is_valid_section(imap, raw_section_name, final_section_name, collision_allowed=False):
     if not imap:
         logger.warning("Null section json")
         return False
@@ -102,7 +110,7 @@ def is_valid_section(imap, raw_section_name, final_section_name):
         logger.warning(raw_section_name + " section not present.")
         return False
 
-    if len(imap[raw_section_name]) > 1:
+    if len(imap[raw_section_name]) > 1 and not collision_allowed:
         logger.warning(
             "More than one entries detected, There is a collision for this section: " + final_section_name)
         return False
@@ -195,4 +203,3 @@ def _type_check_field_and_raw_values(section):
 
     for key in keys:
         section.pop(key, None)
-

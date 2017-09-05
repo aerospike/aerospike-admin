@@ -16,7 +16,7 @@ import re
 import copy
 import logging
 import section_filter_list
-from utils import is_valid_section, get_section_name_from_id, is_bool
+from utils import is_valid_section, get_section_name_from_id, is_bool, is_collision_allowed_for_section
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,9 @@ def parse_as_section(section_list, imap, parsed_map):
         elif section == 'config.xdr':
             _parse_xdr_config_section(nodes, imap, parsed_map)
 
+        elif section == 'config.cluster':
+            _parse_cluster_config_section(nodes, imap, parsed_map)
+
         elif section == 'latency':
             _parse_latency_section(nodes, imap, parsed_map)
 
@@ -60,6 +63,18 @@ def parse_as_section(section_list, imap, parsed_map):
 
         elif section == 'features':
             _parse_features(nodes, imap, parsed_map)
+
+        elif section == 'histogram.ttl':
+            _parse_hist_dump_ttl(nodes, imap, parsed_map)
+
+        elif section == 'histogram.objsz':
+            _parse_hist_dump_objsz(nodes, imap, parsed_map)
+
+        elif section == 'endpoints':
+            _parse_endpoints(nodes, imap, parsed_map)
+
+        elif section == 'services':
+            _parse_services(nodes, imap, parsed_map)
 
         else:
             logger.warning(
@@ -80,6 +95,7 @@ def parse_as_section(section_list, imap, parsed_map):
                 # type_check_basic_values(param_map)
                 parsed_map[node][section] = copy.deepcopy(param_map[section])
 
+
 # output: {in_aws: AAA, instance_type: AAA}
 def get_cluster_name(parsed_map):
 	for node in parsed_map:
@@ -99,6 +115,7 @@ def get_meta_info(imap, meta_map):
     asd_meta = _get_meta_from_network_info(imap, nodes)
     xdr_meta = _get_xdr_build(imap, nodes)
     ip_meta = _get_ip_from_network_info(imap, nodes)
+
     for node in nodes:
         meta_map[node] = {}
         if node in asd_meta:
@@ -684,6 +701,7 @@ def _parse_multi_column_sub_section(raw_section, parsed_map, final_section_name,
         sub_section_name = sec_line
     xdr_section = 'xdr'
     dc_section = 'dc'
+    cluster_section = 'cluster'
     cur_sec = ''
     dc_name = ''
 
@@ -696,6 +714,10 @@ def _parse_multi_column_sub_section(raw_section, parsed_map, final_section_name,
         # ~~~~~DC Statistics/Config~~~~~
         dc_name = tok[0]
         cur_sec = dc_section
+
+    elif 'Cluster ' in sub_section_name:
+        # ~~~~~Cluster Config~~~~
+        cur_sec = cluster_section
 
     else:
         logger.info("Unknown header line: " + sub_section_name)
@@ -710,8 +732,8 @@ def _parse_multi_column_sub_section(raw_section, parsed_map, final_section_name,
             logger.warning("Nodeid is not in info_network or latency: " + node)
             continue
 
-        # Update XDR and DC information.
-        if cur_sec == xdr_section:
+        # Update XDR/DC/Cluster information.
+        if cur_sec == xdr_section or cur_sec == cluster_section:
             parsed_sec[final_section_name] = section_obj[node]
 
         elif cur_sec == dc_section:
@@ -720,7 +742,7 @@ def _parse_multi_column_sub_section(raw_section, parsed_map, final_section_name,
             parsed_sec[final_section_name][dc_name] = section_obj[node]
 
 
-def _parse_multi_column_dc_xdr_section(info_section, parsed_map, final_section_name, parent_section_name):
+def _parse_multi_column_section(info_section, parsed_map, final_section_name, parent_section_name):
     section_list = _get_section_array_from_multicolumn_section(info_section)
     for raw_section in section_list:
         _parse_multi_column_sub_section(raw_section, parsed_map,
@@ -819,7 +841,7 @@ def _get_node_id_from_latency_line(data_string):
         return None
 
 
-def _parse_dc_xdr_section(sec_id, nodes, imap, parsed_map):
+def _parse_nondefault_section(sec_id, nodes, imap, parsed_map):
     raw_section_name, final_section_name, parent_section_name = get_section_name_from_id(sec_id)
 
     logger.info("Parsing section: " + final_section_name)
@@ -837,7 +859,7 @@ def _parse_dc_xdr_section(sec_id, nodes, imap, parsed_map):
     # initialize only if parent section is not present, do not overwrite.
     _init_nodes_for_parsed_json(nodes, parsed_map, parent_section_name)
 
-    _parse_multi_column_dc_xdr_section(
+    _parse_multi_column_section(
         info_section, parsed_map, final_section_name, parent_section_name)
 
 
@@ -866,13 +888,16 @@ def _parse_config_section(nodes, imap, parsed_map):
 
 def _parse_dc_config_section(nodes, imap, parsed_map):
     sec_id = 'ID_7'
-    _parse_dc_xdr_section(sec_id, nodes, imap, parsed_map)
+    _parse_nondefault_section(sec_id, nodes, imap, parsed_map)
 
 
 def _parse_xdr_config_section(nodes, imap, parsed_map):
     sec_id = 'ID_6'
-    _parse_dc_xdr_section(sec_id, nodes, imap, parsed_map)
+    _parse_nondefault_section(sec_id, nodes, imap, parsed_map)
 
+def _parse_cluster_config_section(nodes, imap, parsed_map):
+    sec_id = 'ID_102'
+    _parse_nondefault_section(sec_id, nodes, imap, parsed_map)
 
 def _get_stat_sindex_section(imap):
     raw_section_name, final_section_name, _ = get_section_name_from_id('ID_14')
@@ -925,12 +950,12 @@ def _parse_stat_section(nodes, imap, parsed_map):
 
 def _parse_dc_stat_section(nodes, imap, parsed_map):
     sec_id = 'ID_13'
-    _parse_dc_xdr_section(sec_id, nodes, imap, parsed_map)
+    _parse_nondefault_section(sec_id, nodes, imap, parsed_map)
 
 
 def _parse_xdr_stat_section(nodes, imap, parsed_map):
     sec_id = 'ID_12'
-    _parse_dc_xdr_section(sec_id, nodes, imap, parsed_map)
+    _parse_nondefault_section(sec_id, nodes, imap, parsed_map)
 
 
 def _parse_latency_section(nodes, imap, parsed_map):
@@ -1093,6 +1118,96 @@ def _parse_features(nodes, imap, parsed_map):
             continue
         parsed_map[node][final_section_name] = featureobj[node]
 
+def _parse_hist_dump(section):
+    namespace = None
+    parsed_section = {}
+    if not section or len(section) <= 0:
+        return namespace, parsed_section
+
+    parsed_section = eval(section[0])
+
+    if not parsed_section:
+        return namespace, parsed_section
+
+    for node, hist_dump in parsed_section.items():
+        if not node or not hist_dump or isinstance(hist_dump, Exception) or ":" not in hist_dump:
+            continue
+
+        namespace = hist_dump.split(':')[0].strip()
+        break
+
+    return namespace, parsed_section
+
+def _parse_hist_dump_section(sec_id, nodes, imap, parsed_map):
+    raw_section_name, final_section_name, parent_section_name = get_section_name_from_id(sec_id)
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name, collision_allowed=is_collision_allowed_for_section(sec_id)):
+        return
+
+    hist_dump_sections = imap[raw_section_name]
+
+    for hist_dump_section in hist_dump_sections:
+        namespace, hist_dump_section = _parse_hist_dump(hist_dump_section)
+        if not namespace:
+            continue
+
+        for node, hist_dump in hist_dump_section.items():
+            map_ptr = None
+            if node not in parsed_map:
+                parsed_map[node] = {}
+            map_ptr = parsed_map[node]
+
+            if parent_section_name:
+                if parent_section_name not in map_ptr:
+                    map_ptr[parent_section_name] = {}
+                map_ptr = map_ptr[parent_section_name]
+
+            if final_section_name not in map_ptr:
+                map_ptr[final_section_name] = {}
+            map_ptr = map_ptr[final_section_name]
+
+            map_ptr[namespace] = copy.deepcopy(hist_dump)
+
+def _parse_hist_dump_ttl(nodes, imap, parsed_map):
+    sec_id = 'ID_98'
+    _parse_hist_dump_section(sec_id, nodes, imap, parsed_map)
+
+def _parse_hist_dump_objsz(nodes, imap, parsed_map):
+    sec_id = 'ID_99'
+    _parse_hist_dump_section(sec_id, nodes, imap, parsed_map)
+
+def _parse_asinfo_node_value_section(sec_id, imap, parsed_map):
+    raw_section_name, final_section_name, parent_section_name = get_section_name_from_id(sec_id)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    for raw_dump in imap[raw_section_name]:
+        try:
+            for node, val in eval(raw_dump[0]).items():
+                map_ptr = None
+                if node not in parsed_map:
+                    parsed_map[node] = {}
+                map_ptr = parsed_map[node]
+
+                if parent_section_name:
+                    if parent_section_name not in map_ptr:
+                        map_ptr[parent_section_name] = {}
+                    map_ptr = map_ptr[parent_section_name]
+
+                map_ptr[final_section_name] = val
+
+        except Exception:
+            pass
+
+def _parse_endpoints(nodes, imap, parsed_map):
+    sec_id = 'ID_55'
+    _parse_asinfo_node_value_section(sec_id, imap, parsed_map)
+
+def _parse_services(nodes, imap, parsed_map):
+    sec_id = 'ID_56'
+    _parse_asinfo_node_value_section(sec_id, imap, parsed_map)
 
 def _stat_exist_in_statistics(statmap, statlist):
     if not statmap:
@@ -1237,7 +1352,6 @@ def _identify_features_from_stats(nodes, imap, parsed_map, section_name):
                         break
         parsed_map[node][section_name] = featureobj
 
-
 def _get_xdr_build(imap, nodes):
     raw_section_name, final_section_name, _ = get_section_name_from_id('ID_3')
 
@@ -1282,27 +1396,52 @@ def _get_meta_from_network_info(imap, nodes):
     info_section_lines = imap[raw_section_name][0]
     meta_map = {}
     del_found = False
+    node_found = False
     skip_lines = 2
     build_found = False
-    build_index = 0
+    build_index = -1
+    node_id_found = False
+    node_id_index = -1
+    node_indices = []
     for i in range(len(info_section_lines)):
         if "~~~~~~~" in info_section_lines[i] or "====" in info_section_lines[i]:
             del_found = True
             continue
 
+        # Get index for node_ids
+        if node_found and 'Id' in info_section_lines[i]:
+            tags = info_section_lines[i].split()
+            for j in node_indices:
+                if 'Id' in tags[j]:
+                    node_id_found = True
+                    node_id_index = j
+
+            if node_id_index == -1:
+                node_id_index = len(tags) + 1
+
         # Get index for build
-        if 'Node' in info_section_lines[i]:
+        if not node_found and 'Node' in info_section_lines[i]:
+            index = 0
             tags = info_section_lines[i].split()
             for tag in tags:
-                if 'Build' in tag:
+                if not build_found and 'Build' in tag:
                     build_found = True
-                    break
-                build_index = build_index + 1
+                    build_index = index
+                    # break
+                if 'Node' in tag:
+                    node_indices.append(index)
+                index += 1
+
+            if build_index == -1:
+                build_index = index
+
+            node_found = True
 
         if del_found:
             if skip_lines == 0:
                 break
             skip_lines = skip_lines - 1
+
     for node in nodes:
         for i in range(len(info_section_lines)):
             if node not in info_section_lines[i]:
@@ -1312,6 +1451,7 @@ def _get_meta_from_network_info(imap, nodes):
             node_line = info_section_lines[i].split()
             build = ''
             edition = ''
+            node_id = ''
             if build_found:
                 if 'C-' in node_line[build_index]:
                     build = node_line[build_index][2:]
@@ -1322,8 +1462,15 @@ def _get_meta_from_network_info(imap, nodes):
                 else:
                     build = node_line[build_index]
 
+            if node_id_found:
+                node_id = node_line[node_id_index]
+                if node_id:
+                    node_id = node_id.strip()
+
             meta_map[node]['asd_build'] = build
             meta_map[node]['edition'] = edition
+            meta_map[node]['node_id'] = node_id
+
     return meta_map
 
 def _get_ip_from_network_info(imap, nodes):

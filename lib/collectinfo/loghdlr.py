@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import ntpath
 import os
 import logging
@@ -22,12 +21,10 @@ import tarfile
 import zipfile
 
 
-from lib.collectinfo_parser.full_parser import parse_info_all
 from lib.collectinfo.reader import CollectinfoReader
 from lib.collectinfo.cinfolog import CollectinfoLog
 from lib.utils.constants import ADMIN_HOME, CLUSTER_FILE, JSON_FILE, SYSTEM_FILE
-from lib.utils.util import restructure_sys_data
-from lib.utils import logutil
+from lib.utils import logutil, util
 
 ###### Constants ######
 DATE_SEG = 0
@@ -47,13 +44,6 @@ class CollectinfoLoghdlr(object):
     all_cinfo_logs = {}
     selected_cinfo_logs = {}
 
-    # for healthchecker
-    # TODO: This is temporary extra dict, all commands should fetch data from one dict.
-    # TODO: Remove parsing code from asadm
-    parsed_data = {}
-    parsed_as_data_logs = []
-    parsed_system_data_logs = []
-
     # for zipped files
     COLLECTINFO_DIR = ADMIN_HOME + 'collectinfo/'
     COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
@@ -65,18 +55,11 @@ class CollectinfoLoghdlr(object):
         self.logger = logging.getLogger('asadm')
 
         self.reader = CollectinfoReader()
-        cinfo_added, err_cinfo = self._add_cinfo_log_files(cinfo_path)
-        if not cinfo_added:
-            cinfo_added, _ = self._add_cinfo_log_files(self.COLLECTINFO_DIR)
+        snapshot_added, err_cinfo = self._add_cinfo_log_files(cinfo_path)
 
-        if cinfo_added == 0:
+        if snapshot_added == 0:
             self.logger.error(err_cinfo)
             sys.exit(1)
-
-        health_data_updated = self._add_data_to_health_dict(cinfo_path)
-
-        if not health_data_updated:
-            self.logger.info("No data added for healthcheck.")
 
     def __str__(self):
         status_str = ""
@@ -114,12 +97,6 @@ class CollectinfoLoghdlr(object):
         if os.path.exists(self.COLLECTINFO_DIR):
             shutil.rmtree(self.COLLECTINFO_DIR)
 
-    def get_cinfo_path(self):
-        return self.cinfo_path
-
-    def get_cinfo_timestamp(self):
-        return self.cinfo_timestamp
-
     def get_cinfo_log_at(self, timestamp=""):
 
         if not timestamp or timestamp not in self.all_cinfo_logs:
@@ -127,63 +104,61 @@ class CollectinfoLoghdlr(object):
 
         return self.all_cinfo_logs[timestamp]
 
-    def info_getconfig(self, stanza=""):
-        return self._fetch_from_cinfo_log(type="config", stanza=stanza)
+    def info_getconfig(self, stanza="", flip=False):
+        return self._fetch_from_cinfo_log(type="config", stanza=stanza, flip=flip)
 
-    def info_statistics(self, stanza=""):
-        return self._fetch_from_cinfo_log(type="statistics", stanza=stanza)
+    def info_statistics(self, stanza="", flip=False):
+        return self._fetch_from_cinfo_log(type="statistics", stanza=stanza, flip=flip)
 
-    def info_histogram(self, stanza=""):
-        return self._fetch_from_cinfo_log(type="distribution", stanza=stanza)
+    def info_histogram(self, stanza="", flip=False):
+        hist_dict = self._fetch_from_cinfo_log(type="histogram", stanza=stanza, flip=flip)
+        res_dict = {}
 
-    def info_summary(self, stanza=""):
-        return self._fetch_from_cinfo_log(type="summary", stanza=stanza)
+        for timestamp, hist_snapshot in hist_dict.items():
+            res_dict[timestamp] = {}
+            if not hist_snapshot:
+                continue
 
-    def get_asstat_data(self, stanza=""):
-        return self._fetch_from_parsed_as_data(info_type="statistics",
-                                               stanza=stanza)
+            for node, node_snapshot in hist_snapshot.items():
+                res_dict[timestamp][node] = {}
+                if not node_snapshot:
+                    continue
 
-    def get_asconfig_data(self, stanza=""):
-        return self._fetch_from_parsed_as_data(info_type="config",
-                                               stanza=stanza)
+                for namespace, namespace_snapshot in node_snapshot.items():
+                    if not namespace_snapshot:
+                        continue
 
-    def get_asmeta_data(self, stanza=""):
-        return self._fetch_from_parsed_as_data(info_type="meta_data",
-                                               stanza=stanza)
+                    try:
+                        datum = namespace_snapshot.split(',')
+                        datum.pop(0)  # don't care about ns, hist_name, or length
+                        width = int(datum.pop(0))
+                        datum[-1] = datum[-1].split(';')[0]
+                        datum = map(int, datum)
+
+                        res_dict[timestamp][node][namespace] = {'histogram': stanza, 'width': width, 'data': datum}
+                    except Exception:
+                        pass
+        return res_dict
+
+    def info_meta_data(self, stanza=""):
+        return self._fetch_from_cinfo_log(type="meta_data", stanza=stanza)
+
+    def info_pmap(self):
+        return self._fetch_from_cinfo_log(type="pmap")
 
     def get_sys_data(self, stanza=""):
         res_dict = {}
+        if not stanza:
+            return res_dict
 
-        for sys_ts in sorted(self.parsed_data.keys()):
-            res_dict[sys_ts] = {}
-
-            for cl in self.parsed_data[sys_ts]:
-                d = self.parsed_data[sys_ts][cl]
-                for node in d:
-                    try:
-                        res_dict[sys_ts][node] = copy.deepcopy(
-                            d[node]['sys_stat'][stanza])
-                    except Exception:
-                        pass
-
-                try:
-                    res_dict[sys_ts] = restructure_sys_data(
-                        res_dict[sys_ts], stanza)
-                except Exception:
-                    pass
-
-        return res_dict
-
-    def get_asd_build(self):
-        res_dic = {}
         for timestamp in sorted(self.selected_cinfo_logs.keys()):
             try:
-                res_dic[timestamp] = self.selected_cinfo_logs[
-                    timestamp].get_asd_build()
+                out = self.selected_cinfo_logs[timestamp].get_sys_data(stanza=stanza)
+                res_dict[timestamp] = util.restructure_sys_data(out, stanza)
             except Exception:
                 continue
 
-        return res_dic
+        return res_dict
 
     def _get_files_by_type(self, file_type, cinfo_path=""):
         try:
@@ -230,36 +205,7 @@ class CollectinfoLoghdlr(object):
         except Exception:
             return []
 
-    def _update_parsed_log_list(self, stanza, old_log_list):
-        logs = []
-        if not stanza or not self.parsed_data:
-            return logs
-        found_new = False
-        for sn in self.parsed_data.keys():
-            for cluster in self.parsed_data[sn].keys():
-                for node in self.parsed_data[sn][cluster].keys():
-                    try:
-                        if (self.parsed_data[sn][cluster][node][stanza]
-                                and sn not in old_log_list):
-                            found_new = True
-                            old_log_list.append(sn)
-                    except Exception:
-                        pass
-        return found_new
-
-    def _is_parsed_data_changed(self):
-        as_logs_updated = self._update_parsed_log_list(
-            stanza="as_stat", old_log_list=self.parsed_as_data_logs)
-        sys_logs_updated = self._update_parsed_log_list(
-            stanza="sys_stat", old_log_list=self.parsed_system_data_logs)
-        if as_logs_updated or sys_logs_updated:
-            return True
-        return False
-
-    def _add_data_to_health_dict(self, cinfo_path):
-        if not cinfo_path or not os.path.exists(cinfo_path):
-            return False
-
+    def _get_all_file_paths(self, cinfo_path):
         files = []
 
 
@@ -290,119 +236,45 @@ class CollectinfoLoghdlr(object):
                     for sysinfo_file in self._get_files_by_type(SYSTEM_FILE, self.COLLECTINFO_DIR):
                         files.append(sysinfo_file)
 
-        if files:
-            parse_info_all(files, self.parsed_data, True)
-            if self._is_parsed_data_changed():
-                return True
-
-        return False
+        return files
 
     def _add_cinfo_log_files(self, cinfo_path=""):
 
-        logs_added = 0
+        snapshots_added = 0
         if not cinfo_path:
-            return logs_added, "Collectinfo path not specified."
+            return snapshots_added, "Collectinfo path not specified."
 
         if not os.path.exists(cinfo_path):
-            return logs_added, "Wrong Collectinfo path."
+            return snapshots_added, "Wrong Collectinfo path."
 
-        error = ""
-        if os.path.isdir(cinfo_path):
-            for log_file in self._get_files_by_type(CLUSTER_FILE, cinfo_path):
-                timestamp = self.reader.get_timestamp(log_file)
-
-                if timestamp:
-                    cinfo_log = CollectinfoLog(
-                        timestamp, log_file, self.reader)
-                    self.selected_cinfo_logs[timestamp] = cinfo_log
-                    self.all_cinfo_logs[timestamp] = cinfo_log
-                    logs_added += 1
-                    if not self.cinfo_timestamp:
-                        self.cinfo_timestamp = timestamp
-                else:
-                    return logs_added, "Missing timestamp, cannot add specified collectinfo file " + str(log_file) + ". Only supports collectinfo generated by asadm (>=0.0.13)."
-
-            if logs_added == 0:
-                return 0, "No aerospike collectinfo file found at " + str(cinfo_path)
-
-        elif (os.path.isfile(cinfo_path)
-                and self.reader.is_cinfo_log_file(cinfo_path)):
-            timestamp = self.reader.get_timestamp(cinfo_path)
-
-            if timestamp:
-                cinfo_log = CollectinfoLog(timestamp, cinfo_path, self.reader)
-                self.selected_cinfo_logs[timestamp] = cinfo_log
-                self.all_cinfo_logs[timestamp] = cinfo_log
-                logs_added += 1
-                if not self.cinfo_timestamp:
-                    self.cinfo_timestamp = timestamp
-            else:
-                return 0, "Missing timestamp, cannot add specified collectinfo file " + str(cinfo_path) + ". Only supports collectinfo generated by asadm (>=0.0.13)."
-
-        elif (os.path.isfile(cinfo_path)
-                and self.reader.is_system_log_file(cinfo_path)):
-            return logs_added, "Only sysinfo file path is not sufficient for collectinfo-analyzer. Please provide collectinfo directory path."
-
+        files = self._get_all_file_paths(cinfo_path)
+        if files:
+            cinfo_log = CollectinfoLog(cinfo_path, files, self.reader)
+            self.selected_cinfo_logs = cinfo_log.snapshots
+            self.all_cinfo_logs = cinfo_log.snapshots
+            snapshots_added = len(self.all_cinfo_logs)
+            return snapshots_added, ""
         else:
-            return logs_added, "Incorrect collectinfo path " + str(cinfo_path) + " specified. Please provide correct collectinfo directory path."
+            return snapshots_added, "Incorrect collectinfo path " + str(cinfo_path) + " specified. Please provide correct collectinfo directory path."
 
-        return logs_added, ""
+        return snapshots_added, ""
 
-    def _fetch_from_cinfo_log(self, type="", stanza=""):
-        res_dic = {}
-        if not stanza or not type:
-            return res_dic
+    def _fetch_from_cinfo_log(self, type="", stanza="", flip=False):
+        res_dict = {}
+
+        if not type:
+            return res_dict
 
         for timestamp in sorted(self.selected_cinfo_logs.keys()):
             try:
-                res_dic[timestamp] = self.selected_cinfo_logs[
-                    timestamp].get_data(type=type, stanza=stanza)
+                out = self.selected_cinfo_logs[timestamp].get_data(type=type, stanza=stanza)
+                if flip:
+                    out = util.flip_keys(out)
+
+                res_dict[timestamp] = out
+
             except Exception:
                 continue
-
-        return res_dic
-
-    def _fetch_from_parsed_as_data(self, info_type="", stanza=""):
-        res_dict = {}
-        if not info_type or not stanza:
-            return res_dict
-        for ts in sorted(self.parsed_data.keys()):
-            res_dict[ts] = {}
-
-            for cl in self.parsed_data[ts]:
-                data = self.parsed_data[ts][cl]
-
-                for node in data:
-
-                    try:
-                        d = copy.deepcopy(data[node]['as_stat'][info_type])
-                        if not d or isinstance(d, Exception):
-                            continue
-
-                        if node not in res_dict[ts]:
-                            res_dict[ts][node] = {}
-
-                        if stanza in ['namespace', 'bin', 'set', 'sindex']:
-                            d = d["namespace"]
-
-                            for ns_name in d.keys():
-                                if stanza == "namespace":
-                                    res_dict[ts][node][ns_name] = d[
-                                        ns_name]["service"]
-                                elif stanza == "bin":
-                                    res_dict[ts][node][ns_name] = d[
-                                        ns_name][stanza]
-                                elif stanza in ["set", "sindex"]:
-
-                                    for _name in d[ns_name][stanza]:
-                                        _key = "%s %s" % (ns_name, _name)
-                                        res_dict[ts][node][_key] = d[
-                                            ns_name][stanza][_name]
-                        else:
-                            res_dict[ts][node] = d[stanza]
-
-                    except Exception:
-                        pass
 
         return res_dict
 
