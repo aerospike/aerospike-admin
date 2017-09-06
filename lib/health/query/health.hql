@@ -749,4 +749,17 @@ ASSERT(r, True, "Non-default namespace defrag-sleep configuration.", "OPERATIONS
                 "Listed namespace[s] have non-default defrag-sleep configuration. Please run 'show config namespace like defrag' to check value. It may be a non-issue in case namespaces are configured for aggressive defrag. Ignore those.",
                 "Non-default namespace defrag-sleep check.");
 
+
+SET CONSTRAINT VERSION >= 3.9;
+
+e = select "hwm_breached" from NAMESPACE.STATISTICS;
+
+r = do e == False;
+
+ASSERT(r, True, "HWM breached.", "OPERATIONS", INFO,
+
+				"HWM breached for Memory or Disks.",
+
+				"Namespace HWM breached check");
+
 SET CONSTRAINT VERSION ALL;
