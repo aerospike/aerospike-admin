@@ -28,7 +28,7 @@ except ImportError:
 
 class ASSocket:
 
-    def __init__(self, ip, port, tls_name, user, password, ssl_context, pool_size=3, timeout=5):
+    def __init__(self, ip, port, tls_name, user, password, ssl_context, timeout=5):
         self.sock = None
 
         self.ip = ip
@@ -37,7 +37,6 @@ class ASSocket:
         self.user = user
         self.password = password
         self.ssl_context = ssl_context
-        self.pool_size = pool_size
         self._timeout = timeout
 
     def _wrap_socket(self, sock, ctx):
@@ -116,25 +115,28 @@ class ASSocket:
     def is_connected(self):
         if not self.sock:
             return False
-        result = self.execute("node")
-        if result is None or result == -1:
+
+        try:
+            result = self.execute("node")
+
+            if result is None or result == -1:
+                return False
+
+        except Exception:
             return False
+
         return True
 
-    def close(self, force=False):
+    def close(self):
+
         if self.sock:
             try:
-                if (not force
-                        and (len(self.node.socket_pool[self.port])
-                             < self.pool_size)):
+                self.sock.close()
+                self.sock = None
 
-                    self.sock.settimeout(None)
-                    self.node.socket_pool[self.port].add(self)
-                else:
-                    self.sock.close()
-                    self.sock = None
             except Exception:
                 pass
+
         return
 
     def settimeout(self, timeout):

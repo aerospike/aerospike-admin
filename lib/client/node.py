@@ -135,9 +135,7 @@ class Node(object):
         self._key = hash(self.create_key(address, self.port))
         self.peers_generation = -1
         self.service_addresses = []
-        self.socket_pool = {}
-        self.socket_pool[self.port] = set()
-        self.socket_pool[self.xdr_port] = set()
+        self._initialize_socket_pool()
         self.connect(address, port)
         self.localhost = False
         try:
@@ -148,6 +146,12 @@ class Node(object):
                 self.localhost = self._is_any_my_ip(o.split())
         except Exception:
             pass
+
+    def _initialize_socket_pool(self):
+        self.socket_pool = {}
+        self.socket_pool[self.port] = set()
+        self.socket_pool[self.xdr_port] = set()
+        self.socket_pool_max_size = 3
 
     def _is_any_my_ip(self, ips):
         if not ips:
@@ -172,6 +176,7 @@ class Node(object):
             # else : might be it's IP is not available, node should try all old
             # service addresses
             self.close()
+            self._initialize_socket_pool()
             if (not self.service_addresses
                     or (self.ip, self.port, self.tls_name) not in
                     self.service_addresses):
@@ -294,36 +299,47 @@ class Node(object):
 
     def _get_connection(self, ip, port):
         sock = None
+
         with Node.pool_lock:
+
             try:
                 while True:
+
                     sock = self.socket_pool[port].pop()
+
                     if sock.is_connected():
                         if not self.ssl_context:
                             sock.settimeout(self._timeout)
                         break
-                    sock.close(force=True)
+
+                    sock.close()
+                    sock = None
+
             except Exception:
                 pass
+
         if sock:
             return sock
+
         sock = ASSocket(ip, port, self.tls_name, self.user, self.password, self.ssl_context, timeout=self._timeout)
+
         if sock.connect():
             return sock
+
         return None
 
     def close(self):
         try:
             while True:
                 sock = self.socket_pool[self.port].pop()
-                sock.close(force=True)
+                sock.close()
         except Exception:
             pass
 
         try:
             while True:
                 sock = self.socket_pool[self.xdr_port].pop()
-                sock.close(force=True)
+                sock.close()
         except Exception:
             pass
         self.socket_pool = None
@@ -347,6 +363,7 @@ class Node(object):
         if port == None:
             port = self.port
         result = None
+
         sock = self._get_connection(ip, port)
         if not sock:
             raise IOError("Error: Could not connect to node %s" % ip)
@@ -354,11 +371,24 @@ class Node(object):
         try:
             if sock:
                 result = sock.execute(command)
-                sock.close()
+
+                try:
+                    if len(self.socket_pool[port]) < self.socket_pool_max_size:
+                        sock.settimeout(None)
+                        self.socket_pool[port].add(sock)
+
+                    else:
+                        sock.close()
+
+                except Exception:
+                    sock.close()
+
             if result != -1 and result is not None:
                 return result
+
             else:
                 raise IOError("Error: Invalid command '%s'" % command)
+
         except Exception as ex:
             if sock:
                 sock.close()

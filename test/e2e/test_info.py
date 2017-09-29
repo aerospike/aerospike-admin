@@ -124,7 +124,7 @@ class TestInfo(unittest.TestCase):
                          'Stop Writes%',
                          'Total Objects',
                          'Pending Migrates',
-                         'Rack ID'
+                         ('Rack ID', None)
                       ]
 
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_info, horizontal = True)
