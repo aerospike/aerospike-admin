@@ -15,6 +15,7 @@
 import copy
 import re
 
+from lib.health.constants import HEALTH_PARSER_VAR
 from lib.health.exceptions import HealthException
 from lib.utils.util import get_value_from_dict
 
@@ -47,73 +48,6 @@ def deep_merge_dicts(dict_to, dict_from):
             dict_to[_key] = deep_merge_dicts(dict_to[_key], dict_from[_key])
 
     return dict_to
-
-
-def fetch_keys_from_dict(data={}, keys=[], from_keys=[]):
-    """
-    Function takes dictionary, list of keys to fetch, list of from_keys to filter scope
-
-    Returns dictionary of selected keys and values
-    """
-
-    if not data or not isinstance(data, dict):
-        raise HealthException("Wrong Input Data for select operation.")
-
-    result_dict = {}
-    if not keys:
-        raise HealthException("No key provided for select operation.")
-
-    for _key in data:
-        if from_keys:
-            f_key = from_keys[0]
-            if isinstance(_key, tuple):
-                # from_keys work with static component keys only, if we get
-                                # tuple keys means we have done with checking of all component
-                                # keys and not found any from key match so no need to check
-                                # further in this direction
-                break
-
-            if (f_key == "ALL") or (_key == f_key):
-                # from_key is ALL or matching with _key
-                child_res = fetch_keys_from_dict(data[_key], keys=keys,
-                                                 from_keys=from_keys[1:] if len(from_keys) > 1 else [])
-
-            else:
-                # no key match, need to check further
-                child_res = fetch_keys_from_dict(data[_key], keys=keys,
-                                                 from_keys=from_keys)
-
-            if child_res:
-                if f_key == "ALL":
-                    # It assumes ALL is only for top snapshot level
-                    result_dict[(_key, "SNAPSHOT")] = copy.deepcopy(child_res)
-                else:
-                    result_dict = deep_merge_dicts(
-                        result_dict, copy.deepcopy(child_res))
-
-        else:
-            if (False, "*", None) in keys and isinstance(_key, tuple):
-                result_dict[_key] = copy.deepcopy(data[_key])
-            elif isinstance(_key, tuple) and _key[1] == "KEY":
-                for check_substring, s_key, new_name in keys:
-                    if ((check_substring and re.search(s_key, _key[0]))
-                            or (not check_substring and _key[0] == s_key)):
-                        if new_name:
-                            result_dict[(new_name, "KEY")] = data[_key]
-                        else:
-                            result_dict[_key] = data[_key]
-                        break
-
-            elif data[_key] and isinstance(data[_key], dict):
-                child_res = fetch_keys_from_dict(data[_key], keys=keys)
-                if child_res:
-                    if isinstance(_key, tuple):
-                        result_dict[_key] = copy.deepcopy(child_res)
-                    else:
-                        result_dict = deep_merge_dicts(result_dict,
-                                                       copy.deepcopy(child_res))
-
-    return result_dict
 
 
 def add_component_keys(data, component_key_list):
@@ -369,6 +303,80 @@ def make_key(key):
     return (key, "KEY")
 
 
+def _remove_duplicates_from_saved_value_list(v_list):
+    """
+    Remove items with duplicate keys and create single tuple entry with last possible value for key in list.
+
+    """
+
+    if not v_list:
+        return v_list
+
+    tmp_dict = {}
+    for i in v_list:
+        tmp_dict[i[0]] = (i[1], i[2])
+
+    res_list = []
+    for i in v_list:
+        t = (i[0], tmp_dict[i[0]][0], tmp_dict[i[0]][1])
+        if t not in res_list:
+            res_list.append(t)
+
+    return res_list
+
+
+def _extract_saved_value_list_from_value_vector(v):
+    val_to_save = []
+
+    for i in v:
+        try:
+            _k, _v = get_kv(i)
+
+            if _v[1]:
+                val_to_save += _v[1]
+
+        except Exception:
+            # Not expected Input format (list of kv map)
+            pass
+
+    return val_to_save
+
+
+def create_value_list_to_save(save_param=None, key=" ", value=None, op1=None, op2=None, formatting=True):
+    """
+    Merge saved value lists of operand/s.
+
+    """
+
+    value_list = []
+
+    if op1:
+        if isinstance(op1, list):
+            value_list += _extract_saved_value_list_from_value_vector(op1)
+        else:
+            value_list += op1[1]
+
+    if op2:
+        if isinstance(op2, list):
+            value_list += _extract_saved_value_list_from_value_vector(op2)
+        else:
+            value_list += op2[1]
+
+    if save_param is None:
+        # Not saving value (result)
+        return _remove_duplicates_from_saved_value_list(value_list)
+
+    if save_param == "":
+        # Saving value (result) with key
+        value_list.append((key, value, formatting))
+
+    else:
+        # Saving value (result) with save_param as key
+        value_list.append((save_param, value, formatting))
+
+    return _remove_duplicates_from_saved_value_list(value_list)
+
+
 def create_snapshot_key(id, snapshot_prefix="SNAPSHOT"):
     id = str(id)
     if len(id) > 2:
@@ -381,3 +389,51 @@ def create_snapshot_key(id, snapshot_prefix="SNAPSHOT"):
         return snapshot_prefix + "00" + id
 
     return None
+
+
+def create_health_internal_tuple(val, saved_value_list=[]):
+    return (val, saved_value_list)
+
+
+def get_value_from_health_internal_tuple(t):
+    if not t or not isinstance(t, tuple):
+        return t
+
+    return t[0]
+
+
+def is_health_parser_variable(var):
+    """
+
+    :param var: variable to check
+    :return: True/False
+
+    """
+    if not var:
+        return False
+
+    if isinstance(var, tuple) and var[0] == HEALTH_PARSER_VAR:
+        return True
+
+    return False
+
+
+def find_majority_element(value_list):
+    if not value_list:
+        return None
+
+    m_value = value_list[0]
+    tmp_dict = {}
+    tmp_dict[m_value] = 1
+
+    for i in range(1, len(value_list)):
+        v = value_list[i]
+        if v in tmp_dict:
+            tmp_dict[v] += 1
+        else:
+            tmp_dict[v] = 1
+
+        if v != m_value and tmp_dict[v] > tmp_dict[m_value]:
+            m_value = v
+
+    return m_value

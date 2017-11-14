@@ -25,8 +25,57 @@ QUERIES = '''
 // SET CONSTRAINT VERSION IN [3.8.4, 3.10.0];
 SET CONSTRAINT VERSION ALL;
 
+/* System checks */
+
+limit = select "Soft_Max_open_files" as "fd" from SYSTEM.LIMITS save;
+limit = group by CLUSTER, NODE, KEY do SUM(limit);
+config = select "proto-fd-max" as "fd" from SERVICE.CONFIG save;
+r = do config < limit;
+ASSERT(r, True, "File descriptor is configured higher than limit.", "LIMITS", INFO,
+			    "Listed node[s] have proto-fd-limit set higher than system soft limit of Max open files. Aerospike process may run out of file descriptor, Possible misconfiguration.",
+			    "System open file descriptor limit check.");
+
+s = select * from SYSTEM.HDPARM save;
+r = group by KEY do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different Disk Hardware in cluster.", "OPERATIONS", INFO,
+                            "Different disk hardware configuration across multiple nodes in cluster.", "Disk hardware check.");
+
+s = select "OOM" from SYSTEM.DMESG save;
+ASSERT(s, False, "DMESG: Process Out of Memory kill.", "OPERATIONS", INFO,
+                            "Certain process was killed due to Out Of Memory. Check dmesg or system log.",
+                            "System OOM kill check.");
+
+s = select "Blocked" from SYSTEM.DMESG save;
+ASSERT(s, False, "DMESG: Process blocking.", "OPERATIONS", INFO,
+                            "Certain process was blocked for more than 120sec. Check dmesg or system log.",
+                            "System process blocking Check.");
+
+s = select "OS" from SYSTEM.DMESG save;
+r = group by NODE do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different OS version in cluster.", "OPERATIONS", INFO,
+                            "Different version of OS running across multiple nodes in cluster.", "OS version check.");
+
+s = select * from SYSTEM.LSCPU save;
+r = group by KEY do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "CPU configuration mismatch.", "OPERATIONS", INFO,
+                            "Listed node[s] in the cluster are running with different CPU or CPU setting, performance may be skewed. Please run 'lscpu' to check CPU configuration.",
+                            "CPU config check.");
+
+s = select "vm_drop_caches", "vm_nr_hugepages", "vm_nr_hugepages_policy", "vm_numa_zonelist_order", "vm_oom_dump_tasks", "vm_oom_kill_allocating_task", "vm_zone_reclaim_mode", "vm_swapiness",
+            "vm_nr_overcommit_hugepages", "kernel_shmmax", "kernel_shmall", "kernel_version" from SYSTEM.SYSCTLALL save;
+r = group by KEY do NO_MATCH(s, ==, MAJORITY);
+ASSERT(r, False, "Sysctl configuration mismatch.", "OPERATIONS", INFO,
+                            "Listed node[s] in the cluster are running with different Sysctl setting. Please run 'sysctl -a' to check CPU configuration.",
+                            "Sysctl config check.");
+
+s = select "has_firewall" from SYSTEM.IPTABLES;
+ASSERT(s, False, "Node in cluster have firewall setting.", "OPERATIONS", INFO,
+                                "Listed node[s] have firewall setting. Could cause cluster formation issue if misconfigured. Please run 'iptables -L' to check firewall rules.",
+				"Firewall Check.");
+
+
 /* Disk */
-s = select "%util" from SYSTEM.IOSTAT;
+s = select "%util" from SYSTEM.IOSTAT save;
 r = do s > 90;
 ASSERT(r, False, "High system disk utilization.", "PERFORMANCE", CRITICAL,
 				"Listed disks show higher than normal (> 90%) disk utilization at the time of sampling. Please run 'iostat' command to check disk utilization. Possible causes can be disk overload due to undersized cluster or some issue with disk hardware itself. If running on cloud, can be a problem with cloud instance itself.",
@@ -37,9 +86,9 @@ ASSERT(r1, False, "Skewed cluster disk utilization.", "ANOMALY", WARNING,
 				 "Disk utilization Anomaly.");
 
 
-avail=select like(".*available_pct") as "free_disk" from NAMESPACE.STATISTICS;
-disk_free = select "device_free_pct" as "free_disk", "free-pct-disk" as "free_disk" from NAMESPACE.STATISTICS;
-r = do disk_free - avail;
+avail=select like(".*available_pct") as "free_disk" from NAMESPACE.STATISTICS save;
+disk_free = select "device_free_pct" as "free_disk", "free-pct-disk" as "free_disk" from NAMESPACE.STATISTICS save;
+r = do disk_free - avail save as "fragmented blocks pct";
 r = do r <= 30;
 r = group by CLUSTER, NAMESPACE r;
 ASSERT(r, True, "High (> 30%) fragmented blocks.", "PERFORMANCE", WARNING,
@@ -47,7 +96,7 @@ ASSERT(r, True, "High (> 30%) fragmented blocks.", "PERFORMANCE", WARNING,
 				"Fragmented Blocks check.");
 
 
-s = select "%iowait" from SYSTEM.IOSTAT;
+s = select "%iowait" from SYSTEM.IOSTAT save;
 r = do s > 10;
 ASSERT(r, False, "High (> 10%) CPU IO wait time.", "PERFORMANCE", WARNING,
 				"Listed nodes show higher than normal (> 10%) CPU spent in io wait. Please run 'iostat' command to check utilization. Possible cause can be slow disk or network leading to lot of CPU time spent waiting for IO.",
@@ -58,7 +107,7 @@ ASSERT(r1, False, "Skewed CPU IO wait time.", "ANOMALY", WARNING,
 				 "CPU IO wait time anomaly.");
 
 
-s = select "await" from SYSTEM.IOSTAT;
+s = select "await" from SYSTEM.IOSTAT save;
 r = do s > 4;
 ASSERT(r, False, "High system disk average wait time.", "PERFORMANCE", WARNING,
 				"Listed disks show higher than normal (> 4ms) disk average wait time. Please run 'iostat' command to check average wait time (await). Possible cause can be issue with disk hardware or VM instance in case you are running in cloud environment. This may also be caused by having storage over network like say SAN device or EBS.",
@@ -69,7 +118,7 @@ ASSERT(r1, False, "Skewed cluster disk average wait time", "ANOMALY", WARNING,
 				"Disk average wait time anomaly check.");
 
 
-s = select "avgqu-sz" from SYSTEM.IOSTAT;
+s = select "avgqu-sz" from SYSTEM.IOSTAT save;
 r = do s > 7;
 ASSERT(r, False, "High disk average queue size.", "PERFORMANCE", INFO,
 				"Listed disks show higher than normal (> 7) disk average queue size. This is not a issue if using NVME drives which support more queues. Please run 'iostat' command to check average wait time (avgqu-sz). Possible disk overload. This may be non-issue of disk has more than 7 queues. Please analyze this number in conjunction with utilization.",
@@ -80,8 +129,8 @@ ASSERT(r1, False, "Skewed cluster disk avg queue size.", "ANOMALY", WARNING,
 				"Disk avg queue size anomaly check.");
 
 
-s = select "id" as "cpu_use" from SYSTEM.TOP.CPU_UTILIZATION;
-s = do 100 - s;
+s = select "id" as "cpu_use" from SYSTEM.TOP.CPU_UTILIZATION save as "cpu_idle_pct";
+s = do 100 - s save as "cpu utilization pct";
 r = do s > 70;
 ASSERT(r, False, "High system CPU utilization.", "PERFORMANCE", CRITICAL,
 				"Listed node[s] are showing higher than normal (> 70%) CPU utilization. Please check top output. Possible system overload.",
@@ -92,21 +141,21 @@ ASSERT(r1, False, "Skewed cluster CPU utilization.", "ANOMALY", WARNING,
 				"CPU utilization anomaly check.");
 
 
-s = select "resident_memory" from SYSTEM.TOP;
+s = select "resident_memory" from SYSTEM.TOP save;
 r = group by KEY do SD_ANOMALY(s, ==, 3);
 ASSERT(r, False, "Skewed cluster resident memory utilization.", "ANOMALY", WARNING,
 				"Listed node[s] show different resident memory usage compared to other node[s]. Please run top command on those node[s] to confirm such behavior. Possible skewed data distribution. This may be non-issue in case migrations are going on.",
 				"Resident memory utilization anomaly.");
 
 
-s = select "system_swapping" from SERVICE.STATISTICS;
+s = select "system_swapping" from SERVICE.STATISTICS save;
 r = do s == true;
 ASSERT(r, False, "System memory swapping.", "LIMITS", INFO,
 				"Listed node[s] are swapping. Please run 'show statistics service like system_swapping' to confirm such behaviour. Possible misconfiguration. This may be non-issue if amount of swap is small and good amount of memory available.",
 				"System swap check.");
 
 /* TODO - is it really actually an issue */
-s = select "system_free_mem_pct";
+s = select "system_free_mem_pct" from SERVICE.STATISTICS save;
 r = do s < 20;
 ASSERT(r, False, "Low system memory percentage.", "LIMITS", CRITICAL,
 				"Listed node[s] have lower than normal (< 20%) system free memory percentage. Please run 'show statistics service like system_free_mem_pct' to get actual values. Possible misconfiguration.",
@@ -115,7 +164,7 @@ ASSERT(r, False, "Low system memory percentage.", "LIMITS", CRITICAL,
 /* NB : ADD CHECKS IF NODES ARE NOT HOMOGENOUS MEM / NUM CPU etc */
 
 
-s = select "available_bin_names", "available-bin-names" from NAMESPACE;
+s = select "available_bin_names", "available-bin-names" from NAMESPACE save;
 r = group by NAMESPACE do s > 3200;
 ASSERT(r, True, "Low namespace available bin names.", "LIMITS", WARNING,
 				"Listed node[s] have low available bin name (< 3200) for corresponding namespace[s]. Maximum unique bin names allowed per namespace are 32k. Please run 'show statistics namespace like available' to get actual values. Possible improperly modeled data.",
@@ -124,29 +173,29 @@ ASSERT(r, True, "Low namespace available bin names.", "LIMITS", WARNING,
 
 /* Holds only upto 4B key */
 SET CONSTRAINT VERSION < 3.12;
-s = select "memory-size" from NAMESPACE;
-r = group by NODE, NAMESPACE do SUM(s);
+s = select "memory-size" from NAMESPACE.CONFIG save;
+r = group by CLUSTER, NODE, NAMESPACE do SUM(s);
 e = do r <= 274877906944;
 ASSERT(e, True, "Namespace configured to use more than 256G.", "LIMITS", WARNING,
-				"On list nodes namespace as mentioned have configured more than 256G of memory. Namespace with data not in memory can have max upto 4billion keys and can utilize only up to 256G. Please run 'show statistics namespace like memory-size' to check configured memory.",
+				"On listed nodes namespace as mentioned have configured more than 256G of memory. Namespace with data not in memory can have max upto 4 billion keys and can utilize only up to 256G. Please run 'show statistics namespace like memory-size' to check configured memory.",
 				"Namespace per node memory limit check.");
 SET CONSTRAINT VERSION ALL;
 
 /*
-Following query selects assigned memory-size from namespace statistics and total ram size from system statistics.
+Following query selects assigned memory-size from namespace config and total ram size from system statistics.
 group by for namespace stats sums all memory size and gives node level memory size.
 group by for system stats helps to remove key, this is requirement for proper matching for simple operations.
 */
-s = select "memory-size" from NAMESPACE;
-n = group by NODE do SUM(s);
+s = select "memory-size" from NAMESPACE.CONFIG save;
+n = group by NODE do SUM(s) save as "sum of memory-size";
 s = select "total" from SYSTEM.FREE.MEM;
-m = group by NODE do SUM(s);
+m = group by NODE do SUM(s) save as "total physical memory";
 r = do n <= m on common;
 ASSERT(r, True, "Namespace memory misconfiguration.", "LIMITS", WARNING,
 				"Listed node[s] have more namespace memory configured than available physical memory. Please run 'show statistics namespace like memory-size' to check configured memory and check output of 'free' for system memory. Possible namespace misconfiguration.",
 				"Namespace memory configuration check.");
 
-r = do m - n on common;
+r = do m - n on common save as "runtime memory";
 r = do r >= 5368709120;
 ASSERT(r, True, "Aerospike runtime memory configured < 5G.", "LIMITS", INFO,
 				"Listed node[s] have less than 5G free memory available for Aerospike runtime. Please run 'show statistics namespace like memory-size' to check configured memory and check output of 'free' for system memory. Possible misconfiguration.",
@@ -157,30 +206,40 @@ ASSERT(r, True, "Aerospike runtime memory configured < 5G.", "LIMITS", INFO,
 Following query selects proto-fd-max from service config and client_connections from service statistics.
 It uses as clause to get proper matching structure for simple operation.
 */
-max = select "proto-fd-max" as "fd" from SERVICE.CONFIG;
-conn = select "client_connections" as "fd" from SERVICE.STATISTICS;
+max = select "proto-fd-max" as "fd" from SERVICE.CONFIG save;
+conn = select "client_connections" as "fd" from SERVICE.STATISTICS save;
 bound = do 80 %% max;
 r = do conn > bound;
 ASSERT(r, False, "High system client connections.", "OPERATIONS", WARNING,
-				"Listed node[s] show higher than normal (> 80%) client-connections of the max configured proto-fd-max. Please run 'show config like proto-fd-max' and 'show statistics like client_connections' for actual values. Possible can be network issue / improper client behavior / FD leak.",
+				"Listed node[s] show higher than normal client-connections (> 80% of the max configured proto-fd-max). Please run 'show config like proto-fd-max' and 'show statistics like client_connections' for actual values. Possible can be network issue / improper client behavior / FD leak.",
 				"Client connections check.");
 
 
-s = select like(".*available_pct") from NAMESPACE.STATISTICS;
+s = select like(".*available_pct") from NAMESPACE.STATISTICS save;
 r = do s < 20;
 ASSERT(r, False, "Low namespace disk available pct.", "OPERATIONS", WARNING,
-				"Listed namespace[s] have lower than normal (< 20 %). Please run 'show statistics namespace like available_pct' to check available disk space. Probable cause - namespace size misconfiguration.",
+				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Please run 'show statistics namespace like available_pct' to check available disk space. Probable cause - namespace size misconfiguration.",
 				"Namespace disk available pct check.");
 
 
-s = select * from SERVICE.CONFIG;
-r = group by KEY do EQUAL(s);
-ASSERT(r, True, "Different service configurations.", "OPERATIONS", WARNING,
+s = select * from SERVICE.CONFIG ignore "pidfile", "heartbeat.mtu", like(".*address"), like(".*port")  save;
+r = group by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different service configurations.", "OPERATIONS", WARNING,
 				"Listed Service configuration[s] are different across multiple nodes in cluster. Please run 'show config service diff' to check different configuration values. Probable cause - config file misconfiguration.",
 				"Service configurations difference check.");
 
+multicast_mode_enabled = select like(".*mode") from NETWORK.CONFIG;
+multicast_mode_enabled = do multicast_mode_enabled == "multicast";
+multicast_mode_enabled = group by CLUSTER, NODE do OR(multicast_mode_enabled);
+s = select like(".*mtu")  from SERVICE.CONFIG save;
+r = group by CLUSTER do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different heartbeat.mtu.", "OPERATIONS", WARNING,
+				"Listed node[s] have a different heartbeat.mtu configured. A multicast packet can only be as large as the interface mtu. Different mtu values might create cluster stability issue. Please contact Aerospike Support team.",
+				"heartbeat.mtu check.",
+				multicast_mode_enabled);
 
-s = select "migrate-threads", "migrate_threads" from SERVICE.CONFIG;
+
+s = select "migrate-threads", "migrate_threads" from SERVICE.CONFIG save;
 r = do s > 1;
 ASSERT(r, False, "> 1 migrate thread configured.", "OPERATIONS", INFO,
 				"Listed node[s] are running with higher than normal (> 1) migrate threads. Please run 'show config service like migrate-threads' to check migration configuration. Is a non-issue if requirement is to run migration aggressively. Otherwise possible operational misconfiguration.",
@@ -188,26 +247,34 @@ ASSERT(r, False, "> 1 migrate thread configured.", "OPERATIONS", INFO,
 
 
 /* Device Configuration */
-s = select "device_total_bytes", "device-total-bytes", "total-bytes-disk" from NAMESPACE.STATISTICS;
-r = group by NAMESPACE do EQUAL(s);
-ASSERT(r, True, "Different namespace device size configuration.", "OPERATIONS", WARNING,
+s = select "device_total_bytes", "device-total-bytes", "total-bytes-disk" from NAMESPACE.STATISTICS save;
+r = group by CLUSTER, NAMESPACE do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different namespace device size configuration.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have difference in configured disk size. Please run 'show statistics namespace like bytes' to check total device size. Probable cause - config file misconfiguration.",
 				"Namespace device size configuration difference check.");
 
-hwm = select "high-water-disk-pct" from NAMESPACE.CONFIG;
+hwm = select "high-water-disk-pct" from NAMESPACE.CONFIG save;
 hwm = group by CLUSTER, NAMESPACE hwm;
 r = do hwm == 50;
 ASSERT(r, True, "Non-default namespace device high water mark configuration.", "OPERATIONS", INFO,
 				"Listed namespace[s] have non-default high water mark configuration. Please run 'show config namespace like high-water-disk-pct' to check value. Probable cause - config file misconfiguration.",
 				"Non-default namespace device high water mark check.");
 
-hwm = select "high-water-disk-pct" as "defrag-lwm-pct" from NAMESPACE.CONFIG;
-lwm = select like(".*defrag-lwm-pct") as "defrag-lwm-pct" from NAMESPACE.CONFIG;
+lwm = select like(".*defrag-lwm-pct") from NAMESPACE.CONFIG save;
+lwm = group by CLUSTER, NAMESPACE lwm;
+r = do lwm == 50;
+ASSERT(r, True, "Non-default namespace device low water mark configuration.", "OPERATIONS", INFO,
+				"Listed namespace[s] have non-default low water mark configuration. Probable cause - config file misconfiguration.",
+				"Non-default namespace device low water mark check.");
+
+hwm = select "high-water-disk-pct" as "defrag-lwm-pct" from NAMESPACE.CONFIG save;
+lwm = select like(".*defrag-lwm-pct") as "defrag-lwm-pct" from NAMESPACE.CONFIG save;
 r = do lwm < hwm on common;
 r = group by CLUSTER, NAMESPACE r;
 ASSERT(r, False, "Defrag low water mark misconfigured.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have defrag-lwm-pct lower than high-water-disk-pct. This might create situation like no block to write, no eviction and no defragmentation. Please run 'show config namespace like high-water-disk-pct defrag-lwm-pct' to check configured values. Probable cause - namespace watermark misconfiguration.",
 				"Defrag low water mark misconfiguration check.");
+
 
 /*
 Following query collects used device space and total device space and computes available free space on each node per namespace per cluster (group by CLUSTER, NAMESPACE, NODE).
@@ -219,13 +286,13 @@ t = select "device_total_bytes" as "disk_space", "device-total-bytes" as "disk_s
 u = select "used-bytes-disk" as "disk_space", "device_used_bytes" as "disk_space" from NAMESPACE.STATISTICS;
 /* Available extra space */
 e = do t - u;
-e = group by CLUSTER, NAMESPACE, NODE do SUM(e);
+e = group by CLUSTER, NAMESPACE, NODE do SUM(e) save as "available device space";
 s = select "cluster_size" as "size" from SERVICE;
-n = do AVG(s);
+n = do MAX(s);
 n = do n - 1;
 /* Extra space need if 1 node goes down */
 e1 = do u / n;
-e1 = group by CLUSTER, NAMESPACE do MAX(e1);
+e1 = group by CLUSTER, NAMESPACE do MAX(e1) save as "distribution share of used device space per node";
 r = do e > e1;
 ASSERT(r, True, "Namespace under configured (disk) for single node failure.", "OPERATIONS", WARNING,
 				"Listed namespace[s] does not have enough disk space configured to deal with increase in data per node in case of 1 node failure. Please run 'show statistics namespace like bytes' to check device space. It is non-issue if single replica limit is set to larger values, i.e if number of replica copies are reduced in case of node loss.",
@@ -234,18 +301,17 @@ ASSERT(r, True, "Namespace under configured (disk) for single node failure.", "O
 /*
 Same as above query but for memory
 */
-t = select "memory-size" as "mem" from NAMESPACE;
+t = select "memory-size" as "mem" from NAMESPACE.CONFIG;
 u = select "used-bytes-memory" as "mem", "memory_used_bytes" as "mem" from NAMESPACE.STATISTICS;
 /* Available extra space */
 e = do t - u;
-e = group by CLUSTER, NAMESPACE, NODE do SUM(e);
-
+e = group by CLUSTER, NAMESPACE, NODE do SUM(e) save as "available memory space";
 s = select "cluster_size" as "size" from SERVICE;
-n = do AVG(s);
+n = do MAX(s);
 n = do n - 1;
 /* Extra space need if 1 node goes down */
 e1 = do u / n;
-e1 = group by CLUSTER, NAMESPACE do MAX(e1);
+e1 = group by CLUSTER, NAMESPACE do MAX(e1) save as "distribution share of used memory space per node";
 r = do e > e1;
 ASSERT(r, True, "Namespace under configured (memory) for single node failure.", "OPERATIONS", WARNING,
 				"Listed namespace[s] does not have enough memory space configured to deal with increase in data per node in case of 1 node failure. Please run 'show statistics namespace like bytes' to check memory space. It is non-issue if single replica limit is set to larger values, i.e number of replica copies reduce.",
@@ -254,54 +320,55 @@ ASSERT(r, True, "Namespace under configured (memory) for single node failure.", 
 
 /* Namespace Configuration */
 
+SET CONSTRAINT VERSION < 3.13;
+
 nsid = select "nsid" from NAMESPACE.CONFIG;
-r = group by CLUSTER, NAMESPACE do EQUAL(nsid);
-ASSERT(r, True, "Different namespace order in aerospike conf.", "OPERATIONS", CRITICAL,
+r = group by CLUSTER, NAMESPACE do NO_MATCH(nsid, ==, MAJORITY) save;
+ASSERT(r, False, "Different namespace order in aerospike conf.", "OPERATIONS", CRITICAL,
 				"Listed namespace[s] have different order on different nodes. Please check aerospike conf file on all nodes and change configuration to make namespace order same.",
 				"Namespace order check.");
 
+SET CONSTRAINT VERSION ALL;
+
 repl = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG;
 repl = group by CLUSTER, NAMESPACE repl;
-ns_count = group by CLUSTER do COUNT(repl);
-ns_count_per_node = group by CLUSTER, NODE do COUNT(repl);
+ns_count = group by CLUSTER do COUNT(repl) save as "total available namespaces for cluster";
+ns_count_per_node = group by CLUSTER, NODE do COUNT(repl) save as "namespace count";
 r = do ns_count_per_node == ns_count;
 ASSERT(r, True, "Disparate namespaces.", "OPERATIONS", WARNING,
 				"Listed node[s] do not have all namespaces configured. Please check aerospike conf file on all nodes and change namespace configuration as per requirement.",
 				"Namespaces per node count check.");
 
-r = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG;
+r = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG save;
 r = group by CLUSTER, NAMESPACE r;
 r = do r == 2;
 ASSERT(r, True, "Non-default namespace replication-factor configuration.", "OPERATIONS", INFO,
 				"Listed namespace[s] have non-default replication-factor configuration. Please run 'show config namespace like repl' to check value. It may be non-issue in case namespace are configured for user requirement. Ignore those.",
 				"Non-default namespace replication-factor check.");
 
-s = select * from NAMESPACE.CONFIG;
-r = group by NAMESPACE, KEY do EQUAL(s);
-ASSERT(r, True, "Different namespace configurations.", "OPERATIONS", WARNING,
+s = select * from NAMESPACE.CONFIG ignore "rack-id", like(".*device"), like(".*file") save;
+r = group by CLUSTER, NAMESPACE, KEY do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different namespace configurations.", "OPERATIONS", WARNING,
 				"Listed namespace configuration[s] are different across multiple nodes in cluster. Please run 'show config namespace diff' to get actual difference. It may be non-issue in case namespace are configured with different device or file name etc. Ignore those.",
 				"Namespace configurations difference check.");
 
-
-s = select like(".*_err.*") from SERVICE.STATISTICS;
+/*  Errors */
+s = select like(".*_err.*") from SERVICE.STATISTICS save;
 u = select "uptime" from SERVICE.STATISTICS;
-u = group by CLUSTER, NODE do SUM(u);
+u = group by CLUSTER, NODE do MAX(u);
 s = do s / u;
 r = group by KEY do SD_ANOMALY(s, ==, 3);
-ASSERT(r, False, "Skewed cluster service errors count.", "ANOMALY", WARNING,
+ASSERT(r, False, "Skewed cluster service errors count.", "ANOMALY", INFO,
 				"Listed service errors[s] show skew in error count patterns (for listed node[s]). Please run 'show statistics service like err' for details.",
 				"Service errors count anomaly check.");
 
 
-s = select like(".*_error") from NAMESPACE.STATISTICS;
-u = select "uptime" from SERVICE.STATISTICS;
-u = group by CLUSTER, NODE do MAX(u);
-s = do s / u on common;
-d = group by NAMESPACE, KEY do SUM(s);
-e = do d == 0;
-ASSERT(e, True, "Non-zero namespace errors count.", "OPERATIONS", WARNING,
-				"Listed namespace error[s] show skew in count (for nodes). It may or may not be an issue depending on the error type. Please run 'show statistics namespace like error' for details.",
-				"Namespace errors count check.");
+e = select "hwm_breached", "hwm-breached" from NAMESPACE.STATISTICS;
+e = group by CLUSTER, NAMESPACE e;
+r = do e == False;
+ASSERT(r, True, "Namespace HWM breached.", "OPERATIONS", WARNING,
+				"Listed namespace[s] show HWM breached for memory or Disks.",
+				"Namespace HWM breach check.");
 
 /*
 Following query collects master_objects, prole_objects and replication_factor, and computes proles for one replication (prole_objects/(replication_factor-1)).
@@ -312,82 +379,82 @@ this last result will 'AND' with replication_enabled and migration_in_progress b
 m = select "master_objects" as "cnt", "master-objects" as "cnt" from NAMESPACE.STATISTICS;
 p = select "prole_objects" as "cnt", "prole-objects" as "cnt" from NAMESPACE.STATISTICS;
 r = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG;
-m = select "migrate_rx_partitions_active", "migrate_progress_recv", "migrate-rx-partitions-active"  from NAMESPACE.STATISTICS;
-mt = group by NAMESPACE do SUM(m);
+mg = select "migrate_rx_partitions_active", "migrate_progress_recv", "migrate-rx-partitions-active"  from NAMESPACE.STATISTICS;
+mt = group by NAMESPACE do SUM(m) save as "master_objects";
 pt = group by NAMESPACE do SUM(p);
 r = group by NAMESPACE do MAX(r);
-m = group by NAMESPACE do MAX(m);
-migration_in_progress = do m > 0;
+mg = group by NAMESPACE do MAX(mg);
+no_migration = do mg == 0;
+
 replication_enabled = do r > 1;
 r = do r - 1;
-pt = do pt / r;
-discounted_pt = do 95 %% pt;
+pt = do pt / r save as "unique prole_objects";
+discounted_pt = do 95 %% pt save as "95% of unique prole_objects";
 d = do discounted_pt > mt;
 d = do d && replication_enabled;
-d = do d && migration_in_progress;
+d = do d && no_migration;
 ASSERT(d, False, "Skewed namespace data distribution, prole objects exceed master objects by > 5%.", "DATA", INFO,
 				"Listed namespace[s] show abnormal object distribution. It may not be an issue if migrations are in progress. Please run 'show statistics namespace like object' for actual counts.",
 				"Namespace data distribution check (prole objects exceed master objects by > 5%).");
-discounted_mt = do 95 %% mt;
+discounted_mt = do 95 %% mt save as "95% of master_objects";
 d = group by NAMESPACE do discounted_mt > pt;
 d = do d && replication_enabled;
-d = do d && migration_in_progress;
+d = do d && no_migration;
 ASSERT(d, False, "Skewed namespace data distribution, master objects exceed prole objects by > 5%.", "DATA", INFO,
 				"Listed namespace[s] show abnormal object distribution. It may not be an issue if migrations are in progress. Please run 'show statistics namespace like object' for actual counts.",
 				"Namespace data distribution check (master objects exceed prole objects by > 5%).");
 
 
-s = select "set-delete", "deleting" as "set-delete" from SET;
-r = group by NAMESPACE, SET do EQUAL(s);
-ASSERT(r, True, "Different set delete status.", "OPERATIONS", INFO,
+s = select "set-delete", "deleting" as "set-delete" from SET save;
+r = group by CLUSTER, NAMESPACE, SET do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different set delete status.", "OPERATIONS", INFO,
 				"Listed set[s] have different set delete status across multiple nodes in cluster. This is non-issue if set-delete is being performed. Nodes reset the status asynchronously. Please check if nsup is still delete data for the set.",
 				"Set delete status check.");
 
 
-s = select like ("disable-eviction") from SET;
-r = group by NAMESPACE, SET do EQUAL(s);
-ASSERT(r, True, "Different set eviction configuration.", "OPERATIONS", WARNING,
+s = select like ("disable-eviction") from SET save;
+r = group by CLUSTER, NAMESPACE, SET do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different set eviction configuration.", "OPERATIONS", WARNING,
 				"Listed set[s] have different eviction setting across multiple nodes in cluster. Please run 'show statistics set like disable-eviction' to check values. Possible operational misconfiguration.",
 				"Set eviction configuration difference check.");
 
 
-s = select like ("set-enable-xdr") from SET;
-r = group by NAMESPACE, SET do EQUAL(s);
-ASSERT(r, True, "Different set xdr configuration.", "OPERATIONS", WARNING,
+s = select like ("set-enable-xdr") from SET save;
+r = group by CLUSTER, NAMESPACE, SET do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different set xdr configuration.", "OPERATIONS", WARNING,
 				"Listed set[s] have different XDR replication setting across multiple nodes in cluster. Please run 'show statistics set like set-enable-xdr' to check values. Possible operational misconfiguration.",
 				"Set xdr configuration difference check.");
 
 
-s = select "n_objects", "objects" as "n_objects" from SET;
-/* Should be Anomaly */
-r = group by NAMESPACE, SET do SD_ANOMALY(s, ==, 3);
+s = select "n_objects", "objects" from SET save;
+r = group by CLUSTER, NAMESPACE, SET do SD_ANOMALY(s, ==, 3);
 ASSERT(r, False, "Skewed cluster set object count.", "ANOMALY", WARNING,
 				"Listed set[s] have skewed object distribution. Please run 'show statistics set like object' to check counts. It may be non-issue if cluster is undergoing migrations.",
 				"Set object count anomaly check.");
 
 /* XDR */
 
-s = select * from XDR.CONFIG;
-r = GROUP by KEY do EQUAL(s);
-ASSERT(r, True, "Different XDR configurations.", "OPERATIONS", WARNING,
+s = select * from XDR.CONFIG save;
+r = GROUP by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different XDR configurations.", "OPERATIONS", WARNING,
 				"Listed XDR configuration[s] are different across multiple nodes in cluster. Please run 'show config xdr diff' to get difference. Possible operational misconfiguration.",
 				"XDR configurations difference check.");
 
 
-s = select * from XDR.STATISTICS;
+s = select * from XDR.STATISTICS save;
 u = select "uptime" from SERVICE.STATISTICS;
-u = group by CLUSTER, NODE do SUM(u);
+u = group by CLUSTER, NODE do MAX(u);
 s = do s / u;
-r = group by KEY do SD_ANOMALY(s, ==, 3);
+r = group by CLUSTER, KEY do SD_ANOMALY(s, ==, 3);
 ASSERT(r, False, "Skewed cluster XDR statistics.", "ANOMALY", WARNING,
 				"Listed XDR statistic[s] show skew for the listed node[s]. It may or may not be an issue depending on the statistic type.",
 				"XDR statistics anomaly check.");
 
-s = select * from DC.STATISTICS;
+s = select * from DC.STATISTICS ignore "dc_size", "dc_state" save;
 u = select "uptime" from SERVICE.STATISTICS;
-u = group by CLUSTER, NODE do SUM(u);
+u = group by CLUSTER, NODE do MAX(u);
 s = do s / u on common;
-r = group by DC, KEY do SD_ANOMALY(s, ==, 3);
+r = group by CLUSTER, DC, KEY do SD_ANOMALY(s, ==, 3);
 ASSERT(r, False, "Skewed cluster remote DC statistics.", "ANOMALY", WARNING,
 				"Listed DC statistic[s] show skew for the listed node[s]. Please run 'show statistics dc' to get all DC stats. May be non-issue if remote Data center connectivity behavior for nodes is not same.",
 				"Remote DC statistics anomaly check.");
@@ -399,51 +466,58 @@ assert input data structure, only exceptions are data which grouped by DC, in th
 */
 xdr_enabled = select "enable-xdr" from XDR.CONFIG;
 xdr_enabled = group by CLUSTER, NODE do OR(xdr_enabled);
+cluster_xdr_enabled = group by CLUSTER do OR(xdr_enabled);
 
-s = select "xdr-dc-state", "dc_state"  from DC.STATISTICS;
-r = group by DC do EQUAL(s);
-ASSERT(r, True, "Different remote DC states.", "OPERATIONS", WARNING,
-				"Listed node[s] have a different remote DC visibility. Please run 'show statistics dc like state' to see DC state. Possible network issue between data centers.",
+s = select "xdr-dc-state", "dc_state"  from DC.STATISTICS save;
+r = group by CLUSTER, DC do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different remote DC states.", "OPERATIONS", WARNING,
+				"Listed DC[s] have a different remote DC visibility. Please run 'show statistics dc like state' to see DC state. Possible network issue between data centers.",
 				"Remote DC state check.",
 				xdr_enabled);
 
-s = select "free-dlog-pct", "dlog_free_pct", "free_dlog_pct" from XDR;
+s = select "dc_size"  from DC.STATISTICS save;
+r = group by CLUSTER, DC do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different remote DC sizes.", "OPERATIONS", WARNING,
+				"Listed DC[s] have a different remote DC size. Please run 'show statistics dc like size' to see DC size. Possible network issue between data centers.",
+				"Remote DC size check.");
+
+s = select "free-dlog-pct", "dlog_free_pct", "free_dlog_pct" from XDR save;
 r = do s < 95;
 ASSERT(r, False, "Low XDR free digest log space.", "OPERATIONS", INFO,
 				"Listed node[s] have lower than ideal (95%) free digest log space. Please run 'show statistics xdr like free' to see digest log space. Probable cause - low XDR throughput or a failed node processing in progress.",
 				"XDR free digest log space check.",
 				xdr_enabled);
-r = group by CLUSTER, NODE do SD_ANOMALY(s, ==, 3);
+r = group by CLUSTER do SD_ANOMALY(s, ==, 3);
 ASSERT(r, False, "Skewed cluster XDR free digest log space.", "ANOMALY", WARNING,
 				"Listed node[s] have different digest log free size pattern. Please run 'show statistics xdr like free' to see digest log space. May not be an issue if the nodes are newly added or have been restarted with noresume or if remote Datacenter connectivity behavior differs for nodes.",
 				"XDR free digest log space anomaly check.",
-				xdr_enabled);
+				cluster_xdr_enabled);
 
 
 /* Needs normalization but not sure on what ?? */
-s = select "timediff_lastship_cur_secs", "xdr_timelag" from XDR.STATISTICS;
+s = select "timediff_lastship_cur_secs", "xdr_timelag" from XDR.STATISTICS save;
 r = do s > 10;
 ASSERT(r, False, "High XDR shipping lag (> 10s).", "PERFORMANCE", WARNING,
 				"Listed node[s] have higher than healthy ( > 10 sec) ship lag to remote data center. Please run 'show statistics xdr like time' to see shipping lag. Probable cause - connectivity issue to remote datacenter or spike in write throughput on the local cluster.",
 				"XDR shipping lag check.",
 				xdr_enabled);
-r = group by CLUSTER, NODE do SD_ANOMALY(s, ==, 3);
+r = group by CLUSTER do SD_ANOMALY(s, ==, 3);
 ASSERT(r, False, "Cluster XDR shipping lag skewed.", "ANOMALY", WARNING,
 				"Listed node[s] have different ship lag patterns. Please run 'show statistics xdr like time' to see shipping lag. May not be an issue if the nodes are newly added or have been restarted with noresume or if remote Datacenter connectivity behavior differs for nodes.",
 				"XDR shipping lag anomaly check.",
-				xdr_enabled);
+				cluster_xdr_enabled);
 
 
-s = select "xdr-dc-timelag", "dc_timelag" from DC.STATISTICS;
-r = group by DC do SD_ANOMALY(s, ==, 3);
+s = select "xdr-dc-timelag", "dc_timelag" from DC.STATISTICS save;
+r = group by CLUSTER, DC do SD_ANOMALY(s, ==, 3);
 ASSERT(r, False, "Skewed cluster remote DC Lag.", "ANOMALY", WARNING,
 				"Listed node[s] have different latency to remote data center. Please run 'show statistics dc like timelag' to see timelag. Possible Data center connectivity issue.",
 				"Remote DC lag anomaly check.",
-				xdr_enabled);
+				cluster_xdr_enabled);
 
 
 /* XDR xdr_read_latency_avg check */
-s = select "xdr_read_latency_avg", "local_recs_fetch_avg_latency" from XDR.STATISTICS;
+s = select "xdr_read_latency_avg", "local_recs_fetch_avg_latency" from XDR.STATISTICS save;
 r = do s > 2;
 ASSERT(r, False, "High XDR average read latency (>2 sec).", "PERFORMANCE", WARNING,
 				"Listed node[s] have higher than normal (> 2sec) local read latencies. Please run 'show statistics xdr like latency' to see XDR read latency. Probable cause - system overload causing transaction queue to back up.",
@@ -451,9 +525,9 @@ ASSERT(r, False, "High XDR average read latency (>2 sec).", "PERFORMANCE", WARNI
 				xdr_enabled);
 
 
-s = select "dc_open_conn" as "conn" from DC.STATISTICS;
-ds = select "dc_size" as "conn" from DC.STATISTICS;
-ds = do ds * 64;
+s = select "dc_open_conn" as "conn" from DC.STATISTICS save;
+ds = select "dc_size" as "conn" from DC.STATISTICS save;
+ds = do ds * 64 save as "max expected dc connections";
 r = do s > ds;
 ASSERT(r, False, "High remote DC connections.", "LIMITS", WARNING,
 				"Listed node[s] have higher than normal remote datacenter connections. Generally accepted number is (64*No of nodes in remote DC) per node. Please run 'show statistics dc like dc_open_conn dc_size' to see DC connection statistics. Ignore if XDR is not pipelined.",
@@ -461,7 +535,7 @@ ASSERT(r, False, "High remote DC connections.", "LIMITS", WARNING,
 				xdr_enabled);
 
 
-s = select "xdr_uninitialized_destination_error", "noship_recs_uninitialized_destination" from XDR.STATISTICS;
+s = select "xdr_uninitialized_destination_error", "noship_recs_uninitialized_destination" from XDR.STATISTICS save;
 r = do s > 0;
 ASSERT(r, False, "Uninitialized destination cluster.", "OPERATIONS", WARNING,
 				"Listed node[s] have a non zero value for this uninitialized DC. Please check the configuration.",
@@ -469,7 +543,7 @@ ASSERT(r, False, "Uninitialized destination cluster.", "OPERATIONS", WARNING,
 				xdr_enabled);
 
 
-s = select "xdr_unknown_namespace_error", "noship_recs_unknown_namespace" from XDR.STATISTICS;
+s = select "xdr_unknown_namespace_error", "noship_recs_unknown_namespace" from XDR.STATISTICS save;
 r = do s > 0;
 ASSERT(r, False, "Missing namespace in remote data center.", "OPERATIONS", WARNING,
 				"Certain namespace not found in remote DC. Please check the configuration to ascertain if remote DC has all the namespace being shipped.",
@@ -477,7 +551,7 @@ ASSERT(r, False, "Missing namespace in remote data center.", "OPERATIONS", WARNI
 				xdr_enabled);
 
 /* XDR failednode_sessions_pending check */
-s = select "failednode_sessions_pending", "xdr_active_failed_node_sessions" from XDR.STATISTICS;
+s = select "failednode_sessions_pending", "xdr_active_failed_node_sessions" from XDR.STATISTICS save;
 r = do s > 0;
 ASSERT(r, False, "Active failed node sessions.", "OPERATIONS", INFO,
                 "Listed node[s] have failed node sessions pending. Please check if there are any failed nodes on the source cluster.",
@@ -485,7 +559,7 @@ ASSERT(r, False, "Active failed node sessions.", "OPERATIONS", INFO,
                 xdr_enabled);
 
 /* XDR linkdown_sessions_pending check */
-s = select "linkdown_sessions_pending", "xdr_active_link_down_sessions" from XDR.STATISTICS;
+s = select "linkdown_sessions_pending", "xdr_active_link_down_sessions" from XDR.STATISTICS save;
 r = do s > 0;
 ASSERT(r, False, "Active linkdown sessions.", "OPERATIONS", INFO,
                 "Listed node[s] have link down sessions pending. Please check the connectivity of remote datacenter.",
@@ -493,7 +567,7 @@ ASSERT(r, False, "Active linkdown sessions.", "OPERATIONS", INFO,
                 xdr_enabled);
 
 /* XDR xdr_ship_outstanding_objects check */
-s = select "xdr_ship_outstanding_objects", "stat_recs_outstanding" from XDR.STATISTICS;
+s = select "xdr_ship_outstanding_objects", "stat_recs_outstanding" from XDR.STATISTICS save;
 r = do s > 10000;
 ASSERT(r, False, "Too many outstanding objects (>10000) to ship !!.", "OPERATIONS", WARNING,
                 "Listed node[s] have too many records outstanding. Please check relogging and error statistics.",
@@ -501,7 +575,7 @@ ASSERT(r, False, "Too many outstanding objects (>10000) to ship !!.", "OPERATION
                 xdr_enabled);
 
 /* XDR xdr_ship_inflight_objects check */
-s = select "xdr_ship_inflight_objects", "stat_recs_inflight" from XDR.STATISTICS;
+s = select "xdr_ship_inflight_objects", "stat_recs_inflight" from XDR.STATISTICS save;
 r = do s > 5000;
 ASSERT(r, False, "Too many inflight objects (>5000).", "PERFORMANCE", WARNING,
                 "Listed node[s] have too many objects inflight. This might lead to XDR throttling itself, consider tuning this parameter to a lower value.",
@@ -509,7 +583,7 @@ ASSERT(r, False, "Too many inflight objects (>5000).", "PERFORMANCE", WARNING,
                 xdr_enabled);
 
 /* XDR xdr_ship_latency_avg check */
-s = select "xdr_ship_latency_avg", "latency_avg_ship" from XDR.STATISTICS;
+s = select "xdr_ship_latency_avg", "latency_avg_ship" from XDR.STATISTICS save;
 // Following value is not fixed yet
 r = do s > 5000;
 ASSERT(r, False, "Record shipping takes too long (>5 sec).", "PERFORMANCE", WARNING,
@@ -520,21 +594,21 @@ ASSERT(r, False, "Record shipping takes too long (>5 sec).", "PERFORMANCE", WARN
 
 /* CLUSTER STATE */
 
-r = select "cluster_integrity" from SERVICE.STATISTICS;
+r = select "cluster_integrity" from SERVICE.STATISTICS save;
 r = do r == True;
 ASSERT(r, True, "Cluster integrity fault.", "OPERATIONS", CRITICAL,
 				"Listed node[s] have cluster integrity fault. This indicates cluster is not completely wellformed. Please check server logs for more information. Probable cause - issue with network.",
 				"Cluster integrity fault check.");
 
 r = select "cluster_key" from SERVICE.STATISTICS;
-r = do EQUAL(r);
-ASSERT(r, True, "Different Cluster Key.", "OPERATIONS", CRITICAL,
+r = do NO_MATCH(r, ==, MAJORITY) save;
+ASSERT(r, False, "Different Cluster Key.", "OPERATIONS", CRITICAL,
 				"Listed cluster[s] have different cluster keys for nodes. This indicates cluster is not completely wellformed. Please check server logs for more information. Probable cause - issue with network.",
 				"Cluster Key difference check.");
 
 u = select "uptime" from SERVICE.STATISTICS;
-total_nodes = group by CLUSTER do COUNT(u);
-r = select "cluster_size" from SERVICE.STATISTICS;
+total_nodes = group by CLUSTER do COUNT(u) save as "total nodes";
+r = select "cluster_size" from SERVICE.STATISTICS save;
 r = do r == total_nodes;
 ASSERT(r, True, "Unstable Cluster.", "OPERATIONS", CRITICAL,
 				"Listed node[s] have cluster size not matching total number of available nodes. This indicates cluster is not completely wellformed. Please check server logs for more information. Probable cause - issue with network.",
@@ -543,18 +617,20 @@ ASSERT(r, True, "Unstable Cluster.", "OPERATIONS", CRITICAL,
 hp = select "heartbeat.protocol", "heartbeat-protocol" from NETWORK.CONFIG;
 heartbeat_proto_v2 = do hp == "v2";
 heartbeat_proto_v2 = group by CLUSTER, NODE do OR(heartbeat_proto_v2);
-cs = select "cluster_size" from SERVICE.STATISTICS;
-mcs = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG;
+cs = select "cluster_size" from SERVICE.STATISTICS save;
+mcs = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG save;
+cs_without_saved_value = select "cluster_size" from SERVICE.STATISTICS;
+mcs_without_saved_value = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG;
 r = do cs < mcs;
 ASSERT(r, True, "Critical cluster size.", "OPERATIONS", CRITICAL,
 				"Listed node[s] have cluster size higher than configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
 				"Critical cluster size check.",
 				heartbeat_proto_v2);
 
-small_max_configured = do mcs < 20;
+small_max_configured = do mcs_without_saved_value < 20;
 critical_size = do cs >= mcs;
-correct_size = do mcs - 10;
-correct_size = do cs <= correct_size;
+correct_size = do mcs_without_saved_value - 10;
+correct_size = do cs_without_saved_value <= correct_size;
 r = do small_max_configured || critical_size;
 r = do r || correct_size;
 ASSERT(r, True, "Cluster size is near the max configured cluster size.", "OPERATIONS", WARNING,
@@ -566,12 +642,12 @@ ASSERT(r, True, "Cluster size is near the max configured cluster size.", "OPERAT
 /* UDF */
 
 u = select * from UDF.METADATA;
-r = group by FILENAME, KEY do EQUAL(u);
-ASSERT(r, True, "UDF not in sync (file not matching).", "OPERATIONS", CRITICAL,
+r = group by FILENAME, KEY do NO_MATCH(u, ==, MAJORITY) save;
+ASSERT(r, False, "UDF not in sync (file not matching).", "OPERATIONS", CRITICAL,
 				"Listed UDF definitions do not match across the nodes. This may lead to incorrect UDF behavior. Run command 'asinfo -v udf-list' to see list of UDF. Re-register the latest version of the not in sync UDF[s].",
 				"UDF sync (file not matching) check.");
-total_nodes = group by CLUSTER do COUNT(u);
-c = group by CLUSTER, FILENAME do COUNT(u);
+total_nodes = group by CLUSTER do COUNT(u) save as "expected node count";
+c = group by CLUSTER, FILENAME do COUNT(u) save as "node count";
 r = do c == total_nodes;
 ASSERT(r, True, "UDF not in sync (not available on all node).", "OPERATIONS", CRITICAL,
 				"Listed UDF[s] are not available on all the nodes. This may lead to incorrect UDF behavior. Run command 'asinfo -v udf-list' to see list of UDF. Re-register missing UDF in cluster.",
@@ -579,15 +655,15 @@ ASSERT(r, True, "UDF not in sync (not available on all node).", "OPERATIONS", CR
 
 /* SINDEX */
 
-s = select "sync_state" from SINDEX.STATISTICS;
+s = select "sync_state" from SINDEX.STATISTICS save;
 s = group by CLUSTER, NAMESPACE, SET, SINDEX s;
 r = do s == "synced";
 ASSERT(r, True, "SINDEX not in sync with primary.", "OPERATIONS", CRITICAL,
 				"Listed sindex[es] are not in sync with primary. This can lead to wrong query results. Consider dropping and recreating secondary index[es].",
 				"SINDEX sync state check.");
 u = select "uptime" from SERVICE.STATISTICS;
-total_nodes = group by CLUSTER do COUNT(u);
-c = group by CLUSTER, NAMESPACE, SET, SINDEX do COUNT(s);
+total_nodes = group by CLUSTER do COUNT(u) save as "cluster node count";
+c = group by CLUSTER, NAMESPACE, SET, SINDEX do COUNT(s) save as "nodes with SINDEX";
 r = do c == total_nodes;
 ASSERT(r, True, "SINDEX not in sync (not available on all node).", "OPERATIONS", CRITICAL,
 				"Listed sindex[es] not available on all nodes. This can lead to wrong query results. Consider dropping and recreating missing secondary index[es].",
@@ -620,133 +696,629 @@ ASSERT(r, True, "Services list discrepancy.", "OPERATIONS", WARNING,
 */
 
 SET CONSTRAINT VERSION >= 3.9;
+// Uptime
 
 u = select "uptime" from SERVICE.STATISTICS;
-u = GROUP BY CLUSTER, NODE do SUM(u);
+u = GROUP BY CLUSTER, NODE do MAX(u);
 
-e = select "client_write_error" from NAMESPACE.STATISTICS;
-s = select "client_write_success" from NAMESPACE.STATISTICS;
-s = GROUP BY CLUSTER, NODE, NAMESPACE do SUM(s);
-r = do e / s;
-r = do r/u on common;
-r = do r == 0;
-ASSERT(r, True, "Non-zero namespace write errors count", "OPERATIONS", INFO,
-				"Listed namespace write error[s] show skew in count across nodes in cluster. It may or may not be an issue depending on the error type (e.g gen check errors may be expected if client is using check and set kind of operations). Please run 'show statistics namespace like client_write' to see values.",
-				"Namespace write errors count check");
 
-e = select "client_read_error" from NAMESPACE.STATISTICS;
-s = select "client_read_success" from NAMESPACE.STATISTICS;
-s = GROUP BY CLUSTER, NODE, NAMESPACE do SUM(s);
-r = do e / s;
-r = do r/u on common;
-r = do r == 0;
-ASSERT(r, True, "Non-zero namespace read errors count", "OPERATIONS", INFO,
-				"Listed namespace read error[s] show skew in count across nodes in the cluster. It may or may not be an issue depending on the error type (e.g key not found may be expected). Please run 'show statistics namespace like client_read' to see values.",
-				"Namespace read errors count check");
+// Read statistics
 
-e = select "client_delete_error" from NAMESPACE.STATISTICS;
-s = select "client_delete_success" from NAMESPACE.STATISTICS;
-s = GROUP BY CLUSTER, NODE, NAMESPACE do SUM(s);
-r = do e / s;
-r = do r/u on common;
-r = do r == 0;
-ASSERT(r, True, "Non-zero namespace delete errors count", "OPERATIONS", INFO,
-				"Listed namespace delete error[s] show skew in count across nodes in the cluster. It may or may not be an issue depending on the error type (e.g key not found). Please run 'show statistics namespace like client_delete' to see values.",
-				"Namespace delete errors count check");
+nf = select "client_read_not_found" as "cnt" from NAMESPACE.STATISTICS;
+s = select "client_read_success" as "cnt" from NAMESPACE.STATISTICS;
+t = select "client_read_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "client_read_error" as "cnt" from NAMESPACE.STATISTICS;
+total_reads = do s + nf;
+total_reads = do total_reads + t;
+total_reads = do total_reads + e save as "total client reads";
+total_reads_per_sec = do total_reads/u;
+total_reads = group by CLUSTER, NAMESPACE, NODE do MAX(total_reads);
+total_reads_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_reads_per_sec);
 
-e = select "batch_sub_tsvc_timeout" from NAMESPACE.STATISTICS;
-e = do e/u on common;
+e = select "client_read_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
 e = group by CLUSTER, NAMESPACE e;
-r = do e > 0;
-ASSERT(r, False, "Non-zero batch-index read sub-transaction timeouts.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-zero batch-index read sub-transaction timeouts across the nodes. Please run 'show statistics namespace like batch_sub_tsvc_timeout' to see the values.",
-				"Namespace batch-index read sub-transaction timeout count check");
+p = do e/total_reads_per_sec;
+p = do p * 100 save as "client_read_error % of total reads";
+r = do p <= 5;
+ASSERT(r, True, "High client read errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal read errors (> 5% client reads). Please run 'show statistics namespace like client_read' to see values.",
+				"High read error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero client read errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero read errors. Please run 'show statistics namespace like client_read' to see values.",
+				"Non-zero read error check");
 
-e = select "client_tsvc_timeout" from NAMESPACE.STATISTICS;
-e = do e/u on common;
-e = group by CLUSTER, NAMESPACE e;
-r = do e > 0;
-ASSERT(r, False, "Non-zero client transaction timeouts.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-zero client transaction timeouts (for nodes). Please run 'show statistics namespace like client_tsvc_timeout' to see values. Probable cause - congestion in the transaction queue (transaction threads not able to process efficiently enough), or it could also be that the timeout set by the client is too aggressive.",
-				"Namespace client transaction timeout count check");
+t = select "client_read_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_reads;
+r = do r * 100 save as "client_read_timeout % of total reads";
+r = do r <= 5;
+ASSERT(r, True, "High client read timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal read timeouts (> 5% client reads). Please run 'show statistics namespace like client_read' to see values.",
+				"High read timeouts check");
 
-e = select "client_udf_error" from NAMESPACE.STATISTICS;
-e = do e/u on common;
-e = group by CLUSTER, NAMESPACE e;
-r = do e > 0;
-ASSERT(r, False, "Non-zero UDF transaction failure.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-zero UDF transaction failures (for nodes). Please run 'show statistics namespace like client_udf_error' to see values.",
-				"Namespace UDF transaction failure check");
+c = select "client_read_not_found" from NAMESPACE.STATISTICS save;
+c = group by CLUSTER, NAMESPACE c;
 
-e = select "client_udf_timeout" from NAMESPACE.STATISTICS;
-e = do e/u on common;
-e = group by CLUSTER, NAMESPACE e;
-r = do e > 0;
-ASSERT(r, False, "Non-zero UDF transaction timeouts.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-zero UDF transaction timeouts (for nodes). Please run 'show statistics namespace like client_udf_timeout' to see values.",
-				"Namespace UDF transaction timeout check");
-
-e = select "udf_sub_udf_error" from NAMESPACE.STATISTICS;
-e = do e/u on common;
-e = group by CLUSTER, NAMESPACE e;
-r = do e > 0;
-ASSERT(r, False, "Non-zero UDF sub-transaction failures.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-zero UDF sub-transaction failures across nodes in cluster for scan/query background udf jobs. Please run 'show statistics namespace like udf_sub_udf_error udf_sub_lang_' to see details.",
-				"Namespace UDF sub-transaction failure check");
-
-e = select "client_write_timeout" from NAMESPACE.STATISTICS;
-e = do e/u on common;
-e = group by CLUSTER, NAMESPACE e;
-r = do e > 0;
-ASSERT(r, False, "Non-zero write transaction timeouts.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-zero write transaction timeouts (for nodes). Please run 'show statistics namespace like client_write_timeout' to see values.",
-				"Namespace write transaction timeout check");
-
-e = select "client_read_not_found" from NAMESPACE.STATISTICS;
-e = group by CLUSTER, NAMESPACE e;
-s = select "client_read_success" from NAMESPACE.STATISTICS;
-s = group by CLUSTER, NAMESPACE, NODE do MAX(s);
-s = do 50 %% s;
-r = do e <= s;
+r = do c / total_reads;
+r = do r * 100 save as "client_read_not_found % of total reads";
+r = do r <= 20;
 ASSERT(r, True, "High read not found errors", "OPERATIONS", INFO,
-				"Listed namespace[s] show higher than normal read not found errors (> 50% client read success). Please run 'show statistics namespace like client_read_not_found client_read_success' to see values.",
+				"Listed namespace[s] show higher than normal read not found errors (> 20% client reads). Please run 'show statistics namespace like client_read' to see values.",
 				"High read not found error check");
 
-e = select "xdr_write_error" from NAMESPACE.STATISTICS;
-e = do e/u on common;
-e = group by CLUSTER, NAMESPACE e;
-r = do e > 0;
-ASSERT(r, False, "Non-zero XDR write errors count.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-zero XDR write transaction failures (for nodes). Please run 'show statistics namespace like xdr_write_error' to see values.",
-				"Namespace XDR write failure check");
 
-e = select "xdr_write_timeout" from NAMESPACE.STATISTICS;
-e = do e/u on common;
+// Delete statistics
+
+nf = select "client_delete_not_found" as "cnt" from NAMESPACE.STATISTICS;
+s = select "client_delete_success" as "cnt" from NAMESPACE.STATISTICS;
+t = select "client_delete_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "client_delete_error" as "cnt" from NAMESPACE.STATISTICS;
+total_deletes = do s + nf;
+total_deletes = do total_deletes + t;
+total_deletes = do total_deletes + e save as "total client deletes";
+total_deletes_per_sec = do total_deletes/u;
+total_deletes = group by CLUSTER, NAMESPACE, NODE do MAX(total_deletes);
+total_deletes_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_deletes_per_sec);
+
+e = select "client_delete_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_deletes_per_sec;
+p = do p * 100 save as "client_delete_error % of total deletes";
+r = do p <= 5;
+ASSERT(r, True, "High client delete errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal delete errors (> 5% client deletes). Please run 'show statistics namespace like client_delete' to see values.",
+				"High delete error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero client delete errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero delete errors. Please run 'show statistics namespace like client_delete' to see values.",
+				"Non-zero delete error check");
+
+t = select "client_delete_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_deletes;
+r = do r * 100 save as "client_delete_timeout % of total deletes";
+r = do r <= 5;
+ASSERT(r, True, "High client delete timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal delete timeouts (> 5% client deletes). Please run 'show statistics namespace like client_delete' to see values.",
+				"High delete timeouts check");
+
+c = select "client_delete_not_found" from NAMESPACE.STATISTICS save;
+c = group by CLUSTER, NAMESPACE c;
+r = do c / total_deletes;
+r = do r * 100 save as "client_delete_not_found % of total deletes";
+r = do r <= 20;
+ASSERT(r, True, "High delete not found errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show higher than normal delete not found errors (> 20% client deletes). Please run 'show statistics namespace like client_delete' to see values.",
+				"High delete not found error check");
+
+
+// Write statistics
+
+s = select "client_write_success" as "cnt" from NAMESPACE.STATISTICS;
+t = select "client_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "client_write_error" as "cnt" from NAMESPACE.STATISTICS;
+total_writes = do s + t;
+total_writes = do total_writes + e save as "total client writes";
+total_writes_per_sec = do total_writes/u;
+total_writes = group by CLUSTER, NAMESPACE, NODE do MAX(total_writes);
+total_writes_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_writes_per_sec);
+
+e = select "client_write_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_writes_per_sec;
+p = do p * 100 save as "client_write_error % of total writes";
+r = do p <= 5;
+ASSERT(r, True, "High client write errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal write errors (> 5% client writes). Please run 'show statistics namespace like client_write' to see values.",
+				"High write error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero client write errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero write errors. Please run 'show statistics namespace like client_write' to see values.",
+				"Non-zero write error check");
+
+t = select "client_write_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_writes;
+r = do r * 100 save as "client_write_timeout % of total writes";
+r = do r <= 5;
+ASSERT(r, True, "High client write timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal write timeouts (> 5% client writes). Please run 'show statistics namespace like client_write' to see values.",
+				"High write timeouts check");
+
+
+// Client Proxy transaction statistics
+
+s = select "client_proxy_complete" as "cnt" from NAMESPACE.STATISTICS;
+t = select "client_proxy_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "client_proxy_error" as "cnt" from NAMESPACE.STATISTICS;
+total_client_proxy = do s + t;
+total_client_proxy = do total_client_proxy + e save as "total client proxy transactions";
+total_client_proxy_per_sec = do total_client_proxy/u;
+total_client_proxy = group by CLUSTER, NAMESPACE, NODE do MAX(total_client_proxy);
+total_client_proxy_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_client_proxy_per_sec);
+
+e = select "client_proxy_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_client_proxy_per_sec;
+p = do p * 100 save as "client_proxy_error % of total proxy transactions";
+r = do p <= 5;
+ASSERT(r, True, "High client proxy transaction errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal proxy transaction errors (> 5% client proxy transactions). Please run 'show statistics namespace like client_proxy' to see values.",
+				"High proxy transaction error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero client proxy transaction errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero proxy transaction errors. Please run 'show statistics namespace like client_proxy' to see values.",
+				"Non-zero proxy transaction error check");
+
+
+t = select "client_proxy_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_client_proxy;
+r = do r * 100 save as "client_proxy_timeout % of total proxy transactions";
+r = do r <= 5;
+ASSERT(r, True, "High client proxy transaction timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal proxy transaction timeouts (> 5% client proxy transactions). Please run 'show statistics namespace like client_proxy' to see values.",
+				"High proxy transaction timeouts check");
+
+
+
+// XDR Write statistics
+
+s = select "xdr_write_success" as "cnt" from NAMESPACE.STATISTICS;
+t = select "xdr_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "xdr_write_error" as "cnt" from NAMESPACE.STATISTICS;
+total_xdr_writes = do s + t;
+total_xdr_writes = do total_xdr_writes + e save as "total xdr writes";
+total_xdr_writes_per_sec = do total_xdr_writes/u;
+total_xdr_writes = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes);
+total_xdr_writes_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes_per_sec);
+
+e = select "xdr_write_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_xdr_writes_per_sec;
+p = do p * 100 save as "xdr_write_error % of total xdr writes";
+r = do p <= 5;
+ASSERT(r, True, "High xdr write errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal xdr write errors (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
+				"High xdr write error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero xdr write errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero xdr write errors. Please run 'show statistics namespace like xdr_write' to see values.",
+				"Non-zero xdr write error check");
+
+t = select "xdr_write_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_xdr_writes;
+r = do r * 100 save as "xdr_write_timeout % of total xdr writes";
+r = do r <= 5;
+ASSERT(r, True, "High xdr write timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal xdr write timeouts (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
+				"High xdr write timeouts check");
+
+
+// UDF Transaction statistics
+
+s = select "client_udf_complete" as "cnt" from NAMESPACE.STATISTICS;
+t = select "client_udf_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "client_udf_error" as "cnt" from NAMESPACE.STATISTICS;
+total_udf_transactions = do s + t;
+total_udf_transactions = do total_udf_transactions + e save as "total udf transactions";
+total_udf_transactions_per_sec = do total_udf_transactions/u;
+total_udf_transactions = group by CLUSTER, NAMESPACE, NODE do MAX(total_udf_transactions);
+total_udf_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_udf_transactions_per_sec);
+
+e = select "client_udf_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_udf_transactions_per_sec;
+p = do p * 100 save as "client_udf_error % of total udf transactions";
+r = do p <= 5;
+ASSERT(r, True, "High udf transaction errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal udf transaction errors (> 5% udf transactions). Please run 'show statistics namespace like client_udf' to see values.",
+				"High udf transaction error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero udf transaction errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero udf transaction errors. Please run 'show statistics namespace like client_udf' to see values.",
+				"Non-zero udf transaction error check");
+
+t = select "client_udf_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_udf_transactions;
+r = do r * 100 save as "client_udf_timeout % of total udf transactions";
+r = do r <= 5;
+ASSERT(r, True, "High udf transaction timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal udf transaction timeouts (> 5% udf transaction). Please run 'show statistics namespace like client_udf' to see values.",
+				"High udf transaction timeouts check");
+
+
+// UDF Sub-Transaction statistics
+
+s = select "udf_sub_udf_complete" as "cnt" from NAMESPACE.STATISTICS;
+t = select "udf_sub_udf_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "udf_sub_udf_error" as "cnt" from NAMESPACE.STATISTICS;
+total_udf_sub_transactions = do s + t;
+total_udf_sub_transactions = do total_udf_sub_transactions + e save as "total udf sub-transactions";
+total_udf_sub_transactions_per_sec = do total_udf_sub_transactions/u;
+total_udf_sub_transactions = group by CLUSTER, NAMESPACE, NODE do MAX(total_udf_sub_transactions);
+total_udf_sub_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_udf_sub_transactions_per_sec);
+
+e = select "udf_sub_udf_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_udf_sub_transactions_per_sec;
+p = do p * 100 save as "udf_sub_udf_error % of total udf sub-transactions";
+r = do p <= 5;
+ASSERT(r, True, "High udf sub-transaction errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal udf sub-transaction errors (> 5% udf sub-transactions). Please run 'show statistics namespace like udf_sub_udf' to see values.",
+				"High udf sub-transaction error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero udf sub-transaction errors. Please run 'show statistics namespace like udf_sub_udf' to see values.",
+				"Non-zero udf sub-transaction error check");
+
+t = select "udf_sub_udf_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_udf_sub_transactions;
+r = do r * 100 save as "udf_sub_udf_timeout % of total udf sub-transactions";
+r = do r <= 5;
+ASSERT(r, True, "High udf sub-transaction timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal udf sub-transaction timeouts (> 5% udf sub-transaction). Please run 'show statistics namespace like udf_sub_udf' to see values.",
+				"High udf sub-transaction timeouts check");
+
+
+// Proxied Batch-index Sub-Transaction statistics
+
+s = select "batch_sub_proxy_complete" as "cnt" from NAMESPACE.STATISTICS;
+t = select "batch_sub_proxy_error" as "cnt" from NAMESPACE.STATISTICS;
+e = select "batch_sub_proxy_timeout" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + t;
+total_transactions = do total_transactions + e save as "total batch-index sub-transactions";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions);
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "batch_sub_proxy_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "batch_sub_proxy_error % of total batch-index sub-transactions";
+r = do p <= 5;
+ASSERT(r, True, "High batch-index sub-transaction errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal batch-index sub-transaction errors (> 5% batch-index sub-transactions). Please run 'show statistics namespace like batch_sub_proxy' to see values.",
+				"High batch-index sub-transaction error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero batch-index sub-transaction errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero batch-index sub-transaction errors. Please run 'show statistics namespace like batch_sub_proxy' to see values.",
+				"Non-zero batch-index sub-transaction error check");
+
+t = select "batch_sub_proxy_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_transactions;
+r = do r * 100 save as "batch_sub_proxy_timeout % of total batch-index sub-transactions";
+r = do r <= 5;
+ASSERT(r, True, "High batch-index sub-transaction timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal batch-index sub-transaction timeouts (> 5% batch-index sub-transaction). Please run 'show statistics namespace like batch_sub_proxy' to see values.",
+				"High batch-index sub-transaction timeouts check");
+
+
+// Batch-index read Sub-Transaction statistics
+
+nf = select "batch_sub_read_not_found" as "cnt" from NAMESPACE.STATISTICS;
+s = select "batch_sub_read_success" as "cnt" from NAMESPACE.STATISTICS;
+t = select "batch_sub_read_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "batch_sub_read_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + nf;
+total_transactions = do total_transactions + t;
+total_transactions = do total_transactions + e save as "total batch-index read sub-transactions";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions);
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "batch_sub_read_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "batch_sub_read_error % of total reads";
+r = do p <= 5;
+ASSERT(r, True, "High batch-index read sub-transaction errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal batch-index read sub-transaction errors (> 5% batch-index read sub-transactions). Please run 'show statistics namespace like batch_sub_read' to see values.",
+				"High batch-index read sub-transaction error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero batch-index read sub-transaction errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero batch-index read sub-transaction errors. Please run 'show statistics namespace like batch_sub_read' to see values.",
+				"Non-zero batch-index read sub-transaction error check");
+
+t = select "batch_sub_read_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_transactions;
+r = do r * 100 save as "batch_sub_read_timeout % of total batch-index read sub-transactions";
+r = do r <= 5;
+ASSERT(r, True, "High batch-index read sub-transaction timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal batch-index read sub-transaction timeouts (> 5% batch-index read sub-transactions). Please run 'show statistics namespace like batch_sub_read' to see values.",
+				"High batch-index read sub-transaction timeouts check");
+
+c = select "batch_sub_read_not_found" from NAMESPACE.STATISTICS save;
+c = group by CLUSTER, NAMESPACE c;
+r = do c / total_transactions;
+r = do r * 100 save as "batch_sub_read_not_found % of total batch-index read sub-transactions";
+r = do r <= 20;
+ASSERT(r, True, "High batch-index read sub-transaction not found errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show higher than normal batch-index read sub-transaction not found errors (> 20% batch-index read sub-transactions). Please run 'show statistics namespace like batch_sub_read' to see values.",
+				"High batch-index read sub-transaction not found error check");
+
+
+// Client UDF Transaction statistics
+
+rs = select "client_lang_read_success" as "cnt" from NAMESPACE.STATISTICS;
+ds = select "client_lang_delete_success" as "cnt" from NAMESPACE.STATISTICS;
+ws = select "client_lang_write_success" as "cnt" from NAMESPACE.STATISTICS;
+e = select "client_lang_error" as "cnt" from NAMESPACE.STATISTICS;
+total_client_udf_transactions = do rs + ds;
+total_client_udf_transactions = do total_client_udf_transactions + ws;
+total_client_udf_transactions = do total_client_udf_transactions + e save as "total client_lang";
+total_client_udf_transactions_per_sec = do total_client_udf_transactions/u;
+total_client_udf_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_client_udf_transactions_per_sec);
+
+e = select "client_lang_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_client_udf_transactions_per_sec;
+p = do p * 100 save as "client_lang_error % of total client_lang";
+r = do p <= 5;
+ASSERT(r, True, "High client initiated udf transactions errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal client initiated udf transactions errors (> 5% client initiated udf transactions). Please run 'show statistics namespace like client_lang' to see values.",
+				"High client initiated udf transactions error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero client initiated udf transaction errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero client initiated udf transaction errors. Please run 'show statistics namespace like client_lang' to see values.",
+				"Non-zero client initiated udf transaction error check");
+
+
+// UDF Sub-Transaction statistics
+
+rs = select "udf_sub_lang_read_success" as "cnt" from NAMESPACE.STATISTICS;
+ds = select "udf_sub_lang_delete_success" as "cnt" from NAMESPACE.STATISTICS;
+ws = select "udf_sub_lang_write_success" as "cnt" from NAMESPACE.STATISTICS;
+e = select "udf_sub_lang_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do rs + ds;
+total_transactions = do total_transactions + ws;
+total_transactions = do total_transactions + e save as "total udf_sub_lang";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "udf_sub_lang_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "udf_sub_lang_error % of total udf_sub_lang";
+r = do p <= 5;
+ASSERT(r, True, "High udf sub-transaction errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal udf sub-transaction errors (> 5% udf sub-transactions). Please run 'show statistics namespace like udf_sub_lang' to see values.",
+				"High udf sub-transaction error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero udf sub-transaction errors. Please run 'show statistics namespace like udf_sub_lang' to see values.",
+				"Non-zero udf sub-transaction error check");
+
+
+// Query Agg statistics
+
+total_transactions = select "query_agg" from NAMESPACE.STATISTICS save as "total query aggregations";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "query_agg_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "query_agg_error % of total query aggregations";
+r = do p <= 5;
+ASSERT(r, True, "High query aggregation errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal query aggregation errors (> 5% query aggregations). Please run 'show statistics namespace like query_agg' to see values.",
+				"High query aggregation error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero query aggregation errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero query aggregation errors. Please run 'show statistics namespace like query_agg' to see values.",
+				"Non-zero query aggregation error check");
+
+
+// Query Lookup statistics
+
+total_transactions = select "query_lookups" from NAMESPACE.STATISTICS save as "total query lookups";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "query_lookup_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "query_lookup_error % of total query lookups";
+r = do p <= 5;
+ASSERT(r, True, "High query lookup errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_lookup' to see values.",
+				"High query lookup error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero query lookup errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_lookup' to see values.",
+				"Non-zero query lookup error check");
+
+
+// Scan Agg statistics
+s = select "scan_aggr_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_aggr_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total scan aggregations";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "scan_aggr_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "scan_aggr_error % of total scan aggregations";
+r = do p <= 5;
+ASSERT(r, True, "High scan aggregation errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal scan aggregation errors (> 5% scan aggregations). Please run 'show statistics namespace like scan_agg' to see values.",
+				"High scan aggregation error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero scan aggregation errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero scan aggregation errors. Please run 'show statistics namespace like scan_agg' to see values.",
+				"Non-zero scan aggregation error check");
+
+
+// Scan Basic statistics
+s = select "scan_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_basic_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total basic scans";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "scan_basic_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "scan_basic_error % of total basic scans";
+r = do p <= 5;
+ASSERT(r, True, "High basic scan errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal basic scan errors (> 5% basic scans). Please run 'show statistics namespace like scan_basic' to see values.",
+				"High basic scan error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero basic scan errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero basic scan errors. Please run 'show statistics namespace like scan_basic' to see values.",
+				"Non-zero basic scan error check");
+
+
+// Scan Background UDF statistics
+s = select "scan_udf_bg_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_udf_bg_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total scan background udf";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "scan_udf_bg_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "scan_udf_bg_error % of total scan background udf";
+r = do p <= 5;
+ASSERT(r, True, "High scan background udf errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal scan background udf errors (> 5% scan background udf). Please run 'show statistics namespace like scan_udf_bg' to see values.",
+				"High scan background udf error check");
+warning_breached = do p > 5;
+r = do p == 0;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero scan background udf errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero scan background udf errors. Please run 'show statistics namespace like scan_udf_bg' to see values.",
+				"Non-zero scan background udf error check");
+
+
+// Client transaction statistics
+
+e = select "client_tsvc_error" from NAMESPACE.STATISTICS save;
+e = do e/u on common save as "errors per second";
 e = group by CLUSTER, NAMESPACE e;
 r = do e > 0;
-ASSERT(r, False, "Non-zero XDR write timeouts.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-zero XDR write transaction timeouts (for nodes). Please run 'show statistics namespace like xdr_write_timeout' to see values.",
-				"Namespace XDR write timeout check");
+ASSERT(r, False, "Non-zero client transaction error.", "OPERATIONS", INFO,
+				"Listed namespace[s] have non-zero client transaction errors (for nodes). Please run 'show statistics namespace like client_tsvc_error' to see values. Probable cause - protocol errors or security permission mismatch.",
+				"Namespace client transaction error count check");
+
+
+// UDF Sub-Transactions (transaction service) statistics
+
+e = select "udf_sub_tsvc_error" from NAMESPACE.STATISTICS save;
+e = do e/u on common save as "errors per second";
+e = group by CLUSTER, NAMESPACE e;
+r = do e > 0;
+ASSERT(r, False, "Non-zero udf sub-transaction error in the transaction service.", "OPERATIONS", INFO,
+				"Listed namespace[s] have non-zero udf sub-transaction errors in the transaction service (for nodes). Probable cause - protocol errors or security permission mismatch.",
+				"Namespace udf sub-transaction transaction service error count check");
+
+
+// Batch-index read Sub-Transaction (transaction service) statistics
+
+e = select "batch_sub_tsvc_error" from NAMESPACE.STATISTICS save;
+e = do e/u on common save as "errors per second";
+e = group by CLUSTER, NAMESPACE e;
+r = do e > 0;
+ASSERT(r, False, "Non-zero batch-index read sub-transaction errors in the transaction service.", "OPERATIONS", INFO,
+				"Listed namespace[s] have non-zero batch-index read sub-transaction errors in the transaction service across the nodes. Please run 'show statistics namespace like batch_sub_tsvc_error' to see the values.",
+				"Namespace batch-index read sub-transaction transaction service error count check");
+
 
 SET CONSTRAINT VERSION < 3.9;
 
-e = select "stat_write_errs" from SERVICE.STATISTICS;
-s = select "stat_write_success" from SERVICE.STATISTICS;
-s = GROUP BY CLUSTER, NODE do SUM(s);
-u = select "uptime" from SERVICE.STATISTICS;
-u = GROUP BY CLUSTER, NODE do SUM(u);
-r = do e / s;
-r = do r/u on common;
-r = do r == 0;
-ASSERT(r, True, "Non-zero node write errors count", "OPERATIONS", INFO,
-				"Listed write error[s] show skew in count (for nodes). It may or may not be an issue depending on the error type. Please run 'show statistics service like stat_write' to see values.",
-				"Node write errors count check");
+// Read statistics
 
-e = select "stat_read_errs_other" from SERVICE.STATISTICS;
+t = select "stat_read_reqs" as "cnt" from SERVICE.STATISTICS save;
+
+e = select "stat_read_errs_other" from SERVICE.STATISTICS save;
+r = do e/t;
+r = do r * 100 save as "stat_read_errs_other % of total reads";
+r = do r <= 5;
+ASSERT(r, True, "High read errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal read errors (> 5% reads). Please run 'show statistics service like stat_read' to see values.",
+				"High read error check");
+
+nf = select "stat_read_errs_notfound" from SERVICE.STATISTICS save;
+r = do nf/t;
+r = do r * 100 save as "stat_read_errs_notfound % of total reads";
+r = do r <= 20;
+ASSERT(r, True, "High read not found errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal read not found errors (> 20% reads). Please run 'show statistics service like stat_read' to see values.",
+				"High read not found error check");
+
+
+// Write statistics
+
+t = select "stat_write_reqs" as "cnt" from SERVICE.STATISTICS save;
+
+e = select "stat_write_errs" from SERVICE.STATISTICS save;
+r = do e/t;
+r = do r * 100 save as "stat_write_errs % of total writes";
+r = do r <= 5;
+ASSERT(r, True, "High write errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal write errors (> 5% writes). Please run 'show statistics service like stat_write' to see values.",
+				"High write error check");
+
+
+e = select "stat_read_errs_other" from SERVICE.STATISTICS save;
 s = select "stat_read_success" from SERVICE.STATISTICS;
 s = GROUP BY CLUSTER, NODE do SUM(s);
-u = select "uptime" from SERVICE.STATISTICS;
-u = GROUP BY CLUSTER, NODE do SUM(u);
 r = do e / s;
 r = do r/u on common;
 r = do r == 0;
@@ -757,12 +1329,85 @@ ASSERT(r, True, "Non-zero node read errors count", "OPERATIONS", INFO,
 
 SET CONSTRAINT VERSION >= 3.3.17;
 
-defslp= select "defrag-sleep", "storage-engine.defrag-sleep" from NAMESPACE.CONFIG;
+defslp= select "defrag-sleep", "storage-engine.defrag-sleep" from NAMESPACE.CONFIG save;
 defslp = group by CLUSTER, NAMESPACE defslp;
 r = do defslp == 1000;
 ASSERT(r, True, "Non-default namespace defrag-sleep configuration.", "OPERATIONS",INFO,
                 "Listed namespace[s] have non-default defrag-sleep configuration. Please run 'show config namespace like defrag' to check value. It may be a non-issue in case namespaces are configured for aggressive defrag. Ignore those.",
                 "Non-default namespace defrag-sleep check.");
+
+SET CONSTRAINT VERSION ALL;
+
+
+/*
+Queries Requested by SA Team (Ronen)
+*/
+
+SET CONSTRAINT VERSION >= 3.9;
+
+crp = select "cache_read_pct" as "post-write-queue", "cache-read-pct" as "post-write-queue" from NAMESPACE.STATISTICS save;
+pwq = select "post-write-queue", "storage-engine.post-write-queue" as "post-write-queue"  from NAMESPACE.CONFIG save;
+crp = do crp >= 10;
+pwq = do pwq == 256;
+r = do crp && pwq;
+r = group by CLUSTER, NAMESPACE, NODE r;
+ASSERT(r, False, "Sub-optimal post-write-queue", "OPERATIONS", INFO,
+				"Listed namespace[s] show high cache hit rate (> 10%) but post-write-queue value is default. It might be sub-optimal. Please contact Aerospike support team or SA team.",
+				"Namespace post-write-queue check");
+
+
+SET CONSTRAINT VERSION >= 3.11;
+
+ptl = select "partition-tree-locks" from NAMESPACE.CONFIG save;
+cs = select "cluster_size" from SERVICE.STATISTICS;
+cs = group by CLUSTER do MAX(cs) save as "cluster_size";
+r = do cs/ptl;
+r = group by CLUSTER, NAMESPACE, NODE r;
+r = do r < 2;
+
+ASSERT(r, True, "Non-recommended partition-tree-locks", "OPERATIONS", WARNING,
+				"Listed namespace[s] show low value for partition-tree-locks with respect to cluster size. It should be 8 for cluster-size < 16, 16 for cluster sizes 16 to 31, 32 for cluster sizes 32 to 63, etc. Please contact Aerospike support team or SA team.",
+				"Namespace partition-tree-locks check");
+
+
+m = select "memory-size" as "cnt" from NAMESPACE.CONFIG;
+s = select "stop-writes-pct" as "cnt"  from NAMESPACE.CONFIG;
+s = do 100 - s;
+s = do s/100;
+extra_space = do m * s save as "breathing space (over stop-write)";
+extra_space = group by CLUSTER, NODE, NAMESPACE do SUM(extra_space);
+
+p = select "partition-tree-sprigs" from NAMESPACE.CONFIG save;
+p = do p/16;
+
+overhead1 = do 64 * 1024;
+overhead2 = do 1024 * 1024;
+overhead = do overhead1 + overhead2;
+
+total_overhead = do p * overhead save as "partition-tree-sprigs overhead";
+r = do total_overhead < extra_space;
+
+e = select "edition" from METADATA;
+e = do e == "Community";
+e = group by CLUSTER, NODE do OR(e);
+ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", "OPERATIONS", INFO,
+				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
+				"Namespace partition-tree-sprigs check for Community edition",
+				e);
+
+ee_overhead = do 320 * 1024;
+overhead = do overhead + ee_overhead;
+
+total_overhead = do p * overhead save as "partition-tree-sprigs overhead";
+r = do total_overhead < extra_space;
+
+e = select "edition" from METADATA;
+e = do e == "Enterprise";
+e = group by CLUSTER, NODE do OR(e);
+ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition", "OPERATIONS", INFO,
+				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
+				"Namespace partition-tree-sprigs check for Enterprise edition",
+				e);
 
 SET CONSTRAINT VERSION ALL;
 

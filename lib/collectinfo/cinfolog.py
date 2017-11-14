@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import copy
-from lib.collectinfo_parser.full_parser import parse_info_all
 
+from lib.collectinfo_parser.full_parser import parse_info_all
+from lib.utils import util
 
 class CollectinfoNode(object):
 
@@ -52,12 +53,7 @@ class CollectinfoNode(object):
         self.cluster_name = cluster_name
 
     def set_asd_version(self, asd_version):
-        if asd_version.lower() in ['enterprise', 'true', 'ee'] or 'enterprise' in asd_version.lower():
-            self.asd_version = "Enterprise"
-        elif asd_version.lower() in ['community', 'false', 'ce'] or 'community' in asd_version.lower():
-            self.asd_version = "Community"
-        else:
-            self.asd_version = "N/E"
+        self.asd_version = util.convert_edition_to_shortform(asd_version)
 
 
 class CollectinfoSnapshot(object):
@@ -154,6 +150,10 @@ class CollectinfoSnapshot(object):
                             data[node] = copy.deepcopy(d[stanza]).split(';')
                         except Exception:
                             data[node] = copy.deepcopy(d[stanza])
+
+                    elif type == "meta_data" and stanza == "edition":
+                        edition = copy.deepcopy(d[stanza])
+                        data[node] = util.convert_edition_to_shortform(edition)
 
                     else:
                         data[node] = copy.deepcopy(d[stanza])

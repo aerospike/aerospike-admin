@@ -63,8 +63,15 @@ class ControllerTest(unittest.TestCase):
         ic.pre_command([""])
     
         ic.do_network(["network"]) # TODO: view.info_network needs a "real" node
-        ic.do_namespace(["namespace"])
         ic.do_xdr(["xdr"])
+
+    def test_info_namespace_controller(self):
+        inc = InfoNamespaceController()
+
+        inc.pre_command([""])
+
+        inc.do_usage(["namespace usage"])
+        inc.do_object(["namespace object"])
 
     def test_show_distribution_controller(self):
         sdc = ShowDistributionController()

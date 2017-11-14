@@ -13,36 +13,41 @@
 # limitations under the License.
 
 import copy
-from distutils.version import LooseVersion
 import json
-import time
 import os
-import sys
 import platform
 import shutil
-import urllib2
 import socket
+import sys
+import time
+import urllib2
 import zipfile
+from distutils.version import LooseVersion
 
 from lib.client.cluster import Cluster
 from lib.collectinfocontroller import CollectinfoRootController
-from lib.controllerlib import BaseController, CommandController, CommandHelp, ShellException
-from lib.getcontroller import GetConfigController, GetStatisticsController, GetDistributionController, get_sindex_stats, \
-    GetPmapController
-from lib.health.util import create_health_input_dict, h_eval, create_snapshot_key
+from lib.controllerlib import (BaseController, CommandController, CommandHelp,
+                               ShellException)
+from lib.getcontroller import (GetConfigController, GetDistributionController,
+                               GetPmapController, GetStatisticsController,
+                               get_sindex_stats)
+from lib.health.util import (create_health_input_dict, create_snapshot_key,
+                             h_eval)
 from lib.utils import util
 from lib.utils.data import lsof_file_type_desc
-from lib.view.view import CliView
 from lib.view import terminal
+from lib.view.view import CliView
 
 aslogfile = ""
 aslogdir = ""
+
 
 class BasicCommandController(CommandController):
     cluster = None
 
     def __init__(self, cluster):
         BasicCommandController.cluster = cluster
+
 
 @CommandHelp('Aerospike Admin')
 class BasicRootController(BaseController):
@@ -111,15 +116,23 @@ class BasicRootController(BaseController):
 @CommandHelp('The "info" command provides summary tables for various aspects',
              'of Aerospike functionality.')
 class InfoController(BasicCommandController):
-
     def __init__(self):
         self.modifiers = set(['with'])
 
+        self.controller_map = dict(
+            namespace=InfoNamespaceController)
+
     @CommandHelp('Displays network, namespace, and XDR summary information.')
     def _do_default(self, line):
-        actions = (util.Future(self.do_network, line).start(),
-                   util.Future(self.do_namespace, line).start(),
-                   util.Future(self.do_xdr, line).start())
+        actions = [util.Future(self.do_network, line).start()]
+        # We are not using line for any of subcommand, but if user enters 'info object' or 'info usage' then it will
+        # give error for unexpected format. We can catch this inside InfoNamespaceController but in that case
+        # it will show incomplete output, for ex. 'info object' will print output of 'info network', 'info xdr' and
+        # 'info namespace object', but since it is not correct command it should print output for partial correct
+        # command, in this case it should print data for 'info'. To keep consistent output format, we are passing empty
+        # list as line.
+        actions.extend(self.controller_map['namespace'](get_futures=True)([])['futures'])
+        actions.append(util.Future(self.do_xdr, line).start())
 
         return [action.result() for action in actions]
 
@@ -160,18 +173,6 @@ class InfoController(BasicCommandController):
     def do_set(self, line):
         stats = self.cluster.info_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
-
-    @CommandHelp('Displays summary information for each namespace.')
-    def do_namespace(self, line):
-        stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
-        return util.Future(self.view.info_namespace, stats, self.cluster,
-                           **self.mods)
-
-    @CommandHelp('Displays summary information for objects of each namespace.')
-    def do_object(self, line):
-        stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
-        return util.Future(self.view.info_object, stats, self.cluster,
-                           **self.mods)
 
     @CommandHelp('Displays summary information for Cross Datacenter',
                  'Replication (XDR).')
@@ -226,12 +227,49 @@ class InfoController(BasicCommandController):
         return util.Future(self.view.info_sindex, sindex_stats, self.cluster,
                            **self.mods)
 
-@CommandHelp('"asinfo" provides raw access to the info protocol.',
-             '  Options:',
-             '    -v <command>  - The command to execute',
-             '    -p <port>     - Port to use in case of XDR info command',
-             '                    and XDR is not in asd',
-             '    -l            - Replace semicolons ";" with newlines.')
+
+@CommandHelp('The "namespace" command provides summary tables for various aspects',
+             'of Aerospike namespaces.')
+class InfoNamespaceController(BasicCommandController):
+    def __init__(self, get_futures=False):
+        self.modifiers = set(['with'])
+        self.get_futures = get_futures
+
+    @CommandHelp('Displays usage and objects information for namespaces')
+    def _do_default(self, line):
+        actions = [util.Future(self.do_usage, line).start(),
+                   util.Future(self.do_object, line).start()]
+
+        if self.get_futures:
+            # Wrapped to prevent base class from calling result.
+            return dict(futures=actions)
+
+        return [action.result() for action in actions]
+
+    @CommandHelp('Displays usage information for each namespace.')
+    def do_usage(self, line):
+        stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+        return util.Future(self.view.info_namespace_usage, stats, self.cluster,
+                           **self.mods)
+
+    @CommandHelp('Displays object information for each namespace.')
+    def do_object(self, line):
+        stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+        return util.Future(self.view.info_namespace_object, stats, self.cluster,
+                           **self.mods)
+
+
+@CommandHelp(
+    '"asinfo" provides raw access to the info protocol.',
+    '  Options:',
+    '    -v <command>   - The command to execute',
+    '    -p <port>      - Port to use in case of XDR info command and XDR is',
+    '                     not in asd',
+    '    -l             - Replace semicolons ";" with newlines. If output does',
+    '                     not contain semicolons "-l" will attempt to use',
+    '                     colons ":" followed by commas ",".',
+    '    --no_node_name - Force to display output without printing node names.'
+)
 class ASInfoController(BasicCommandController):
 
     def __init__(self):
@@ -267,7 +305,7 @@ class ASInfoController(BasicCommandController):
                     raise ShellException(
                         "Do not understand '%s' in '%s'" % (word, " ".join(line)))
         except Exception:
-            self.logger.error(
+            self.logger.warning(
                 "Do not understand '%s' in '%s'" % (word, " ".join(line)))
             return
         if value is not None:
@@ -306,8 +344,8 @@ class ShowDistributionController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['with', 'for'])
-        self.getter = GetDistributionController(self.cluster); 
-        
+        self.getter = GetDistributionController(self.cluster);
+
 
     @CommandHelp('Shows the distributions of Time to Live and Object Size')
     def _do_default(self, line):
@@ -318,7 +356,7 @@ class ShowDistributionController(BasicCommandController):
 
     @CommandHelp('Shows the distribution of TTLs for namespaces')
     def do_time_to_live(self, line):
-        
+
         histogram = self.getter.do_distribution('ttl', nodes=self.nodes)
 
         return util.Future(self.view.show_distribution, 'TTL Distribution',
@@ -327,7 +365,7 @@ class ShowDistributionController(BasicCommandController):
 
     @CommandHelp('Shows the distribution of Eviction TTLs for namespaces')
     def do_eviction(self, line):
-        
+
         histogram = self.getter.do_distribution('evict', nodes=self.nodes)
 
         return util.Future(self.view.show_distribution, 'Eviction Distribution',
@@ -345,7 +383,7 @@ class ShowDistributionController(BasicCommandController):
         byte_distribution = util.check_arg_and_delete_from_mods(line=line,
                 arg="-b", default=False, modifiers=self.modifiers,
                 mods=self.mods)
-    
+
         bucket_count = util.get_arg_and_delete_from_mods(line=line,
                 arg="-k", return_type=int, default=5, modifiers=self.modifiers,
                 mods=self.mods)
@@ -356,7 +394,7 @@ class ShowDistributionController(BasicCommandController):
             return util.Future(self.view.show_distribution,
                     'Object Size Distribution', histogram, 'Record Blocks',
                     'objsz', self.cluster, like=self.mods['for'])
-        
+
 
         histogram = self.getter.do_object_size(byte_distribution = True, bucket_count=bucket_count, nodes=self.nodes)
 
@@ -413,7 +451,7 @@ class ShowLatencyController(BasicCommandController):
                 util.filter_list(list(namespace_set), self.mods['for']))
 
         latency = self.cluster.info_latency(
-            nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm, 
+            nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
             ns_set=namespace_set)
 
         hist_latency = {}
@@ -504,8 +542,8 @@ class ShowConfigController(BasicCommandController):
 
         ns_configs = self.getter.get_namespace(nodes=self.nodes)
 
-        return [util.Future(self.view.show_config, 
-            "%s Namespace Configuration" % (ns), configs, self.cluster, 
+        return [util.Future(self.view.show_config,
+            "%s Namespace Configuration" % (ns), configs, self.cluster,
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
                 for ns, configs in ns_configs.iteritems()]
 
@@ -646,8 +684,8 @@ class ShowStatisticsController(BasicCommandController):
         ns_stats = self.getter.get_namespace(nodes=self.nodes, for_mods=self.mods['for'])
 
         return [util.Future(self.view.show_stats,
-            "%s Namespace Statistics" % (namespace), ns_stats[namespace], 
-            self.cluster, show_total=show_total, 
+            "%s Namespace Statistics" % (namespace), ns_stats[namespace],
+            self.cluster, show_total=show_total,
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
             for namespace in sorted(ns_stats.keys())]
 
@@ -738,10 +776,10 @@ class ShowStatisticsController(BasicCommandController):
 
     @CommandHelp('Displays datacenter statistics')
     def do_dc(self, line):
-        
+
         show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
-        
+
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
@@ -757,6 +795,7 @@ class ShowStatisticsController(BasicCommandController):
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
             for dc, stats in dc_stats.iteritems()]
 
+
 @CommandHelp('Displays partition map analysis of Aerospike cluster.')
 class ShowPmapController(BasicCommandController):
     def __init__(self):
@@ -768,9 +807,9 @@ class ShowPmapController(BasicCommandController):
 
         return util.Future(self.view.show_pmap, pmap_data, self.cluster)
 
+
 @CommandHelp('"collectinfo" is used to collect cluster info, aerospike conf file and system stats.')
 class CollectinfoController(BasicCommandController):
-
     def __init__(self):
         self.modifiers = set(['with'])
 
@@ -780,7 +819,6 @@ class CollectinfoController(BasicCommandController):
             shutil.copy2(src, dest_dir)
         except Exception, e:
             self.logger.error(e)
-        return
 
     def _collectinfo_content(self, func, parm='', alt_parm=''):
         name = ''
@@ -799,8 +837,7 @@ class CollectinfoController(BasicCommandController):
         if func == 'shell':
             o, e = util.shell_command(parm)
             if e:
-                if e:
-                    self.logger.error(str(e))
+                self.logger.warning(str(e))
 
                 if alt_parm and alt_parm[0]:
                     info_line = "Data collection for alternative command " + \
@@ -814,7 +851,7 @@ class CollectinfoController(BasicCommandController):
                         self.cmds_error.add(alt_parm[0])
 
                         if e_alt:
-                            self.logger.error(str(e_alt))
+                            self.logger.warning(str(e_alt))
 
                     if o_alt:
                         o = o_alt
@@ -863,7 +900,7 @@ class CollectinfoController(BasicCommandController):
                     try:
                             aws_c += self._get_metadata(response, prefix + rsp + "/", old_response=response)
                     except Exception:
-                            aws_c +=  (prefix + rsp).strip('/') + '\n' + response + "\n\n"
+                            aws_c += (prefix + rsp).strip('/') + '\n' + response + "\n\n"
 
         if last_values:
             aws_c += prefix.strip('/') + '\n' + '\n'.join(last_values) + "\n\n"
@@ -1024,8 +1061,19 @@ class CollectinfoController(BasicCommandController):
         util.shell_command(["tar -czvf " + logdir + ".tgz " + aslogdir])
         sys.stderr.write("\x1b[2J\x1b[H")
         print "\n\n\n"
-        self.logger.info("Files in " + logdir + " and " + logdir + ".tgz saved. ")
+        self.logger.info("Files in " + logdir + " and " + logdir + ".tgz saved.")
+
+    def _print_collecinto_summary(self, logdir):
+        if self.cmds_error:
+            self.logger.warning("Following commands are either unavailable or giving runtime error...")
+            self.logger.warning(list(self.cmds_error))
+
+        print "\n"
+        self.logger.info("Please provide file " + logdir + ".tgz to Aerospike Support.")
         self.logger.info("END OF ASCOLLECTINFO")
+
+        # If multiple commands are given in execute_only mode then we might need coloring for next commands
+        terminal.enable_color(True)
 
     def _parse_namespace(self, namespace_data):
         """
@@ -1187,12 +1235,19 @@ class CollectinfoController(BasicCommandController):
 
     def _get_as_metadata(self):
         metamap = {}
-        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start().result()
-        editions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start().result()
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version, nodes=self.nodes).start().result()
-        node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start().result()
-        ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start().result()
-        udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start().result()
+        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
+        editions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version, nodes=self.nodes).start()
+        node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start()
+        ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start()
+        udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start()
+
+        builds = builds.result()
+        editions = editions.result()
+        xdr_builds = xdr_builds.result()
+        node_ids = node_ids.result()
+        ips = ips.result()
+        udf_data = udf_data.result()
 
         for nodeid in builds:
             metamap[nodeid] = {}
@@ -1208,9 +1263,14 @@ class CollectinfoController(BasicCommandController):
     def _get_as_histograms(self):
         histogram_map = {}
         hist_list = ['ttl', 'objsz']
+        hist_dumps = [util.Future(self.cluster.info_histogram, hist,
+                                  raw_output=True,
+                                  nodes=self.nodes).start()
+                      for hist in hist_list]
 
-        for hist in hist_list:
-            hist_dump = util.Future(self.cluster.info_histogram, hist, raw_output=True, nodes=self.nodes).start().result()
+        for hist, hist_dump in zip(hist_list, hist_dumps):
+            hist_dump = hist_dump.result()
+
             for node in hist_dump:
                 if node not in histogram_map:
                     histogram_map[node] = {}
@@ -1232,8 +1292,8 @@ class CollectinfoController(BasicCommandController):
         with open(aslogfile, "w") as f:
             f.write(json.dumps(dump, indent=4, separators=(',', ':')))
 
-    def _get_collectinfo_data_json(self, default_user, default_pwd,
-            default_ssh_port, default_ssh_key, credential_file):
+    def _get_collectinfo_data_json(self, default_user, default_pwd, default_ssh_port,
+                                   default_ssh_key, credential_file, enable_ssh):
 
         dump_map = {}
 
@@ -1244,7 +1304,11 @@ class CollectinfoController(BasicCommandController):
         pmap_map = self._get_as_pmap()
 
         sys_map = self.cluster.info_system_statistics(default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
-                                                      default_ssh_port=default_ssh_port, credential_file=credential_file, nodes=self.nodes)
+                                                      default_ssh_port=default_ssh_port, credential_file=credential_file, nodes=self.nodes,
+                                                      collect_remote_data=enable_ssh)
+
+        cluster_names = util.Future(
+            self.cluster.info, 'cluster-name').start()
 
         as_map = self._get_as_data_json()
 
@@ -1264,8 +1328,7 @@ class CollectinfoController(BasicCommandController):
 
         # Get the cluster name and add one more level in map
         cluster_name = 'null'
-        cluster_names = util.Future(
-            self.cluster.info, 'cluster-name').start().result()
+        cluster_names = cluster_names.result()
 
         # Cluster name.
         for node in cluster_names:
@@ -1277,8 +1340,8 @@ class CollectinfoController(BasicCommandController):
         snp_map[cluster_name] = dump_map
         return snp_map
 
-    def _dump_collectinfo_json(self, timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port, default_ssh_key, credential_file,
-                               snp_count, wait_time):
+    def _dump_collectinfo_json(self, timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port,
+                               default_ssh_key, credential_file, enable_ssh, snp_count, wait_time):
         snpshots = {}
 
         for i in range(snp_count):
@@ -1286,7 +1349,7 @@ class CollectinfoController(BasicCommandController):
             snp_timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
             self.logger.info("Data collection for Snapshot: " + str(i + 1) + " in progress..")
             snpshots[snp_timestamp] = self._get_collectinfo_data_json(
-                default_user, default_pwd, default_ssh_port, default_ssh_key, credential_file)
+                default_user, default_pwd, default_ssh_port, default_ssh_key, credential_file, enable_ssh)
 
             time.sleep(wait_time)
 
@@ -1318,42 +1381,41 @@ class CollectinfoController(BasicCommandController):
         # maintain proper order for output
         sys_shell_cmds = [
             ['hostname -I', 'hostname'],
-            ['uname -a', ''],
-            ['lsb_release -a',
-             'ls /etc|grep release|xargs -I f cat /etc/f'],
+            ['top -n3 -b', 'top -l 3'],
+            ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f'],
             ['cat /proc/meminfo', 'vmstat -s'],
             ['cat /proc/interrupts', ''],
-            ['cat /proc/partitions', 'fdisk -l'],
-            [
-                'ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"', ''],
-            [
-                'ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"', ''],
-            [
-                'ls /sys/block/{sd*,xvd*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"', ''],
-            ['rpm -qa|grep -E "citrus|aero"',
-             'dpkg -l|grep -E "citrus|aero"'],
-            ['ip addr', ''],
-            ['ip -s link', ''],
-            ['sudo iptables -L', ''],
-            ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"',
-             ''],
             ['iostat -x 1 10', ''],
-            ['sar -n DEV', ''],
-            ['sar -n EDEV', ''],
+            [cmd_dmesg, alt_dmesg],
+            ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"', ''],
+            ['lscpu', ''],
+            ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"'],
+            ['sudo iptables -L', ''],
+            ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null', ''],
             ['df -h', ''],
             ['free -m', ''],
-            [cmd_dmesg, alt_dmesg],
-            ['top -n3 -b', 'top -l 3'],
+            ['uname -a', ''],
+
+            # Only in pretty print
+            ['cat /proc/partitions', 'fdisk -l'],
+            ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"', ''],
+            ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"', ''],
+            ['ls /sys/block/{sd*,xvd*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"', ''],
+            ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
+            ['ip addr', ''],
+            ['ip -s link', '', ''],
+            ['sar -n DEV', ''],
+            ['sar -n EDEV', ''],
             ['mpstat -P ALL 2 3', ''],
             ['uptime', ''],
-            ['ss -pant | grep %d | grep TIME-WAIT | wc -l' %
-                (port), 'netstat -pant | grep %d | grep TIME_WAIT | wc -l' % (port)],
-            ['ss -pant | grep %d | grep CLOSE-WAIT | wc -l' %
-                (port), 'netstat -pant | grep %d | grep CLOSE_WAIT | wc -l' % (port)],
-            ['ss -pant | grep %d | grep ESTAB | wc -l' %
-                (port), 'netstat -pant | grep %d | grep ESTABLISHED | wc -l' % (port)],
-            ['ss -pant | grep %d | grep LISTEN | wc -l' %
-                (port), 'netstat -pant | grep %d | grep LISTEN | wc -l' % (port)]
+            ['ss -ant state time-wait sport = :%d or dport = :%d | wc -l' %
+                (port,port), 'netstat -ant | grep %d | grep TIME_WAIT | wc -l' % (port)],
+            ['ss -ant state close-wait sport = :%d or dport = :%d | wc -l' %
+                (port,port), 'netstat -ant | grep %d | grep CLOSE_WAIT | wc -l' % (port)],
+            ['ss -ant state established sport = :%d or dport = :%d | wc -l' %
+                (port,port), 'netstat -ant | grep %d | grep ESTABLISHED | wc -l' % (port)],
+            ['ss -ant state listen sport = :%d or dport = :%d |  wc -l' %
+                (port,port), 'netstat -ant | grep %d | grep LISTEN | wc -l' % (port)]
         ]
         dignostic_info_params = [
             'network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
@@ -1375,7 +1437,7 @@ class CollectinfoController(BasicCommandController):
         ]
 
         summary_params = ['summary']
-        summary_info_params = ['network', 'namespace', 'object', 'set', 'xdr', 'dc', 'sindex']
+        summary_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
         health_params = ['health -v']
 
         hist_list = ['ttl', 'objsz']
@@ -1651,8 +1713,8 @@ class CollectinfoController(BasicCommandController):
             sys.stdout = sys.__stdout__
 
     def _main_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
-            credential_file, snp_count, wait_time, show_all=False,
-            verbose=False):
+                          credential_file, snp_count, wait_time, enable_ssh=False,
+                          show_all=False, verbose=False):
         global aslogdir, output_time
         timestamp = time.gmtime()
         output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
@@ -1664,13 +1726,15 @@ class CollectinfoController(BasicCommandController):
         # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
         terminal.enable_color(False)
 
+        self.cmds_error = set()
+
         # JSON collectinfo
         if snp_count < 1:
             self._archive_log(aslogdir)
             return
 
         self._dump_collectinfo_json(timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port, default_ssh_key,
-                                    credential_file, snp_count, wait_time,)
+                                    credential_file, enable_ssh, snp_count, wait_time,)
 
         # Pretty print collectinfo
         self._dump_collectinfo_pretty_print(timestamp, as_logfile_prefix, show_all=show_all, verbose=verbose)
@@ -1678,38 +1742,9 @@ class CollectinfoController(BasicCommandController):
         # Archive collectinfo directory
         self._archive_log(aslogdir)
 
-        # If multiple commands are given in execute_only mode then we might need coloring for next commands
-        terminal.enable_color(True)
+        self._print_collecinto_summary(aslogdir)
 
-
-    @CommandHelp('Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.',
-                 'If credentials are not available then it will collect system stats from local node only.',
-                 '  Options:',
-                 '    -n <int>        - Number of snapshots. Default: 1',
-                 '    -s <int>        - Sleep time in seconds between each snapshot. Default: 5 sec',
-                 '    -U <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-                 '    -P <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
-                 '    -sp <int>       - Default SSH port for remote servers. Default: 22',
-                 '    -sk <string>    - Default SSH key (file path) for remote servers.',
-                 '    -cf <string>    - Remote System Credentials file path. ',
-                 '                      If server credentials are not available in credential file then default credentials will be used ',
-                 '                      File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
-                 '                      Example:  1.2.3.4,uid,pwd',
-                 '                                1.2.3.4:3232,uid,pwd',
-                 '                                1.2.3.4:3232,uid,,key_path',
-                 '                                1.2.3.4:3232,uid,passphrase,key_path',
-                 '                                [2001::1234:10],uid,pwd',
-                 '                                [2001::1234:10]:3232,uid,,key_path',
-                 )
-    def _do_default(self, line):
-
-        default_user = util.get_arg_and_delete_from_mods(line=line,
-                arg="-U", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
-        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="-P",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+    def _collect_info(self, line, show_all=False):
 
         snp_count = util.get_arg_and_delete_from_mods(line=line, arg="-n",
                 return_type=int, default=1, modifiers=self.modifiers,
@@ -1719,73 +1754,64 @@ class CollectinfoController(BasicCommandController):
                 return_type=int, default=5, modifiers=self.modifiers,
                 mods=self.mods)
 
-        default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
-                arg="-sp", return_type=int, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        enable_ssh = util.check_arg_and_delete_from_mods(line=line, arg="--enable-ssh", default=False, modifiers=self.modifiers, mods=self.mods)
 
-        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
-                arg="-sk", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
-        credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="-cf", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
-        self.cmds_error = set()
-        self._main_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
-                credential_file, snp_count, wait_time, show_all=False, verbose=False)
-
-        if self.cmds_error:
-            self.logger.error(
-                "Following commands are either unavailable or giving runtime error")
-            self.logger.error(self.cmds_error)
-
-    @CommandHelp('Collects all default stats and additional stats like "info dump-*" commands output',
-                 '  Options:',
-                 '    verbose     - Enable to collect additional stats with detailed output of "info dump-*" commands'
-                 )
-    def do_all(self, line):
-        default_user = util.get_arg_and_delete_from_mods(line=line,
-                arg="-U", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
-        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="-P",
+        default_user = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-user",
                 return_type=str, default=None, modifiers=self.modifiers,
                 mods=self.mods)
 
-        snp_count = util.get_arg_and_delete_from_mods(line=line, arg="-n",
-                return_type=int, default=1, modifiers=self.modifiers,
-                mods=self.mods)
-
-        wait_time = util.get_arg_and_delete_from_mods(line=line, arg="-t",
-                return_type=int, default=5, modifiers=self.modifiers,
+        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-pwd",
+                return_type=str, default=None, modifiers=self.modifiers,
                 mods=self.mods)
 
         default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
-                arg="-sp", return_type=int, default=None,
+                arg="--ssh-port", return_type=int, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
         default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
-                arg="-sk", return_type=str, default=None,
+                arg="--ssh-key", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
         credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="-cf", return_type=str, default=None,
+                arg="--ssh-cf", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
         verbose = False
         if 'verbose' in line:
             verbose = True
 
-        self.cmds_error = set()
         self._main_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
-                credential_file, snp_count, wait_time, show_all=True, verbose=verbose)
+                credential_file, snp_count, wait_time, enable_ssh=enable_ssh, show_all=show_all, verbose=verbose)
 
-        if self.cmds_error:
-            self.logger.error(
-                "Following commands are either unavailable or giving runtime error")
-            self.logger.error(self.cmds_error)
+    @CommandHelp('Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.',
+                 'If credentials are not available then it will collect system stats from local node only.',
+                 '  Options:',
+                 '    -n           <int>        - Number of snapshots. Default: 1',
+                 '    -s           <int>        - Sleep time in seconds between each snapshot. Default: 5 sec',
+                 '    --enable-ssh              - Enable remote server system statistics collection.',
+                 '    --ssh-user   <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
+                 '    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
+                 '    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22',
+                 '    --ssh-key    <string>     - Default SSH key (file path) for remote servers.',
+                 '    --ssh-cf     <string>     - Remote System Credentials file path.',
+                 '                                If server credentials are not available in credential file then default credentials will be used ',
+                 '                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
+                 '                                Example:  1.2.3.4,uid,pwd',
+                 '                                          1.2.3.4:3232,uid,pwd',
+                 '                                          1.2.3.4:3232,uid,,key_path',
+                 '                                          1.2.3.4:3232,uid,passphrase,key_path',
+                 '                                          [2001::1234:10],uid,pwd',
+                 '                                          [2001::1234:10]:3232,uid,,key_path',
+                 )
+    def _do_default(self, line):
+        self._collect_info(line=line)
 
+    @CommandHelp('Collects all default stats and additional stats like "info dump-*" commands output',
+                 '  Options:',
+                 '    verbose     - Enable to collect additional stats with detailed output of "info dump-*" commands'
+                 )
+    def do_all(self, line):
+        self._collect_info(line=line, show_all=True)
 
 @CommandHelp('Displays features used in running Aerospike cluster.')
 class FeaturesController(BasicCommandController):
@@ -1864,35 +1890,53 @@ class HealthCheckController(BasicCommandController):
         else:
             return self.cluster.info_get_config(nodes=self.nodes, stanza=stanza)
 
+    def _get_as_meta_data(self, stanza):
+        if stanza == "build":
+            return self.cluster.info("build", nodes=self.nodes)
+        elif stanza == "edition":
+            editions = self.cluster.info("edition", nodes=self.nodes)
+            if not editions:
+                return editions
+
+            editions_in_shortform = {}
+            for node, edition in editions.iteritems():
+                if not edition or isinstance(edition, Exception):
+                    continue
+
+                editions_in_shortform[node] = util.convert_edition_to_shortform(edition)
+
+            return editions_in_shortform
+
     @CommandHelp(
         'Displays health summary. If remote server System credentials provided, then it will collect remote system stats',
         'and analyse that also. If credentials are not available then it will collect only localhost system statistics.',
         '  Options:',
-        '    -f <string>     - Query file path. Default: inbuilt health queries.',
-        '    -o <string>     - Output file path. ',
-        '                      This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
-        '    -v              - Enable to display extra details of assert errors.',
-        '    -d              - Enable to display extra details of exceptions.',
-        '    -n <int>        - Number of snapshots. Default: 3',
-        '    -s <int>        - Sleep time in seconds between each snapshot. Default: 1 sec',
-        '    -U <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-        '    -P <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
-        '    -sp <int>       - Default SSH port for remote servers. Default: 22',
-        '    -sk <string>    - Default SSH key (file path) for remote servers.',
-        '    -cf <string>    - Remote System Credentials file path. ',
-        '                      If server credentials are not available in credential file then default credentials will be used ',
-        '                      File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
-        '                      Example:  1.2.3.4,uid,pwd',
-        '                                1.2.3.4:3232,uid,pwd',
-        '                                1.2.3.4:3232,uid,,key_path',
-        '                                1.2.3.4:3232,uid,passphrase,key_path',
-        '                                [2001::1234:10],uid,pwd',
-        '                                [2001::1234:10]:3232,uid,,key_path',
-        '    -oc <string>    - Output filter Category. ',
-        '                      This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
-        '                      Format : string of dot (.) separated category levels',
-        '    -wl <string>    - Output filter Warning level. Expected value CRITICAL or WARNING or INFO ',
-        '                      This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
+        '    -f           <string>     - Query file path. Default: inbuilt health queries.',
+        '    -o           <string>     - Output file path. ',
+        '                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
+        '    -v                        - Enable to display extra details of assert errors.',
+        '    -d                        - Enable to display extra details of exceptions.',
+        '    -n           <int>        - Number of snapshots. Default: 1',
+        '    -s           <int>        - Sleep time in seconds between each snapshot. Default: 1 sec',
+        '    -oc          <string>     - Output filter Category. ',
+        '                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
+        '                                Format : string of dot (.) separated category levels',
+        '    -wl          <string>     - Output filter Warning level. Expected value CRITICAL or WARNING or INFO ',
+        '                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
+        '    --enable-ssh              - Enable remote server system statistics collection.',
+        '    --ssh-user   <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
+        '    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
+        '    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22',
+        '    --ssh-key    <string>     - Default SSH key (file path) for remote servers.',
+        '    --ssh-cf     <string>     - Remote System Credentials file path.',
+        '                                If server credentials are not available in credential file then default credentials will be used ',
+        '                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
+        '                                Example:  1.2.3.4,uid,pwd',
+        '                                          1.2.3.4:3232,uid,pwd',
+        '                                          1.2.3.4:3232,uid,,key_path',
+        '                                          1.2.3.4:3232,uid,passphrase,key_path',
+        '                                          [2001::1234:10],uid,pwd',
+        '                                          [2001::1234:10]:3232,uid,,key_path',
     )
     def _do_default(self, line):
 
@@ -1901,7 +1945,7 @@ class HealthCheckController(BasicCommandController):
                 mods=self.mods)
 
         snap_count = util.get_arg_and_delete_from_mods(line=line, arg="-n",
-                return_type=int, default=3, modifiers=self.modifiers,
+                return_type=int, default=1, modifiers=self.modifiers,
                 mods=self.mods)
 
         sleep_tm = util.get_arg_and_delete_from_mods(line=line, arg="-s",
@@ -1914,26 +1958,6 @@ class HealthCheckController(BasicCommandController):
         debug = util.check_arg_and_delete_from_mods(line=line, arg="-d",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
-        credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="-cf", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
-        default_user = util.get_arg_and_delete_from_mods(line=line, arg="-U",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
-
-        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="-P",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
-
-        default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
-                arg="-sp", return_type=int, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
-        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
-                arg="-sk", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
-
         output_filter_category = util.get_arg_and_delete_from_mods(line=line,
                 arg="-oc", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
@@ -1942,11 +1966,36 @@ class HealthCheckController(BasicCommandController):
                 arg="-wl", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
+        enable_ssh = util.check_arg_and_delete_from_mods(line=line, arg="--enable-ssh", default=False, modifiers=self.modifiers, mods=self.mods)
+
+        default_user = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-user",
+                return_type=str, default=None, modifiers=self.modifiers,
+                mods=self.mods)
+
+        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-pwd",
+                return_type=str, default=None, modifiers=self.modifiers,
+                mods=self.mods)
+
+        default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
+                arg="--ssh-port", return_type=int, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
+        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
+                arg="--ssh-key", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
+        credential_file = util.get_arg_and_delete_from_mods(line=line,
+                arg="--ssh-cf", return_type=str, default=None,
+                modifiers=self.modifiers, mods=self.mods)
+
         # Query file can be specified without -f
         # hence always parsed in the end
         query_file = util.get_arg_and_delete_from_mods(line=line, arg="-f",
                 return_type=str, default=None, modifiers=self.modifiers,
                 mods=self.mods)
+
+        if not query_file and line:
+            query_file = line[0]
 
         if query_file:
             query_file = util.strip_string(query_file)
@@ -1999,9 +2048,11 @@ class HealthCheckController(BasicCommandController):
                     ("namespace", "NAMESPACE", True, True, [
                      ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
                 ]),
-                "cluster": (self.cluster.info, [
+                "cluster": (self._get_as_meta_data, [
                     ("build", "METADATA", False, False, [
                      ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
+                    ("edition", "METADATA", False, False, [
+                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
                 ]),
                 "endpoints": (self._get_asstat_data, [
                     ("endpoints", "METADATA", False, False, [
@@ -2026,6 +2077,18 @@ class HealthCheckController(BasicCommandController):
                      (None, None), ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DEVICE", None)]),
                     ("meminfo", "SYSTEM", "MEMINFO", True,
                      [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("dmesg", "SYSTEM", "DMESG", True,
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("lscpu", "SYSTEM", "LSCPU", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("LSCPU", None)]),
+                    ("iptables", "SYSTEM", "IPTABLES", True,
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("sysctlall", "SYSTEM", "SYSCTLALL", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("SYSCTL", None)]),
+                    ("hdparm", "SYSTEM", "HDPARM", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("HDPARM", None)]),
+                    ("limits", "SYSTEM", "LIMITS", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("LIMITS", None)]),
                     ("interrupts", "SYSTEM", "INTERRUPTS", False, [(None, None), ("CLUSTER", cluster_name), ("NODE", None), (None, None),
                                                                    ("INTERRUPT_TYPE", None), (None, None), ("INTERRUPT_ID", None), (None, None), ("INTERRUPT_DEVICE", None)]),
                     ("df", "SYSTEM", "DF", True, [
@@ -2044,7 +2107,7 @@ class HealthCheckController(BasicCommandController):
 
                 # Collecting data
                 sys_stats = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
-                                                                default_ssh_port=default_ssh_port, credential_file=credential_file)
+                                                                default_ssh_port=default_ssh_port, credential_file=credential_file, collect_remote_data=enable_ssh)
 
                 for _key, (info_function, stanza_list) in stanza_dict.iteritems():
 
@@ -2139,33 +2202,31 @@ class HealthCheckController(BasicCommandController):
         health_summary = self.health_checker.execute(query_file=query_file)
 
         if health_summary:
-            try:
-                self.view.print_health_output(health_summary, verbose, debug,
-                        output_file, output_filter_category,
-                        output_filter_warning_level)
-                if not verbose:
-                    self.logger.info("Please use -v option for more details on failure. \n")
-
-            except Exception as e:
-                self.logger.error(e)
+            self.view.print_health_output(health_summary, verbose, debug,
+                                          output_file, output_filter_category,
+                                          output_filter_warning_level)
+            if not verbose:
+                self.logger.info("Please use -v option for more details on failure. \n")
 
 
 @CommandHelp(
         'Displays summary of Aerospike cluster.',
         '  Options:',
-        '    -U <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-        '    -P <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
-        '    -sp <int>       - Default SSH port for remote servers. Default: 22',
-        '    -sk <string>    - Default SSH key (file path) for remote servers.',
-        '    -cf <string>    - Remote System Credentials file path. ',
-        '                      If server credentials are not available in credential file then default credentials will be used ',
-        '                      File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
-        '                      Example:  1.2.3.4,uid,pwd',
-        '                                1.2.3.4:3232,uid,pwd',
-        '                                1.2.3.4:3232,uid,,key_path',
-        '                                1.2.3.4:3232,uid,passphrase,key_path',
-        '                                [2001::1234:10],uid,pwd',
-        '                                [2001::1234:10]:3232,uid,,key_path',
+        '    -l                        - Enable to display namespace output in List view. Default: Table view',
+        '    --enable-ssh              - Enable remote server system statistics collection.',
+        '    --ssh-user   <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
+        '    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
+        '    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22',
+        '    --ssh-key    <string>     - Default SSH key (file path) for remote servers.',
+        '    --ssh-cf     <string>     - Remote System Credentials file path.',
+        '                                If server credentials are not available in credential file then default credentials will be used ',
+        '                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
+        '                                Example:  1.2.3.4,uid,pwd',
+        '                                          1.2.3.4:3232,uid,pwd',
+        '                                          1.2.3.4:3232,uid,,key_path',
+        '                                          1.2.3.4:3232,uid,passphrase,key_path',
+        '                                          [2001::1234:10],uid,pwd',
+        '                                          [2001::1234:10]:3232,uid,,key_path',
         )
 class SummaryController(BasicCommandController):
 
@@ -2173,24 +2234,28 @@ class SummaryController(BasicCommandController):
         self.modifiers = set(['with'])
 
     def _do_default(self, line):
-        default_user = util.get_arg_and_delete_from_mods(line=line, arg="-U",
+        enable_list_view = util.check_arg_and_delete_from_mods(line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods)
+
+        enable_ssh = util.check_arg_and_delete_from_mods(line=line, arg="--enable-ssh", default=False, modifiers=self.modifiers, mods=self.mods)
+
+        default_user = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-user",
                 return_type=str, default=None, modifiers=self.modifiers,
                 mods=self.mods)
 
-        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="-P",
+        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-pwd",
                 return_type=str, default=None, modifiers=self.modifiers,
                 mods=self.mods)
 
         default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
-                arg="-sp", return_type=int, default=None,
+                arg="--ssh-port", return_type=int, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
         default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
-                arg="-sk", return_type=str, default=None,
+                arg="--ssh-key", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
         credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="-cf", return_type=str, default=None,
+                arg="--ssh-cf", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
         service_stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
@@ -2198,7 +2263,7 @@ class SummaryController(BasicCommandController):
         set_stats = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
 
         os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
-                                                         default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["lsb"])
+                                                         default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["lsb"], collect_remote_data=enable_ssh)
         server_version = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
 
         service_stats = service_stats.result()
@@ -2214,6 +2279,4 @@ class SummaryController(BasicCommandController):
             metadata["os_version"] = os_version
 
         return util.Future(self.view.print_summary, util.create_summary(service_stats=service_stats, namespace_stats=namespace_stats,
-                                                    set_stats=set_stats, metadata=metadata))
-
-
+                                                    set_stats=set_stats, metadata=metadata), list_view=enable_list_view)

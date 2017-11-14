@@ -366,7 +366,7 @@ class _GrepFile(LogCommandController):
                 try:
                     output_page_size = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.error(
+                    self.logger.warning(
                         "Wrong output page size, setting default value")
             elif word == '-n':
                 try:
@@ -449,13 +449,13 @@ class _GrepFile(LogCommandController):
                 try:
                     output_page_size = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.error(
+                    self.logger.warning(
                         "Wrong output page size, setting default value")
             elif word == '-r':
                 try:
                     title_every_nth = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.error(
+                    self.logger.warning(
                         "Wrong output title repetition value, setting default value")
             elif word == '-f':
                 start_tm = tline.pop(0)
@@ -557,13 +557,13 @@ class _GrepFile(LogCommandController):
                 try:
                     output_page_size = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.error(
+                    self.logger.warning(
                         "Wrong output page size, setting default value")
             elif word == '-r':
                 try:
                     title_every_nth = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.error(
+                    self.logger.warning(
                         "Wrong output title repetition value, setting default value")
             elif word == '-n':
                 try:
@@ -652,13 +652,13 @@ class _GrepFile(LogCommandController):
                 try:
                     output_page_size = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.error(
+                    self.logger.warning(
                         "Wrong output page size, setting default value")
             elif word == '-r':
                 try:
                     title_every_nth = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.error(
+                    self.logger.warning(
                         "Wrong output title repetition value, setting default value")
             elif word == '-n':
                 try:

@@ -18,8 +18,9 @@ import os
 import re
 import socket
 import threading
-from lib.client.assocket import ASSocket
+
 from lib.client import util
+from lib.client.assocket import ASSocket
 from lib.collectinfo_parser.full_parser import parse_system_live_command
 
 #### Remote Server connection module
@@ -39,6 +40,7 @@ except ImportError:
         PEXPECT_VERSION = OLD_MODULE
     except ImportError:
         PEXPECT_VERSION = NO_MODULE
+
 
 def getfqdn(address, timeout=0.5):
     # note: cannot use timeout lib because signal must be run from the
@@ -75,7 +77,7 @@ class Node(object):
     pool_lock = threading.Lock()
 
     def __init__(self, address, port=3000, tls_name=None, timeout=5, user=None,
-                 password=None,  ssl_context=None, consider_alumni=False, use_services_alt=False):
+                 password=None, ssl_context=None, consider_alumni=False, use_services_alt=False):
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -123,6 +125,12 @@ class Node(object):
             ('meminfo', ['cat /proc/meminfo', 'vmstat -s']),
             ('interrupts', ['cat /proc/interrupts', '']),
             ('iostat', ['iostat -x 1 1', '']),
+            ('dmesg', ['dmesg -T', 'dmesg']),
+            ('limits', ['sudo  pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', '']),
+            ('lscpu', ['lscpu', '']),
+            ('sysctlall', ['sudo sysctl vm fs', '']),
+            ('iptables', ['sudo iptables -S', '']),
+            ('hdparm', ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null', '']),
             ('df', ['df -h', '']),
             ('free-m', ['free -m', '']),
             ('uname', ['uname -a', ''])
@@ -177,8 +185,8 @@ class Node(object):
             # service addresses
             self.close()
             self._initialize_socket_pool()
-            if (not self.service_addresses
-                    or (self.ip, self.port, self.tls_name) not in
+            if (not self.service_addresses or
+                (self.ip, self.port, self.tls_name) not in
                     self.service_addresses):
 
                 # if asd >= 3.10 and node has only IPv6 address
@@ -249,9 +257,10 @@ class Node(object):
 
     def _update_IP(self, address, port):
         if address not in self.dns_cache:
-            self.dns_cache[address] = (socket.getaddrinfo(address, port,
-                                                          socket.AF_UNSPEC, socket.SOCK_STREAM)[0][4][0],
-                                       getfqdn(address))
+            self.dns_cache[address] = (
+                socket.getaddrinfo(address, port, socket.AF_UNSPEC,
+                                   socket.SOCK_STREAM)[0][4][0],
+                getfqdn(address))
 
         self.ip, self.fqdn = self.dns_cache[address]
 
@@ -321,7 +330,8 @@ class Node(object):
         if sock:
             return sock
 
-        sock = ASSocket(ip, port, self.tls_name, self.user, self.password, self.ssl_context, timeout=self._timeout)
+        sock = ASSocket(ip, port, self.tls_name, self.user, self.password,
+                        self.ssl_context, timeout=self._timeout)
 
         if sock.connect():
             return sock
@@ -358,9 +368,9 @@ class Node(object):
     def _info_cinfo(self, command, ip=None, port=None):
         # TODO: citrusleaf.py does not support passing a timeout default is
         # 0.5s
-        if ip == None:
+        if ip is None:
             ip = self.ip
-        if port == None:
+        if port is None:
             port = self.port
         result = None
 
@@ -414,11 +424,7 @@ class Node(object):
         command -- the info command to execute on this node
         """
 
-        try:
-            return self._info_cinfo(command, self.ip, self.xdr_port)
-        except Exception as e:
-            self.logger.error("Couldn't get XDR info: " + str(e))
-            return e
+        return self._info_cinfo(command, self.ip, self.xdr_port)
 
     @return_exceptions
     def info_node(self):
@@ -476,7 +482,7 @@ class Node(object):
                 tls_name = util.find_dns(endpoints)
             endpoint_list = []
             for e in endpoints:
-                if "[" in e and not "]:" in e:
+                if "[" in e and "]:" not in e:
                     addr_port = util._parse_string(e, delim=",")
                 else:
                     addr_port = util._parse_string(e, delim=":")
@@ -486,8 +492,8 @@ class Node(object):
                 if addr.endswith("]"):
                     addr = addr[:-1].strip()
 
-                if (len(addr_port) > 1 and addr_port[1]
-                        and len(addr_port[1]) > 0):
+                if (len(addr_port) > 1 and addr_port[1] and
+                        len(addr_port[1]) > 0):
                     port = addr_port[1]
                 else:
                     port = default_port
@@ -842,7 +848,7 @@ class Node(object):
             hist_info = self.info(cmd)
         except Exception:
             return data
-        #tdata = hist_info.split(';')[:-1]
+        # tdata = hist_info.split(';')[:-1]
         tdata = hist_info.split(';')
         hist_name = None
         ns = None
@@ -1090,8 +1096,8 @@ class Node(object):
             try:
                 f = open(self.sys_credential_file, 'r')
             except IOError as e:
-                self.logger.error("Can not open credential file. error: " + str(e))
-                raise
+                self.logger.warning("Ignoring credential file. Can not open credential file. \n%s." %(str(e)))
+                return result
 
             for line in f.readlines():
                 if not line or not line.strip():
@@ -1141,9 +1147,8 @@ class Node(object):
 
                 except Exception:
                     pass
-        except Exception:
-            self.logger.error("Couldn't set credential from given file.")
-            pass
+        except Exception as e:
+            self.logger.warning("Ignoring credential file.\n%s." %(str(e)))
         finally:
             if f:
                 f.close()
@@ -1167,7 +1172,7 @@ class Node(object):
 
     @return_exceptions
     def info_system_statistics(self, default_user=None, default_pwd=None, default_ssh_key=None,
-                               default_ssh_port=None, credential_file=None, commands=[]):
+                               default_ssh_port=None, credential_file=None, commands=[], collect_remote_data=False):
         """
         Get statistics for a system.
 
@@ -1181,10 +1186,13 @@ class Node(object):
 
         if self.localhost:
             return self._get_localhost_system_statistics(cmd_list)
-        else:
+
+        if collect_remote_data:
             self._set_default_system_credentials(default_user, default_pwd, default_ssh_key,
                                                  default_ssh_port, credential_file)
             return self._get_remote_host_system_statistics(cmd_list)
+
+        return {}
 
     @return_exceptions
     def _get_localhost_system_statistics(self, commands):
@@ -1231,9 +1239,9 @@ class Node(object):
         if ssh_key is not None:
             try:
                 os.path.isfile(ssh_key)
-            except:
-                self.logger.error('private ssh key does not exist, please check and confirm ssh_key ' + str(ssh_key))
-                raise
+            except Exception:
+                raise Exception('private ssh key %s does not exist'%(str(ssh_key)))
+
             ssh_options += ' -i %s' % (ssh_key)
 
         s = pexpect.spawn('ssh %s -l %s %s'%(ssh_options, str(user), str(ip)))
@@ -1245,6 +1253,9 @@ class Node(object):
             i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT])
         if i == 2:
             # password or passphrase
+            if pwd is None:
+                raise Exception("Wrong SSH Password None.")
+
             s.sendline(pwd)
             i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT])
         if i == 4:
@@ -1292,12 +1303,12 @@ class Node(object):
         s.sendline("unset PROMPT_COMMAND")
 
         # sh style
-        s.sendline ("PS1='[PEXPECT]\$ '")
-        i = s.expect ([pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10)
+        s.sendline("PS1='[PEXPECT]\$ '")
+        i = s.expect([pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10)
         if i == 0:
             # csh-style.
-            s.sendline ("set prompt='[PEXPECT]\$ '")
-            i = s.expect ([pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10)
+            s.sendline("set prompt='[PEXPECT]\$ '")
+            i = s.expect([pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10)
 
             if i == 0:
                 return None
@@ -1306,6 +1317,9 @@ class Node(object):
 
     @return_exceptions
     def _create_ssh_connection(self, ip, user, pwd, ssh_key=None, port=None):
+        if user is None and pwd is None and ssh_key is None:
+            raise Exception("Insufficient credentials to connect.")
+
         if PEXPECT_VERSION == NEW_MODULE:
             return self._login_remote_system(ip, user, pwd, ssh_key, port)
 
@@ -1323,7 +1337,7 @@ class Node(object):
         if PEXPECT_VERSION == NEW_MODULE:
             conn.prompt()
         elif PEXPECT_VERSION == OLD_MODULE:
-            conn.expect (self.remote_system_command_prompt)
+            conn.expect(self.remote_system_command_prompt)
         else:
             return None
         return conn.before
@@ -1351,9 +1365,9 @@ class Node(object):
             if conn:
                 conn.close()
         elif PEXPECT_VERSION == OLD_MODULE:
-            conn.sendline ('exit')
+            conn.sendline('exit')
             i = conn.expect([pexpect.EOF, "(?i)there are stopped jobs"])
-            if i==1:
+            if i == 1:
                 conn.sendline("exit")
                 conn.expect(pexpect.EOF)
             if conn:
@@ -1366,12 +1380,11 @@ class Node(object):
         sys_stats = {}
 
         if PEXPECT_VERSION == NO_MODULE:
-            self.logger.error("No module named pexpect. Please install it to collect remote server system statistics.")
+            self.logger.warning("Ignoring system statistics collection from node %s. No module named pexpect."%(str(self.ip)))
             return sys_stats
 
         sys_stats_collected = False
         self._set_system_credentials()
-        # 1 for previous saved credential and one from new inputs
         max_tries = 1
         tries = 0
 
@@ -1381,14 +1394,16 @@ class Node(object):
 
             try:
                 s = self._create_ssh_connection(self.ip, self.sys_user_id, self.sys_pwd, self.sys_ssh_key, self.sys_ssh_port)
-                if not s or isinstance(s, Exception):
-                    s = None
-                    raise
-            except Exception:
+                if not s:
+                    raise Exception("Wrong credentials to connect.")
+
+                if isinstance(s, Exception):
+                    raise s
+
+            except Exception as e:
                 if tries >= max_tries:
-                    self.logger.error("Couldn't make SSH login to remote server %s:%s, please provide correct credentials."%(str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port)))
-                if s:
-                    s.close()
+                    self.logger.warning("Ignoring system statistics collection. Couldn't make SSH login to remote server %s:%s. \n%s" % (str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port), str(e)))
+
                 continue
 
             try:
@@ -1410,10 +1425,9 @@ class Node(object):
                 sys_stats_collected = True
                 self._stop_ssh_connection(s)
 
-            except Exception:
+            except Exception as e:
                 if tries >= max_tries:
-                    self.logger.error("Couldn't get or parse remote system stats for remote server %s:%s."%(str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port)))
-                pass
+                    self.logger.error("Ignoring system statistics collection. Couldn't get or parse remote system stats for remote server %s:%s. \n%s" % (str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port), str(e)))
 
             finally:
                 if s and not isinstance(s, Exception):

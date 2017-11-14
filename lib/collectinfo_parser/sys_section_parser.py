@@ -61,6 +61,24 @@ def parse_sys_section(section_list, imap, parsed_map):
         elif section == 'ip_addr':
             _parse_ipaddr_section(imap, parsed_map)
 
+        elif section == 'dmesg':
+            _parse_dmesg_section(imap, parsed_map)
+
+        elif section == 'lscpu':
+            _parse_lscpu_section(imap, parsed_map)
+
+        elif section == 'iptables':
+            _parse_iptables_section(imap, parsed_map)
+
+        elif section == 'sysctlall':
+            _parse_sysctlall_section(imap, parsed_map)
+
+        elif section == 'hdparm':
+            _parse_hdparm_section(imap, parsed_map)
+
+        elif section == 'limits':
+            _parse_limits_section(imap, parsed_map)
+
         else:
             logger.warning(
                 "Section unknown, can not be parsed. Check SYS_SECTION_NAME_LIST. Section: " + section)
@@ -568,6 +586,152 @@ def _modify_keys_in_iostat_section(iostatobj_list):
     for obj in iostatobj_list:
         change_key_name_in_map(obj, ['rkB/s'], 'rk_b/s')
         change_key_name_in_map(obj, ['wkB/s'], 'wk_b/s')
+
+def _parse_dmesg_section(imap, parsed_map):
+    sec_id = 'ID_42'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    dmesg_section = imap[raw_section_name][0]
+
+    parsed_map[final_section_name] = {}
+    cpu_list = []
+
+    parsed_map[final_section_name]["OOM"] = False
+    parsed_map[final_section_name]["Blocked"] = False
+
+    for line in dmesg_section:
+        if 'OOM' in line:
+            parsed_map[final_section_name]["OOM"] |= True
+
+        if 'blocked for more than 120 seconds' in line:
+            parsed_map[final_section_name]["Blocked"] |= True
+
+        if 'Linux version' in line:
+            parsed_map[final_section_name]["OS"] = line
+
+def _parse_lscpu_section(imap, parsed_map):
+    sec_id = 'ID_107'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    lscpu_section = imap[raw_section_name][0]
+
+    parsed_map[final_section_name] = {}
+
+    for line in lscpu_section:
+        if line == "":
+            continue
+        lineobj = line.rstrip().split(':')
+        key = str(lineobj[0])
+        val = str(lineobj[1])
+        parsed_map[final_section_name][key.strip()] = val.strip()
+
+def _parse_iptables_section(imap, parsed_map):
+    sec_id = 'ID_108'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    iptables_section = imap[raw_section_name][0]
+
+    parsed_map[final_section_name] = {}
+
+    for line in iptables_section:
+        if "DROP" in line:
+            parsed_map[final_section_name]["has_firewall"] = True
+            return
+
+    parsed_map[final_section_name]["has_firewall"] = False
+
+def _parse_sysctlall_section(imap, parsed_map):
+    sec_id = 'ID_109'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    sysctlall_section = imap[raw_section_name][0]
+
+    parsed_map[final_section_name] = {}
+
+    for line in sysctlall_section:
+        if line == "":
+            continue
+        lineobj = line.rstrip().split('=')
+        key = str(lineobj[0])
+        val = str(lineobj[1])
+        parsed_map[final_section_name][key.strip()] = val.strip()
+
+def _parse_hdparm_section(imap, parsed_map):
+    sec_id = 'ID_110'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    device_info = {}
+    hdparm_section = imap[raw_section_name][0]
+
+    for line in hdparm_section:
+
+        if re.search("/dev.*:", line, re.IGNORECASE):
+            device = line
+
+        if ('Sector size' in line
+            or 'device size' in line
+            or 'Model Number' in line
+            or 'Serial Number' in line
+            or 'Firmware Revision' in line
+            or 'Transport' in line
+            or 'Queue Depth' in line):
+
+            lineobj = line.rstrip().split(':')
+            key = str(device) + str(lineobj[0]).strip()
+            val = str(lineobj[1]).strip()
+
+            device_info[key] = val
+
+    parsed_map[final_section_name] = device_info
+
+def _parse_limits_section(imap, parsed_map):
+    sec_id = 'ID_111'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    limits = {}
+    limits_section = imap[raw_section_name][0]
+
+    for line in limits_section:
+
+        if "Max" not in line:
+            continue
+
+        lineobj = filter(None, line.rstrip().split('  '))
+        key = str(lineobj[0]).strip()
+        limits["Soft " + key] = str(lineobj[1]).strip()
+        limits["Hard " + key] = str(lineobj[2]).strip()
+
+    parsed_map[final_section_name] = limits
 
 
 ### "iostat -x 1 10\n",

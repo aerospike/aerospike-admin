@@ -15,14 +15,14 @@
 import copy
 from distutils.version import LooseVersion
 import re
-import logging
 
-from lib.view import terminal
 from lib.health.constants import ParserResultType, HealthResultType, HealthResultCounter, AssertResultKey
 from lib.health.exceptions import SyntaxException, HealthException
 from lib.health.parser import HealthParser
 from lib.health.query import QUERIES
+from lib.health.util import is_health_parser_variable
 from lib.utils.util import parse_queries
+from lib.view import terminal
 
 VERSION_CONSTRAINT_PATTERN = "SET CONSTRAINT VERSION(.+)"
 
@@ -39,7 +39,6 @@ class HealthChecker(object):
 
         self.verbose = False
         self.no_valid_version = False
-        self.logger = logging.getLogger('asadm')
         self.filtered_data_set_to_parser = False
 
     def _reset_counters(self):
@@ -298,21 +297,17 @@ class HealthChecker(object):
     def _execute_queries(self, query_source=None, is_source_file=True):
         self._reset_counters()
         if not self.health_input_data or not isinstance(self.health_input_data, dict):
-            self.logger.error("No Health Input Data available")
-            return False
+            raise Exception("No Health Input Data available")
 
         if not query_source:
-            self.logger.error("No Input Query Source.")
-            return False
+            raise Exception("No Input Query Source.")
 
         if not isinstance(query_source, str):
-            self.logger.error("Query input source is not valid")
-            return False
+            raise Exception("Query input source is not valid")
 
         queries = parse_queries(query_source, is_file=is_source_file)
         if not queries:
-            self.logger.error("Wrong Health query source.")
-            return False
+            raise Exception("Wrong Health query source.")
 
         try:
             for query in queries:
@@ -372,7 +367,7 @@ class HealthChecker(object):
                                 else:
                                     self._increment_counter(HealthResultCounter.ASSERT_FAILED_COUNTER)
                                 self._add_assert_output(result[1])
-                            else:
+                            elif is_health_parser_variable(result):
                                 self._increment_counter(
                                     HealthResultCounter.DEBUG_COUNTER)
                                 self.debug_outputs.append(result)
@@ -385,23 +380,19 @@ class HealthChecker(object):
 
     def execute(self, query_file=None):
         health_summary = None
-        try:
-            if query_file is None:
-                if not self._execute_queries(query_source=QUERIES, is_source_file=False):
-                    return {}
-                health_summary = self._create_health_result_dict()
 
-            elif query_file:
-                if not self._execute_queries(query_source=query_file, is_source_file=True):
-                    return {}
-                health_summary = self._create_health_result_dict()
-
-            else:
-                self.logger.error("Wrong Input to execute")
+        if query_file is None:
+            if not self._execute_queries(query_source=QUERIES, is_source_file=False):
                 return {}
+            health_summary = self._create_health_result_dict()
 
-        except Exception:
-            pass
+        elif query_file:
+            if not self._execute_queries(query_source=query_file, is_source_file=True):
+                return {}
+            health_summary = self._create_health_result_dict()
+
+        else:
+            raise Exception("Wrong Query-file input for Health-Checker to execute")
 
         self.no_valid_version = False
         self._reset_parser()

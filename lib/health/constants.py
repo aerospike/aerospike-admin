@@ -13,6 +13,9 @@
 # limitations under the License.
 
 
+HEALTH_PARSER_VAR = "health_parser_var"
+MAJORITY = "MAJORITY_VALUE"
+
 class AssertLevel(object):
     CRITICAL = 0
     WARNING = 1

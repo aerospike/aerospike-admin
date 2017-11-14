@@ -339,8 +339,9 @@ FILTER_LIST = {
         # 'parser_func':
     },
     'ID_42': {
-        'enable': False,
+        'enable': True,
         'raw_section_name': 'dmesg',
+        'final_section_name': 'dmesg',
         'regex_new': 'dmesg',
         'regex_old': CMD_PREFIX + 'dmesg'
         # 'parser_func':
@@ -730,14 +731,68 @@ FILTER_LIST = {
         'regex_new': "\['config', 'cluster'\]"
         # 'parser_func'
     },
-    'ID_102': {
+    # Leave 102 for merge from pensive 
+    'ID_103': {
         'enable': True,
-        'raw_section_name': 'config_cluster',
-        'final_section_name': 'cluster',
-        'parent_section_name': 'config',
-        'regex_new': "\['config', 'cluster'\]"
+        'raw_section_name': 'ss -ant state time-wait sport = :%d or dport = :%d | wc -l',
+        'regex_new': 'ss -ant state time-wait sport = :%d or dport = :%d [|] wc -l',
         # 'parser_func'
     },
+    'ID_104': {
+        'enable': True,
+        'raw_section_name': 'ss -ant state close-wait sport = :%d or dport = :%d | wc -l',
+        'regex_new': 'ss -ant state close-wait sport = :%d or dport = :%d [|] wc -l',
+        # 'parser_func'
+    },
+    'ID_105': {
+        'enable': True,
+        'raw_section_name': 'ss -ant state established sport = :%d or dport = :%d | wc -l',
+        'regex_new': 'ss -ant state established sport = :%d or dport = :%d [|] wc -l',
+        # 'parser_func'
+    },
+    'ID_106': {
+        'enable': True,
+        'raw_section_name': 'netstat -ant|grep 3000',
+        'regex_new': 'netstat -ant[|]grep 3000|^netstat\n',
+        'regex_old': CMD_PREFIX + 'netstat -ant[|]grep 3000'
+        # 'parser_func'
+    },
+    'ID_107': {
+        'enable': True,
+        'raw_section_name': 'lscpu',
+        'final_section_name': 'lscpu',
+        'regex_new': "[cpu] lscpu\n"
+        # 'parser_func'
+    },
+    'ID_108': {
+        'enable': True,
+        'raw_section_name': 'iptables -S',
+        'final_section_name': 'iptables',
+        'regex_new': 'iptables',
+        # 'parser_func':
+    },
+    'ID_109': {
+        'enable': True,
+        'raw_section_name': 'sysctl vm sys',
+        'final_section_name': 'sysctlall',
+        'regex_new': 'sysctlall',
+        # 'parser_func':
+    },
+    'ID_110': {
+        'enable': True,
+        'raw_section_name': 'sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null',
+        'final_section_name': 'hdparm',
+        'regex_new': 'hdparm',
+        # 'parser_func':
+    },
+    'ID_111': {
+        'enable': True,
+        'raw_section_name': 'sudo pgrep asd | xargs -I f sh -c "cat /proc/f/limits"',
+        'final_section_name': 'limits',
+        'regex_new': 'limits',
+        # 'parser_func':
+    }
+
     #{
     #    'enable': True,
     #    'raw_section_name': 'set',

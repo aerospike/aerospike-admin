@@ -79,15 +79,17 @@ class CollectinfoRootController(BaseController):
     'The "info" command provides summary tables for various aspects',
     'of Aerospike functionality.')
 class InfoController(CollectinfoCommandController):
-
     def __init__(self):
         self.modifiers = set()
+
+        self.controller_map = dict(
+            namespace=InfoNamespaceController)
 
     @CommandHelp(
         'Displays network, namespace, and xdr summary information.')
     def _do_default(self, line):
         self.do_network(line)
-        self.do_namespace(line)
+        self.controller_map['namespace']()(line[:])
         self.do_xdr(line)
 
     @CommandHelp(
@@ -113,32 +115,7 @@ class InfoController(CollectinfoCommandController):
                                    versions, builds, cluster=cinfo_log,
                                    title_suffix=" (%s)" % (timestamp), **self.mods)
 
-    @CommandHelp(
-        'Displays namespace summary information.')
-    def do_namespace(self, line):
-        ns_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE, flip=True)
-
-        for timestamp in sorted(ns_stats.keys()):
-            if not ns_stats[timestamp]:
-                continue
-
-            self.view.info_namespace(util.flip_keys(ns_stats[timestamp]),
-                                     self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                                     title_suffix=" (%s)" % (timestamp), **self.mods)
-
-    @CommandHelp('Displays summary information for objects of each namespace.')
-    def do_object(self, line):
-        ns_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE, flip=True)
-
-        for timestamp in sorted(ns_stats.keys()):
-            if not ns_stats[timestamp]:
-                continue
-
-            self.view.info_object(util.flip_keys(ns_stats[timestamp]),
-                                  self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                                  title_suffix=" (%s)" % (timestamp), **self.mods)
-
-    def convert_key_to_tuple(self, stats):
+    def _convert_key_to_tuple(self, stats):
         for key in stats.keys():
             key_tuple = tuple(key.split())
             stats[key_tuple] = stats[key]
@@ -153,7 +130,7 @@ class InfoController(CollectinfoCommandController):
             if not set_stats[timestamp]:
                 continue
 
-            self.convert_key_to_tuple(set_stats[timestamp])
+            self._convert_key_to_tuple(set_stats[timestamp])
             self.view.info_set(util.flip_keys(set_stats[timestamp]),
                                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
                                title_suffix=" (%s)" % (timestamp), **self.mods)
@@ -224,6 +201,44 @@ class InfoController(CollectinfoCommandController):
             self.view.info_sindex(sindex_stats[timestamp],
                                   self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
                                   title_suffix=" (%s)" % (timestamp), **self.mods)
+
+
+@CommandHelp('The "namespace" command provides summary tables for various aspects',
+             'of Aerospike namespaces.')
+class InfoNamespaceController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    @CommandHelp('Displays usage and objects information for namespaces')
+    def _do_default(self, line):
+        self.do_usage(line)
+        self.do_object(line)
+
+    @CommandHelp('Displays usage information for each namespace.')
+    def do_usage(self, line):
+        ns_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE, flip=True)
+
+        for timestamp in sorted(ns_stats.keys()):
+            if not ns_stats[timestamp]:
+                continue
+
+            self.view.info_namespace_usage(
+                util.flip_keys(ns_stats[timestamp]),
+                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                title_suffix=" (%s)" % (timestamp), **self.mods)
+
+    @CommandHelp('Displays object information for each namespace.')
+    def do_object(self, line):
+        ns_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE, flip=True)
+
+        for timestamp in sorted(ns_stats.keys()):
+            if not ns_stats[timestamp]:
+                continue
+
+            self.view.info_namespace_object(
+                util.flip_keys(ns_stats[timestamp]),
+                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                title_suffix=" (%s)" % (timestamp), **self.mods)
 
 
 @CommandHelp(
@@ -812,6 +827,8 @@ class HealthCheckController(CollectinfoCommandController):
                 "cluster": (self.loghdlr.info_meta_data, [
                     ("asd_build", "METADATA", "CLUSTER", True, [
                      ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
+                    ("edition", "METADATA", "CLUSTER", True, [
+                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
                 ]),
                 "endpoints": (self.loghdlr.info_meta_data, [
                     ("endpoints", "METADATA", "ENDPOINTS", True, [
@@ -835,6 +852,18 @@ class HealthCheckController(CollectinfoCommandController):
                      (None, None), ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DEVICE", None)]),
                     ("meminfo", "SYSTEM", "MEMINFO", True,
                      [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("dmesg", "SYSTEM", "DMESG", True,
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("lscpu", "SYSTEM", "LSCPU", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("LSCPU", None)]),
+                    ("sysctlall", "SYSTEM", "SYSCTLALL", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("SYSCTL", None)]),
+                    ("iptables", "SYSTEM", "IPTABLES", True,
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("hdparm", "SYSTEM", "HDPARM", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("HDPARM", None)]),
+                    ("limits", "SYSTEM", "LIMITS", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("LIMITS", None)]),
                     ("interrupts", "SYSTEM", "INTERRUPTS", False, [(None, None), ("CLUSTER", cluster_name), ("NODE", None), (None, None),
                                                                    ("INTERRUPT_TYPE", None), (None, None), ("INTERRUPT_ID", None), (None, None), ("INTERRUPT_DEVICE", None)]),
                     ("df", "SYSTEM", "DF", True, [
@@ -882,17 +911,12 @@ class HealthCheckController(CollectinfoCommandController):
         health_summary = self.health_checker.execute(query_file=query_file)
 
         if health_summary:
-            try:
-                self.view.print_health_output(health_summary, debug=debug,
-                                              verbose=verbose, output_file=output_file,
-                                              output_filter_category=output_filter_category,
-                                              output_filter_warning_level=output_filter_warning_level)
-                if not verbose:
-                    self.logger.info("Please use -v option for more details on failure. \n")
-
-            except Exception as e:
-                self.logger.error(e)
-
+            self.view.print_health_output(health_summary, debug=debug,
+                                          verbose=verbose, output_file=output_file,
+                                          output_filter_category=output_filter_category,
+                                          output_filter_warning_level=output_filter_warning_level)
+            if not verbose:
+                self.logger.info("Please use -v option for more details on failure. \n")
 
 class ListController(CollectinfoCommandController):
 
@@ -934,13 +958,18 @@ class PagerController(CollectinfoCommandController):
         CliView.pager = CliView.SCROLL
 
 
-@CommandHelp('Displays summary of Aerospike cluster.')
+@CommandHelp('Displays summary of Aerospike cluster.',
+             '  Options:',
+             '    -l    - Enable to display namespace output in List view. Default: Table view',
+             )
 class SummaryController(CollectinfoCommandController):
 
     def __init__(self):
         self.modifiers = set([])
 
     def _do_default(self, line):
+        enable_list_view = util.check_arg_and_delete_from_mods(line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods)
+
         service_stats = self.loghdlr.info_statistics(stanza=STAT_SERVICE)
         namespace_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE)
         set_stats = self.loghdlr.info_statistics(stanza=STAT_SETS)
@@ -955,4 +984,5 @@ class SummaryController(CollectinfoCommandController):
         metadata["os_version"] = os_version[last_timestamp]
 
         self.view.print_summary(util.create_summary(service_stats=service_stats[last_timestamp], namespace_stats=namespace_stats[last_timestamp],
-                                                    set_stats=set_stats[last_timestamp], metadata=metadata))
+                                                    set_stats=set_stats[last_timestamp], metadata=metadata),
+                                list_view=enable_list_view)

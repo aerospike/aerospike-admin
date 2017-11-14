@@ -12,16 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import itertools
 from math import sqrt
 import operator
+import re
 
-from lib.health.constants import AssertResultKey, ParserResultType
+from lib.health.constants import AssertResultKey, MAJORITY, ParserResultType
 from lib.health.exceptions import HealthException
-from lib.health.util import deep_merge_dicts, get_kv, merge_key, make_map, make_key
+from lib.health.util import create_health_internal_tuple, create_value_list_to_save, deep_merge_dicts,\
+    find_majority_element, get_kv, get_value_from_health_internal_tuple, merge_key, make_map, make_key
 
 RESULT_TUPLE_HEADER = "RESULT"
 NOKEY = ""
+
+# Simple Operations
 
 operators = {
     "+": operator.add,
@@ -35,6 +40,7 @@ operators = {
     '<=': operator.le,
     '==': operator.eq,
     '!=': operator.ne,
+    '%%': lambda p, v: find_pct_value(p, v),
     'AND': operator.and_,
     'OR': operator.or_,
     'MAX': max,
@@ -42,6 +48,14 @@ operators = {
     'COUNT': len
 }
 
+
+def find_pct_value(pct, v):
+    if (isinstance(v, int) or isinstance(v, float)) and (isinstance(pct, int) or isinstance(pct, float)):
+        return float(v) * (float(pct)/100.0)
+
+    return None
+
+# Aggregation Operations
 
 def basic_vector_to_scalar_operation(op, kv, typecast=int, initial_value=None):
     """
@@ -66,7 +80,7 @@ def basic_vector_to_scalar_operation(op, kv, typecast=int, initial_value=None):
 
     for i in kv:
         k1, v1 = get_kv(i)
-
+        v1 = get_value_from_health_internal_tuple(v1)
         try:
             if not found_first:
                 res = typecast(v1)
@@ -87,6 +101,10 @@ def basic_vector_to_scalar_operation(op, kv, typecast=int, initial_value=None):
 
 def int_vector_to_scalar_operation(op, v):
     r, _ = basic_vector_to_scalar_operation(op, v, typecast=int)
+    return r
+
+def float_vector_to_scalar_operation(op, v):
+    r, _ = basic_vector_to_scalar_operation(op, v, typecast=float)
     return r
 
 
@@ -116,11 +134,13 @@ def vector_to_scalar_equal_operation(op, v):
 
     i0 = v[0]
     k1, v1 = get_kv(i0)
+    v1 = get_value_from_health_internal_tuple(v1)
     if v1 and isinstance(v1, list):
         v1 = sorted(v1)
 
     for i in v[1:]:
         k2, v2 = get_kv(i)
+        v2 = get_value_from_health_internal_tuple(v2)
         if v2 and isinstance(v2, list):
             v2 = sorted(v2)
 
@@ -130,7 +150,9 @@ def vector_to_scalar_equal_operation(op, v):
     return True
 
 
-def vector_to_vector_diff_operation(kv, op, a):
+# Complex Operations
+
+def vector_to_vector_diff_operation(kv, op, a, save_param):
     """
     Passed Vector values
     [ {(name, tag) : value}, {(name, tag) : value} ...
@@ -141,6 +163,7 @@ def vector_to_vector_diff_operation(kv, op, a):
     """
 
     res = {}
+    temp_res = {}
     if not kv or not a:
         raise HealthException("Insufficient input for Diff operation ")
 
@@ -149,27 +172,37 @@ def vector_to_vector_diff_operation(kv, op, a):
         for x, y in itertools.combinations(kv, 2):
             k1, v1 = get_kv(x)
             k2, v2 = get_kv(y)
-            if op(abs(v1 - v2), a):
+
+            _v1 = get_value_from_health_internal_tuple(v1)
+            _v2 = get_value_from_health_internal_tuple(v2)
+
+            if op(abs(_v1 - _v2), a):
                 try:
-                    res[make_key(k1)] |= True
+                    temp_res[make_key(k1)] |= True
+
                 except Exception:
-                    res[make_key(k1)] = True
+                    temp_res[make_key(k1)] = True
 
                 try:
-                    res[make_key(k2)] |= True
+                    temp_res[make_key(k2)] |= True
                 except Exception:
-                    res[make_key(k2)] = True
+                    temp_res[make_key(k2)] = True
 
             else:
                 try:
-                    res[make_key(k1)] |= False
+                    temp_res[make_key(k1)] |= False
                 except Exception:
-                    res[make_key(k1)] = False
+                    temp_res[make_key(k1)] = False
 
                 try:
-                    res[make_key(k2)] |= False
+                    temp_res[make_key(k2)] |= False
                 except Exception:
-                    res[make_key(k2)] = False
+                    temp_res[make_key(k2)] = False
+
+        for i in kv:
+            k, v = get_kv(i)
+            val_to_save = create_value_list_to_save(save_param, value=temp_res[make_key(k)], op1=v)
+            res[make_key(k)] = create_health_internal_tuple(temp_res[make_key(k)], val_to_save)
 
     except Exception:
         exception_found = True
@@ -177,25 +210,77 @@ def vector_to_vector_diff_operation(kv, op, a):
     if exception_found:
         for x in kv:
             k, v = get_kv(x)
-            res[make_key(k)] = None
+            res[make_key(k)] = create_health_internal_tuple(None, None)
 
     return res
 
 
-def vector_to_vector_sd_anomaly_operation(kv, op, a):
+def _find_match_operand_value(v, value_list):
+    if not v or not value_list:
+        return v
+
+    if v == MAJORITY:
+        return find_majority_element(value_list)
+
+    return v
+
+
+def vector_to_vector_no_match_operation(kv, op, a, save_param):
     """
     Passed Vector values
     [ {(name, tag) : value}, {(name, tag) : value} ...
 
-    Return boolean dictionary result
+    Return health internal tuple
 
-    { (name, tag) : True/False , (name, tag) : True/False, ... }
+    (True/False , [(key, value, formatting), (key, value, formatting), ...])
     """
     res = {}
-    if not kv or not a:
+    operand = get_value_from_health_internal_tuple(a)
+    if not kv:
+        raise HealthException("Insufficient input for NO_MATCH operation ")
+
+    try:
+        values = [get_value_from_health_internal_tuple(get_kv(m)[1]) for m in kv]
+        match_operand = _find_match_operand_value(operand, values)
+
+        result = False
+        val_to_save = []
+        for x in kv:
+            k, v = get_kv(x)
+            _val = get_value_from_health_internal_tuple(v)
+
+            if not op(_val, match_operand):
+                result |= True
+                val_to_save += create_value_list_to_save(save_param=None, value=result, op1=v)
+
+        if operand and operand == MAJORITY:
+            key = "Majority Value"
+        else:
+            key = "Expected Value"
+
+        val_to_save += create_value_list_to_save(save_param=save_param, key=key, value=match_operand)
+        res = create_health_internal_tuple(result, val_to_save)
+
+    except Exception:
+        res = create_health_internal_tuple(False, None)
+
+    return res
+
+
+def vector_to_vector_sd_anomaly_operation(kv, op, a, save_param):
+    """
+    Passed Vector values
+    [ {(name, tag) : value}, {(name, tag) : value} ...
+
+    Return health internal tuple
+
+    (True/False , [(key, value, formatting), (key, value, formatting), ...])
+    """
+    res = {}
+    sd_multiplier = get_value_from_health_internal_tuple(a)
+    if not kv or not sd_multiplier:
         raise HealthException("Insufficient input for SD_ANOMALY operation ")
 
-    exception_found = False
     try:
         n = len(kv)
         if n < 3:
@@ -203,7 +288,7 @@ def vector_to_vector_sd_anomaly_operation(kv, op, a):
             range_start = 0
             range_end = 0
         else:
-            values = [get_kv(m)[1] for m in kv]
+            values = [get_value_from_health_internal_tuple(get_kv(m)[1]) for m in kv]
             no_anomaly = False
 
             try:
@@ -219,26 +304,28 @@ def vector_to_vector_sd_anomaly_operation(kv, op, a):
                     variance += pow((v - mean), 2)
                 variance = float(variance) / float(n)
                 sd = sqrt(variance)
-                range_start = mean - (a * sd)
-                range_end = mean + (a * sd)
+                range_start = mean - (sd_multiplier * sd)
+                range_end = mean + (sd_multiplier * sd)
 
+        result = False
+        val_to_save = []
         for x in kv:
             k, v = get_kv(x)
-            if (no_anomaly or (float(v) >= float(range_start)
-                and float(v) <= float(range_end))):
-                res[make_key(k)] = False
-            else:
-                res[make_key(k)] = True
+            _val = get_value_from_health_internal_tuple(v)
+
+            if not no_anomaly and (float(_val) < float(range_start) or float(_val) > float(range_end)):
+                result |= True
+                val_to_save += create_value_list_to_save(save_param=None, value=result, op1=v)
+
+        val_to_save += create_value_list_to_save(save_param=save_param, value=result)
+        res = create_health_internal_tuple(result, val_to_save)
 
     except Exception:
-        exception_found = True
-
-    if exception_found:
-        for x in kv:
-            k, v = get_kv(x)
-            res[make_key(k)] = None
+        res = create_health_internal_tuple(False, None)
 
     return res
+
+###
 
 
 class SimpleOperation():
@@ -263,9 +350,31 @@ class SimpleOperation():
     def __init__(self, op):
         self.op = operators[op]
 
-    def _operate_each_key(self, arg1, arg2):
+    def _operate_each_key(self, arg1, arg2, save_param=None):
         if isinstance(arg1, dict) and isinstance(arg2, dict):
             return None
+
+        if not isinstance(arg1, dict) and not isinstance(arg2, dict):
+
+            try:
+                raw_arg1 = get_value_from_health_internal_tuple(arg1)
+                raw_arg2 = get_value_from_health_internal_tuple(arg2)
+                if self.op == operator.div and raw_arg2 == 0:
+                    val_to_save = create_value_list_to_save(save_param, value=0, op1=arg1, op2=arg2)
+                    return (0, val_to_save)
+
+                # if any of the arg is type float or operation is division
+                # cast all argument to float
+                if self.op == operator.div or isinstance(raw_arg1, float) or isinstance(raw_arg2, float):
+                    raw_arg1 = float(raw_arg1)
+                    raw_arg2 = float(raw_arg2)
+
+                result = self.op(raw_arg1, raw_arg2)
+                val_to_save = create_value_list_to_save(save_param, value=result, op1=arg1, op2=arg2)
+                return create_health_internal_tuple(result, val_to_save)
+
+            except Exception:
+                return create_health_internal_tuple(None, [])
 
         dict_first = True
         if isinstance(arg1, dict):
@@ -275,31 +384,17 @@ class SimpleOperation():
             d = arg2
             v = arg1
             dict_first = False
-        else:
-            try:
-                # if any of the arg is type float or operation is division
-                # cast all argument to float
-                if self.op == operator.div and arg2 == 0:
-                    return 0
-
-                if self.op == operator.div or isinstance(arg1, float) or isinstance(arg2, float):
-                    arg1 = float(arg1)
-                    arg2 = float(arg2)
-
-                return self.op(arg1, arg2)
-            except Exception:
-                return None
 
         res_dict = {}
         for _k in d:
             if dict_first:
-                res_dict[_k] = self._operate_each_key(d[_k], v)
+                res_dict[_k] = self._operate_each_key(d[_k], v, save_param=save_param)
             else:
-                res_dict[_k] = self._operate_each_key(v, d[_k])
+                res_dict[_k] = self._operate_each_key(v, d[_k], save_param=save_param)
 
         return res_dict
 
-    def _operate_dicts(self, arg1, arg2, on_common_only=False):
+    def _operate_dicts(self, arg1, arg2, on_common_only=False, save_param=None):
         if isinstance(arg1, dict) and isinstance(arg2, dict):
             k1_set = set(arg1.keys())
             k2_set = set(arg2.keys())
@@ -310,30 +405,30 @@ class SimpleOperation():
             res_dict = {}
             for _k in k1_set.intersection(k2_set):
                 res_dict[_k] = self._operate_dicts(
-                    arg1[_k], arg2[_k], on_common_only=on_common_only)
+                    arg1[_k], arg2[_k], on_common_only=on_common_only, save_param=save_param)
             return res_dict
         else:
-            return self._operate_each_key(arg1, arg2)
+            return self._operate_each_key(arg1, arg2, save_param=save_param)
 
     def operate(self, arg1, arg2, group_by=None, result_comp_op=None,
-            result_comp_val=None, on_common_only=False):
+            result_comp_val=None, on_common_only=False, save_param=None):
         if arg1 is None or arg2 is None:
             raise HealthException("Wrong operands for Simple operation.")
 
         # No Group By So No Key Merging
-        return self._operate_dicts(arg1, arg2, on_common_only=on_common_only)
+        return self._operate_dicts(arg1, arg2, on_common_only=on_common_only, save_param=save_param)
 
 
 class AggOperation():
 
     operator_and_function = {
-        '+': lambda v: int_vector_to_scalar_operation(operators["+"], v),
-        '*': lambda v: int_vector_to_scalar_operation(operators["*"], v),
+        '+': lambda v: float_vector_to_scalar_operation(operators["+"], v),
+        '*': lambda v: float_vector_to_scalar_operation(operators["*"], v),
         'AND': lambda v: bool_vector_to_scalar_operation(operators["AND"], v),
         'OR': lambda v: bool_vector_to_scalar_operation(operators["OR"], v),
         'AVG': lambda v: vector_to_scalar_avg_operation(operators["+"], v),
-        'MAX': lambda v: int_vector_to_scalar_operation(operators["MAX"], v),
-        'MIN': lambda v: int_vector_to_scalar_operation(operators["MIN"], v),
+        'MAX': lambda v: float_vector_to_scalar_operation(operators["MAX"], v),
+        'MIN': lambda v: float_vector_to_scalar_operation(operators["MIN"], v),
         '==': lambda v: vector_to_scalar_equal_operation(operators["=="], v),
         'COUNT': operators["COUNT"],
         'COUNT_ALL': operators["COUNT"],
@@ -341,10 +436,17 @@ class AggOperation():
 
     def __init__(self, op):
         self.op = op
-        self.op_fn = AggOperation.operator_and_function[op]
+        self.op_fn = self.op_fn_distributor
+
+    def op_fn_distributor(self, v, save_param):
+        result = AggOperation.operator_and_function[self.op](v)
+
+        val_to_save = create_value_list_to_save(save_param, value=result, op1=v)
+
+        return create_health_internal_tuple(result, val_to_save)
 
     def operate(self, arg1, arg2=None, group_by=None, result_comp_op=None,
-            result_comp_val=None, on_common_only=False):
+                result_comp_val=None, on_common_only=False, save_param=None):
         if not arg1:
             raise HealthException("Wrong operand for Aggregation operation.")
 
@@ -357,7 +459,9 @@ class AggOperation():
                 "Invalid group ids %s for Aggregation operation." % (str(group_by)))
 
         try:
-            return apply_operator(arg1, NOKEY, self.op_fn, group_by[-1] if group_by else "CLUSTER", on_all_keys=False if self.op=="COUNT" else True)
+            return apply_operator(arg1, NOKEY, self.op_fn, group_by[-1] if group_by else "CLUSTER",
+                                  on_all_keys=False if self.op=="COUNT" else True, save_param=save_param,
+                                  update_saved_list=True)
         except Exception as e:
             raise HealthException(str(e) + " for Aggregation Operation")
 
@@ -365,14 +469,17 @@ class AggOperation():
 class ComplexOperation():
 
     operator_and_function = {
-        'DIFF': lambda kv, op, a: vector_to_vector_diff_operation(kv, op, a),
-        'SD_ANOMALY': lambda kv, op, a: vector_to_vector_sd_anomaly_operation(kv, op, a),
+        'DIFF': lambda kv, op, a, sp: vector_to_vector_diff_operation(kv, op, a, sp),
+        'SD_ANOMALY': lambda kv, op, a, sp: vector_to_vector_sd_anomaly_operation(kv, op, a, sp),
+        'NO_MATCH': lambda kv, op, a, sp: vector_to_vector_no_match_operation(kv, op, a, sp),
     }
 
     def __init__(self, op):
+        self.op = op
         self.op_fn = ComplexOperation.operator_and_function[op]
 
-    def operate(self, arg1, arg2=None, group_by=None, result_comp_op=None, result_comp_val=None, on_common_only=False):
+    def operate(self, arg1, arg2=None, group_by=None, result_comp_op=None, result_comp_val=None,
+                on_common_only=False, save_param=None):
         if not arg1:
             # if empty opearand
             raise HealthException("Wrong operand for Complex operation.")
@@ -386,38 +493,13 @@ class ComplexOperation():
                 "Invalid group ids %s for Complex operation." % (str(group_by)))
 
         try:
-            return apply_operator(arg1, NOKEY, 
-                    lambda kv: self.op_fn(kv, operators[result_comp_op],
-                        result_comp_val), group_by[-1]
-                    if group_by else "CLUSTER")
+            return apply_operator(arg1, NOKEY,
+                                  lambda kv, sp: self.op_fn(kv, operators[result_comp_op], result_comp_val, sp),
+                                  group_by[-1] if group_by else "CLUSTER", save_param=save_param,
+                                  update_saved_list=True)
 
         except Exception as e:
             raise HealthException(str(e) + " for Complex Operation")
-
-
-class AssertOperation():
-
-    def __init__(self, op):
-        self.op = operators[op]
-
-    def operate(self, data={}, check_val=True, error=None):
-        if not data:
-            raise HealthException("Wrong Input Data for ASSERT operation.")
-
-        if not isinstance(data, dict):
-            if not self.op(data, check_val):
-                return ("ASSERT", error)
-            return None
-
-        v = find_data_vector(data)
-
-        if not v:
-            return ("ASSERT", error)
-        for i in v:
-            if not self.op(i, check_val):
-                return ("ASSERT", error)
-
-        return None
 
 
 class AssertDetailOperation():
@@ -431,7 +513,7 @@ class AssertDetailOperation():
     def __init__(self, op):
         self.op = operators[op]
 
-    def operate(self, data={}, check_val=True, error=None, category=None,
+    def operate(self, data={}, check_val=create_health_internal_tuple(True,[]), error=None, category=None,
             level=None, description=None, success_msg=None):
         if not data:
             raise HealthException("Wrong Input Data for ASSERT operation.")
@@ -449,11 +531,11 @@ class AssertDetailOperation():
         res[AssertResultKey.LEVEL] = level
 
         if not isinstance(data, dict):
-            if not self.op(data, check_val):
+            if not self.op(get_value_from_health_internal_tuple(data), get_value_from_health_internal_tuple(check_val)):
                 return (ParserResultType.ASSERT, res)
             return None
 
-        kv = find_kv_vector(NOKEY, data, True)
+        kv = find_kv_vector(NOKEY, data, recurse=True, update_saved_list=False)
 
         if not kv:
             return (ParserResultType.ASSERT, res)
@@ -462,10 +544,15 @@ class AssertDetailOperation():
 
         for i in kv:
             k, v = get_kv(i)
-            if not self.op(v, check_val):
+            kv_tuple = (k, None)
+            value_to_check = get_value_from_health_internal_tuple(v)
+            if v[1]:
+                kv_tuple = (k, v[1])
+
+            if not self.op(value_to_check, get_value_from_health_internal_tuple(check_val)):
                 res[AssertResultKey.SUCCESS] = False
                 fail = True
-                res[AssertResultKey.KEYS].append(str(k))
+                res[AssertResultKey.KEYS].append(kv_tuple)
 
         if not fail:
             res[AssertResultKey.SUCCESS] = True
@@ -534,10 +621,95 @@ def do_multiple_group_by(d, group_by_list):
 
     return res
 
+
+# Select operation
+
+def _is_key_in_ignore_keys(key, ignore_keys):
+    if not key or not ignore_keys:
+        return False
+
+    return any(re.search(ik[1], key) if ik[0] else key==ik[1] for ik in ignore_keys)
+
+def select_keys_from_dict(data={}, keys=[], from_keys=[], ignore_keys=[], save_param=None, config_param=False):
+    """
+    Function takes dictionary, list of keys to fetch, list of from_keys to filter scope
+
+    Returns dictionary of selected keys and values
+    """
+
+    if not data or not isinstance(data, dict):
+        raise HealthException("Wrong Input Data for select operation.")
+
+    result_dict = {}
+    if not keys:
+        raise HealthException("No key provided for select operation.")
+
+    for _key in data:
+        if from_keys:
+            f_key = from_keys[0]
+            if isinstance(_key, tuple):
+                # from_keys work with static component keys only, if we get
+                                # tuple keys means we have done with checking of all component
+                                # keys and not found any from key match so no need to check
+                                # further in this direction
+                break
+
+            if (f_key == "ALL") or (_key == f_key):
+                # from_key is ALL or matching with _key
+                child_res = select_keys_from_dict(data[_key], keys=keys,
+                                                  from_keys=from_keys[1:] if len(from_keys) > 1 else [],
+                                                  ignore_keys=ignore_keys,
+                                                  save_param=save_param, config_param=config_param)
+
+            else:
+                # no key match, need to check further
+                child_res = select_keys_from_dict(data[_key], keys=keys,
+                                                  from_keys=from_keys, ignore_keys=ignore_keys,
+                                                  save_param=save_param, config_param=config_param)
+
+            if child_res:
+                if f_key == "ALL":
+                    # It assumes ALL is only for top snapshot level
+                    result_dict[(_key, "SNAPSHOT")] = copy.deepcopy(child_res)
+                else:
+                    result_dict = deep_merge_dicts(
+                        result_dict, copy.deepcopy(child_res))
+
+        else:
+            # if (False, "*", None) in keys and isinstance(_key, tuple):
+            #     result_dict[_key] = copy.deepcopy(data[_key])
+            if isinstance(_key, tuple) and _key[1] == "KEY":
+                for check_substring, s_key, new_name in keys:
+                    if ((s_key == "*" and not _is_key_in_ignore_keys(_key[0], ignore_keys)) or (check_substring and re.search(s_key, _key[0]))
+                            or (not check_substring and _key[0] == s_key)):
+
+                        val_to_save = create_value_list_to_save(save_param=save_param, key=_key[0], value=data[_key],
+                                                                formatting=not config_param)
+
+                        if new_name:
+                            result_dict[(new_name, "KEY")] = create_health_internal_tuple(data[_key], val_to_save)
+
+                        else:
+                            result_dict[_key] = create_health_internal_tuple(data[_key], val_to_save)
+
+                        break
+
+            elif data[_key] and isinstance(data[_key], dict):
+                child_res = select_keys_from_dict(data[_key], keys=keys, ignore_keys=ignore_keys, save_param=save_param, config_param=config_param)
+                if child_res:
+                    if isinstance(_key, tuple):
+                        result_dict[_key] = copy.deepcopy(child_res)
+                    else:
+                        result_dict = deep_merge_dicts(result_dict,
+                                                       copy.deepcopy(child_res))
+
+    return result_dict
+
+
 # Recursive worker functions to apply operation
 
 
-def apply_operator(data, key, op_fn, group_by=None, arg2=None, recurse=False, on_all_keys = True):
+def apply_operator(data, key, op_fn, group_by=None, arg2=None, recurse=False, on_all_keys=True, save_param=None, update_saved_list=False):
     res_dict = {}
     if not data or not isinstance(data, dict):
         raise HealthException("Wrong Input Data ")
@@ -551,18 +723,18 @@ def apply_operator(data, key, op_fn, group_by=None, arg2=None, recurse=False, on
             # User merged key for aggregation result
             if on_all_keys:
                 # Apply operation on all leaf values
-                res_dict[k] = op_fn(find_kv_vector(NOKEY, data[_key], True))
+                res_dict[k] = op_fn(find_kv_vector(NOKEY, data[_key], recurse=True, update_saved_list=update_saved_list), save_param)
             else:
                 # Apply operation on next level only, no further
                 if isinstance(data[_key], dict):
                     # Next level is dict, so apply operation on keys
-                    res_dict[k] = op_fn(data[_key].keys())
+                    res_dict[k] = op_fn(data[_key].keys(), save_param)
                 else:
                     # Next level is not dict, so apply operation on value
-                    res_dict[k] = op_fn([data[_key]])
+                    res_dict[k] = op_fn([data[_key]], save_param)
         else:
             res_dict[_key] = apply_operator(
-                data[_key], k, op_fn, group_by, arg2, recurse, on_all_keys=on_all_keys)
+                data[_key], k, op_fn, group_by, arg2, recurse, on_all_keys=on_all_keys, save_param=save_param, update_saved_list=update_saved_list)
 
     return res_dict
 
@@ -582,7 +754,21 @@ def find_data_vector(data_dict):
     return v
 
 
-def find_kv_vector(key, data, recurse=False):
+def add_prefix_to_saved_keys(prefix, data):
+    if not prefix or not data or not data[1]:
+        return data
+
+    new_saved_value_list = []
+    for i in data[1]:
+        _k = prefix
+        if i[0] and len(i[0].strip()) > 0:
+            _k += "/%s"%(i[0])
+        new_saved_value_list.append((_k, i[1], i[2]))
+
+    return create_health_internal_tuple(data[0], new_saved_value_list)
+
+
+def find_kv_vector(key, data, recurse=False, update_saved_list=False):
     """
     Function takes a arbitrary next dictionary and creates
     vector of based level key and value pair in form
@@ -598,11 +784,23 @@ def find_kv_vector(key, data, recurse=False):
     if data is None:
         return v
 
+    if not isinstance(data, dict):
+        k = merge_key(key, " ", recurse)
+        v.append(make_map(k, data))
+        return v
+
     for _key in sorted(data.keys()):
         k = merge_key(key, _key, recurse)
         if not isinstance(data[_key], dict):
-            v.append(make_map(k, data[_key]))
+
+            if _key[1] == "KEY":
+                _k = key
+
+            else:
+                _k = k
+            v.append(make_map(k, add_prefix_to_saved_keys(_k, data[_key]) if update_saved_list else data[_key]))
+            # v.append(make_map(k, data[_key]))
         else:
-            v.extend(find_kv_vector(k, data[_key], recurse))
+            v.extend(find_kv_vector(k, data[_key], recurse=recurse, update_saved_list=update_saved_list))
 
     return v

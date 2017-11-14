@@ -14,9 +14,7 @@
 
 import ntpath
 import os
-import logging
 import shutil
-import sys
 import tarfile
 import zipfile
 
@@ -52,14 +50,12 @@ class CollectinfoLoghdlr(object):
         self.cinfo_path = cinfo_path
         self._validate_and_extract_compressed_files(cinfo_path, dest_dir=self.COLLECTINFO_DIR)
         self.cinfo_timestamp = None
-        self.logger = logging.getLogger('asadm')
 
         self.reader = CollectinfoReader()
         snapshot_added, err_cinfo = self._add_cinfo_log_files(cinfo_path)
 
         if snapshot_added == 0:
-            self.logger.error(err_cinfo)
-            sys.exit(1)
+            raise Exception(str(err_cinfo))
 
     def __str__(self):
         status_str = ""

@@ -30,7 +30,8 @@ Admin> help
 ### Python Modules
 - ply: >= 3.4
 - pexpect: >= 3.0
-- pyOpenSSL: 16.2.0
+- pyOpenSSL: >= 16.2.0
+- pyasn1: >= 0.3.1
 
 ### Installing Python Module Dependencies
 ```

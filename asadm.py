@@ -22,6 +22,7 @@ import re
 import shlex
 import sys
 import logging
+import traceback
 
 if '-e' not in sys.argv and '--asinfo' not in sys.argv:
     # asinfo mode or non-interactive mode does not need readline
@@ -41,25 +42,44 @@ class BaseLogger(logging.Logger, object):
     def __init__(self, name, level=logging.WARNING):
         return super(BaseLogger, self).__init__(name, level=level)
 
+    def _handle_exception(self, msg):
+        if isinstance(msg, Exception) and not isinstance(msg, ShellException):
+            traceback.print_exc()
+
+    def _print_message(self, msg, level, red_color=False, *args, **kwargs):
+        try:
+            message = str(msg).format(*args, **kwargs)
+        except Exception:
+            message = str(msg)
+
+        message = level + ": " + message
+
+        if red_color:
+            message = terminal.fg_red() + message + terminal.fg_clear()
+
+        print message
+
     def debug(self, msg, *args, **kwargs):
         if self.level <= logging.DEBUG:
-            print "DEBUG: " + str(msg)
+            self._print_message(msg=msg, level="DEBUG", red_color=False, *args, **kwargs)
 
     def info(self, msg, *args, **kwargs):
         if self.level <= logging.INFO:
-            print "INFO: " + str(msg)
+            self._print_message(msg=msg, level="INFO", red_color=False, *args, **kwargs)
 
     def warning(self, msg, *args, **kwargs):
         if self.level <= logging.WARNING:
-            print terminal.fg_red() + "ERROR: " + str(msg) + terminal.fg_clear()
+            self._print_message(msg=msg, level="WARNING", red_color=True, *args, **kwargs)
 
     def error(self, msg, *args, **kwargs):
         if self.level <= logging.ERROR:
-            print terminal.fg_red() + "ERROR: " + str(msg) + terminal.fg_clear()
+            self._print_message(msg=msg, level="ERROR", red_color=True, *args, **kwargs)
+            self._handle_exception(msg)
 
     def critical(self, msg, *args, **kwargs):
         if self.level <= logging.CRITICAL:
-            print terminal.fg_red() + "ERROR: " + str(msg) + terminal.fg_clear()
+            self._print_message(msg=msg, level="ERROR", red_color=True, *args, **kwargs)
+            self._handle_exception(msg)
         exit(1)
 
 logging.setLoggerClass(BaseLogger)
@@ -68,6 +88,7 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger('asadm')
 logger.setLevel(logging.INFO)
 
+from lib.controllerlib import ShellException
 from lib.basiccontroller import BasicRootController
 from lib.client import info
 from lib.client.assocket import ASSocket
@@ -87,8 +108,8 @@ ADMINHIST = ADMIN_HOME + 'admin_hist'
 
 MULTILEVEL_COMMANDS = ["show", "info"]
 
-class AerospikeShell(cmd.Cmd):
 
+class AerospikeShell(cmd.Cmd):
     def __init__(self, seed, user=None, password=None, use_services_alumni=False, use_services_alt=False,
                  log_path="", log_analyser=False, collectinfo=False,
                  ssl_context=None, only_connect_seed=False, execute_only_mode=False, timeout=5):
@@ -129,7 +150,7 @@ class AerospikeShell(cmd.Cmd):
                 if not execute_only_mode:
                     self.intro = str(self.ctrl.loghdlr)
             else:
-                if user != None:
+                if user is not None:
                     if password == "prompt":
                         if sys.stdin.isatty():
                             password = getpass.getpass("Enter Password:")
@@ -143,9 +164,8 @@ class AerospikeShell(cmd.Cmd):
                                                 only_connect_seed=only_connect_seed, timeout=timeout)
 
                 if not self.ctrl.cluster.get_live_nodes():
-                    logger.error("Not able to connect any cluster.")
                     self.do_exit('')
-                    exit(0)
+                    logger.critical("Not able to connect any cluster.")
 
                 self.prompt = "Admin> "
                 self.intro = ""
@@ -165,12 +185,11 @@ class AerospikeShell(cmd.Cmd):
 
             if self.use_rawinput:
                 self.prompt = "\001" + terminal.bold() + terminal.fg_red() + "\002" +\
-                          self.prompt + "\001" +\
-                          terminal.unbold() + terminal.fg_clear() + "\002"
+                              self.prompt + "\001" +\
+                              terminal.unbold() + terminal.fg_clear() + "\002"
         except Exception as e:
-            logger.error(e)
             self.do_exit('')
-            exit(1)
+            logger.critical(str(e))
 
         if not execute_only_mode:
             try:
@@ -229,7 +248,7 @@ class AerospikeShell(cmd.Cmd):
             if not lines:  # allow empty lines
                 return ""
         except Exception as e:
-            logger.error(e)
+            logger.error(str(e))
             return ""
 
         for line in lines:
@@ -243,10 +262,8 @@ class AerospikeShell(cmd.Cmd):
                     # If single level command then print from first index. For example: health, features, grep etc.
                     index = 0
 
-                print "\n~~~ %s%s%s ~~~" % (terminal.bold(),
-                                          ' '.join(
-                                              line[index:]),
-                                          terminal.reset())
+                print "\n~~~ %s%s%s ~~~" % (
+                    terminal.bold(), ' '.join(line[index:]), terminal.reset())
 
             sys.stdout.write(terminal.reset())
             try:
@@ -254,7 +271,7 @@ class AerospikeShell(cmd.Cmd):
                 if response == "EXIT":
                     return "exit"
             except Exception as e:
-                logger.error(e)
+                logger.error(str(e))
         return ""  # line was handled by execute
 
     def _listdir(self, root):
@@ -449,7 +466,7 @@ def parse_tls_input(cli_args):
                           crl_check_all=cli_args.crl_check_all).ctx
 
     except Exception as e:
-        print terminal.fg_red() + "SSLContext creation Exception: " + str(e) + terminal.fg_clear()
+        logger.error("SSLContext creation Exception: " + str(e))
         exit(1)
 
 
@@ -463,7 +480,7 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, ssl_co
         if not cmds:
             return
 
-    if user != None:
+    if user is not None:
         if password == "prompt":
             if sys.stdin.isatty():
                 password = getpass.getpass("Enter Password:")
@@ -475,16 +492,18 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, ssl_co
     if not assock.connect():
         raise Exception("Could not connect to node")
 
-    node_name = "%s:%s"%(seed[0],seed[1])
+    node_name = "%s:%s" % (seed[0], seed[1])
 
-    for cmd in cmds:
-        if cmd:
-            cmd = util.strip_string(cmd)
-        result = assock.execute(cmd)
-        if result == -1 or result == None:
-            result = IOError("Error: Invalid command '%s'" % cmd)
+    for command in cmds:
+        if command:
+            command = util.strip_string(command)
 
-        view.CliView.asinfo({node_name:result}, line_separator, False, None)
+        result = assock.execute(command)
+
+        if result == -1 or result is None:
+            result = IOError("Error: Invalid command '%s'" % command)
+
+        view.CliView.asinfo({node_name: result}, line_separator, False, None)
 
     return
 
@@ -508,7 +527,7 @@ def main():
         parser.add_argument("-l", "--log_analyser", dest="log_analyser", action="store_true",
                             help="Start asadm in log-analyser mode and analyse data from log files")
         parser.add_argument("--asinfo", dest="asinfo_mode", action="store_true",
-                            #help="Enable asinfo mode to connect directly to seed node without cluster creation. By default asadm connects to all nodes and creates cluster.",
+                            # help="Enable asinfo mode to connect directly to seed node without cluster creation. By default asadm connects to all nodes and creates cluster.",
                             help=argparse.SUPPRESS)
 
         parser.add_argument("-e", "--execute", dest="execute",
@@ -518,8 +537,9 @@ def main():
 
         parser.add_argument("--no-color", dest="no_color",
                             action="store_true", help="Disable colored output")
-        parser.add_argument("--profile", dest="profile", action="store_true"  # , help="Profile Aerospike Admin for performance issues"
-                            , help=argparse.SUPPRESS)
+        parser.add_argument("--profile", dest="profile", action="store_true",
+                            # , help="Profile Aerospike Admin for performance issues"
+                            help=argparse.SUPPRESS)
 
         parser.add_argument("-u", "--help", dest="help", action="store_true", help="show program usage")
         parser.add_argument("--version", dest="show_version",
@@ -532,7 +552,7 @@ def main():
         parser.add_argument("--single_node_cluster", dest="only_connect_seed", action="store_true",
                             help="Enable asadm mode to connect only seed node. By default asadm connects to all nodes in cluster.")
         parser.add_argument("--timeout", dest="timeout", type=float, default=5,
-                          help="Set timeout value in seconds to node level operations. TLS connection does not support timeout. Default: 5 seconds")
+                            help="Set timeout value in seconds to node level operations. TLS connection does not support timeout. Default: 5 seconds")
 
         parser.add_argument("--lineseperator", dest="line_separator", action="store_true",
                             # help="Print output in separate lines. This works only for asinfo mode."
@@ -583,8 +603,8 @@ def main():
         parser.add_option("-t", "--tls_name", dest="tls_name",
                           help="TLS name of host to verify for TLS connection. It is required if tls_enable is set.")
         parser.add_option("-U", "--user", dest="user", help="user name")
-        parser.add_option("-P", "--password", dest="password", action="store_const"  # , nargs="?"
-                          , const="prompt", help="password")
+        parser.add_option("-P", "--password", dest="password", action="store_const",  # , nargs="?"
+                          const="prompt", help="password")
 
         parser.add_option("-c", "--collectinfo", dest="collectinfo", action="store_true",
                           help="Start asadm to run against offline collectinfo files.")
@@ -601,8 +621,8 @@ def main():
 
         parser.add_option("--no-color", dest="no_color",
                           action="store_true", help="Disable colored output")
-        parser.add_option("--profile", dest="profile", action="store_true"  # , help="Profile Aerospike Admin for performance issues"
-                          , help=optparse.SUPPRESS_USAGE)
+        parser.add_option("--profile", dest="profile", action="store_true",  # , help="Profile Aerospike Admin for performance issues"
+                          help=optparse.SUPPRESS_USAGE)
 
         parser.add_option("-u", "--help", dest="help", action="store_true", help="show program usage")
         parser.add_option("--version", dest="show_version",
@@ -614,7 +634,7 @@ def main():
                           action="store_true", help="Enable use of services-alternate instead of services in info request during cluster tending")
         parser.add_option("--single_node_cluster", dest="only_connect_seed", action="store_true",
                           help="Enable asadm mode to connect only seed node. By default asadm connects to all nodes in cluster.")
-        parser.add_option("--timeout", dest="timeout",type=float, default=5,
+        parser.add_option("--timeout", dest="timeout", type=float, default=5,
                           help="Set timeout value in seconds to node level operations. TLS connection does not support timeout. Default: 5 seconds")
 
         parser.add_option("--lineseperator", dest="line_separator", action="store_true",
@@ -692,8 +712,9 @@ def main():
             commands_arg = parse_commands(commands_arg)
 
         try:
-            execute_asinfo_commands(commands_arg, seed, user=cli_args.user,
-                           password=cli_args.password, ssl_context=ssl_context, line_separator=cli_args.line_separator)
+            execute_asinfo_commands(
+                commands_arg, seed, user=cli_args.user, password=cli_args.password,
+                ssl_context=ssl_context, line_separator=cli_args.line_separator)
             exit(0)
         except Exception as e:
             logger.error(str(e))
@@ -705,7 +726,7 @@ def main():
     shell = AerospikeShell(seed, user=cli_args.user,
                            password=cli_args.password,
                            use_services_alumni=cli_args.use_services_alumni,
-                           use_services_alt = cli_args.use_services_alternate,
+                           use_services_alt=cli_args.use_services_alternate,
                            log_path=cli_args.log_path,
                            log_analyser=cli_args.log_analyser,
                            collectinfo=cli_args.collectinfo,
@@ -811,6 +832,7 @@ def parse_commands(file):
         except Exception:
             commands = line
     return commands
+
 
 if __name__ == '__main__':
     main()

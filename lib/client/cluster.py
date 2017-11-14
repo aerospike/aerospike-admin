@@ -28,7 +28,7 @@ CLUSTER_REFRESH_INTERVAL = 3
 
 class Cluster(object):
     # Kinda like a singleton... All instantiated classes will share the same
-    # state... This makes the class no
+    # state.
     cluster_state = {}
     use_services_alumni = False
     use_services_alt = False

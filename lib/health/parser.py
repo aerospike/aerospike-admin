@@ -16,10 +16,10 @@ import copy
 import re
 
 from lib.health.commands import select_keys, do_assert, do_operation, do_assert_if_check
-from lib.health.constants import AssertLevel
+from lib.health.constants import AssertLevel, HEALTH_PARSER_VAR, MAJORITY
 from lib.health.exceptions import SyntaxException
 from lib.health.operation import do_multiple_group_by
-from lib.health.util import h_eval, create_snapshot_key
+from lib.health.util import create_health_internal_tuple, create_snapshot_key, h_eval, is_health_parser_variable
 
 try:
     from ply import lex, yacc
@@ -49,10 +49,13 @@ class HealthLexer(object):
         'DEVICE_INTERRUPTS': 'DEVICE_INTERRUPTS',
         'DEVICE_STAT': 'DEVICE_STAT',
         'DF': 'DF',
+        'DMESG': 'DMESG',
         'ENDPOINTS': 'ENDPOINTS',
         'FREE': 'FREE',
         'INTERRUPTS': 'INTERRUPTS',
         'IOSTAT': 'IOSTAT',
+        'LSCPU': 'LSCPU',
+        'LIMITS' : 'LIMITS',
         'MEM': 'MEM',
         'MEMINFO': 'MEMINFO',
         'METADATA': 'METADATA',
@@ -65,6 +68,9 @@ class HealthLexer(object):
         'SERVICES': 'SERVICES',
         'STATISTICS': 'STATISTICS',
         'SWAP': 'SWAP',
+        'SYSCTLALL': 'SYSCTLALL',
+        'HDPARM': 'HDPARM',
+        'IPTABLES' : 'IPTABLES',
         'TASKS': 'TASKS',
         'TOP': 'TOP',
         'UDF': 'UDF',
@@ -99,19 +105,24 @@ class HealthLexer(object):
 
     agg_ops = {
         'AND': 'AND',
-        'OR' : 'OR',
         'AVG': 'AVG',
-        'SUM': 'SUM',
+        'COUNT': 'COUNT',
+        'COUNT_ALL': 'COUNT_ALL',
         'EQUAL': 'EQUAL',
         'MAX': 'MAX',
         'MIN': 'MIN',
-        'COUNT': 'COUNT',
-        'COUNT_ALL': 'COUNT_ALL'
+        'OR' : 'OR',
+        'SUM': 'SUM'
     }
 
     complex_ops = {
         'DIFF': 'DIFF',
-        'SD_ANOMALY': 'SD_ANOMALY'
+        'SD_ANOMALY': 'SD_ANOMALY',
+        'NO_MATCH': 'NO_MATCH'
+    }
+
+    complex_params = {
+        'MAJORITY': MAJORITY,
     }
 
     assert_ops = {
@@ -124,21 +135,23 @@ class HealthLexer(object):
     }
 
     reserved = {
-        'select': 'SELECT',
-        'from': 'FROM',
         'as': 'AS',
-        'do': 'DO',
-        'group': 'GROUP',
         'by': 'BY',
+        'common': 'COMMON',
+        'do': 'DO',
+        'from': 'FROM',
+        'group': 'GROUP',
+        'ignore': 'IGNORE',
         'like': 'LIKE',
         'on': 'ON',
-        'common': 'COMMON'
+        'save': 'SAVE',
+        'select': 'SELECT'
     }
 
-    tokens = ['NUMBER',     'BOOL_VAL',
+    tokens = ['NUMBER',     'FLOAT', 'BOOL_VAL',
               'VAR',        'NEW_VAR',
               'COMPONENT', 'GROUP_ID', 'COMPONENT_AND_GROUP_ID',
-              'AGG_OP', 'COMPLEX_OP', 'ASSERT_OP', 'ASSERT_LEVEL',
+              'AGG_OP', 'COMPLEX_OP', 'COMPLEX_PARAM', 'ASSERT_OP', 'ASSERT_LEVEL',
               'STRING',
               'COMMA',      'DOT',
               'PLUS',       'MINUS',
@@ -151,6 +164,11 @@ class HealthLexer(object):
               'ASSIGN',
               'PCT',
               ] + list(reserved.values())
+
+    def t_FLOAT(self, t):
+        r'\d+(\.(\d+)?([eE][-+]?\d+)?|[eE][-+]?\d+)'
+        t.value = float(t.value)
+        return t
 
     def t_NUMBER(self, t):
         r'\d+'
@@ -180,6 +198,9 @@ class HealthLexer(object):
             t.type = "AGG_OP"
         elif t.value in HealthLexer.complex_ops.keys():
             t.type = "COMPLEX_OP"
+        elif t.value in HealthLexer.complex_params.keys():
+            t.value = HealthLexer.complex_params[t.value]
+            t.type = "COMPLEX_PARAM"
         elif t.value in HealthLexer.assert_ops.keys():
             t.type = "ASSERT_OP"
         elif t.value in HealthLexer.assert_levels.keys():
@@ -187,7 +208,7 @@ class HealthLexer(object):
             t.type = "ASSERT_LEVEL"
         elif t.value in HealthVars:
             t.type = "VAR"
-            t.value = (t.value, copy.deepcopy(HealthVars[t.value]))
+            t.value = (HEALTH_PARSER_VAR, t.value, copy.deepcopy(HealthVars[t.value]))
         return t
 
     def t_STRING(self, t):
@@ -257,12 +278,13 @@ class HealthParser(object):
         if len(p) > 2 and p[2] is not None:
             if isinstance(p[2], Exception):
                 val = None
-            elif isinstance(p[2], tuple):
-                val = p[2][1]
+            elif is_health_parser_variable(p[2]):
+                val = p[2][2]
             else:
                 val = p[2]
-            if isinstance(p[1], tuple):
-                HealthVars[p[1][0]] = val
+
+            if is_health_parser_variable(p[1]):
+                HealthVars[p[1][1]] = val
             else:
                 HealthVars[p[1]] = val
             p[0] = val
@@ -295,27 +317,46 @@ class HealthParser(object):
 
     def p_complex_operation(self, p):
         """
-        complex_operation : COMPLEX_OP LPAREN operand COMMA comparison_op COMMA operand RPAREN
+        complex_operation : COMPLEX_OP LPAREN operand COMMA comparison_op COMMA complex_comparison_operand RPAREN
         """
         p[0] = (p[1], p[3], None, p[5], p[7], False)
+
+    def p_complex_comparison_operand(self, p):
+        """
+        complex_comparison_operand : COMPLEX_PARAM
+                   | operand
+        """
+        if is_health_parser_variable(p[1]):
+            p[0] = p[1][2]
+
+        elif not isinstance(p[1], tuple):
+            p[0] = create_health_internal_tuple(p[1], [])
+
+        else:
+            p[0] = p[1]
 
     def p_operand(self, p):
         """
         operand : VAR
-                   | number
-                   | STRING
-                   | BOOL_VAL
+                   | constant
         """
-        if isinstance(p[1], tuple):
-            p[0] = p[1][1]
+        if is_health_parser_variable(p[1]):
+            p[0] = p[1][2]
         else:
-            p[0] = h_eval(p[1])
+            p[0] = create_health_internal_tuple(p[1], [])
+
+    def p_value(self, p):
+        """
+        value : NUMBER
+                | FLOAT
+        """
+        p[0] = p[1]
 
     def p_number(self, p):
         """
-        number : NUMBER
-                   | PLUS NUMBER
-                   | MINUS NUMBER
+        number : value
+                   | PLUS value
+                   | MINUS value
         """
         if len(p) == 2:
             p[0] = p[1]
@@ -389,7 +430,7 @@ class HealthParser(object):
         group_by_statement : group_by_clause VAR
         """
         try:
-            p[0] = do_multiple_group_by(p[2][1], p[1])
+            p[0] = do_multiple_group_by(p[2][2], p[1])
         except Exception as e:
             p[0] = e
 
@@ -419,15 +460,31 @@ class HealthParser(object):
 
     def p_op_statement(self, p):
         """
-        op_statement : opt_group_by_clause DO simple_operation
-                        | opt_group_by_clause DO agg_operation
-                        | opt_group_by_clause DO complex_operation
+        op_statement : opt_group_by_clause DO simple_operation opt_save_clause
+                        | opt_group_by_clause DO agg_operation opt_save_clause
+                        | opt_group_by_clause DO complex_operation opt_save_clause
         """
         try:
             p[0] = do_operation(op=p[3][0], arg1=p[3][1], arg2=p[3][2], group_by=p[
-                                1], result_comp_op=p[3][3], result_comp_val=p[3][4], on_common_only=p[3][5])
+                                1], result_comp_op=p[3][3], result_comp_val=p[3][4], on_common_only=p[3][5], save_param=p[4])
         except Exception as e:
             p[0] = e
+
+    def p_opt_save_clause(self, p):
+        """
+        opt_save_clause : SAVE opt_as_clause
+                         |
+        """
+        if len(p) == 3:
+            if p[2] is None:
+                # No keyname entered so use same as value keyname
+                p[0] = ""
+            else:
+                # Keyname entered
+                p[0] = p[2]
+        else:
+            # No data saving
+            p[0] = None
 
     def p_assert_statement(self, p):
         """
@@ -461,7 +518,7 @@ class HealthParser(object):
                         pass
 
                     p[0] = do_assert(
-                        op=p[1], data=data, check_val=True, error=p[7], category=p[9], level=p[11], description=p[13], success_msg=p[15])
+                        op=p[1], data=data, check_val=create_health_internal_tuple(True,[]), error=p[7], category=p[9], level=p[11], description=p[13], success_msg=p[15])
                 else:
                     p[0] = do_assert(
                         op=p[1], data=p[3], check_val=p[5], error=p[7], category=p[9], level=p[11], description=p[13], success_msg=p[15])
@@ -485,23 +542,23 @@ class HealthParser(object):
 
     def p_assert_arg(self, p):
         """
-        assert_arg : VAR
-                      | number
-                      | STRING
-                      | BOOL_VAL
+        assert_arg : operand
         """
-        if isinstance(p[1], tuple):
-            p[0] = p[1][1]
-        else:
-            p[0] = p[1]
+        p[0] = p[1]
 
     def p_assert_comparison_arg(self, p):
         """
-        assert_comparison_arg : number
-                                 | STRING
-                                 | BOOL_VAL
+        assert_comparison_arg : constant
         """
-        p[0] = p[1]
+        p[0] = create_health_internal_tuple(p[1], [])
+
+    def p_constant(self, p):
+        """
+        constant : number
+                    | STRING
+                    | BOOL_VAL
+        """
+        p[0] = h_eval(p[1])
 
     def p_assert_category(self, p):
         """
@@ -532,13 +589,13 @@ class HealthParser(object):
 
     def p_select_statement(self, p):
         """
-        select_statement : SELECT select_keys opt_from_clause
+        select_statement : SELECT select_keys opt_from_clause opt_ignore_clause opt_save_clause
                           | operand
         """
         if len(p) > 2:
             try:
-                p[0] = select_keys(
-                    data=self.health_input_data, select_keys=p[2], select_from_keys=p[3])
+                p[0] = select_keys(data=self.health_input_data, select_keys=p[2],
+                                   select_from_keys=p[3], ignore_keys=p[4], save_param=p[5])
             except Exception as e:
                 p[0] = e
         else:
@@ -629,6 +686,42 @@ class HealthParser(object):
             p[0] = (True, pattern, p[5])
         else:
             p[0] = (False, p[1], p[2])
+
+    def p_opt_ignore_clause(self, p):
+        """
+        opt_ignore_clause : IGNORE ignore_keys
+                         |
+        """
+        if len(p) == 1:
+            p[0] = []
+        else:
+            p[0] = p[2]
+
+    def p_ignore_keys(self, p):
+        """
+        ignore_keys : ignore_keys COMMA ignore_key
+                      | ignore_key
+        """
+        if len(p) > 2:
+            p[1].append(p[3])
+            p[0] = p[1]
+        else:
+            p[0] = [p[1]]
+
+    def p_ignore_key(self, p):
+        """
+        ignore_key : LIKE LPAREN key RPAREN
+                      | key
+        """
+        if len(p) > 2:
+            pattern = p[3]
+            if not pattern.startswith("^"):
+                pattern = "^" + str(pattern)
+            if not pattern.endswith("$"):
+                pattern += "$"
+            p[0] = (True, pattern)
+        else:
+            p[0] = (False, p[1])
 
     def p_key(self, p):
         """

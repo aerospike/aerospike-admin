@@ -15,8 +15,8 @@
 import re
 
 from lib.health.exceptions import HealthException
-from lib.health.operation import SimpleOperation, AggOperation, ComplexOperation, AssertDetailOperation
-from lib.health.util import fetch_keys_from_dict, create_snapshot_key
+from lib.health.operation import select_keys_from_dict, SimpleOperation, AggOperation, ComplexOperation, AssertDetailOperation
+from lib.health.util import create_health_internal_tuple, create_snapshot_key
 
 SNAPSHOT_KEY_PREFIX = "SNAPSHOT"
 SNAPSHOT_KEY_PATTERN = r"SNAPSHOT(\d+)$"
@@ -34,6 +34,7 @@ op_list = {
     "<=": SimpleOperation("<=").operate,
     "==": SimpleOperation("==").operate,
     "!=": SimpleOperation("!=").operate,
+    "%%": SimpleOperation("%%").operate,
     "&&": SimpleOperation("AND").operate,
     "||": SimpleOperation("OR").operate,
     "AND": AggOperation("AND").operate,
@@ -47,7 +48,8 @@ op_list = {
     "COUNT": AggOperation("COUNT").operate,
     "COUNT_ALL": AggOperation("COUNT_ALL").operate,
     "DIFF": ComplexOperation("DIFF").operate,
-    "SD_ANOMALY": ComplexOperation("SD_ANOMALY").operate
+    "SD_ANOMALY": ComplexOperation("SD_ANOMALY").operate,
+    "NO_MATCH": ComplexOperation("NO_MATCH").operate
 }
 
 assert_op_list = {
@@ -56,20 +58,16 @@ assert_op_list = {
 
 
 def do_operation(op=None, arg1=None, arg2=None, group_by=None,
-                 result_comp_op=None, result_comp_val=None, on_common_only=False):
+                 result_comp_op=None, result_comp_val=None, on_common_only=False, save_param=None):
 
     if op in op_list:
         return op_list[op](arg1, arg2, group_by, result_comp_op,
-                           result_comp_val, on_common_only=on_common_only)
-
-    if op == "%%" and (isinstance(arg1, int) or isinstance(arg1, float)):
-        return op_list["*"](arg2, float(arg1) / 100, group_by,
-                            on_common_only=on_common_only)
+                           result_comp_val, on_common_only=on_common_only, save_param=save_param)
 
     return None
 
 
-def select_keys(data={}, select_keys=[], select_from_keys=[]):
+def select_keys(data={}, select_keys=[], select_from_keys=[], ignore_keys=[], save_param=None):
     if not data or not isinstance(data, dict):
         raise HealthException("Wrong Input Data for select operation.")
 
@@ -85,8 +83,12 @@ def select_keys(data={}, select_keys=[], select_from_keys=[]):
     elif select_from_keys[0].startswith(SNAPSHOT_KEY_PREFIX):
         select_from_keys[0] = create_snapshot_key(int(re.search(SNAPSHOT_KEY_PATTERN, select_from_keys[0]).group(1)))
 
-    result = fetch_keys_from_dict(data=data, keys=select_keys,
-                                  from_keys=select_from_keys)
+    config_param = False
+    if "CONFIG" in select_from_keys:
+        config_param = True
+
+    result = select_keys_from_dict(data=data, keys=select_keys, from_keys=select_from_keys, ignore_keys=ignore_keys,
+                                   save_param=save_param, config_param=config_param)
 
     if not result:
         raise HealthException(
@@ -95,7 +97,7 @@ def select_keys(data={}, select_keys=[], select_from_keys=[]):
     return result
 
 
-def do_assert(op=None, data={}, check_val=True, error=None, category=None,
+def do_assert(op=None, data={}, check_val=create_health_internal_tuple(True,[]), error=None, category=None,
               level=None, description=None, success_msg=None):
     if op in assert_op_list:
         return assert_op_list[op](data, check_val, error, category, level,
@@ -116,7 +118,7 @@ def do_assert_if_check(op=None, arg1=None, arg2=None):
         arg1 = do_operation(op=op, arg1=arg1, arg2=arg2)
 
     # return filter argument should be in boolean form, True for key to skip and False for key to check
-    return not is_data_true(arg1), do_operation(op="==", arg1=arg1, arg2=False)
+    return not is_data_true(arg1), do_operation(op="==", arg1=arg1, arg2=(False,[]))
 
 def is_data_true(data):
     """

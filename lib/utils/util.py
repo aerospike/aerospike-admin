@@ -13,18 +13,18 @@
 # limitations under the License.
 import copy
 from distutils.version import LooseVersion
-
-import re
-import threading
-import subprocess
 import pipes
-import sys
+import re
 import StringIO
+import subprocess
+import sys
+import threading
+
+from lib.utils import filesize
+
 
 # Dictionary to contain feature and related stats to identify state of that feature
 # Format : { feature1: ((service_stat1, service_stat2, ....), (namespace_stat1, namespace_stat2, ...), ...}
-from lib.utils import filesize
-
 FEATURE_KEYS = {
         "KVS": (('stat_read_reqs', 'stat_write_reqs'), ('client_read_error', 'client_read_success', 'client_write_error', 'client_write_success')),
         "UDF": (('udf_read_reqs', 'udf_write_reqs'), ('client_udf_complete', 'client_udf_error')),
@@ -112,7 +112,7 @@ def capture_stdout(func, line=''):
 
 
 def compile_likes(likes):
-    likes = map(re.escape, likes)
+    likes = ["(" + like.translate(None, '\'"') + ")" for like in likes]
     likes = "|".join(likes)
     likes = re.compile(likes)
     return likes
@@ -253,8 +253,17 @@ def get_value_from_dict(d, keys, default_value=None, return_type=None):
                     return val
 
                 try:
+                    if return_type == bool:
+                        if val.lower() == "false":
+                            return False
+                        if val.lower() == "true":
+                            return True
+                except Exception:
+                    pass
+
+                try:
                     return return_type(val)
-                except:
+                except Exception:
                     pass
 
             return default_value
@@ -410,7 +419,7 @@ def pct_to_value(data, d_pct):
 
     return out_map
 
-def is_keyval_greater_than_value(data={}, keys=(), value=0, is_and=False, type_check=int):
+def _is_keyval_greater_than_value(data={}, keys=(), value=0, is_and=False, type_check=int):
     """
     Function takes dictionary, keys and value to compare.
     Returns boolean to indicate value for key is greater than comparing value or not.
@@ -442,19 +451,19 @@ def check_feature_by_keys(service_data=None, service_keys=None, ns_data=None, ns
     """
 
     if service_data and not isinstance(service_data, Exception) and service_keys:
-        if is_keyval_greater_than_value(service_data, service_keys):
+        if _is_keyval_greater_than_value(service_data, service_keys):
             return True
 
     if ns_data and ns_keys:
         for ns, nsval in ns_data.iteritems():
             if not nsval or isinstance(nsval, Exception):
                 continue
-            if is_keyval_greater_than_value(nsval, ns_keys):
+            if _is_keyval_greater_than_value(nsval, ns_keys):
                 return True
 
     return False
 
-def find_features_for_cluster(service_data, ns_data):
+def _find_features_for_cluster(service_data, ns_data):
     """
     Function takes dictionary of service data and dictionary of namespace data.
     Returns list of active (used) features identifying by comparing respective keys for non-zero value.
@@ -476,7 +485,7 @@ def find_features_for_cluster(service_data, ns_data):
 
     return features
 
-def compute_set_overhead_for_ns(set_stats, ns):
+def _compute_set_overhead_for_ns(set_stats, ns):
     """
     Function takes set stat and namespace name.
     Returns set overhead for input namespace name.
@@ -500,9 +509,9 @@ def compute_set_overhead_for_ns(set_stats, ns):
 
     return overhead
 
-def compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict):
+def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict):
     """
-    Function takes dictionary of  service stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
+    Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
     """
 
@@ -535,7 +544,7 @@ def compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict)
             device_data_size = sum(get_value_from_second_level_of_dict(ns_stats, ("device_used_bytes", "used-bytes-disk"), default_value=0, return_type=int).values())
 
             if device_data_size > 0:
-                set_overhead = compute_set_overhead_for_ns(set_stats, ns)
+                set_overhead = _compute_set_overhead_for_ns(set_stats, ns)
                 device_data_size = device_data_size - set_overhead
 
             if device_data_size > 0:
@@ -548,20 +557,40 @@ def compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict)
                 device_record_overhead = master_objects * 64
                 device_data_size = device_data_size - device_record_overhead
 
-        ns_dict[ns]["license_data"] = {}
+        ns_dict[ns]["license_data_in_memory"] = 0
+        ns_dict[ns]["license_data_on_disk"] = 0
         if memory_data_size is not None:
-            ns_dict[ns]["license_data"]["memory_size"] = memory_data_size
+            ns_dict[ns]["license_data_in_memory"] = memory_data_size
             cl_memory_data_size += memory_data_size
 
         if device_data_size is not None:
-            ns_dict[ns]["license_data"]["device_size"] = device_data_size
+            ns_dict[ns]["license_data_on_disk"] = device_data_size
             cl_device_data_size += device_data_size
 
     cluster_dict["license_data"] = {}
     cluster_dict["license_data"]["memory_size"] = cl_memory_data_size
     cluster_dict["license_data"]["device_size"] = cl_device_data_size
 
-def initialize_summary_output(ns_list):
+def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
+    """
+    Function takes dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
+    Function finds migration status per namespace, and per cluster and updates output dictionaries.
+    """
+
+    if not namespace_stats:
+        return
+
+    for ns, ns_stats in namespace_stats.iteritems():
+        if not ns_stats or isinstance(ns_stats, Exception):
+            continue
+
+        migrations_in_progress = any(get_value_from_second_level_of_dict(ns_stats, ("migrate_tx_partitions_remaining", "migrate-tx-partitions-remaining"),
+                                                                         default_value=0, return_type=int).values())
+        if migrations_in_progress:
+            ns_dict[ns]["migrations_in_progress"] = True
+            cluster_dict["migrations_in_progress"] = True
+
+def _initialize_summary_output(ns_list):
     """
     Function takes list of namespace names.
     Returns dictionary with summary fields set.
@@ -573,6 +602,7 @@ def initialize_summary_output(ns_list):
     summary_dict["CLUSTER"]["server_version"] = []
     summary_dict["CLUSTER"]["os_version"] = []
     summary_dict["CLUSTER"]["active_features"] = []
+    summary_dict["CLUSTER"]["migrations_in_progress"] = False
 
     summary_dict["CLUSTER"]["device"] = {}
     summary_dict["CLUSTER"]["device"]["count"] = 0
@@ -587,6 +617,7 @@ def initialize_summary_output(ns_list):
     summary_dict["CLUSTER"]["memory"]["aval_pct"] = 0
 
     summary_dict["CLUSTER"]["active_ns"] = 0
+    summary_dict["CLUSTER"]["ns_count"] = 0
 
     summary_dict["CLUSTER"]["license_data"] = {}
     summary_dict["CLUSTER"]["license_data"]["memory_size"] = 0
@@ -598,23 +629,22 @@ def initialize_summary_output(ns_list):
     for ns in ns_list:
         summary_dict["FEATURES"]["NAMESPACE"][ns] = {}
 
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["device"] = {}
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count_per_node"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count_same_across_nodes"] = True
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["total"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["used_pct"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["aval_pct"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = 0
 
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = 0
 
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory"] = {}
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory"]["total"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory"]["aval_pct"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_available_pct"] = 0
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["master_objects"] = 0
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["license_data"] = {}
+
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["migrations_in_progress"] = False
 
     return summary_dict
 
@@ -624,12 +654,12 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
     Returns dictionary with summary information.
     """
 
-    features = find_features_for_cluster(service_stats, namespace_stats)
+    features = _find_features_for_cluster(service_stats, namespace_stats)
 
     namespace_stats = flip_keys(namespace_stats)
     set_stats = flip_keys(set_stats)
 
-    summary_dict = initialize_summary_output(namespace_stats.keys())
+    summary_dict = _initialize_summary_output(namespace_stats.keys())
 
     total_nodes = len(service_stats.keys())
 
@@ -642,7 +672,8 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
     cl_nodewise_device_used = {}
     cl_nodewise_device_aval = {}
 
-    compute_license_data_size(namespace_stats, set_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"])
+    _compute_license_data_size(namespace_stats, set_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"])
+    _set_migration_status(namespace_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"])
 
     summary_dict["CLUSTER"]["active_features"] = features
     summary_dict["CLUSTER"]["cluster_size"]= list(set(get_value_from_second_level_of_dict(service_stats, ("cluster_size",), default_value=0, return_type=int).values()))
@@ -665,18 +696,16 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
         ns_total_nodes = len(ns_stats.keys())
 
         if ns_total_devices:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count"] = ns_total_devices
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count_per_node"] = int((float(ns_total_devices)/float(ns_total_nodes)) + 0.5)
-            if len(set(device_counts.values())) > 1:
-                summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["count_same_across_nodes"] = False
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = ns_total_devices
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = int((float(ns_total_devices)/float(ns_total_nodes)) + 0.5)
 
         mem_size = get_value_from_second_level_of_dict(ns_stats, ("memory-size",), default_value=0, return_type=int)
         mem_aval_pct = get_value_from_second_level_of_dict(ns_stats, ("memory_free_pct", "free-pct-memory"), default_value=0, return_type=int)
         mem_aval = pct_to_value(mem_size, mem_aval_pct)
         cl_nodewise_mem_size = add_dicts(cl_nodewise_mem_size, mem_size)
         cl_nodewise_mem_aval = add_dicts(cl_nodewise_mem_aval, mem_aval)
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory"]["total"] = sum(mem_size.values())
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory"]["aval_pct"] = (float(sum(mem_aval.values()))/float(sum(mem_size.values())))*100.0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = sum(mem_size.values())
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = (float(sum(mem_aval.values()))/float(sum(mem_size.values())))*100.0
 
         device_size = get_value_from_second_level_of_dict(ns_stats, ("device_total_bytes", "total-bytes-disk"), default_value=0, return_type=int)
         device_used = get_value_from_second_level_of_dict(ns_stats, ("device_used_bytes", "used-bytes-disk"), default_value=0, return_type=int)
@@ -687,12 +716,23 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
         cl_nodewise_device_aval = add_dicts(cl_nodewise_device_aval, device_aval)
         device_size_total = sum(device_size.values())
         if device_size_total > 0:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["total"] = device_size_total
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["used_pct"] = (float(sum(device_used.values()))/float(device_size_total))*100.0
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device"]["aval_pct"] = (float(sum(device_aval.values()))/float(device_size_total))*100.0
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = device_size_total
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = (float(sum(device_used.values()))/float(device_size_total))*100.0
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_available_pct"] = (float(sum(device_aval.values()))/float(device_size_total))*100.0
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = list(set(get_value_from_second_level_of_dict(ns_stats, ("repl-factor",), default_value=0, return_type=int).values()))
+
+        data_in_memory = get_value_from_second_level_of_dict(ns_stats, ("storage-engine.data-in-memory", "data-in-memory"), default_value=False, return_type=bool).values()[0]
+
+        if data_in_memory:
+            cache_read_pcts = get_value_from_second_level_of_dict(ns_stats, ("cache_read_pct", "cache-read-pct"), default_value="N/E", return_type=int).values()
+            if cache_read_pcts:
+                try:
+                    summary_dict["FEATURES"]["NAMESPACE"][ns]["cache_read_pct"] = sum(cache_read_pcts)/len(cache_read_pcts)
+                except Exception:
+                    pass
         master_objects = sum(get_value_from_second_level_of_dict(ns_stats, ("master_objects", "master-objects"), default_value=0, return_type=int).values())
+        summary_dict["CLUSTER"]["ns_count"] += 1
         if master_objects > 0:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["master_objects"] = master_objects
             summary_dict["CLUSTER"]["active_ns"] += 1
@@ -924,3 +964,22 @@ def create_histogram_output(histogram_name, histogram_data, **params):
 
     return _create_bytewise_histogram_percentiles_output(histogram_data, params["bucket_count"], params["builds"])
 
+def find_delimiter_in(value):
+    """Find a good delimiter to split the value by"""
+
+    for d in [';', ':', ',']:
+        if d in value:
+            return d
+
+    return ';'
+
+def convert_edition_to_shortform(edition):
+    """Convert edition to shortform EE or CE or N/E"""
+
+    if edition.lower() in ['enterprise', 'true', 'ee'] or 'enterprise' in edition.lower():
+        return "Enterprise"
+
+    if edition.lower() in ['community', 'false', 'ce'] or 'community' in edition.lower():
+        return "Community"
+
+    return "N/E"

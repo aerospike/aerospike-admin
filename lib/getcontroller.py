@@ -104,13 +104,14 @@ class GetConfigController():
         self.cluster = cluster
 
     def get_all(self, nodes='all'):
-        config_map = {'service': (util.Future(self.get_service, nodes=nodes).start()).result(),
-                      'namespace': (util.Future(self.get_namespace, nodes=nodes).start()).result(),
-                      'network': (util.Future(self.get_network, nodes=nodes).start()).result(),
-                      'xdr': (util.Future(self.get_xdr, nodes=nodes).start()).result(),
-                      'dc': (util.Future(self.get_dc, nodes=nodes).start()).result(),
-                      'cluster': (util.Future(self.get_cluster, nodes=nodes).start()).result()
-                      }
+        futures = [('service', (util.Future(self.get_service, nodes=nodes).start())),
+                   ('namespace', (util.Future(self.get_namespace, nodes=nodes).start())),
+                   ('network', (util.Future(self.get_network, nodes=nodes).start())),
+                   ('xdr', (util.Future(self.get_xdr, nodes=nodes).start())),
+                   ('dc', (util.Future(self.get_dc, nodes=nodes).start())),
+                   ('cluster', (util.Future(self.get_cluster, nodes=nodes).start()))]
+        config_map = dict(((k, f.result()) for k, f in futures))
+
         return config_map
 
     def get_service(self, nodes='all'):
@@ -234,14 +235,15 @@ class GetStatisticsController():
         self.cluster = cluster
 
     def get_all(self, nodes='all'):
-        stat_map = {'service': (util.Future(self.get_service, nodes=nodes).start()).result(),
-                    'namespace': (util.Future(self.get_namespace, nodes=nodes).start()).result(),
-                    'set': (util.Future(self.get_sets, nodes=nodes).start()).result(),
-                    'bin': (util.Future(self.get_bins, nodes=nodes).start()).result(),
-                    'sindex': (util.Future(self.get_sindex, nodes=nodes).start()).result(),
-                    'xdr': (util.Future(self.get_xdr, nodes=nodes).start()).result(),
-                    'dc': (util.Future(self.get_dc, nodes=nodes).start()).result()
-                    }
+        futures = [('service', (util.Future(self.get_service, nodes=nodes).start())),
+                   ('namespace', (util.Future(self.get_namespace, nodes=nodes).start())),
+                   ('set', (util.Future(self.get_sets, nodes=nodes).start())),
+                   ('bin', (util.Future(self.get_bins, nodes=nodes).start())),
+                   ('sindex', (util.Future(self.get_sindex, nodes=nodes).start())),
+                   ('xdr', (util.Future(self.get_xdr, nodes=nodes).start())),
+                   ('dc', (util.Future(self.get_dc, nodes=nodes).start()))]
+        stat_map = dict(((k, f.result()) for k, f in futures))
+
         return stat_map
 
     def get_service(self, nodes='all'):
@@ -250,20 +252,24 @@ class GetStatisticsController():
 
     def get_namespace(self, nodes='all', for_mods=[]):
         namespaces = self.cluster.info_namespaces(nodes=nodes)
-
         namespaces = namespaces.values()
         namespace_set = set()
+
         for namespace in namespaces:
             if isinstance(namespace, Exception):
                 continue
-            namespace_set.update(namespace)
-        namespace_list = util.filter_list(list(namespace_set), for_mods)
 
+            namespace_set.update(namespace)
+
+        namespace_list = util.filter_list(list(namespace_set), for_mods)
+        futures = [(namespace, util.Future(
+            self.cluster.info_namespace_statistics, namespace, nodes=nodes).start())
+                   for namespace in namespace_list]
         ns_stats = {}
-        for namespace in namespace_list:
-            ns_stats[namespace] = util.Future(
-                self.cluster.info_namespace_statistics, namespace,
-                nodes=nodes).start().result()
+
+        for namespace, stat_future in futures:
+            ns_stats[namespace] = stat_future.result()
+
             for _k in ns_stats[namespace].keys():
                 if not ns_stats[namespace][_k]:
                     ns_stats[namespace].pop(_k)
@@ -396,7 +402,15 @@ class GetPmapController():
                 if cluster_keys[node] not in repl_factor:
                     repl_factor[cluster_keys[node]] = 0
 
-                repl_factor[cluster_keys[node]] = max(repl_factor[cluster_keys[node]], int(params['repl-factor']))
+                repl_factor[cluster_keys[node]] = max(
+                    repl_factor[cluster_keys[node]],
+                    util.get_value_from_dict(
+                        params,
+                        ('repl-factor',
+                         'effective_replication_factor'),  # introduced post 3.15.0.1
+                        default_value=0,
+                        return_type=int
+                    ))
 
             for ck in repl_factor:
                 if ck not in ns_info:

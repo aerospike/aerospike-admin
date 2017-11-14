@@ -334,7 +334,7 @@ class SSLContext(object):
                     pass
                 cnnames.add(value)
         else:
-            raise ImportError("No module named pyasn1")
+            raise ImportError("No module named pyasn1. It is required for dnsname_match.")
 
         if len(cnnames) > 1:
             raise Exception("tls_name %r doesn't match either of %s" % (
@@ -466,10 +466,32 @@ class SSLContext(object):
             self.ctx.set_verify(
                 SSL.VERIFY_PEER | SSL.VERIFY_CLIENT_ONCE, self._verify_cb)
             if cafile or capath:
-                self.ctx.load_verify_locations(cafile, capath)
+                try:
+                    self.ctx.load_verify_locations(cafile, capath)
+                except Exception as e:
+                    path = ""
+
+                    if cafile:
+                        path = "cafile=%s"%(str(cafile))
+
+                    if capath:
+                        if path:
+                            path += " and "
+                        path += "capath=%s"%(str(capath))
+
+                    raise Exception("Failed to load CA certificate from %s \n %s"%(path, str(e)))
+
             if certfile:
-                self.ctx.use_certificate_chain_file(certfile)
+                try:
+                    self.ctx.use_certificate_chain_file(certfile)
+                except Exception as e:
+                    raise Exception("Failed to load certificate chain file %s \n %s"%(certfile, str(e)))
+
             if keyfile:
-                self.ctx.use_privatekey_file(keyfile)
+                try:
+                    self.ctx.use_privatekey_file(keyfile)
+                except Exception as e:
+                    raise Exception("Failed to load private key %s \n %s"%(keyfile, str(e)))
+
         if cipher_suite:
             self.ctx.set_cipher_list(cipher_suite)

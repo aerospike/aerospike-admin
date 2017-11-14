@@ -160,7 +160,7 @@ class Loghdlr(object):
                     del self.selected_logs[log]
 
             except Exception as e:
-                self.logger.error(e)
+                self.logger.warning("Ignoring remove operation for index %s. Error: %s"%(str(index), str(e)))
                 continue
 
     def select_logs_by_index(self, indices="all"):

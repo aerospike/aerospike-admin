@@ -167,8 +167,8 @@ class LogReader(object):
             try:
                 init_dt = tail_dt - self.parse_timedelta(arg_from.strip("- "))
             except Exception:
-                self.logger.error(
-                    "Can't parse relative start time " + arg_from)
+                self.logger.warning(
+                    "Ignoring relative start time. Can't parse relative start time " + arg_from)
                 return 0
         else:
             # Absolute start time:
@@ -176,8 +176,8 @@ class LogReader(object):
                 init_dt = datetime.datetime(
                     *(time.strptime(arg_from, DT_FMT)[0:6]))
             except Exception as e:
-                self.logger.error(
-                    "Can't parse absolute start time " + arg_from + " " + str(e))
+                self.logger.warning(
+                    "Ignoring absolute start time. Can't parse absolute start time " + arg_from + " " + str(e))
                 return 0
         return init_dt
 
