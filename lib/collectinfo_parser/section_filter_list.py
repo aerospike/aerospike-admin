@@ -44,7 +44,8 @@ FILTER_LIST = {
         'raw_section_name': 'XDR',
         'final_section_name': 'xdr_info',
         'regex_new': "\['xdr'\]|^XDR\n",
-        'regex_old': '^XDR\n'
+        'regex_old': '^XDR\n',
+        'collision_allowed': True
         # 'parser_func'
     },
     'ID_4': {
@@ -393,6 +394,7 @@ FILTER_LIST = {
         'enable': True,
         'raw_section_name': 'info_network',
         'regex_new': "'network'",
+        'collision_allowed': True
         # 'parser_func':
     },
     'ID_50': {
@@ -817,3 +819,6 @@ DERIVED_SECTION_LIST = ['features']
 
 # List of histogram dumps (raw)
 HISTOGRAM_SECTION_NAME_LIST = ['histogram.ttl', 'histogram.objsz']
+
+# List of latency dumps
+LATENCY_SECTION_NAME_LIST = ['latency']

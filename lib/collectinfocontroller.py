@@ -250,6 +250,7 @@ class ShowController(CollectinfoCommandController):
         self.controller_map = {
             'config': ShowConfigController,
             'statistics': ShowStatisticsController,
+            'latency': ShowLatencyController,
             'distribution': ShowDistributionController,
             'pmap': ShowPmapController
         }
@@ -454,6 +455,81 @@ class ShowDistributionController(CollectinfoCommandController):
     @CommandHelp('Shows the distribution of Eviction TTLs for namespaces')
     def do_eviction(self, line):
         return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
+
+
+class ShowLatencyController(CollectinfoCommandController):
+
+    def __init__(self):
+        self.modifiers = set(['like', 'for'])
+
+    @CommandHelp('Displays latency information for Aerospike cluster.',
+                 '  Options:',
+                 '    -m           - Set to display the output group by machine names.')
+    def _do_default(self, line):
+
+        machine_wise_display = util.check_arg_and_delete_from_mods(line=line,
+                arg="-m", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
+        namespaces = {}
+        if self.mods['for']:
+            namespaces = self.loghdlr.info_namespaces()
+
+        latency = self.loghdlr.info_latency()
+
+        for timestamp in sorted(latency.keys()):
+            namespace_set = set()
+            _latency = {}
+            if timestamp in namespaces:
+                _namespaces = namespaces[timestamp].values()
+                for _namespace in _namespaces:
+                    if isinstance(_namespace, Exception):
+                        continue
+                    namespace_set.update(_namespace)
+                namespace_set = set(
+                    util.filter_list(list(namespace_set), self.mods['for']))
+
+                for node_id, node_data in latency[timestamp].iteritems():
+                    if not node_data or isinstance(node_data, Exception):
+                        continue
+                    if node_id not in _latency:
+                        _latency[node_id] = {}
+                    for hist_name, hist_data in node_data.iteritems():
+                        if not hist_data or isinstance(hist_data, Exception):
+                            continue
+
+                        if hist_name not in _latency[node_id]:
+                            _latency[node_id][hist_name] = {}
+
+                        for _type, _type_data in hist_data.iteritems():
+                            _latency[node_id][hist_name][_type] = {}
+                            if _type != "namespace":
+                                _latency[node_id][hist_name][_type] = _type_data
+                                continue
+
+                            for _ns, _ns_data in _type_data.iteritems():
+                                if _ns in namespace_set:
+                                    _latency[node_id][hist_name][_type][_ns] = _ns_data
+
+            else:
+                _latency = latency[timestamp]
+
+            hist_latency = {}
+            if machine_wise_display:
+                hist_latency = _latency
+            else:
+                for node_id, node_data in _latency.iteritems():
+                    if not node_data or isinstance(node_data, Exception):
+                        continue
+                    for hist_name, hist_data in node_data.iteritems():
+                        if hist_name not in hist_latency:
+                            hist_latency[hist_name] = {}
+
+                        hist_latency[hist_name][node_id] = hist_data
+
+            self.view.show_latency(hist_latency, self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    machine_wise_display=machine_wise_display,
+                    show_ns_details=True if namespace_set else False, **self.mods)
 
 
 @CommandHelp('Displays statistics for Aerospike components.')
@@ -694,29 +770,21 @@ class FeaturesController(CollectinfoCommandController):
     def _do_default(self, line):
         service_stats = self.loghdlr.info_statistics(stanza=STAT_SERVICE)
         namespace_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE)
+        cluster_configs = self.loghdlr.info_getconfig(stanza=CONFIG_CLUSTER)
 
         for timestamp in sorted(service_stats.keys()):
             features = {}
+            s_stats = service_stats[timestamp]
             ns_stats = {}
+            cl_configs = {}
 
             if timestamp in namespace_stats:
                 ns_stats = namespace_stats[timestamp]
-                # ns_stats = util.flip_keys(ns_stats)
 
-            for feature, keys in util.FEATURE_KEYS.iteritems():
-                for node, s_stats in service_stats[timestamp].iteritems():
+            if timestamp in cluster_configs:
+                cl_configs = cluster_configs[timestamp]
 
-                    if node not in features:
-                        features[node] = {}
-
-                    features[node][feature.upper()] = "NO"
-                    n_stats = None
-
-                    if node in ns_stats and not isinstance(ns_stats[node], Exception):
-                        n_stats = ns_stats[node]
-
-                    if util.check_feature_by_keys(s_stats, keys[0], n_stats, keys[1]):
-                        features[node][feature.upper()] = "YES"
+            features = util.find_nodewise_features(service_data=s_stats, ns_data=ns_stats, cl_data=cl_configs)
 
             self.view.show_config(
                 "(%s) Features" %
@@ -822,6 +890,18 @@ class HealthCheckController(CollectinfoCommandController):
                     ("dc", "DC", "CONFIG", True, [
                         ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
                     ("namespace", "NAMESPACE", "CONFIG", True, [
+                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
+                ]),
+                "original_config": (self.loghdlr.info_get_originalconfig, [
+                    ("service", "SERVICE", "ORIGINAL_CONFIG", True,
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("xdr", "XDR", "ORIGINAL_CONFIG", True, [
+                        ("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("network", "NETWORK", "ORIGINAL_CONFIG", True, [
+                        ("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("dc", "DC", "ORIGINAL_CONFIG", True, [
+                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
+                    ("namespace", "NAMESPACE", "ORIGINAL_CONFIG", True, [
                         ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
                 ]),
                 "cluster": (self.loghdlr.info_meta_data, [
@@ -974,15 +1054,65 @@ class SummaryController(CollectinfoCommandController):
         namespace_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE)
         set_stats = self.loghdlr.info_statistics(stanza=STAT_SETS)
 
+        cluster_configs = self.loghdlr.info_getconfig(stanza=CONFIG_CLUSTER)
+
         os_version = self.loghdlr.get_sys_data(stanza="lsb")
+        kernel_version = self.loghdlr.get_sys_data(stanza="uname")
         server_version = self.loghdlr.info_meta_data(stanza="asd_build")
+        server_edition = self.loghdlr.info_meta_data(stanza="edition")
 
         last_timestamp = sorted(service_stats.keys())[-1]
 
+        try:
+            cluster_configs = cluster_configs[last_timestamp]
+        except:
+            cluster_configs = {}
+
         metadata = {}
-        metadata["server_version"] = server_version[last_timestamp]
-        metadata["os_version"] = os_version[last_timestamp]
+        metadata["server_version"] = {}
+
+        server_version = server_version[last_timestamp]
+        server_edition = server_edition[last_timestamp]
+
+        for node, version in server_version.iteritems():
+            if not version or isinstance(version, Exception):
+                continue
+
+            if node in server_edition and server_edition[node] and not isinstance(server_edition[node], Exception):
+                if 'enterprise' in server_edition[node].lower():
+                    metadata["server_version"][node] = "E-%s" % (str(version))
+                elif 'community' in server_edition[node].lower():
+                    metadata["server_version"][node] = "C-%s" % (str(version))
+                else:
+                    metadata["server_version"][node] = version
+
+            else:
+                metadata["server_version"][node] = version
+
+        os_version = os_version[last_timestamp]
+        kernel_version = kernel_version[last_timestamp]
+
+        try:
+            if kernel_version:
+                for node, version in os_version.iteritems():
+                    if not version or isinstance(version, Exception):
+                        continue
+
+                    if node not in kernel_version or not kernel_version[node] or isinstance(kernel_version[node], Exception):
+                        continue
+
+                    try:
+                        ov = version["description"]
+                        kv = kernel_version[node]["kernel_release"]
+                        version["description"] = str(ov) + " (%s)"%str(kv)
+                    except Exception:
+                        pass
+
+        except Exception:
+            pass
+
+        metadata["os_version"] = os_version
 
         self.view.print_summary(util.create_summary(service_stats=service_stats[last_timestamp], namespace_stats=namespace_stats[last_timestamp],
-                                                    set_stats=set_stats[last_timestamp], metadata=metadata),
+                                                    set_stats=set_stats[last_timestamp], metadata=metadata, cluster_configs=cluster_configs),
                                 list_view=enable_list_view)

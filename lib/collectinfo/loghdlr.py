@@ -103,6 +103,9 @@ class CollectinfoLoghdlr(object):
     def info_getconfig(self, stanza="", flip=False):
         return self._fetch_from_cinfo_log(type="config", stanza=stanza, flip=flip)
 
+    def info_get_originalconfig(self, stanza="", flip=False):
+        return self._fetch_from_cinfo_log(type="original_config", stanza=stanza, flip=flip)
+
     def info_statistics(self, stanza="", flip=False):
         return self._fetch_from_cinfo_log(type="statistics", stanza=stanza, flip=flip)
 
@@ -136,11 +139,17 @@ class CollectinfoLoghdlr(object):
                         pass
         return res_dict
 
+    def info_latency(self):
+        return self._fetch_from_cinfo_log(type="latency")
+
     def info_meta_data(self, stanza=""):
         return self._fetch_from_cinfo_log(type="meta_data", stanza=stanza)
 
     def info_pmap(self):
         return self._fetch_from_cinfo_log(type="pmap")
+
+    def info_namespaces(self):
+        return self._fetch_from_cinfo_log(type="config", stanza="namespace_list")
 
     def get_sys_data(self, stanza=""):
         res_dict = {}

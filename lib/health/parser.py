@@ -52,14 +52,17 @@ class HealthLexer(object):
         'DMESG': 'DMESG',
         'ENDPOINTS': 'ENDPOINTS',
         'FREE': 'FREE',
+        'HDPARM': 'HDPARM',
         'INTERRUPTS': 'INTERRUPTS',
         'IOSTAT': 'IOSTAT',
+        'IPTABLES' : 'IPTABLES',
         'LSCPU': 'LSCPU',
         'LIMITS' : 'LIMITS',
         'MEM': 'MEM',
         'MEMINFO': 'MEMINFO',
         'METADATA': 'METADATA',
         'NETWORK': 'NETWORK',
+        'ORIGINAL_CONFIG': 'ORIGINAL_CONFIG',
         'RAM': 'RAM',
         'ROLES': 'ROLES',
         'SYSTEM': 'SYSTEM',
@@ -69,8 +72,6 @@ class HealthLexer(object):
         'STATISTICS': 'STATISTICS',
         'SWAP': 'SWAP',
         'SYSCTLALL': 'SYSCTLALL',
-        'HDPARM': 'HDPARM',
-        'IPTABLES' : 'IPTABLES',
         'TASKS': 'TASKS',
         'TOP': 'TOP',
         'UDF': 'UDF',
@@ -121,6 +122,15 @@ class HealthLexer(object):
         'NO_MATCH': 'NO_MATCH'
     }
 
+    apply_ops = {
+        'APPLY_TO_ANY': 'APPLY_TO_ANY',
+        'APPLY_TO_ALL': 'APPLY_TO_ALL'
+    }
+
+    apply_comp_ops = {
+        'IN' : 'IN'
+    }
+
     complex_params = {
         'MAJORITY': MAJORITY,
     }
@@ -151,7 +161,7 @@ class HealthLexer(object):
     tokens = ['NUMBER',     'FLOAT', 'BOOL_VAL',
               'VAR',        'NEW_VAR',
               'COMPONENT', 'GROUP_ID', 'COMPONENT_AND_GROUP_ID',
-              'AGG_OP', 'COMPLEX_OP', 'COMPLEX_PARAM', 'ASSERT_OP', 'ASSERT_LEVEL',
+              'AGG_OP', 'COMPLEX_OP', 'APPLY_OP', 'APPLY_COMP_OP', 'COMPLEX_PARAM', 'ASSERT_OP', 'ASSERT_LEVEL',
               'STRING',
               'COMMA',      'DOT',
               'PLUS',       'MINUS',
@@ -198,6 +208,10 @@ class HealthLexer(object):
             t.type = "AGG_OP"
         elif t.value in HealthLexer.complex_ops.keys():
             t.type = "COMPLEX_OP"
+        elif t.value in HealthLexer.apply_ops.keys():
+            t.type = "APPLY_OP"
+        elif t.value in HealthLexer.apply_comp_ops.keys():
+            t.type = "APPLY_COMP_OP"
         elif t.value in HealthLexer.complex_params.keys():
             t.value = HealthLexer.complex_params[t.value]
             t.type = "COMPLEX_PARAM"
@@ -320,6 +334,19 @@ class HealthParser(object):
         complex_operation : COMPLEX_OP LPAREN operand COMMA comparison_op COMMA complex_comparison_operand RPAREN
         """
         p[0] = (p[1], p[3], None, p[5], p[7], False)
+
+    def p_apply_operation(self, p):
+        """
+        apply_operation : APPLY_OP LPAREN operand COMMA apply_comparison_op COMMA operand RPAREN
+        """
+        p[0] = (p[1], p[3], p[7], p[5], None, False)
+
+    def p_apply_comparison_op(self, p):
+        """
+        apply_comparison_op : APPLY_COMP_OP
+                              | comparison_op
+        """
+        p[0] = p[1]
 
     def p_complex_comparison_operand(self, p):
         """
@@ -463,6 +490,7 @@ class HealthParser(object):
         op_statement : opt_group_by_clause DO simple_operation opt_save_clause
                         | opt_group_by_clause DO agg_operation opt_save_clause
                         | opt_group_by_clause DO complex_operation opt_save_clause
+                        | opt_group_by_clause DO apply_operation opt_save_clause
         """
         try:
             p[0] = do_operation(op=p[3][0], arg1=p[3][1], arg2=p[3][2], group_by=p[

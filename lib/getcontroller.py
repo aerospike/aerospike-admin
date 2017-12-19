@@ -103,29 +103,27 @@ class GetConfigController():
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_all(self, nodes='all'):
-        futures = [('service', (util.Future(self.get_service, nodes=nodes).start())),
-                   ('namespace', (util.Future(self.get_namespace, nodes=nodes).start())),
-                   ('network', (util.Future(self.get_network, nodes=nodes).start())),
-                   ('xdr', (util.Future(self.get_xdr, nodes=nodes).start())),
-                   ('dc', (util.Future(self.get_dc, nodes=nodes).start())),
-                   ('cluster', (util.Future(self.get_cluster, nodes=nodes).start()))]
+    def get_all(self, flip=True, nodes='all'):
+        futures = [('service', (util.Future(self.get_service, flip=flip, nodes=nodes).start())),
+                   ('namespace', (util.Future(self.get_namespace, flip=flip, nodes=nodes).start())),
+                   ('network', (util.Future(self.get_network, flip=flip, nodes=nodes).start())),
+                   ('xdr', (util.Future(self.get_xdr, flip=flip, nodes=nodes).start())),
+                   ('dc', (util.Future(self.get_dc, flip=flip, nodes=nodes).start())),
+                   ('cluster', (util.Future(self.get_cluster, flip=flip, nodes=nodes).start()))]
         config_map = dict(((k, f.result()) for k, f in futures))
 
         return config_map
 
-    def get_service(self, nodes='all'):
+    def get_service(self, flip=True, nodes='all'):
         service_configs = self.cluster.info_get_config(
             nodes=nodes, stanza='service')
         for node in service_configs:
             if isinstance(service_configs[node], Exception):
                 service_configs[node] = {}
-            else:
-                service_configs[node] = service_configs[node]['service']
 
         return service_configs
 
-    def get_network(self, nodes='all'):
+    def get_network(self, flip=True, nodes='all'):
         hb_configs = util.Future(
             self.cluster.info_get_config, nodes=nodes, stanza='network.heartbeat').start()
         info_configs = util.Future(
@@ -140,7 +138,7 @@ class GetConfigController():
                 if isinstance(hb_configs[node], Exception):
                     network_configs[node] = {}
                 else:
-                    network_configs[node] = hb_configs[node]['network.heartbeat']
+                    network_configs[node] = hb_configs[node]
             except Exception:
                 pass
 
@@ -151,7 +149,7 @@ class GetConfigController():
                     continue
                 else:
                     network_configs[node].update(
-                        info_configs[node]['network.info'])
+                        info_configs[node])
             except Exception:
                 pass
 
@@ -161,34 +159,32 @@ class GetConfigController():
                 if isinstance(nw_configs[node], Exception):
                     continue
                 else:
-                    network_configs[node].update(nw_configs[node]['network'])
+                    network_configs[node].update(nw_configs[node])
             except Exception:
                 pass
 
         return network_configs
 
-    def get_namespace(self, nodes='all'):
-        namespace_configs = self.cluster.info_get_config(
+    def get_namespace(self, flip=True, nodes='all'):
+        configs = self.cluster.info_get_config(
             nodes=nodes, stanza='namespace')
-        for node in namespace_configs:
-            if isinstance(namespace_configs[node], Exception):
-                namespace_configs[node] = {}
-            else:
-                namespace_configs[node] = namespace_configs[node]['namespace']
+        for node in configs:
+            if isinstance(configs[node], Exception):
+                configs[node] = {}
 
         ns_configs = {}
-        for host, configs in namespace_configs.iteritems():
-            for ns, config in configs.iteritems():
-                if ns not in ns_configs:
-                    ns_configs[ns] = {}
+        for node, node_config in configs.iteritems():
+            if not node_config or isinstance(node_config, Exception):
+                continue
 
-                try:
-                    ns_configs[ns][host].update(config)
-                except KeyError:
-                    ns_configs[ns][host] = config
+            ns_configs[node] = node_config
+
+        if flip:
+            ns_configs = util.flip_keys(ns_configs)
+
         return ns_configs
 
-    def get_xdr(self, nodes='all'):
+    def get_xdr(self, flip=True, nodes='all'):
         configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
         xdr_configs = {}
@@ -196,26 +192,29 @@ class GetConfigController():
             if isinstance(config, Exception):
                 continue
 
-            xdr_configs[node] = config['xdr']
+            xdr_configs[node] = config
+
         return xdr_configs
 
-    def get_dc(self, nodes='all'):
-        all_dc_configs = self.cluster.info_dc_get_config(nodes=nodes)
-        dc_configs = {}
-        for host, configs in all_dc_configs.iteritems():
-            if not configs or isinstance(configs, Exception):
-                continue
-            for dc, config in configs.iteritems():
-                if dc not in dc_configs:
-                    dc_configs[dc] = {}
+    def get_dc(self, flip=True, nodes='all'):
+        configs = self.cluster.info_dc_get_config(nodes=nodes)
+        for node in configs:
+            if isinstance(configs[node], Exception):
+                configs[node] = {}
 
-                try:
-                    dc_configs[dc][host].update(config)
-                except KeyError:
-                    dc_configs[dc][host] = config
+        dc_configs = {}
+        for node, node_config in configs.iteritems():
+            if not node_config or isinstance(node_config, Exception):
+                continue
+
+            dc_configs[node] = node_config
+
+        if flip:
+            dc_configs = util.flip_keys(dc_configs)
+
         return dc_configs
 
-    def get_cluster(self, nodes='all'):
+    def get_cluster(self, flip=True, nodes='all'):
 
         configs = util.Future(self.cluster.info_get_config, nodes=nodes,
                 stanza='cluster').start()
@@ -223,9 +222,10 @@ class GetConfigController():
         configs = configs.result()
         cl_configs = {}
         for node, config in configs.iteritems():
-            if isinstance(config, Exception):
+            if not config or isinstance(config, Exception):
                 continue
-            cl_configs[node] = config['cluster']
+
+            cl_configs[node] = config
 
         return cl_configs
 
@@ -364,26 +364,15 @@ class GetStatisticsController():
         return False
 
     def get_features(self, nodes='all'):
-        service_stats = self.cluster.info_statistics(nodes=nodes)
-        ns_stats = self.cluster.info_all_namespace_statistics(nodes=nodes)
+        service_stats = util.Future(self.cluster.info_statistics, nodes=nodes).start()
+        ns_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=nodes).start()
+        cl_configs = util.Future(self.cluster.info_get_config, nodes=nodes,stanza='cluster').start()
 
-        features = {}
-        for feature, keys in util.FEATURE_KEYS.iteritems():
-            for node, s_stats in service_stats.iteritems():
+        service_stats = service_stats.result()
+        ns_stats = ns_stats.result()
+        cl_configs = cl_configs.result()
 
-                if node not in features:
-                    features[node] = {}
-
-                features[node][feature.upper()] = "NO"
-                n_stats = None
-
-                if node in ns_stats and not isinstance(ns_stats[node], Exception):
-                    n_stats = ns_stats[node]
-
-                if util.check_feature_by_keys(s_stats, keys[0], n_stats, keys[1]):
-                    features[node][feature.upper()] = "YES"
-
-        return features
+        return util.find_nodewise_features(service_data=service_stats, ns_data=ns_stats, cl_data=cl_configs)
 
 class GetPmapController():
 
@@ -407,6 +396,7 @@ class GetPmapController():
                     util.get_value_from_dict(
                         params,
                         ('repl-factor',
+                         'replication-factor',
                          'effective_replication_factor'),  # introduced post 3.15.0.1
                         default_value=0,
                         return_type=int

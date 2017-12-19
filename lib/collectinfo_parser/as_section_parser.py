@@ -19,6 +19,7 @@ import section_filter_list
 from utils import is_valid_section, get_section_name_from_id, is_bool, is_collision_allowed_for_section
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 FILTER_LIST = section_filter_list.FILTER_LIST
 DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
@@ -120,8 +121,10 @@ def get_meta_info(imap, meta_map):
         meta_map[node] = {}
         if node in asd_meta:
             meta_map[node].update(asd_meta[node])
+
         if node in xdr_meta:
             meta_map[node].update(xdr_meta[node])
+
         if node in ip_meta:
             meta_map[node].update(ip_meta[node])
 
@@ -361,9 +364,10 @@ def _get_nodes_from_latency_info(imap):
 
 def _get_nodes_from_network_info(imap):
 
-    raw_section_name, final_section_name, _ = get_section_name_from_id('ID_49')
+    sec_id = 'ID_49'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
 
-    if not is_valid_section(imap, raw_section_name, final_section_name):
+    if not is_valid_section(imap, raw_section_name, final_section_name, is_collision_allowed_for_section(sec_id)):
         return
 
     info_section_lines = imap[raw_section_name][0]
@@ -809,10 +813,11 @@ def _get_histogram_keys(latency_line):
     keys = latency_line.split()
     key_start_index = 0
     for i in range(len(keys)):
-        if keys[i] == "ops/sec":
+        if keys[i] == "time":
             key_start_index = i
     if len(keys) > 4:
-        return keys[key_start_index:]
+        key_list = ["Time Span" if i == "time" else i for i in keys[key_start_index:]]
+        return key_list
     else:
         logger.warning(
             "Number of keys in histogram is less than four " + str(keys))
@@ -824,6 +829,7 @@ def _get_histogram_values(latency_line):
     global time_regex
     if re.findall(time_regex, latency_line):
         values = re.split(time_regex, latency_line, maxsplit=1)[1].split()
+        values.insert(0, re.findall(time_regex, latency_line)[0])
         return values
 
 # To identify if a line has node_id, time isprinted in the format
@@ -1353,10 +1359,11 @@ def _identify_features_from_stats(nodes, imap, parsed_map, section_name):
         parsed_map[node][section_name] = featureobj
 
 def _get_xdr_build(imap, nodes):
-    raw_section_name, final_section_name, _ = get_section_name_from_id('ID_3')
+    sec_id = 'ID_3'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
 
-    if not is_valid_section(imap, raw_section_name, final_section_name):
-        return
+    if not is_valid_section(imap, raw_section_name, final_section_name, is_collision_allowed_for_section(sec_id)):
+        return {}
 
     xdr_info = imap[raw_section_name][0]
     header_line = 5
@@ -1374,6 +1381,7 @@ def _get_xdr_build(imap, nodes):
                     break
                 build_index = build_index + 1
         header_line = header_line - 1
+
     for node in nodes:
         for i in range(len(xdr_info)):
             if node in xdr_info[i]:
@@ -1382,16 +1390,18 @@ def _get_xdr_build(imap, nodes):
                 if build_found:
                     build = xdr_info[i].split()[build_index]
                 xdr_build[node]['xdr_build'] = build
+
     return xdr_build
 
 
 def _get_meta_from_network_info(imap, nodes):
-    raw_section_name, final_section_name, _ = get_section_name_from_id('ID_49')
+    sec_id = 'ID_49'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
 
     logger.info("Parsing section: " + final_section_name)
 
-    if not is_valid_section(imap, raw_section_name, final_section_name):
-        return
+    if not is_valid_section(imap, raw_section_name, final_section_name, is_collision_allowed_for_section(sec_id)):
+        return {}
 
     info_section_lines = imap[raw_section_name][0]
     meta_map = {}
@@ -1474,12 +1484,13 @@ def _get_meta_from_network_info(imap, nodes):
     return meta_map
 
 def _get_ip_from_network_info(imap, nodes):
-    raw_section_name, final_section_name, _ = get_section_name_from_id('ID_49')
+    sec_id = 'ID_49'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
 
     logger.info("Parsing section: " + final_section_name)
 
-    if not is_valid_section(imap, raw_section_name, final_section_name):
-        return
+    if not is_valid_section(imap, raw_section_name, final_section_name, is_collision_allowed_for_section(sec_id)):
+        return {}
 
     info_section_lines = imap[raw_section_name][0]
     ip_map = {}

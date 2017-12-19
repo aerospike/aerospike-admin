@@ -45,7 +45,8 @@ operators = {
     'OR': operator.or_,
     'MAX': max,
     'MIN': min,
-    'COUNT': len
+    'COUNT': len,
+    'IN': lambda a,b:operator.contains(b, a)
 }
 
 
@@ -417,6 +418,92 @@ class SimpleOperation():
 
         # No Group By So No Key Merging
         return self._operate_dicts(arg1, arg2, on_common_only=on_common_only, save_param=save_param)
+
+
+class ApplyOperation():
+
+    """
+    Passed In Two Vectors or Vector and Value
+
+    [ {(name, tag) : value_a}, {(name, tag) : value_b2} ...
+    op
+    [ {(name, tag) : value_a1}, {(name, tag) : value_b1} ...
+
+    OR
+
+    [ {(name, tag) : value}, {(name, tag) : value} ...
+    op
+    value
+
+    Returns boolean vector result of comparison of the both vector
+    or value and value comparison with consideration of apply operation (any or all).
+    """
+
+    apply_operators={
+        "ANY": any,
+        "ALL": all
+    }
+    def __init__(self, op):
+        self.op = self.apply_operators[op]
+
+    def _operate_each_key(self, arg1, arg2, comp_op=None):
+        if isinstance(arg1, dict):
+            return None
+
+        if not isinstance(arg2, dict):
+
+            try:
+                raw_arg1 = get_value_from_health_internal_tuple(arg1)
+                raw_arg2 = get_value_from_health_internal_tuple(arg2)
+
+                return comp_op(raw_arg1, raw_arg2)
+
+            except Exception:
+                return False
+
+        res_list = []
+        for _k in arg2:
+            res_list.append(self._operate_each_key(arg1, arg2[_k], comp_op=comp_op))
+
+        return self.op(res_list)
+
+    def _operate_dicts(self, arg1, arg2, comp_op=None, check_common=True, save_param=None):
+        if isinstance(arg1, dict):
+            if not isinstance(arg2, dict):
+                check_common = False
+
+            if check_common:
+                k1_set = set(arg1.keys())
+                k2_set = set(arg2.keys())
+                if not list(k1_set.intersection(k2_set)):
+                    check_common = False
+
+            result_dict = {}
+            for _k in arg1:
+                if check_common:
+                    if _k in arg2:
+                        result_dict[_k] = self._operate_dicts(arg1[_k], arg2[_k], comp_op=comp_op,
+                                                              check_common=check_common, save_param=save_param)
+
+                else:
+                    result_dict[_k] = self._operate_dicts(arg1[_k], arg2, comp_op=comp_op, check_common=check_common, save_param=save_param)
+            return result_dict
+
+        else:
+            result = self._operate_each_key(arg1, arg2, comp_op=comp_op)
+            val_to_save = create_value_list_to_save(save_param, value=result, op1=arg1)
+            return create_health_internal_tuple(result, val_to_save)
+
+    def operate(self, arg1, arg2, group_by=None, result_comp_op=None,
+            result_comp_val=None, on_common_only=False, save_param=None):
+        if arg1 is None or arg2 is None:
+            raise HealthException("Wrong operands for Apply operation.")
+
+        if result_comp_op is None:
+            raise HealthException("Wrong operator for Apply operation.")
+
+        # No Group By So No Key Merging
+        return self._operate_dicts(arg1, arg2, comp_op=operators[result_comp_op], save_param=save_param)
 
 
 class AggOperation():

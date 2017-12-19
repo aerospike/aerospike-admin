@@ -146,6 +146,14 @@ ASSERT(r, False, "Low system memory percentage.", "LIMITS", CRITICAL,
 				"Listed node[s] have lower than normal (< 20%) system free memory percentage. Please run 'show statistics service like system_free_mem_pct' to get actual values. Possible misconfiguration.",
 				"System memory percentage check.");
 
+f = select "memory_free_pct" as "stats", "free-pct-memory" as "stats" from NAMESPACE.STATISTICS save;
+s = select "stop-writes-pct" as "stats" from NAMESPACE.CONFIG save;
+u = do 100 - f save as "memory_used_pct";
+r = do u <= s;
+ASSERT(r, True, "Low namespace memory available pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have lower than normal (< (100 - memory_free_pct)) available memory space. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace memory available pct check.");
+
 /* NB : ADD CHECKS IF NODES ARE NOT HOMOGENOUS MEM / NUM CPU etc */
 
 
@@ -188,6 +196,39 @@ ASSERT(r, True, "Aerospike runtime memory configured < 5G.", "LIMITS", INFO,
 
 
 /*
+Current configurations and config file values difference check
+*/
+
+oc = select * from SERVICE.ORIGINAL_CONFIG save;
+c = select * from SERVICE.CONFIG save;
+r = do oc == c on common;
+ASSERT(r, True, "Service configurations different than config file values.", "OPERATIONS", INFO,
+                 "Listed Service configuration[s] are different than actual initial value set in aerospike.conf file.",
+                            "Service config runtime and conf file difference check.");
+
+oc = select * from NAMESPACE.ORIGINAL_CONFIG save;
+c = select * from NAMESPACE.CONFIG save;
+r = do oc == c on common;
+ASSERT(r, True, "Namespace configurations different than config file values.", "OPERATIONS", INFO,
+                 "Listed Namespace configuration[s] are different than actual initial value set in aerospike.conf file.",
+                            "Namespace config runtime and conf file difference check.");
+
+oc = select * from XDR.ORIGINAL_CONFIG save;
+c = select * from XDR.CONFIG save;
+r = do oc == c on common;
+ASSERT(r, True, "XDR configurations different than config file values.", "OPERATIONS", INFO,
+                 "Listed XDR configuration[s] are different than actual initial value set in aerospike.conf file.",
+                            "XDR config runtime and conf file difference check.");
+
+oc = select * from DC.ORIGINAL_CONFIG save;
+c = select * from DC.CONFIG save;
+r = do oc == c on common;
+ASSERT(r, True, "DC configurations different than config file values.", "OPERATIONS", INFO,
+                 "Listed DC configuration[s] are different than actual initial value set in aerospike.conf file.",
+                            "DC config runtime and conf file difference check.");
+
+
+/*
 Following query selects proto-fd-max from service config and client_connections from service statistics.
 It uses as clause to get proper matching structure for simple operation.
 */
@@ -199,13 +240,19 @@ ASSERT(r, False, "High system client connections.", "OPERATIONS", WARNING,
 				"Listed node[s] show higher than normal client-connections (> 80% of the max configured proto-fd-max). Please run 'show config like proto-fd-max' and 'show statistics like client_connections' for actual values. Possible can be network issue / improper client behavior / FD leak.",
 				"Client connections check.");
 
+s = select like(".*available_pct") as "stats" from NAMESPACE.STATISTICS save;
+m = select like(".*min-avail-pct") as "stats" from NAMESPACE.CONFIG save;
+critical_check = do s >= m;
+ASSERT(critical_check, True, "Low namespace disk available pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have lower than normal (< min-avail-pct) available disk space. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace disk available pct check.");
 
-s = select like(".*available_pct") from NAMESPACE.STATISTICS save;
-r = do s < 20;
-ASSERT(r, False, "Low namespace disk available pct.", "OPERATIONS", WARNING,
-				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Please run 'show statistics namespace like available_pct' to check available disk space. Probable cause - namespace size misconfiguration.",
+critical_check = do s < m;
+r = do s >= 20;
+r = do r || critical_check;
+ASSERT(r, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
+				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Probable cause - namespace size misconfiguration.",
 				"Namespace disk available pct check.");
-
 
 s = select * from SERVICE.CONFIG ignore "pidfile", "heartbeat.mtu", like(".*address"), like(".*port")  save;
 r = group by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
@@ -232,6 +279,13 @@ ASSERT(r, False, "> 1 migrate thread configured.", "OPERATIONS", INFO,
 
 
 /* Device Configuration */
+f = select "name" from SYSTEM.DF;
+d = select like(".*device.*") from NAMESPACE.CONFIG save;
+r = do APPLY_TO_ANY(d, IN, f);
+ASSERT(r, False, "Device name misconfigured.", "OPERATIONS", WARNING,
+				"Listed device[s] have partitions on same node. This might create situation like data corruption where data written to main drive gets overwritten/corrupted from data written to or deleted from the partition with the same name.",
+				"Device name misconfiguration check.");
+
 s = select "device_total_bytes", "device-total-bytes", "total-bytes-disk" from NAMESPACE.STATISTICS save;
 r = group by CLUSTER, NAMESPACE do NO_MATCH(s, ==, MAJORITY) save;
 ASSERT(r, False, "Different namespace device size configuration.", "OPERATIONS", WARNING,

@@ -19,6 +19,7 @@ import section_filter_list
 # Assumption - Always a valid number is passed to convert to integer/float
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 FILTER_LIST = section_filter_list.FILTER_LIST
 DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST

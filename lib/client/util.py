@@ -20,7 +20,7 @@ import subprocess
 import pipes
 
 
-def info_to_dict(value, delimiter=';'):
+def info_to_dict(value, delimiter=';', ignore_field_without_key_value_delimiter=True):
     """
     Simple function to convert string to dict
     """
@@ -31,8 +31,37 @@ def info_to_dict(value, delimiter=';'):
         return value
 
     stat_dict = {}
-    stat_param = itertools.imap(lambda sp: info_to_tuple(sp, "="),
-                                info_to_list(value, delimiter))
+    _tmp_value_list = info_to_list(value, delimiter)
+    _value_list = []
+    delimiter2 = "="
+
+    if ignore_field_without_key_value_delimiter:
+        _value_list = _tmp_value_list
+
+    else:
+        # Sometimes value contains confusing delimiter
+        # In such cases, after splitting on delimiter, we get items without next delimiter (=).
+        # By default we ignore such items. But in some cases like dc configs we need to accept those and append to previous item.
+        # For ex. "dc-name=REMOTE_DC_1:nodes=2000:10:3:0:0:0:100:d+3000:int-ext-ipmap=172.68.17.123...."
+        # In this example, first split will give ["dc-name=REMOTE_DC_1", "nodes=2000", "10", "3",
+        # "0", "0", "100", "d+3000", "int-ext-ipmap=172.68.17.123", ....]. In such cases we need to append items
+        # (10, 3, 0, 0, 100, "d+3000") to previous valid item ("nodes=2000") with delimiter (":").
+        # It gives "nodes=2000:10:3:0:0:0:100:d+3000".
+
+        for _v in _tmp_value_list:
+            if delimiter2 not in _v:
+                try:
+                    _value_list[-1] = str(_value_list[-1]) + delimiter + str(_v)
+
+                except Exception:
+                    pass
+
+            else:
+                _value_list.append(_v)
+
+    stat_param = itertools.imap(lambda sp: info_to_tuple(sp, delimiter2),
+                                _value_list)
+
     for g in itertools.groupby(stat_param, lambda x: x[0]):
         try:
             value = map(lambda v: v[1], g[1])
@@ -48,7 +77,7 @@ def info_to_dict(value, delimiter=';'):
     return stat_dict
 
 
-def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':'):
+def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ignore_field_without_key_value_delimiter=True):
     """
     Simple function to convert string to dict where string is format like
     field1_section1=value1<delimiter2>field2_section1=value2<delimiter2>... <delimiter1> field1_section2=value3<delimiter2>field2_section2=value4<delimiter2>...
@@ -68,7 +97,7 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':'):
         return value_dict
 
     for v in value_list:
-        values = info_to_dict(v, delimiter2)
+        values = info_to_dict(v, delimiter2, ignore_field_without_key_value_delimiter=ignore_field_without_key_value_delimiter)
         if not values or isinstance(values, Exception):
             continue
         for _k in keyname:

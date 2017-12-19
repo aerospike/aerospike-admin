@@ -361,6 +361,7 @@ class CliView(object):
             '_repl_factor',
             lambda data: get_value_from_dict(
                 data, ('repl-factor',
+                       'replication-factor',
                        'effective_replication_factor')  # introduced post 3.15.0.1
             ))
 
@@ -515,7 +516,7 @@ class CliView(object):
 
             row['namespace'] = ns
             row["_total_records"] = str(total_res[ns]["_total_records"])
-            row["effective_replication_factor"] = " "
+            row["repl-factor"] = " "
             row["master_objects"] = str(total_res[ns]["master_objects"])
             row["master_tombstones"] = str(total_res[ns]["master_tombstones"])
             row["prole_objects"] = str(total_res[ns]["prole_objects"])
@@ -873,6 +874,31 @@ class CliView(object):
                 print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n" % (terminal.fg_green(), (len(columns) - 1), "s" if (len(columns) - 1) > 1 else "", terminal.fg_clear())
 
     @staticmethod
+    def _update_latency_column_list(data, all_columns):
+        if not data or "columns" not in data or not data["columns"]:
+            return
+
+        for column in data["columns"]:
+            if column[0] == '>':
+                column = int(column[1:-2])
+                all_columns.add(column)
+
+    @staticmethod
+    def _create_latency_row(data, ns=" "):
+        if not data or "columns" not in data or not data["columns"] or "values" not in data or not data["values"]:
+            return
+
+        rows = []
+
+        columns = data.pop("columns", None)
+        for _values in data["values"]:
+            row = dict(itertools.izip(columns, _values))
+            row['namespace'] = ns
+            rows.append(row)
+
+        return rows
+
+    @staticmethod
     def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, **ignore):
         prefixes = cluster.get_node_names()
         if like:
@@ -898,13 +924,16 @@ class CliView(object):
                 if machine_wise_display and node_or_hist_id not in histograms:
                     continue
 
-                for ns, ns_data in _data.iteritems():
-                    if "columns" not in ns_data or not ns_data["columns"]:
+                for _type, _type_data in _data.iteritems():
+                    if _type == "namespace" and not show_ns_details:
                         continue
-                    for column in ns_data["columns"]:
-                        if column[0] == '>':
-                            column = int(column[1:-2])
-                            all_columns.add(column)
+
+                    if _type == "total":
+                        CliView._update_latency_column_list(_type_data, all_columns=all_columns)
+
+                    else:
+                        for ns, ns_data in _type_data.iteritems():
+                            CliView._update_latency_column_list(ns_data, all_columns=all_columns)
 
             all_columns = [">%sms" % (c) for c in sorted(all_columns)]
             all_columns.insert(0, 'ops/sec')
@@ -925,17 +954,24 @@ class CliView(object):
                 if machine_wise_display and node_or_hist_id not in histograms:
                     continue
 
-                for ns, type in [i for i in sorted(_data.keys(), key=lambda x:str(x[1]) + "-" + str(x[0]))]:
-                    if not show_ns_details and type == "namespace":
+                for _type in sorted(_data.keys()):
+                    if _type == "namespace" and not show_ns_details:
                         continue
-                    ns_data = _data[(ns, type)]
 
-                    if "columns" not in ns_data or not ns_data["columns"]:
-                        continue
-                    columns = ns_data.pop("columns", None)
-                    for _data_item in ns_data["values"]:
-                        row = dict(itertools.izip(columns, _data_item))
-                        row['namespace'] = ns
+                    _type_data = _data[_type]
+                    rows = []
+
+                    if _type == "total":
+                        rows = CliView._create_latency_row(_type_data)
+
+                    else:
+                        for _ns, _ns_data in _type_data.iteritems():
+                            rows += CliView._create_latency_row(_ns_data, ns=_ns)
+
+                    for row in rows:
+                        if not row or isinstance(row, Exception):
+                            continue
+
                         if machine_wise_display:
                             row['histogram'] = node_or_hist_id
                         else:
@@ -1617,7 +1653,8 @@ class CliView(object):
 
                     s += "\n"
                     s += CliView.get_header("Description:")
-                    s += CliView.get_msg(textwrap.wrap(str(d[AssertResultKey.DESCRIPTION]), H_width - H2_offset))
+                    s += CliView.get_msg(textwrap.wrap(str(d[AssertResultKey.DESCRIPTION]), H_width - H2_offset,
+                                                       break_long_words=False, break_on_hyphens=False))
 
                     s += "\n"
                     s += CliView.get_header("Keys:")
@@ -1784,7 +1821,7 @@ class CliView(object):
         s = " " * 3
         s += str(index)
         s += "." + (" " * 3)
-        s += key.ljust(18)
+        s += key.ljust(19)
         s += ":" + (" " * 2)
         return s
 
@@ -1793,8 +1830,8 @@ class CliView(object):
         title = "Namespaces"
         column_names = ('namespace', ('_devices', 'Devices (Total,Per-Node)'), ('_memory', 'Memory (Total,Used%,Avail%)'),
                         ('_disk', 'Disk (Total,Used%,Avail%)'), ('repl_factor', 'Replication Factor'), ('cache_read_pct','Post-Write-Queue Hit-Rate'),
-                        ('master_objects', 'Master Objects'),
-                        ('license_data_in_memory', 'Usage In-Memory'), ('license_data_on_disk', 'Usage On-Disk')
+                        'rack-aware', ('master_objects', 'Master Objects'),
+                        ('license_data_in_memory', 'Usage (Unique-Data) In-Memory'), ('license_data_on_disk', 'Usage (Unique-Data) On-Disk')
                         )
 
 
@@ -1867,14 +1904,22 @@ class CliView(object):
                            if stats[ns]["migrations_in_progress"] else ns)
             print "   " + "=" * len(ns)
 
-            print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d"%(stats[ns]["devices_total"], stats[ns]["devices_per_node"])
+            print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
+                stats[ns]["devices_total"], stats[ns]["devices_per_node"],
+                " (number differs across nodes)" if not stats[ns]["devices_count_same_across_nodes"] else "")
             index += 1
 
-            print CliView.get_summary_line_prefix(index, "Memory") + "%s, %.2f%% available"%(filesize.size(stats[ns]["memory_total"]),stats[ns]["memory_available_pct"])
+            print CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
+                filesize.size(stats[ns]["memory_total"]).strip(), 100.00 - stats[ns]["memory_available_pct"],
+                filesize.size(stats[ns]["memory_total"] - stats[ns]["memory_aval"]).strip(),
+                stats[ns]["memory_available_pct"], filesize.size(stats[ns]["memory_aval"]).strip())
             index += 1
 
             if stats[ns]["disk_total"]:
-                print CliView.get_summary_line_prefix(index, "Disk") + "%s, %.2f%% used, %.2f%% available"%(filesize.size(stats[ns]["disk_total"]), stats[ns]["disk_used_pct"], stats[ns]["disk_available_pct"])
+                print CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
+                    filesize.size(stats[ns]["disk_total"]).strip(), stats[ns]["disk_used_pct"],
+                    filesize.size(stats[ns]["disk_used"]).strip(), stats[ns]["disk_available_pct"],
+                    filesize.size(stats[ns]["disk_aval"]).strip())
                 index += 1
 
             print CliView.get_summary_line_prefix(index, "Replication Factor") + "%s"%(",".join([str(rf) for rf in stats[ns]["repl_factor"]]))
@@ -1882,6 +1927,10 @@ class CliView(object):
 
             if "cache_read_pct" in stats[ns]:
                 print CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.sif))
+                index += 1
+
+            if "rack-aware" in stats[ns]:
+                print CliView.get_summary_line_prefix(index, "Rack-aware") + "%s"%(str(stats[ns]["rack-aware"]))
                 index += 1
 
             print CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.sif))
@@ -1895,7 +1944,7 @@ class CliView(object):
                 if s:
                     s += ", "
                 s += "%s on-disk"%(filesize.size(stats[ns]["license_data_on_disk"]))
-            print CliView.get_summary_line_prefix(index, "Usage") + s
+            print CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s
             print
 
     @staticmethod
@@ -1912,13 +1961,21 @@ class CliView(object):
         index += 1
         print CliView.get_summary_line_prefix(index, "Cluster Size") + ", ".join([str(cs) for cs in summary["CLUSTER"]["cluster_size"]])
         index += 1
-        print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d"%(summary["CLUSTER"]["device"]["count"], summary["CLUSTER"]["device"]["count_per_node"])
+        print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
+            summary["CLUSTER"]["device"]["count"], summary["CLUSTER"]["device"]["count_per_node"],
+            " (number differs across nodes)" if not summary["CLUSTER"]["device"]["count_same_across_nodes"] else "")
         index += 1
-        print CliView.get_summary_line_prefix(index, "Memory") + "%s, %.2f%% used, %.2f%% available"%(filesize.size(summary["CLUSTER"]["memory"]["total"]), 100.00-summary["CLUSTER"]["memory"]["aval_pct"], summary["CLUSTER"]["memory"]["aval_pct"])
+        print CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
+            filesize.size(summary["CLUSTER"]["memory"]["total"]).strip(), 100.00 - summary["CLUSTER"]["memory"]["aval_pct"],
+            filesize.size(summary["CLUSTER"]["memory"]["total"] - summary["CLUSTER"]["memory"]["aval"]).strip(),
+            summary["CLUSTER"]["memory"]["aval_pct"], filesize.size(summary["CLUSTER"]["memory"]["aval"]).strip())
         index += 1
-        print CliView.get_summary_line_prefix(index, "Disk") + "%s, %.2f%% used, %.2f%% available"%(filesize.size(summary["CLUSTER"]["device"]["total"]), summary["CLUSTER"]["device"]["used_pct"],summary["CLUSTER"]["device"]["aval_pct"])
+        print CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
+            filesize.size(summary["CLUSTER"]["device"]["total"]).strip(), summary["CLUSTER"]["device"]["used_pct"],
+            filesize.size(summary["CLUSTER"]["device"]["used"]).strip(), summary["CLUSTER"]["device"]["aval_pct"],
+            filesize.size(summary["CLUSTER"]["device"]["aval"]).strip())
         index += 1
-        print CliView.get_summary_line_prefix(index, "Usage") + "%s in-memory, %s on-disk"%(filesize.size(summary["CLUSTER"]["license_data"]["memory_size"]),filesize.size(summary["CLUSTER"]["license_data"]["device_size"]))
+        print CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + "%s in-memory, %s on-disk"%(filesize.size(summary["CLUSTER"]["license_data"]["memory_size"]),filesize.size(summary["CLUSTER"]["license_data"]["device_size"]))
         index += 1
         print CliView.get_summary_line_prefix(index, "Active Namespaces") + "%d of %d"%(summary["CLUSTER"]["active_ns"], summary["CLUSTER"]["ns_count"])
         index += 1

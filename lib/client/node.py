@@ -21,6 +21,7 @@ import threading
 
 from lib.client import util
 from lib.client.assocket import ASSocket
+from lib.collectinfo_parser import conf_parser
 from lib.collectinfo_parser.full_parser import parse_system_live_command
 
 #### Remote Server connection module
@@ -155,6 +156,9 @@ class Node(object):
         except Exception:
             pass
 
+        # configurations from conf file
+        self.conf_data = {}
+
     def _initialize_socket_pool(self):
         self.socket_pool = {}
         self.socket_pool[self.port] = set()
@@ -280,7 +284,7 @@ class Node(object):
         if isinstance(config, Exception):
             return False
         try:
-            xdr_enabled = config['xdr']['enable-xdr']
+            xdr_enabled = config['enable-xdr']
             return xdr_enabled == 'true'
         except Exception:
             pass
@@ -764,34 +768,63 @@ class Node(object):
         config = {}
         if stanza == 'namespace':
             if namespace != "":
-                config[stanza] = {namespace: util.info_to_dict(
+                config = {namespace: util.info_to_dict(
                     self.info("get-config:context=namespace;id=%s" % namespace))}
                 if namespace_id == "":
                     namespaces = self.info_namespaces()
                     if namespaces and namespace in namespaces:
                         namespace_id = namespaces.index(namespace)
                 if namespace_id != "":
-                    config[stanza][namespace]["nsid"] = str(namespace_id)
+                    config[namespace]["nsid"] = str(namespace_id)
             else:
                 namespace_configs = {}
                 namespaces = self.info_namespaces()
                 for index, namespace in enumerate(namespaces):
                     namespace_config = self.info_get_config(
                         'namespace', namespace, namespace_id=index)
-                    namespace_config = namespace_config['namespace'][namespace]
+                    namespace_config = namespace_config[namespace]
                     namespace_configs[namespace] = namespace_config
-                config['namespace'] = namespace_configs
+                config = namespace_configs
 
         elif stanza == '' or stanza == 'service':
-            config['service'] = util.info_to_dict(self.info("get-config:"))
+            config = util.info_to_dict(self.info("get-config:"))
         elif stanza != 'all':
-            config[stanza] = util.info_to_dict(
+            config = util.info_to_dict(
                 self.info("get-config:context=%s" % stanza))
         elif stanza == "all":
             config['namespace'] = self.info_get_config("namespace")
             config['service'] = self.info_get_config("service")
             # Server lumps this with service
             # config["network"] = self.info_get_config("network")
+        return config
+
+    @return_exceptions
+    def info_get_originalconfig(self, stanza=""):
+        """
+        Get the original config (from conf file) for a node. This should include the following
+        stanzas: Service, Network, XDR, DC, and Namespace
+
+        Returns:
+        dict -- stanza --> [namespace] --> param --> value
+        """
+        config = {}
+        if not self.localhost:
+            return config
+
+        if not self.conf_data:
+            conf_path = "/etc/aerospike/aerospike.conf"
+            self.conf_data = conf_parser.parse_file(conf_path)
+            if "namespace" in self.conf_data:
+                for ns in self.conf_data["namespace"].keys():
+                    if "service" in self.conf_data["namespace"][ns]:
+                        self.conf_data["namespace"][ns] = self.conf_data["namespace"][ns]["service"]
+
+        try:
+            config = self.conf_data[stanza]
+
+        except Exception:
+            pass
+
         return config
 
     def _update_total_latency(self, t_rows, row):
@@ -855,15 +888,15 @@ class Node(object):
         start_time = None
         columns = []
         ns_hist_pattern = '{([A-Za-z_\d-]+)}-([A-Za-z_-]+)'
-        total_key = (" ", "total")
+        total_key = "total"
 
         while tdata != []:
             row = tdata.pop(0)
             if not row:
                 continue
             row = row.split(",")
-            # row format : <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>
-            # only IP:PORT and USER_ID are compulsory entries, so we need to check row length for 2
+
+            # neglect if error string
             if len(row) < 2:
                 continue
 
@@ -896,12 +929,14 @@ class Node(object):
                 if hist_name not in data:
                     data[hist_name] = {}
                 if ns:
-                    ns_key = (ns, "namespace")
+                    ns_key = "namespace"
                     if ns_key not in data[hist_name]:
                         data[hist_name][ns_key] = {}
-                        data[hist_name][ns_key]["columns"] = columns
-                        data[hist_name][ns_key]["values"] = []
-                    data[hist_name][ns_key][
+                    if ns not in data[hist_name][ns_key]:
+                        data[hist_name][ns_key][ns] = {}
+                        data[hist_name][ns_key][ns]["columns"] = columns
+                        data[hist_name][ns_key][ns]["values"] = []
+                    data[hist_name][ns_key][ns][
                         "values"].append(copy.deepcopy(row))
                 if total_key not in data[hist_name]:
                     data[hist_name][total_key] = {}
@@ -979,18 +1014,19 @@ class Node(object):
         Returns:
         dict -- {dc_name1:{config_name : config_value, ...}, dc_name2:{config_name : config_value, ...}}
         """
+
         if self.is_feature_present('xdr'):
             configs = self.info("get-dc-config")
             if not configs or isinstance(configs, Exception):
                 configs = self.info("get-dc-config:")
             if not configs or isinstance(configs, Exception):
                 return {}
-            return util.info_to_dict_multi_level(configs, ["dc-name", "DC_Name"])
+            return util.info_to_dict_multi_level(configs, ["dc-name", "DC_Name"], ignore_field_without_key_value_delimiter=False)
 
         configs = self.xdr_info("get-dc-config")
         if not configs or isinstance(configs, Exception):
             return {}
-        return util.info_to_dict_multi_level(configs, ["dc-name", "DC_Name"])
+        return util.info_to_dict_multi_level(configs, ["dc-name", "DC_Name"], ignore_field_without_key_value_delimiter=False)
 
     @return_exceptions
     def info_XDR_get_config(self):
@@ -1002,13 +1038,13 @@ class Node(object):
         # required for old aerospike server versions (<3.8)
         xdr_configs_xdr = self.xdr_info('get-config')
         if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
-            xdr_configs_xdr = {'xdr': util.info_to_dict(xdr_configs_xdr)}
-            if xdr_configs_xdr['xdr'] and not isinstance(xdr_configs_xdr['xdr'], Exception):
-                if xdr_configs and xdr_configs['xdr'] and not isinstance(xdr_configs['xdr'], Exception):
-                    xdr_configs['xdr'].update(xdr_configs_xdr['xdr'])
+            xdr_configs_xdr = util.info_to_dict(xdr_configs_xdr)
+            if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
+                if xdr_configs and not isinstance(xdr_configs, Exception):
+                    xdr_configs.update(xdr_configs_xdr)
                 else:
-                    xdr_configs = {}
-                    xdr_configs['xdr'] = xdr_configs_xdr['xdr']
+                    xdr_configs = xdr_configs_xdr
+
         return xdr_configs
 
     @return_exceptions

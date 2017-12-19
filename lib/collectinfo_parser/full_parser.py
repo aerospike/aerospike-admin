@@ -20,13 +20,16 @@ import os
 
 from as_section_parser import parse_as_section, get_meta_info, get_cluster_name
 import cinfo_parser
+import conf_parser
 import section_filter_list
 from sys_section_parser import parse_sys_section
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 AS_SECTION_NAME_LIST = section_filter_list.AS_SECTION_NAME_LIST
 HISTOGRAM_SECTION_NAME_LIST = section_filter_list.HISTOGRAM_SECTION_NAME_LIST
+LATENCY_SECTION_NAME_LIST = section_filter_list.LATENCY_SECTION_NAME_LIST
 SYS_SECTION_NAME_LIST = section_filter_list.SYS_SECTION_NAME_LIST
 SECTION_FILTER_LIST = section_filter_list.FILTER_LIST
 DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
@@ -40,6 +43,8 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
     timestamp = ''
 
     json_parsed_timestamps = []
+    _missing_version = 0
+
     # IF a valid cinfo json is present in cinfo_paths then append
     # its data in parsed_map.
     for cinfo_path_name in cinfo_paths:
@@ -58,32 +63,41 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
             else:
                 logger.info("File is already pasred_json: " + cinfo_path_name)
                 parsed_map.update(cinfo_map)
-                if _is_complete_json_data(cinfo_map):
-                    return
+                _missing_version = _find_missing_data_version(cinfo_map)
                 json_parsed_timestamps = cinfo_map.keys()
                 break
 
+    parsed_conf_map = {}
     for cinfo_path in cinfo_paths:
         if os.path.splitext(cinfo_path)[1] == ".json":
             continue
 
-        if timestamp == '':
-            timestamp = cinfo_parser.get_timestamp_from_file(cinfo_path)
-        try:
-            cinfo_parser.extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception)
-        except Exception as e:
-            if not ignore_exception:
-                logger.error("Cinfo parser can not create intermediate json. Err: " + str(e))
-                raise
+        if os.path.splitext(cinfo_path)[1] == ".conf":
+            parsed_conf_map = conf_parser.parse_file(cinfo_path)
+
+        else:
+            if timestamp == '':
+                timestamp = cinfo_parser.get_timestamp_from_file(cinfo_path)
+            try:
+                cinfo_parser.extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception)
+            except Exception as e:
+                if not ignore_exception:
+                    logger.error("Cinfo parser can not create intermediate json. Err: " + str(e))
+                    raise
 
     if json_parsed_timestamps:
-        return _add_missing_data(imap, parsed_map, json_parsed_timestamps, ignore_exception)
+        if not _missing_version and not parsed_conf_map:
+            return
+        return _add_missing_data(imap, parsed_map, parsed_conf_map, json_parsed_timestamps, _missing_version, ignore_exception)
 
     # get as_map using imap
     as_map = _get_as_map(imap, AS_SECTION_NAME_LIST, ignore_exception)
 
     # get histogram_map using imap
     histogram_map = _get_as_map(imap, HISTOGRAM_SECTION_NAME_LIST, ignore_exception)
+
+    # get latency_map using imap
+    latency_map = _convert_parsed_latency_map_to_collectinfo_format(_get_as_map(imap, LATENCY_SECTION_NAME_LIST, ignore_exception))
 
     # get sys_map using imap
     sys_map = _get_sys_map(imap, ignore_exception)
@@ -115,6 +129,9 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
     # Insert histogram stat
     _merge_nodelevel_map_to_mainmap(parsed_map, histogram_map, [timestamp], keys_after_node_id=["as_stat"], node_ip_mapping=ip_to_node_map)
 
+    # Insert latency stat
+    _merge_nodelevel_map_to_mainmap(parsed_map, latency_map, [timestamp], keys_after_node_id=["as_stat"], node_ip_mapping=ip_to_node_map)
+
     # insert meta_stat
     _merge_nodelevel_map_to_mainmap(parsed_map, meta_map, [timestamp], keys_after_node_id=["as_stat", "meta_data"], node_ip_mapping=ip_to_node_map)
 
@@ -138,6 +155,11 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
         if node not in nodemap:
             nodemap[node] = {}
         _update_map(nodemap[node], 'sys_stat', sys_map)
+
+    try:
+        nodemap[node]['as_stat']['original_config'] = parsed_conf_map
+    except Exception:
+        pass
 
     # Assume all provided sys_stat belong to same node.
     # if any node has sys_stat and there is 'UNKNOWN' node then put that unknown data
@@ -271,32 +293,6 @@ def _create_node_ip_map(nodemap):
             pass
 
     return node_ip_map
-
-def _is_complete_json_data(cinfo_map):
-    """
-    Check cinfo_map parsed from json file is having all necessary data or not.
-    Old json file does not have some data sections Ex. node_id, histogram, cluster config etc.
-
-    """
-
-    if not cinfo_map:
-        return True
-
-    for timestamp in cinfo_map:
-        if cinfo_map[timestamp]:
-
-            for cl in cinfo_map[timestamp]:
-                if cinfo_map[timestamp][cl]:
-
-                    for node in cinfo_map[timestamp][cl]:
-                        try:
-                            if "node_id" in cinfo_map[timestamp][cl][node]["as_stat"]["meta_data"]:
-                                return True
-
-                        except Exception:
-                            return False
-
-    return False
 
 def _create_ip_to_node_map(meta_map):
     """
@@ -506,7 +502,111 @@ def _add_missing_histogram_data(imap, parsed_map, timestamps, node_ip_mapping, i
     histogram_map = _get_as_map(imap, HISTOGRAM_SECTION_NAME_LIST, ignore_exception)
     _merge_nodelevel_map_to_mainmap(parsed_map, histogram_map, timestamps, node_ip_mapping, ["as_stat"])
 
-def _add_missing_data(imap, parsed_map, timestamps, ignore_exception):
+def _convert_parsed_latency_map_to_collectinfo_format(parsed_map):
+    latency_map = {}
+
+    for node, node_data in parsed_map.iteritems():
+        if not node_data or isinstance(node_data, Exception) or "latency" not in node_data:
+            continue
+
+        latency_data = node_data["latency"]
+
+        for hist, hist_data in latency_data.iteritems():
+            if not hist_data or isinstance(hist_data, Exception):
+                continue
+
+            if node not in latency_map:
+                latency_map[node] = {}
+                latency_map[node]["latency"] = {}
+
+            if hist not in latency_map[node]["latency"]:
+                latency_map[node]["latency"][hist] = {}
+                latency_map[node]["latency"][hist]["total"] = {}
+                latency_map[node]["latency"][hist]["total"]["columns"] = []
+                latency_map[node]["latency"][hist]["total"]["values"] = []
+
+            _vl = []
+            for _k, _v in hist_data.iteritems():
+                latency_map[node]["latency"][hist]["total"]["columns"].append(_k)
+                _vl.append(_v)
+            latency_map[node]["latency"][hist]["total"]["values"].append(_vl)
+
+    return latency_map
+
+def _add_missing_latency_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+    """
+    Add missing Aerospike latency data into parsed_map which is loaded from old format json file
+
+    """
+
+    latency_map = {}
+    parsed_latency_map = _get_as_map(imap, LATENCY_SECTION_NAME_LIST, ignore_exception)
+
+    latency_map = _convert_parsed_latency_map_to_collectinfo_format(parsed_latency_map)
+
+    _merge_nodelevel_map_to_mainmap(parsed_map, latency_map, timestamps, node_ip_mapping, ["as_stat"])
+
+def _add_missing_original_config_data(parsed_conf_map, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+    """
+    Add missing Aerospike original config data (from conf file) into parsed_map.
+
+    """
+
+    _merge_nodelevel_map_to_mainmap(parsed_map, parsed_conf_map, timestamps, node_ip_mapping, ["as_stat", "original_config"])
+
+# Format: [version, key to identify version changes, parent keys of key till node]
+new_additional_field_pointers = [
+    [1, "node_id", ["as_stat", "meta_data"]],
+    [2, "latency", ["as_stat"]],
+]
+
+def _find_missing_data_version(cinfo_map):
+    """
+    Check cinfo_map parsed from json file is having all necessary data or not.
+    Old json file does not have some data sections Ex. node_id, histogram, cluster config etc.
+    Further version does not have latency data only.
+
+    """
+
+    if not cinfo_map:
+        return new_additional_field_pointers[0][0]
+
+    found_version = 0
+    for i in new_additional_field_pointers:
+        _version = i[0]
+        _key = i[1]
+        _parent_keys = i[2]
+
+        for timestamp in cinfo_map:
+            if found_version >= _version:
+                break
+
+            if cinfo_map[timestamp]:
+
+                for cl in cinfo_map[timestamp]:
+                    if found_version >= _version:
+                        break
+
+                    if cinfo_map[timestamp][cl]:
+
+                        for node in cinfo_map[timestamp][cl]:
+                            try:
+                                _ptr = cinfo_map[timestamp][cl][node]
+                                for _pk in _parent_keys:
+                                    _ptr = _ptr[_pk]
+                                if _key in _ptr:
+                                    found_version = _version
+                                    break
+
+                            except Exception:
+                                return _version
+
+        if found_version < _version:
+            return _version
+
+    return 0
+
+def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missing_version=0, ignore_exception=False):
     """
     Add missing data (Aerospike stats, config, metadata and histogram dump) into parsed_map which is loaded from old format json file
 
@@ -514,7 +614,20 @@ def _add_missing_data(imap, parsed_map, timestamps, ignore_exception):
 
     meta_map = _get_meta_map(imap, ignore_exception)
     node_to_ip_mapping = _create_node_ip_map(meta_map)
-    _merge_nodelevel_map_to_mainmap(parsed_map, meta_map, timestamps, node_to_ip_mapping, ["as_stat", "meta_data"])
-    _add_missing_as_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
-    _add_missing_histogram_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
-    _add_missing_endpoints_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+    sys_map = _get_sys_map(imap, ignore_exception)
+    node = _match_nodeip(sys_map, node_to_ip_mapping)
+    conf_map = {}
+    conf_map[node] = parsed_conf_map
+    _add_missing_original_config_data(conf_map, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+
+    if missing_version == 0:
+        return
+
+    if missing_version == 1:
+        _merge_nodelevel_map_to_mainmap(parsed_map, meta_map, timestamps, node_to_ip_mapping, ["as_stat", "meta_data"])
+        _add_missing_as_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+        _add_missing_histogram_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+        _add_missing_endpoints_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+
+    if missing_version <= 2:
+        _add_missing_latency_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)

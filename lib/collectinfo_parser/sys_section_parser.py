@@ -20,6 +20,7 @@ import section_filter_list
 from utils import is_valid_section, get_section_name_from_id, type_check_basic_values, change_key_name_in_map
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 FILTER_LIST = section_filter_list.FILTER_LIST
 DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST

@@ -28,7 +28,7 @@ FILTER_LIST = section_filter_list.FILTER_LIST
 SKIP_LIST = section_filter_list.SKIP_LIST
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.CRITICAL)
 
 def extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception):
     """

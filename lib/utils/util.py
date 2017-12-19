@@ -38,6 +38,7 @@ FEATURE_KEYS = {
                 ('ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes')),
         "XDR Source": (('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error'), None),
         "XDR Destination": (('stat_write_reqs_xdr'), ('xdr_write_success')),
+        "Rack-aware": (('self-group-id'), ('rack-id')),
     }
 
 class Future(object):
@@ -463,13 +464,52 @@ def check_feature_by_keys(service_data=None, service_keys=None, ns_data=None, ns
 
     return False
 
-def _find_features_for_cluster(service_data, ns_data):
+def find_nodewise_features(service_data, ns_data, cl_data={}):
     """
-    Function takes dictionary of service data and dictionary of namespace data.
+    Function takes dictionary of service stats, dictionary of namespace stats, and dictionary cluster config.
+    Returns map of active (used) features per node identifying by comparing respective keys for non-zero value.
+    """
+
+    features = {}
+
+    for node in service_data.keys():
+        if node in cl_data and cl_data[node] and not isinstance(cl_data[node], Exception):
+            if service_data[node] and not isinstance(service_data[node], Exception):
+                service_data[node].update(cl_data[node])
+            else:
+                service_data[node] = cl_data[node]
+
+    for feature, keys in FEATURE_KEYS.iteritems():
+        for node, s_stats in service_data.iteritems():
+
+            if node not in features:
+                features[node] = {}
+
+            features[node][feature.upper()] = "NO"
+            n_stats = None
+
+            if node in ns_data and not isinstance(ns_data[node], Exception):
+                n_stats = ns_data[node]
+
+            if check_feature_by_keys(s_stats, keys[0], n_stats, keys[1]):
+                features[node][feature.upper()] = "YES"
+
+    return features
+
+def _find_features_for_cluster(service_data, ns_data, cl_data={}):
+    """
+    Function takes dictionary of service stats, dictionary of namespace stats, and dictionary cluster config.
     Returns list of active (used) features identifying by comparing respective keys for non-zero value.
     """
 
     features = []
+
+    for node in service_data.keys():
+        if cl_data and node in cl_data and cl_data[node] and not isinstance(cl_data[node], Exception):
+            if service_data[node] and not isinstance(service_data[node], Exception):
+                service_data[node].update(cl_data[node])
+            else:
+                service_data[node] = cl_data[node]
 
     for feature, keys in FEATURE_KEYS.iteritems():
         for node, d in service_data.iteritems():
@@ -524,7 +564,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
     for ns, ns_stats in namespace_stats.iteritems():
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
-        repl_factor = max(get_value_from_second_level_of_dict(ns_stats, ("repl-factor",), default_value=0, return_type=int).values())
+        repl_factor = max(get_value_from_second_level_of_dict(ns_stats, ("repl-factor", "replication-factor"), default_value=0, return_type=int).values())
         master_objects = sum(get_value_from_second_level_of_dict(ns_stats, ("master_objects", "master-objects"), default_value=0, return_type=int).values())
         devices_in_use = list(set(get_value_from_second_level_of_dict(ns_stats, ("storage-engine.device", "device", "storage-engine.file", "file", "dev"), default_value=None, return_type=str).values()))
         memory_data_size = None
@@ -609,11 +649,14 @@ def _initialize_summary_output(ns_list):
     summary_dict["CLUSTER"]["device"]["count_per_node"] = 0
     summary_dict["CLUSTER"]["device"]["count_same_across_nodes"] = True
     summary_dict["CLUSTER"]["device"]["total"] = 0
+    summary_dict["CLUSTER"]["device"]["used"] = 0
+    summary_dict["CLUSTER"]["device"]["aval"] = 0
     summary_dict["CLUSTER"]["device"]["used_pct"] = 0
     summary_dict["CLUSTER"]["device"]["aval_pct"] = 0
 
     summary_dict["CLUSTER"]["memory"] = {}
     summary_dict["CLUSTER"]["memory"]["total"] = 0
+    summary_dict["CLUSTER"]["memory"]["aval"] = 0
     summary_dict["CLUSTER"]["memory"]["aval_pct"] = 0
 
     summary_dict["CLUSTER"]["active_ns"] = 0
@@ -631,11 +674,15 @@ def _initialize_summary_output(ns_list):
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_count_same_across_nodes"] = True
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_aval"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = 0
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_aval"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_available_pct"] = 0
 
@@ -648,13 +695,13 @@ def _initialize_summary_output(ns_list):
 
     return summary_dict
 
-def create_summary(service_stats, namespace_stats, set_stats, metadata):
+def create_summary(service_stats, namespace_stats, set_stats, metadata, cluster_configs={}):
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
     Returns dictionary with summary information.
     """
 
-    features = _find_features_for_cluster(service_stats, namespace_stats)
+    features = _find_features_for_cluster(service_stats, namespace_stats, cluster_configs)
 
     namespace_stats = flip_keys(namespace_stats)
     set_stats = flip_keys(set_stats)
@@ -698,6 +745,8 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
         if ns_total_devices:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = ns_total_devices
             summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = int((float(ns_total_devices)/float(ns_total_nodes)) + 0.5)
+            if len(set(device_counts.values())) > 1:
+                summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_count_same_across_nodes"] = False
 
         mem_size = get_value_from_second_level_of_dict(ns_stats, ("memory-size",), default_value=0, return_type=int)
         mem_aval_pct = get_value_from_second_level_of_dict(ns_stats, ("memory_free_pct", "free-pct-memory"), default_value=0, return_type=int)
@@ -705,6 +754,7 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
         cl_nodewise_mem_size = add_dicts(cl_nodewise_mem_size, mem_size)
         cl_nodewise_mem_aval = add_dicts(cl_nodewise_mem_aval, mem_aval)
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = sum(mem_size.values())
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_aval"] = sum(mem_aval.values())
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = (float(sum(mem_aval.values()))/float(sum(mem_size.values())))*100.0
 
         device_size = get_value_from_second_level_of_dict(ns_stats, ("device_total_bytes", "total-bytes-disk"), default_value=0, return_type=int)
@@ -717,10 +767,12 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
         device_size_total = sum(device_size.values())
         if device_size_total > 0:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = device_size_total
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used"] = sum(device_used.values())
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_aval"] = sum(device_aval.values())
             summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = (float(sum(device_used.values()))/float(device_size_total))*100.0
             summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_available_pct"] = (float(sum(device_aval.values()))/float(device_size_total))*100.0
 
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = list(set(get_value_from_second_level_of_dict(ns_stats, ("repl-factor",), default_value=0, return_type=int).values()))
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = list(set(get_value_from_second_level_of_dict(ns_stats, ("repl-factor", "replication-factor"), default_value=0, return_type=int).values()))
 
         data_in_memory = get_value_from_second_level_of_dict(ns_stats, ("storage-engine.data-in-memory", "data-in-memory"), default_value=False, return_type=bool).values()[0]
 
@@ -737,6 +789,17 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
             summary_dict["FEATURES"]["NAMESPACE"][ns]["master_objects"] = master_objects
             summary_dict["CLUSTER"]["active_ns"] += 1
 
+        try:
+            rack_ids = get_value_from_second_level_of_dict(ns_stats, ("rack-id",), default_value=None, return_type=int)
+            rack_ids = list(set(rack_ids.values()))
+            if len(rack_ids) > 1 or rack_ids[0] is not None:
+                if any((i is not None and i > 0) for i in rack_ids):
+                    summary_dict["FEATURES"]["NAMESPACE"][ns]["rack-aware"] = True
+                else:
+                    summary_dict["FEATURES"]["NAMESPACE"][ns]["rack-aware"] = False
+        except Exception:
+            pass
+
     cl_device_counts = sum(cl_nodewise_device_counts.values())
     if cl_device_counts:
         summary_dict["CLUSTER"]["device"]["count"] = cl_device_counts
@@ -747,11 +810,14 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata):
     cl_memory_size_total = sum(cl_nodewise_mem_size.values())
     if cl_memory_size_total > 0:
         summary_dict["CLUSTER"]["memory"]["total"] = cl_memory_size_total
+        summary_dict["CLUSTER"]["memory"]["aval"] = sum(cl_nodewise_mem_aval.values())
         summary_dict["CLUSTER"]["memory"]["aval_pct"] = (float(sum(cl_nodewise_mem_aval.values()))/float(cl_memory_size_total))*100.0
 
     cl_device_size_total = sum(cl_nodewise_device_size.values())
     if cl_device_size_total > 0:
         summary_dict["CLUSTER"]["device"]["total"] = cl_device_size_total
+        summary_dict["CLUSTER"]["device"]["used"] = sum(cl_nodewise_device_used.values())
+        summary_dict["CLUSTER"]["device"]["aval"] = sum(cl_nodewise_device_aval.values())
         summary_dict["CLUSTER"]["device"]["used_pct"] = (float(sum(cl_nodewise_device_used.values()))/float(cl_device_size_total))*100.0
         summary_dict["CLUSTER"]["device"]["aval_pct"] = (float(sum(cl_nodewise_device_aval.values()))/float(cl_device_size_total))*100.0
 
@@ -974,7 +1040,7 @@ def find_delimiter_in(value):
     return ';'
 
 def convert_edition_to_shortform(edition):
-    """Convert edition to shortform EE or CE or N/E"""
+    """Convert edition to shortform Enterprise or Community or N/E"""
 
     if edition.lower() in ['enterprise', 'true', 'ee'] or 'enterprise' in edition.lower():
         return "Enterprise"

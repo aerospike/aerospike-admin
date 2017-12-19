@@ -121,6 +121,7 @@ class InfoController(BasicCommandController):
 
         self.controller_map = dict(
             namespace=InfoNamespaceController)
+        self.config_getter = GetConfigController(self.cluster)
 
     @CommandHelp('Displays network, namespace, and XDR summary information.')
     def _do_default(self, line):
@@ -141,9 +142,7 @@ class InfoController(BasicCommandController):
         stats = util.Future(self.cluster.info_statistics,
                             nodes=self.nodes).start()
 
-        cluster_configs = util.Future(self.cluster.info_get_config,
-                                      nodes=self.nodes,
-                                      stanza='cluster').start()
+        cluster_configs = self.config_getter.get_cluster(nodes=self.nodes)
 
         cluster_names = util.Future(
             self.cluster.info, 'cluster-name', nodes=self.nodes).start()
@@ -153,17 +152,14 @@ class InfoController(BasicCommandController):
             self.cluster.info, 'version', nodes=self.nodes).start()
 
         stats = stats.result()
-        cluster_configs = cluster_configs.result()
         cluster_names = cluster_names.result()
         builds = builds.result()
         versions = versions.result()
 
         for node in stats:
             try:
-                if not isinstance(cluster_configs[node]["cluster"]["mode"],
-                                  Exception):
-                    stats[node]["rackaware_mode"] = cluster_configs[
-                        node]["cluster"]["mode"]
+                if not isinstance(cluster_configs[node]["mode"], Exception):
+                    stats[node]["rackaware_mode"] = cluster_configs[node]["mode"]
             except Exception:
                 pass
         return util.Future(self.view.info_network, stats, cluster_names,
@@ -198,26 +194,33 @@ class InfoController(BasicCommandController):
         stats = util.Future(self.cluster.info_all_dc_statistics,
                             nodes=self.nodes).start()
 
-        configs = util.Future(self.cluster.info_dc_get_config,
-                              nodes=self.nodes).start()
+        configs = self.config_getter.get_dc(flip=False, nodes=self.nodes)
 
         stats = stats.result()
-        configs = configs.result()
 
         for node in stats.keys():
 
             if (stats[node]
                     and not isinstance(stats[node], Exception)
+                    and node in configs
                     and configs[node]
                     and not isinstance(configs[node], Exception)):
 
                 for dc in stats[node].keys():
-                    stats[node][dc].update(configs[node][dc])
+                    try:
+                        stats[node][dc].update(configs[node][dc])
+                    except Exception:
+                        pass
+
             elif ((not stats[node]
                    or isinstance(stats[node], Exception))
+                    and node in configs
                     and configs[node]
                     and not isinstance(configs[node], Exception)):
-                stats[node] = configs[node]
+                try:
+                    stats[node] = configs[node]
+                except Exception:
+                    pass
 
         return util.Future(self.view.info_dc, stats, self.cluster, **self.mods)
 
@@ -820,7 +823,7 @@ class CollectinfoController(BasicCommandController):
         except Exception, e:
             self.logger.error(e)
 
-    def _collectinfo_content(self, func, parm='', alt_parm=''):
+    def _collectinfo_content(self, func, parm='', alt_parms=''):
         name = ''
         capture_stdout = util.capture_stdout
         sep = "\n====ASCOLLECTINFO====\n"
@@ -838,8 +841,12 @@ class CollectinfoController(BasicCommandController):
             o, e = util.shell_command(parm)
             if e:
                 self.logger.warning(str(e))
+                success = False
+                for alt_parm in alt_parms:
+                    if not alt_parm:
+                        continue
 
-                if alt_parm and alt_parm[0]:
+                    alt_parm = [alt_parm]
                     info_line = "Data collection for alternative command " + \
                                 name + str(alt_parm) + " in progress.."
                     self.logger.info(info_line)
@@ -847,17 +854,19 @@ class CollectinfoController(BasicCommandController):
                     o_alt, e_alt = util.shell_command(alt_parm)
 
                     if e_alt:
-                        self.cmds_error.add(parm[0])
-                        self.cmds_error.add(alt_parm[0])
+                        e = e_alt
 
-                        if e_alt:
-                            self.logger.warning(str(e_alt))
+                    else:
+                        success = True
 
-                    if o_alt:
-                        o = o_alt
+                        if o_alt:
+                            o = o_alt
+                        break
 
-                else:
+                if not success:
                     self.cmds_error.add(parm[0])
+                    for alt_parm in alt_parms:
+                        self.cmds_error.add(alt_parm)
 
         elif func == 'cluster':
             o = self.cluster.info(parm)
@@ -1282,6 +1291,23 @@ class CollectinfoController(BasicCommandController):
 
         return histogram_map
 
+    def _get_as_latency(self):
+        latency_map = {}
+        latency_data = util.Future(self.cluster.info_latency,
+                                  nodes=self.nodes).start()
+        latency_data = latency_data.result()
+
+        for node in latency_data:
+            if node not in latency_map:
+                latency_map[node] = {}
+
+            if not latency_data[node] or isinstance(latency_data[node], Exception):
+                continue
+
+            latency_map[node] = latency_data[node]
+
+        return latency_map
+
     def _get_as_pmap(self):
         getter = GetPmapController(self.cluster)
         return getter.get_pmap(nodes=self.nodes)
@@ -1300,6 +1326,9 @@ class CollectinfoController(BasicCommandController):
         meta_map = self._get_as_metadata()
 
         histogram_map = self._get_as_histograms()
+
+        # ToDO: Fix format for latency map
+        # latency_map = self._get_as_latency()
 
         pmap_map = self._get_as_pmap()
 
@@ -1322,6 +1351,9 @@ class CollectinfoController(BasicCommandController):
 
             if node in histogram_map:
                  dump_map[node]['as_stat']['histogram'] = histogram_map[node]
+
+            # if node in latency_map:
+            #      dump_map[node]['as_stat']['latency'] = latency_map[node]
 
             if node in pmap_map:
                  dump_map[node]['as_stat']['pmap'] = pmap_map[node]
@@ -1415,7 +1447,9 @@ class CollectinfoController(BasicCommandController):
             ['ss -ant state established sport = :%d or dport = :%d | wc -l' %
                 (port,port), 'netstat -ant | grep %d | grep ESTABLISHED | wc -l' % (port)],
             ['ss -ant state listen sport = :%d or dport = :%d |  wc -l' %
-                (port,port), 'netstat -ant | grep %d | grep LISTEN | wc -l' % (port)]
+                (port,port), 'netstat -ant | grep %d | grep LISTEN | wc -l' % (port)],
+            ['arp -n|grep ether|tr -s [:blank:] | cut -d" " -f5 |sort|uniq -c', ''],
+            ['find /proc/sys/net/ipv4/neigh/default/ -name "gc_thresh*" -print -exec cat {} \;', '']
         ]
         dignostic_info_params = [
             'network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
@@ -1584,7 +1618,7 @@ class CollectinfoController(BasicCommandController):
 
         try:
             for cmds in sys_shell_cmds:
-                self._collectinfo_content('shell', [cmds[0]], [cmds[1]])
+                self._collectinfo_content('shell', [cmds[0]], cmds[1:] if len(cmds)>1 else [])
         except Exception as e:
             self._write_log(str(e))
             sys.stdout = sys.__stdout__
@@ -1714,11 +1748,17 @@ class CollectinfoController(BasicCommandController):
 
     def _main_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
                           credential_file, snp_count, wait_time, enable_ssh=False,
-                          show_all=False, verbose=False):
+                          show_all=False, verbose=False, output_prefix=""):
         global aslogdir, output_time
         timestamp = time.gmtime()
         output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
-        aslogdir = '/tmp/collect_info_' + output_time
+        aslogdir_prefix = ""
+        if output_prefix:
+            output_prefix = output_prefix.strip()
+            aslogdir_prefix = "%s%s"%(str(output_prefix), '_' if not output_prefix.endswith('_')
+                                                             and not output_prefix.endswith('-') else "")\
+                                                if output_prefix else ""
+        aslogdir = '/tmp/%scollect_info_'%(aslogdir_prefix) + output_time
         as_logfile_prefix = aslogdir + '/' + output_time + '_'
 
         os.makedirs(aslogdir)
@@ -1776,32 +1816,38 @@ class CollectinfoController(BasicCommandController):
                 arg="--ssh-cf", return_type=str, default=None,
                 modifiers=self.modifiers, mods=self.mods)
 
+        output_prefix = util.get_arg_and_delete_from_mods(line=line,
+                arg="--output-prefix", return_type=str, default="",
+                modifiers=self.modifiers, mods=self.mods)
+
         verbose = False
         if 'verbose' in line:
             verbose = True
 
         self._main_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
-                credential_file, snp_count, wait_time, enable_ssh=enable_ssh, show_all=show_all, verbose=verbose)
+                               credential_file, snp_count, wait_time, enable_ssh=enable_ssh,
+                               show_all=show_all, verbose=verbose, output_prefix=output_prefix)
 
     @CommandHelp('Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.',
                  'If credentials are not available then it will collect system stats from local node only.',
                  '  Options:',
-                 '    -n           <int>        - Number of snapshots. Default: 1',
-                 '    -s           <int>        - Sleep time in seconds between each snapshot. Default: 5 sec',
-                 '    --enable-ssh              - Enable remote server system statistics collection.',
-                 '    --ssh-user   <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-                 '    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
-                 '    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22',
-                 '    --ssh-key    <string>     - Default SSH key (file path) for remote servers.',
-                 '    --ssh-cf     <string>     - Remote System Credentials file path.',
-                 '                                If server credentials are not available in credential file then default credentials will be used ',
-                 '                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
-                 '                                Example:  1.2.3.4,uid,pwd',
-                 '                                          1.2.3.4:3232,uid,pwd',
-                 '                                          1.2.3.4:3232,uid,,key_path',
-                 '                                          1.2.3.4:3232,uid,passphrase,key_path',
-                 '                                          [2001::1234:10],uid,pwd',
-                 '                                          [2001::1234:10]:3232,uid,,key_path',
+                 '    -n              <int>        - Number of snapshots. Default: 1',
+                 '    -s              <int>        - Sleep time in seconds between each snapshot. Default: 5 sec',
+                 '    --enable-ssh                 - Enable remote server system statistics collection.',
+                 '    --ssh-user      <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
+                 '    --ssh-pwd       <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
+                 '    --ssh-port      <int>        - Default SSH port for remote servers. Default: 22',
+                 '    --ssh-key       <string>     - Default SSH key (file path) for remote servers.',
+                 '    --ssh-cf        <string>     - Remote System Credentials file path.',
+                 '                                   If server credentials are not available in credential file then default credentials will be used ',
+                 '                                   File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
+                 '                                   Example:  1.2.3.4,uid,pwd',
+                 '                                             1.2.3.4:3232,uid,pwd',
+                 '                                             1.2.3.4:3232,uid,,key_path',
+                 '                                             1.2.3.4:3232,uid,passphrase,key_path',
+                 '                                             [2001::1234:10],uid,pwd',
+                 '                                             [2001::1234:10]:3232,uid,,key_path',
+                 '    --output-prefix <string>     - Output directory name prefix.',
                  )
     def _do_default(self, line):
         self._collect_info(line=line)
@@ -1874,7 +1920,7 @@ class HealthCheckController(BasicCommandController):
         elif stanza == "dc":
             return self.cluster.info_all_dc_statistics(nodes=self.nodes)
         elif stanza == "sindex":
-            return get_sindex_stats(cluster=self.cluster, nodes=self.nodes)
+            return util.flip_keys(get_sindex_stats(cluster=self.cluster, nodes=self.nodes))
         elif stanza == "udf":
             return self.cluster.info_udf_list(nodes=self.nodes)
         elif stanza == "endpoints":
@@ -2021,50 +2067,62 @@ class HealthCheckController(BasicCommandController):
 
             stanza_dict = {
                 "statistics": (self._get_asstat_data, [
-                    ("service", "SERVICE", False, False,
+                    ("service", "SERVICE",
                      [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("namespace", "NAMESPACE", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
-                    ("sets", "SET", False, False, [("CLUSTER", cluster_name), ("NODE", None), (
+                    ("namespace", "NAMESPACE",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("sets", "SET", [("CLUSTER", cluster_name), ("NODE", None), (
                         None, None), ("NAMESPACE", ("ns_name", "ns",)), ("SET", ("set_name", "set",))]),
-                    ("bins", "BIN", False, False, [
+                    ("bins", "BIN", [
                      ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
-                    ("xdr", "XDR", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("dc", "DC", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
-                    ("sindex", "SINDEX", True, False, [("CLUSTER", cluster_name), ("NODE", None), (
+                    ("xdr", "XDR",
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("dc", "DC",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
+                    ("sindex", "SINDEX", [("CLUSTER", cluster_name), ("NODE", None), (
                         None, None), ("NAMESPACE", ("ns",)), ("SET", ("set",)), ("SINDEX", ("indexname",))])
                 ]),
                 "config": (self._get_asconfig_data, [
-                    ("service", "SERVICE", True, True,
+                    ("service", "SERVICE",
                      [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("xdr", "XDR", True, True, [
-                     ("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("network", "NETWORK", True, True,
+                    ("xdr", "XDR",
                      [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("dc", "DC", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
-                    ("namespace", "NAMESPACE", True, True, [
-                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
+                    ("network", "NETWORK",
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("dc", "DC",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
+                    ("namespace", "NAMESPACE",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
+                ]),
+                "original_config": (self.cluster.info_get_originalconfig, [
+                    ("service", "SERVICE",
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("xdr", "XDR",
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("network", "NETWORK",
+                     [("CLUSTER", cluster_name), ("NODE", None)]),
+                    ("dc", "DC",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
+                    ("namespace", "NAMESPACE",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
                 ]),
                 "cluster": (self._get_as_meta_data, [
-                    ("build", "METADATA", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
-                    ("edition", "METADATA", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
+                    ("build", "METADATA",
+                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
+                    ("edition", "METADATA",
+                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
                 ]),
                 "endpoints": (self._get_asstat_data, [
-                    ("endpoints", "METADATA", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "endpoints")]),
+                    ("endpoints", "METADATA",
+                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "endpoints")]),
                 ]),
                 "services": (self._get_asstat_data, [
-                    ("services", "METADATA", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "services")]),
+                    ("services", "METADATA",
+                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "services")]),
                 ]),
                 "metadata": (self._get_asstat_data, [
-                    ("udf", "UDF", False, False, [
-                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILENAME", None)]),
+                    ("udf", "UDF",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILENAME", None)]),
                 ]),
             }
             sys_cmd_dict = {
@@ -2123,8 +2181,6 @@ class HealthCheckController(BasicCommandController):
 
                         stanza = stanza_item[0]
                         component_name = stanza_item[1]
-                        is_flip_needs = stanza_item[2]
-                        remove_first_key = stanza_item[3]
 
                         try:
                             d = fetched_as_val[(_key, stanza)]
@@ -2132,29 +2188,15 @@ class HealthCheckController(BasicCommandController):
                             continue
 
                         try:
-                            new_tuple_keys = copy.deepcopy(stanza_item[4])
+                            new_tuple_keys = copy.deepcopy(stanza_item[2])
                         except Exception:
                             new_tuple_keys = []
 
-                        if is_flip_needs:
-                            d = util.flip_keys(d)
+                        new_component_keys = [create_snapshot_key(sn_ct),
+                                              component_name, _key.upper()]
 
-                        if remove_first_key:
-                            for i in d:
-
-                                new_component_keys = [create_snapshot_key(sn_ct),
-                                                      component_name, i,
-                                                      _key.upper()]
-
-                                health_input = create_health_input_dict(d[i],
-                                        health_input, new_tuple_keys,
-                                        new_component_keys)
-                        else:
-                            new_component_keys = [create_snapshot_key(sn_ct),
-                                                  component_name, _key.upper()]
-
-                            health_input = create_health_input_dict(d, health_input,
-                                    new_tuple_keys, new_component_keys)
+                        health_input = create_health_input_dict(d, health_input,
+                                        new_tuple_keys, new_component_keys)
 
                 sys_stats = util.flip_keys(sys_stats)
 
@@ -2262,21 +2304,69 @@ class SummaryController(BasicCommandController):
         namespace_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=self.nodes).start()
         set_stats = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
 
+        cluster_configs = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
+
         os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
                                                          default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["lsb"], collect_remote_data=enable_ssh)
+        kernel_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
+                                                         default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["uname"], collect_remote_data=enable_ssh)
         server_version = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
+
+        server_edition = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
 
         service_stats = service_stats.result()
         namespace_stats = namespace_stats.result()
         set_stats = set_stats.result()
+        cluster_configs = cluster_configs.result()
         server_version = server_version.result()
+        server_edition = server_edition.result()
 
         metadata = {}
-        metadata["server_version"] = server_version
+        metadata["server_version"] = {}
+
+        for node, version in server_version.iteritems():
+            if not version or isinstance(version, Exception):
+                continue
+
+            if node in server_edition and server_edition[node] and not isinstance(server_edition[node], Exception):
+                if 'enterprise' in server_edition[node].lower():
+                    metadata["server_version"][node] = "E-%s" % (str(version))
+                elif 'community' in server_edition[node].lower():
+                    metadata["server_version"][node] = "C-%s" % (str(version))
+                else:
+                    metadata["server_version"][node] = version
+
+            else:
+                metadata["server_version"][node] = version
+
         try:
-            metadata["os_version"] = util.flip_keys(os_version)["lsb"]
+            try:
+                kernel_version = util.flip_keys(kernel_version)["uname"]
+            except Exception:
+                pass
+
+            os_version = util.flip_keys(os_version)["lsb"]
+
+            if kernel_version:
+                for node, version in os_version.iteritems():
+                    if not version or isinstance(version, Exception):
+                        continue
+
+                    if node not in kernel_version or not kernel_version[node] or isinstance(kernel_version[node], Exception):
+                        continue
+
+                    try:
+                        ov = version["description"]
+                        kv = kernel_version[node]["kernel_release"]
+                        version["description"] = str(ov) + " (%s)"%str(kv)
+                    except Exception:
+                        pass
+
         except Exception:
-            metadata["os_version"] = os_version
+            pass
+
+        metadata["os_version"] = os_version
 
         return util.Future(self.view.print_summary, util.create_summary(service_stats=service_stats, namespace_stats=namespace_stats,
-                                                    set_stats=set_stats, metadata=metadata), list_view=enable_list_view)
+                                                    set_stats=set_stats, metadata=metadata, cluster_configs=cluster_configs),
+                           list_view=enable_list_view)

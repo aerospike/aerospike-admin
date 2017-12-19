@@ -15,7 +15,7 @@
 import re
 
 from lib.health.exceptions import HealthException
-from lib.health.operation import select_keys_from_dict, SimpleOperation, AggOperation, ComplexOperation, AssertDetailOperation
+from lib.health.operation import select_keys_from_dict, AggOperation, ApplyOperation, AssertDetailOperation, ComplexOperation, SimpleOperation
 from lib.health.util import create_health_internal_tuple, create_snapshot_key
 
 SNAPSHOT_KEY_PREFIX = "SNAPSHOT"
@@ -49,7 +49,9 @@ op_list = {
     "COUNT_ALL": AggOperation("COUNT_ALL").operate,
     "DIFF": ComplexOperation("DIFF").operate,
     "SD_ANOMALY": ComplexOperation("SD_ANOMALY").operate,
-    "NO_MATCH": ComplexOperation("NO_MATCH").operate
+    "NO_MATCH": ComplexOperation("NO_MATCH").operate,
+    "APPLY_TO_ANY": ApplyOperation("ANY").operate,
+    "APPLY_TO_ALL": ApplyOperation("ALL").operate,
 }
 
 assert_op_list = {

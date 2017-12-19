@@ -1,0 +1,360 @@
+# Copyright 2013-2017 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import re
+
+SPACE = re.compile("\s+")
+
+space_unit_converter = {
+    "P": 1024*1024*1024*1024*1024,
+    "T": 1024*1024*1024*1024,
+    "G": 1024*1024*1024,
+    "M": 1024*1024,
+    "K": 1024
+}
+
+time_unit_converter = {
+    "D": 24*60*60,
+    "d": 24*60*60,
+    "H": 60*60,
+    "h": 60*60,
+    "M": 60,
+    "m": 60,
+    "S": 1,
+    "s": 1,
+}
+
+# space configs which need conversion to bytes
+context_space_configs = ["filesize", "memory-size", "storage-engine.max-write-cache", "storage-engine.write-block-size"]
+
+# time configs which need conversion to seconds
+context_time_configs = ["default-ttl"]
+
+# confings differs in configuration file and asinfo output
+# Format: (Name in config file, name expected in asinfo output)
+xdr_dc_config_name_changes = [
+    ("dc-node-address-port", "Nodes"),
+    ("dc-node-address-port", "nodes"),
+    ("dc-int-ext-ipmap", "int-ext-ipmap")
+]
+
+def _convert(d, unit_converter):
+    if not d or not isinstance(d, str) or len(d) < 2:
+        return d
+
+    try:
+        v = d[:-1]
+        u = d[-1]
+        if u in unit_converter:
+            return str(int(v) * unit_converter[u])
+
+    except Exception:
+        pass
+
+    return d
+
+def _to_bytes(d):
+    return _convert(d, space_unit_converter)
+
+def _to_seconds(d):
+    return _convert(d, time_unit_converter)
+
+def _ignore_context(fstream):
+    paranthesis_to_find = 1
+    while True:
+        try:
+            line = fstream.readline()
+            if not line:
+                break
+
+            line = line.strip()
+            if not line or line[0] == '#':
+                continue
+
+            paranthesis_to_find += line.count('{')
+            paranthesis_to_find -= line.count('}')
+
+            if paranthesis_to_find < 1:
+                break
+
+        except Exception:
+            break
+
+def _get_kv_from_line(line, key_prefix="", value_separator=None):
+    k = None
+    v = None
+
+    if not line:
+        return k, v
+
+    line = line.split("#")[0].strip()
+    values = line.split()
+    if len(values) > 1:
+        _k = values[0]
+        _values = []
+
+        k = "%s%s"%((key_prefix+".") if key_prefix else "",_k)
+
+        if _k in context_space_configs or k in context_space_configs:
+            for _v in values[1:]:
+                _values.append(_to_bytes(_v))
+
+        elif _k in context_time_configs or k in context_time_configs:
+            for _v in values[1:]:
+                _values.append(_to_seconds(_v))
+
+        else:
+            _values = values[1:]
+
+        if value_separator is not None:
+            v = value_separator.join(_values)
+
+        else:
+            v = _values[0]
+
+    return k, v
+
+def _parse_context(parsed_map, fstream, key_prefix="", value_separator=None, value_delimiter=","):
+    while True:
+        try:
+            line = fstream.readline()
+            if not line:
+                break
+
+            line = line.strip()
+            if not line or line[0] == '#':
+                continue
+
+            if line[0] == '}':
+                break
+
+            _k, _v = _get_kv_from_line(line, key_prefix=key_prefix, value_separator=value_separator)
+            if _k:
+                if _k in parsed_map:
+                    _v = parsed_map[_k] + value_delimiter + _v
+                parsed_map[_k] = _v
+
+        except Exception:
+            break
+
+def _parse_service_context(parsed_map, fstream, line):
+    if "service" not in parsed_map:
+        parsed_map["service"] = {}
+    dir_ptr = parsed_map["service"]
+    _parse_context(parsed_map=dir_ptr, fstream=fstream)
+
+def _parse_network_sub_context(parsed_map, fstream, subcontext):
+    _parse_context(parsed_map=parsed_map, fstream=fstream, key_prefix=subcontext)
+
+def _parse_network_context(parsed_output, fstream, line):
+    if "service" not in parsed_output:
+        parsed_output["service"] = {}
+    dir_ptr = parsed_output["service"]
+    while True:
+        try:
+            line = fstream.readline()
+            if not line:
+                break
+
+            line = line.strip()
+            if not line or line[0] == '#':
+                continue
+
+            if line[0] == '}':
+                break
+
+            line = line.split("#")[0].strip()
+            if line[-1] == '{':
+                sub_context = line[:-1].strip()
+                _parse_network_sub_context(dir_ptr, fstream, sub_context)
+
+        except Exception:
+            break
+
+def _parse_xdr_dc_context(parsed_map, fstream, dc_name):
+    if dc_name not in parsed_map:
+        parsed_map[dc_name] = {}
+    _parse_context(parsed_map=parsed_map[dc_name], fstream=fstream, value_separator='+')
+
+    parsed_map[dc_name]["DC_Name"] = dc_name
+    parsed_map[dc_name]["dc-name"] = dc_name
+    config_to_remove = []
+
+    for file_config_name, asinfo_config_name in xdr_dc_config_name_changes:
+        if file_config_name in parsed_map[dc_name]:
+            parsed_map[dc_name][asinfo_config_name] = parsed_map[dc_name][file_config_name]
+            config_to_remove.append(file_config_name)
+
+    for c in set(config_to_remove):
+        try:
+            parsed_map[dc_name].pop(c)
+        except Exception:
+            pass
+
+def _parse_xdr_context(parsed_output, fstream, line):
+    if "xdr" not in parsed_output:
+        parsed_output["xdr"] = {}
+    xdr_dir_ptr = parsed_output["xdr"]
+
+    if "dc" not in parsed_output:
+        parsed_output["dc"] = {}
+    dc_dir_ptr = parsed_output["dc"]
+
+    while True:
+        try:
+            line = fstream.readline()
+            if not line:
+                break
+
+            line = line.strip()
+            if not line or line[0] == '#':
+                continue
+
+            if line[0] == '}':
+                break
+
+            line = line.split("#")[0].strip()
+
+            if line[-1] == '{':
+                sub_context = line[:-1].strip().split()
+                if sub_context[0] != "datacenter" or len(sub_context) < 2:
+                    _ignore_context(fstream)
+                else:
+                    _parse_xdr_dc_context(dc_dir_ptr, fstream, sub_context[1])
+
+            else:
+                _k, _v = _get_kv_from_line(line, value_separator=" ")
+
+                if _k:
+
+                    if _k == "xdr-digestlog-path" and len(_v.split())>1:
+                        _v = _v.split()
+                        xdr_dir_ptr[_k] = _v[0]
+                        xdr_dir_ptr["xdr-digestlog-size"] = _to_bytes(_v[1])
+
+                    else:
+                        xdr_dir_ptr[_k] = _v
+
+        except Exception:
+            break
+
+def _parse_namespace_sub_context(parsed_map, fstream, subcontext):
+    _parse_context(parsed_map=parsed_map, fstream=fstream, key_prefix=subcontext)
+
+def _parse_namespace_context(parsed_output, fstream, line):
+    if "namespace" not in parsed_output:
+        parsed_output["namespace"] = {}
+    if not line:
+        return
+
+    ns_name = line[1]
+
+    if ns_name not in parsed_output["namespace"]:
+        parsed_output["namespace"][ns_name] = {}
+
+    if "service" not in parsed_output["namespace"][ns_name]:
+        parsed_output["namespace"][ns_name]["service"] = {}
+
+    namespace_dir_ptr = parsed_output["namespace"][ns_name]["service"]
+
+    if "dc" not in parsed_output:
+        parsed_output["dc"] = {}
+    dc_dir_ptr = parsed_output["dc"]
+
+    while True:
+        try:
+            line = fstream.readline()
+            if not line:
+                break
+
+            line = line.strip()
+            if not line or line[0] == '#':
+                continue
+
+            if line[0] == '}':
+                break
+
+            line = line.split("#")[0].strip()
+
+            if line[-1] == '{':
+                sub_context = line[:-1].strip().split()
+                if sub_context[0] != "storage-engine" or len(sub_context) < 2:
+                    _ignore_context(fstream)
+                else:
+                    _parse_namespace_sub_context(namespace_dir_ptr, fstream, sub_context[0])
+
+            else:
+                _k, _v = _get_kv_from_line(line)
+
+                if _k:
+
+                    if _k == "xdr-remote-datacenter":
+
+                        if _v not in dc_dir_ptr:
+                            dc_dir_ptr[_v] = {}
+
+                        if "namespaces" in dc_dir_ptr[_v]:
+                            dc_dir_ptr[_v]["namespaces"] += ",%s"%ns_name
+                        else:
+                            dc_dir_ptr[_v]["namespaces"] = ns_name
+
+                    else:
+                        namespace_dir_ptr[_k] = _v
+
+        except Exception:
+            break
+
+# Main first level context in conf file
+contexts = {
+    "service": _parse_service_context,
+    "network": _parse_network_context,
+    "xdr": _parse_xdr_context,
+    "namespace": _parse_namespace_context
+}
+
+def parse_file(file_path):
+    parsed_output = {}
+    try:
+        fstream = open(file_path, "r")
+    except Exception:
+        return parsed_output
+
+    while True:
+        try:
+            line = fstream.readline()
+            if not line:
+                break
+
+            line = line.strip()
+            if not line or line[0] == '#' or not line[-1] == '{':
+                # Ignore empty lines and comments
+                continue
+
+            line_values = line[:-1].strip().split()
+            context_name = line_values[0]
+            if context_name in contexts:
+                contexts[context_name](parsed_output, fstream, line_values)
+
+            else:
+                _ignore_context(fstream)
+
+        except Exception:
+            pass
+
+    return parsed_output
+
+# f = "/Users/aerospike/Downloads/tmp 28/collect_info_20171210_050702/20171210_050702_aerospike.conf"
+#
+# print parse(f)
+

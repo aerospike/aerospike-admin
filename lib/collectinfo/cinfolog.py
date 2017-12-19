@@ -125,8 +125,12 @@ class CollectinfoSnapshot(object):
                         data[node] = copy.deepcopy(d)
                         continue
 
-                    if stanza in ['namespace', 'bin', 'bins', 'set', 'sindex']:
+                    if stanza in ['namespace', 'bin', 'bins', 'set', 'sindex', 'namespace_list']:
                         d = d["namespace"]
+
+                        if stanza == "namespace_list":
+                            data[node] = d.keys()
+                            continue
 
                         for ns_name in d.keys():
                             try:
@@ -322,11 +326,15 @@ class CollectinfoLog(object):
         self.snapshots = {}
         self.data = {}
         parse_info_all(files, self.data, True)
+
         if self.data:
-            for ts in self.data:
+            for ts in sorted(self.data.keys(), reverse=True):
                 if self.data[ts]:
                     for cl in self.data[ts]:
                         self.snapshots[ts] = CollectinfoSnapshot(cl, ts, self.data[ts][cl], cinfo_path)
+
+                    # Since we are not dealing with timeseries we should fetch only one snapshot
+                    break
 
     def destroy(self):
         try:
