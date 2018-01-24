@@ -140,10 +140,19 @@ class CollectinfoSnapshot(object):
                                 elif stanza == "bin" or stanza == "bins":
                                     data[node][ns_name] = copy.deepcopy(d[ns_name][stanza])
 
-                                elif stanza in ["set", "sindex"]:
-
+                                elif stanza == "set":
                                     for _name in d[ns_name][stanza]:
                                         _key = "%s %s" % (ns_name, _name)
+                                        data[node][_key] = copy.deepcopy(d[ns_name][stanza][_name])
+
+                                elif stanza == "sindex":
+                                    for _name in d[ns_name][stanza]:
+                                        try:
+                                            set = d[ns_name][stanza][_name]["set"]
+                                            _key = "%s %s %s" % (ns_name, set, _name)
+                                        except Exception:
+                                            continue
+
                                         data[node][_key] = copy.deepcopy(d[ns_name][stanza][_name])
 
                             except Exception:

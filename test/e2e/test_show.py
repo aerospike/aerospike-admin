@@ -312,9 +312,9 @@ class TestShowLatency(unittest.TestCase):
         exp_header= ['Node',
                      'Time Span',
                      'Ops/Sec',
-                     '>1Ms',
-                     '>8Ms',
-                     '>64Ms']
+                     '%>1Ms',
+                     '%>8Ms',
+                     '%>64Ms']
         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
 
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestShowLatency.proxy_latency, horizontal = True)
@@ -337,9 +337,9 @@ class TestShowLatency(unittest.TestCase):
             exp_header= ['Node',
                          'Time Span',
                          'Ops/Sec',
-                         '>1Ms',
-                         '>8Ms',
-                         '>64Ms']
+                         '%>1Ms',
+                         '%>8Ms',
+                         '%>64Ms']
 
             exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
 
@@ -363,9 +363,9 @@ class TestShowLatency(unittest.TestCase):
         exp_header= ['Node',
                      'Time Span',
                      'Ops/Sec',
-                     '>1Ms',
-                     '>8Ms',
-                     '>64Ms']
+                     '%>1Ms',
+                     '%>8Ms',
+                     '%>64Ms']
 
         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
 
@@ -389,9 +389,9 @@ class TestShowLatency(unittest.TestCase):
         exp_header= ['Node',
                      'Time Span',
                      'Ops/Sec',
-                     '>1Ms',
-                     '>8Ms',
-                     '>64Ms']
+                     '%>1Ms',
+                     '%>8Ms',
+                     '%>64Ms']
 
         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
 
@@ -415,9 +415,9 @@ class TestShowLatency(unittest.TestCase):
         exp_header= ['Node',
                      'Time Span',
                      'Ops/Sec',
-                     '>1Ms',
-                     '>8Ms',
-                     '>64Ms']
+                     '%>1Ms',
+                     '%>8Ms',
+                     '%>64Ms']
 
         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
 
@@ -441,9 +441,9 @@ class TestShowLatency(unittest.TestCase):
         exp_header= ['Node',
                      'Time Span',
                      'Ops/Sec',
-                     '>1Ms',
-                     '>8Ms',
-                     '>64Ms']
+                     '%>1Ms',
+                     '%>8Ms',
+                     '%>64Ms']
 
         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
 

@@ -269,7 +269,7 @@ ASSERT(r, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Probable cause - namespace size misconfiguration.",
 				"Namespace disk available pct check.");
 
-s = select * from SERVICE.CONFIG ignore "pidfile", "heartbeat.mtu", like(".*address"), like(".*port")  save;
+s = select * from SERVICE.CONFIG ignore "heartbeat.mtu", "node-id-interface", "pidfile", like(".*address"), like(".*port")  save;
 r = group by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
 ASSERT(r, False, "Different service configurations.", "OPERATIONS", WARNING,
 				"Listed Service configuration[s] are different across multiple nodes in cluster. Please run 'show config service diff' to check different configuration values. Probable cause - config file misconfiguration.",
@@ -1334,7 +1334,29 @@ ASSERT(r, False, "Non-zero batch-index read sub-transaction errors in the transa
 				"Namespace batch-index read sub-transaction transaction service error count check");
 
 
+/*  Key busy error */
+s = select "fail_key_busy" from NAMESPACE.STATISTICS save;
+u = select "uptime" from SERVICE.STATISTICS;
+u = group by CLUSTER, NODE do MAX(u);
+s = do s / u;
+r = group by KEY do SD_ANOMALY(s, ==, 3);
+ASSERT(r, False, "Skewed Fail Key Busy count.", "ANOMALY", INFO,
+				"fail_key_busy show skew count patterns (for listed node[s]). Please run 'show statistics namespace like fail_key_busy' for details.",
+				"Key Busy  errors count anomaly check.");
+
+
 SET CONSTRAINT VERSION < 3.9;
+
+/*  Key busy error */
+s = select "err_rw_pending_limit" from SERVICE.STATISTICS save;
+u = select "uptime" from SERVICE.STATISTICS;
+u = group by CLUSTER, NODE do MAX(u);
+s = do s / u;
+r = group by KEY do SD_ANOMALY(s, ==, 3);
+ASSERT(r, False, "Skewed Fail Key Busy count.", "ANOMALY", INFO,
+				"err_rw_pending_limit show skew count patterns (for listed node[s]). Please run 'show statistics like err_rw_pending_limit' for details.",
+				"Key Busy  errors count anomaly check.");
+
 
 // Read statistics
 

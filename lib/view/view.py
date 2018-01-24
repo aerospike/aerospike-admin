@@ -426,6 +426,7 @@ class CliView(object):
                     row = {}
                 else:
                     row = ns_stats
+                    ns_stats['_total_records'] = 0
 
                 if ns not in total_res:
                     total_res[ns] = {}
@@ -438,8 +439,6 @@ class CliView(object):
                     total_res[ns]["non_replica_tombstones"] = 0
                     total_res[ns]["migrate_tx_partitions_remaining"] = 0
                     total_res[ns]["migrate_rx_partitions_remaining"] = 0
-
-                ns_stats['_total_records'] = 0
 
                 if "rack-id" in row:
                     rack_id_available = True
@@ -503,7 +502,8 @@ class CliView(object):
                 except Exception:
                     pass
 
-                total_res[ns]['_total_records'] += ns_stats['_total_records']
+                if not isinstance(ns_stats, Exception):
+                    total_res[ns]['_total_records'] += ns_stats['_total_records']
 
                 row['namespace'] = ns
                 row['real_node_id'] = node.node_id
@@ -880,8 +880,12 @@ class CliView(object):
 
         for column in data["columns"]:
             if column[0] == '>':
-                column = int(column[1:-2])
-                all_columns.add(column)
+                c = int(column[1:-2])
+                all_columns.add((c,(column, "%%>%dMs"%c)))
+
+            elif column[0:2] == "%>":
+                c = int(column[2:-2])
+                all_columns.add((c, column))
 
     @staticmethod
     def _create_latency_row(data, ns=" "):
@@ -935,7 +939,7 @@ class CliView(object):
                         for ns, ns_data in _type_data.iteritems():
                             CliView._update_latency_column_list(ns_data, all_columns=all_columns)
 
-            all_columns = [">%sms" % (c) for c in sorted(all_columns)]
+            all_columns = [c[1] for c in sorted(all_columns, key=lambda c:c[0])]
             all_columns.insert(0, 'ops/sec')
             all_columns.insert(0, 'Time Span')
             if show_ns_details:

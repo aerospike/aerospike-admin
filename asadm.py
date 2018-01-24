@@ -95,7 +95,7 @@ from lib.client.assocket import ASSocket
 from lib.client.ssl_context import SSLContext
 from lib.collectinfocontroller import CollectinfoRootController
 from lib.logcontroller import LogRootController
-from lib.utils import util
+from lib.utils import common, util
 from lib.utils.constants import ADMIN_HOME
 from lib.view import terminal, view
 
@@ -113,6 +113,9 @@ class AerospikeShell(cmd.Cmd):
     def __init__(self, seed, user=None, password=None, use_services_alumni=False, use_services_alt=False,
                  log_path="", log_analyser=False, collectinfo=False,
                  ssl_context=None, only_connect_seed=False, execute_only_mode=False, timeout=5):
+
+        # indicates shell created successfully and connected to cluster/collectinfo/logfile
+        self.connected  = True
 
         self.execute_only_mode = execute_only_mode
 
@@ -165,7 +168,12 @@ class AerospikeShell(cmd.Cmd):
 
                 if not self.ctrl.cluster.get_live_nodes():
                     self.do_exit('')
-                    logger.critical("Not able to connect any cluster.")
+                    if self.execute_only_mode:
+                        logger.error("Not able to connect any cluster.")
+                        self.connected = False
+                        return
+                    else:
+                        logger.critical("Not able to connect any cluster.")
 
                 self.prompt = "Admin> "
                 self.intro = ""
@@ -248,7 +256,7 @@ class AerospikeShell(cmd.Cmd):
             if not lines:  # allow empty lines
                 return ""
         except Exception as e:
-            logger.error(str(e))
+            logger.error(e)
             return ""
 
         for line in lines:
@@ -271,7 +279,7 @@ class AerospikeShell(cmd.Cmd):
                 if response == "EXIT":
                     return "exit"
             except Exception as e:
-                logger.error(str(e))
+                logger.error(e)
         return ""  # line was handled by execute
 
     def _listdir(self, root):
@@ -717,7 +725,7 @@ def main():
                 ssl_context=ssl_context, line_separator=cli_args.line_separator)
             exit(0)
         except Exception as e:
-            logger.error(str(e))
+            logger.error(e)
             exit(1)
 
     if not execute_only_mode:
@@ -750,8 +758,12 @@ def main():
     single_command = True
     real_stdout = sys.stdout
     if not execute_only_mode:
+        if not shell.connected:
+            exit(1)
+
         func = shell.cmdloop
         single_command = False
+
     else:
         commands_arg = cli_args.execute
         max_commands_to_print_header = 1
@@ -771,13 +783,21 @@ def main():
             except Exception as e:
                 print e
 
-        line = shell.precmd(commands_arg,
-                            max_commands_to_print_header=max_commands_to_print_header,
-                            command_index_to_print_from=command_index_to_print_from)
+        if shell.connected:
+            line = shell.precmd(commands_arg,
+                                max_commands_to_print_header=max_commands_to_print_header,
+                                command_index_to_print_from=command_index_to_print_from)
 
-        shell.onecmd(line)
-        func = shell.onecmd
-        args = (line,)
+            shell.onecmd(line)
+            func = shell.onecmd
+            args = (line,)
+
+        else:
+            if "collectinfo" in commands_arg:
+                logger.info("Collecting only System data")
+                func = common.collect_sys_info(port=cli_args.port)
+
+            exit(1)
 
     cmdloop(shell, func, args, use_yappi, single_command)
     shell.close()

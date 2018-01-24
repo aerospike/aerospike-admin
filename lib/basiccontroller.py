@@ -17,11 +17,8 @@ import json
 import os
 import platform
 import shutil
-import socket
 import sys
 import time
-import urllib2
-import zipfile
 from distutils.version import LooseVersion
 
 from lib.client.cluster import Cluster
@@ -33,13 +30,9 @@ from lib.getcontroller import (GetConfigController, GetDistributionController,
                                get_sindex_stats)
 from lib.health.util import (create_health_input_dict, create_snapshot_key,
                              h_eval)
-from lib.utils import util
-from lib.utils.data import lsof_file_type_desc
+from lib.utils import common, constants, util
 from lib.view import terminal
 from lib.view.view import CliView
-
-aslogfile = ""
-aslogdir = ""
 
 
 class BasicCommandController(CommandController):
@@ -815,6 +808,8 @@ class ShowPmapController(BasicCommandController):
 class CollectinfoController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['with'])
+        self.aslogfile = ""
+        self.aslogdir = ""
 
     def _collect_local_file(self, src, dest_dir):
         self.logger.info("Copying file %s to %s" % (src, dest_dir))
@@ -826,263 +821,44 @@ class CollectinfoController(BasicCommandController):
     def _collectinfo_content(self, func, parm='', alt_parms=''):
         name = ''
         capture_stdout = util.capture_stdout
-        sep = "\n====ASCOLLECTINFO====\n"
+        sep = constants.COLLECTINFO_SEPRATOR
         try:
             name = func.func_name
         except Exception:
             pass
-        info_line = "Data collection for " + name + \
-            "%s" % (" %s" % (str(parm)) if parm else "") + " in progress.."
+        info_line = constants.COLLECTINFO_PROGRESS_MSG %(name, "%s" % (" %s" % (str(parm)) if parm else ""))
         self.logger.info(info_line)
         if parm:
             sep += str(parm) + "\n"
 
-        if func == 'shell':
-            o, e = util.shell_command(parm)
-            if e:
-                self.logger.warning(str(e))
-                success = False
-                for alt_parm in alt_parms:
-                    if not alt_parm:
-                        continue
-
-                    alt_parm = [alt_parm]
-                    info_line = "Data collection for alternative command " + \
-                                name + str(alt_parm) + " in progress.."
-                    self.logger.info(info_line)
-                    sep += str(alt_parm) + "\n"
-                    o_alt, e_alt = util.shell_command(alt_parm)
-
-                    if e_alt:
-                        e = e_alt
-
-                    else:
-                        success = True
-
-                        if o_alt:
-                            o = o_alt
-                        break
-
-                if not success:
-                    self.cmds_error.add(parm[0])
-                    for alt_parm in alt_parms:
-                        self.cmds_error.add(alt_parm)
-
-        elif func == 'cluster':
+        if func == 'cluster':
             o = self.cluster.info(parm)
         else:
             if self.nodes and isinstance(self.nodes, list):
                 parm += ["with"] + self.nodes
             o = capture_stdout(func, parm)
-        self._write_log(sep + str(o))
+        util.write_to_file(self.aslogfile, sep + str(o))
         return ''
-
-    def _write_log(self, collectedinfo):
-        f = open(str(aslogfile), 'a')
-        f.write(str(collectedinfo))
-        return f.close()
 
     def _write_version(self, line):
         print "asadm version " + str(self.asadm_version)
 
-    def _get_metadata(self, response_str, prefix='', old_response=''):
-        aws_c = ''
-        aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
-
-        # set of values which will give same old_response, so no need to go further
-        last_values = []
-        for rsp in response_str.split("\n"):
-            if rsp[-1:] == '/':
-                rsp_p = rsp.strip('/')
-                aws_c += self._get_metadata(rsp_p, prefix, old_response=old_response)
-            else:
-                meta_url = aws_metadata_base_url + prefix + rsp
-
-                req = urllib2.Request(meta_url)
-                r = urllib2.urlopen(req)
-                # r = requests.get(meta_url,timeout=aws_timeout)
-                if r.code != 404:
-                    response = r.read().strip()
-                    if response == old_response:
-                        last_values.append(rsp.strip())
-                        continue
-                    try:
-                            aws_c += self._get_metadata(response, prefix + rsp + "/", old_response=response)
-                    except Exception:
-                            aws_c += (prefix + rsp).strip('/') + '\n' + response + "\n\n"
-
-        if last_values:
-            aws_c += prefix.strip('/') + '\n' + '\n'.join(last_values) + "\n\n"
-
-        return aws_c
-
-    def _get_awsdata(self, line):
-        aws_rsp = ''
-        aws_timeout = 1
-        socket.setdefaulttimeout(aws_timeout)
-        aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
-        print "['AWS']"
-        try:
-            req = urllib2.Request(aws_metadata_base_url)
-            r = urllib2.urlopen(req)
-            # r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
-            if r.code == 200:
-                rsp = r.read()
-                aws_rsp += self._get_metadata(rsp, '/')
-                print "Requesting... {0} \n{1}  \t Successful".format(aws_metadata_base_url, aws_rsp)
-            else:
-                aws_rsp = " Not likely in AWS"
-                print "Requesting... {0} \t FAILED {1} ".format(aws_metadata_base_url, aws_rsp)
-
-        except Exception as e:
-            print "Requesting... {0} \t  {1} ".format(aws_metadata_base_url, e)
-            print "FAILED! Node Is Not likely In AWS"
-
-    def _collect_sys(self, line=''):
-        print "['cpuinfo']"
-        cpu_info_cmd = 'cat /proc/cpuinfo | grep "vendor_id"'
-        o, e = util.shell_command([cpu_info_cmd])
-        if o:
-            o = o.strip().split("\n")
-            cpu_info = {}
-            for item in o:
-                items = item.strip().split(":")
-                if len(items) == 2:
-                    key = items[1].strip()
-                    if key in cpu_info.keys():
-                        cpu_info[key] = cpu_info[key] + 1
-                    else:
-                        cpu_info[key] = 1
-            print "vendor_id\tprocessor count"
-            for key in cpu_info.keys():
-                print key + "\t" + str(cpu_info[key])
-
-    def _get_asd_pids(self):
-        pids = []
-        ps_cmd = 'sudo ps aux|grep -v grep|grep -E "asd|cld"'
-        ps_o, ps_e = util.shell_command([ps_cmd])
-        if ps_o:
-            ps_o = ps_o.strip().split("\n")
-            pids = []
-            for item in ps_o:
-                vals = item.strip().split()
-                if len(vals) >= 2:
-                    pids.append(vals[1])
-        return pids
-
     def _collect_logs_from_systemd_journal(self, as_logfile_prefix):
-        asd_pids = self._get_asd_pids()
+        asd_pids = common.get_asd_pids()
         for pid in asd_pids:
             try:
                 journalctl_cmd = [
                     'journalctl _PID=%s --since "24 hours ago" -q -o cat' % (pid)]
-                aslogfile = as_logfile_prefix + 'aerospike_%s.log' % (pid)
-                print "[INFO] Data collection for %s to %s in progress..." % (str(journalctl_cmd), aslogfile)
+                self.aslogfile = as_logfile_prefix + 'aerospike_%s.log' % (pid)
+                self.logger.info("Data collection for %s to %s in progress..." % (str(journalctl_cmd), self.aslogfile))
                 o, e = util.shell_command(journalctl_cmd)
                 if e:
-                    print e
+                    self.logger.error(str(e))
                 else:
-                    self._write_log(o)
+                    util.write_to_file(self.aslogfile, str(o))
             except Exception as e1:
-                print str(e1)
+                self.logger.error(str(e1))
                 sys.stdout = sys.__stdout__
-
-    def _collect_lsof(self, verbose=False):
-        print "['lsof']"
-        pids = self._get_asd_pids()
-        if pids and len(pids) > 0:
-            search_str = pids[0]
-            for _str in pids[1:len(pids)]:
-                search_str += "\\|" + _str
-            lsof_cmd = 'sudo lsof -n |grep "%s"' % (search_str)
-            lsof_o, lsof_e = util.shell_command([lsof_cmd])
-            if lsof_e:
-                print lsof_e
-                self.cmds_error.add(lsof_cmd)
-            if lsof_o:
-                if verbose:
-                    print lsof_o
-                else:
-                    lsof_dic = {}
-                    unidentified_protocol_count = 0
-                    lsof_list = lsof_o.strip().split("\n")
-                    type_ljust_parm = 20
-                    desc_ljust_parm = 20
-                    for row in lsof_list:
-                        try:
-                            if "can't identify protocol" in row:
-                                unidentified_protocol_count = unidentified_protocol_count + \
-                                    1
-                        except Exception:
-                            pass
-
-                        try:
-                            type = row.strip().split()[4]
-                            if type not in lsof_dic:
-
-                                if len(type) > type_ljust_parm:
-                                    type_ljust_parm = len(type)
-
-                                if (type in lsof_file_type_desc
-                                        and len(lsof_file_type_desc[type]) > desc_ljust_parm):
-                                    desc_ljust_parm = len(
-                                        lsof_file_type_desc[type])
-
-                                lsof_dic[type] = 1
-                            else:
-                                lsof_dic[type] = lsof_dic[type] + 1
-
-                        except Exception:
-                            continue
-
-                    print "FileType".ljust(type_ljust_parm) + "Description".ljust(desc_ljust_parm) + "fd count"
-                    for ftype in sorted(lsof_dic.keys()):
-                        desc = "Unknown"
-                        if ftype in lsof_file_type_desc:
-                            desc = lsof_file_type_desc[ftype]
-                        print ftype.ljust(type_ljust_parm) + desc.ljust(desc_ljust_parm) + str(lsof_dic[ftype])
-
-                    print "\nUnidentified Protocols = " + str(unidentified_protocol_count)
-
-    def _zip_files(self, dir_path, _size=1):
-        """
-        If file size is greater then given _size, create zip of file on same location and
-        remove original one. Won't zip If zlib module is not available.
-        """
-        for root, dirs, files in os.walk(dir_path):
-            for _file in files:
-                file_path = os.path.join(root, _file)
-                size_mb = (os.path.getsize(file_path) / (1024 * 1024))
-                if size_mb >= _size:
-                    os.chdir(root)
-                    try:
-                        newzip = zipfile.ZipFile(
-                            _file + ".zip", "w", zipfile.ZIP_DEFLATED)
-                        newzip.write(_file)
-                        newzip.close()
-                        os.remove(_file)
-                    except Exception as e:
-                        print e
-                        pass
-
-    def _archive_log(self, logdir):
-        self._zip_files(logdir)
-        util.shell_command(["tar -czvf " + logdir + ".tgz " + aslogdir])
-        sys.stderr.write("\x1b[2J\x1b[H")
-        print "\n\n\n"
-        self.logger.info("Files in " + logdir + " and " + logdir + ".tgz saved.")
-
-    def _print_collecinto_summary(self, logdir):
-        if self.cmds_error:
-            self.logger.warning("Following commands are either unavailable or giving runtime error...")
-            self.logger.warning(list(self.cmds_error))
-
-        print "\n"
-        self.logger.info("Please provide file " + logdir + ".tgz to Aerospike Support.")
-        self.logger.info("END OF ASCOLLECTINFO")
-
-        # If multiple commands are given in execute_only mode then we might need coloring for next commands
-        terminal.enable_color(True)
 
     def _parse_namespace(self, namespace_data):
         """
@@ -1314,9 +1090,13 @@ class CollectinfoController(BasicCommandController):
 
     def _dump_in_json_file(self, as_logfile_prefix, dump):
         self.logger.info("Dumping collectinfo in JSON format.")
-        aslogfile = as_logfile_prefix + 'ascinfo.json'
-        with open(aslogfile, "w") as f:
-            f.write(json.dumps(dump, indent=4, separators=(',', ':')))
+        self.aslogfile = as_logfile_prefix + 'ascinfo.json'
+
+        try:
+            with open(self.aslogfile, "w") as f:
+                f.write(json.dumps(dump, indent=4, separators=(',', ':')))
+        except Exception as e:
+            self.logger.error("Failed to write JSON file: " + str(e))
 
     def _get_collectinfo_data_json(self, default_user, default_pwd, default_ssh_port,
                                    default_ssh_key, credential_file, enable_ssh):
@@ -1397,60 +1177,10 @@ class CollectinfoController(BasicCommandController):
         except Exception:
             port = 3000
 
-        # Unfortunately timestamp can not be printed in Centos with dmesg,
-        # storing dmesg logs without timestamp for this particular OS.
-        if 'centos' == (platform.linux_distribution()[0]).lower():
-            cmd_dmesg = 'sudo dmesg'
-            alt_dmesg = ''
-        else:
-            cmd_dmesg = 'sudo dmesg -T'
-            alt_dmesg = 'sudo dmesg'
+
 
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
-        global aslogfile, output_time
 
-        # cmd and alternative cmds are stored in list of list instead of dic to
-        # maintain proper order for output
-        sys_shell_cmds = [
-            ['hostname -I', 'hostname'],
-            ['top -n3 -b', 'top -l 3'],
-            ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f'],
-            ['cat /proc/meminfo', 'vmstat -s'],
-            ['cat /proc/interrupts', ''],
-            ['iostat -x 1 10', ''],
-            [cmd_dmesg, alt_dmesg],
-            ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"', ''],
-            ['lscpu', ''],
-            ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"'],
-            ['sudo iptables -L', ''],
-            ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null', ''],
-            ['df -h', ''],
-            ['free -m', ''],
-            ['uname -a', ''],
-
-            # Only in pretty print
-            ['cat /proc/partitions', 'fdisk -l'],
-            ['ls /sys/block/{sd*,xvd*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"', ''],
-            ['ls /sys/block/{sd*,xvd*}/device/model |xargs -I f sh -c "echo f; cat f;"', ''],
-            ['ls /sys/block/{sd*,xvd*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"', ''],
-            ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
-            ['ip addr', ''],
-            ['ip -s link', '', ''],
-            ['sar -n DEV', ''],
-            ['sar -n EDEV', ''],
-            ['mpstat -P ALL 2 3', ''],
-            ['uptime', ''],
-            ['ss -ant state time-wait sport = :%d or dport = :%d | wc -l' %
-                (port,port), 'netstat -ant | grep %d | grep TIME_WAIT | wc -l' % (port)],
-            ['ss -ant state close-wait sport = :%d or dport = :%d | wc -l' %
-                (port,port), 'netstat -ant | grep %d | grep CLOSE_WAIT | wc -l' % (port)],
-            ['ss -ant state established sport = :%d or dport = :%d | wc -l' %
-                (port,port), 'netstat -ant | grep %d | grep ESTABLISHED | wc -l' % (port)],
-            ['ss -ant state listen sport = :%d or dport = :%d |  wc -l' %
-                (port,port), 'netstat -ant | grep %d | grep LISTEN | wc -l' % (port)],
-            ['arp -n|grep ether|tr -s [:blank:] | cut -d" " -f5 |sort|uniq -c', ''],
-            ['find /proc/sys/net/ipv4/neigh/default/ -name "gc_thresh*" -print -exec cat {} \;', '']
-        ]
         dignostic_info_params = [
             'network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
         dignostic_features_params = ['features']
@@ -1533,13 +1263,13 @@ class CollectinfoController(BasicCommandController):
 
         ####### Dignostic info ########
 
-        aslogfile = as_logfile_prefix + 'ascollectinfo.log'
-        self._write_log(collect_output)
+        self.aslogfile = as_logfile_prefix + 'ascollectinfo.log'
+        util.write_to_file(self.aslogfile, collect_output)
 
         try:
             self._collectinfo_content(self._write_version)
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
@@ -1547,7 +1277,7 @@ class CollectinfoController(BasicCommandController):
             for info_param in dignostic_info_params:
                 self._collectinfo_content(info_controller, [info_param])
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
@@ -1555,7 +1285,7 @@ class CollectinfoController(BasicCommandController):
             for show_param in dignostic_show_params:
                 self._collectinfo_content(show_controller, show_param.split())
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
@@ -1563,32 +1293,33 @@ class CollectinfoController(BasicCommandController):
             for cmd in dignostic_features_params:
                 self._collectinfo_content(features_controller, [cmd])
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
             for cmd in dignostic_aerospike_cluster_params:
                 self._collectinfo_content('cluster', cmd)
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         ####### Summary ########
-        collectinfo_root_controller = CollectinfoRootController(asadm_version=self.asadm_version, clinfo_path=as_logfile_prefix + "ascinfo.json")
 
-        aslogfile = as_logfile_prefix + 'summary.log'
-        self._write_log(collect_output)
+        collectinfo_root_controller = CollectinfoRootController(asadm_version=self.asadm_version, clinfo_path=self.aslogdir)
+
+        self.aslogfile = as_logfile_prefix + 'summary.log'
+        util.write_to_file(self.aslogfile, collect_output)
         try:
             self._collectinfo_content(self._write_version)
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
             for summary_param in summary_params:
                 self._collectinfo_content(collectinfo_root_controller.execute, [summary_param])
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
@@ -1596,57 +1327,25 @@ class CollectinfoController(BasicCommandController):
             for info_param in summary_info_params:
                 self._collectinfo_content(info_controller, [info_param])
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         ####### Health ########
 
-        aslogfile = as_logfile_prefix + 'health.log'
-        self._write_log(collect_output)
+        self.aslogfile = as_logfile_prefix + 'health.log'
+        util.write_to_file(self.aslogfile, collect_output)
 
         try:
             for health_param in health_params:
                 self._collectinfo_content(collectinfo_root_controller.execute, health_param.split())
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         ####### System info ########
 
-        aslogfile = as_logfile_prefix + 'sysinfo.log'
-        self._write_log(collect_output)
-
-        try:
-            for cmds in sys_shell_cmds:
-                self._collectinfo_content('shell', [cmds[0]], cmds[1:] if len(cmds)>1 else [])
-        except Exception as e:
-            self._write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            self._collectinfo_content(self._collect_sys)
-        except Exception as e:
-            self._write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            self._collectinfo_content(self._get_awsdata)
-        except Exception as e:
-            self._write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            self._collectinfo_content(self._collect_lsof)
-        except Exception as e:
-            self._write_log(str(e))
-            sys.stdout = sys.__stdout__
-
-        if show_all and verbose:
-            try:
-                self._collectinfo_content(self._collect_lsof, verbose)
-            except Exception as e:
-                self._write_log(str(e))
-                sys.stdout = sys.__stdout__
+        self.aslogfile = as_logfile_prefix + 'sysinfo.log'
+        self.failed_cmds = common.collect_sys_info(port=port, timestamp=collect_output, outfile=self.aslogfile, verbose=show_all & verbose)
 
         ####### Logs and conf ########
 
@@ -1670,7 +1369,7 @@ class CollectinfoController(BasicCommandController):
                         is_xdr_in_asd_version = self.cluster.call_node_method(
                             [_ip], "is_feature_present", "xdr").popitem()[1]
                     except Exception:
-                        from lib.node import Node
+                        from lib.client.node import Node
                         temp_node = Node(_ip)
                         is_xdr_in_asd_version = self.cluster.call_node_method(
                             [temp_node.ip], "is_feature_present", "xdr").popitem()[1]
@@ -1686,11 +1385,11 @@ class CollectinfoController(BasicCommandController):
                         except Exception:
                             xdr_log_location = '/var/log/aerospike/*xdr.log'
 
-                        aslogfile = as_logfile_prefix + 'asxdr.log'
-                        self._collectinfo_content(
-                            'shell', ['cat ' + xdr_log_location])
+                        self.aslogfile = as_logfile_prefix + 'asxdr.log'
+                        self._collect_local_file(xdr_log_location, self.aslogfile)
+
             except Exception as e:
-                self._write_log(str(e))
+                util.write_to_file(self.aslogfile, str(e))
                 sys.stdout = sys.__stdout__
 
             try:
@@ -1698,7 +1397,7 @@ class CollectinfoController(BasicCommandController):
                     log_locations = [i.split(':')[1] for i in self.cluster.call_node_method(
                         [_ip], "info", "logs").popitem()[1].split(';')]
                 except Exception:
-                    from lib.node import Node
+                    from lib.client.node import Node
                     temp_node = Node(_ip)
                     log_locations = [i.split(':')[1] for i in self.cluster.call_node_method(
                         [temp_node.ip], "info", "logs").popitem()[1].split(';')]
@@ -1724,10 +1423,10 @@ class CollectinfoController(BasicCommandController):
                             self._collect_logs_from_systemd_journal(
                                 as_logfile_prefix)
                         except Exception as e1:
-                            self._write_log(str(e1))
+                            util.write_to_file(self.aslogfile, str(e1))
                             sys.stdout = sys.__stdout__
             except Exception as e:
-                self._write_log(str(e))
+                util.write_to_file(self.aslogfile, str(e))
                 sys.stdout = sys.__stdout__
 
         ##### aerospike conf file #####
@@ -1735,43 +1434,35 @@ class CollectinfoController(BasicCommandController):
             # Comparing with this version because prior to this it was
             # citrusleaf.conf & citrusleaf.log
             if LooseVersion(as_version) > LooseVersion("3.0.0"):
-                aslogfile = as_logfile_prefix + 'aerospike.conf'
+                self.aslogfile = as_logfile_prefix + 'aerospike.conf'
             else:
-                aslogfile = as_logfile_prefix + 'citrusleaf.conf'
+                self.aslogfile = as_logfile_prefix + 'citrusleaf.conf'
 
-            self._write_log(collect_output)
-            self._collectinfo_content('shell', ['cat %s' % (conf_path)])
+            self._collect_local_file(conf_path, self.aslogfile)
 
         except Exception as e:
-            self._write_log(str(e))
+            util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
     def _main_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
                           credential_file, snp_count, wait_time, enable_ssh=False,
                           show_all=False, verbose=False, output_prefix=""):
-        global aslogdir, output_time
-        timestamp = time.gmtime()
-        output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
-        aslogdir_prefix = ""
-        if output_prefix:
-            output_prefix = output_prefix.strip()
-            aslogdir_prefix = "%s%s"%(str(output_prefix), '_' if not output_prefix.endswith('_')
-                                                             and not output_prefix.endswith('-') else "")\
-                                                if output_prefix else ""
-        aslogdir = '/tmp/%scollect_info_'%(aslogdir_prefix) + output_time
-        as_logfile_prefix = aslogdir + '/' + output_time + '_'
 
-        os.makedirs(aslogdir)
+        # JSON collectinfo snapshot count check
+        if snp_count < 1:
+            self.logger.error("Wrong collectinfo snapshot count")
+            return
+
+        timestamp = time.gmtime()
+        self.aslogdir, as_logfile_prefix = common.set_collectinfo_path(timestamp, output_prefix=output_prefix)
 
         # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
         terminal.enable_color(False)
 
-        self.cmds_error = set()
+        # list of failed system commands
+        self.failed_cmds = []
 
         # JSON collectinfo
-        if snp_count < 1:
-            self._archive_log(aslogdir)
-            return
 
         self._dump_collectinfo_json(timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port, default_ssh_key,
                                     credential_file, enable_ssh, snp_count, wait_time,)
@@ -1780,9 +1471,10 @@ class CollectinfoController(BasicCommandController):
         self._dump_collectinfo_pretty_print(timestamp, as_logfile_prefix, show_all=show_all, verbose=verbose)
 
         # Archive collectinfo directory
-        self._archive_log(aslogdir)
+        common.archive_log(self.aslogdir)
 
-        self._print_collecinto_summary(aslogdir)
+        # printing collectinfo summary
+        common.print_collecinto_summary(self.aslogdir, failed_cmds=self.failed_cmds)
 
     def _collect_info(self, line, show_all=False):
 
@@ -2367,6 +2059,6 @@ class SummaryController(BasicCommandController):
 
         metadata["os_version"] = os_version
 
-        return util.Future(self.view.print_summary, util.create_summary(service_stats=service_stats, namespace_stats=namespace_stats,
+        return util.Future(self.view.print_summary, common.create_summary(service_stats=service_stats, namespace_stats=namespace_stats,
                                                     set_stats=set_stats, metadata=metadata, cluster_configs=cluster_configs),
                            list_view=enable_list_view)

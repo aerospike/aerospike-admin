@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib.utils import util
+from lib.utils import common, util
 
 
 def get_sindex_stats(cluster, nodes='all', for_mods=[]):
@@ -23,16 +23,28 @@ def get_sindex_stats(cluster, nodes='all', for_mods=[]):
         for host, stat_list in stats.iteritems():
             if not stat_list or isinstance(stat_list, Exception):
                 continue
+
             namespace_list = [stat['ns'] for stat in stat_list]
-            namespace_list = util.filter_list(namespace_list, for_mods)
+            try:
+                namespace_list = util.filter_list(namespace_list, for_mods[:1])
+            except Exception:
+                pass
+
+            sindex_list = [stat['indexname'] for stat in stat_list]
+            try:
+                sindex_list = util.filter_list(sindex_list, for_mods[1:2])
+            except Exception:
+                pass
+
             for stat in stat_list:
                 if not stat or stat['ns'] not in namespace_list:
                     continue
+
                 ns = stat['ns']
                 set = stat['set']
                 indexname = stat['indexname']
 
-                if not indexname or not ns:
+                if not indexname or not ns or indexname not in sindex_list:
                     continue
 
                 sindex_key = "%s %s %s" % (ns, set, indexname)
@@ -57,7 +69,7 @@ class GetDistributionController():
 
     def do_distribution(self, histogram_name, nodes='all'):
         histogram = self.cluster.info_histogram(histogram_name, nodes=nodes)
-        return util.create_histogram_output(histogram_name, histogram)
+        return common.create_histogram_output(histogram_name, histogram)
 
     def do_object_size(self, byte_distribution=False, bucket_count=5, nodes='all'):
 
@@ -71,7 +83,7 @@ class GetDistributionController():
         histogram = histogram.result()
         builds = builds.result()
 
-        return util.create_histogram_output(histogram_name, histogram, byte_distribution=True, bucket_count=bucket_count, builds=builds)
+        return common.create_histogram_output(histogram_name, histogram, byte_distribution=True, bucket_count=bucket_count, builds=builds)
 
 class GetLatencyController():
 
@@ -287,11 +299,23 @@ class GetStatisticsController():
         for host_id, key_values in sets.iteritems():
             if isinstance(key_values, Exception) or not key_values:
                 continue
+
             namespace_list = [ns_set[0] for ns_set in key_values.keys()]
-            namespace_list = util.filter_list(namespace_list, for_mods)
+            try:
+                namespace_list = util.filter_list(namespace_list, for_mods[:1])
+            except Exception:
+                pass
+
+            set_list = [ns_set[1] for ns_set in key_values.keys()]
+            try:
+                set_list = util.filter_list(set_list, for_mods[1:2])
+            except Exception:
+                pass
+
             for key, values in key_values.iteritems():
-                if key[0] not in namespace_list:
+                if key[0] not in namespace_list or key[1] not in set_list:
                     continue
+
                 if key not in set_stats:
                     set_stats[key] = {}
                 host_vals = set_stats[key]
@@ -372,7 +396,7 @@ class GetStatisticsController():
         ns_stats = ns_stats.result()
         cl_configs = cl_configs.result()
 
-        return util.find_nodewise_features(service_data=service_stats, ns_data=ns_stats, cl_data=cl_configs)
+        return common.find_nodewise_features(service_data=service_stats, ns_data=ns_stats, cl_data=cl_configs)
 
 class GetPmapController():
 

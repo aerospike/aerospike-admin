@@ -18,7 +18,7 @@ from lib.controllerlib import BaseController, CommandHelp, CommandController
 from lib.collectinfo.loghdlr import CollectinfoLoghdlr
 from lib.health.util import create_health_input_dict, h_eval, create_snapshot_key
 from lib.utils.constants import *
-from lib.utils import util
+from lib.utils import common, util
 from lib.view import terminal
 from lib.view.view import CliView
 
@@ -415,7 +415,7 @@ class ShowDistributionController(CollectinfoCommandController):
         for timestamp in sorted(histogram.keys()):
             if not histogram[timestamp]:
                 continue
-            self.view.show_distribution(title, util.create_histogram_output(histogram_name, histogram[timestamp]), unit,
+            self.view.show_distribution(title, common.create_histogram_output(histogram_name, histogram[timestamp]), unit,
                                         histogram_name,
                                         self.loghdlr.get_cinfo_log_at(
                                             timestamp=timestamp),
@@ -446,7 +446,7 @@ class ShowDistributionController(CollectinfoCommandController):
 
         for timestamp in histogram:
             self.view.show_object_distribution('Object Size Distribution',
-                                                util.create_histogram_output(histogram_name, histogram[timestamp], byte_distribution=True, bucket_count=bucket_count, builds=builds),
+                                                common.create_histogram_output(histogram_name, histogram[timestamp], byte_distribution=True, bucket_count=bucket_count, builds=builds),
                                                 'Bytes', 'objsz', bucket_count, True,
                                                 self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
                                                 title_suffix=" (%s)" % (timestamp),
@@ -623,10 +623,24 @@ class ShowStatisticsController(CollectinfoCommandController):
                 continue
             namespace_list = [ns_set.split()[0]
                               for ns_set in set_stats[timestamp].keys()]
-            namespace_list = util.filter_list(namespace_list, self.mods['for'])
+
+            try:
+                namespace_list = util.filter_list(namespace_list, self.mods['for'][:1])
+            except Exception:
+                pass
+
+            set_list = [ns_set.split()[1]
+                              for ns_set in set_stats[timestamp].keys()]
+            try:
+                set_list = util.filter_list(set_list, self.mods['for'][1:2])
+            except Exception:
+                pass
+
             for ns_set, stats in set_stats[timestamp].iteritems():
-                if ns_set.split()[0] not in namespace_list:
+                ns, set = ns_set.split()
+                if ns not in namespace_list or set not in set_list:
                     continue
+
                 self.view.show_stats("%s Set Statistics (%s)" %
                                      (ns_set, timestamp), stats,
                                      self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
@@ -733,12 +747,26 @@ class ShowStatisticsController(CollectinfoCommandController):
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp] or isinstance(sindex_stats[timestamp], Exception):
                 continue
+
             namespace_list = [ns_set_sindex.split()[0]
                               for ns_set_sindex in sindex_stats[timestamp].keys()]
-            namespace_list = util.filter_list(namespace_list, self.mods['for'])
+            try:
+                namespace_list = util.filter_list(namespace_list, self.mods['for'][:1])
+            except Exception:
+                pass
+
+            sindex_list = [ns_set_sindex.split()[2]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()]
+            try:
+                sindex_list = util.filter_list(sindex_list, self.mods['for'][1:2])
+            except Exception:
+                pass
+
             for sindex, stats in sindex_stats[timestamp].iteritems():
-                if sindex.split()[0] not in namespace_list:
+                ns, set, si = sindex.split()
+                if ns not in namespace_list or si not in sindex_list:
                     continue
+
                 self.view.show_stats("%s Sindex Statistics (%s)" %
                                      (sindex, timestamp), stats,
                                      self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
@@ -784,7 +812,7 @@ class FeaturesController(CollectinfoCommandController):
             if timestamp in cluster_configs:
                 cl_configs = cluster_configs[timestamp]
 
-            features = util.find_nodewise_features(service_data=s_stats, ns_data=ns_stats, cl_data=cl_configs)
+            features = common.find_nodewise_features(service_data=s_stats, ns_data=ns_stats, cl_data=cl_configs)
 
             self.view.show_config(
                 "(%s) Features" %
@@ -1113,6 +1141,6 @@ class SummaryController(CollectinfoCommandController):
 
         metadata["os_version"] = os_version
 
-        self.view.print_summary(util.create_summary(service_stats=service_stats[last_timestamp], namespace_stats=namespace_stats[last_timestamp],
+        self.view.print_summary(common.create_summary(service_stats=service_stats[last_timestamp], namespace_stats=namespace_stats[last_timestamp],
                                                     set_stats=set_stats[last_timestamp], metadata=metadata, cluster_configs=cluster_configs),
                                 list_view=enable_list_view)

@@ -38,6 +38,12 @@ Admin> help
 sudo ./asadm-deps/install.sh
 ```
 
+### Mac OSX
+Run following command to ensure asadm history works properly:
+```
+sudo easy_install -a readline
+```
+
 ## Tests
 ### Dependencies
 - unittest2: 0.5.1
