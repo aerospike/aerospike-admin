@@ -793,6 +793,13 @@ FILTER_LIST = {
         'final_section_name': 'limits',
         'regex_new': 'limits',
         # 'parser_func':
+    },
+    'ID_112': {
+        'enable': True,
+        'raw_section_name': 'curl -m 1 http://169.254.169.254/1.0/ || true',
+        'final_section_name': 'environment',
+        'regex_new': 'environment',
+        # 'parser_func':
     }
 
     #{

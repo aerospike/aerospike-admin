@@ -1842,7 +1842,11 @@ class HealthCheckController(BasicCommandController):
                     ("interrupts", "SYSTEM", "INTERRUPTS", False, [(None, None), ("CLUSTER", cluster_name), ("NODE", None), (None, None),
                                                                    ("INTERRUPT_TYPE", None), (None, None), ("INTERRUPT_ID", None), (None, None), ("INTERRUPT_DEVICE", None)]),
                     ("df", "SYSTEM", "DF", True, [
-                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILE_SYSTEM", None)])
+                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILE_SYSTEM", None)]),
+                    ("lsb", "SYSTEM", "LSB", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("LSB", None)]),
+                    ("environment", "SYSTEM", "ENVIRONMENT", True,
+                     [("CLUSTER", cluster_name), ("NODE", None), ("ENVIRONMENT", None)]),
                 ]),
             }
             health_input = {}

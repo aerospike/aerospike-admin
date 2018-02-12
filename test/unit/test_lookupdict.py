@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import unittest2 as unittest
-from lib.utils.prefixdict import PrefixDict, SuffixDict
+from lib.utils.lookupdict import PrefixDict, LookupDict
 
 class PrefixDictTest(unittest.TestCase):
     def setUp(self):
@@ -80,9 +80,9 @@ class PrefixDictTest(unittest.TestCase):
         self.assertTrue(1 in self.test_dict['u01'])
         self.assertTrue(10 in self.test_dict['u01'])
 
-class SuffixDict_test(unittest.TestCase):
+class LookupDictTest(unittest.TestCase):
     def setUp(self):
-        self.test_dict = t = SuffixDict()
+        self.test_dict = t = LookupDict()
 
         t['192.168.0.11'] = 1
         t['192.168.0.12'] = 2
@@ -116,7 +116,7 @@ class SuffixDict_test(unittest.TestCase):
         keys = self.test_dict.get_key('1')
         self.assertTrue('192.168.0.11' in keys)
         self.assertTrue('192.168.0.21' in keys)
-        self.assertEqual(len(keys), 2)
+        self.assertEqual(len(keys), 4)
         self.assertRaises(KeyError, self.test_dict.get_key, 'asdf')
 
     def test_keys(self):
@@ -129,15 +129,6 @@ class SuffixDict_test(unittest.TestCase):
         self.assertTrue('192.168.0.11' in self.test_dict)
         self.assertFalse('asdf' in self.test_dict)
 
-    def test_get_prefix(self):
-        prefix = self.test_dict.get_prefix('192.168.0.11')
-        self.assertEqual(prefix, '11')
-
-        prefix = self.test_dict.get_prefix('0.12')
-        self.assertEqual(prefix, '12')
-
-        self.assertRaises(KeyError, self.test_dict.get_prefix, 'asdf')
-
     def test_setitem(self):
         self.test_dict['192.168.0.31'] = 5
         self.assertEqual(self.test_dict['31'][0], 5)
@@ -145,3 +136,21 @@ class SuffixDict_test(unittest.TestCase):
         self.test_dict['11'] = 10
         self.assertTrue(1 in self.test_dict['11'])
         self.assertTrue(10 in self.test_dict['11'])
+
+    def test_getshortname(self):
+        short_name = self.test_dict.get_shortname('192.168.0.11')
+        self.assertEqual(short_name, '192.168.0.11')
+
+        self.test_dict['u01.test.com.b-india'] = 5
+        self.test_dict['u02.test.com.usa'] = 5
+        self.test_dict['u03.test.com.aus'] = 5
+        self.test_dict['u04.test.com.a-india'] = 5
+        self.test_dict['u05.test.com.c-india'] = 5
+
+        short_name = self.test_dict.get_shortname('u01.test.com.b-india')
+        self.assertEqual(short_name, 'u01...b-india')
+
+        short_name = self.test_dict.get_shortname('u02.test.com.usa')
+        self.assertEqual(short_name, 'u02...sa')
+
+        self.assertRaises(KeyError, self.test_dict.get_shortname, 'asdf')

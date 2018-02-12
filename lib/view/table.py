@@ -349,6 +349,18 @@ class Table(object):
 
         return [description, ]
 
+    def _get_title(self, title, width):
+        if not title:
+            return title
+
+        t = title.center(width, '~')
+        if t and len(t) > 0:
+            if not t.startswith("~"):
+                t = "~" + t
+            if not t.endswith("~"):
+                t += "~"
+        return t
+
     def _get_horizontal_header(self, title_every_nth=0):
         width = sum(self._render_column_widths)
         total_repeat_titles = 0
@@ -363,7 +375,7 @@ class Table(object):
         max_deep = max(map(len, column_name_lines))
 
         output = [terminal.bold()]
-        output.append(self._title.center(width, '~'))
+        output.append(self._get_title(self._title, width=width))
         output.append(terminal.reset())
         output = [''.join(output)]
         output.extend(self.gen_description(width, width - 10))
@@ -475,7 +487,7 @@ class Table(object):
 
         output = [terminal.bold()]
         for t_width in title_width:
-            output.append(self._title.center(t_width, '~'))
+            output.append(self._get_title(self._title, width=t_width))
         output.append(terminal.reset())
         output = [''.join(output)]
         output.extend(

@@ -54,7 +54,7 @@ def parse_output(actual_out = "", horizontal = False, mearge_header = True):
         return(heading, header, params)
 
 def get_separate_output(in_str = '', mid_str=''):
-    _regex = re.compile("~.+" + mid_str + "~.+")
+    _regex = re.compile("~.+" + mid_str + " \(.+\)~.+")
     out_pattern, outstr = re.findall(_regex,in_str), re.split(_regex, in_str)
     output_list =[]
     for i, item in enumerate(out_pattern):

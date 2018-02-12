@@ -16,6 +16,8 @@ import re
 import math
 import copy
 import logging
+from datetime import datetime
+
 import section_filter_list
 from utils import is_valid_section, get_section_name_from_id, type_check_basic_values, change_key_name_in_map
 
@@ -79,6 +81,9 @@ def parse_sys_section(section_list, imap, parsed_map):
 
         elif section == 'limits':
             _parse_limits_section(imap, parsed_map)
+
+        elif section == 'environment':
+            _parse_environment_section(imap, parsed_map)
 
         else:
             logger.warning(
@@ -371,6 +376,9 @@ def _parse_meminfo_section(imap, parsed_map):
         meminfodata[key] = int(keyval[1].split()[0]) * 1024
     parsed_map[final_section_name] = meminfodata
 
+def _get_age_month(y, m):
+    n = datetime.now()
+    return (n.year - y) * 12 + n.month - m
 
 def _parse_lsb_release_section(imap, parsed_map):
     sec_id_1 = 'ID_25'
@@ -424,6 +432,27 @@ def _parse_lsb_release_section(imap, parsed_map):
             if matchobj:
                 lsbdata['description'] = matchobj.group(1)
                 break
+
+        if 'description' in lsbdata and ('amazon' in lsbdata['description'].lower() and 'ami' in lsbdata['description'].lower()):
+            # For amazon linux ami
+            for index, line in enumerate(lsb_section):
+                matchobj = re.match(r'version=(.*)', line.lower())
+                if matchobj:
+                    v = matchobj.group(1).strip()
+                    try:
+                        v = v.split('.')
+                        y, m = v[0], v[1]
+                        if y.startswith("'") or y.startswith('"'):
+                            y = y[1:]
+                        if m.endswith("'") or m.endswith('"'):
+                            m = m[:-1]
+                        y = int(y)
+                        m = int(m)
+                        lsbdata['os_age_months'] = _get_age_month(y, m)
+                    except Exception:
+                        # Error while parsing version
+                        pass
+
     parsed_map[final_section_name_1] = lsbdata
 
 # "hostname\n",
@@ -604,6 +633,7 @@ def _parse_dmesg_section(imap, parsed_map):
 
     parsed_map[final_section_name]["OOM"] = False
     parsed_map[final_section_name]["Blocked"] = False
+    parsed_map[final_section_name]["ENA_enabled"] = False
 
     for line in dmesg_section:
         if 'OOM' in line:
@@ -614,6 +644,9 @@ def _parse_dmesg_section(imap, parsed_map):
 
         if 'Linux version' in line:
             parsed_map[final_section_name]["OS"] = line
+
+        if ' ena ' in line or ' ena:' in line:
+            parsed_map[final_section_name]["ENA_enabled"] = True
 
 def _parse_lscpu_section(imap, parsed_map):
     sec_id = 'ID_107'
@@ -733,6 +766,29 @@ def _parse_limits_section(imap, parsed_map):
         limits["Hard " + key] = str(lineobj[2]).strip()
 
     parsed_map[final_section_name] = limits
+
+def _parse_environment_section(imap, parsed_map):
+    sec_id = 'ID_112'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    env_section = imap[raw_section_name][0]
+
+    platform = "baremetal"
+
+    for line in env_section:
+        if line.strip() == "meta-data":
+            platform = "aws"
+            break
+
+    if final_section_name not in parsed_map:
+        parsed_map[final_section_name] = {}
+
+    parsed_map[final_section_name]["platform"] = platform
 
 
 ### "iostat -x 1 10\n",

@@ -402,7 +402,7 @@ class _GrepFile(LogCommandController):
         page_index = 1
         for show_res in show_results:
             if show_res:
-                self.view.info_string("", show_res[SHOW_RESULT_KEY])
+                self.view.show_grep("", show_res[SHOW_RESULT_KEY])
                 page_index += 1
         show_results.close()
 

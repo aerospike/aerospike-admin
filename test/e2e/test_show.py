@@ -38,16 +38,16 @@ class TestShowConfig(unittest.TestCase):
         TestShowConfig.is_bar_present = False
 
         for item in TestShowConfig.output_list:
-            if "~~Service Configuration~~" in item:
+            if "~~Service Configuration" in item:
                 TestShowConfig.service_config = item
-            elif "~~Network Configuration~~" in item:
+            elif "~~Network Configuration" in item:
                 TestShowConfig.network_config = item
-            elif "~~test Namespace Configuration~~" in item:
+            elif "~~test Namespace Configuration" in item:
                 TestShowConfig.test_namespace_config = item
-            elif "~~bar Namespace Configuration~~" in item:
+            elif "~~bar Namespace Configuration" in item:
                 TestShowConfig.bar_namespace_config = item
                 TestShowConfig.is_bar_present = True
-            elif "~~XDR Configuration~~" in item:
+            elif "~~XDR Configuration" in item:
                 TestShowConfig.xdr_config = item
 
     @classmethod
@@ -60,7 +60,7 @@ class TestShowConfig(unittest.TestCase):
         TODO: test for values as well
         """
 
-        exp_heading = "~~Network Configuration~~"
+        exp_heading = "~~Network Configuration"
         exp_header = "NODE"
         exp_params = [('fabric-keepalive-enabled', 'fabric.keepalive-enabled'),
                       ('fabric-keepalive-intvl', 'fabric.keepalive-intvl'),
@@ -90,7 +90,7 @@ class TestShowConfig(unittest.TestCase):
         TODO: test for values as well
         """
 
-        exp_heading = "~~Service Configuration~~"
+        exp_heading = "~~Service Configuration"
         exp_header = "NODE"
         exp_params = [  ('allow-inline-transactions', None),
                         'batch-max-requests',
@@ -160,7 +160,7 @@ class TestShowConfig(unittest.TestCase):
         TODO: test for values as well
         """
 
-        exp_heading = "~~test Namespace Configuration~~"
+        exp_heading = "~~test Namespace Configuration"
         exp_header = "NODE"
         exp_params_test = [  'allow-nonxdr-writes',
                         'allow-xdr-writes',
@@ -200,7 +200,7 @@ class TestShowConfig(unittest.TestCase):
         if not TestShowConfig.is_bar_present:
             return
 
-        exp_heading = "~~bar Namespace Configuration~~"
+        exp_heading = "~~bar Namespace Configuration"
         exp_header = "NODE"
         exp_params_bar = [  'allow-nonxdr-writes',
                             'allow-xdr-writes',
@@ -238,7 +238,7 @@ class TestShowConfig(unittest.TestCase):
         Asserts XDR config output with heading, header & parameters.
         TODO: test for values as well
         """
-        exp_heading = "~~XDR Configuration~~"
+        exp_heading = "~~XDR Configuration"
         exp_header = "NODE"
         exp_params = [  'enable-xdr',
                         'xdr-batch-num-retry',
@@ -473,9 +473,9 @@ class TestShowDistribution(unittest.TestCase):
         TestShowDistribution.is_bar_present = False
 
         for item in TestShowDistribution.output_list:
-            if "~~test - TTL Distribution in Seconds~~" in item:
+            if "~~test - TTL Distribution in Seconds" in item:
                 TestShowDistribution.test_ttl_distri = item
-            elif "~~bar - TTL Distribution in Seconds~~" in item:
+            elif "~~bar - TTL Distribution in Seconds" in item:
                 TestShowDistribution.bar_ttl_distri = item
                 TestShowDistribution.is_bar_present = True
             elif "~~~~" in item:
@@ -491,7 +491,7 @@ class TestShowDistribution(unittest.TestCase):
         Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
         TODO: test for values as well
         """
-        exp_heading = "~~test - TTL Distribution in Seconds~~"
+        exp_heading = "~~test - TTL Distribution in Seconds"
         exp_header = """Percentage of records having ttl less than or equal
                         to value measured in Seconds
                         Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
@@ -513,7 +513,7 @@ class TestShowDistribution(unittest.TestCase):
         """
         if not TestShowDistribution.is_bar_present:
             return
-        exp_heading = "~~bar - TTL Distribution in Seconds~~"
+        exp_heading = "~~bar - TTL Distribution in Seconds"
         exp_header = """Percentage of records having ttl less than or equal
                         to value measured in Seconds
                         Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
@@ -545,19 +545,19 @@ class TestShowStatistics(unittest.TestCase):
         TestShowStatistics.is_bar_present = False
 
         for item in TestShowStatistics.output_list:
-            if "~~test Bin Statistics~~" in item:
+            if "~test Bin Statistics" in item:
                 TestShowStatistics.test_bin_stats = item
-            elif "~~bar Bin Statistics~~" in item:
+            elif "~bar Bin Statistics" in item:
                 TestShowStatistics.bar_bin_stats = item
                 TestShowStatistics.is_bar_present = True
-            elif "~~Service Statistics~~" in item:
+            elif "~Service Statistics" in item:
                 TestShowStatistics.service_stats = item
-            elif "~~bar Namespace Statistics~~" in item:
+            elif "~bar Namespace Statistics" in item:
                 TestShowStatistics.bar_namespace_stats = item
                 TestShowStatistics.is_bar_present = True
-            elif "~~test Namespace Statistics~~" in item:
+            elif "~test Namespace Statistics" in item:
                 TestShowStatistics.test_namespace_stats = item
-            elif "~~XDR Statistics~~" in item:
+            elif "~XDR Statistics" in item:
                 TestShowStatistics.xdr_stats = item
 
     @classmethod
@@ -569,7 +569,7 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> test Bin Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
-        exp_heading = "~test Bin Statistics~"
+        exp_heading = "~test Bin Statistics"
         exp_header = "NODE"
         exp_params = [('bin-names-quota','bin_names_quota'), ('num-bin-names','bin_names')]
 
@@ -586,7 +586,7 @@ class TestShowStatistics(unittest.TestCase):
         """
         if not TestShowStatistics.is_bar_present:
             return
-        exp_heading = "~bar Bin Statistics~"
+        exp_heading = "~bar Bin Statistics"
         exp_header = "NODE"
         exp_params = [('bin-names-quota','bin_names_quota'), ('num-bin-names','bin_names')]
 
@@ -601,7 +601,7 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> Service Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
-        exp_heading = "~Service Statistics~"
+        exp_heading = "~Service Statistics"
         exp_header = "NODE"
         exp_params = [  ('batch_errors', 'batch_error'),
                         'batch_initiate',
@@ -774,7 +774,7 @@ class TestShowStatistics(unittest.TestCase):
         """
         if not TestShowStatistics.is_bar_present:
             return
-        exp_heading = "~bar Namespace Statistics~"
+        exp_heading = "~bar Namespace Statistics"
         exp_header = "NODE"
         exp_params = [  'allow-nonxdr-writes',
                         'allow-xdr-writes',
@@ -839,7 +839,7 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> test Namespace Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
-        exp_heading = "~test Namespace Statistics~"
+        exp_heading = "~test Namespace Statistics"
         exp_header = "NODE"
         exp_params = [  'allow-nonxdr-writes',
                         'allow-xdr-writes',
@@ -905,7 +905,7 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> test Namespace Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
-        exp_heading = "~~XDR Statistics~~"
+        exp_heading = "~~XDR Statistics"
         exp_header = "NODE"
         exp_params = [  'cur_throughput',
                         'err_ship_client',

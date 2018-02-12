@@ -516,7 +516,8 @@ def _parse_multi_column_format(section):
             if len(vals) != len(nodeids):
                 continue
             for index, node in enumerate(nodeids):
-                section_obj[node][key] = vals[index]
+                if vals[index] != "N/E":
+                    section_obj[node][key] = vals[index]
     return section_obj
 
 

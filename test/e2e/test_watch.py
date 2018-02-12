@@ -30,7 +30,7 @@ class TestWatch(unittest.TestCase):
     def test_watch(self):
         info_counter = 0
         for item in TestWatch.output_list:
-            if "~~Network Information~~" in item:
+            if "~~Network Information" in item:
                 info_counter += 1
         self.assertEqual(info_counter, 3)
 

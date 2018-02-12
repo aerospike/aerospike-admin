@@ -58,6 +58,21 @@ ASSERT(s, False, "Node in cluster have firewall setting.", "OPERATIONS", INFO,
                                 "Listed node[s] have firewall setting. Could cause cluster formation issue if misconfigured. Please run 'iptables -L' to check firewall rules.",
 				"Firewall Check.");
 
+/* AWS */
+
+l = select "os_age_months" from SYSTEM.LSB save;
+r = do l > 12;
+ASSERT(r, False, "Old Amazon Linux AMI.", "OPERATIONS", WARNING,
+                            "Amazon Linux AMI is older than 12 months. It might causes periodic latency spikes probably due to a driver issue.",
+                            "Amazon Linux AMI version check.");
+
+s = select "ENA_enabled" from SYSTEM.DMESG;
+aws_enabled = select "platform" from SYSTEM.ENVIRONMENT;
+aws_enabled = do aws_enabled == "aws";
+aws_enabled = group by CLUSTER, NODE do OR(aws_enabled);
+ASSERT(s, True, "ENA not enabled.", "OPERATIONS", INFO,
+                            "ENA is not enabled on AWS instance. Please check with Aerospike support team.",
+                            "ENA enable check.", aws_enabled);
 
 /* Disk */
 s = select "%util" from SYSTEM.IOSTAT save;
@@ -417,7 +432,7 @@ this last result will 'AND' with replication_enabled and migration_in_progress b
 
 m = select "master_objects" as "cnt", "master-objects" as "cnt" from NAMESPACE.STATISTICS;
 p = select "prole_objects" as "cnt", "prole-objects" as "cnt" from NAMESPACE.STATISTICS;
-r = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG;
+r = select "effective_replication_factor", "repl-factor" from NAMESPACE.STATISTICS;
 mg = select "migrate_rx_partitions_active", "migrate_progress_recv", "migrate-rx-partitions-active"  from NAMESPACE.STATISTICS;
 mt = group by NAMESPACE do SUM(m) save as "master_objects";
 pt = group by NAMESPACE do SUM(p);

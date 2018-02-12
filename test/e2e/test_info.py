@@ -37,15 +37,15 @@ class TestInfo(unittest.TestCase):
         TestInfo.output_list = test_util.get_separate_output(actual_out, 'Information')
         # TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex']))
         for item in TestInfo.output_list:
-            if "~~Network Information~~" in item:
-                TestInfo.network_info = item           
-            elif "~~Namespace Usage Information~~" in item:
+            if "~~Network Information" in item:
+                TestInfo.network_info = item
+            elif "~~Namespace Usage Information" in item:
                 TestInfo.namespace_usage_info = item
-            elif "~~Secondary Index Information~~" in item:
+            elif "~~Secondary Index Information" in item:
                 TestInfo.sindex_info = item              
-            elif "~~XDR Information~~" in item:
+            elif "~~XDR Information" in item:
                 TestInfo.xdr_info = item
-            elif "~~Namespace Object Information~~" in item:
+            elif "~~Namespace Object Information" in item:
                 TestInfo.namespace_object_info = item
         
     @classmethod    
@@ -58,7 +58,7 @@ class TestInfo(unittest.TestCase):
         and no of row displayed in output
         TODO: test for values as well
         """
-        exp_heading = "~~Network Information~~"
+        exp_heading = "~~Network Information"
         exp_header = [   'Node',
                          'Node Id',
                          'Ip',
@@ -71,8 +71,8 @@ class TestInfo(unittest.TestCase):
                          'Uptime']
         exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.network_info, horizontal = True)        
-        
+        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.network_info, horizontal = True)
+
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(set(exp_header).issubset(actual_header))
         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
@@ -84,7 +84,7 @@ class TestInfo(unittest.TestCase):
         and no of row displayed in output
         TODO: test for values as well
         """
-        exp_heading = '~~Secondary Index Information~~'
+        exp_heading = '~~Secondary Index Information'
         exp_header = ['Node', 
                       'Index Name', 
                       'Namespace', 
@@ -107,7 +107,7 @@ class TestInfo(unittest.TestCase):
         displayed in output
         TODO: test for values as well
         """
-        exp_heading = "~~Namespace Usage Information~~"
+        exp_heading = "~~Namespace Usage Information"
         exp_header = [   'Node',
                          'Namespace',
                          'Total Records',
@@ -132,7 +132,7 @@ class TestInfo(unittest.TestCase):
         displayed in output
         TODO: test for values as well
         """
-        exp_heading = "~~Namespace Object Information~~"
+        exp_heading = "~~Namespace Object Information"
         exp_header = [   'Namespace',
                          'Node',
                          'Total Records',
@@ -154,7 +154,7 @@ class TestInfo(unittest.TestCase):
         and no of row displayed in output
         TODO: test for values as well
         """
-        exp_heading = "~~XDR Information~~"
+        exp_heading = "~~XDR Information"
         exp_header = ['Node', 
                       'Build', 
                       'Data Shipped', 

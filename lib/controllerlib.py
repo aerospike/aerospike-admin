@@ -18,7 +18,7 @@ import logging
 
 from lib.health.healthchecker import HealthChecker
 from lib.utils import util
-from lib.utils.prefixdict import PrefixDict
+from lib.utils.lookupdict import PrefixDict
 from lib.view import view, terminal
 
 DEFAULT = "_do_default"

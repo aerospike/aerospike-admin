@@ -16,6 +16,7 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyser / log-analyser)
 #############################################################################################################
 
+import json
 import logging
 import os
 import platform
@@ -780,6 +781,88 @@ def _collect_awsdata(cmd=''):
     return out, None
 
 
+def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=''):
+    res_str = ''
+    gce_metadata_base_url = 'http://metadata.google.internal/computeMetadata/v1/instance/'
+
+    for rsp in response_str.split("\n"):
+        rsp = rsp.strip()
+        if not rsp or rsp in fields_to_ignore:
+            continue
+
+        meta_url = gce_metadata_base_url + prefix + rsp
+
+        try:
+            req = urllib2.Request(meta_url, headers={"Metadata-Flavor" : "Google"})
+            r = urllib2.urlopen(req)
+
+            if r.code != 404:
+                response = r.read().strip()
+
+                if rsp[-1:] == '/':
+                    res_str += _get_gce_metadata(response, fields_to_ignore=fields_to_ignore, prefix=prefix+rsp)
+                else:
+                    res_str += prefix + rsp + "\n" + response + "\n\n"
+        except Exception:
+            pass
+
+    return res_str
+
+
+def _collect_gcedata(cmd=''):
+    gce_timeout = 1
+    socket.setdefaulttimeout(gce_timeout)
+    gce_metadata_base_url = 'http://metadata.google.internal/computeMetadata/v1/instance/'
+    out = "['GCE']"
+
+    fields_to_ignore = ['attributes/']
+
+    try:
+        req = urllib2.Request(gce_metadata_base_url, headers={"Metadata-Flavor" : "Google"})
+        r = urllib2.urlopen(req)
+
+        if r.code == 200:
+            rsp = r.read()
+            gce_rsp = _get_gce_metadata(rsp, fields_to_ignore=fields_to_ignore)
+            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(gce_metadata_base_url, gce_rsp)
+        else:
+            gce_rsp = " Not likely in GCE"
+            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(gce_metadata_base_url, gce_rsp)
+
+    except Exception as e:
+        out += "\n" + "Requesting... {0} \t  {1} ".format(gce_metadata_base_url, e)
+        out += "\n" + "FAILED! Node Is Not likely In GCE"
+
+    return out, None
+
+
+def _collect_azuredata(cmd=''):
+    azure_timeout = 1
+    socket.setdefaulttimeout(azure_timeout)
+    azure_metadata_base_url = 'http://169.254.169.254/metadata/instance?api-version=2017-04-02'
+    out = "['Azure']"
+
+    try:
+        req = urllib2.Request(azure_metadata_base_url, headers={"Metadata" : "true"})
+        r = urllib2.urlopen(req)
+
+        if r.code == 200:
+            rsp = r.read()
+            rsp = rsp.decode("utf-8")
+            jsonObj = json.loads(rsp)
+            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(azure_metadata_base_url,
+                                                                          json.dumps(jsonObj, sort_keys=True, indent=4, separators=(',', ': ')))
+        else:
+            rsp = " Not likely in Azure"
+            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(azure_metadata_base_url, rsp)
+
+    except Exception as e:
+        out += "\n" + "Requesting... {0} \t  {1} ".format(azure_metadata_base_url, e)
+        out += "\n" + "FAILED! Node Is Not likely In Azure"
+
+    return out, None
+
+
 def _collect_cpuinfo(cmd=''):
     out = "['cpuinfo']"
 
@@ -1108,6 +1191,18 @@ def collect_sys_info(port=3000, timestamp="", outfile="", verbose=False):
 
     try:
         o, f_cmds = _collectinfo_content(func=_collect_awsdata)
+        util.write_to_file(outfile, o)
+    except Exception as e:
+        util.write_to_file(outfile, str(e))
+
+    try:
+        o, f_cmds = _collectinfo_content(func=_collect_gcedata)
+        util.write_to_file(outfile, o)
+    except Exception as e:
+        util.write_to_file(outfile, str(e))
+
+    try:
+        o, f_cmds = _collectinfo_content(func=_collect_azuredata)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))

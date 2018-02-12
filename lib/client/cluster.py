@@ -19,8 +19,9 @@ from time import time
 
 from lib.client import util
 from lib.client.node import Node
-# TODO - how to get this dependency sorted out
-from lib.utils.prefixdict import PrefixDict
+from lib.utils import util as commonutil
+from lib.utils.lookupdict import LookupDict
+
 
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
@@ -61,7 +62,7 @@ class Cluster(object):
 
         # self.node_lookup is a dict of (fqdn, port) -> Node
         # and (ip, port) -> Node, and node.node_id -> Node
-        self.node_lookup = PrefixDict()
+        self.node_lookup = LookupDict()
 
         self._original_seed_nodes = set(seed_nodes)
         self._seed_nodes = set(seed_nodes)
@@ -89,13 +90,16 @@ class Cluster(object):
 
         return retval
 
-    def get_prefixes(self):
-        prefixes = {}
+    def get_node_displaynames(self):
+        node_names = {}
         for node_key, node in self.nodes.iteritems():
-            fqdn = node.sock_name(use_fqdn=True)
-            prefixes[node_key] = self.node_lookup.get_prefix(fqdn)
+            k = node.sock_name(use_fqdn=True)
+            if commonutil.is_valid_ip_port(k):
+                node_names[node_key] = k
+            else:
+                node_names[node_key] = self.node_lookup.get_shortname(k, min_prefix_len=20, min_suffix_len=5)
 
-        return prefixes
+        return node_names
 
     def get_node_names(self):
         node_names = {}

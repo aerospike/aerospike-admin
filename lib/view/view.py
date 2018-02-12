@@ -65,10 +65,19 @@ class CliView(object):
             print "NO PAGER"
 
     @staticmethod
-    def info_network(stats, cluster_names, versions, builds, cluster, title_suffix="", **ignore):
+    def _get_timestamp_suffix(timestamp):
+        if not timestamp:
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+
+        return " (%s)"%(str(timestamp))
+
+    @staticmethod
+    def info_network(stats, cluster_names, versions, builds, cluster, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
         hosts = cluster.nodes
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Network Information%s" % (title_suffix)
         column_names = (
             ('cluster-name', 'Cluster Name'), 'node', 'node_id', 'ip', 'build',
@@ -145,10 +154,11 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_namespace_usage(stats, cluster, title_suffix="", **ignore):
+    def info_namespace_usage(stats, cluster, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Namespace Usage Information%s" % (title_suffix)
         column_names = (
             'namespace', 'node',
@@ -337,10 +347,11 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_namespace_object(stats, cluster, title_suffix="", **ignore):
+    def info_namespace_object(stats, cluster, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Namespace Object Information%s" % (title_suffix)
         column_names = (
             'namespace', 'node',
@@ -536,10 +547,11 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_set(stats, cluster, title_suffix="", **ignore):
+    def info_set(stats, cluster, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Set Information%s" % (title_suffix)
         column_names = ('set', 'namespace', 'node', ('_set-delete', 'Set Delete'), ('_n-bytes-memory', 'Mem Used'), ('_n_objects', 'Objects'), 'stop-writes-count', 'disable-eviction', 'set-enable-xdr'
                         )
@@ -628,13 +640,14 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_XDR(stats, builds, xdr_enable, cluster, title_suffix="", **ignore):
+    def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
         if not max(xdr_enable.itervalues()):
             return
 
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "XDR Information%s" % (title_suffix)
         column_names = ('node', 'build', ('_bytes-shipped', 'Data Shipped'), '_free-dlog-pct', ('_lag-secs', 'Lag (sec)'), '_req-outstanding',
                         '_req-shipped-success', '_req-shipped-errors', ('_cur_throughput', 'Cur Throughput'), ('_latency_avg_ship', 'Avg Latency (ms)'), '_xdr-uptime')
@@ -710,10 +723,11 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_dc(stats, cluster, title_suffix="", **ignore):
+    def info_dc(stats, cluster, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "DC Information%s" % (title_suffix)
         column_names = ('node', ('_dc-name', 'DC'), ('_xdr_dc_size', 'DC size'), 'namespaces', ('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'), ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
                         )
@@ -756,9 +770,11 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_sindex(stats, cluster, title_suffix="", **ignore):
+    def info_sindex(stats, cluster, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Secondary Index Information%s" % (title_suffix)
         column_names = ('node', ('indexname', 'Index Name'), ('indextype', 'Index Type'), ('ns', 'Namespace'), 'set', ('_bins', 'Bins'), ('_num_bins', 'Num Bins'), ('type', 'Bin Type'),
                         'state', 'sync_state', 'keys', 'entries', 'si_accounted_memory', ('_query_reqs', 'q'), ('_stat_write_success', 'w'), ('_stat_delete_success', 'd'), ('_query_avg_rec_count', 's'))
@@ -794,7 +810,7 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_string(title, summary):
+    def show_grep(title, summary):
         if not summary or len(summary.strip()) == 0:
             return
         if title:
@@ -802,7 +818,7 @@ class CliView(object):
         CliView.print_result(summary)
 
     @staticmethod
-    def show_distribution(title, histogram, unit, hist, cluster, like=None, title_suffix="", **ignore):
+    def show_distribution(title, histogram, unit, hist, cluster, like=None, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
 
         likes = compile_likes(like)
@@ -810,6 +826,8 @@ class CliView(object):
         columns = ["%s%%" % (n) for n in xrange(10, 110, 10)]
         percentages = columns[:]
         columns.insert(0, 'node')
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = "Percentage of records having %s less than or " % (hist) + \
                       "equal to value measured in %s" % (unit)
 
@@ -833,11 +851,12 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def show_object_distribution(title, histogram, unit, hist, bucket_count, set_bucket_count, cluster, like=None, title_suffix="", loganalyser_mode=False, **ignore):
+    def show_object_distribution(title, histogram, unit, hist, bucket_count, set_bucket_count, cluster, like=None, timestamp="", loganalyser_mode=False, **ignore):
         prefixes = cluster.get_node_names()
 
         likes = compile_likes(like)
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = "Number of records having %s in the range " % (hist) + \
                       "measured in %s" % (unit)
 
@@ -903,20 +922,24 @@ class CliView(object):
         return rows
 
     @staticmethod
-    def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, **ignore):
+    def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
+
         if like:
             likes = compile_likes(like)
+
         if not machine_wise_display:
             if like:
                 histograms = set(filter(likes.search, latency.keys()))
             else:
                 histograms = set(latency.keys())
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+
         for hist_or_node, data in sorted(latency.iteritems()):
             if not machine_wise_display and hist_or_node not in histograms:
                 continue
-            title = "%s Latency" % (hist_or_node)
+            title = "%s Latency%s" % (hist_or_node, title_suffix)
 
             if machine_wise_display:
                 if like:
@@ -985,7 +1008,7 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, **ignore):
+    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         column_names = set()
 
@@ -1024,6 +1047,8 @@ class CliView(object):
         else:
             n_last_columns_ignore_sort = 0
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = title + title_suffix
         t = Table(title, column_names,
                   title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
 
@@ -1056,7 +1081,7 @@ class CliView(object):
         column_names = set()
         if grep_result:
             if grep_result[grep_result.keys()[0]]:
-                column_names = CliView.sort_list_with_string_and_datetime(
+                column_names = CliView._sort_list_with_string_and_datetime(
                     grep_result[grep_result.keys()[0]][COUNT_RESULT_KEY].keys())
 
         if len(column_names) == 0:
@@ -1104,7 +1129,7 @@ class CliView(object):
                     except Exception:
                         continue
 
-            column_names = CliView.sort_list_with_string_and_datetime(
+            column_names = CliView._sort_list_with_string_and_datetime(
                 grep_result[grep_result.keys()[0]]["value"].keys())
 
         if len(column_names) == 0:
@@ -1149,7 +1174,7 @@ class CliView(object):
             print("\n" + terminal.fg_red() + "Input Key is not uniq, multiple writer instance (server_file:line_no) found." + terminal.fg_clear())
 
     @staticmethod
-    def sort_list_with_string_and_datetime(keys):
+    def _sort_list_with_string_and_datetime(keys):
         if not keys:
             return keys
         dt_list = []
@@ -1179,7 +1204,7 @@ class CliView(object):
         tps_key = ("ops/sec", None)
         if grep_result:
             if grep_result[grep_result.keys()[0]]:
-                column_names = CliView.sort_list_with_string_and_datetime(
+                column_names = CliView._sort_list_with_string_and_datetime(
                     grep_result[grep_result.keys()[0]][tps_key].keys())
         if len(column_names) == 0:
             return ''
@@ -1232,18 +1257,22 @@ class CliView(object):
         CliView.show_config(*args, **kwargs)
 
     @staticmethod
-    def show_mapping(col1, col2, mapping, like=None, **ignore):
+    def show_mapping(col1, col2, mapping, like=None, timestamp="", **ignore):
         if not mapping:
             return
+
         column_names = []
         column_names.insert(0, col2)
         column_names.insert(0, col1)
 
-        t = Table("%s to %s Mapping" % (col1, col2), column_names,
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        t = Table("%s to %s Mapping%s" % (col1, col2, title_suffix), column_names,
                   title_format=TitleFormats.no_change, style=Styles.HORIZONTAL)
+
         if like:
             likes = compile_likes(like)
             filtered_keys = filter(likes.search, mapping.keys())
+
         else:
             filtered_keys = mapping.keys()
 
@@ -1452,8 +1481,12 @@ class CliView(object):
             sys.stdout = real_stdout
             print ''
 
+###########################
+### Health Print functions
+###########################
+
     @staticmethod
-    def print_data(d):
+    def _print_data(d):
         if d is None:
             return
         if isinstance(d, tuple):
@@ -1464,64 +1497,47 @@ class CliView(object):
             print str(d)
 
     @staticmethod
-    def print_counter_list(data, header=None):
+    def _print_counter_list(data, header=None):
         if not data:
             return
         print "\n" + ("_" * 100) + "\n"
         if header:
             print terminal.fg_red() + terminal.bold() + str(header) + " ::\n" + terminal.unbold() + terminal.fg_clear()
         for d in data:
-            CliView.print_data(d)
+            CliView._print_data(d)
             print ""
 
     @staticmethod
-    def print_status(status_counters, verbose=False):
-        if not status_counters:
-            return
-        print "=" * 100
-        print "Total Queries               : " + str(status_counters[HealthResultCounter.QUERY_COUNTER])
-        print "Total Queries Success       : " + str(status_counters[HealthResultCounter.QUERY_SUCCESS_COUNTER])
-        print "Total Queries Skipped       : " + str(status_counters[HealthResultCounter.QUERY_SKIPPED_COUNTER])
-        print "Total ASSERT Queries        : " + str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER])
-        print "Total ASSERT Passed         : " + str(status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])
-        print "Total ASSERT Failed         : " + str(status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER])
-        print "Total Debug Prints          : " + str(status_counters[HealthResultCounter.DEBUG_COUNTER])
-        print "Total Exceptions            : " + str(status_counters[HealthResultCounter.HEALTH_EXCEPTION_COUNTER] + status_counters[HealthResultCounter.SYNTAX_EXCEPTION_COUNTER] + status_counters[HealthResultCounter.OTEHR_EXCEPTION_COUNTER])
-        print "Total Syntax Exceptions     : " + str(status_counters[HealthResultCounter.SYNTAX_EXCEPTION_COUNTER])
-        print "Total Processing Exceptions : " + str(status_counters[HealthResultCounter.HEALTH_EXCEPTION_COUNTER])
-        print "=" * 100
-
-    @staticmethod
-    def print_status1(status_counters, verbose=False):
+    def _print_status(status_counters, verbose=False):
         if not status_counters:
             return
         s = "\n" + terminal.bold() + "Summary".center(H_width, "_") + terminal.unbold()
-        s += "\n" + CliView.get_header("Total") + CliView.get_msg([str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER])])
-        s += CliView.get_header("Passed") + CliView.get_msg([str(status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])])
-        s += CliView.get_header("Failed") + CliView.get_msg([str(status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER])])
-        s += CliView.get_header("Skipped") + CliView.get_msg([str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER]
+        s += "\n" + CliView._get_header("Total") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER])])
+        s += CliView._get_header("Passed") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])])
+        s += CliView._get_header("Failed") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER])])
+        s += CliView._get_header("Skipped") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER]
                                                         - status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER]
                                                         - status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])])
         print s
 
     @staticmethod
-    def print_debug_messages(ho):
+    def _print_debug_messages(ho):
         try:
             for d in ho[HealthResultType.DEBUG_MESSAGES]:
                 try:
                     print "Value of %s:" % (d[1])
-                    CliView.print_data(d[2])
+                    CliView._print_data(d[2])
                 except Exception:
                     pass
         except Exception:
             pass
 
     @staticmethod
-    def print_exceptions(ho):
+    def _print_exceptions(ho):
         try:
             for e in ho[HealthResultType.EXCEPTIONS]:
                 try:
-                    CliView.print_counter_list(
+                    CliView._print_counter_list(
                         data=ho[HealthResultType.EXCEPTIONS][e], header="%s Exceptions" % (e.upper()))
                 except Exception:
                     pass
@@ -1529,12 +1545,12 @@ class CliView(object):
             pass
 
     @staticmethod
-    def get_header(header):
+    def _get_header(header):
         return "\n" + terminal.bold() + ("%s:" % header).rjust(H1_offset) + \
             terminal.unbold() + " ".rjust(H2_offset - H1_offset)
 
     @staticmethod
-    def get_msg(msg, level=None):
+    def _get_msg(msg, level=None):
         if level is not None:
             if level == AssertLevel.WARNING:
                 return terminal.fg_blue() + ("\n" + " ".rjust(H2_offset)).join(msg) + terminal.fg_clear()
@@ -1546,7 +1562,7 @@ class CliView(object):
             return ("\n" + " ".rjust(H2_offset)).join(msg)
 
     @staticmethod
-    def format_value(val, formatting=True):
+    def _format_value(val, formatting=True):
         if not val or not formatting:
             return val
 
@@ -1587,19 +1603,19 @@ class CliView(object):
                 return return_val
 
         elif isinstance(val, str) and val.isdigit():
-            return CliView.format_value(int(val))
+            return CliView._format_value(int(val))
 
         elif isinstance(val, str):
             try:
                 val = float(val)
-                return CliView.format_value(val)
+                return CliView._format_value(val)
             except Exception:
                 pass
 
         return val
 
     @staticmethod
-    def get_kv_msg_list(kv_list):
+    def _get_kv_msg_list(kv_list):
         if not kv_list:
             return []
 
@@ -1615,9 +1631,9 @@ class CliView(object):
                 for _kv in kv[1]:
                     if _kv:
                         try:
-                            _str += ", " + ("%s:"%(str(_kv[0])) if len(str(_kv[0]).strip())>0 else "") + "%s"%(CliView.format_value(_kv[1], _kv[2]))
+                            _str += ", " + ("%s:"%(str(_kv[0])) if len(str(_kv[0]).strip())>0 else "") + "%s"%(CliView._format_value(_kv[1], _kv[2]))
                         except Exception:
-                            _str = ("%s:"%(str(_kv[0])) if len(str(_kv[0]).strip())>0 else "") + "%s"%(CliView.format_value(_kv[1], _kv[2]))
+                            _str = ("%s:"%(str(_kv[0])) if len(str(_kv[0]).strip())>0 else "") + "%s"%(CliView._format_value(_kv[1], _kv[2]))
 
                 if _str:
                     tmp_res_str += " {%s}"%(_str)
@@ -1628,7 +1644,7 @@ class CliView(object):
         return res_str
 
     @staticmethod
-    def get_error_string(data, verbose=False, level=AssertLevel.CRITICAL):
+    def _get_error_string(data, verbose=False, level=AssertLevel.CRITICAL):
         if not data:
             return "", 0
         f_msg_str = ""
@@ -1644,25 +1660,25 @@ class CliView(object):
                 if d[AssertResultKey.SUCCESS]:
                     if d[AssertResultKey.SUCCESS_MSG]:
 
-                        s_msg_str += CliView.get_header(d[AssertResultKey.CATEGORY][0]) + \
-                            CliView.get_msg([d[AssertResultKey.SUCCESS_MSG]])
+                        s_msg_str += CliView._get_header(d[AssertResultKey.CATEGORY][0]) + \
+                            CliView._get_msg([d[AssertResultKey.SUCCESS_MSG]])
                         s_msg_cnt += 1
                     continue
 
-                s += CliView.get_header(d[AssertResultKey.CATEGORY][0]) + \
-                    CliView.get_msg([d[AssertResultKey.FAIL_MSG]], level)
+                s += CliView._get_header(d[AssertResultKey.CATEGORY][0]) + \
+                    CliView._get_msg([d[AssertResultKey.FAIL_MSG]], level)
 
                 if verbose:
                     import textwrap
 
                     s += "\n"
-                    s += CliView.get_header("Description:")
-                    s += CliView.get_msg(textwrap.wrap(str(d[AssertResultKey.DESCRIPTION]), H_width - H2_offset,
+                    s += CliView._get_header("Description:")
+                    s += CliView._get_msg(textwrap.wrap(str(d[AssertResultKey.DESCRIPTION]), H_width - H2_offset,
                                                        break_long_words=False, break_on_hyphens=False))
 
                     s += "\n"
-                    s += CliView.get_header("Keys:")
-                    s += CliView.get_msg(CliView.get_kv_msg_list(d[AssertResultKey.KEYS]))
+                    s += CliView._get_header("Keys:")
+                    s += CliView._get_msg(CliView._get_kv_msg_list(d[AssertResultKey.KEYS]))
 
                     # Extra new line in case verbose output is printed
                     s += "\n"
@@ -1685,7 +1701,7 @@ class CliView(object):
         return res_fail_msg_str, f_msg_cnt, res_success_msg_str, s_msg_cnt
 
     @staticmethod
-    def get_assert_output_string(assert_out, verbose=False, output_filter_category=[], level=AssertLevel.CRITICAL):
+    def _get_assert_output_string(assert_out, verbose=False, output_filter_category=[], level=AssertLevel.CRITICAL):
 
         if not assert_out:
             return ""
@@ -1697,7 +1713,7 @@ class CliView(object):
 
         if not isinstance(assert_out, dict):
             if not output_filter_category:
-                return CliView.get_error_string(assert_out, verbose, level=level)
+                return CliView._get_error_string(assert_out, verbose, level=level)
         else:
             for _k in sorted(assert_out.keys()):
                 category = []
@@ -1709,7 +1725,7 @@ class CliView(object):
                     else:
                         category = output_filter_category
 
-                f_msg_str, f_msg_cnt, s_msg_str, s_msg_cnt = CliView.get_assert_output_string(
+                f_msg_str, f_msg_cnt, s_msg_str, s_msg_cnt = CliView._get_assert_output_string(
                     assert_out[_k], verbose, category, level=level)
 
                 res_fail_msg_str += f_msg_str
@@ -1720,7 +1736,7 @@ class CliView(object):
         return res_fail_msg_str, total_fail_msg_cnt, res_success_msg_str, total_success_msg_cnt
 
     @staticmethod
-    def print_assert_summary(assert_out, verbose=False, output_filter_category=[], output_filter_warning_level=None):
+    def _print_assert_summary(assert_out, verbose=False, output_filter_category=[], output_filter_warning_level=None):
 
         if not output_filter_warning_level:
             search_levels = [AssertLevel.INFO, AssertLevel.WARNING, AssertLevel.CRITICAL]
@@ -1755,7 +1771,7 @@ class CliView(object):
                     else:
                         category = output_filter_category
 
-                f_msg_str, f_msg_cnt, s_msg_str, s_msg_cnt = CliView.get_assert_output_string(
+                f_msg_str, f_msg_cnt, s_msg_str, s_msg_cnt = CliView._get_assert_output_string(
                     assert_out[_k], verbose, category, level=level)
                 if f_msg_str:
                     total_fail_msg_cnt += f_msg_cnt
@@ -1807,18 +1823,20 @@ class CliView(object):
             except Exception:
                 sys.stdout = sys.__stdout__
 
-        CliView.print_debug_messages(ho)
+        CliView._print_debug_messages(ho)
         if debug:
-            CliView.print_exceptions(ho)
+            CliView._print_exceptions(ho)
 
-        CliView.print_status1(
+        CliView._print_status(
             ho[HealthResultType.STATUS_COUNTERS], verbose=verbose)
-        CliView.print_assert_summary(ho[HealthResultType.ASSERT], verbose=verbose,
+        CliView._print_assert_summary(ho[HealthResultType.ASSERT], verbose=verbose,
                                      output_filter_category=output_filter_category, output_filter_warning_level=output_filter_warning_level)
 
         if o_s:
             o_s.close()
         sys.stdout = sys.__stdout__
+
+###########################
 
     @staticmethod
     def get_summary_line_prefix(index, key):
@@ -1994,8 +2012,10 @@ class CliView(object):
             CliView._summary_namespace_table_view(summary["FEATURES"]["NAMESPACE"])
 
     @staticmethod
-    def show_pmap(pmap_data, cluster, title_suffix="", **ignore):
+    def show_pmap(pmap_data, cluster, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Partition Map Analysis%s"%(title_suffix)
         column_names = (('_cluster_key', 'Cluster Key'),
                         'namespace',

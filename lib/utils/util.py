@@ -15,6 +15,7 @@
 import copy
 import pipes
 import re
+import socket
 import StringIO
 import subprocess
 import sys
@@ -447,3 +448,59 @@ def write_to_file(file, data):
     f = open(str(file), 'a')
     f.write(str(data))
     return f.close()
+
+
+def is_valid_ip_port(key):
+    """
+    It returns True if key matches with either "IP:port" or "[ipv6]:port" format.
+    """
+
+    if not key or ":" not in key:
+        return False
+
+    key = key.strip()
+    l = key.split(":")
+    if "]:" in key:
+        # IPv6 address
+        l = key.split("]:")
+
+    if len(l) < 2:
+        return False
+
+    address, port = l[0], l[1]
+
+    try:
+        p = int(port)
+    except Exception:
+        return False
+
+    address = address.strip()
+
+    if address.startswith("["):
+        address = address[1:]
+
+    if _is_valid_ipv4_address(address) or _is_valid_ipv6_address(address):
+        return True
+
+    return False
+
+def _is_valid_ipv4_address(address):
+    try:
+        socket.inet_pton(socket.AF_INET, address)
+    except AttributeError:
+        try:
+            socket.inet_aton(address)
+        except socket.error:
+            return False
+        return address.count('.') == 3
+    except socket.error:  # not a valid address
+        return False
+
+    return True
+
+def _is_valid_ipv6_address(address):
+    try:
+        socket.inet_pton(socket.AF_INET6, address)
+    except socket.error:  # not a valid address
+        return False
+    return True

@@ -16,6 +16,7 @@ import copy
 
 from lib.collectinfo_parser.full_parser import parse_info_all
 from lib.utils import util
+from lib.utils.lookupdict import LookupDict
 
 class CollectinfoNode(object):
 
@@ -65,6 +66,7 @@ class CollectinfoSnapshot(object):
         self.node_names = {}
         self.cinfo_data = cinfo_data
         self.cinfo_file = cinfo_file
+        self.node_lookup = LookupDict()
         self._initialize_nodes()
 
     def _initialize_nodes(self):
@@ -88,6 +90,17 @@ class CollectinfoSnapshot(object):
             del self.node_names
         except Exception:
             pass
+
+    def get_node_displaynames(self):
+        node_names = {}
+
+        for key in self.get_node_names():
+            if util.is_valid_ip_port(key):
+                node_names[key] = key
+            else:
+                node_names[key] = self.node_lookup.get_shortname(key, min_prefix_len=20, min_suffix_len=5)
+
+        return node_names
 
     def get_node_names(self):
         if not self.node_names:
@@ -276,6 +289,7 @@ class CollectinfoSnapshot(object):
         for node in nodes:
             self.node_names[node] = node
             self.nodes[node] = CollectinfoNode(self.timestamp, node)
+            self.node_lookup[node] = node
 
     def _get_node_count(self):
         return len(self.nodes.keys())

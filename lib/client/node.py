@@ -134,7 +134,10 @@ class Node(object):
             ('hdparm', ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null', '']),
             ('df', ['df -h', '']),
             ('free-m', ['free -m', '']),
-            ('uname', ['uname -a', ''])
+            ('uname', ['uname -a', '']),
+
+            # Todo: Add more commands for other cloud platform detection
+            ('environment', ['curl -m 1 -s http://169.254.169.254/1.0/', 'uname']),
         ]
 
         # hack, _key needs to be defines before info calls... but may have

@@ -20,7 +20,7 @@ import unittest2 as unittest
 from lib.client.cluster import Cluster
 from lib.client.node import Node
 from lib.basiccontroller import *
-from lib.utils.prefixdict import PrefixDict
+from lib.utils.lookupdict import LookupDict
 from lib.view.view import *
 
 real_stdout = sys.stdout
@@ -50,10 +50,10 @@ class ControllerTest(unittest.TestCase):
         Cluster.get_node = classmethod(
             lambda self, key: [n])
 
-        pd = PrefixDict()
+        pd = LookupDict()
         pd['test'] = 'test'
 
-        Cluster.get_prefixes = classmethod(lambda self: pd)
+        Cluster.get_node_displaynames = classmethod(lambda self: pd)
 
         self.rc = BasicRootController()
 
