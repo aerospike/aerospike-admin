@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-# Copyright 2013-2017 Aerospike, Inc.
+# Copyright 2013-2018 Aerospike, Inc.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License")
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
@@ -95,7 +95,7 @@ from lib.client.assocket import ASSocket
 from lib.client.ssl_context import SSLContext
 from lib.collectinfocontroller import CollectinfoRootController
 from lib.logcontroller import LogRootController
-from lib.utils import common, util
+from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME
 from lib.view import terminal, view
 
@@ -110,7 +110,7 @@ MULTILEVEL_COMMANDS = ["show", "info"]
 
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, seed, user=None, password=None, use_services_alumni=False, use_services_alt=False,
+    def __init__(self, admin_version, seeds, user=None, password=None, use_services_alumni=False, use_services_alt=False,
                  log_path="", log_analyser=False, collectinfo=False,
                  ssl_context=None, only_connect_seed=False, execute_only_mode=False, timeout=5):
 
@@ -128,7 +128,7 @@ class AerospikeShell(cmd.Cmd):
 
         if not execute_only_mode:
             print terminal.bold() + self.name + ', version ' +\
-                __version__ + terminal.reset() + "\n"
+                admin_version + terminal.reset() + "\n"
 
         cmd.Cmd.__init__(self)
 
@@ -136,7 +136,7 @@ class AerospikeShell(cmd.Cmd):
             if log_analyser:
                 if not log_path:
                     log_path = " "
-                self.ctrl = LogRootController(__version__, log_path)
+                self.ctrl = LogRootController(admin_version, log_path)
 
                 self.prompt = "Log-analyzer> "
             elif collectinfo:
@@ -146,7 +146,7 @@ class AerospikeShell(cmd.Cmd):
                     self.do_exit('')
                     exit(1)
 
-                self.ctrl = CollectinfoRootController(__version__,
+                self.ctrl = CollectinfoRootController(admin_version,
                                                       clinfo_path=log_path)
 
                 self.prompt = "Collectinfo-analyzer> "
@@ -154,26 +154,26 @@ class AerospikeShell(cmd.Cmd):
                     self.intro = str(self.ctrl.loghdlr)
             else:
                 if user is not None:
-                    if password == "prompt":
+                    if password == "prompt" or password is None:
                         if sys.stdin.isatty():
                             password = getpass.getpass("Enter Password:")
                         else:
                             password = sys.stdin.readline().strip()
                     password = info.hashpassword(password)
 
-                self.ctrl = BasicRootController(seed_nodes=[seed], user=user,
+                self.ctrl = BasicRootController(seed_nodes=seeds, user=user,
                                                 password=password, use_services_alumni=use_services_alumni, use_services_alt=use_services_alt,
-                                                ssl_context=ssl_context, asadm_version=__version__,
+                                                ssl_context=ssl_context, asadm_version=admin_version,
                                                 only_connect_seed=only_connect_seed, timeout=timeout)
 
                 if not self.ctrl.cluster.get_live_nodes():
                     self.do_exit('')
                     if self.execute_only_mode:
-                        logger.error("Not able to connect any cluster.")
+                        logger.error("Not able to connect any cluster with " + str(seeds) + ".")
                         self.connected = False
                         return
                     else:
-                        logger.critical("Not able to connect any cluster.")
+                        logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
                 self.prompt = "Admin> "
                 self.intro = ""
@@ -464,14 +464,14 @@ def do_ctrl_c(*args, **kwargs):
 
 def parse_tls_input(cli_args):
     try:
-        return SSLContext(enable_tls=cli_args.enable_tls,
-                          encrypt_only=cli_args.encrypt_only, cafile=cli_args.cafile,
-                          capath=cli_args.capath, keyfile=cli_args.keyfile,
-                          certfile=cli_args.certfile, protocols=cli_args.protocols,
-                          cipher_suite=cli_args.cipher_suite,
-                          cert_blacklist=cli_args.cert_blacklist,
-                          crl_check=cli_args.crl_check,
-                          crl_check_all=cli_args.crl_check_all).ctx
+        return SSLContext(enable_tls=cli_args.tls_enable,
+                          encrypt_only=None, cafile=cli_args.tls_cafile,
+                          capath=cli_args.tls_capath, keyfile=cli_args.tls_keyfile,
+                          certfile=cli_args.tls_certfile, protocols=cli_args.tls_protocols,
+                          cipher_suite=cli_args.tls_cipher_suite,
+                          cert_blacklist=cli_args.tls_cert_blacklist,
+                          crl_check=cli_args.tls_crl_check,
+                          crl_check_all=cli_args.tls_crl_check_all).ctx
 
     except Exception as e:
         logger.error("SSLContext creation Exception: " + str(e))
@@ -498,7 +498,8 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, ssl_co
 
     assock = ASSocket(seed[0], seed[1], seed[2], user, password, ssl_context)
     if not assock.connect():
-        raise Exception("Could not connect to node")
+        logger.critical("Not able to connect any cluster with " + str(seed) + ".")
+        return
 
     node_name = "%s:%s" % (seed[0], seed[1])
 
@@ -521,191 +522,44 @@ def main():
         import argparse
         parser = argparse.ArgumentParser(
             add_help=False, conflict_handler='resolve')
-        parser.add_argument("-h", "--host", dest="host", default="127.0.0.1", help="Address (ip/fqdn) of a host in an " +
-                            "Aerospike cluster")
-        parser.add_argument("-p", "--port", dest="port", type=int,
-                            default=3000, help="Aerospike service port used by the host.")
-        parser.add_argument("-t", "--tls_name", dest="tls_name",
-                            help="TLS name of host to verify for TLS connection. It is required if tls_enable is set.")
-        parser.add_argument("-U", "--user", dest="user", help="user name")
-        parser.add_argument("-P", "--password", dest="password", nargs="?", const="prompt", help="password")
-
-        parser.add_argument("-c", "--collectinfo", dest="collectinfo", action="store_true",
-                            help="Start asadm to run against offline collectinfo files.")
-        parser.add_argument("-l", "--log_analyser", dest="log_analyser", action="store_true",
-                            help="Start asadm in log-analyser mode and analyse data from log files")
-        parser.add_argument("--asinfo", dest="asinfo_mode", action="store_true",
-                            # help="Enable asinfo mode to connect directly to seed node without cluster creation. By default asadm connects to all nodes and creates cluster.",
-                            help=argparse.SUPPRESS)
-
-        parser.add_argument("-e", "--execute", dest="execute",
-                            help="Execute a single or multiple asadm commands and exit. The input value is either string of ';' separated asadm commands or path of file which has asadm commands (ends with ';')")
-        parser.add_argument("-o", "--out_file", dest="out_file",
-                            help="Path of file to write output of -e command/s")
-
-        parser.add_argument("--no-color", dest="no_color",
-                            action="store_true", help="Disable colored output")
-        parser.add_argument("--profile", dest="profile", action="store_true",
-                            # , help="Profile Aerospike Admin for performance issues"
-                            help=argparse.SUPPRESS)
-
-        parser.add_argument("-u", "--help", dest="help", action="store_true", help="show program usage")
-        parser.add_argument("--version", dest="show_version",
-                            action="store_true", help="Show the version of asadm and exit")
-
-        parser.add_argument("-s", "--services_alumni", dest="use_services_alumni",
-                            action="store_true", help="Enable use of services-alumni-list instead of services-list")
-        parser.add_argument("-a", "--services_alternate", dest="use_services_alternate",
-                            action="store_true", help="Enable use of services-alternate instead of services in info request during cluster tending")
-        parser.add_argument("--single_node_cluster", dest="only_connect_seed", action="store_true",
-                            help="Enable asadm mode to connect only seed node. By default asadm connects to all nodes in cluster.")
-        parser.add_argument("--timeout", dest="timeout", type=float, default=5,
-                            help="Set timeout value in seconds to node level operations. TLS connection does not support timeout. Default: 5 seconds")
-
-        parser.add_argument("--lineseperator", dest="line_separator", action="store_true",
-                            # help="Print output in separate lines. This works only for asinfo mode."
-                            help=argparse.SUPPRESS)
-
-        parser.add_argument("-f", "--file-path", dest="log_path",
-                            help="Path of cluster collectinfo file or directory containing collectinfo and system info files."
-                                 "This works only for collectinfo-analyser or log-analyser mode.")
-
-        parser.add_argument("--tls_enable", dest="enable_tls", action="store_true",
-                            help="Enable TLS on connections. By default TLS is disabled.")
-        parser.add_argument("--tls_encrypt_only", dest="encrypt_only", action="store_true",
-                            help="Enable mode to do only encryption, so connections won't verify certificates.")
-        parser.add_argument("--tls_cafile", dest="cafile", help="Path to a trusted CA certificate file.")
-        parser.add_argument("--tls_capath", dest="capath",
-                            help="Path to a directory of trusted CA certificates.")
-        parser.add_argument("--tls_protocols", dest="protocols", help="Set the TLS protocol selection criteria. This format is the same as Apache's SSLProtocol documented "
-                            "at https://httpd.apache.org/docs/current/mod/mod_ssl.html#sslprotocol . "
-                            "If not specified the asadm will use '-all +TLSv1.2' if has support for TLSv1.2,"
-                            "otherwise it will be '-all +TLSv1'.")
-        parser.add_argument("--tls_cipher_suite", dest="cipher_suite", help="Set the TLS cipher selection criteria. The format is the same as Open_sSL's Cipher List Format documented "
-                            "at https://www.openssl.org/docs/man1.0.1/apps/ciphers.html")
-        parser.add_argument("--tls_keyfile", dest="keyfile",
-                            help="Path to the key for mutual authentication (if Aerospike Cluster is supporting it).")
-        parser.add_argument("--tls_certfile", dest="certfile",
-                            help="Path to the chain file for mutual authentication (if Aerospike Cluster is supporting it).")
-        parser.add_argument("--tls_cert_blacklist", dest="cert_blacklist", help="Path to a certificate blacklist file. The file should contain one line for each blacklisted certificate. "
-                            "Each line starts with the certificate serial number expressed in hex. "
-                            "Each entry may optionally specify the issuer name of the "
-                            "certificate (serial numbers are only required to be unique per    "
-                            "issuer)."
-                            "Example: "
-                            "867EC87482B2 /C=US/ST=CA/O=Acme/OU=Engineering/CN=TestChainCA")
-        parser.add_argument("--tls_crl_check", dest="crl_check", action="store_true",
-                            help="Enable CRL checking for leaf certificate. An error occurs if a valid CRL files cannot be found in tls_capath.")
-        parser.add_argument("--tls_crl_check_all", dest="crl_check_all", action="store_true",
-                            help="Enable CRL checking for entire certificate chain. An error occurs if a valid CRL files cannot be found in tls_capath.")
-
+        conf.add_options(parser.add_argument)
         cli_args = parser.parse_args()
     except Exception:
         import optparse
         usage = "usage: %prog [options]"
         parser = optparse.OptionParser(usage, add_help_option=False)
-        parser.add_option("-h", "--host", dest="host", default="127.0.0.1", help="Address (ip/fqdn) of a host in an " +
-                          "Aerospike cluster")
-        parser.add_option("-p", "--port", dest="port", type=int,
-                          default=3000, help="Aerospike service port used by the host.")
-        parser.add_option("-t", "--tls_name", dest="tls_name",
-                          help="TLS name of host to verify for TLS connection. It is required if tls_enable is set.")
-        parser.add_option("-U", "--user", dest="user", help="user name")
-        parser.add_option("-P", "--password", dest="password", action="store_const",  # , nargs="?"
-                          const="prompt", help="password")
-
-        parser.add_option("-c", "--collectinfo", dest="collectinfo", action="store_true",
-                          help="Start asadm to run against offline collectinfo files.")
-        parser.add_option("-l", "--log_analyser", dest="log_analyser", action="store_true",
-                          help="Start asadm in log-analyser mode and analyse data from log files")
-        parser.add_option("--asinfo_mode", dest="asinfo_mode", action="store_true",
-                          # help="Enable asinfo mode to connect directly to seed node without cluster creation. By default asadm connects to all nodes and creates cluster."
-                          help=optparse.SUPPRESS_USAGE)
-
-        parser.add_option("-e", "--execute", dest="execute",
-                          help="Execute a single or multiple asadm commands and exit. The input value is either string of ';' separated asadm commands or path of file which has asadm commands (ends with ';')")
-        parser.add_option("-o", "--out_file", dest="out_file",
-                          help="Path of file to write output of -e command/s")
-
-        parser.add_option("--no-color", dest="no_color",
-                          action="store_true", help="Disable colored output")
-        parser.add_option("--profile", dest="profile", action="store_true",  # , help="Profile Aerospike Admin for performance issues"
-                          help=optparse.SUPPRESS_USAGE)
-
-        parser.add_option("-u", "--help", dest="help", action="store_true", help="show program usage")
-        parser.add_option("--version", dest="show_version",
-                          action="store_true", help="Show the version of asadm and exit")
-
-        parser.add_option("-s", "--services_alumni", dest="use_services_alumni",
-                          action="store_true", help="Enable use of services-alumni-list instead of services-list")
-        parser.add_option("-a", "--services_alternate", dest="use_services_alternate",
-                          action="store_true", help="Enable use of services-alternate instead of services in info request during cluster tending")
-        parser.add_option("--single_node_cluster", dest="only_connect_seed", action="store_true",
-                          help="Enable asadm mode to connect only seed node. By default asadm connects to all nodes in cluster.")
-        parser.add_option("--timeout", dest="timeout", type=float, default=5,
-                          help="Set timeout value in seconds to node level operations. TLS connection does not support timeout. Default: 5 seconds")
-
-        parser.add_option("--lineseperator", dest="line_separator", action="store_true",
-                          # help="Print output in separate lines. This works only for asinfo mode."
-                          help=optparse.SUPPRESS_USAGE)
-
-        parser.add_option("-f", "--file-path", dest="log_path",
-                          help="Path of cluster collectinfo file or directory containing collectinfo and system info files.")
-
-        parser.add_option("--tls_enable", dest="enable_tls", action="store_true",
-                          help="Enable TLS on connections. By default TLS is disabled.")
-        parser.add_option("--tls_encrypt_only", dest="encrypt_only", action="store_true",
-                          help="Enable mode to do only encryption, so connections won't verify certificates.")
-        parser.add_option("--tls_cafile", dest="cafile", help="Path to a trusted CA certificate file.")
-        parser.add_option("--tls_capath", dest="capath",
-                          help="Path to a directory of trusted CA certificates.")
-        parser.add_option("--tls_protocols", dest="protocols", help="Set the TLS protocol selection criteria. This format is the same as Apache's SSLProtocol documented "
-                          "at https://httpd.apache.org/docs/current/mod/mod_ssl.html#sslprotocol . "
-                          "If not specified the asadm will use '-all +TLSv1.2' if has support for TLSv1.2,"
-                          "otherwise it will be '-all +TLSv1'.")
-        parser.add_option("--tls_cipher_suite", dest="cipher_suite", help="Set the TLS cipher selection criteria. The format is the same as Open_sSL's Cipher List Format documented "
-                          "at https://www.openssl.org/docs/man1.0.1/apps/ciphers.html")
-        parser.add_option("--tls_keyfile", dest="keyfile",
-                          help="Path to the key for mutual authentication (if Aerospike Cluster is supporting it).")
-        parser.add_option("--tls_certfile", dest="certfile",
-                          help="Path to the chain file for mutual authentication (if Aerospike Cluster is supporting it).")
-        parser.add_option("--tls_cert_blacklist", dest="cert_blacklist", help="Path to a certificate blacklist file. The file should contain one line for each blacklisted certificate. "
-                          "Each line starts with the certificate serial number expressed in hex. "
-                          "Each entry may optionally specify the issuer name of the "
-                          "certificate (serial numbers are only required to be unique per    "
-                          "issuer)."
-                          "Example: "
-                          "867EC87482B2 /C=US/ST=CA/O=Acme/OU=Engineering/CN=TestChainCA")
-        parser.add_option("--tls_crl_check", dest="crl_check", action="store_true",
-                          help="Enable CRL checking for leaf certificate. An error occurs if a valid CRL files cannot be found in tls_capath.")
-        parser.add_option("--tls_crl_check_all", dest="crl_check_all", action="store_true",
-                          help="Enable CRL checking for entire certificate chain. An error occurs if a valid CRL files cannot be found in tls_capath.")
-
+        conf.add_options(parser.add_option)
         (cli_args, args) = parser.parse_args()
 
+
+    admin_version = get_version()
+
     if cli_args.help:
-        parser.print_help()
+        conf.print_config_help()
+        #parser.print_help()
         exit(0)
 
-    if cli_args.show_version:
-        print __version__
+    if cli_args.version:
+        print "Aerospike Administration Shell"
+        print "Version " + str(admin_version)
         exit(0)
 
     if cli_args.no_color:
         disable_coloring()
 
-    if cli_args.use_services_alumni and cli_args.use_services_alternate:
-        print "Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate."
-        exit(1)
-
     if not os.path.isdir(ADMIN_HOME):
         os.makedirs(ADMIN_HOME)
-
-    seed = (cli_args.host, cli_args.port, cli_args.tls_name)
 
     execute_only_mode = False
     if cli_args.execute:
         execute_only_mode = True
+
+    cli_args, seeds = conf.loadconfig(cli_args, logger)
+
+    if cli_args.services_alumni and cli_args.services_alternate:
+        print "Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate."
+        exit(1)
+
 
     ssl_context = parse_tls_input(cli_args)
 
@@ -721,7 +575,7 @@ def main():
 
         try:
             execute_asinfo_commands(
-                commands_arg, seed, user=cli_args.user, password=cli_args.password,
+                commands_arg, seeds[0], user=cli_args.user, password=cli_args.password,
                 ssl_context=ssl_context, line_separator=cli_args.line_separator)
             exit(0)
         except Exception as e:
@@ -731,15 +585,15 @@ def main():
     if not execute_only_mode:
         readline.set_completer_delims(' \t\n;')
 
-    shell = AerospikeShell(seed, user=cli_args.user,
+    shell = AerospikeShell(admin_version, seeds, user=cli_args.user,
                            password=cli_args.password,
-                           use_services_alumni=cli_args.use_services_alumni,
-                           use_services_alt=cli_args.use_services_alternate,
+                           use_services_alumni=cli_args.services_alumni,
+                           use_services_alt=cli_args.services_alternate,
                            log_path=cli_args.log_path,
                            log_analyser=cli_args.log_analyser,
                            collectinfo=cli_args.collectinfo,
                            ssl_context=ssl_context,
-                           only_connect_seed=cli_args.only_connect_seed,
+                           only_connect_seed=cli_args.single_node,
                            execute_only_mode=execute_only_mode, timeout=cli_args.timeout)
 
     use_yappi = False
@@ -853,6 +707,14 @@ def parse_commands(file):
             commands = line
     return commands
 
+def get_version():
+    if __version__.startswith('$$'):
+        import string
+        vfile = string.join(sys.argv[0].split('/')[:-1], '/') + "/version.txt"
+        output = util.shell_command(["cat " + vfile])
+        return str(output[0])
+    else:
+        return __version__
 
 if __name__ == '__main__':
     main()

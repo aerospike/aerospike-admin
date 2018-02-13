@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2013-2017 Aerospike, Inc.
+# Copyright 2013-2018 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 run_test(){
     unknown_option_error="Do not understand"
     asinfo_cmd_str="'$1' "
-    cmd_out=`./asadm.py --asinfo -e "${asinfo_cmd_str}"`
+    cmd_out=`./asadm.py --asinfo-mode -e "${asinfo_cmd_str}"`
     cmd_status="$?"
 #    echo ${cmd_out}
     if [ "$cmd_status" -ne 0 ]; then
@@ -110,7 +110,7 @@ fi
 
 asinfo_cmd_str="\"STATUS\" "
 
-cmd_out=`./asadm.py --asinfo -e "${asinfo_cmd_str}" | tr -dc '[:alnum:]\n\r'`
+cmd_out=`./asadm.py --asinfo-mode -e "${asinfo_cmd_str}" | tr -dc '[:alnum:]\n\r'`
 cmd_status="$?"
 
 if [ "$cmd_status" -ne 0 ]; then
@@ -122,7 +122,7 @@ if [[ $cmd_out != "OK" ]];then
     exit 1
 fi
 
-cmd_out=`./asadm.py --asinfo -e "${asinfo_cmd_str}" | hexdump`
+cmd_out=`./asadm.py --asinfo-mode -e "${asinfo_cmd_str}" | hexdump`
 cmd_status="$?"
 expected_output=`echo "OK" | hexdump`
 
