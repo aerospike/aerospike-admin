@@ -57,14 +57,18 @@ class ASSocket:
             sock_addr = addrinfo[4]
 
             sock = socket.socket(addr_family, socket.SOCK_STREAM)
-            if not ssl_context:
-                sock.settimeout(self._timeout)
-            # timeout on wrapper might give errors
+            sock.settimeout(self._timeout)
+
             sock = self._wrap_socket(sock, ssl_context)
             sock.connect(sock_addr)
+
             if ssl_context:
                 try:
                     sock.set_app_data(tls_name)
+
+                    # timeout on wrapper might give errors
+                    sock.setblocking(1)
+
                     sock.do_handshake()
                 except Exception as tlse:
                     print "TLS connection exception: " + str(tlse)
@@ -72,12 +76,14 @@ class ASSocket:
                         sock.close()
                         sock = None
                     return None
+
             if user != None:
                 rc = authenticate(sock, user, password)
                 if rc != 0:
                     print "Authentication failed for ", user, ": ", rc
                     sock.close()
                     return None
+
         except Exception:
             sock = None
             pass

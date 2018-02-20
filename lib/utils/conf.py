@@ -12,14 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import toml
+import collections
 import json
 import os
 import re
 
-import collections
+try:
+    import toml
+    HAVE_TOML = True
+except ImportError:
+    HAVE_TOML = False
 
-from jsonschema import validate
+try:
+    from jsonschema import validate
+    HAVE_JSONSCHEMA = True
+except ImportError:
+    HAVE_JSONSCHEMA = False
 
 from lib.utils.constants import ADMIN_HOME
 
@@ -29,47 +37,43 @@ class _Namespace(object):
 
 # Default is local host without security / tls
 # with timeout value of 5ms
-_confdefault = '''
-    [cluster]
+_confdefault = {
+    "cluster": {
+        "host": "127.0.0.1",
+        "port": 3000,
+        "user": None,
+        "password": "prompt",
+        "tls-enable":  False,
+        "tls-cafile": "",
+        "tls-capath": "",
+        "tls-cert-blacklist": "",
+        "tls-certfile": "",
+        "tls-cipher-suite": "",
+        "tls-crl-check": False,
+        "tls-crl-check-all": False,
+        "tls-keyfile": "",
+        "tls-protocols": "",
+    },
+    "asadm": {
+        "services-alumni": False,
+        "services-alternate": False,
+        "timeout": 5,
 
-    host = "127.0.0.1:3000"
-    port = 3000
+        "line-separator": False,
+        "no-color": False,
+        "out-file": "",
+        "profile": False,
+        "single-node": False,
 
-    user = ""
-    password = "prompt"
-
-    tls-enable =  false
-    tls-cafile = ""
-    tls-capath = ""
-    tls-cert-blacklist = ""
-    tls-certfile = ""
-    tls-cipher-suite = ""
-    tls-crl-check = false
-    tls-crl-check-all = false
-    tls-keyfile =  ""
-    tls-protocols = ""
-
-    [asadm]
-
-    services-alumni = false
-    services-alternate = false
-    timeout = 5
-
-    line-separator = false
-    no-color = false
-    out-file = ""
-    profile = false
-    single-node = false
-
-    help = false
-    version = false
-    asinfo-mode = false
-    collectinfo = false
-    execute = false
-    log-analyser = false
-    log-path = ""
-
-}'''
+        "help": False,
+        "version": False,
+        "asinfo-mode": False,
+        "collectinfo": False,
+        "execute": False,
+        "log-analyser": False,
+        "log-path": "",
+    },
+}
 
 _confspec = '''{
     "$schema": "http://json-schema.org/draft-04/schema#",
@@ -141,15 +145,18 @@ _confspec = '''{
 }'''
 
 def _getdefault(logger):
-    conf_dict = toml.loads(_confdefault)
-    validate(conf_dict, json.loads(_confspec))
-    return conf_dict
+    import copy
+    return copy.deepcopy(_confdefault)
 
 def _loadfile(fname, logger):
     conf_dict = {}
+
     if os.path.exists(fname):
         # file exists
-        conf_dict = toml.loads(open(fname).read())
+        if HAVE_TOML:
+            conf_dict = toml.loads(open(fname).read())
+        else:
+            raise ImportError("No module named toml")
 
         include_files = []
         if "include" in conf_dict.keys():
@@ -167,7 +174,11 @@ def _loadfile(fname, logger):
             except Exception as e:
                 logger.error("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
 
-    validate(conf_dict, json.loads(_confspec))
+        if HAVE_JSONSCHEMA:
+            validate(conf_dict, json.loads(_confspec))
+        else:
+            raise ImportError("No module named jsonschema")
+
     return conf_dict
 
 def decode(v):
@@ -307,8 +318,7 @@ def loadconfig(cli_args, logger):
             _merge(conf_dict, _loadfile(f, logger))
         except Exception as e:
             # Bail out of the primary file has parsing error.
-            logger.error("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
-            exit(-1)
+            logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
 
     # Read config file if no-config-file is not specified
     # is specified
@@ -325,8 +335,7 @@ def loadconfig(cli_args, logger):
                 _merge(conf_dict, _loadfile(f, logger))
             except Exception as e:
                 # Bail out of the primary file has parsing error.
-                logger.error("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
-                exit(-1)
+                logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
 
     asadm_dict = _flatten(conf_dict, cli_args.instance)
 

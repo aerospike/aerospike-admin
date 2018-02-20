@@ -28,10 +28,13 @@ Admin> help
 - python 2.6+ (< 3)
 
 ### Python Modules
-- ply: >= 3.4
+- jsonschema >= 2.5.1 (for centos6 please install jsonschema==2.5.1)
 - pexpect: >= 3.0
+- ply: >= 3.4
 - pyOpenSSL: >= 16.2.0
 - pyasn1: >= 0.3.1
+- toml
+
 
 ### Installing Python Module Dependencies
 ```
