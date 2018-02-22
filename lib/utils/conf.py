@@ -481,7 +481,20 @@ def config_file_help():
     print ("\n")
 
 
-def add_options(add_fn):
+def get_cli_args():
+    have_argparse = True
+    try:
+        import argparse
+        parser = argparse.ArgumentParser(
+            add_help=False, conflict_handler='resolve')
+        add_fn = parser.add_argument
+    except Exception:
+        import optparse
+        have_argparse = False
+        usage = "usage: %prog [options]"
+        parser = optparse.OptionParser(usage, add_help_option=False)
+        add_fn = parser.add_option
+
     add_fn("-V", "--version", action="store_true")
     add_fn("-E", "--help", action="store_true")
     add_fn("-e", "--execute")
@@ -497,7 +510,11 @@ def add_options(add_fn):
     add_fn("-h", "--host")
     add_fn("-p", "--port", type=int)
     add_fn("-U", "--user")
-    add_fn("-P", "--password",  action="store_const")
+    if have_argparse:
+        add_fn("-P", "--password", nargs="?")
+    else:
+        parser.add_option("-P", "--password", dest="password", action="store_const", const="prompt")
+
     add_fn("--tls-enable", action="store_true")
     add_fn("--tls-cafile")
     add_fn("--tls-capath")
@@ -543,3 +560,9 @@ def add_options(add_fn):
     add_fn("--tls_cert_blacklist")
     add_fn("--tls_crl_check",  action="store_true")
     add_fn("--tls_crl_check_all", action="store_true")
+
+    if have_argparse:
+        return parser.parse_args()
+
+    (cli_args, args) = parser.parse_args()
+    return cli_args
