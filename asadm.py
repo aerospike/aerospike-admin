@@ -524,7 +524,6 @@ def main():
 
     if cli_args.help:
         conf.print_config_help()
-        #parser.print_help()
         exit(0)
 
     if cli_args.version:

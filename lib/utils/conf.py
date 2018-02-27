@@ -412,9 +412,9 @@ def print_config_file_option():
     print (" --tls-enable         Enable TLS on connections. By default TLS is disabled.")
     # Deprecated
     # print(" --tls-encrypt-only   Disable TLS certificate verification.\n")
-    print (" --tls-cafile=TLS_CAFILE\n"
+    print (" --tls-cafile=TLS_CAFILE <path>\n"
            "                      Path to a trusted CA certificate file.")
-    print (" --tls-capath=TLS_CAPATH.\n"
+    print (" --tls-capath=TLS_CAPATH <path>\n"
            "                      Path to a directory of trusted CA certificates.")
     print (" --tls-protocols=TLS_PROTOCOLS\n"
            "                      Set the TLS protocol selection criteria. This format\n"
@@ -428,7 +428,7 @@ def print_config_file_option():
            "                      the same as Open_sSL's Cipher List Format documented\n"
            "                      at https://www.openssl.org/docs/man1.0.1/apps/ciphers.\n"
            "                      html")
-    print (" --tls-keyfile=TLS_KEYFILE\n"
+    print (" --tls-keyfile=TLS_KEYFILE <path>\n"
            "                      Path to the key for mutual authentication (if\n"
            "                      Aerospike Cluster is supporting it).")
     print (" --tls-certfile=TLS_CERTFILE <path>\n"
@@ -447,7 +447,7 @@ def print_config_file_option():
     print (" --tls-crl-check      Enable CRL checking for leaf certificate. An error\n"
            "                      occurs if a valid CRL files cannot be found in\n"
            "                      tls_capath.")
-    print (" --tls-crl-checkall   Enable CRL checking for entire certificate chain. An\n"
+    print (" --tls-crl-check-all  Enable CRL checking for entire certificate chain. An\n"
            "                      error occurs if a valid CRL files cannot be found in\n"
            "                      tls_capath.")
     print ("")
@@ -467,13 +467,13 @@ def config_file_help():
     print "\n\n"
     print ("Default configuration files are read from the following files in the given order:\n"
           "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
-          "The following sections are read: (cluster aql include)\n"
+          "The following sections are read: (cluster asadm include)\n"
           "The following options effect configuration file behavior\n")
     print (" --no-config-file\n"
            "                      Do not read any config file. Default: disabled")
     print (" --instance <name>\n"
            "                      Section with these instance is read. e.g in case instance \n"
-           "                      `a` is specified sections cluster_a, aql_a is read.")
+           "                      `a` is specified sections cluster_a, asadm_a is read.")
     print (" --config-file <path>\n"
            "                      Read this file after default configuration file.")
     print (" --only-config-file <path>\n"
