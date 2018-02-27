@@ -313,12 +313,17 @@ def loadconfig(cli_args, logger):
     # Load only config file.
     if cli_args.only_config_file is not None:
         f = cli_args.only_config_file
-        conffiles = [f]
-        try:
-            _merge(conf_dict, _loadfile(f, logger))
-        except Exception as e:
-            # Bail out of the primary file has parsing error.
-            logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
+        conffiles = []
+
+        if os.path.exists(f):
+            try:
+                _merge(conf_dict, _loadfile(f, logger))
+                conffiles.append(f)
+            except Exception as e:
+                # Bail out of the primary file has parsing error.
+                logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
+        else:
+            logger.warning("Config file read error : " + str(f) + " " + "No such file")
 
     # Read config file if no-config-file is not specified
     # is specified
@@ -328,7 +333,10 @@ def loadconfig(cli_args, logger):
         # -> user specified conf file
         conffiles = ["/etc/aerospike/astools.conf", ADMIN_HOME + "astools.conf"]
         if cli_args.config_file:
-            conffiles.append(cli_args.config_file)
+            if os.path.exists(cli_args.config_file):
+                conffiles.append(cli_args.config_file)
+            else:
+                logger.warning("Config file read error : " + str(cli_args.config_file) + " " + "No such file")
 
         for f in conffiles:
             try:
