@@ -219,13 +219,13 @@ def _flatten(conf_dict, instance):
     return asadm_conf
 
 
-def _merge(dct, merge_dct):
+def _merge(dct, merge_dct, ignore_false=False):
     for k, v in merge_dct.iteritems():
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
-            _merge(dct[k], merge_dct[k])
+            _merge(dct[k], merge_dct[k], ignore_false=ignore_false)
         else:
-            if merge_dct[k] is not None:
+            if merge_dct[k] is not None and (not ignore_false or merge_dct[k] is not False):
                 dct[k] = merge_dct[k]
 
 
@@ -257,14 +257,14 @@ def _getseeds(conf):
                 m = re_ipv6hostnameport.match(host)
                 if (m and len(m.groups()) == 3):
                     g = m.groups()
-                    seeds.append((str(g[0]).strip("[]"), str(g[2]),
+                    seeds.append((str(g[0]).strip("[]"), int(g[2]),
                         tls_name if (tls_name is not None) else str(g[1])))
                     continue
 
                 m = re_ipv6hostport.match(host)
                 if (m and len(m.groups()) == 2):
                     g = m.groups()
-                    seeds.append((str(g[0]).strip("[]"), str(g[1]), tls_name))
+                    seeds.append((str(g[0]).strip("[]"), int(g[1]), tls_name))
                     continue
 
                 m = re_ipv6host.match(host)
@@ -276,14 +276,14 @@ def _getseeds(conf):
                 m = re_ipv4hostnameport.match(host)
                 if (m and len(m.groups()) == 3):
                     g = m.groups()
-                    seeds.append((str(g[0]).strip("[]"), str(g[2]),
+                    seeds.append((str(g[0]).strip("[]"), int(g[2]),
                         tls_name if (tls_name is not None) else str(g[1])))
                     continue
 
                 m = re_ipv4hostport.match(host)
                 if (m and len(m.groups()) == 2):
                     g = m.groups()
-                    seeds.append((str(g[0]).strip("[]"), str(g[1]), tls_name))
+                    seeds.append((str(g[0]).strip("[]"), int(g[1]), tls_name))
                     continue
 
                 # ipv4 host only
@@ -349,7 +349,8 @@ def loadconfig(cli_args, logger):
 
     # -> Command line
     cli_dict = vars(cli_args)
-    _merge(asadm_dict, cli_dict)
+    # For boolean arguments, false is default value... so ignore it
+    _merge(asadm_dict, cli_dict, ignore_false=True)
 
     # Find seed nods
     seeds = _getseeds(asadm_dict)
@@ -537,7 +538,7 @@ def get_cli_args():
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
     add_fn("-a", "--services-alternate", action="store_true")
-    add_fn("--timeout", type=float, default=5)
+    add_fn("--timeout", type=float)
 
     add_fn("--config-file")
     add_fn("--instance")
