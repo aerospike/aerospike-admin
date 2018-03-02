@@ -219,13 +219,13 @@ def _flatten(conf_dict, instance):
     return asadm_conf
 
 
-def _merge(dct, merge_dct):
+def _merge(dct, merge_dct, ignore_false=False):
     for k, v in merge_dct.iteritems():
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
-            _merge(dct[k], merge_dct[k])
+            _merge(dct[k], merge_dct[k], ignore_false=ignore_false)
         else:
-            if merge_dct[k] is not None:
+            if merge_dct[k] is not None and (not ignore_false or merge_dct[k] is not False):
                 dct[k] = merge_dct[k]
 
 
@@ -257,14 +257,14 @@ def _getseeds(conf):
                 m = re_ipv6hostnameport.match(host)
                 if (m and len(m.groups()) == 3):
                     g = m.groups()
-                    seeds.append((str(g[0]).strip("[]"), str(g[2]),
+                    seeds.append((str(g[0]).strip("[]"), int(g[2]),
                         tls_name if (tls_name is not None) else str(g[1])))
                     continue
 
                 m = re_ipv6hostport.match(host)
                 if (m and len(m.groups()) == 2):
                     g = m.groups()
-                    seeds.append((str(g[0]).strip("[]"), str(g[1]), tls_name))
+                    seeds.append((str(g[0]).strip("[]"), int(g[1]), tls_name))
                     continue
 
                 m = re_ipv6host.match(host)
@@ -276,14 +276,14 @@ def _getseeds(conf):
                 m = re_ipv4hostnameport.match(host)
                 if (m and len(m.groups()) == 3):
                     g = m.groups()
-                    seeds.append((str(g[0]).strip("[]"), str(g[2]),
+                    seeds.append((str(g[0]).strip("[]"), int(g[2]),
                         tls_name if (tls_name is not None) else str(g[1])))
                     continue
 
                 m = re_ipv4hostport.match(host)
                 if (m and len(m.groups()) == 2):
                     g = m.groups()
-                    seeds.append((str(g[0]).strip("[]"), str(g[1]), tls_name))
+                    seeds.append((str(g[0]).strip("[]"), int(g[1]), tls_name))
                     continue
 
                 # ipv4 host only
@@ -313,12 +313,17 @@ def loadconfig(cli_args, logger):
     # Load only config file.
     if cli_args.only_config_file is not None:
         f = cli_args.only_config_file
-        conffiles = [f]
-        try:
-            _merge(conf_dict, _loadfile(f, logger))
-        except Exception as e:
-            # Bail out of the primary file has parsing error.
-            logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
+        conffiles = []
+
+        if os.path.exists(f):
+            try:
+                _merge(conf_dict, _loadfile(f, logger))
+                conffiles.append(f)
+            except Exception as e:
+                # Bail out of the primary file has parsing error.
+                logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
+        else:
+            logger.warning("Config file read error : " + str(f) + " " + "No such file")
 
     # Read config file if no-config-file is not specified
     # is specified
@@ -328,7 +333,10 @@ def loadconfig(cli_args, logger):
         # -> user specified conf file
         conffiles = ["/etc/aerospike/astools.conf", ADMIN_HOME + "astools.conf"]
         if cli_args.config_file:
-            conffiles.append(cli_args.config_file)
+            if os.path.exists(cli_args.config_file):
+                conffiles.append(cli_args.config_file)
+            else:
+                logger.warning("Config file read error : " + str(cli_args.config_file) + " " + "No such file")
 
         for f in conffiles:
             try:
@@ -341,7 +349,8 @@ def loadconfig(cli_args, logger):
 
     # -> Command line
     cli_dict = vars(cli_args)
-    _merge(asadm_dict, cli_dict)
+    # For boolean arguments, false is default value... so ignore it
+    _merge(asadm_dict, cli_dict, ignore_false=True)
 
     # Find seed nods
     seeds = _getseeds(asadm_dict)
@@ -412,9 +421,9 @@ def print_config_file_option():
     print (" --tls-enable         Enable TLS on connections. By default TLS is disabled.")
     # Deprecated
     # print(" --tls-encrypt-only   Disable TLS certificate verification.\n")
-    print (" --tls-cafile=TLS_CAFILE\n"
+    print (" --tls-cafile=TLS_CAFILE <path>\n"
            "                      Path to a trusted CA certificate file.")
-    print (" --tls-capath=TLS_CAPATH.\n"
+    print (" --tls-capath=TLS_CAPATH <path>\n"
            "                      Path to a directory of trusted CA certificates.")
     print (" --tls-protocols=TLS_PROTOCOLS\n"
            "                      Set the TLS protocol selection criteria. This format\n"
@@ -428,7 +437,7 @@ def print_config_file_option():
            "                      the same as Open_sSL's Cipher List Format documented\n"
            "                      at https://www.openssl.org/docs/man1.0.1/apps/ciphers.\n"
            "                      html")
-    print (" --tls-keyfile=TLS_KEYFILE\n"
+    print (" --tls-keyfile=TLS_KEYFILE <path>\n"
            "                      Path to the key for mutual authentication (if\n"
            "                      Aerospike Cluster is supporting it).")
     print (" --tls-certfile=TLS_CERTFILE <path>\n"
@@ -447,7 +456,7 @@ def print_config_file_option():
     print (" --tls-crl-check      Enable CRL checking for leaf certificate. An error\n"
            "                      occurs if a valid CRL files cannot be found in\n"
            "                      tls_capath.")
-    print (" --tls-crl-checkall   Enable CRL checking for entire certificate chain. An\n"
+    print (" --tls-crl-check-all  Enable CRL checking for entire certificate chain. An\n"
            "                      error occurs if a valid CRL files cannot be found in\n"
            "                      tls_capath.")
     print ("")
@@ -467,13 +476,13 @@ def config_file_help():
     print "\n\n"
     print ("Default configuration files are read from the following files in the given order:\n"
           "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
-          "The following sections are read: (cluster aql include)\n"
+          "The following sections are read: (cluster asadm include)\n"
           "The following options effect configuration file behavior\n")
     print (" --no-config-file\n"
            "                      Do not read any config file. Default: disabled")
     print (" --instance <name>\n"
            "                      Section with these instance is read. e.g in case instance \n"
-           "                      `a` is specified sections cluster_a, aql_a is read.")
+           "                      `a` is specified sections cluster_a, asadm_a is read.")
     print (" --config-file <path>\n"
            "                      Read this file after default configuration file.")
     print (" --only-config-file <path>\n"
@@ -481,7 +490,20 @@ def config_file_help():
     print ("\n")
 
 
-def add_options(add_fn):
+def get_cli_args():
+    have_argparse = True
+    try:
+        import argparse
+        parser = argparse.ArgumentParser(
+            add_help=False, conflict_handler='resolve')
+        add_fn = parser.add_argument
+    except Exception:
+        import optparse
+        have_argparse = False
+        usage = "usage: %prog [options]"
+        parser = optparse.OptionParser(usage, add_help_option=False)
+        add_fn = parser.add_option
+
     add_fn("-V", "--version", action="store_true")
     add_fn("-E", "--help", action="store_true")
     add_fn("-e", "--execute")
@@ -497,7 +519,11 @@ def add_options(add_fn):
     add_fn("-h", "--host")
     add_fn("-p", "--port", type=int)
     add_fn("-U", "--user")
-    add_fn("-P", "--password",  action="store_const")
+    if have_argparse:
+        add_fn("-P", "--password", nargs="?")
+    else:
+        parser.add_option("-P", "--password", dest="password", action="store_const", const="prompt")
+
     add_fn("--tls-enable", action="store_true")
     add_fn("--tls-cafile")
     add_fn("--tls-capath")
@@ -512,7 +538,7 @@ def add_options(add_fn):
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
     add_fn("-a", "--services-alternate", action="store_true")
-    add_fn("--timeout", type=float, default=5)
+    add_fn("--timeout", type=float)
 
     add_fn("--config-file")
     add_fn("--instance")
@@ -543,3 +569,9 @@ def add_options(add_fn):
     add_fn("--tls_cert_blacklist")
     add_fn("--tls_crl_check",  action="store_true")
     add_fn("--tls_crl_check_all", action="store_true")
+
+    if have_argparse:
+        return parser.parse_args()
+
+    (cli_args, args) = parser.parse_args()
+    return cli_args

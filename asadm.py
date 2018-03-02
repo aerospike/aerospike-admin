@@ -518,25 +518,12 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, ssl_co
 
 
 def main():
-    try:
-        import argparse
-        parser = argparse.ArgumentParser(
-            add_help=False, conflict_handler='resolve')
-        conf.add_options(parser.add_argument)
-        cli_args = parser.parse_args()
-    except Exception:
-        import optparse
-        usage = "usage: %prog [options]"
-        parser = optparse.OptionParser(usage, add_help_option=False)
-        conf.add_options(parser.add_option)
-        (cli_args, args) = parser.parse_args()
-
+    cli_args = conf.get_cli_args()
 
     admin_version = get_version()
 
     if cli_args.help:
         conf.print_config_help()
-        #parser.print_help()
         exit(0)
 
     if cli_args.version:
