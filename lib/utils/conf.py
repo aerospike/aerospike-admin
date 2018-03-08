@@ -189,7 +189,7 @@ def decode(v):
     else:
         return v
 
-def _flatten(conf_dict, instance):
+def _flatten(conf_dict, instance, logger):
     # _flatten global and asadm specific property
     # change all string key and value into utf-8
 
@@ -197,7 +197,17 @@ def _flatten(conf_dict, instance):
     asadm_conf = {}
     for k,v in conf_dict["asadm"].iteritems():
         asadm_conf[decode(k.replace("-", "_"))] = decode(v)
-    for k,v in conf_dict["cluster"].iteritems():
+
+    # Find cluster config to use. Overlay default if
+    # instance is defined. Skip host.
+    cluster_conf = {}
+    if instance is None:
+        cluster_conf = conf_dict["cluster"]
+    else:
+        cluster_conf = _getdefault(logger)["cluster"]
+        cluster_conf["host"] = None
+
+    for k,v in cluster_conf.iteritems():
         asadm_conf[decode(k.replace("-", "_"))] = decode(v)
 
     if instance is None:
@@ -345,7 +355,7 @@ def loadconfig(cli_args, logger):
                 # Bail out of the primary file has parsing error.
                 logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
 
-    asadm_dict = _flatten(conf_dict, cli_args.instance)
+    asadm_dict = _flatten(conf_dict, cli_args.instance, logger)
 
     # -> Command line
     cli_dict = vars(cli_args)
