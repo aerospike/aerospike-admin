@@ -400,7 +400,7 @@ def print_config_help():
            "                      By default asadm connects to all nodes in cluster.")
     print (" --collectinfo        Start asadm to run against offline collectinfo files.")
     print (" --log-analyser       Start asadm in log-analyser mode and analyse data from log files.")
-    print (" -f --log-path        Path of cluster collectinfo file or directory \n"
+    print (" -f --log-path=path   Path of cluster collectinfo file or directory \n"
            "                      containing collectinfo and system info files.")
 
     print_config_file_option()
@@ -411,7 +411,7 @@ def print_config_file_option():
     print ("Configuration File Allowed Options")
     print ("----------------------------------\n")
     print ("[cluster]")
-    print (" -h HOST, --host=HOST\n"
+    print (" -h, --host=HOST\n"
            "                      HOST is \"<host1>[:<tlsname1>][:<port1>],...\" \n"
            "                      Server seed hostnames or IP addresses. The tlsname is \n"
            "                      only used when connecting with a secure TLS enabled \n"
@@ -420,9 +420,9 @@ def print_config_file_option():
            "                        host1\n"
            "                        host1:3000,host2:3000\n"
            "                        192.168.1.10:cert1:3000,192.168.1.20:cert2:3000")
-    print (" -p PORT, --port=PORT \n"
+    print (" -p, --port=PORT \n"
            "                      Server default port. Default: 3000")
-    print (" -U USER, --user=USER \n"
+    print (" -U, --user=USER \n"
            "                      User name used to authenticate with cluster. Default: none")
     print (" -P, --password\n"
            "                      Password used to authenticate with cluster. Default: none\n"
@@ -431,29 +431,29 @@ def print_config_file_option():
     print (" --tls-enable         Enable TLS on connections. By default TLS is disabled.")
     # Deprecated
     # print(" --tls-encrypt-only   Disable TLS certificate verification.\n")
-    print (" --tls-cafile=TLS_CAFILE <path>\n"
+    print (" --tls-cafile=path\n"
            "                      Path to a trusted CA certificate file.")
-    print (" --tls-capath=TLS_CAPATH <path>\n"
+    print (" --tls-capath=path\n"
            "                      Path to a directory of trusted CA certificates.")
     print (" --tls-protocols=TLS_PROTOCOLS\n"
            "                      Set the TLS protocol selection criteria. This format\n"
            "                      is the same as Apache's SSLProtocol documented at http\n"
            "                      s://httpd.apache.org/docs/current/mod/mod_ssl.html#ssl\n"
-           "                      protocol . If not specified the asadm will use '-all\n"
+           "                      protocol . If not specified the asadm will use ' -all\n"
            "                      +TLSv1.2' if has support for TLSv1.2,otherwise it will\n"
-           "                      be '-all +TLSv1'.")
+           "                      be ' -all +TLSv1'.")
     print (" --tls-cipher-suite=TLS_CIPHER_SUITE\n"
            "                      Set the TLS cipher selection criteria. The format is\n"
            "                      the same as Open_sSL's Cipher List Format documented\n"
            "                      at https://www.openssl.org/docs/man1.0.1/apps/ciphers.\n"
            "                      html")
-    print (" --tls-keyfile=TLS_KEYFILE <path>\n"
+    print (" --tls-keyfile=path\n"
            "                      Path to the key for mutual authentication (if\n"
            "                      Aerospike Cluster is supporting it).")
-    print (" --tls-certfile=TLS_CERTFILE <path>\n"
+    print (" --tls-certfile=path\n"
            "                      Path to the chain file for mutual authentication (if\n"
            "                      Aerospike Cluster is supporting it).")
-    print (" --tls-cert-blacklist <path>\n"
+    print (" --tls-cert-blacklist=path\n"
            "                      Path to a certificate blacklist file. The file should\n"
            "                      contain one line for each blacklisted certificate.\n"
            "                      Each line starts with the certificate serial number\n"
@@ -471,7 +471,7 @@ def print_config_file_option():
            "                      tls_capath.")
     print ("")
     print ("[asadm]")
-    print (" -t --tls-name        Default TLS name of host to verify for TLS connection,\n"
+    print (" -t --tls-name=name   Default TLS name of host to verify for TLS connection,\n"
            "                      if not specified in host string. It is required if tls-enable\n"
            "                      is set.")
     print (" -s --services-alumni\n"
@@ -479,7 +479,7 @@ def print_config_file_option():
     print (" -a --services-alternate \n"
            "                      Enable use of services-alternate instead of services in\n"
            "                      info request during cluster tending")
-    print (" --timeout            Set timeout value in seconds to node level operations. \n"
+    print (" --timeout=value      Set timeout value in seconds to node level operations. \n"
            "                      TLS connection does not support timeout. Default: 5 seconds")
 
 def config_file_help():
@@ -490,12 +490,12 @@ def config_file_help():
           "The following options effect configuration file behavior\n")
     print (" --no-config-file\n"
            "                      Do not read any config file. Default: disabled")
-    print (" --instance <name>\n"
+    print (" --instance=name\n"
            "                      Section with these instance is read. e.g in case instance \n"
            "                      `a` is specified sections cluster_a, asadm_a is read.")
-    print (" --config-file <path>\n"
+    print (" --config-file=path\n"
            "                      Read this file after default configuration file.")
-    print (" --only-config-file <path>\n"
+    print (" --only-config-file=path\n"
            "                      Read only this configuration file.")
     print ("\n")
 
