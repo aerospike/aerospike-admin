@@ -159,7 +159,10 @@ class AerospikeShell(cmd.Cmd):
                             password = getpass.getpass("Enter Password:")
                         else:
                             password = sys.stdin.readline().strip()
-                    password = info.hashpassword(password)
+
+                    if not info.hasbcrypt:
+                        self.do_exit('')
+                        logger.critical("Authentication failed: bcrypt not installed.")
 
                 self.ctrl = BasicRootController(seed_nodes=seeds, user=user,
                                                 password=password, use_services_alumni=use_services_alumni, use_services_alt=use_services_alt,
@@ -494,10 +497,12 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, ssl_co
                 password = getpass.getpass("Enter Password:")
             else:
                 password = sys.stdin.readline().strip()
-        password = info.hashpassword(password)
+
+        if not info.hasbcrypt:
+            logger.critical("Authentication failed: bcrypt not installed.")
 
     assock = ASSocket(seed[0], seed[1], seed[2], user, password, ssl_context)
-    if not assock.connect():
+    if not assock.connect(try_ldap_login=True):
         logger.critical("Not able to connect any cluster with " + str(seed) + ".")
         return
 

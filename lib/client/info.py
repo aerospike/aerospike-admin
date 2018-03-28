@@ -67,19 +67,19 @@ def partition_old(s, sep):
         return(s, "", "")
     return(s[:idx], sep, s[idx + 1:])
 
+admin_header_fmt = '! Q B B B B 12x'
+proto_header_fmt = '! Q'
 
 g_proto_header = None
-g_struct_header_in = None
-g_struct_header_out = None
 g_partition = None
+g_struct_admin_header_in = None
+g_struct_admin_header_out = None
 
 # 2.5, this will succeed
 try:
-    g_proto_header = struct.Struct('! Q')
-    g_struct_header_in = struct.Struct('! Q B 4x B I 8x H H')
-    g_struct_header_out = struct.Struct('! Q B B B B B B I I I H H')
-    g_struct_admin_header_in = struct.Struct('! Q B B B B 12x')
-    g_struct_admin_header_out = struct.Struct('! Q B B B B 12x')
+    g_proto_header = struct.Struct(proto_header_fmt)
+    g_struct_admin_header_in = struct.Struct(admin_header_fmt)
+    g_struct_admin_header_out = struct.Struct(admin_header_fmt)
     g_partition = partition_25
 
 # pre 2.5, if there's no Struct submember, so use my workaround pack/unpack
@@ -89,7 +89,7 @@ except:
     g_partition = partition_old
 
 
-def receivedata(sock, sz):
+def _receivedata(sock, sz):
     pos = 0
     while pos < sz:
         chunk = sock.recv(sz - pos)
@@ -100,8 +100,9 @@ def receivedata(sock, sz):
         pos += len(chunk)
     return data
 
+####### Password hashing ######
 
-def hashpassword(password):
+def _hashpassword(password):
     if hasbcrypt == False:
         print "Authentication failed: bcrypt not installed."
         sys.exit(1)
@@ -114,53 +115,149 @@ def hashpassword(password):
 
     return password
 
+###############################
 
-def admin_write_header(sz, command, field_count):
+
+########### Security ##########
+
+_OK = 0
+_INVALID_COMMAND = 54
+
+_ADMIN_MSG_VERSION = 0
+_ADMIN_MSG_TYPE = 2
+
+_AUTHENTICATE = 0
+_LOGIN = 20
+
+_USER_FIELD_ID = 0
+_CREDENTIAL_FIELD_ID = 3
+_CLEAR_PASSWORD_FIELD_ID = 4
+_SESSION_TOKEN_FIELD_ID = 5
+
+_HEADER_SIZE = 24
+_HEADER_REMAINING = 16
+
+
+def _admin_write_header(sz, command, field_count):
     send_buf = create_string_buffer(sz)      # from ctypes
-    # sz = (0 << 56) | (2 << 48) | (sz - 8)
-    sz = (2 << 48) | (sz - 8)
+    sz = (_ADMIN_MSG_VERSION << 56) | (_ADMIN_MSG_TYPE << 48) | (sz - 8)
 
     if g_struct_admin_header_out != None:
         g_struct_admin_header_out.pack_into(
             send_buf, 0, sz, 0, 0, command, field_count)
     else:
         struct.pack_into(
-            '! Q B B B B 12x', send_buf, 0, sz, 0, 0, command, field_count)
+            admin_header_fmt, send_buf, 0, sz, 0, 0, command, field_count)
 
     return send_buf
 
 
-def admin_parse_header(data):
+def _admin_parse_header(data):
     if g_struct_admin_header_in != None:
         rv = g_struct_admin_header_in.unpack(data)
     else:
-        rv = struct.unpack('! Q B B B B 12x', data)
+        rv = struct.unpack(admin_header_fmt, data)
 
     return rv
 
 
-def buffer_to_string(buf):
+def _parse_session_token(data, field_count):
+    i = 0
+    offset = 0
+    while i < field_count:
+        field_len, field_id = struct.unpack_from("! I B", data, offset)
+        field_len -= 1
+        offset += 5
+
+        if field_id == _SESSION_TOKEN_FIELD_ID:
+            fmt_str = "%ds" % field_len
+            return struct.unpack_from(fmt_str, data, offset)[0]
+
+        offset += field_len
+        i += 1
+
+    return None
+
+
+def _buffer_to_string(buf):
     buf_str = ""
     for s in buf:
         buf_str += s
     return buf_str
 
 
-def authenticate(sock, user, password):
-    sz = len(user) + len(password) + 34  # 2 * 5 + 24
-    send_buf = admin_write_header(sz, 0, 2)
+def _authenticate(sock, user, password, password_field_id):
+    sz = len(user) + len(password) + 34 # 2 * 5 + 24
+    send_buf = _admin_write_header(sz, _AUTHENTICATE, 2)
     fmt_str = "! I B %ds I B %ds" % (len(user), len(password))
-    struct.pack_into(fmt_str, send_buf, 24, len(
-        user) + 1, 0, user, len(password) + 1, 3, password)
+    struct.pack_into(fmt_str, send_buf, _HEADER_SIZE,
+                     len(user) + 1, _USER_FIELD_ID, user,
+                     len(password) + 1, password_field_id, password)
     try:
         # OpenSSL wrapper doesn't support ctypes
-        send_buf = buffer_to_string(send_buf)
+        send_buf = _buffer_to_string(send_buf)
         sock.sendall(send_buf)
-        recv_buff = receivedata(sock, 24)
-        rv = admin_parse_header(recv_buff)
+        recv_buff = _receivedata(sock, _HEADER_SIZE)
+        rv = _admin_parse_header(recv_buff)
         return rv[2]
     except Exception as ex:
         raise IOError("Error: %s" % str(ex))
+
+def authenticate_new(sock, user, session_token):
+    return _authenticate(sock, user, password=session_token, password_field_id=_SESSION_TOKEN_FIELD_ID)
+
+def authenticate_old(sock, user, password):
+    return _authenticate(sock, user, password=_hashpassword(password), password_field_id=_CREDENTIAL_FIELD_ID)
+
+def login(sock, user, password):
+    credential = _hashpassword(password)
+    sz = len(user) + len(credential) + len(password) + 39  # 3 * 5 + 24
+    send_buf = _admin_write_header(sz, _LOGIN, 3)
+    fmt_str = "! I B %ds I B %ds I B %ds" % (len(user), len(credential), len(password))
+    struct.pack_into(fmt_str, send_buf, _HEADER_SIZE,
+                     len(user) + 1, _USER_FIELD_ID, user,
+                     len(credential) + 1, _CREDENTIAL_FIELD_ID, credential,
+                     len(password) + 1, _CLEAR_PASSWORD_FIELD_ID, password)
+
+    try:
+        # OpenSSL wrapper doesn't support ctypes
+        send_buf = _buffer_to_string(send_buf)
+        sock.sendall(send_buf)
+        recv_buff = _receivedata(sock, _HEADER_SIZE)
+        rv = _admin_parse_header(recv_buff)
+
+        result = rv[2]
+        if result != _OK:
+            # login failed
+
+            if result == _INVALID_COMMAND:
+                # login is invalid command, so cluster does not support ldap
+                return None, authenticate_old(sock, user, password)
+
+            # login failed
+            return None, result
+
+        sz = int(rv[0] & 0xFFFFFFFFFFFF) - _HEADER_REMAINING
+        field_count = rv[4]
+        if sz < 0 or field_count < 1:
+            raise IOError("Login failed to retrieve session token")
+
+        recv_buff = _receivedata(sock, sz)
+        session_token = _buffer_to_string(_parse_session_token(recv_buff, field_count))
+        return session_token, 0
+
+    except Exception as ex:
+        raise IOError("Error: %s" % str(ex))
+
+
+
+
+###############################
+
+##### aerospike info call #####
+
+_INFO_MSG_VERSION = 2
+_INFO_MSG_TYPE = 1
 
 def _info_request(sock, buf):
 
@@ -169,10 +266,10 @@ def _info_request(sock, buf):
         sock.send(buf)
         # get response
         rsp_hdr = sock.recv(8)
-        q = struct.unpack_from("! Q", rsp_hdr, 0)
+        q = struct.unpack_from(proto_header_fmt, rsp_hdr, 0)
         sz = q[0] & 0xFFFFFFFFFFFF
         if sz > 0:
-            rsp_data = receivedata(sock, sz)
+            rsp_data = _receivedata(sock, sz)
     except Exception as ex:
         raise IOError("Error: %s" % str(ex))
 
@@ -189,14 +286,14 @@ def info(sock, names=None):
     # Passed a set of names: created output buffer
 
     if names == None:
-        q = (2 << 56) | (1 << 48)
+        q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48)
         if g_proto_header != None:
             buf = g_proto_header.pack(q)
         else:
-            buf = struct.pack('! Q', q)
+            buf = struct.pack(proto_header_fmt, q)
 
     elif type(names) == types.StringType:
-        q = (2 << 56) | (1 << 48) | (len(names) + 1)
+        q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48) | (len(names) + 1)
         fmt_str = "! Q %ds B" % len(names)
         buf = struct.pack(fmt_str, q, names, 10)
 
@@ -208,7 +305,7 @@ def info(sock, names=None):
             names_l.append(name)
             names_l.append("\n")
         namestr = "".join(names_l)
-        q = (2 << 56) | (1 << 48) | (len(namestr))
+        q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48) | (len(namestr))
         fmt_str = "! Q %ds" % len(namestr)
         buf = struct.pack(fmt_str, q, namestr)
 
@@ -236,3 +333,5 @@ def info(sock, names=None):
             name, sep, value = g_partition(line, "\t")
             rdict[name] = value
         return rdict
+
+###############################

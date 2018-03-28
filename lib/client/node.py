@@ -109,6 +109,14 @@ class Node(object):
         self.consider_alumni = consider_alumni
         self.use_services_alt = use_services_alt
 
+        # session token
+        self.session_token = None
+        if user is None:
+            self.try_ldap_login = False
+        else:
+            # for first time node should try ldap login
+            self.try_ldap_login = True
+
         # System Details
         self.sys_ssh_port = None
         self.sys_user_id = None
@@ -226,6 +234,7 @@ class Node(object):
             if self.has_peers_changed():
                 self.peers = self._find_friend_nodes()
             self.alive = True
+
         except Exception:
             # Node is offline... fake a node
             self.ip = address
@@ -338,9 +347,13 @@ class Node(object):
             return sock
 
         sock = ASSocket(ip, port, self.tls_name, self.user, self.password,
-                        self.ssl_context, timeout=self._timeout)
+                        self.ssl_context, session_token=self.session_token, timeout=self._timeout)
 
-        if sock.connect():
+        if sock.connect(self.try_ldap_login):
+            # after first connection we do not need to try login
+            # session_token will take care about that
+            self.try_ldap_login = False
+            self.session_token = sock.get_session_token()
             return sock
 
         return None
@@ -388,7 +401,6 @@ class Node(object):
         try:
             if sock:
                 result = sock.execute(command)
-
                 try:
                     if len(self.socket_pool[port]) < self.socket_pool_max_size:
                         sock.settimeout(None)
@@ -604,7 +616,7 @@ class Node(object):
             service = self.info("service")
             s = map(util.info_to_tuple, util.info_to_list(service))
 
-            return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
+            return map(lambda v: (v[0], int(self.port), self.tls_name), s)
 
         except Exception:
             pass
