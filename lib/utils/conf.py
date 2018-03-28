@@ -189,43 +189,30 @@ def decode(v):
     else:
         return v
 
-def _flatten(conf_dict, instance, logger):
+def _flatten(conf_dict, instance=None):
     # _flatten global and asadm specific property
     # change all string key and value into utf-8
 
-    # fill with default
     asadm_conf = {}
-    for k,v in conf_dict["asadm"].iteritems():
-        asadm_conf[decode(k.replace("-", "_"))] = decode(v)
 
-    # Find cluster config to use. Overlay default if
-    # instance is defined. Skip host.
-    cluster_conf = {}
-    if instance is None:
-        cluster_conf = conf_dict["cluster"]
-    else:
-        cluster_conf = _getdefault(logger)["cluster"]
-        cluster_conf["host"] = None
-
-    for k,v in cluster_conf.iteritems():
-        asadm_conf[decode(k.replace("-", "_"))] = decode(v)
-
-    if instance is None:
-        return asadm_conf
-
-    # Overlay instance setion
     sections = []
 
-    sections.append("cluster_"+str(instance))
-
-    mymod = "asadm_"+str(instance)
-    if mymod in conf_dict.keys():
-       sections.append(mymod)
+    if instance is None:
+        sections.append("asadm")
+        sections.append("cluster")
+    else:
+        sections.append("cluster_"+str(instance))
+        i = "asadm_"+str(instance)
+        if i in conf_dict:
+            sections.append(i)
+        else:
+            sections.append("asadm")
 
     for section in sections:
         if section in conf_dict.keys():
             for k,v in conf_dict[section].iteritems():
                 asadm_conf[decode(k.replace("-", "_"))] = decode(v)
+
     return asadm_conf
 
 
@@ -308,54 +295,63 @@ def _getseeds(conf):
 
 
 def loadconfig(cli_args, logger):
-
-    #print json.dumps(vars(cli_args), indent=4)
-
     # order of loading is
     #
     # Default
-    conf_dict = _getdefault(logger)
+    default_conf_dict = _getdefault(logger)
+
 
     if cli_args.no_config_file and cli_args.only_config_file:
         print "--no-config-file and only-config-file are mutually exclusive option. Please enable only one."
         exit(1)
 
-    # Load only config file.
-    if cli_args.only_config_file is not None:
-        f = cli_args.only_config_file
-        conffiles = []
+    conf_dict = {}
+    conffiles = []
 
-        if os.path.exists(f):
-            try:
-                _merge(conf_dict, _loadfile(f, logger))
-                conffiles.append(f)
-            except Exception as e:
-                # Bail out of the primary file has parsing error.
-                logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
-        else:
-            logger.warning("Config file read error : " + str(f) + " " + "No such file")
+    if cli_args.only_config_file is not None or not cli_args.no_config_file:
+        # need to load config file
 
-    # Read config file if no-config-file is not specified
-    # is specified
-    elif not cli_args.no_config_file:
-       # -> /etc/aerospike/astools.conf
-        # -> ./aerospike/astools.conf
-        # -> user specified conf file
-        conffiles = ["/etc/aerospike/astools.conf", ADMIN_HOME + "astools.conf"]
-        if cli_args.config_file:
-            if os.path.exists(cli_args.config_file):
-                conffiles.append(cli_args.config_file)
+        if not HAVE_TOML:
+            logger.warning("No module named toml. Skipping Config file read.")
+
+        elif not HAVE_JSONSCHEMA:
+            logger.warning("No module named jsonschema. Skipping Config file read.")
+
+        elif cli_args.only_config_file is not None:
+            # Load only config file.
+            f = cli_args.only_config_file
+
+            if os.path.exists(f):
+                try:
+                    _merge(conf_dict, _loadfile(f, logger))
+                    conffiles.append(f)
+                except Exception as e:
+                    # Bail out of the primary file has parsing error.
+                    logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
             else:
-                logger.warning("Config file read error : " + str(cli_args.config_file) + " " + "No such file")
+                logger.warning("Config file read error : " + str(f) + " " + "No such file")
 
-        for f in conffiles:
-            try:
-                _merge(conf_dict, _loadfile(f, logger))
-            except Exception as e:
-                # Bail out of the primary file has parsing error.
-                logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
+        elif not cli_args.no_config_file:
+            # Read config file if no-config-file is not specified
+            # -> /etc/aerospike/astools.conf
+            # -> ./aerospike/astools.conf
+            # -> user specified conf file
+            conffiles = ["/etc/aerospike/astools.conf", ADMIN_HOME + "astools.conf"]
+            if cli_args.config_file:
+                if os.path.exists(cli_args.config_file):
+                    conffiles.append(cli_args.config_file)
+                else:
+                    logger.warning("Config file read error : " + str(cli_args.config_file) + " " + "No such file")
 
-    asadm_dict = _flatten(conf_dict, cli_args.instance, logger)
+            for f in conffiles:
+                try:
+                    _merge(conf_dict, _loadfile(f, logger))
+                except Exception as e:
+                    # Bail out of the primary file has parsing error.
+                    logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
+
+    asadm_dict = _flatten(default_conf_dict)
+    _merge(asadm_dict, _flatten(conf_dict, cli_args.instance))
 
     # -> Command line
     cli_dict = vars(cli_args)
@@ -367,16 +363,15 @@ def loadconfig(cli_args, logger):
     args = _Namespace(asadm_dict)
 
     # debug
-    #print json.dumps(vars(args), indent=4)
-    #print seeds
+    # print json.dumps(vars(args), indent=4)
+    # print seeds
 
-    # print
     if not cli_args.asinfo_mode:
         if cli_args.instance:
             print("Instance:    " + cli_args.instance )
         print("Seed:        " + str(seeds))
 
-        if cli_args.no_config_file:
+        if cli_args.no_config_file or not conffiles:
             print("Config_file: None")
         else:
             print("Config_file: " + ", ".join(reversed(conffiles)))
