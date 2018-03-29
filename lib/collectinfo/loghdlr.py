@@ -35,6 +35,10 @@ HH = 0
 MM = 1
 SS = 2
 
+# for zipped files
+COLLECTINFO_DIR = ADMIN_HOME + 'collectinfo/'
+COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
+
 ######################
 
 
@@ -42,13 +46,10 @@ class CollectinfoLoghdlr(object):
     all_cinfo_logs = {}
     selected_cinfo_logs = {}
 
-    # for zipped files
-    COLLECTINFO_DIR = ADMIN_HOME + 'collectinfo/'
-    COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
-
     def __init__(self, cinfo_path):
         self.cinfo_path = cinfo_path
-        self._validate_and_extract_compressed_files(cinfo_path, dest_dir=self.COLLECTINFO_DIR)
+        self.collectinfo_dir = COLLECTINFO_DIR + str(os.getpid())
+        self._validate_and_extract_compressed_files(cinfo_path, dest_dir=self.collectinfo_dir)
         self.cinfo_timestamp = None
 
         self.reader = CollectinfoReader()
@@ -90,8 +91,8 @@ class CollectinfoLoghdlr(object):
             self.all_cinfo_logs.clear()
             self.selected_cinfo_logs.clear()
 
-        if os.path.exists(self.COLLECTINFO_DIR):
-            shutil.rmtree(self.COLLECTINFO_DIR)
+        if os.path.exists(self.collectinfo_dir):
+            shutil.rmtree(self.collectinfo_dir)
 
     def get_cinfo_log_at(self, timestamp=""):
 
@@ -218,27 +219,27 @@ class CollectinfoLoghdlr(object):
             if not self._is_compressed_file(cinfo_path):
                 files.append(cinfo_path)
             else:
-                files += logutil.get_all_files(self.COLLECTINFO_DIR)
+                files += logutil.get_all_files(self.collectinfo_dir)
 
         elif os.path.isdir(cinfo_path):
             files += logutil.get_all_files(cinfo_path)
 
-            if os.path.exists(self.COLLECTINFO_DIR):
-                # ToDo: Before adding file from COLLECTINFO_DIR, we need to check file already exists in input file list or not,
+            if os.path.exists(self.collectinfo_dir):
+                # ToDo: Before adding file from collectinfo_dir, we need to check file already exists in input file list or not,
                 # ToDo: collectinfo_parser fails if same file exists twice in input file list. This is possible if input has zip file and
                 # ToDo: user unzipped it but did not remove zipped file, in that case collectinfo-analyser creates new unzipped file,
                 # ToDo: which results in two copies of same file (one unzipped by user and one unzipped by collectinfo-analyser).
 
                 if not self._get_files_by_type(JSON_FILE, cinfo_path):
-                    for collectinfo_json_file in self._get_files_by_type(JSON_FILE, self.COLLECTINFO_DIR):
+                    for collectinfo_json_file in self._get_files_by_type(JSON_FILE, self.collectinfo_dir):
                         files.append(collectinfo_json_file)
 
                 if not self._get_files_by_type(CLUSTER_FILE, cinfo_path):
-                    for old_collectinfo_file in self._get_files_by_type(CLUSTER_FILE, self.COLLECTINFO_DIR):
+                    for old_collectinfo_file in self._get_files_by_type(CLUSTER_FILE, self.collectinfo_dir):
                         files.append(old_collectinfo_file)
 
                 if not self._get_files_by_type(SYSTEM_FILE, cinfo_path):
-                    for sysinfo_file in self._get_files_by_type(SYSTEM_FILE, self.COLLECTINFO_DIR):
+                    for sysinfo_file in self._get_files_by_type(SYSTEM_FILE, self.collectinfo_dir):
                         files.append(sysinfo_file)
 
         return files
@@ -325,7 +326,7 @@ class CollectinfoLoghdlr(object):
             return
 
         if not dest_dir:
-            dest_dir = self.COLLECTINFO_DIR
+            dest_dir = self.collectinfo_dir
 
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
@@ -335,7 +336,7 @@ class CollectinfoLoghdlr(object):
                 return
 
             if self._extract_to(cinfo_path, dest_dir):
-                self._validate_and_extract_compressed_files(dest_dir, dest_dir=os.path.join(dest_dir, self.COLLECTINFO_INTERNAL_DIR))
+                self._validate_and_extract_compressed_files(dest_dir, dest_dir=os.path.join(dest_dir, COLLECTINFO_INTERNAL_DIR))
                 return
 
         files = logutil.get_all_files(cinfo_path)
@@ -351,6 +352,6 @@ class CollectinfoLoghdlr(object):
                 file_extracted = True
 
         if file_extracted:
-            self._validate_and_extract_compressed_files(dest_dir, dest_dir=os.path.join(dest_dir, self.COLLECTINFO_INTERNAL_DIR))
+            self._validate_and_extract_compressed_files(dest_dir, dest_dir=os.path.join(dest_dir, COLLECTINFO_INTERNAL_DIR))
 
 
