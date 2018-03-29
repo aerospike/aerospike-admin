@@ -1186,7 +1186,7 @@ class CollectinfoController(BasicCommandController):
         dignostic_features_params = ['features']
         dignostic_show_params = ['config', 'config xdr', 'config dc', 'config cluster', 'distribution', 'distribution eviction',
                                  'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex', 'pmap']
-        dignostic_aerospike_cluster_params = ['service', 'services']
+        dignostic_aerospike_cluster_params = ['service', 'services', 'roster:']
         dignostic_aerospike_cluster_params_additional = [
             'partition-info',
             'dump-msgs:',

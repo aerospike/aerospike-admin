@@ -1500,6 +1500,40 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition",
 				"Namespace partition-tree-sprigs check for Enterprise edition",
 				e);
 
+SET CONSTRAINT VERSION >= 4.0.0.1;
+// SC mode rules
+
+s = select "strong-consistency" from NAMESPACE.CONFIG;
+// Find out atleast one namespace in SC mode
+s = group by CLUSTER do OR(s);
+
+r = select "clock_skew_stop_writes" from NAMESPACE.STATISTICS;
+ASSERT(r, False, "Wrong clock skew for SC mode", "OPERATIONS", WARNING,
+				"For listed namespace[s], clock skew is outside of tolerance for strong-consistency. So writes are not allowed.",
+				"Namespace clock_skew_stop_writes check",
+				s);
+
+r = select "dead_partitions" from NAMESPACE.STATISTICS save;
+ASSERT(r, 0, "Non-zero dead partitions", "OPERATIONS", WARNING,
+				"Listed namespace[s] shows non-zero dead partitions. This is the number of partitions that are unavailable when all roster nodes are present. Will require the use of the revive command to make them available again.",
+				"Namespace dead partitions check",
+				s);
+
+r = select "unavailable_partitions" from NAMESPACE.STATISTICS save;
+ASSERT(r, 0, "Non-zero unavailable partitions", "OPERATIONS", WARNING,
+				"Listed namespace[s] shows non-zero unavailable partitions. This is the number of partitions that are unavailable when roster nodes are missing. Will turn into dead_partitions if still unavailable when all roster nodes are present. Probable cause - nodes more than or equal to replication-factor are either 'untrusted' or out of the cluster.",
+				"Namespace unavailable partitions check",
+				s);
+
+csw = select "cluster_clock_skew_stop_writes_sec" as "cluster_clock_skew" from SERVICE.STATISTICS save as "cluster_clock_skew_stop_writes_sec";
+csw = do 0.75 * csw;
+cs = select "cluster_clock_skew" from SERVICE.STATISTICS save;
+r = do cs > csw;
+ASSERT(r, False, "Cluster clock_skew breached warning level", "OPERATIONS", WARNING,
+				"Listed cluster[s] shows clock_skew more than 3/4th of cluster_clock_skew_stop_writes_sec. If it crossed cluster_clock_skew_stop_writes_sec then cluster will stop accepting writes.",
+				"Cluster clock_skew check",
+				s);
+
 SET CONSTRAINT VERSION ALL;
 
 '''
