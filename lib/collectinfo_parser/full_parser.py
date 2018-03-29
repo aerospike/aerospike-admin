@@ -329,7 +329,7 @@ def _stringify(input):
         return [_stringify(element) for element in input]
 
     elif isinstance(input, unicode):
-        return str(input)
+        return str(input.encode('utf-8'))
 
     else:
         return input
