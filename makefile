@@ -27,6 +27,20 @@ all:
 	rm -rf $(BUILD_ROOT)tmp/*
 	rm -rf $(BUILD_ROOT)bin/*
 	rm -f `find . -type f -name '*.pyc' | xargs`
+	mkdir $(BUILD_ROOT)tmp/asadm
+	cp -f *.py $(BUILD_ROOT)tmp/asadm
+	rsync -aL lib $(BUILD_ROOT)tmp/asadm
+
+    ifeq ($(OS),Darwin)
+		sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
+    else
+		sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
+    endif
+
+	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
+	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm_old
+	cat $(BUILD_ROOT)tmp/asadm.zip >> $(BUILD_ROOT)bin/asadm_old
+	chmod ugo+x $(BUILD_ROOT)bin/asadm_old
 
 	./create_app.sh
 	mv ./asadm.pex $(BUILD_ROOT)bin/asadm
