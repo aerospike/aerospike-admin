@@ -4,10 +4,10 @@
 #
 
 # Create the asadm wheel
-pip wheel -w . .
+pip wheel -w . . -r requirements.txt
 
 # Create the pex executable using the asadm wheel and the dependencies from requirements.txt
-pex -v -f . --disable-cache asadm -r requirements.txt -c asadm.py -o asadm.pex
+pex -v -f . --disable-cache asadm jsonschema lib pexpect pyasn1 pyOpenSSL python_bcrypt mock ply toml unittest2 yappi -c asadm.py -o asadm.pex
 
-# Wheel no longer needed, remove it
+# Wheels no longer needed, remove them
 rm *.whl
