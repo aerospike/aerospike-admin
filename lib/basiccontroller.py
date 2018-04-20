@@ -134,9 +134,6 @@ class InfoController(BasicCommandController):
     def do_network(self, line):
         stats = util.Future(self.cluster.info_statistics,
                             nodes=self.nodes).start()
-
-        cluster_configs = self.config_getter.get_cluster(nodes=self.nodes)
-
         cluster_names = util.Future(
             self.cluster.info, 'cluster-name', nodes=self.nodes).start()
         builds = util.Future(
@@ -149,12 +146,6 @@ class InfoController(BasicCommandController):
         builds = builds.result()
         versions = versions.result()
 
-        for node in stats:
-            try:
-                if not isinstance(cluster_configs[node]["mode"], Exception):
-                    stats[node]["rackaware_mode"] = cluster_configs[node]["mode"]
-            except Exception:
-                pass
         return util.Future(self.view.info_network, stats, cluster_names,
                            versions, builds, self.cluster, **self.mods)
 
@@ -168,27 +159,23 @@ class InfoController(BasicCommandController):
     def do_xdr(self, line):
         stats = util.Future(self.cluster.info_XDR_statistics,
                             nodes=self.nodes).start()
-
         builds = util.Future(self.cluster.info_XDR_build_version,
                              nodes=self.nodes).start()
-
         xdr_enable = util.Future(self.cluster.is_XDR_enabled,
                                  nodes=self.nodes).start()
 
         stats = stats.result()
         builds = builds.result()
         xdr_enable = xdr_enable.result()
+
         return util.Future(self.view.info_XDR, stats, builds, xdr_enable,
                            self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each datacenter.')
     def do_dc(self, line):
-
         stats = util.Future(self.cluster.info_all_dc_statistics,
                             nodes=self.nodes).start()
-
         configs = self.config_getter.get_dc(flip=False, nodes=self.nodes)
-
         stats = stats.result()
 
         for node in stats.keys():
@@ -342,11 +329,10 @@ class ShowDistributionController(BasicCommandController):
         self.modifiers = set(['with', 'for'])
         self.getter = GetDistributionController(self.cluster)
 
-
     @CommandHelp('Shows the distributions of Time to Live and Object Size')
     def _do_default(self, line):
         actions = (util.Future(self.do_time_to_live, line[:]).start(),
-                util.Future(self.do_object_size, line[:]).start())
+                   util.Future(self.do_object_size, line[:]).start())
 
         return [action.result() for action in actions]
 

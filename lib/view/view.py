@@ -26,15 +26,474 @@ from lib.health.constants import (AssertLevel, AssertResultKey,
 from lib.health.util import print_dict
 from lib.utils import filesize
 from lib.utils.constants import COUNT_RESULT_KEY, DT_FMT
-from lib.utils.util import (compile_likes, find_delimiter_in,
-                            get_value_from_dict, set_value_in_dict)
-from lib.view import terminal
+from lib.utils.util import (compile_likes, find_delimiter_in)
+from lib.view import sheet, terminal
+from lib.view.sheet import (Aggregators, Converters, Field, FieldAlignment,
+                            FieldType, Formatters, Projectors, Sheet,
+                            TupleField)
 from lib.view.table import Extractors, Styles, Table, TitleFormats
 
 H1_offset = 13
 H2_offset = 15
 H_width = 80
 
+# Common set of fields.
+cluster_field = Field('Cluster',
+                      Projectors.Func(FieldType.string,
+                                      lambda c: c if c != 'null' else None,
+                                      Projectors.String('cluster_names', None)),
+                      key='cluster_name')
+node_field = Field('Node', Projectors.String('prefixes', None),
+                   formatters=(Formatters.green_alert(
+                       lambda edata: edata.record['Node ID'] == edata.common['principal']),))
+hidden_node_id_field = Field('Node ID',
+                             Projectors.String('node_ids', None), hidden=True)
+namespace_field = Field('Namespace', Projectors.String('ns_stats', None, for_each_key=True))
+
+
+def project_build(b, v):
+    if 'community' in v.lower():
+        return 'C-' + b
+
+    if 'enterprise' in v.lower():
+        return 'E-' + b
+
+    return b
+
+
+network_sheet = Sheet(
+    (cluster_field,
+     node_field,
+     Field('Node ID', Projectors.String('node_ids', None),
+           converter=(lambda edata: '*' + edata.value
+                      if edata.value == edata.common['principal']
+                      else edata.value),
+           formatters=(Formatters.green_alert(
+               lambda edata: edata.record['Node ID'] == edata.common['principal']),),
+           align=FieldAlignment.right),
+     Field('IP', Projectors.String('hosts', None)),
+     Field('Build',
+           Projectors.Func(
+               FieldType.string,
+               project_build,
+               Projectors.String('builds', None),
+               Projectors.String('versions', None))),
+     Field('Migrations',
+           Projectors.Number('stats', 'migrate_partitions_remaining'),
+           converter=Converters.sif),
+     TupleField(
+         'Cluster',
+         (Field('Size', Projectors.Number('stats', 'cluster_size')),
+          Field('Key', Projectors.String('stats', 'cluster_key'),
+                align=FieldAlignment.right),
+          Field('Integrity', Projectors.Boolean('stats', 'cluster_integrity'),
+                formatters=(Formatters.red_alert(
+                    lambda edata: not edata.value),)),
+          Field('Principal', Projectors.String('stats', 'paxos_principal'),
+                align=FieldAlignment.right))),
+     Field('Client Conns', Projectors.Number('stats', 'client_connections')),
+     Field('Uptime', Projectors.Number('stats', 'uptime'),
+           converter=Converters.time)),
+    from_source=('cluster_names', 'prefixes', 'node_ids', 'hosts', 'builds',
+                 'versions', 'stats'),
+    group_by='cluster_name',
+    order_by='Node'
+)
+
+namespace_usage_sheet = Sheet(
+    (cluster_field,
+     namespace_field,
+     node_field,
+     hidden_node_id_field,
+     Field('Total Records',
+           Projectors.Sum(
+               Projectors.Number('ns_stats',
+                                 'master_objects', 'master-objects'),
+               Projectors.Number('ns_stats', 'master_tombstones'),
+               Projectors.Number('ns_stats', 'prole_objects', 'prole-objects'),
+               Projectors.Number('ns_stats', 'non_replica_objects'),
+               Projectors.Number('ns_stats', 'non_replica_tombstones')),
+           converter=Converters.sif,
+           aggregator=Aggregators.sum()),
+     Field('Expirations',
+           Projectors.Number('ns_stats', 'expired_objects', 'expired-objects'),
+           converter=Converters.sif,
+           aggregator=Aggregators.sum()),
+     Field('Evictions',
+           Projectors.Number('ns_stats', 'evicted_objects', 'evicted-objects'),
+           converter=Converters.sif,
+           aggregator=Aggregators.sum()),
+     Field('Stop Writes',
+           Projectors.Boolean('ns_stats', 'stop_writes', 'stop-writes'),
+           formatters=(Formatters.red_alert(
+               lambda edata: edata.value),)),
+     TupleField(
+         'Disk',
+         (Field('Used',
+                Projectors.Number('ns_stats',
+                                  'device_used_bytes', 'used-bytes-disk'),
+                converter=Converters.byte,
+                aggregator=Aggregators.sum()),
+          Field('Used%',
+                Projectors.Percent('ns_stats',
+                                   'device_free_pct', 'free_pct_disk',
+                                   invert=True),
+                formatters=(Formatters.yellow_alert(
+                    lambda edata: edata.value >= edata.record['HWM Disk%']),)),
+          Field('HWM%',
+                Projectors.Number('ns_stats', 'high-water-disk-pct')),
+          Field('Avail%',
+                Projectors.Number('ns_stats',
+                                  'device_available_pct', 'available_pct'),
+                formatters=(Formatters.red_alert(
+                    lambda edata: edata.value < 10),)))),
+     TupleField(
+         'Memory',
+         (Field('Used', Projectors.Number('ns_stats', 'memory_used_bytes'),
+                converter=Converters.byte,
+                aggregator=Aggregators.sum()),
+          Field('Used%',
+                Projectors.Percent('ns_stats',
+                                   'memory_free_pct', 'free_pct_memory',
+                                   invert=True),
+                formatters=(Formatters.yellow_alert(
+                    lambda edata: edata.value > edata.record['HWM Mem%']),)),
+          Field('HWM%',
+                Projectors.Number('ns_stats', 'high-water-memory-pct')),
+          Field('Stop%',
+                Projectors.Number('ns_stats', 'stop-writes-pct'))))),
+    from_source=('cluster_names', 'node_ids', 'prefixes', 'ns_stats'),
+    for_each='ns_stats',
+    group_by=('cluster_name', 'Namespace'),
+    order_by='Node'
+)
+
+namespace_object_sheet = Sheet(
+    (cluster_field,
+     namespace_field,
+     node_field,
+     hidden_node_id_field,
+     Field('Rack ID', Projectors.Number('ns_stats', 'rack-id')),
+     Field('Repl Factor', Projectors.Number(
+         'ns_stats',
+         'effective_replication_factor',  # introduced post 3.15.0.1
+         'replication-factor',
+         'repl-factor')),
+     Field('Total Records',
+           Projectors.Sum(
+               Projectors.Number('ns_stats',
+                                 'master_objects', 'master-objects'),
+               Projectors.Number('ns_stats', 'master_tombstones'),
+               Projectors.Number('ns_stats', 'prole_objects', 'prole-objects'),
+               Projectors.Number('ns_stats', 'prole_tombstones'),
+               Projectors.Number('ns_stats', 'non_replica_objects'),
+               Projectors.Number('ns_stats', 'non_replica_tombstones')),
+           converter=Converters.sif,
+           aggregator=Aggregators.sum()),
+     TupleField(
+         'Objects',
+         (Field('Master',
+                Projectors.Number('ns_stats',
+                                  'master_objects', 'master-objects'),
+                converter=Converters.sif, aggregator=Aggregators.sum()),
+          Field('Prole',
+                Projectors.Number('ns_stats', 'prole_objects', 'prole-objects'),
+                converter=Converters.sif, aggregator=Aggregators.sum()),
+          Field('Non-Replica',
+                Projectors.Number('ns_stats', 'non_replica_objects'),
+                converter=Converters.sif, aggregator=Aggregators.sum()))),
+     TupleField(
+         'Tombstones',
+         (Field('Master',
+                Projectors.Number('ns_stats', 'master_tombstones'),
+                converter=Converters.sif, aggregator=Aggregators.sum()),
+          Field('Prole', Projectors.Number('ns_stats', 'prole_tombstones'),
+                converter=Converters.sif, aggregator=Aggregators.sum()),
+          Field('Non-Replica',
+                Projectors.Number('ns_stats', 'non_replica_tombstones'),
+                converter=Converters.sif, aggregator=Aggregators.sum()))),
+     TupleField(
+         'Pending Migrates',
+         (Field('Tx',
+                Projectors.Number(
+                    'ns_stats',
+                    'migrate_tx_partitions_remaining',
+                    'migrate-tx-partitions-remaining'),
+                converter=Converters.sif, aggregator=Aggregators.sum()),
+          Field('Rx',
+                Projectors.Number(
+                    'ns_stats',
+                    'migrate_rx_partitions_remaining',
+                    'migrate-rx-partitions-remaining'),
+                converter=Converters.sif, aggregator=Aggregators.sum())))),
+    from_source=('cluster_names', 'node_ids', 'prefixes', 'ns_stats'),
+    for_each='ns_stats',
+    group_by=('cluster_name', 'Namespace'),
+    order_by='Node'
+)
+
+set_sheet = Sheet(
+    (cluster_field,
+     Field('Namespace', Projectors.String('set_stats', 0, for_each_key=True)),
+     Field('Set', Projectors.String('set_stats', 1, for_each_key=True)),
+     node_field,
+     hidden_node_id_field,
+     Field('Set Delete',
+           Projectors.Boolean('set_stats', 'deleting', 'set-delete')),
+     Field('Mem Used',
+           Projectors.Number('set_stats',
+                             'memory_data_bytes', 'n-bytes-memory'),
+           converter=Converters.byte,
+           aggregator=Aggregators.sum()),
+     Field('Objects', Projectors.Number('set_stats', 'objects', 'n_objects'),
+           converter=Converters.sif,
+           aggregator=Aggregators.sum()),
+     Field('Stop Writes Count',
+           Projectors.Number('set_stats', 'stop-writes-count')),
+     Field('Disable Eviction',
+           Projectors.Boolean('set_stats', 'disable-eviction')),
+     Field('Set Enable XDR', Projectors.String('set_stats', 'set-enable-xdr'))),
+    from_source=('cluster_names', 'node_ids', 'prefixes', 'set_stats'),
+    for_each='set_stats',
+    group_by=('cluster_name', 'Namespace', 'Set'),
+    order_by='Node'
+)
+
+
+def project_xdr_free_dlog(s):
+    return int(s.translate(None, '%'))
+
+
+def project_xdr_req_shipped_success(s, rs, esc, ess):
+    if s is not None:
+        return s
+
+    return rs - esc - ess
+
+
+def project_xdr_req_shipped_errors(s, esc, ess):
+    if s is not None:
+        return s
+
+    return esc + ess
+
+
+xdr_sheet = Sheet(
+    (Field('XDR Enabled', Projectors.Boolean('xdr_enable', None), hidden=True),
+     node_field,
+     hidden_node_id_field,
+     Field('Build', Projectors.String('builds', None)),
+     Field('Data Shipped',
+           Projectors.Number('xdr_stats',
+                             'xdr_ship_bytes',
+                             'esmt_bytes_shipped',
+                             'esmt-bytes-shipped'),
+           converter=Converters.byte, aggregator=Aggregators.sum()),
+     Field('Free DLog%',
+           Projectors.Func(
+               FieldType.number,
+               project_xdr_free_dlog,
+               Projectors.String('xdr_stats',
+                                 'dlog_free_pct',
+                                 'free-dlog-pct',
+                                 'free_dlog_pct'))),
+     Field('Lag (sec)',
+           Projectors.Number('xdr_stats',
+                             'xdr_timelag', 'timediff_lastship_cur_secs'),
+           converter=Converters.time,
+           formatters=(
+               Formatters.red_alert(lambda edata: edata.value >= 300),)),
+     TupleField(
+         'Records',
+         (Field('Outstanding',
+                Projectors.Number('xdr_stats',
+                                  'xdr_ship_outstanding_objects',
+                                  'stat_recs_outstanding'),
+                converter=Converters.sif, aggregator=Aggregators.sum()),
+          Field('Shipped Success',
+                Projectors.Func(
+                    FieldType.number,
+                    project_xdr_req_shipped_success,
+                    Projectors.Number('xdr_stats',
+                                      'xdr_ship_success',
+                                      'stat_recs_shipped_ok'),
+                    Projectors.Number('xdr_stats',
+                                      'stat_recs_shipped', 'stat-recs-shipped'),
+                    Projectors.Number('xdr_stats',
+                                      'err_ship_client', 'error-ship-client'),
+                    Projectors.Number('xdr_stats',
+                                      'err_ship_server', 'err-ship-server')),
+                aggregator=Aggregators.sum()),
+          Field('Shipped Errors',
+                Projectors.Func(
+                    FieldType.number,
+                    project_xdr_req_shipped_errors,
+                    Projectors.Number('xdr_stats', 'stat_recs_ship_errors'),
+                    Projectors.Number('xdr_stats',
+                                      'err_ship_client', 'err-ship-client',
+                                      'xdr_ship_source_error'),
+                    Projectors.Number('xdr_stats',
+                                      'err_ship_server', 'err-ship-server',
+                                      'xdr_ship_destination_error')),
+                aggregator=Aggregators.sum()))),
+     Field('Throughput',
+           Projectors.Number('xdr_stats', 'xdr_throughput', 'cur_throughput'),
+           aggregator=Aggregators.sum()),
+     Field('Avg Latency (ms)',
+           Projectors.Number('xdr_stats',
+                             'xdr_ship_latency_avg', 'latency_avg_ship')),
+     Field('XDR Uptime',  # obsolete since 3.11.1.1
+           Projectors.Number('xdr_stats', 'xdr_uptime', 'xdr-uptime'),
+           converter=Converters.time)),
+    from_source=('xdr_enable', 'node_ids', 'prefixes', 'builds', 'xdr_stats'),
+    where=lambda record: record['XDR Enabled'],
+    order_by='Node'
+)
+
+xdr_dc_sheet = Sheet(
+    (node_field,
+     hidden_node_id_field,
+     Field('DC', Projectors.String('dc_stats', 'dc-name', 'DC_Name')),
+     Field('DC Size', Projectors.Number('dc_stats', 'xdr_dc_size', 'dc_size')),
+     Field('Namespaces', Projectors.String('dc_stats', 'namespaces')),
+     Field('Lag',
+           Projectors.Number('dc_stats', 'xdr_dc_timelag', 'xdr-dc-timelag',
+                             'dc_timelag'),
+           converter=Converters.time),
+     Field('Records Shipped',
+           Projectors.Number('dc_stats',
+                             'xdr_dc_remote_ship_ok', 'dc_remote_ship_ok',
+                             'dc_recs_shipped_ok', 'dc_ship_success')),
+     Field('Avg Latency (ms)',
+           Projectors.Number('dc_stats',
+                             'latency_avg_ship_ema', 'dc_latency_avg_ship',
+                             'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')),
+     Field('Status',
+           Projectors.Number('dc_stats',
+                             'xdr_dc_state', 'xdr-dc-state', 'dc_state'))),
+    from_source=('node_ids', 'prefixes', 'dc_stats'),
+    for_each='dc_stats',
+    where=lambda record: record['DC'],
+    group_by=('DC', 'Namespaces'),
+    order_by='Node'
+)
+
+sindex_sheet = Sheet(
+    (Field('Index Name', Projectors.String('sindex_stats', 'indexname')),
+     Field('Namespace', Projectors.String('sindex_stats', 'ns')),
+     Field('Set', Projectors.String('sindex_stats', 'set')),
+     node_field,
+     hidden_node_id_field,
+     Field('Bins', Projectors.Number('sindex_stats', 'bins', 'bin')),
+     Field('Num Bins', Projectors.Number('sindex_stats', 'num_bins')),
+     Field('Bin Type', Projectors.String('sindex_stats', 'type')),
+     Field('State', Projectors.String('sindex_stats', 'state')),
+     Field('Sync State', Projectors.String('sindex_stats', 'sync_state')),
+     Field('Keys', Projectors.Number('sindex_stats', 'keys')),
+     Field('Entries', Projectors.Number('sindex_stats', 'entries', 'objects'),
+           converter=Converters.sif, aggregator=Aggregators.sum()),
+     Field('Memory Used',
+           Projectors.Number('sindex_stats', 'si_accounted_memory'),
+           converter=Converters.byte, aggregator=Aggregators.sum()),
+     TupleField(
+         'Queries',
+         (Field('Requests', Projectors.Number('sindex_stats', 'query_reqs'),
+                converter=Converters.sif, aggregator=Aggregators.sum()),
+          Field('Avg Num Recs',
+                Projectors.Number('sindex_stats', 'query_avg_rec_count'),
+                converter=Converters.sif, aggregator=Aggregators.sum()))),
+     TupleField(
+         'Updates',
+         (Field('Writes',
+                Projectors.Number('sindex_stats',
+                                  'write_success', 'stat_write_success'),
+                converter=Converters.sif, aggregator=Aggregators.sum()),
+          Field('Deletes',
+                Projectors.Number('sindex_stats',
+                                  'delete_success', 'stat_delete_success'),
+                converter=Converters.sif, aggregator=Aggregators.sum())))),
+    from_source=('node_ids', 'prefixes', 'sindex_stats'),
+    for_each='sindex_stats',
+    group_by=('Index Name', 'Namespace', 'Set'),
+    order_by='Node'
+)
+
+
+distribution_sheet = Sheet(
+    tuple(itertools.chain(
+        [Field('Node', Projectors.String('prefixes', None))],
+        [Field('{}%'.format(pct), Projectors.Number('histogram', i))
+         for i, pct in enumerate(range(10, 110, 10))])),
+    from_source=('prefixes', 'histogram'),
+    order_by='Node'
+)
+
+
+summary_namespace_sheet = Sheet(
+    (Field('Namespace', Projectors.String('ns_stats', None),
+           Formatters.red_alert(
+               lambda edata: edata.record['active_migrations'])),
+     Field('active_migrations', Projectors.Boolean('ns_stats',
+                                                   'migrations_in_progress'),
+           hidden=True),
+     TupleField('Devices',
+                (Field('Total', Projectors.Number('ns_stats', 'devices_total')),
+                 Field('Per-Node', Projectors.Number('ns_stats',
+                                                     'devices_per_node')))),
+     TupleField('Memory',
+                (Field('Total', Projectors.Number('ns_stats', 'memory_total'),
+                       converter=Converters.byte),
+                 Field('Used%',
+                       Projectors.Percent('ns_stats',
+                                          'memory_available_pct', invert=True)),
+                 Field('Avail%', Projectors.Number('ns_stats',
+                                                   'memory_available_pct'),
+                       converter=Converters.byte))),
+     TupleField('Disk',
+                (Field('Total', Projectors.Number('ns_stats', 'disk_total'),
+                       converter=Converters.byte),
+                 Field('Used%', Projectors.Number('ns_stats', 'disk_used_pct')),
+                 Field('Avail%', Projectors.Number('ns_stats',
+                                                   'disk_available_pct'),
+                       converter=Converters.byte))),
+     Field('Replication Factors',
+           Projectors.Func(FieldType.string,
+                           lambda *v: ','.join(map(str, v[0])),
+                           Projectors.String('ns_stats', 'repl_factor')),
+           align=FieldAlignment.right),
+     Field('Cache Read%', Projectors.Number('ns_stats', 'cache_read_pct')),
+     Field('Master Objects', Projectors.Number('ns_stats', 'master_objects'),
+           Converters.sif),
+     TupleField('Usage (Unique-Data)',
+                (Field('In-Memory',
+                       Projectors.Number('ns_stats', 'license_data_in_memory'),
+                       Converters.byte),
+                 Field('On-Disk',
+                       Projectors.Number('ns_stats', 'license_data_on_disk'),
+                       Converters.byte)))),
+    from_source=('ns_stats',),
+    order_by='Namespace'
+)
+
+pmap_sheet = Sheet(
+    (Field('Namespace', Projectors.String('pmap', None, for_each_key=True)),
+     node_field,
+     hidden_node_id_field,
+     Field('Cluster Key', Projectors.Number('pmap', 'cluster_key')),
+     Field('Primary Partitions',
+           Projectors.Number('pmap', 'master_partition_count'),
+           aggregator=Aggregators.sum()),
+     Field('Secondary Partitions',
+           Projectors.Number('pmap', 'prole_partition_count'),
+           aggregator=Aggregators.sum()),
+     Field('Missing Partitions',
+           Projectors.Number('pmap', 'missing_partition_count'),
+           aggregator=Aggregators.sum())),
+    from_source=('prefixes', 'node_ids', 'pmap'),
+    for_each='pmap',
+    group_by='Namespace',
+    order_by='Node'
+)
 
 class CliView(object):
     NO_PAGER, LESS, MORE, SCROLL = range(4)
@@ -69,747 +528,148 @@ class CliView(object):
         if not timestamp:
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
 
-        return " (%s)"%(str(timestamp))
+        return ' (' + str(timestamp) + ')'
 
     @staticmethod
-    def info_network(stats, cluster_names, versions, builds, cluster, timestamp="", **ignore):
+    def info_network(stats, cluster_names, versions, builds, cluster,
+                     timestamp='', **ignore):
         prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
         hosts = cluster.nodes
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Network Information%s" % (title_suffix)
-        column_names = (
-            ('cluster-name', 'Cluster Name'), 'node', 'node_id', 'ip', 'build',
-            'cluster_size', ('_migrations', 'Migrations'), 'cluster_key',
-            '_cluster_integrity', ('_paxos_principal', 'Principal'),
-            'rackaware_mode', ('client_connections', 'Client Conns'), '_uptime'
-        )
+        title = 'Network Information' + title_suffix
+        sources = dict(
+            cluster_names=cluster_names,
+            prefixes=prefixes,
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.iterkeys())),
+            hosts=dict(((k, h.sock_name(use_fqdn=False))
+                        for k, h in hosts.iteritems())),
+            builds=builds,
+            versions=versions,
+            stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, group_by=0, sort_by=1)
-
-        t.add_data_source('Enterprise', lambda data: 'N/E' if data['version'] == 'N/E' else(
-            True if "Enterprise" in data['version'] else False))
-        t.add_data_source('_cluster_integrity', lambda data:
-                          True if row['cluster_integrity'] == 'true' else False)
-        t.add_data_source('_migrations',
-                          Extractors.sif_extractor('migrate_partitions_remaining'))
-        t.add_data_source('_uptime', Extractors.time_extractor('uptime'))
-
-        t.add_cell_alert('node_id', lambda data: data[
-                         'real_node_id'] == principal, color=terminal.fg_green)
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-        t.add_cell_alert(
-            '_cluster_integrity', lambda data: data['cluster_integrity'] != 'true')
-
-        for node_key, n_stats in stats.iteritems():
-            if isinstance(n_stats, Exception):
-                n_stats = {}
-
-            node = cluster.get_node(node_key)[0]
-            row = n_stats
-            row['real_node_id'] = node.node_id
-            row['node'] = prefixes[node_key]
-            row['ip'] = hosts[node_key].sock_name(use_fqdn=False)
-            row['node_id'] = node.node_id if node.node_id != principal else "*%s" % (
-                node.node_id)
-
-            try:
-                paxos_node = cluster.get_node(row['paxos_principal'])[0]
-                row['_paxos_principal'] = paxos_node.node_id
-            except KeyError:
-                # The principal is a node we currently do not know about
-                # So return the principal ID
-                try:
-                    row['_paxos_principal'] = row['paxos_principal']
-                except KeyError:
-                    pass
-            try:
-                build = builds[node_key]
-                if not isinstance(build, Exception):
-                    try:
-                        version = versions[node_key]
-                        if not isinstance(version, Exception):
-                            if 'enterprise' in version.lower():
-                                row['build'] = "E-%s" % (str(build))
-                            elif 'community' in version.lower():
-                                row['build'] = "C-%s" % (str(build))
-                            else:
-                                row['build'] = build
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            try:
-                cluster_name = cluster_names[node_key]
-                if not isinstance(cluster_name, Exception) and cluster_name not in ["null"]:
-                    row["cluster-name"] = cluster_name
-            except Exception:
-                pass
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(network_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_namespace_usage(stats, cluster, timestamp="", **ignore):
+    def info_namespace_usage(stats, cluster, timestamp='', **ignore):
         prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Namespace Usage Information%s" % (title_suffix)
-        column_names = (
-            'namespace', 'node',
-            ('_total_records', 'Total Records'),
-            ('_expired_and_evicted', 'Expirations,Evictions'), 'stop_writes',
-            ('_used_bytes_disk', 'Disk Used'), ('_used_disk_pct', 'Disk Used%'),
-            ('high-water-disk-pct', 'HWM Disk%'), ('available_pct', 'Avail%'),
-            ('_used_bytes_memory', 'Mem Used'), ('_used_mem_pct', 'Mem Used%'),
-            ('high-water-memory-pct', 'HWM Mem%'),
-            ('stop-writes-pct', 'Stop Writes%')
-        )
+        title = 'Namespace Usage Information' + title_suffix
+        sources = dict(
+            # TODO - collect cluster-name.
+            cluster_names=dict([(k, None) for k in stats.iterkeys()]),
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.iterkeys())),
+            prefixes=prefixes,
+            ns_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, sort_by=0)
-
-        t.add_data_source('_total_records', Extractors.sif_extractor(
-            ('_total_records')))
-        t.add_data_source_tuple(
-            '_expired_and_evicted',
-            Extractors.sif_extractor(('expired-objects', 'expired_objects')),
-            Extractors.sif_extractor(('evicted-objects', 'evicted_objects')))
-        t.add_data_source('_used_bytes_disk', Extractors.byte_extractor(
-            ('used-bytes-disk', 'device_used_bytes')))
-        t.add_data_source('_used_bytes_memory', Extractors.byte_extractor(
-            ('used-bytes-memory', 'memory_used_bytes')))
-
-        t.add_data_source('_used_disk_pct', lambda data: 100 -
-                          int(data['free_pct_disk']) if data['free_pct_disk'] is not " " else " ")
-
-        t.add_data_source('_used_mem_pct', lambda data: 100 - int(
-            data['free_pct_memory']) if data['free_pct_memory'] is not " " else " ")
-
-        t.add_cell_alert('available_pct', lambda data: data['available_pct'] != " " and int(data['available_pct']) <= 10)
-
-        t.add_cell_alert('stop_writes', lambda data: data['stop_writes'] != " " and data['stop_writes'] != 'false')
-
-        t.add_cell_alert('_used_mem_pct', lambda data: data['free_pct_memory'] != " " and (100 - int(data['free_pct_memory'])) >= int(data['high-water-memory-pct']))
-
-        t.add_cell_alert('_used_disk_pct', lambda data: data['free_pct_disk'] != " " and (100 - int(data['free_pct_disk'])) >= int(data['high-water-disk-pct']))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_total_records', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_used_bytes_memory', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_used_bytes_disk', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_expired_and_evicted', lambda data: data['node'] is " ", color=terminal.fg_blue)
-
-        total_res = {}
-
-        # Need to maintain Node column ascending order per namespace.
-        # If set sort_by in table, it will affect total rows. TODO: implement group_by
-        # So we need to add rows as Nodes ascending order. So need to sort
-        # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
-        node_column_list = [prefixes[key] for key in node_key_list]
-        sorted_node_list = [x for (y, x) in sorted(
-            zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
-
-        for node_key in sorted_node_list:
-            n_stats = stats[node_key]
-            node = cluster.get_node(node_key)[0]
-            if isinstance(n_stats, Exception):
-                t.insert_row(
-                    {'real_node_id': node.node_id, 'node': prefixes[node_key]})
-                continue
-
-            for ns, ns_stats in n_stats.iteritems():
-
-                if isinstance(ns_stats, Exception):
-                    row = {}
-                else:
-                    row = ns_stats
-
-                _total_records = 0
-
-                if ns not in total_res:
-                    total_res[ns] = {}
-                    total_res[ns]["_total_records"] = 0
-                    total_res[ns]["used-bytes-memory"] = 0
-                    total_res[ns]["used-bytes-disk"] = 0
-                    total_res[ns]["evicted_objects"] = 0
-                    total_res[ns]["expired_objects"] = 0
-
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('master-objects', 'master_objects'),
-                        default_value=0, return_type=int)
-                except Exception:
-                    pass
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('master_tombstones'), default_value=0, return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('prole-objects', 'prole_objects'), default_value=0,
-                        return_type=int)
-                except Exception:
-                    pass
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('prole_tombstones'), default_value=0, return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('non-replica-objects', 'non_replica_objects'),
-                        default_value=0, return_type=int)
-                except Exception:
-                    pass
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('non_replica_tombstones'), default_value=0, return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["used-bytes-memory"] += get_value_from_dict(
-                        ns_stats, ('used-bytes-memory', 'memory_used_bytes'), return_type=int)
-                except Exception:
-                    pass
-                try:
-                    total_res[ns]["used-bytes-disk"] += get_value_from_dict(
-                        ns_stats, ('used-bytes-disk', 'device_used_bytes'), return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["evicted_objects"] += get_value_from_dict(
-                        ns_stats, ('evicted-objects', 'evicted_objects'), return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["expired_objects"] += get_value_from_dict(
-                        ns_stats, ('expired-objects', 'expired_objects'), return_type=int)
-                except Exception:
-                    pass
-
-                row['namespace'] = ns
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                set_value_in_dict(row, "available_pct", get_value_from_dict(
-                    row, ('available_pct', 'device_available_pct')))
-                set_value_in_dict(row, "free_pct_disk", get_value_from_dict(
-                    row, ('free-pct-disk', 'device_free_pct')))
-                set_value_in_dict(row, "free_pct_memory", get_value_from_dict(
-                    row, ('free-pct-memory', 'memory_free_pct')))
-                set_value_in_dict(
-                    row, "stop_writes", get_value_from_dict(row, ('stop-writes', 'stop_writes')))
-                set_value_in_dict(
-                    row, "_total_records", _total_records)
-                total_res[ns]["_total_records"] += _total_records
-
-                t.insert_row(row)
-
-        for ns in total_res:
-            row = {}
-            row['node'] = " "
-            row['available_pct'] = " "
-            row["stop_writes"] = " "
-            row["high-water-disk-pct"] = " "
-            row["free_pct_disk"] = " "
-            row["free_pct_memory"] = " "
-            row["high-water-memory-pct"] = " "
-            row["stop-writes-pct"] = " "
-
-            row['namespace'] = ns
-            row["_total_records"] = str(total_res[ns]["_total_records"])
-            row["used-bytes-memory"] = str(total_res[ns]["used-bytes-memory"])
-            row["used-bytes-disk"] = str(total_res[ns]["used-bytes-disk"])
-            row["evicted_objects"] = str(total_res[ns]["evicted_objects"])
-            row["expired_objects"] = str(total_res[ns]["expired_objects"])
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(namespace_usage_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_namespace_object(stats, cluster, timestamp="", **ignore):
+    def info_namespace_object(stats, cluster, timestamp='', **ignore):
         prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Namespace Object Information%s" % (title_suffix)
-        column_names = (
-            'namespace', 'node',
-            ('_total_records', 'Total Records'),
-            ('_repl_factor', "Repl Factor"),
-            ('_objects', 'Objects (Master,Prole,Non-Replica)'),
-            ('_tombstones', 'Tombstones (Master,Prole,Non-Replica)'),
-            ('_migrates', 'Pending Migrates (tx,rx)'), ('rack-id', 'Rack ID')
-        )
+        title = 'Namespace Object Information' + title_suffix
+        sources = dict(
+            # TODO - collect cluster-name.
+            cluster_names=dict([(k, None) for k in stats.iterkeys()]),
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.iterkeys())),
+            prefixes=prefixes,
+            ns_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, sort_by=0)
-
-        t.add_data_source(
-            '_total_records',
-            Extractors.sif_extractor('_total_records'))
-
-        t.add_data_source(
-            '_repl_factor',
-            lambda data: get_value_from_dict(
-                data, ('repl-factor',
-                       'replication-factor',
-                       'effective_replication_factor')  # introduced post 3.15.0.1
-            ))
-
-        t.add_data_source_tuple(
-            '_objects',
-            Extractors.sif_extractor(('master-objects', 'master_objects')),
-            Extractors.sif_extractor(('prole-objects', 'prole_objects')),
-            Extractors.sif_extractor(('non_replica_objects'))
-        )
-
-        t.add_data_source_tuple(
-            '_tombstones',
-            Extractors.sif_extractor(('master_tombstones')),
-            Extractors.sif_extractor(('prole_tombstones')),
-            Extractors.sif_extractor(('non_replica_tombstones'))
-        )
-
-        t.add_data_source_tuple(
-            '_migrates',
-            Extractors.sif_extractor(('migrate_tx_partitions_remaining',
-                                      'migrate-tx-partitions-remaining')),
-            Extractors.sif_extractor(('migrate_rx_partitions_remaining',
-                                      'migrate-rx-partitions-remaining')))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_total_records', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_objects', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_tombstones', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_migrates', lambda data: data['node'] is " ", color=terminal.fg_blue)
-
-        total_res = {}
-
-        # Need to maintain Node column ascending order per namespace.
-        # If set sort_by in table, it will affect total rows.
-        # So we need to add rows as Nodes ascending order. So need to sort
-        # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
-        node_column_list = [prefixes[key] for key in node_key_list]
-        sorted_node_list = [x for (y, x) in sorted(
-            zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
-
-        rack_id_available = False
-
-        for node_key in sorted_node_list:
-            n_stats = stats[node_key]
-            node = cluster.get_node(node_key)[0]
-            if isinstance(n_stats, Exception):
-                t.insert_row(
-                    {'real_node_id': node.node_id, 'node': prefixes[node_key]})
-                continue
-
-            for ns, ns_stats in n_stats.iteritems():
-                if isinstance(ns_stats, Exception):
-                    row = {}
-                else:
-                    row = ns_stats
-                    ns_stats['_total_records'] = 0
-
-                if ns not in total_res:
-                    total_res[ns] = {}
-                    total_res[ns]["_total_records"] = 0
-                    total_res[ns]["master_objects"] = 0
-                    total_res[ns]["master_tombstones"] = 0
-                    total_res[ns]["prole_objects"] = 0
-                    total_res[ns]["prole_tombstones"] = 0
-                    total_res[ns]["non_replica_objects"] = 0
-                    total_res[ns]["non_replica_tombstones"] = 0
-                    total_res[ns]["migrate_tx_partitions_remaining"] = 0
-                    total_res[ns]["migrate_rx_partitions_remaining"] = 0
-
-                if "rack-id" in row:
-                    rack_id_available = True
-
-                try:
-                    value = get_value_from_dict(
-                        ns_stats, ('master-objects', 'master_objects'), return_type=int)
-                    total_res[ns]["master_objects"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(ns_stats, ('master_tombstones'), return_type=int)
-                    total_res[ns]["master_tombstones"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(
-                        ns_stats, ('prole-objects', 'prole_objects'), return_type=int)
-                    total_res[ns]["prole_objects"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(ns_stats, ('prole_tombstones'), return_type=int)
-                    total_res[ns]["prole_tombstones"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(
-                        ns_stats, ('non_replica_objects'), return_type=int)
-                    total_res[ns]["non_replica_objects"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(ns_stats, ('non_replica_tombstones'), return_type=int)
-                    total_res[ns]["non_replica_tombstones"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["migrate_tx_partitions_remaining"] += get_value_from_dict(
-                        ns_stats, ('migrate-tx-partitions-remaining',
-                                   'migrate_tx_partitions_remaining'), return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["migrate_rx_partitions_remaining"] += get_value_from_dict(
-                        ns_stats, ('migrate-rx-partitions-remaining',
-                                   'migrate_rx_partitions_remaining'), return_type=int)
-                except Exception:
-                    pass
-
-                if not isinstance(ns_stats, Exception):
-                    total_res[ns]['_total_records'] += ns_stats['_total_records']
-
-                row['namespace'] = ns
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                t.insert_row(row)
-
-        for ns in total_res:
-            row = {}
-            row['node'] = " "
-
-            row['namespace'] = ns
-            row["_total_records"] = str(total_res[ns]["_total_records"])
-            row["repl-factor"] = " "
-            row["master_objects"] = str(total_res[ns]["master_objects"])
-            row["master_tombstones"] = str(total_res[ns]["master_tombstones"])
-            row["prole_objects"] = str(total_res[ns]["prole_objects"])
-            row["prole_tombstones"] = str(total_res[ns]["prole_tombstones"])
-            row["non_replica_objects"] = str(total_res[ns]["non_replica_objects"])
-            row["non_replica_tombstones"] = str(total_res[ns]["non_replica_tombstones"])
-            row["migrate_tx_partitions_remaining"] = str(
-                total_res[ns]["migrate_tx_partitions_remaining"])
-            row["migrate_rx_partitions_remaining"] = str(
-                total_res[ns]["migrate_rx_partitions_remaining"])
-
-            if rack_id_available:
-                row["rack-id"] = " "
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(namespace_object_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_set(stats, cluster, timestamp="", **ignore):
+    def info_set(stats, cluster, timestamp='', **ignore):
         prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Set Information%s" % (title_suffix)
-        column_names = ('set', 'namespace', 'node', ('_set-delete', 'Set Delete'), ('_n-bytes-memory', 'Mem Used'), ('_n_objects', 'Objects'), 'stop-writes-count', 'disable-eviction', 'set-enable-xdr'
-                        )
+        title = 'Set Information%s' + title_suffix
+        sources = dict(
+            # TODO - collect cluster-name.
+            cluster_names=dict([(k, None) for k in stats.iterkeys()]),
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.iterkeys())),
+            prefixes=prefixes,
+            set_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, sort_by=1, group_by=0)
-        t.add_data_source(
-            '_n-bytes-memory', Extractors.byte_extractor(('n-bytes-memory', 'memory_data_bytes')))
-        t.add_data_source(
-            '_n_objects', Extractors.sif_extractor(('n_objects', 'objects')))
-
-        t.add_data_source(
-            '_set-delete', lambda data: get_value_from_dict(data, ('set-delete', 'deleting')))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        t.add_cell_alert(
-            'set', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_n-bytes-memory', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_n_objects', lambda data: data['node'] is " ", color=terminal.fg_blue)
-
-        total_res = {}
-
-        # Need to maintain Node column ascending order per <set,namespace>. If set sort_by in table, it will affect total rows.
-        # So we need to add rows as Nodes ascending order. So need to sort
-        # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
-        node_column_list = [prefixes[key] for key in node_key_list]
-        sorted_node_list = [x for (y, x) in sorted(
-            zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
-
-        for node_key in sorted_node_list:
-            s_stats = stats[node_key]
-            node = cluster.get_node(node_key)[0]
-            if isinstance(s_stats, Exception):
-                t.insert_row(
-                    {'real_node_id': node.node_id, 'node': prefixes[node_key]})
-                continue
-
-            for (ns, set), set_stats in s_stats.iteritems():
-                if isinstance(set_stats, Exception):
-                    row = {}
-                else:
-                    row = set_stats
-
-                if (ns, set) not in total_res:
-                    total_res[(ns, set)] = {}
-                    total_res[(ns, set)]["n-bytes-memory"] = 0
-                    total_res[(ns, set)]["n_objects"] = 0
-                try:
-                    total_res[(ns, set)]["n-bytes-memory"] += get_value_from_dict(
-                        set_stats, ('n-bytes-memory', 'memory_data_bytes'), 0, int)
-                except Exception:
-                    pass
-                try:
-                    total_res[(ns, set)][
-                        "n_objects"] += get_value_from_dict(set_stats, ('n_objects', 'objects'), 0, int)
-                except Exception:
-                    pass
-
-                row['set'] = set
-                row['namespace'] = ns
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                t.insert_row(row)
-
-        for (ns, set) in total_res:
-            row = {}
-            row['set'] = set
-            row['namespace'] = ns
-            row['node'] = " "
-            row['set-delete'] = " "
-            row['stop-writes-count'] = " "
-            row['disable-eviction'] = " "
-            row['set-enable-xdr'] = " "
-
-            row['n-bytes-memory'] = str(total_res[(ns, set)]["n-bytes-memory"])
-            row["n_objects"] = str(total_res[(ns, set)]["n_objects"])
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(set_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
-        if not max(xdr_enable.itervalues()):
+    def info_XDR(stats, builds, xdr_enable, cluster, timestamp='', **ignore):
+        if not any(xdr_enable.itervalues()):
             return
 
         prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "XDR Information%s" % (title_suffix)
-        column_names = ('node', 'build', ('_bytes-shipped', 'Data Shipped'), '_free-dlog-pct', ('_lag-secs', 'Lag (sec)'), '_req-outstanding',
-                        '_req-shipped-success', '_req-shipped-errors', ('_cur_throughput', 'Cur Throughput'), ('_latency_avg_ship', 'Avg Latency (ms)'), '_xdr-uptime')
+        title = 'XDR Information' + title_suffix
+        sources = dict(
+            xdr_enable=xdr_enable,
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.iterkeys())),
+            prefixes=prefixes,
+            builds=builds,
+            xdr_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, group_by=1)
-
-        t.add_data_source('_xdr-uptime', Extractors.time_extractor(
-            ('xdr-uptime', 'xdr_uptime')))
-
-        t.add_data_source('_bytes-shipped',
-                          Extractors.byte_extractor(
-                              ('esmt-bytes-shipped', 'esmt_bytes_shipped', 'xdr_ship_bytes')))
-
-        t.add_data_source('_lag-secs',
-                          Extractors.time_extractor('xdr_timelag'))
-
-        t.add_data_source('_req-outstanding',
-                          Extractors.sif_extractor(('stat_recs_outstanding', 'xdr_ship_outstanding_objects')))
-
-        t.add_data_source('_req-shipped-errors',
-                          Extractors.sif_extractor('stat_recs_ship_errors'))
-
-        t.add_data_source('_req-shipped-success',
-                          Extractors.sif_extractor(('stat_recs_shipped_ok', 'xdr_ship_success')))
-
-        t.add_data_source('_cur_throughput',
-                          lambda data: get_value_from_dict(data, ('cur_throughput', 'xdr_throughput')))
-
-        t.add_data_source('_latency_avg_ship',
-                          lambda data: get_value_from_dict(data, ('latency_avg_ship', 'xdr_ship_latency_avg')))
-
-        # Highlight red if lag is more than 30 seconds
-        t.add_cell_alert(
-            '_lag-secs', lambda data: int(data['xdr_timelag']) >= 300)
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        row = None
-        for node_key, row in stats.iteritems():
-            if isinstance(row, Exception):
-                row = {}
-
-            node = cluster.get_node(node_key)[0]
-            if xdr_enable[node_key]:
-                if row:
-                    row['build'] = builds[node_key]
-                    set_value_in_dict(
-                        row, '_free-dlog-pct', get_value_from_dict(row, ('free_dlog_pct', 'free-dlog-pct', 'dlog_free_pct')))
-                    if row['_free-dlog-pct'].endswith("%"):
-                        row['_free-dlog-pct'] = row['_free-dlog-pct'][:-1]
-
-                    set_value_in_dict(row, 'xdr_timelag', get_value_from_dict(
-                        row, ('xdr_timelag', 'timediff_lastship_cur_secs')))
-                    if not get_value_from_dict(row, ('stat_recs_shipped_ok', 'xdr_ship_success')):
-                        set_value_in_dict(row, 'stat_recs_shipped_ok', str(int(get_value_from_dict(row, ('stat_recs_shipped', 'stat-recs-shipped'), 0))
-                                                                           -
-                                                                           int(get_value_from_dict(
-                                                                               row, ('err_ship_client', 'err-ship-client'), 0))
-                                                                           - int(get_value_from_dict(row, ('err_ship_server', 'err-ship-server'), 0))))
-                    set_value_in_dict(row, 'stat_recs_ship_errors', str(int(get_value_from_dict(row, ('err_ship_client', 'err-ship-client', 'xdr_ship_source_error'), 0))
-                                                                        + int(get_value_from_dict(row, ('err_ship_server', 'err-ship-server', 'xdr_ship_destination_error'), 0))))
-                else:
-                    row = {}
-                    row['node-id'] = node.node_id
-                row['real_node_id'] = node.node_id
-            else:
-                continue
-
-            row['node'] = prefixes[node_key]
-
-            t.insert_row(row)
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(xdr_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_dc(stats, cluster, timestamp="", **ignore):
+    def info_dc(stats, cluster, timestamp='', **ignore):
         prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "DC Information%s" % (title_suffix)
-        column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'), ('_xdr_dc_size', 'DC size'),
-                        'namespaces',('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'),
-                        ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
-                        )
+        title = 'DC Information%s' % (title_suffix)
+        sources = dict(
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.iterkeys())),
+            prefixes=prefixes,
+            dc_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, group_by=1)
-
-        t.add_data_source(
-            '_dc-name', lambda data: get_value_from_dict(data, ('dc-name', 'DC_Name')))
-
-        t.add_data_source('_xdr_dc_size', lambda data: get_value_from_dict(
-            data, ('xdr_dc_size', 'dc_size', 'dc_as_size', 'dc_http_good_locations')))
-
-        t.add_data_source(
-            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
-
-        t.add_data_source('_xdr_dc_remote_ship_ok', lambda data: get_value_from_dict(
-            data, ('xdr_dc_remote_ship_ok', 'dc_remote_ship_ok', 'dc_recs_shipped_ok', 'dc_ship_success')))
-
-        t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
-            data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
-
-        t.add_data_source('_xdr-dc-state', lambda data:
-                          get_value_from_dict(data, ('xdr_dc_state', 'xdr-dc-state', 'dc_state')))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        row = None
-        for node_key, dc_stats in stats.iteritems():
-            if isinstance(dc_stats, Exception):
-                dc_stats = {}
-            node = cluster.get_node(node_key)[0]
-            for dc, row in dc_stats.iteritems():
-                if isinstance(row, Exception):
-                    row = {}
-                if row:
-                    row['real_node_id'] = node.node_id
-                    row['node'] = prefixes[node_key]
-                    t.insert_row(row)
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(xdr_dc_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_sindex(stats, cluster, timestamp="", **ignore):
+    def info_sindex(stats, cluster, timestamp='', **ignore):
+        # return if sindex stats are empty.
+        if not stats:
+            return
+
+        # stats comes in {index:{node:{k:v}}}, needs to be {node:{index:{k:v}}}
+        sindex_stats = {}
+
+        for iname, nodes in stats.iteritems():
+            for node, values in nodes.iteritems():
+                sindex_stats[node] = node_stats = sindex_stats.get(node, {})
+                node_stats[iname] = values
+
         prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
-
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Secondary Index Information%s" % (title_suffix)
-        column_names = ('node', ('indexname', 'Index Name'), ('indextype', 'Index Type'), ('ns', 'Namespace'), 'set', ('_bins', 'Bins'), ('_num_bins', 'Num Bins'), ('type', 'Bin Type'),
-                        'state', 'sync_state', 'keys', 'entries', 'si_accounted_memory', ('_query_reqs', 'q'), ('_stat_write_success', 'w'), ('_stat_delete_success', 'd'), ('_query_avg_rec_count', 's'))
+        title = 'Secondary Index Information' + title_suffix
+        sources = dict(
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.iterkeys())),
+            prefixes=prefixes,
+            sindex_stats=sindex_stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, group_by=1, sort_by=2)
-        t.add_data_source(
-            '_bins', lambda data: get_value_from_dict(data, ('bins', 'bin')))
-        t.add_data_source('_num_bins', lambda data: get_value_from_dict(
-            data, ('num_bins'), default_value=1))
-        t.add_data_source(
-            'entries', Extractors.sif_extractor(('entries', 'objects')))
-        t.add_data_source(
-            '_query_reqs', Extractors.sif_extractor(('query_reqs')))
-        t.add_data_source('_stat_write_success', Extractors.sif_extractor(
-            ('stat_write_success', 'write_success')))
-        t.add_data_source('_stat_delete_success', Extractors.sif_extractor(
-            ('stat_delete_success', 'delete_success')))
-        t.add_data_source(
-            '_query_avg_rec_count', Extractors.sif_extractor(('query_avg_rec_count')))
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-        for stat in stats.values():
-            for node_key, n_stats in stat.iteritems():
-                node = cluster.get_node(node_key)[0]
-                if isinstance(n_stats, Exception):
-                    row = {}
-                else:
-                    row = n_stats
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(sindex_sheet, title, sources, common=common))
 
     @staticmethod
     def show_grep(title, summary):
@@ -820,40 +680,29 @@ class CliView(object):
         CliView.print_result(summary)
 
     @staticmethod
-    def show_distribution(title, histogram, unit, hist, cluster, like=None, timestamp="", **ignore):
+    def show_distribution(title, histogram, unit, hist, cluster, like=None,
+                          timestamp="", **ignore):
         prefixes = cluster.get_node_names()
-
         likes = compile_likes(like)
-
-        columns = ["%s%%" % (n) for n in xrange(10, 110, 10)]
-        percentages = columns[:]
-        columns.insert(0, 'node')
-
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        description = "Percentage of records having %s less than or " % (hist) + \
-                      "equal to value measured in %s" % (unit)
-
+        description = 'Percentage of records having {} less than or '.format(hist) + \
+                      'equal to value measured in {}'.format(unit)
         namespaces = set(filter(likes.search, histogram.keys()))
 
         for namespace, node_data in histogram.iteritems():
             if namespace not in namespaces or not node_data or isinstance(node_data, Exception):
                 continue
 
-            t = Table("%s - %s in %s%s" % (namespace, title, unit,
-                                           title_suffix), columns, description=description)
-            for node_id, data in node_data.iteritems():
-                if not data or isinstance(data, Exception):
-                    continue
+            this_title = '{} - {} in {}{}'.format(
+                namespace, title, unit, title_suffix)
+            sources = dict(
+                prefixes=prefixes,
+                histogram=dict((k, d['percentiles']) for k, d in node_data.iteritems())
+            )
 
-                percentiles = data['percentiles']
-                row = {}
-                row['node'] = prefixes[node_id]
-                for percent in percentages:
-                    row[percent] = percentiles.pop(0)
-
-                t.insert_row(row)
-
-            CliView.print_result(t)
+            CliView.print_result(
+                sheet.render(distribution_sheet, this_title, sources,
+                             description=description))
 
     @staticmethod
     def show_object_distribution(title, histogram, unit, hist, bucket_count, set_bucket_count, cluster, like=None, timestamp="", loganalyser_mode=False, **ignore):
@@ -1082,6 +931,14 @@ class CliView(object):
             t.__str__(horizontal_title_every_nth=title_every_nth))
 
     @staticmethod
+    def show_stats(*args, **kwargs):
+        CliView.show_config(*args, **kwargs)
+
+    @staticmethod
+    def show_health(*args, **kwargs):
+        CliView.show_config(*args, **kwargs)
+
+    @staticmethod
     def show_grep_count(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
         if grep_result:
@@ -1271,23 +1128,15 @@ class CliView(object):
                 t.insert_row(row)
 
         t.ignore_sort()
-        # print t
         CliView.print_result(t.__str__(
             horizontal_title_every_nth=title_every_nth * (sub_columns_per_column + 1)))
-
-    @staticmethod
-    def show_stats(*args, **kwargs):
-        CliView.show_config(*args, **kwargs)
 
     @staticmethod
     def show_mapping(col1, col2, mapping, like=None, timestamp="", **ignore):
         if not mapping:
             return
 
-        column_names = []
-        column_names.insert(0, col2)
-        column_names.insert(0, col1)
-
+        column_names = [col1, col2]
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         t = Table("%s to %s Mapping%s" % (col1, col2, title_suffix), column_names,
                   title_format=TitleFormats.no_change, style=Styles.HORIZONTAL)
@@ -1310,8 +1159,19 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def show_health(*args, **kwargs):
-        CliView.show_config(*args, **kwargs)
+    def show_pmap(pmap_data, cluster, timestamp='', **ignore):
+        prefixes = cluster.get_node_names()
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = 'Partition Map Analysis' + title_suffix
+        sources = dict(
+            prefixes=prefixes,
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.iterkeys())),
+            pmap=pmap_data
+        )
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(sheet.render(pmap_sheet, title, sources, common=common))
 
     @staticmethod
     def asinfo(results, line_sep, show_node_name, cluster, **kwargs):
@@ -1873,71 +1733,9 @@ class CliView(object):
     @staticmethod
     def _summary_namespace_table_view(stats, **ignore):
         title = "Namespaces"
-        column_names = ('namespace', ('_devices', 'Devices (Total,Per-Node)'), ('_memory', 'Memory (Total,Used%,Avail%)'),
-                        ('_disk', 'Disk (Total,Used%,Avail%)'), ('repl_factor', 'Replication Factor'), ('cache_read_pct','Post-Write-Queue Hit-Rate'),
-                        'rack_aware', ('master_objects', 'Master Objects'),
-                        ('license_data_in_memory', 'Usage (Unique-Data) In-Memory'), ('license_data_on_disk', 'Usage (Unique-Data) On-Disk'),
-                        'compression_ratio'
-                        )
-
-
-        t = Table(title, column_names, sort_by=0)
-
-        t.add_cell_alert(
-            'namespace',
-            lambda data: data['migrations_in_progress'],
-            color=terminal.fg_red
-        )
-
-        t.add_data_source_tuple(
-            '_devices',
-            lambda data:str(data['devices_total']),
-            lambda data:str(data['devices_per_node']))
-
-        t.add_data_source_tuple(
-            '_memory',
-            Extractors.byte_extractor('memory_total'),
-            lambda data:"%.2f"%data["memory_used_pct"],
-            lambda data:"%.2f"%data["memory_available_pct"])
-
-        t.add_data_source_tuple(
-            '_disk',
-            Extractors.byte_extractor('disk_total'),
-            lambda data:"%.2f"%data["disk_used_pct"],
-            lambda data:"%.2f"%data["disk_available_pct"])
-
-        t.add_data_source(
-            'repl_factor',
-            lambda data:",".join([str(rf) for rf in data["repl_factor"]])
-        )
-
-        t.add_data_source(
-            'master_objects',
-            Extractors.sif_extractor('master_objects')
-        )
-
-        t.add_data_source(
-            'license_data_in_memory',
-            Extractors.byte_extractor('license_data_in_memory')
-        )
-
-        t.add_data_source(
-            'license_data_on_disk',
-            Extractors.byte_extractor('license_data_on_disk')
-        )
-
-        for ns, ns_stats in stats.iteritems():
-            if isinstance(ns_stats, Exception):
-                row = {}
-            else:
-                row = ns_stats
-
-            row['namespace'] = ns
-            row['memory_used_pct'] = 100.00 - row['memory_available_pct']
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        sources = dict(ns_stats=stats)
+        CliView.print_result(
+            sheet.render(summary_namespace_sheet, title, sources))
 
     @staticmethod
     def _summary_namespace_list_view(stats, **ignore):
@@ -2052,32 +1850,3 @@ class CliView(object):
 
         else:
             CliView._summary_namespace_table_view(summary["FEATURES"]["NAMESPACE"])
-
-    @staticmethod
-    def show_pmap(pmap_data, cluster, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Partition Map Analysis%s"%(title_suffix)
-        column_names = (('cluster_key', 'Cluster Key'),
-                        'namespace',
-                        'node',
-                        ('_primary_partitions', 'Primary Partitions'),
-                        ('_secondary_partitions', 'Secondary Partitions'),
-                        ('dead_partitions', 'Dead Partitions'),
-                        ('unavailable_partitions', 'Unavailable Partitions'),
-                        )
-        t = Table(title, column_names, group_by=0, sort_by=1)
-
-        for node_key, n_stats in pmap_data.iteritems():
-
-            for ns, ns_stats in n_stats.iteritems():
-                row = ns_stats
-                row['node'] = prefixes[node_key]
-                row['namespace'] = ns
-                row['_primary_partitions'] = ns_stats['master_partition_count']
-                row['_secondary_partitions'] = ns_stats['prole_partition_count']
-
-                t.insert_row(row)
-
-        CliView.print_result(t)
