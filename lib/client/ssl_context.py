@@ -337,11 +337,11 @@ class SSLContext(object):
             raise ImportError("No module named pyasn1. It is required for dnsname_match.")
 
         if len(cnnames) > 1:
-            raise Exception("tls_name %r doesn't match either of %s" % (
-                tls_name, ', '.join(map(repr, cnnames))))
+            raise Exception("Wrong tls_name %r" % tls_name)
+
         elif len(cnnames) == 1:
-            raise Exception("tls_name %r doesn't match %r" %
-                            (tls_name, list(cnnames)[0]))
+            raise Exception("Wrong tls_name %r" % tls_name)
+
         else:
             raise Exception(
                 "no appropriate commonName or subjectAltName fields were found")

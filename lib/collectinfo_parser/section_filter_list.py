@@ -820,7 +820,7 @@ AS_SECTION_NAME_LIST = ['statistics', 'statistics.dc',
 # Other Available sections  ['latency', 'sindex_info', 'features']
 
 SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo',
-                         'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']
+                         'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr', 'dmesg']
 # Meta data have all meta info (asd_build, xdr_build, cluster_name)
 DERIVED_SECTION_LIST = ['features']
 

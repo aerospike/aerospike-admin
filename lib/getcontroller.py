@@ -406,33 +406,30 @@ class GetPmapController():
     def _get_namespace_data(self, namespace_stats, cluster_keys):
         ns_info = {}
 
+        # stats to fetch
+        stats = ["dead_partitions", "unavailable_partitions"]
+
         for ns, nodes in namespace_stats.items():
-            repl_factor = {}
 
             for node, params in nodes.items():
                 if isinstance(params, Exception):
                     continue
-                if cluster_keys[node] not in repl_factor:
-                    repl_factor[cluster_keys[node]] = 0
 
-                repl_factor[cluster_keys[node]] = max(
-                    repl_factor[cluster_keys[node]],
-                    util.get_value_from_dict(
-                        params,
-                        ('repl-factor',
-                         'replication-factor',
-                         'effective_replication_factor'),  # introduced post 3.15.0.1
-                        default_value=0,
-                        return_type=int
-                    ))
+                if cluster_keys[node] not in ns_info:
+                    ns_info[cluster_keys[node]] = {}
 
-            for ck in repl_factor:
-                if ck not in ns_info:
-                    ns_info[ck] = {}
-                if ns not in ns_info[ck]:
-                    ns_info[ck][ns] = {}
+                d = ns_info[cluster_keys[node]]
+                if ns not in d:
+                    d[ns] = {}
 
-                ns_info[ck][ns]['repl_factor'] = repl_factor[ck]
+                d = d[ns]
+                if node not in d:
+                    d[node] = {}
+
+                for s in stats:
+                    util.set_value_in_dict(d[node], s,
+                                           util.get_value_from_dict(params, (s,))
+                                           )
 
         return ns_info
 
@@ -547,16 +544,18 @@ class GetPmapController():
                         # Working master (Acting master)
                         node_pmap[ns]['master_partition_count'] += 1
 
-                if state == 'S' or state == 'D':
-                    ns_available_part[ck][ns]['available_partition_count'] += 1
-
             pmap_data[_node] = node_pmap
 
         for _node, _ns_data in pmap_data.items():
             ck = cluster_keys[_node]
             for ns, params in _ns_data.items():
-                params['missing_partition_count'] = (pid_range * ns_info[ck][ns]['repl_factor']) - ns_available_part[ck][ns]['available_partition_count']
                 params['cluster_key'] = ck
+
+                try:
+                    params.update(ns_info[ck][ns][_node])
+
+                except Exception as e:
+                    pass
 
         return pmap_data
 

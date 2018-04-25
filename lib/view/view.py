@@ -2017,25 +2017,25 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Partition Map Analysis%s"%(title_suffix)
-        column_names = (('_cluster_key', 'Cluster Key'),
+        column_names = (('cluster_key', 'Cluster Key'),
                         'namespace',
                         'node',
                         ('_primary_partitions', 'Primary Partitions'),
                         ('_secondary_partitions', 'Secondary Partitions'),
-                        ('_missing_partitions', 'Missing Partitions'),
+                        ('dead_partitions', 'Dead Partitions'),
+                        ('unavailable_partitions', 'Unavailable Partitions'),
                         )
         t = Table(title, column_names, group_by=0, sort_by=1)
 
         for node_key, n_stats in pmap_data.iteritems():
-            row = {}
-            row['node'] = prefixes[node_key]
 
             for ns, ns_stats in n_stats.iteritems():
+                row = ns_stats
+                row['node'] = prefixes[node_key]
                 row['namespace'] = ns
                 row['_primary_partitions'] = ns_stats['master_partition_count']
                 row['_secondary_partitions'] = ns_stats['prole_partition_count']
-                row['_missing_partitions'] = ns_stats['missing_partition_count']
-                row['_cluster_key'] = ns_stats['cluster_key']
+
                 t.insert_row(row)
 
         CliView.print_result(t)

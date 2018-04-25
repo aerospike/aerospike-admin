@@ -220,9 +220,10 @@ def parse_queries(file, delimiter=";", is_file=True):
 
 
 def set_value_in_dict(d, key, value):
-    if (not d or not key or (not value and value != 0 and value != False)
+    if (d is None or not isinstance(d, dict) or not key or (not value and value != 0 and value != False)
             or isinstance(value, Exception)):
         return
+
     d[key] = value
 
 

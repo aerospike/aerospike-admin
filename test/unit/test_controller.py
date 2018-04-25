@@ -128,7 +128,7 @@ class ShowPmapControllerTest(unittest.TestCase):
         cluster.info_namespaces = Mock()
         cluster.info_namespaces.return_value = {'10.71.71.169:3000': ['test']}
         cluster.info_namespace_statistics = Mock()
-        cluster.info_namespace_statistics.return_value = {'10.71.71.169:3000': {'repl-factor': '2'}}
+        cluster.info_namespace_statistics.return_value = {'10.71.71.169:3000': {'dead_partitions': '2000', 'unavailable_partitions':'0'}}
         cluster.info = Mock()
         cluster.info.side_effect = self.mock_info_call
         self.controller = GetPmapController(cluster)
@@ -144,8 +144,9 @@ class ShowPmapControllerTest(unittest.TestCase):
         expected_output['10.71.71.169:3000']['test'] = {}
         expected_output['10.71.71.169:3000']['test']['cluster_key'] = 'ck'
         expected_output['10.71.71.169:3000']['test']['master_partition_count'] = 3
-        expected_output['10.71.71.169:3000']['test']['missing_partition_count'] = 8188
         expected_output['10.71.71.169:3000']['test']['prole_partition_count'] = 1
+        expected_output['10.71.71.169:3000']['test']['dead_partitions'] = '2000'
+        expected_output['10.71.71.169:3000']['test']['unavailable_partitions'] = '0'
         actual_output = self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
 
@@ -159,8 +160,9 @@ class ShowPmapControllerTest(unittest.TestCase):
         expected_output['10.71.71.169:3000']['test'] = {}
         expected_output['10.71.71.169:3000']['test']['cluster_key'] = 'ck'
         expected_output['10.71.71.169:3000']['test']['master_partition_count'] = 3
-        expected_output['10.71.71.169:3000']['test']['missing_partition_count'] = 8186
         expected_output['10.71.71.169:3000']['test']['prole_partition_count'] = 3
+        expected_output['10.71.71.169:3000']['test']['dead_partitions'] = '2000'
+        expected_output['10.71.71.169:3000']['test']['unavailable_partitions'] = '0'
         actual_output = self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
 
@@ -175,8 +177,9 @@ class ShowPmapControllerTest(unittest.TestCase):
         expected_output['10.71.71.169:3000']['test'] = {}
         expected_output['10.71.71.169:3000']['test']['cluster_key'] = 'ck'
         expected_output['10.71.71.169:3000']['test']['master_partition_count'] = 1
-        expected_output['10.71.71.169:3000']['test']['missing_partition_count'] = 8186
         expected_output['10.71.71.169:3000']['test']['prole_partition_count'] = 5
+        expected_output['10.71.71.169:3000']['test']['dead_partitions'] = '2000'
+        expected_output['10.71.71.169:3000']['test']['unavailable_partitions'] = '0'
         actual_output = self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
 
