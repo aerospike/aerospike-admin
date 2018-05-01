@@ -219,7 +219,7 @@ def h_eval(data):
     else:
         try:
             if isinstance(data, unicode):
-                data = str(data)
+                data = str(data.encode('utf-8'))
 
             if isinstance(data, str):
                 if data.endswith("%"):

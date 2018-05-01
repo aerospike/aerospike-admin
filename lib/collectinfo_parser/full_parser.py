@@ -329,7 +329,7 @@ def _stringify(input):
         return [_stringify(element) for element in input]
 
     elif isinstance(input, unicode):
-        return str(input)
+        return str(input.encode('utf-8'))
 
     else:
         return input
@@ -554,10 +554,24 @@ def _add_missing_original_config_data(parsed_conf_map, parsed_map, timestamps, n
 
     _merge_nodelevel_map_to_mainmap(parsed_map, parsed_conf_map, timestamps, node_ip_mapping, ["as_stat", "original_config"])
 
+def _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_ip_mapping, ignore_exception):
+    """
+    Add missing system dmesg data into parsed_map.
+
+    """
+    if not sys_map or "dmesg" not in sys_map:
+        return
+
+    dmesg_map = {}
+    dmesg_map[node] = {}
+    dmesg_map[node]["dmesg"] = sys_map["dmesg"]
+    _merge_nodelevel_map_to_mainmap(parsed_map, dmesg_map, timestamps, node_ip_mapping, ["sys_stat"])
+
 # Format: [version, key to identify version changes, parent keys of key till node]
 new_additional_field_pointers = [
     [1, "node_id", ["as_stat", "meta_data"]],
-    [2, "latency", ["as_stat"]],
+    [2, "dmesg", ["sys_stat"]],
+    [3, "latency", ["as_stat"]],
 ]
 
 def _find_missing_data_version(cinfo_map):
@@ -630,4 +644,7 @@ def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missi
         _add_missing_endpoints_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
 
     if missing_version <= 2:
+        _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_to_ip_mapping, ignore_exception)
+
+    if missing_version <= 3:
         _add_missing_latency_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)

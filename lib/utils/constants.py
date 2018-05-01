@@ -53,3 +53,34 @@ JSON_FILE = 3
 
 COLLECTINFO_SEPRATOR = "\n====ASCOLLECTINFO====\n"
 COLLECTINFO_PROGRESS_MSG = "Data collection for %s%s  in progress.."
+
+
+class Enumeration(set):
+    def __getattr__(self, name):
+        if name in self:
+            return name
+        raise AttributeError
+
+    def __getitem__(self, name):
+        if name in self:
+            return name
+        raise AttributeError
+
+AuthMode = Enumeration([
+    # Use internal authentication only.  Hashed password is stored on the server.
+	# Do not send clear password. This is the default.
+
+	"INTERNAL",
+
+    # Use external authentication (like LDAP).  Specific external authentication is
+	# configured on server.  If TLS defined, send clear password on node login via TLS.
+	# Throw exception if TLS is not defined.
+
+	"EXTERNAL",
+
+    # Use external authentication (like LDAP).  Specific external authentication is
+	# configured on server.  Send clear password on node login whether or not TLS is defined.
+	# This mode should only be used for testing purposes because it is not secure authentication.
+
+	"EXTERNAL_INSECURE",
+])

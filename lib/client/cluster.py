@@ -20,6 +20,7 @@ from time import time
 from lib.client import util
 from lib.client.node import Node
 from lib.utils import util as commonutil
+from lib.utils.constants import AuthMode
 from lib.utils.lookupdict import LookupDict
 
 
@@ -35,7 +36,8 @@ class Cluster(object):
     use_services_alt = False
     crawl_lock = threading.Lock()
 
-    def __init__(self, seed_nodes, user=None, password=None, use_services_alumni=False, use_services_alt=False,
+    def __init__(self, seed_nodes, user=None, password=None, auth_mode=AuthMode.INTERNAL,
+                 use_services_alumni=False, use_services_alt=False,
                  ssl_context=None, only_connect_seed=False, timeout=5):
         """
         Want to be able to support multiple nodes on one box (for testing)
@@ -50,6 +52,8 @@ class Cluster(object):
 
         self.user = user
         self.password = password
+        self.auth_mode = auth_mode
+
         Cluster.use_services_alumni = use_services_alumni
         Cluster.use_services_alt = use_services_alt
 
@@ -349,7 +353,7 @@ class Cluster(object):
 
             # if not existing:
             new_node = Node(addr, port, tls_name=tls_name, timeout=self._timeout,
-                            user=self.user, password=self.password,
+                            user=self.user, password=self.password, auth_mode=self.auth_mode,
                             consider_alumni=Cluster.use_services_alumni,
                             use_services_alt=Cluster.use_services_alt,
                             ssl_context=self.ssl_context)

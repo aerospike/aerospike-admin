@@ -29,7 +29,7 @@ try:
 except ImportError:
     HAVE_JSONSCHEMA = False
 
-from lib.utils.constants import ADMIN_HOME
+from lib.utils.constants import ADMIN_HOME, AuthMode
 
 class _Namespace(object):
   def __init__(self, adict):
@@ -43,6 +43,7 @@ _confdefault = {
         "port": 3000,
         "user": None,
         "password": "prompt",
+        "auth": AuthMode.INTERNAL,
         "tls-enable":  False,
         "tls-cafile": "",
         "tls-capath": "",
@@ -128,6 +129,7 @@ _confspec = '''{
                 "port" : {"type" : "integer"},
                 "user" : { "type" : "string" },
                 "password" : { "type" : "string" },
+                "auth" : { "type" : "string" },
                 "tls-enable" : { "type" : "boolean" },
                 "tls-cipher-suite" : { "type" : "string" },
                 "tls-crl-check" : { "type" : "boolean" },
@@ -189,33 +191,30 @@ def decode(v):
     else:
         return v
 
-def _flatten(conf_dict, instance):
+def _flatten(conf_dict, instance=None):
     # _flatten global and asadm specific property
     # change all string key and value into utf-8
 
-    # fill with default
     asadm_conf = {}
-    for k,v in conf_dict["asadm"].iteritems():
-        asadm_conf[decode(k.replace("-", "_"))] = decode(v)
-    for k,v in conf_dict["cluster"].iteritems():
-        asadm_conf[decode(k.replace("-", "_"))] = decode(v)
 
-    if instance is None:
-        return asadm_conf
-
-    # Overlay instance setion
     sections = []
 
-    sections.append("cluster_"+str(instance))
-
-    mymod = "asadm_"+str(instance)
-    if mymod in conf_dict.keys():
-       sections.append(mymod)
+    if instance is None:
+        sections.append("asadm")
+        sections.append("cluster")
+    else:
+        sections.append("cluster_"+str(instance))
+        i = "asadm_"+str(instance)
+        if i in conf_dict:
+            sections.append(i)
+        else:
+            sections.append("asadm")
 
     for section in sections:
         if section in conf_dict.keys():
             for k,v in conf_dict[section].iteritems():
                 asadm_conf[decode(k.replace("-", "_"))] = decode(v)
+
     return asadm_conf
 
 
@@ -298,75 +297,88 @@ def _getseeds(conf):
 
 
 def loadconfig(cli_args, logger):
-
-    #print json.dumps(vars(cli_args), indent=4)
-
     # order of loading is
     #
     # Default
-    conf_dict = _getdefault(logger)
+    default_conf_dict = _getdefault(logger)
+
 
     if cli_args.no_config_file and cli_args.only_config_file:
         print "--no-config-file and only-config-file are mutually exclusive option. Please enable only one."
         exit(1)
 
-    # Load only config file.
-    if cli_args.only_config_file is not None:
-        f = cli_args.only_config_file
-        conffiles = []
+    conf_dict = {}
+    conffiles = []
 
-        if os.path.exists(f):
-            try:
-                _merge(conf_dict, _loadfile(f, logger))
-                conffiles.append(f)
-            except Exception as e:
-                # Bail out of the primary file has parsing error.
-                logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
-        else:
-            logger.warning("Config file read error : " + str(f) + " " + "No such file")
+    if cli_args.only_config_file is not None or not cli_args.no_config_file:
+        # need to load config file
 
-    # Read config file if no-config-file is not specified
-    # is specified
-    elif not cli_args.no_config_file:
-       # -> /etc/aerospike/astools.conf
-        # -> ./aerospike/astools.conf
-        # -> user specified conf file
-        conffiles = ["/etc/aerospike/astools.conf", ADMIN_HOME + "astools.conf"]
-        if cli_args.config_file:
-            if os.path.exists(cli_args.config_file):
-                conffiles.append(cli_args.config_file)
+        if not HAVE_TOML:
+            logger.warning("No module named toml. Skipping Config file read.")
+
+        elif not HAVE_JSONSCHEMA:
+            logger.warning("No module named jsonschema. Skipping Config file read.")
+
+        elif cli_args.only_config_file is not None:
+            # Load only config file.
+            f = cli_args.only_config_file
+
+            if os.path.exists(f):
+                try:
+                    _merge(conf_dict, _loadfile(f, logger))
+                    conffiles.append(f)
+                except Exception as e:
+                    # Bail out of the primary file has parsing error.
+                    logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
             else:
-                logger.warning("Config file read error : " + str(cli_args.config_file) + " " + "No such file")
+                logger.warning("Config file read error : " + str(f) + " " + "No such file")
 
-        for f in conffiles:
-            try:
-                _merge(conf_dict, _loadfile(f, logger))
-            except Exception as e:
-                # Bail out of the primary file has parsing error.
-                logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
+        elif not cli_args.no_config_file:
+            # Read config file if no-config-file is not specified
+            # -> /etc/aerospike/astools.conf
+            # -> ./aerospike/astools.conf
+            # -> user specified conf file
+            conffiles = ["/etc/aerospike/astools.conf", ADMIN_HOME + "astools.conf"]
+            if cli_args.config_file:
+                if os.path.exists(cli_args.config_file):
+                    conffiles.append(cli_args.config_file)
+                else:
+                    logger.warning("Config file read error : " + str(cli_args.config_file) + " " + "No such file")
 
-    asadm_dict = _flatten(conf_dict, cli_args.instance)
+            for f in conffiles:
+                try:
+                    _merge(conf_dict, _loadfile(f, logger))
+                except Exception as e:
+                    # Bail out of the primary file has parsing error.
+                    logger.critical("Config file parse error: " + str(f) + " " + str(e).split("\n")[0])
+
+    asadm_dict = _flatten(default_conf_dict)
+    _merge(asadm_dict, _flatten(conf_dict, cli_args.instance))
 
     # -> Command line
     cli_dict = vars(cli_args)
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
 
+    try:
+        asadm_dict["auth"] = AuthMode[asadm_dict["auth"].upper()]
+    except Exception:
+        logger.critical("Wrong authentication mode: " + str(asadm_dict["auth"]))
+
     # Find seed nods
     seeds = _getseeds(asadm_dict)
     args = _Namespace(asadm_dict)
 
     # debug
-    #print json.dumps(vars(args), indent=4)
-    #print seeds
+    # print json.dumps(vars(args), indent=4)
+    # print seeds
 
-    # print
     if not cli_args.asinfo_mode:
         if cli_args.instance:
             print("Instance:    " + cli_args.instance )
         print("Seed:        " + str(seeds))
 
-        if cli_args.no_config_file:
+        if cli_args.no_config_file or not conffiles:
             print("Config_file: None")
         else:
             print("Config_file: " + ", ".join(reversed(conffiles)))
@@ -390,7 +402,7 @@ def print_config_help():
            "                      By default asadm connects to all nodes in cluster.")
     print (" --collectinfo        Start asadm to run against offline collectinfo files.")
     print (" --log-analyser       Start asadm in log-analyser mode and analyse data from log files.")
-    print (" -f --log-path        Path of cluster collectinfo file or directory \n"
+    print (" -f --log-path=path   Path of cluster collectinfo file or directory \n"
            "                      containing collectinfo and system info files.")
 
     print_config_file_option()
@@ -401,7 +413,7 @@ def print_config_file_option():
     print ("Configuration File Allowed Options")
     print ("----------------------------------\n")
     print ("[cluster]")
-    print (" -h HOST, --host=HOST\n"
+    print (" -h, --host=HOST\n"
            "                      HOST is \"<host1>[:<tlsname1>][:<port1>],...\" \n"
            "                      Server seed hostnames or IP addresses. The tlsname is \n"
            "                      only used when connecting with a secure TLS enabled \n"
@@ -410,40 +422,43 @@ def print_config_file_option():
            "                        host1\n"
            "                        host1:3000,host2:3000\n"
            "                        192.168.1.10:cert1:3000,192.168.1.20:cert2:3000")
-    print (" -p PORT, --port=PORT \n"
+    print (" -p, --port=PORT \n"
            "                      Server default port. Default: 3000")
-    print (" -U USER, --user=USER \n"
+    print (" -U, --user=USER \n"
            "                      User name used to authenticate with cluster. Default: none")
     print (" -P, --password\n"
            "                      Password used to authenticate with cluster. Default: none\n"
            "                      User will be prompted on command line if -P specified and no\n"
            "                      password is given.")
+    print (" --auth=AUTHENTICATION_MODE\n"
+           "                      Authentication mode. Values: " + str(list(AuthMode)) + ".\n"
+           "                      Default: " + str(AuthMode.INTERNAL))
     print (" --tls-enable         Enable TLS on connections. By default TLS is disabled.")
     # Deprecated
     # print(" --tls-encrypt-only   Disable TLS certificate verification.\n")
-    print (" --tls-cafile=TLS_CAFILE <path>\n"
+    print (" --tls-cafile=path\n"
            "                      Path to a trusted CA certificate file.")
-    print (" --tls-capath=TLS_CAPATH <path>\n"
+    print (" --tls-capath=path\n"
            "                      Path to a directory of trusted CA certificates.")
     print (" --tls-protocols=TLS_PROTOCOLS\n"
            "                      Set the TLS protocol selection criteria. This format\n"
            "                      is the same as Apache's SSLProtocol documented at http\n"
            "                      s://httpd.apache.org/docs/current/mod/mod_ssl.html#ssl\n"
-           "                      protocol . If not specified the asadm will use '-all\n"
+           "                      protocol . If not specified the asadm will use ' -all\n"
            "                      +TLSv1.2' if has support for TLSv1.2,otherwise it will\n"
-           "                      be '-all +TLSv1'.")
+           "                      be ' -all +TLSv1'.")
     print (" --tls-cipher-suite=TLS_CIPHER_SUITE\n"
            "                      Set the TLS cipher selection criteria. The format is\n"
            "                      the same as Open_sSL's Cipher List Format documented\n"
            "                      at https://www.openssl.org/docs/man1.0.1/apps/ciphers.\n"
            "                      html")
-    print (" --tls-keyfile=TLS_KEYFILE <path>\n"
+    print (" --tls-keyfile=path\n"
            "                      Path to the key for mutual authentication (if\n"
            "                      Aerospike Cluster is supporting it).")
-    print (" --tls-certfile=TLS_CERTFILE <path>\n"
+    print (" --tls-certfile=path\n"
            "                      Path to the chain file for mutual authentication (if\n"
            "                      Aerospike Cluster is supporting it).")
-    print (" --tls-cert-blacklist <path>\n"
+    print (" --tls-cert-blacklist=path\n"
            "                      Path to a certificate blacklist file. The file should\n"
            "                      contain one line for each blacklisted certificate.\n"
            "                      Each line starts with the certificate serial number\n"
@@ -461,7 +476,7 @@ def print_config_file_option():
            "                      tls_capath.")
     print ("")
     print ("[asadm]")
-    print (" -t --tls-name        Default TLS name of host to verify for TLS connection,\n"
+    print (" -t --tls-name=name   Default TLS name of host to verify for TLS connection,\n"
            "                      if not specified in host string. It is required if tls-enable\n"
            "                      is set.")
     print (" -s --services-alumni\n"
@@ -469,7 +484,7 @@ def print_config_file_option():
     print (" -a --services-alternate \n"
            "                      Enable use of services-alternate instead of services in\n"
            "                      info request during cluster tending")
-    print (" --timeout            Set timeout value in seconds to node level operations. \n"
+    print (" --timeout=value      Set timeout value in seconds to node level operations. \n"
            "                      TLS connection does not support timeout. Default: 5 seconds")
 
 def config_file_help():
@@ -480,12 +495,12 @@ def config_file_help():
           "The following options effect configuration file behavior\n")
     print (" --no-config-file\n"
            "                      Do not read any config file. Default: disabled")
-    print (" --instance <name>\n"
+    print (" --instance=name\n"
            "                      Section with these instance is read. e.g in case instance \n"
            "                      `a` is specified sections cluster_a, asadm_a is read.")
-    print (" --config-file <path>\n"
+    print (" --config-file=path\n"
            "                      Read this file after default configuration file.")
-    print (" --only-config-file <path>\n"
+    print (" --only-config-file=path\n"
            "                      Read only this configuration file.")
     print ("\n")
 
@@ -524,6 +539,7 @@ def get_cli_args():
     else:
         parser.add_option("-P", "--password", dest="password", action="store_const", const="prompt")
 
+    add_fn("--auth")
     add_fn("--tls-enable", action="store_true")
     add_fn("--tls-cafile")
     add_fn("--tls-capath")
