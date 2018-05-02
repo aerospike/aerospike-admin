@@ -29,6 +29,7 @@ all:
 	rm -f `find . -type f -name '*.pyc' | xargs`
 	mkdir $(BUILD_ROOT)tmp/asadm
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
+	cp -f requirements.txt $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
     ifeq ($(OS),Darwin)
@@ -37,13 +38,11 @@ all:
 		sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
     endif
 
-	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
-	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm_old
-	cat $(BUILD_ROOT)tmp/asadm.zip >> $(BUILD_ROOT)bin/asadm_old
-	chmod ugo+x $(BUILD_ROOT)bin/asadm_old
+	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
+	pex -v -f $(BUILD_ROOT)tmp/asadm -r requirements.txt --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
-	./create_app.sh
-	mv ./asadm.pex $(BUILD_ROOT)bin/asadm
+	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm
 	chmod ugo+x $(BUILD_ROOT)bin/asadm
 
 install:
