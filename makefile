@@ -29,7 +29,6 @@ all:
 	rm -f `find . -type f -name '*.pyc' | xargs`
 	mkdir $(BUILD_ROOT)tmp/asadm
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
-	cp -f requirements.txt $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
     ifeq ($(OS),Darwin)
