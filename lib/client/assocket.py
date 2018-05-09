@@ -37,7 +37,6 @@ class ASSocket:
         self.password = password
         self.auth_mode = auth_mode
         self.ssl_context = ssl_context
-        self.session_token = session_token
         self._timeout = timeout
 
     def _wrap_socket(self, sock, ctx):
