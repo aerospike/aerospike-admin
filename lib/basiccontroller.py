@@ -48,14 +48,14 @@ class BasicRootController(BaseController):
     cluster = None
     command = None
 
-    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], user=None,
-                 password=None, use_services_alumni=False, use_services_alt=False, ssl_context=None,
+    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], user=None, password=None, auth_mode=constants.AuthMode.INTERNAL,
+                 use_services_alumni=False, use_services_alt=False, ssl_context=None,
                  asadm_version='', only_connect_seed=False, timeout=5):
 
         super(BasicRootController, self).__init__(asadm_version)
 
         # Create static instance of cluster
-        BasicRootController.cluster = Cluster(seed_nodes, user, password,
+        BasicRootController.cluster = Cluster(seed_nodes, user, password, auth_mode,
                                               use_services_alumni, use_services_alt,
                                               ssl_context, only_connect_seed, timeout=timeout)
 

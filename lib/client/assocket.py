@@ -28,14 +28,14 @@ except ImportError:
 
 class ASSocket:
 
-    def __init__(self, ip, port, tls_name, user, password, ssl_context, session_token=None, timeout=5):
+    def __init__(self, ip, port, tls_name, user, password, auth_mode, ssl_context, timeout=5):
         self.sock = None
-
         self.ip = ip
         self.port = port
         self.tls_name = tls_name
         self.user = user
         self.password = password
+        self.auth_mode = auth_mode
         self.ssl_context = ssl_context
         self.session_token = session_token
         self._timeout = timeout
@@ -49,8 +49,7 @@ class ASSocket:
 
         return sock
 
-    def _create_socket_for_addrinfo(self, addrinfo, tls_name=None, user=None,
-                                    password=None, ssl_context=None, try_ldap_login=False):
+    def _create_socket_for_addrinfo(self, addrinfo):
         sock = None
         try:
             # sock_info format : (family, socktype, proto, canonname, sockaddr)
@@ -60,12 +59,12 @@ class ASSocket:
             sock = socket.socket(addr_family, socket.SOCK_STREAM)
             sock.settimeout(self._timeout)
 
-            sock = self._wrap_socket(sock, ssl_context)
+            sock = self._wrap_socket(sock, self.ssl_context)
             sock.connect(sock_addr)
 
-            if ssl_context:
+            if self.ssl_context:
                 try:
-                    sock.set_app_data(tls_name)
+                    sock.set_app_data(self.tls_name)
 
                     # timeout on wrapper might give errors
                     sock.setblocking(1)
@@ -78,52 +77,66 @@ class ASSocket:
                         sock = None
                     return None
 
-            if user != None:
-                if try_ldap_login:
-                    self.session_token, rc = login(sock, user, password)
-                elif self.session_token is None:
-                    # old authentication
-                    rc = authenticate_old(sock, user, password)
-                else:
-                    # new authentication with session_token
-                    rc = authenticate_new(sock, user, self.session_token)
-                    if rc != 0:
-                        # might be session_token expired
-                        self.session_token, rc = login(sock, user, password)
-
-                if rc != 0:
-                    print "Authentication failed for ", user, ": ", rc
-                    sock.close()
-                    return None
-
         except Exception:
             sock = None
             pass
+
         return sock
 
-    def _create_socket(self, host, port, tls_name=None, user=None,
-                       password=None, ssl_context=None, try_ldap_login=False):
+    def _create_socket(self):
 
         sock = None
-        for addrinfo in socket.getaddrinfo(host, port, socket.AF_UNSPEC,
+        for addrinfo in socket.getaddrinfo(self.ip, self.port, socket.AF_UNSPEC,
                                            socket.SOCK_STREAM):
             # for DNS it will try all possible addresses
             try:
-                sock = self._create_socket_for_addrinfo(addrinfo, tls_name,
-                                                        user, password, ssl_context=ssl_context,
-                                                        try_ldap_login=try_ldap_login)
+                sock = self._create_socket_for_addrinfo(addrinfo)
                 if sock:
                     break
             except Exception:
                 pass
         return sock
 
-    def connect(self, try_ldap_login=False):
+    def login(self):
+        if self.user is None:
+            return True
+
+        if not self.sock:
+            return False
+
+        rc, self.session_token, self.session_expiration = login(self.sock, self.user, self.password, self.auth_mode)
+
+        if rc != 0:
+            print "Login failed for", self.user, ":", rc
+            self.sock.close()
+            return False
+
+        return True
+
+    def authenticate(self, session_token):
+        if self.user is None:
+            return True
+
+        if not self.sock:
+            return False
+
+        if session_token is None:
+            # old authentication
+            rc = authenticate_old(self.sock, self.user, self.password)
+        else:
+            # new authentication with session_token
+            rc = authenticate_new(self.sock, self.user, session_token)
+
+        if rc != 0:
+            print "Authentication failed for", self.user, ":", rc
+            self.sock.close()
+            return False
+
+        return True
+
+    def connect(self):
         try:
-            self.sock = self._create_socket(self.ip, self.port,
-                                            tls_name=self.tls_name, user=self.user,
-                                            password=self.password,
-                                            ssl_context=self.ssl_context, try_ldap_login=try_ldap_login)
+            self.sock = self._create_socket()
 
             if not self.sock:
                 return False
@@ -164,5 +177,5 @@ class ASSocket:
     def execute(self, command):
         return info(self.sock, command)
 
-    def get_session_token(self):
-        return self.session_token
+    def get_session_info(self):
+        return self.session_token, self.session_expiration

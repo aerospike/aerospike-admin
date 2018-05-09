@@ -31,15 +31,17 @@ all:
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
-        ifeq ($(OS),Darwin)
+    ifeq ($(OS),Darwin)
 		sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
-        else
+    else
 		sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
-        endif 
+    endif
 
-	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
-	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm
-	cat $(BUILD_ROOT)tmp/asadm.zip >> $(BUILD_ROOT)bin/asadm
+	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
+	pex -v -f $(BUILD_ROOT)tmp/asadm -r requirements.txt --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+	rm $(BUILD_ROOT)tmp/asadm/*.whl
+
+	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm
 	chmod ugo+x $(BUILD_ROOT)bin/asadm
 
 install:

@@ -96,7 +96,7 @@ from lib.client.ssl_context import SSLContext
 from lib.collectinfocontroller import CollectinfoRootController
 from lib.logcontroller import LogRootController
 from lib.utils import common, util, conf
-from lib.utils.constants import ADMIN_HOME
+from lib.utils.constants import ADMIN_HOME, AuthMode
 from lib.view import terminal, view
 
 __version__ = '$$__version__$$'
@@ -110,7 +110,7 @@ MULTILEVEL_COMMANDS = ["show", "info"]
 
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, admin_version, seeds, user=None, password=None, use_services_alumni=False, use_services_alt=False,
+    def __init__(self, admin_version, seeds, user=None, password=None, auth_mode=AuthMode.INTERNAL, use_services_alumni=False, use_services_alt=False,
                  log_path="", log_analyser=False, collectinfo=False,
                  ssl_context=None, only_connect_seed=False, execute_only_mode=False, timeout=5):
 
@@ -164,8 +164,8 @@ class AerospikeShell(cmd.Cmd):
                         self.do_exit('')
                         logger.critical("Authentication failed: bcrypt not installed.")
 
-                self.ctrl = BasicRootController(seed_nodes=seeds, user=user,
-                                                password=password, use_services_alumni=use_services_alumni, use_services_alt=use_services_alt,
+                self.ctrl = BasicRootController(seed_nodes=seeds, user=user, password=password, auth_mode=auth_mode,
+                                                use_services_alumni=use_services_alumni, use_services_alt=use_services_alt,
                                                 ssl_context=ssl_context, asadm_version=admin_version,
                                                 only_connect_seed=only_connect_seed, timeout=timeout)
 
@@ -481,7 +481,7 @@ def parse_tls_input(cli_args):
         exit(1)
 
 
-def execute_asinfo_commands(commands_arg, seed, user=None, password=None, ssl_context=None, line_separator=False):
+def execute_asinfo_commands(commands_arg, seed, user=None, password=None, auth_mode=AuthMode.INTERNAL, ssl_context=None, line_separator=False):
     cmds = [None]
 
     if commands_arg:
@@ -501,10 +501,15 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, ssl_co
         if not info.hasbcrypt:
             logger.critical("Authentication failed: bcrypt not installed.")
 
-    assock = ASSocket(seed[0], seed[1], seed[2], user, password, ssl_context)
-    if not assock.connect(try_ldap_login=True):
+    assock = ASSocket(seed[0], seed[1], seed[2], user, password, auth_mode, ssl_context)
+    if not assock.connect():
         logger.critical("Not able to connect any cluster with " + str(seed) + ".")
         return
+
+    if user is not None:
+        if not assock.login():
+            logger.critical("Not able to login and authenticate any cluster with " + str(seed) + ".")
+            return
 
     node_name = "%s:%s" % (seed[0], seed[1])
 
@@ -549,26 +554,26 @@ def main():
     cli_args, seeds = conf.loadconfig(cli_args, logger)
 
     if cli_args.services_alumni and cli_args.services_alternate:
-        print "Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate."
-        exit(1)
+        logger.critical("Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate.")
 
+    if cli_args.auth == AuthMode.EXTERNAL and not cli_args.tls_enable:
+        logger.critical("TLS is required for authentication mode: EXTERNAL")
 
     ssl_context = parse_tls_input(cli_args)
 
     if cli_args.asinfo_mode:
 
         if cli_args.collectinfo or cli_args.log_analyser:
-            print "asinfo mode can not work with Collectinfo-analyser or Log-analyser mode."
-            exit(1)
+            logger.critical("asinfo mode can not work with Collectinfo-analyser or Log-analyser mode.")
 
         commands_arg = cli_args.execute
         if commands_arg and os.path.isfile(commands_arg):
             commands_arg = parse_commands(commands_arg)
 
         try:
-            execute_asinfo_commands(
-                commands_arg, seeds[0], user=cli_args.user, password=cli_args.password,
-                ssl_context=ssl_context, line_separator=cli_args.line_separator)
+            execute_asinfo_commands(commands_arg, seeds[0], user=cli_args.user,
+                                    password=cli_args.password, auth_mode=cli_args.auth,
+                                    ssl_context=ssl_context, line_separator=cli_args.line_separator)
             exit(0)
         except Exception as e:
             logger.error(e)
@@ -579,6 +584,7 @@ def main():
 
     shell = AerospikeShell(admin_version, seeds, user=cli_args.user,
                            password=cli_args.password,
+                           auth_mode=cli_args.auth,
                            use_services_alumni=cli_args.services_alumni,
                            use_services_alt=cli_args.services_alternate,
                            log_path=cli_args.log_path,

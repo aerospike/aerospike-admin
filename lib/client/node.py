@@ -18,11 +18,13 @@ import os
 import re
 import socket
 import threading
+from time import time
 
 from lib.client import util
 from lib.client.assocket import ASSocket
 from lib.collectinfo_parser import conf_parser
 from lib.collectinfo_parser.full_parser import parse_system_live_command
+from lib.utils.constants import AuthMode
 
 #### Remote Server connection module
 
@@ -77,8 +79,9 @@ class Node(object):
     dns_cache = {}
     pool_lock = threading.Lock()
 
-    def __init__(self, address, port=3000, tls_name=None, timeout=5, user=None,
-                 password=None, ssl_context=None, consider_alumni=False, use_services_alt=False):
+    def __init__(self, address, port=3000, tls_name=None, timeout=5,
+                 user=None, password=None, auth_mode=AuthMode.INTERNAL,
+                 ssl_context=None, consider_alumni=False, use_services_alt=False):
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -100,6 +103,7 @@ class Node(object):
         self._timeout = timeout
         self.user = user
         self.password = password
+        self.auth_mode = auth_mode
         self.tls_name = tls_name
         self.ssl_context = ssl_context
         if ssl_context:
@@ -111,11 +115,8 @@ class Node(object):
 
         # session token
         self.session_token = None
-        if user is None:
-            self.try_ldap_login = False
-        else:
-            # for first time node should try ldap login
-            self.try_ldap_login = True
+        self.session_expiration = 0
+        self.perform_login = True
 
         # System Details
         self.sys_ssh_port = None
@@ -186,6 +187,9 @@ class Node(object):
 
     def connect(self, address, port):
         try:
+            if not self.login():
+                raise IOError("Login Error")
+
             self.node_id = self.info_node()
             if isinstance(self.node_id, Exception):
                 # Not able to connect this address
@@ -252,6 +256,27 @@ class Node(object):
 
     def refresh_connection(self):
         self.connect(self.ip, self.port)
+
+    def login(self):
+        if self.user is None:
+            return True
+
+        if not self.perform_login and (self.session_expiration == 0 or self.session_expiration > time()):
+            return True
+
+        sock = ASSocket(self.ip, self.port, self.tls_name, self.user, self.password,
+                        self.auth_mode, self.ssl_context, timeout=self._timeout)
+        if not sock.connect():
+            sock.close()
+            return False
+
+        if not sock.login():
+            sock.close()
+            return False
+
+        self.session_token, self.session_expiration = sock.get_session_info()
+        self.perform_login = False
+        return True
 
     @property
     def key(self):
@@ -346,15 +371,15 @@ class Node(object):
         if sock:
             return sock
 
-        sock = ASSocket(ip, port, self.tls_name, self.user, self.password,
-                        self.ssl_context, session_token=self.session_token, timeout=self._timeout)
+        sock = ASSocket(ip, port, self.tls_name, self.user, self.password, self.auth_mode,
+                        self.ssl_context, timeout=self._timeout)
 
-        if sock.connect(self.try_ldap_login):
-            # after first connection we do not need to try login
-            # session_token will take care about that
-            self.try_ldap_login = False
-            self.session_token = sock.get_session_token()
-            return sock
+        if sock.connect():
+            if sock.authenticate(self.session_token):
+                return sock
+            elif self.session_token is not None:
+                # login enabled.... might be session_token expired, need to perform login again
+                self.perform_login = True
 
         return None
 

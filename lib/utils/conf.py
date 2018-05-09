@@ -29,7 +29,7 @@ try:
 except ImportError:
     HAVE_JSONSCHEMA = False
 
-from lib.utils.constants import ADMIN_HOME
+from lib.utils.constants import ADMIN_HOME, AuthMode
 
 class _Namespace(object):
   def __init__(self, adict):
@@ -43,6 +43,7 @@ _confdefault = {
         "port": 3000,
         "user": None,
         "password": "prompt",
+        "auth": AuthMode.INTERNAL,
         "tls-enable":  False,
         "tls-cafile": "",
         "tls-capath": "",
@@ -128,6 +129,7 @@ _confspec = '''{
                 "port" : {"type" : "integer"},
                 "user" : { "type" : "string" },
                 "password" : { "type" : "string" },
+                "auth" : { "type" : "string" },
                 "tls-enable" : { "type" : "boolean" },
                 "tls-cipher-suite" : { "type" : "string" },
                 "tls-crl-check" : { "type" : "boolean" },
@@ -358,6 +360,11 @@ def loadconfig(cli_args, logger):
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
 
+    try:
+        asadm_dict["auth"] = AuthMode[asadm_dict["auth"].upper()]
+    except Exception:
+        logger.critical("Wrong authentication mode: " + str(asadm_dict["auth"]))
+
     # Find seed nods
     seeds = _getseeds(asadm_dict)
     args = _Namespace(asadm_dict)
@@ -423,6 +430,9 @@ def print_config_file_option():
            "                      Password used to authenticate with cluster. Default: none\n"
            "                      User will be prompted on command line if -P specified and no\n"
            "                      password is given.")
+    print (" --auth=AUTHENTICATION_MODE\n"
+           "                      Authentication mode. Values: " + str(list(AuthMode)) + ".\n"
+           "                      Default: " + str(AuthMode.INTERNAL))
     print (" --tls-enable         Enable TLS on connections. By default TLS is disabled.")
     # Deprecated
     # print(" --tls-encrypt-only   Disable TLS certificate verification.\n")
@@ -529,6 +539,7 @@ def get_cli_args():
     else:
         parser.add_option("-P", "--password", dest="password", action="store_const", const="prompt")
 
+    add_fn("--auth")
     add_fn("--tls-enable", action="store_true")
     add_fn("--tls-cafile")
     add_fn("--tls-capath")

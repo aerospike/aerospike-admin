@@ -23,6 +23,7 @@
 import sys
 import struct
 from ctypes import create_string_buffer		 # gives us pre-allocated buffers
+from time import time
 import types
 
 try:
@@ -32,6 +33,8 @@ except:
     # bcrypt not installed. This should only be
     # fatal when authentication is required.
     hasbcrypt = False
+
+from lib.utils.constants import AuthMode
 
 #
 # COMPATIBILITY COMPATIBILITY COMPATIBILITY
@@ -133,6 +136,7 @@ _USER_FIELD_ID = 0
 _CREDENTIAL_FIELD_ID = 3
 _CLEAR_PASSWORD_FIELD_ID = 4
 _SESSION_TOKEN_FIELD_ID = 5
+_SESSION_TTL_FIELD_ID = 6
 
 _HEADER_SIZE = 24
 _HEADER_REMAINING = 16
@@ -161,9 +165,11 @@ def _admin_parse_header(data):
     return rv
 
 
-def _parse_session_token(data, field_count):
+def _parse_session_info(data, field_count):
     i = 0
     offset = 0
+    session_token = None
+    session_ttl = None
     while i < field_count:
         field_len, field_id = struct.unpack_from("! I B", data, offset)
         field_len -= 1
@@ -171,12 +177,17 @@ def _parse_session_token(data, field_count):
 
         if field_id == _SESSION_TOKEN_FIELD_ID:
             fmt_str = "%ds" % field_len
-            return struct.unpack_from(fmt_str, data, offset)[0]
+            session_token = struct.unpack_from(fmt_str, data, offset)[0]
+
+        elif field_id == _SESSION_TTL_FIELD_ID:
+            fmt_str = ">I"
+            session_ttl = struct.unpack_from(fmt_str, data, offset)[0]
 
         offset += field_len
         i += 1
 
-    return None
+    return session_token, session_ttl
+
 
 
 def _buffer_to_string(buf):
@@ -209,15 +220,25 @@ def authenticate_new(sock, user, session_token):
 def authenticate_old(sock, user, password):
     return _authenticate(sock, user, password=_hashpassword(password), password_field_id=_CREDENTIAL_FIELD_ID)
 
-def login(sock, user, password):
+def login(sock, user, password, auth_mode):
     credential = _hashpassword(password)
-    sz = len(user) + len(credential) + len(password) + 39  # 3 * 5 + 24
-    send_buf = _admin_write_header(sz, _LOGIN, 3)
-    fmt_str = "! I B %ds I B %ds I B %ds" % (len(user), len(credential), len(password))
-    struct.pack_into(fmt_str, send_buf, _HEADER_SIZE,
-                     len(user) + 1, _USER_FIELD_ID, user,
-                     len(credential) + 1, _CREDENTIAL_FIELD_ID, credential,
-                     len(password) + 1, _CLEAR_PASSWORD_FIELD_ID, password)
+
+    if auth_mode == AuthMode.INTERNAL:
+        sz = len(user) + len(credential) + 34 # 2 * 5 + 24
+        send_buf = _admin_write_header(sz, _LOGIN, 2)
+        fmt_str = "! I B %ds I B %ds" % (len(user), len(credential))
+        struct.pack_into(fmt_str, send_buf, _HEADER_SIZE,
+                         len(user) + 1, _USER_FIELD_ID, user,
+                         len(credential) + 1, _CREDENTIAL_FIELD_ID, credential)
+
+    else:
+        sz = len(user) + len(credential) + len(password) + 39  # 3 * 5 + 24
+        send_buf = _admin_write_header(sz, _LOGIN, 3)
+        fmt_str = "! I B %ds I B %ds I B %ds" % (len(user), len(credential), len(password))
+        struct.pack_into(fmt_str, send_buf, _HEADER_SIZE,
+                         len(user) + 1, _USER_FIELD_ID, user,
+                         len(credential) + 1, _CREDENTIAL_FIELD_ID, credential,
+                         len(password) + 1, _CLEAR_PASSWORD_FIELD_ID, password)
 
     try:
         # OpenSSL wrapper doesn't support ctypes
@@ -232,10 +253,10 @@ def login(sock, user, password):
 
             if result == _INVALID_COMMAND:
                 # login is invalid command, so cluster does not support ldap
-                return None, authenticate_old(sock, user, password)
+                return authenticate_old(sock, user, password), None, 0
 
             # login failed
-            return None, result
+            return result, None, 0
 
         sz = int(rv[0] & 0xFFFFFFFFFFFF) - _HEADER_REMAINING
         field_count = rv[4]
@@ -243,8 +264,16 @@ def login(sock, user, password):
             raise IOError("Login failed to retrieve session token")
 
         recv_buff = _receivedata(sock, sz)
-        session_token = _buffer_to_string(_parse_session_token(recv_buff, field_count))
-        return session_token, 0
+        session_token, session_ttl = _parse_session_info(recv_buff, field_count)
+        session_token = _buffer_to_string(session_token)
+
+        if session_ttl is None:
+            session_expiration = 0
+        else:
+            # Subtract 60 seconds from ttl so asadm session expires before server session.
+            session_expiration = time() + session_ttl - 60
+
+        return 0, session_token, session_expiration
 
     except Exception as ex:
         raise IOError("Error: %s" % str(ex))
