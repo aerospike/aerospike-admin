@@ -1,4 +1,4 @@
-jsonschema==2.5.0
+jsonschema==2.5.1
 pexpect==4.4.0
 pyasn1==0.4.2
 pyOpenSSL==17.5.0
