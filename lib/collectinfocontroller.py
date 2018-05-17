@@ -443,7 +443,7 @@ class ShowDistributionController(CollectinfoCommandController):
         if not byte_distribution:
             return self._do_distribution(histogram_name, 'Object Size Distribution', 'Record Blocks')
 
-        histogram = self.loghdlr.info_histogram(histogram_name)
+        histogram = self.loghdlr.info_histogram(histogram_name, byte_distribution=True)
         builds = self.loghdlr.info_meta_data(stanza="asd_build")
 
         for timestamp in histogram:

@@ -78,7 +78,7 @@ class GetDistributionController():
         if not byte_distribution:
             return self.do_distribution(histogram_name)
 
-        histogram = util.Future(self.cluster.info_histogram, histogram_name, nodes=nodes).start()
+        histogram = util.Future(self.cluster.info_histogram, histogram_name, logarithmic=True, nodes=nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=nodes).start()
         histogram = histogram.result()
         builds = builds.result()

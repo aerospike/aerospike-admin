@@ -84,3 +84,7 @@ AuthMode = Enumeration([
 
 	"EXTERNAL_INSECURE",
 ])
+
+
+# server versions with critical changes
+SERVER_OLD_HISTOGRAM_LAST_VERSION = "4.1.0.1"

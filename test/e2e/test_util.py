@@ -89,8 +89,10 @@ def check_for_subset(actual_list, expected_sub_list):
                     found=True
                     break
             if not found:
+                # print i
                 return False
         else:
             if i not in actual_list:
+                # print i
                 return False
     return True

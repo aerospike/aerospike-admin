@@ -527,7 +527,13 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
     histogram_data = util.flip_keys(histogram_data)
 
     for namespace, host_data in histogram_data.iteritems():
+        if not host_data or isinstance(host_data, Exception):
+            continue
+
         for host_id, data in host_data.iteritems():
+            if not data or isinstance(data, Exception):
+                continue
+
             hist = data['data']
             width = data['width']
 
@@ -706,18 +712,210 @@ def _get_bucket_range(current_bucket, next_bucket, width, rblock_size_bytes):
 
     bucket_last_rblock_end = ((next_bucket * width) - 1) * rblock_size_bytes
     e_b = filesize.size(bucket_last_rblock_end, filesize.byte)
-    return "%s to %s" % (s_b.replace(" ", ""), e_b.replace(" ", ""))
+    return _create_range_key(s_b.replace(" ", ""), e_b.replace(" ", ""))
+
+
+def _create_range_key(s, e):
+    return "%s to %s" % (s, e)
+
+
+def _string_to_bytes(k):
+    k = k.split(" to ")
+    s = k[0]
+    b = {
+        'K': 1024 ** 1,
+        'M': 1024 ** 2,
+        'G': 1024 ** 3,
+        'T': 1024 ** 4,
+        'P': 1024 ** 5,
+        'E': 1024 ** 6,
+    }
+
+    for suffix, val in b.iteritems():
+        if s.endswith(suffix):
+            s = s[:-1 * len(suffix)]
+            return int(s) * val
+
+    return int(s)
+
+
+def _restructure_new_log_histogram(histogram_data):
+    histogram_data = util.flip_keys(histogram_data)
+
+    for namespace, ns_data in histogram_data.iteritems():
+        if not ns_data or isinstance(ns_data, Exception):
+            continue
+
+        columns = []
+
+        for host_id, host_data in ns_data.iteritems():
+            if not host_data or isinstance(host_data, Exception):
+                continue
+
+            hist = host_data['data']
+            host_data['values'] = {}
+
+            for k, v in hist.iteritems():
+                try:
+                    kl = k.split("-")
+                    s, e = kl[0], kl[1]
+                    key = _create_range_key(s, e)
+                    host_data['values'][key] = v
+                    if key not in columns:
+                        columns.append(key)
+
+                except Exception:
+                    continue
+
+        for host_id, host_data in ns_data.iteritems():
+            if not host_data or isinstance(host_data, Exception):
+                continue
+
+            for k in columns:
+                if k not in host_data['values'].keys():
+                    host_data['values'][k] = 0
+
+        ns_data['columns'] = sorted(columns, key=_string_to_bytes)
+
+    return histogram_data
+
+
+def _parse_old_histogram(histogram, histogram_data):
+    datum = histogram_data.split(',')
+    datum.pop(0)  # don't care about ns, hist_name, or length
+    width = int(datum.pop(0))
+    datum[-1] = datum[-1].split(';')[0]
+    datum = map(int, datum)
+    return {"histogram": histogram, "width": width, "data": datum}
+
+
+def _parse_new_linear_histogram(histogram, histogram_data):
+    datum = histogram_data.split(':')
+    key_map = {"units": "units", "bucket-width": "width", "buckets": "data"}
+
+    result = {}
+    for d in datum:
+        k = None
+        v = None
+        try:
+            _d = d.split('=')
+            k, v = _d[0], _d[1]
+
+        except Exception:
+            continue
+
+        if k is None:
+            continue
+
+        if k in key_map:
+            result[key_map[k]] = v
+
+    if result:
+        buckets = result["data"]
+        buckets = buckets.split(',')
+        result["data"] = map(int, buckets)
+        result["width"] = int(result["width"])
+        result["histogram"] = histogram
+
+    return result
+
+
+def _parse_new_log_histogram(histogram, histogram_data):
+    datum = histogram_data.split(':')
+
+    field = datum.pop(0)
+    l = field.split('=')
+    k, v = l[0], l[1]
+
+    if k != "units":
+        # wrong format
+        return {}
+
+    result = {}
+    result[k] = v
+    result["data"] = {}
+    result["histogram"] = histogram
+
+    for d in datum:
+        k = None
+        v = None
+        try:
+            _d = d.split('=')
+            k, v = _d[0], _d[1]
+            if k.endswith(')'):
+                k = k[:-1]
+            if k.startswith('['):
+                k = k[1:]
+
+            result["data"][k] = v
+
+        except Exception:
+            continue
+
+    return result
 
 
 def create_histogram_output(histogram_name, histogram_data, **params):
     if "byte_distribution" not in params or not params["byte_distribution"]:
         return _create_histogram_percentiles_output(histogram_name, histogram_data)
 
+    try:
+        units = is_new_histogram_version(histogram_data)
+
+        if units is not None:
+            return _restructure_new_log_histogram(histogram_data)
+
+    except Exception as e:
+        raise e
+
     if "bucket_count" not in params or "builds" not in params:
         return {}
 
     return _create_bytewise_histogram_percentiles_output(histogram_data, params["bucket_count"], params["builds"])
 
+
+def is_new_histogram_version(histogram_data):
+    """
+    Function takes dictionary of histogram data.
+    Checks for units key which indicates it is newer format or older and return unit.
+    """
+
+    units = None
+    units_present = False
+    units_absent = False
+
+    for k1, v1 in histogram_data.iteritems():
+        if not v1 or isinstance(v1, Exception):
+            continue
+
+        for k2, v2 in v1.iteritems():
+            if not v2 or isinstance(v2, Exception):
+                continue
+
+            if "units" in v2:
+                units_present = True
+                units = v2["units"]
+
+            else:
+                units_absent = True
+
+    if units_absent and units_present:
+        raise Exception("Different histogram formats on different nodes")
+
+    return units
+
+
+def parse_raw_histogram(histogram, histogram_data, logarithmic=False, new_histogram_version=False):
+    if not histogram_data or isinstance(histogram_data, Exception):
+        return {}
+
+    if not new_histogram_version:
+        return _parse_old_histogram(histogram, histogram_data)
+
+    if logarithmic:
+        return _parse_new_log_histogram(histogram, histogram_data)
+
+    return _parse_new_linear_histogram(histogram, histogram_data)
 
 #################################
 
