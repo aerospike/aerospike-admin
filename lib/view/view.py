@@ -834,12 +834,15 @@ class CliView(object):
         namespaces = set(filter(likes.search, histogram.keys()))
 
         for namespace, node_data in histogram.iteritems():
-            if namespace not in namespaces:
+            if namespace not in namespaces or not node_data or isinstance(node_data, Exception):
                 continue
 
             t = Table("%s - %s in %s%s" % (namespace, title, unit,
                                            title_suffix), columns, description=description)
             for node_id, data in node_data.iteritems():
+                if not data or isinstance(data, Exception):
+                    continue
+
                 percentiles = data['percentiles']
                 row = {}
                 row['node'] = prefixes[node_id]

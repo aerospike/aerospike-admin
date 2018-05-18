@@ -386,9 +386,19 @@ class ShowDistributionController(BasicCommandController):
 
         if not byte_distribution:
             histogram = self.getter.do_object_size(nodes=self.nodes)
+            units = None
+
+            try:
+                units = common.is_new_histogram_version(histogram)
+
+                if units is None:
+                    units = 'Record Blocks'
+            except Exception as e:
+                self.logger.error(e)
+                return
 
             return util.Future(self.view.show_distribution,
-                    'Object Size Distribution', histogram, 'Record Blocks',
+                    'Object Size Distribution', histogram, units,
                     'objsz', self.cluster, like=self.mods['for'])
 
 
@@ -1047,8 +1057,9 @@ class CollectinfoController(BasicCommandController):
 
     def _get_as_histograms(self):
         histogram_map = {}
-        hist_list = ['ttl', 'objsz']
-        hist_dumps = [util.Future(self.cluster.info_histogram, hist,
+        hist_list = [('ttl', 'ttl', False), ('objsz', 'objsz', False), ('objsz', 'object-size', True)]
+        hist_dumps = [util.Future(self.cluster.info_histogram, hist[0],
+                                  logarithmic = hist[2],
                                   raw_output=True,
                                   nodes=self.nodes).start()
                       for hist in hist_list]
@@ -1063,7 +1074,7 @@ class CollectinfoController(BasicCommandController):
                 if not hist_dump[node] or isinstance(hist_dump[node], Exception):
                     continue
 
-                histogram_map[node][hist] = hist_dump[node]
+                histogram_map[node][hist[1]] = hist_dump[node]
 
         return histogram_map
 

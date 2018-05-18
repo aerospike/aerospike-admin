@@ -67,8 +67,12 @@ fi
 asinfo_cmd="hist-dump:ns=test;hist=ttl"
 output_substring="test:ttl"
 if ! run_test ${asinfo_cmd} ${output_substring} ; then
-	echo "Error while running asinfo command: ${asinfo_cmd}"
-	exit 1
+	asinfo_cmd="histogram:namespace=test;type=ttl"
+	output_substring="units=seconds:"
+	if ! run_test ${asinfo_cmd} ${output_substring} ; then
+		echo "Error while running asinfo command: ${asinfo_cmd}"
+		exit 1
+	fi
 fi
 
 asinfo_cmd="latency:"

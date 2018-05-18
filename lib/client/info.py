@@ -189,6 +189,7 @@ def _parse_session_info(data, field_count):
     return session_token, session_ttl
 
 
+
 def _buffer_to_string(buf):
     buf_str = ""
     for s in buf:

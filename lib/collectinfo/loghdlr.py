@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from distutils.version import LooseVersion
 
 import ntpath
 import os
@@ -21,8 +22,8 @@ import zipfile
 
 from lib.collectinfo.reader import CollectinfoReader
 from lib.collectinfo.cinfolog import CollectinfoLog
-from lib.utils.constants import ADMIN_HOME, CLUSTER_FILE, JSON_FILE, SYSTEM_FILE
-from lib.utils import logutil, util
+from lib.utils.constants import ADMIN_HOME, CLUSTER_FILE, JSON_FILE, SERVER_OLD_HISTOGRAM_LAST_VERSION, SYSTEM_FILE
+from lib.utils import common, logutil, util
 
 ###### Constants ######
 DATE_SEG = 0
@@ -110,9 +111,14 @@ class CollectinfoLoghdlr(object):
     def info_statistics(self, stanza="", flip=False):
         return self._fetch_from_cinfo_log(type="statistics", stanza=stanza, flip=flip)
 
-    def info_histogram(self, stanza="", flip=False):
+    def info_histogram(self, stanza="", byte_distribution=False, flip=False):
+        if byte_distribution and stanza == "objsz":
+            stanza = "object-size"
+
         hist_dict = self._fetch_from_cinfo_log(type="histogram", stanza=stanza, flip=flip)
         res_dict = {}
+
+        version = self.info_meta_data(stanza="asd_build")
 
         for timestamp, hist_snapshot in hist_dict.items():
             res_dict[timestamp] = {}
@@ -129,13 +135,12 @@ class CollectinfoLoghdlr(object):
                         continue
 
                     try:
-                        datum = namespace_snapshot.split(',')
-                        datum.pop(0)  # don't care about ns, hist_name, or length
-                        width = int(datum.pop(0))
-                        datum[-1] = datum[-1].split(';')[0]
-                        datum = map(int, datum)
+                        as_version = version[timestamp][node]
+                        d = common.parse_raw_histogram(stanza, namespace_snapshot, logarithmic=byte_distribution,
+                            new_histogram_version=LooseVersion(as_version) > LooseVersion(SERVER_OLD_HISTOGRAM_LAST_VERSION))
+                        if d and not isinstance(d, Exception):
+                            res_dict[timestamp][node][namespace] = d
 
-                        res_dict[timestamp][node][namespace] = {'histogram': stanza, 'width': width, 'data': datum}
                     except Exception:
                         pass
         return res_dict

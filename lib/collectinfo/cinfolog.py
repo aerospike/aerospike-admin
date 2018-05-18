@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import copy
+from distutils.version import LooseVersion
 
 from lib.collectinfo_parser.full_parser import parse_info_all
-from lib.utils import util
+from lib.utils import constants, util
 from lib.utils.lookupdict import LookupDict
 
 class CollectinfoNode(object):
@@ -181,6 +182,19 @@ class CollectinfoSnapshot(object):
                         edition = copy.deepcopy(d[stanza])
                         data[node] = util.convert_edition_to_shortform(edition)
 
+                    elif type == "histogram" and stanza == "object-size":
+                        if stanza in d:
+                            data[node] = copy.deepcopy(d[stanza])
+
+                        else:
+                            # old collectinfo does not have object-size-logarithmic
+                            # it should return objsz if server version is <= SERVER_OLD_HISTOGRAM_LAST_VERSION
+                            as_version = node_data['as_stat']['meta_data']['asd_build']
+                            if not LooseVersion(as_version) > LooseVersion(constants.SERVER_OLD_HISTOGRAM_LAST_VERSION):
+                                data[node] = copy.deepcopy(d['objsz'])
+
+                            else:
+                                data[node] = {}
                     else:
                         data[node] = copy.deepcopy(d[stanza])
 

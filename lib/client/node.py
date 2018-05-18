@@ -18,13 +18,15 @@ import os
 import re
 import socket
 import threading
+from distutils.version import LooseVersion
 from time import time
 
 from lib.client import util
 from lib.client.assocket import ASSocket
 from lib.collectinfo_parser import conf_parser
 from lib.collectinfo_parser.full_parser import parse_system_live_command
-from lib.utils.constants import AuthMode
+from lib.utils import common
+from lib.utils.constants import AuthMode, SERVER_OLD_HISTOGRAM_LAST_VERSION
 
 #### Remote Server connection module
 
@@ -237,6 +239,7 @@ class Node(object):
             self.use_peers_list = self.is_feature_present(feature="peers")
             if self.has_peers_changed():
                 self.peers = self._find_friend_nodes()
+            self.new_histogram_version = self._is_new_hist_version()
             self.alive = True
 
         except Exception:
@@ -252,6 +255,7 @@ class Node(object):
             self.features = ""
             self.use_peers_list = False
             self.peers = []
+            self.use_new_histogram_format = False
             self.alive = False
 
     def refresh_connection(self):
@@ -346,6 +350,16 @@ class Node(object):
                 return False
         except Exception:
             return True
+
+    def _is_new_hist_version(self):
+        as_version = self.info("build")
+        if isinstance(as_version, Exception):
+            return False
+
+        if LooseVersion(as_version) > LooseVersion(SERVER_OLD_HISTOGRAM_LAST_VERSION):
+            return True
+
+        return False
 
     def _get_connection(self, ip, port):
         sock = None
@@ -1087,30 +1101,45 @@ class Node(object):
 
         return xdr_configs
 
-    @return_exceptions
-    def info_histogram(self, histogram, raw_output=False):
+    def _collect_histogram_data(self, histogram, command, logarithmic=False, raw_output=False):
         namespaces = self.info_namespaces()
 
         data = {}
         for namespace in namespaces:
             try:
-                datum = self.info("hist-dump:ns=%s;hist=%s" %
-                                  (namespace, histogram))
+                datum = self.info(command % (namespace, histogram))
+                if not datum or isinstance(datum, Exception):
+                    continue
+
                 if raw_output:
                     data[namespace] = datum
 
                 else:
-                    datum = datum.split(',')
-                    datum.pop(0)  # don't care about ns, hist_name, or length
-                    width = int(datum.pop(0))
-                    datum[-1] = datum[-1].split(';')[0]
-                    datum = map(int, datum)
-
-                    data[namespace] = {'histogram': histogram, 'width': width, 'data': datum}
+                    d = common.parse_raw_histogram(histogram, datum, logarithmic, self.new_histogram_version)
+                    if d and not isinstance(d, Exception):
+                        data[namespace] = d
 
             except Exception:
                 pass
+
         return data
+
+    @return_exceptions
+    def info_histogram(self, histogram, logarithmic=False, raw_output=False):
+        if not self.new_histogram_version:
+            return self._collect_histogram_data(histogram, command="hist-dump:ns=%s;hist=%s", raw_output=raw_output)
+
+        command = "histogram:namespace=%s;type=%s"
+
+        if logarithmic:
+            if histogram == "objsz":
+                histogram = "object-size"
+            return self._collect_histogram_data(histogram, command=command, logarithmic=logarithmic, raw_output=raw_output)
+
+        if histogram == "objsz":
+            histogram = "object-size-linear"
+
+        return self._collect_histogram_data(histogram, command=command, logarithmic=logarithmic, raw_output=raw_output)
 
     @return_exceptions
     def info_sindex(self):

@@ -704,7 +704,6 @@ class TestShowStatistics(unittest.TestCase):
                         ('sindex_gc_inactivity_dur', None),
                         'sindex_gc_list_creation_time',
                         'sindex_gc_list_deletion_time',
-                        'sindex_gc_locktimedout',
                         'sindex_gc_objects_validated',
                         'sindex_ucgarbage_found',
                         ('stat_cluster_key_err_ack_dup_trans_reenqueue', None),
