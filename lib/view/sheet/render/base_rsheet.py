@@ -93,11 +93,13 @@ class BaseRSheet(object):
     # Other methods.
 
     def _init_sources(self, sources):
-        n_source_records = map(len, sources.itervalues())
+        # This assertion can fire when a node is leaving/joining and some
+        # commands on a subset of the nodes. Should this event be logged?
+        # n_source_records = map(len, sources.itervalues())
 
-        assert len(set(n_source_records)) == 1, \
-            "sources contain different numbers of records {}".format(
-                zip(sources.keys(), n_source_records))
+        # assert len(set(n_source_records)) == 1, \
+        #     "sources contain different numbers of records {}".format(
+        #         zip(sources.keys(), n_source_records))
 
         source_keys = set(keys for d in sources.itervalues()
                           for keys in d.iterkeys())
