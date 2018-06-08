@@ -1104,8 +1104,9 @@ class CollectinfoController(BasicCommandController):
         self.aslogfile = as_logfile_prefix + 'ascinfo.json'
 
         try:
+            json_dump = json.dumps(dump, indent=4, separators=(',', ':'))
             with open(self.aslogfile, "w") as f:
-                f.write(json.dumps(dump, indent=4, separators=(',', ':')))
+                f.write(json_dump)
         except Exception as e:
             self.logger.error("Failed to write JSON file: " + str(e))
 
