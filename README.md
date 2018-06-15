@@ -5,9 +5,18 @@ of their Aerospike Cluster by fetching information from running cluster (Cluster
 Start the tool with *asadm* and run the *help* command to get started.
 
 ## Installing Aerospike Admin
+Two ways to install asadm
+
+- Install asadm as PEX:
+```
+sudo make
+sudo make install
+```
+
+- Install asadm without PEX:
 ```
 sudo ./asadm-deps/install.sh
-sudo make
+sudo make no_pex
 sudo make install
 ```
 
