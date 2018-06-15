@@ -76,7 +76,7 @@ class GetDistributionController():
         histogram_name = 'objsz'
 
         if not byte_distribution:
-            return self.do_distribution(histogram_name)
+            return self.do_distribution(histogram_name, nodes=nodes)
 
         histogram = util.Future(self.cluster.info_histogram, histogram_name, logarithmic=True, nodes=nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=nodes).start()
