@@ -21,7 +21,7 @@ INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
 INSTALL = "install -o aerospike -g aerospike"
 
-all:
+define make_build
 	mkdir -p $(BUILD_ROOT)tmp
 	mkdir -p $(BUILD_ROOT)bin
 	rm -rf $(BUILD_ROOT)tmp/*
@@ -31,17 +31,29 @@ all:
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
-    ifeq ($(OS),Darwin)
-		sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
-    else
-		sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
-    endif
+	$(if $(filter $(OS),Darwin),
+	sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py,
+	sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
+	)
+endef
+
+all:
+	$(call make_build)
 
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
 	pex -v -f $(BUILD_ROOT)tmp/asadm -r requirements.txt --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
 	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
 	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm
+	chmod ugo+x $(BUILD_ROOT)bin/asadm
+
+no_pex:
+	$(call build_asadm)
+
+	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
+	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm
+	cat $(BUILD_ROOT)tmp/asadm.zip >> $(BUILD_ROOT)bin/asadm
+
 	chmod ugo+x $(BUILD_ROOT)bin/asadm
 
 install:
