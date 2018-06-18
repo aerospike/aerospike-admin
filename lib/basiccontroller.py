@@ -2031,10 +2031,13 @@ class SummaryController(BasicCommandController):
 
         metadata = {}
         metadata["server_version"] = {}
+        metadata["server_build"] = {}
 
         for node, version in server_version.iteritems():
             if not version or isinstance(version, Exception):
                 continue
+
+            metadata["server_build"][node] = version
 
             if node in server_edition and server_edition[node] and not isinstance(server_edition[node], Exception):
                 if 'enterprise' in server_edition[node].lower():

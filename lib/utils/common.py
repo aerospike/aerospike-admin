@@ -173,7 +173,17 @@ def find_nodewise_features(service_data, ns_data, cl_data={}):
 
 ########## Summary ##########
 
-def _compute_set_overhead_for_ns(set_stats, ns):
+def _set_record_overhead(as_version=""):
+    overhead = 9
+    if not as_version:
+        return overhead
+
+    if LooseVersion(as_version) >= LooseVersion("4.2"):
+        return 1
+
+    return overhead
+
+def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
     """
     Function takes set stat and namespace name.
     Returns set overhead for input namespace name.
@@ -184,24 +194,35 @@ def _compute_set_overhead_for_ns(set_stats, ns):
 
     overhead = 0
     for _k, stats in set_stats.iteritems():
-        if not stats or isinstance(stats, Exception):
+        if not stats or isinstance(stats, Exception) or node not in stats:
             continue
 
-        ns_name = util.get_value_from_second_level_of_dict(stats, ("ns", "ns_name"), default_value=None,
-                                                           return_type=str).values()[0]
+        ns_name = util.get_value_from_dict(stats[node], ("ns", "ns_name"), default_value=None,
+                                                           return_type=str)
         if ns_name != ns:
             continue
 
-        set_name = util.get_value_from_second_level_of_dict(stats, ("set", "set_name"), default_value="",
-                                                            return_type=str).values()[0]
-        objects = sum(util.get_value_from_second_level_of_dict(stats, ("objects", "n_objects"), default_value=0,
-                                                               return_type=int).values())
-        overhead += objects * (9 + len(set_name))
+        set_name = util.get_value_from_dict(stats[node], ("set", "set_name"), default_value="",
+                                                            return_type=str)
+        objects = util.get_value_from_dict(stats[node], ("objects", "n_objects"), default_value=0,
+                                                               return_type=int)
+        overhead += objects * (_set_record_overhead(as_version=as_version) + len(set_name))
 
     return overhead
 
 
-def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict):
+def _device_record_overhead(as_version=""):
+    overhead = 64
+    if not as_version:
+        return overhead
+
+    if LooseVersion(as_version) >= LooseVersion("4.2"):
+        return 35
+
+    return overhead
+
+
+def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict, as_versions):
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
@@ -216,59 +237,65 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
     for ns, ns_stats in namespace_stats.iteritems():
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
-        repl_factor = max(
-            util.get_value_from_second_level_of_dict(ns_stats, ("repl-factor", "replication-factor"), default_value=0,
-                                                     return_type=int).values())
-        master_objects = sum(
-            util.get_value_from_second_level_of_dict(ns_stats, ("master_objects", "master-objects"), default_value=0,
-                                                     return_type=int).values())
-        devices_in_use = list(set(util.get_value_from_second_level_of_dict(ns_stats, (
-            "storage-engine.device", "device", "storage-engine.file", "file", "dev"), default_value=None,
-                                                                           return_type=str).values()))
-        memory_data_size = None
-        device_data_size = None
 
-        if len(devices_in_use) == 0 or (len(devices_in_use) == 1 and devices_in_use[0] == None):
-            # Data in memory only
-            memory_data_size = sum(
-                util.get_value_from_second_level_of_dict(ns_stats, ("memory_used_data_bytes", "data-used-bytes-memory"),
-                                                         default_value=0, return_type=int).values())
-            memory_data_size = memory_data_size / repl_factor
+        ns_memory_data_size = 0
+        ns_device_data_size = 0
 
-            if memory_data_size > 0:
-                memory_record_overhead = master_objects * 2
-                memory_data_size = memory_data_size - memory_record_overhead
+        for host_id, host_stats in ns_stats.iteritems():
+            master_objects = util.get_value_from_dict(host_stats, ("master_objects", "master-objects"), default_value=0,
+                                                     return_type=int)
+            replica_objects = util.get_value_from_dict(host_stats, ("prole_objects", "prole-objects", "replica_objects",
+                                                                    "replica-objects"), default_value=0, return_type=int)
+            devices_in_use = util.get_value_from_dict(host_stats, ("storage-engine.device", "device", "storage-engine.file",
+                                                                 "file", "dev"), default_value=None, return_type=str)
+            total_objects = master_objects + replica_objects
 
-        else:
-            # Data on disk
-            device_data_size = sum(
-                util.get_value_from_second_level_of_dict(ns_stats, ("device_used_bytes", "used-bytes-disk"),
-                                                         default_value=0, return_type=int).values())
+            if devices_in_use == None:
+                # Data in memory only
+                memory_data_size = util.get_value_from_dict(host_stats, ("memory_used_data_bytes", "data-used-bytes-memory"),
+                                                             default_value=0, return_type=int)
+                if total_objects > 0:
+                    memory_data_size = (memory_data_size / total_objects) * master_objects
+                else:
+                    memory_data_size = 0
 
-            if device_data_size > 0:
-                set_overhead = _compute_set_overhead_for_ns(set_stats, ns)
-                device_data_size = device_data_size - set_overhead
+                if memory_data_size > 0:
+                    memory_record_overhead = master_objects * 2
+                    ns_memory_data_size += memory_data_size - memory_record_overhead
 
-            if device_data_size > 0:
-                tombstones = sum(util.get_value_from_second_level_of_dict(ns_stats, ("tombstones",), default_value=0,
-                                                                          return_type=int).values())
-                tombstone_overhead = tombstones * 128
-                device_data_size = device_data_size - tombstone_overhead
+            else:
+                # Data on disk
+                as_version = ""
+                if as_versions and host_id in as_versions:
+                    as_version = as_versions[host_id]
 
-            device_data_size = device_data_size / repl_factor
-            if device_data_size > 0:
-                device_record_overhead = master_objects * 64
-                device_data_size = device_data_size - device_record_overhead
+                device_data_size = util.get_value_from_dict(host_stats, ("device_used_bytes", "used-bytes-disk"),
+                                                             default_value=0, return_type=int)
 
-        ns_dict[ns]["license_data_in_memory"] = 0
-        ns_dict[ns]["license_data_on_disk"] = 0
-        if memory_data_size is not None:
-            ns_dict[ns]["license_data_in_memory"] = memory_data_size
-            cl_memory_data_size += memory_data_size
+                if device_data_size > 0:
+                    set_overhead = _compute_set_overhead_for_ns(set_stats, ns, host_id, as_version=as_version)
+                    device_data_size = device_data_size - set_overhead
 
-        if device_data_size is not None:
-            ns_dict[ns]["license_data_on_disk"] = device_data_size
-            cl_device_data_size += device_data_size
+                if device_data_size > 0:
+                    tombstones = util.get_value_from_dict(host_stats, ("tombstones",), default_value=0,
+                                                                              return_type=int)
+                    tombstone_overhead = tombstones * 128
+                    device_data_size = device_data_size - tombstone_overhead
+
+                if total_objects > 0:
+                    device_data_size = (device_data_size / total_objects) * master_objects
+                else:
+                    device_data_size = 0
+
+                if device_data_size > 0:
+                    device_record_overhead = master_objects * _device_record_overhead(as_version=as_version)
+                    ns_device_data_size += device_data_size - device_record_overhead
+
+        ns_dict[ns]["license_data_in_memory"] = ns_memory_data_size
+        cl_memory_data_size += ns_memory_data_size
+
+        ns_dict[ns]["license_data_on_disk"] = ns_device_data_size
+        cl_device_data_size += ns_device_data_size
 
     cluster_dict["license_data"] = {}
     cluster_dict["license_data"]["memory_size"] = cl_memory_data_size
@@ -388,7 +415,7 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata, cluster_
     cl_nodewise_device_aval = {}
 
     _compute_license_data_size(namespace_stats, set_stats, summary_dict["CLUSTER"],
-                               summary_dict["FEATURES"]["NAMESPACE"])
+                               summary_dict["FEATURES"]["NAMESPACE"], metadata["server_build"])
     _set_migration_status(namespace_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"])
 
     summary_dict["CLUSTER"]["active_features"] = features

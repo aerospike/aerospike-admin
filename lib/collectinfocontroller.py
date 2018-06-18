@@ -1100,6 +1100,7 @@ class SummaryController(CollectinfoCommandController):
 
         metadata = {}
         metadata["server_version"] = {}
+        metadata["server_build"] = {}
 
         server_version = server_version[last_timestamp]
         server_edition = server_edition[last_timestamp]
@@ -1107,6 +1108,8 @@ class SummaryController(CollectinfoCommandController):
         for node, version in server_version.iteritems():
             if not version or isinstance(version, Exception):
                 continue
+
+            metadata["server_build"][node] = version
 
             if node in server_edition and server_edition[node] and not isinstance(server_edition[node], Exception):
                 if 'enterprise' in server_edition[node].lower():
