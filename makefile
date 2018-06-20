@@ -44,6 +44,11 @@ all:
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
 	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)wheels -r requirements.txt
 	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)wheels
+	for pkg in "${BUILD_ROOT}wheels/"*; do \
+		if [[ "$${pkg}" == *"manylinux1_x86_64"* ]]; then \
+			mv "$${pkg}" "$${pkg/manylinux1_x86_64/linux_x86_64}"; \
+		fi \
+ 	done
 	pex -v -r requirements.txt --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
 	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
