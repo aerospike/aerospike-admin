@@ -40,8 +40,11 @@ endef
 all:
 	$(call make_build)
 
+	mkdir -p $(BUILD_ROOT)wheels
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
-	pex -v -f $(BUILD_ROOT)tmp/asadm -r requirements.txt --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)wheels -r requirements.txt
+	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)wheels
+	pex -v -r requirements.txt --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
 	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
 	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm
