@@ -21,6 +21,8 @@ INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
 INSTALL = "install -o aerospike -g aerospike"
 
+SHELL := /bin/bash
+
 define make_build
 	mkdir -p $(BUILD_ROOT)tmp
 	mkdir -p $(BUILD_ROOT)bin
