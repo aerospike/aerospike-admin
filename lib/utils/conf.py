@@ -40,6 +40,7 @@ class _Namespace(object):
 _confdefault = {
     "cluster": {
         "host": "127.0.0.1",
+        "services-alternate": False,
         "port": 3000,
         "user": None,
         "password": "prompt",
@@ -57,7 +58,6 @@ _confdefault = {
     },
     "asadm": {
         "services-alumni": False,
-        "services-alternate": False,
         "timeout": 5,
 
         "line-separator": False,
@@ -102,7 +102,6 @@ _confspec = '''{
             "type" : "object",
             "properties" : {
                 "services-alumni" : { "type" : "boolean" },
-                "services-alternate" : { "type" : "boolean" },
                 "timeout" : { "type" : "integer" },
 
                 "line-separator": { "type" : "boolean" },
@@ -126,6 +125,7 @@ _confspec = '''{
             "additionalProperties" : false,
             "properties" : {
                 "host" : {"type" : "string"},
+                "services-alternate" : { "type" : "boolean" },
                 "port" : {"type" : "integer"},
                 "user" : { "type" : "string" },
                 "password" : { "type" : "string" },
@@ -422,6 +422,9 @@ def print_config_file_option():
            "                        host1\n"
            "                        host1:3000,host2:3000\n"
            "                        192.168.1.10:cert1:3000,192.168.1.20:cert2:3000")
+    print (" --services-alternate \n"
+           "                      Enable use of services-alternate instead of services in\n"
+           "                      info request during cluster tending")
     print (" -p, --port=PORT \n"
            "                      Server default port. Default: 3000")
     print (" -U, --user=USER \n"
@@ -481,9 +484,6 @@ def print_config_file_option():
            "                      is set.")
     print (" -s --services-alumni\n"
            "                      Enable use of services-alumni-list instead of services-list")
-    print (" -a --services-alternate \n"
-           "                      Enable use of services-alternate instead of services in\n"
-           "                      info request during cluster tending")
     print (" --timeout=value      Set timeout value in seconds to node level operations. \n"
            "                      TLS connection does not support timeout. Default: 5 seconds")
 
@@ -532,6 +532,7 @@ def get_cli_args():
     add_fn("--line-separator",  action="store_true")
 
     add_fn("-h", "--host")
+    add_fn("-a", "--services-alternate", action="store_true")
     add_fn("-p", "--port", type=int)
     add_fn("-U", "--user")
     if have_argparse:
@@ -553,7 +554,6 @@ def get_cli_args():
 
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
-    add_fn("-a", "--services-alternate", action="store_true")
     add_fn("--timeout", type=float)
 
     add_fn("--config-file")
@@ -570,9 +570,9 @@ def get_cli_args():
     add_fn("--asinfo_mode", action="store_true")
     add_fn("--asinfo-mode", action="store_true")
     add_fn("--out_file")
-    add_fn("--no_color")
-    add_fn("--services_alumni")
-    add_fn("--services_alternate")
+    add_fn("--no_color", action="store_true")
+    add_fn("--services_alumni", action="store_true")
+    add_fn("--services_alternate", action="store_true")
     add_fn("--single_node_cluster", dest="single_node", action="store_true")
     add_fn("--tls_name")
     add_fn("--tls_enable", action="store_true")
