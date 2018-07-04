@@ -269,7 +269,7 @@ ASSERT(r, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Probable cause - namespace size misconfiguration.",
 				"Namespace disk available pct check.");
 
-s = select * from SERVICE.CONFIG ignore "heartbeat.mtu", "node-id-interface", "pidfile", like(".*address"), like(".*port")  save;
+s = select * from SERVICE.CONFIG ignore "heartbeat.mtu", "node-id-interface", "node-id", "pidfile", like(".*address"), like(".*port")  save;
 r = group by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
 ASSERT(r, False, "Different service configurations.", "OPERATIONS", WARNING,
 				"Listed Service configuration[s] are different across multiple nodes in cluster. Please run 'show config service diff' to check different configuration values. Probable cause - config file misconfiguration.",
