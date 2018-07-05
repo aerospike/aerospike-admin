@@ -30,6 +30,7 @@ except ImportError:
     HAVE_JSONSCHEMA = False
 
 from lib.utils.constants import ADMIN_HOME, AuthMode
+DEFAULTPASSWORD="SomeRandomDefaultPassword"
 
 class _Namespace(object):
   def __init__(self, adict):
@@ -43,7 +44,7 @@ _confdefault = {
         "services-alternate": False,
         "port": 3000,
         "user": None,
-        "password": "prompt",
+        "password": DEFAULTPASSWORD,
         "auth": AuthMode.INTERNAL,
         "tls-enable":  False,
         "tls-cafile": "",
@@ -213,7 +214,12 @@ def _flatten(conf_dict, instance=None):
     for section in sections:
         if section in conf_dict.keys():
             for k,v in conf_dict[section].iteritems():
-                asadm_conf[decode(k.replace("-", "_"))] = decode(v)
+                # Empty passwords are allowed do not interpret
+                # it as None
+                if k == "password":
+                    asadm_conf[decode(k.replace("-", "_"))] = v
+                else:
+                    asadm_conf[decode(k.replace("-", "_"))] = decode(v)
 
     return asadm_conf
 
@@ -536,9 +542,9 @@ def get_cli_args():
     add_fn("-p", "--port", type=int)
     add_fn("-U", "--user")
     if have_argparse:
-        add_fn("-P", "--password", nargs="?")
+        add_fn("-P", "--password", nargs="?", const=DEFAULTPASSWORD)
     else:
-        parser.add_option("-P", "--password", dest="password", action="store_const", const="prompt")
+        parser.add_option("-P", "--password", dest="password", action="store_const", const=DEFAULTPASSWORD)
 
     add_fn("--auth")
     add_fn("--tls-enable", action="store_true")

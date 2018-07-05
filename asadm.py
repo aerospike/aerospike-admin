@@ -154,7 +154,7 @@ class AerospikeShell(cmd.Cmd):
                     self.intro = str(self.ctrl.loghdlr)
             else:
                 if user is not None:
-                    if password == "prompt" or password is None:
+                    if password == conf.DEFAULTPASSWORD:
                         if sys.stdin.isatty():
                             password = getpass.getpass("Enter Password:")
                         else:
@@ -492,7 +492,7 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, auth_m
             return
 
     if user is not None:
-        if password == "prompt":
+        if password == conf.DEFAULTPASSWORD:
             if sys.stdin.isatty():
                 password = getpass.getpass("Enter Password:")
             else:
