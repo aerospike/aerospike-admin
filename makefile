@@ -21,6 +21,8 @@ INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
 INSTALL = "install -o aerospike -g aerospike"
 
+SHELL := /bin/bash
+
 define make_build
 	mkdir -p $(BUILD_ROOT)tmp
 	mkdir -p $(BUILD_ROOT)bin
@@ -56,8 +58,7 @@ all:
 	chmod ugo+x $(BUILD_ROOT)bin/asadm
 
 no_pex:
-	$(call build_asadm)
-
+	$(call make_build)
 
 	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
 	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm
