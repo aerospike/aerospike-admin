@@ -1190,6 +1190,18 @@ def _collect_lsof(verbose=False):
     return out, None
 
 
+def _collect_env_variables(cmd=''):
+    out = "['env_variables']"
+
+    variables = [
+        "GKE_ENTITLEMENT",
+    ]
+
+    for v in variables:
+        out += "\n" + v + "=" + str(os.environ.get(v))
+
+    return out, None
+
 def _collectinfo_content(func, cmd='', alt_cmds=[]):
     fname = ''
     try:
@@ -1444,6 +1456,12 @@ def collect_sys_info(port=3000, timestamp="", outfile="", verbose=False):
             util.write_to_file(outfile, o)
         except Exception as e:
             util.write_to_file(outfile, str(e))
+
+    try:
+        o, f_cmds = _collectinfo_content(func=_collect_env_variables)
+        util.write_to_file(outfile, o)
+    except Exception as e:
+        util.write_to_file(outfile, str(e))
 
     if not cluster_online:
         # Cluster is offline so collecting only system info and archiving files

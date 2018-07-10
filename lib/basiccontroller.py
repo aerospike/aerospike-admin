@@ -2012,7 +2012,7 @@ class SummaryController(BasicCommandController):
         namespace_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=self.nodes).start()
         set_stats = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
 
-        cluster_configs = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
+        cluster_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='cluster').start()
 
         os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
                                                          default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["lsb"], collect_remote_data=enable_ssh)

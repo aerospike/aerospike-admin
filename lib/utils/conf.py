@@ -249,7 +249,7 @@ def _getseeds(conf):
         port = conf["port"]
 
     tls_name = None
-    if "tls_name" in conf.keys() and conf["tls_name"] is not None:
+    if "tls_name" in conf.keys() and conf["tls_name"] is not None and "tls_enable" in conf and conf["tls_enable"]:
         tls_name = conf["tls_name"]
 
 
@@ -363,6 +363,7 @@ def loadconfig(cli_args, logger):
 
     # -> Command line
     cli_dict = vars(cli_args)
+
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
 
