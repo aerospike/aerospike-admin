@@ -1202,6 +1202,24 @@ def _collect_env_variables(cmd=''):
 
     return out, None
 
+
+def _collect_ip_link_details(cmd=''):
+    out = "['ip -s link']"
+
+    cmd = 'ip -s link'
+    loop_count = 3
+    sleep_seconds = 5
+
+    for i in range(0, loop_count):
+        o, e = util.shell_command([cmd])
+
+        if o:
+            out += "\n\n" + str(o)
+        time.sleep(sleep_seconds)
+
+    return out, None
+
+
 def _collectinfo_content(func, cmd='', alt_cmds=[]):
     fname = ''
     try:
@@ -1324,7 +1342,6 @@ def get_system_commands(port=3000):
         ['ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"'],
         ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
         ['ip addr'],
-        ['ip -s link'],
         ['sar -n DEV'],
         ['sar -n EDEV'],
         ['mpstat -P ALL 2 3'],
@@ -1459,6 +1476,12 @@ def collect_sys_info(port=3000, timestamp="", outfile="", verbose=False):
 
     try:
         o, f_cmds = _collectinfo_content(func=_collect_env_variables)
+        util.write_to_file(outfile, o)
+    except Exception as e:
+        util.write_to_file(outfile, str(e))
+
+    try:
+        o, f_cmds = _collectinfo_content(func=_collect_ip_link_details)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
