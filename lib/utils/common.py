@@ -1191,10 +1191,14 @@ def _collect_lsof(verbose=False):
 
 
 def _collect_env_variables(cmd=''):
+    # collets environment variables
+
     out = "['env_variables']"
 
     variables = [
-        "GKE_ENTITLEMENT",
+        "ENTITLEMENT", "SERVICE_THREADS", "TRANSACTION_QUEUES", "TRANSACTION_THREADS_PER_QUEUE", "LOGFILE",
+        "SERVICE_ADDRESS", "SERVICE_PORT", "HB_ADDRESS", "HB_PORT", "FABRIC_ADDRESS", "FABRIC_PORT", "INFO_ADDRESS",
+        "INFO_PORT", "NAMESPACE", "REPL_FACTOR", "MEM_GB", "DEFAULT_TTL", "STORAGE_GB"
     ]
 
     for v in variables:
@@ -1214,7 +1218,7 @@ def _collect_ip_link_details(cmd=''):
         o, e = util.shell_command([cmd])
 
         if o:
-            out += "\n\n" + str(o)
+            out += "\n" + str(o) + "\n"
         time.sleep(sleep_seconds)
 
     return out, None
