@@ -1306,7 +1306,7 @@ def get_system_commands(port=3000):
         ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f'],
         ['cat /proc/meminfo', 'vmstat -s'],
         ['cat /proc/interrupts'],
-        ['iostat -x 1 10'],
+        ['iostat -y -x 5 4'],
         [cmd_dmesg, alt_dmesg],
         ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
         ['lscpu'],

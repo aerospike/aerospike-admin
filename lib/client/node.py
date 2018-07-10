@@ -136,7 +136,7 @@ class Node(object):
             ('lsb', ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f']),
             ('meminfo', ['cat /proc/meminfo', 'vmstat -s']),
             ('interrupts', ['cat /proc/interrupts', '']),
-            ('iostat', ['iostat -x 1 1', '']),
+            ('iostat', ['iostat -y -x 5 1', '']),
             ('dmesg', ['dmesg -T', 'dmesg']),
             ('limits', ['sudo  pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', '']),
             ('lscpu', ['lscpu', '']),
