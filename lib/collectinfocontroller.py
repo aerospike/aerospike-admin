@@ -820,7 +820,8 @@ class FeaturesController(CollectinfoCommandController):
                 timestamp=timestamp, **self.mods)
 
 
-@CommandHelp('Checks for common inconsistencies and print if there is any')
+@CommandHelp('Checks for common inconsistencies and print if there is any.',
+             'This command is still in beta and its output should not be directly acted upon without further analysis.')
 class HealthCheckController(CollectinfoCommandController):
 
     health_check_input_created = False

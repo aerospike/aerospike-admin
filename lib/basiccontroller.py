@@ -1602,7 +1602,8 @@ class PagerController(BasicCommandController):
         CliView.pager = CliView.SCROLL
 
 
-@CommandHelp('Checks for common inconsistencies and print if there is any')
+@CommandHelp('Checks for common inconsistencies and print if there is any.',
+             'This command is still in beta and its output should not be directly acted upon without further analysis.')
 class HealthCheckController(BasicCommandController):
     last_snapshot_collection_time = 0
     last_snapshot_count = 0
