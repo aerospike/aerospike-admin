@@ -571,7 +571,8 @@ def _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_ip_mappi
 new_additional_field_pointers = [
     [1, "node_id", ["as_stat", "meta_data"]],
     [2, "dmesg", ["sys_stat"]],
-    [3, "latency", ["as_stat"]],
+    [3, "endpoints", ["as_stat", "meta_data"]],
+    [4, "latency", ["as_stat"]],
 ]
 
 def _find_missing_data_version(cinfo_map):
@@ -641,10 +642,12 @@ def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missi
         _merge_nodelevel_map_to_mainmap(parsed_map, meta_map, timestamps, node_to_ip_mapping, ["as_stat", "meta_data"])
         _add_missing_as_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
         _add_missing_histogram_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
-        _add_missing_endpoints_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
 
     if missing_version <= 2:
         _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_to_ip_mapping, ignore_exception)
 
     if missing_version <= 3:
+        _add_missing_endpoints_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+
+    if missing_version <= 4:
         _add_missing_latency_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)

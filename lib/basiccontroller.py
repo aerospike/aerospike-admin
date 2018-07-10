@@ -1035,6 +1035,8 @@ class CollectinfoController(BasicCommandController):
         xdr_builds = util.Future(self.cluster.info_XDR_build_version, nodes=self.nodes).start()
         node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start()
         ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start()
+        endpoints = util.Future(self.cluster.info_service, nodes=self.nodes).start()
+        services = util.Future(self.cluster.info_services, nodes=self.nodes).start()
         udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start()
 
         builds = builds.result()
@@ -1042,6 +1044,8 @@ class CollectinfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         node_ids = node_ids.result()
         ips = ips.result()
+        endpoints = endpoints.result()
+        services = services.result()
         udf_data = udf_data.result()
 
         for nodeid in builds:
@@ -1051,6 +1055,8 @@ class CollectinfoController(BasicCommandController):
             self._get_meta_for_sec(xdr_builds, 'xdr_build', nodeid, metamap)
             self._get_meta_for_sec(node_ids, 'node_id', nodeid, metamap)
             self._get_meta_for_sec(ips, 'ip', nodeid, metamap)
+            self._get_meta_for_sec(endpoints, 'endpoints', nodeid, metamap)
+            self._get_meta_for_sec(services, 'services', nodeid, metamap)
             self._get_meta_for_sec(udf_data, 'udf', nodeid, metamap)
 
         return metamap
