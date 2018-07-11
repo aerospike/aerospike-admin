@@ -228,9 +228,11 @@ def _get_section_list_for_parsing(imap, available_section):
     final_section_list = []
     imap_section_list = []
     imap_section_list.extend(DERIVED_SECTION_LIST)
+
     if 'section_ids' not in imap:
         logger.warning("`section_ids` section missing in section_json.")
         return final_section_list
+
     for section_id in imap['section_ids']:
         section = SECTION_FILTER_LIST[section_id]
         if 'final_section_name' in section:
@@ -240,6 +242,7 @@ def _get_section_list_for_parsing(imap, available_section):
             else:
                 sec_name = section['final_section_name']
             imap_section_list.append(sec_name)
+
     final_section_list = list(set(imap_section_list).intersection(available_section))
     return final_section_list
 
@@ -567,6 +570,20 @@ def _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_ip_mappi
     dmesg_map[node]["dmesg"] = sys_map["dmesg"]
     _merge_nodelevel_map_to_mainmap(parsed_map, dmesg_map, timestamps, node_ip_mapping, ["sys_stat"])
 
+def _add_missing_scheduler_data(sys_map, parsed_map, timestamps, node, node_ip_mapping, ignore_exception):
+    """
+    Add missing IO scheduler details into parsed_map.
+
+    """
+
+    if not sys_map or "scheduler" not in sys_map:
+        return
+
+    scheduler_map = {}
+    scheduler_map[node] = {}
+    scheduler_map[node]["scheduler"] = sys_map["scheduler"]
+    _merge_nodelevel_map_to_mainmap(parsed_map, scheduler_map, timestamps, node_ip_mapping, ["sys_stat"])
+
 # Format: [version, key to identify version changes, parent keys of key till node]
 new_additional_field_pointers = [
     [1, "node_id", ["as_stat", "meta_data"]],
@@ -647,6 +664,7 @@ def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missi
         _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_to_ip_mapping, ignore_exception)
 
     if missing_version <= 3:
+        _add_missing_scheduler_data(sys_map, parsed_map, timestamps, node, node_to_ip_mapping, ignore_exception)
         _add_missing_endpoints_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
 
     if missing_version <= 4:

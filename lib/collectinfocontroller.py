@@ -979,6 +979,8 @@ class HealthCheckController(CollectinfoCommandController):
                      [("CLUSTER", cluster_name), ("NODE", None), ("LSB", None)]),
                     ("environment", "SYSTEM", "ENVIRONMENT", True,
                      [("CLUSTER", cluster_name), ("NODE", None), ("ENVIRONMENT", None)]),
+                    ("scheduler", "SYSTEM", "SCHEDULER", False,
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DEVICE", None)]),
                 ]),
 
             }

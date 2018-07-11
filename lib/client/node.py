@@ -131,24 +131,26 @@ class Node(object):
         self.sys_default_pwd = None
         self.sys_default_ssh_key = None
         self.sys_cmds = [
-            ('hostname', ['hostname -I', 'hostname']),
-            ('top', ['top -n1 -b', 'top -l 1']),
-            ('lsb', ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f']),
-            ('meminfo', ['cat /proc/meminfo', 'vmstat -s']),
-            ('interrupts', ['cat /proc/interrupts', '']),
-            ('iostat', ['iostat -y -x 5 1', '']),
-            ('dmesg', ['dmesg -T', 'dmesg']),
-            ('limits', ['sudo  pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', '']),
-            ('lscpu', ['lscpu', '']),
-            ('sysctlall', ['sudo sysctl vm fs', '']),
-            ('iptables', ['sudo iptables -S', '']),
-            ('hdparm', ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null', '']),
-            ('df', ['df -h', '']),
-            ('free-m', ['free -m', '']),
-            ('uname', ['uname -a', '']),
+            # format: (command name as in parser, ignore error, command list)
+            ('hostname', False, ['hostname -I', 'hostname']),
+            ('top', False, ['top -n1 -b', 'top -l 1']),
+            ('lsb', False, ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f']),
+            ('meminfo', False, ['cat /proc/meminfo', 'vmstat -s']),
+            ('interrupts', False, ['cat /proc/interrupts', '']),
+            ('iostat', False, ['iostat -y -x 5 1', '']),
+            ('dmesg', False, ['dmesg -T', 'dmesg']),
+            ('limits', False, ['sudo  pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', '']),
+            ('lscpu', False, ['lscpu', '']),
+            ('sysctlall', False, ['sudo sysctl vm fs', '']),
+            ('iptables', False, ['sudo iptables -S', '']),
+            ('hdparm', False, ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null', '']),
+            ('df', False, ['df -h', '']),
+            ('free-m', False, ['free -m', '']),
+            ('uname', False, ['uname -a', '']),
+            ('scheduler', True, ['ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"', '']),
 
             # Todo: Add more commands for other cloud platform detection
-            ('environment', ['curl -m 1 -s http://169.254.169.254/1.0/', 'uname']),
+            ('environment', False, ['curl -m 1 -s http://169.254.169.254/1.0/', 'uname']),
         ]
 
         # hack, _key needs to be defines before info calls... but may have
@@ -1287,7 +1289,7 @@ class Node(object):
         if commands:
             cmd_list = copy.deepcopy(commands)
         else:
-            cmd_list = [_key for _key, cmds in self.sys_cmds]
+            cmd_list = [_key for _key, _, _ in self.sys_cmds]
 
         if self.localhost:
             return self._get_localhost_system_statistics(cmd_list)
@@ -1303,13 +1305,13 @@ class Node(object):
     def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
 
-        for _key, cmds in self.sys_cmds:
+        for _key, ignore_error, cmds in self.sys_cmds:
             if _key not in commands:
                 continue
 
             for cmd in cmds:
                 o, e = util.shell_command([cmd])
-                if e or not o:
+                if (e and not ignore_error) or not o:
                     continue
                 else:
                     parse_system_live_command(_key, o, sys_stats)
@@ -1512,7 +1514,7 @@ class Node(object):
                 continue
 
             try:
-                for _key, cmds in self.sys_cmds:
+                for _key, _, cmds in self.sys_cmds:
                     if _key not in commands:
                         continue
 

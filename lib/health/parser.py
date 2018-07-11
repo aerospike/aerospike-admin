@@ -71,6 +71,7 @@ class HealthLexer(object):
         'SECURITY': 'SECURITY',
         'SERVICE': 'SERVICE',
         'SERVICES': 'SERVICES',
+        'SCHEDULER': 'SCHEDULER',
         'STATISTICS': 'STATISTICS',
         'SWAP': 'SWAP',
         'SYSCTLALL': 'SYSCTLALL',

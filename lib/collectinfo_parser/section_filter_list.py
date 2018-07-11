@@ -722,7 +722,8 @@ FILTER_LIST = {
     'ID_100': {
         'enable': True,
         'raw_section_name': 'scheduler_info',
-        'regex_new': 'ls /sys/block/{sd[*],xvd[*]}/queue/scheduler [|]xargs -I f sh -c "echo f; cat f;"'
+        'final_section_name': 'scheduler',
+        'regex_new': 'ls /sys/block/{.*}/queue/scheduler [|]xargs -I f sh -c "echo f; cat f;"'
         # 'parser_func'
     },
     'ID_101': {
@@ -819,7 +820,7 @@ AS_SECTION_NAME_LIST = ['statistics', 'statistics.dc',
                         'statistics.xdr', 'config', 'config.dc', 'config.xdr', 'config.cluster']
 # Other Available sections  ['latency', 'sindex_info', 'features']
 
-SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo',
+SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo', 'scheduler',
                          'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr', 'dmesg']
 # Meta data have all meta info (asd_build, xdr_build, cluster_name)
 DERIVED_SECTION_LIST = ['features']

@@ -285,6 +285,8 @@ def first_key_to_upper(data):
     return updated_dict
 
 
+# TODO: Remove duplications or extra steps
+# TODO: Organize parse flow
 def restructure_sys_data(content, cmd):
     if not content:
         return {}
@@ -348,6 +350,20 @@ def restructure_sys_data(content, cmd):
                     new_df_dict[name].update(copy.deepcopy(fs))
 
                 content[n] = new_df_dict
+        except Exception:
+            pass
+
+    elif cmd == "scheduler":
+        try:
+            for n in content.keys():
+                c = content[n]
+                c = c["scheduler_stat"]
+                sch = {}
+                for d_info in c:
+                    sch[d_info["device"]] = {}
+                    sch[d_info["device"]]["scheduler"] = d_info["scheduler"]
+
+                content[n] = sch
         except Exception:
             pass
 

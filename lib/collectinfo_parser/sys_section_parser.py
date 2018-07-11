@@ -85,12 +85,15 @@ def parse_sys_section(section_list, imap, parsed_map):
         elif section == 'environment':
             _parse_environment_section(imap, parsed_map)
 
+        elif section == 'scheduler':
+            _parse_scheduler_section(imap, parsed_map)
+
         else:
             logger.warning(
                 "Section unknown, can not be parsed. Check SYS_SECTION_NAME_LIST. Section: " + section)
 
-    logger.info(
-        "Converting basic raw string vals to original vals. Sections: " + str(section_list))
+    logger.info("Converting basic raw string vals to original vals. Sections: " + str(section_list))
+
     for section in section_list:
         if section in parsed_map:
             param_map = {section: parsed_map[section]}
@@ -789,6 +792,59 @@ def _parse_environment_section(imap, parsed_map):
         parsed_map[final_section_name] = {}
 
     parsed_map[final_section_name]["platform"] = platform
+
+def _parse_scheduler_section(imap, parsed_map):
+    sec_id = 'ID_100'
+    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+
+    logger.info("Parsing section: " + final_section_name)
+
+    if not is_valid_section(imap, raw_section_name, final_section_name):
+        return
+
+    scheduler_section = imap[raw_section_name][0]
+
+    schedulers = []
+    scheduler = ""
+    device = ""
+    for line in scheduler_section:
+        line = line.strip()
+        if not line or "cannot access" in line:
+            continue
+
+        if "scheduler" in line:
+            l = line.split("/sys/block/")
+            if not l:
+                continue
+
+            l = l[1].split("/queue/scheduler")
+            if not l:
+                continue
+
+            device = l[0].strip()
+            continue
+
+        if not device:
+            # device not found yet, no need to proceed with this line
+            continue
+
+        # find scheduler
+        for s in line.split():
+            if not s:
+                continue
+            if s.startswith('[') and s.endswith(']'):
+                scheduler = s[1:len(s)-1].lower()
+
+        # if scheduler found, set details
+        if scheduler:
+            schedulers.append({"device":device, "scheduler": scheduler})
+            scheduler = ""
+            device = ""
+
+    if final_section_name not in parsed_map:
+        parsed_map[final_section_name] = {}
+
+    parsed_map[final_section_name]["scheduler_stat"] = schedulers
 
 
 ### "iostat -x 1 10\n",

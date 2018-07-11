@@ -294,6 +294,12 @@ ASSERT(r, False, "> 1 migrate thread configured.", "OPERATIONS", INFO,
 
 
 /* Device Configuration */
+s = select "scheduler" from SYSTEM.SCHEDULER save;
+r = do s == "noop";
+ASSERT(r, True, "Non-recommended IO scheduler.", "OPERATIONS", WARNING,
+				"Listed device[s] have not configured with noop scheduler. This might create situation like slow data migrations. Please contact Aerospike Support team. Ignore if device is not used in any namespace.",
+				"Device IO scheduler check.");
+
 f = select "name" from SYSTEM.DF;
 d = select like(".*device.*") from NAMESPACE.CONFIG save;
 r = do APPLY_TO_ANY(d, IN, f);
