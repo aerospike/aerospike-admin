@@ -797,21 +797,32 @@ class FeaturesController(CollectinfoCommandController):
     def _do_default(self, line):
         service_stats = self.loghdlr.info_statistics(stanza=STAT_SERVICE)
         namespace_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE)
+        service_configs = self.loghdlr.info_getconfig(stanza=CONFIG_SERVICE)
+        namespace_configs = self.loghdlr.info_getconfig(stanza=CONFIG_NAMESPACE)
         cluster_configs = self.loghdlr.info_getconfig(stanza=CONFIG_CLUSTER)
 
         for timestamp in sorted(service_stats.keys()):
             features = {}
             s_stats = service_stats[timestamp]
             ns_stats = {}
+            s_configs = {}
+            ns_configs = {}
             cl_configs = {}
 
             if timestamp in namespace_stats:
                 ns_stats = namespace_stats[timestamp]
 
+            if timestamp in service_configs:
+                s_configs = service_configs[timestamp]
+
+            if timestamp in namespace_configs:
+                ns_configs = namespace_configs[timestamp]
+
             if timestamp in cluster_configs:
                 cl_configs = cluster_configs[timestamp]
 
-            features = common.find_nodewise_features(service_data=s_stats, ns_data=ns_stats, cl_data=cl_configs)
+            features = common.find_nodewise_features(service_stats=s_stats, ns_stats=ns_stats, service_configs=s_configs,
+                                                     ns_configs=ns_configs, cluster_configs=cl_configs)
 
             self.view.show_config(
                 "Features",
@@ -1087,6 +1098,8 @@ class SummaryController(CollectinfoCommandController):
         namespace_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE)
         set_stats = self.loghdlr.info_statistics(stanza=STAT_SETS)
 
+        service_configs = self.loghdlr.info_getconfig(stanza=CONFIG_SERVICE)
+        namespace_configs = self.loghdlr.info_getconfig(stanza=CONFIG_NAMESPACE)
         cluster_configs = self.loghdlr.info_getconfig(stanza=CONFIG_CLUSTER)
 
         os_version = self.loghdlr.get_sys_data(stanza="lsb")
@@ -1149,6 +1162,10 @@ class SummaryController(CollectinfoCommandController):
 
         metadata["os_version"] = os_version
 
-        self.view.print_summary(common.create_summary(service_stats=service_stats[last_timestamp], namespace_stats=namespace_stats[last_timestamp],
-                                                    set_stats=set_stats[last_timestamp], metadata=metadata, cluster_configs=cluster_configs),
+        self.view.print_summary(common.create_summary(service_stats=service_stats[last_timestamp],
+                                                      namespace_stats=namespace_stats[last_timestamp],
+                                                      set_stats=set_stats[last_timestamp], metadata=metadata,
+                                                      service_configs=service_configs[last_timestamp],
+                                                      ns_configs=namespace_configs[last_timestamp],
+                                                      cluster_configs=cluster_configs,),
                                 list_view=enable_list_view)

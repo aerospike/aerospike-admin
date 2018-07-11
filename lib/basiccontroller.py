@@ -26,7 +26,7 @@ from lib.collectinfocontroller import CollectinfoRootController
 from lib.controllerlib import (BaseController, CommandController, CommandHelp,
                                ShellException)
 from lib.getcontroller import (GetConfigController, GetDistributionController,
-                               GetPmapController, GetStatisticsController,
+                               GetPmapController, GetStatisticsController, GetFeaturesController,
                                get_sindex_stats)
 from lib.health.util import (create_health_input_dict, create_snapshot_key,
                              h_eval)
@@ -1574,7 +1574,7 @@ class FeaturesController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['with', 'like'])
-        self.getter = GetStatisticsController(self.cluster)
+        self.getter = GetFeaturesController(self.cluster)
 
     def _do_default(self, line):
 
@@ -2021,6 +2021,8 @@ class SummaryController(BasicCommandController):
         namespace_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=self.nodes).start()
         set_stats = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
 
+        service_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='service').start()
+        namespace_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='namespace').start()
         cluster_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='cluster').start()
 
         os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
@@ -2034,6 +2036,8 @@ class SummaryController(BasicCommandController):
         service_stats = service_stats.result()
         namespace_stats = namespace_stats.result()
         set_stats = set_stats.result()
+        service_configs = service_configs.result()
+        namespace_configs = namespace_configs.result()
         cluster_configs = cluster_configs.result()
         server_version = server_version.result()
         server_edition = server_edition.result()
@@ -2088,5 +2092,7 @@ class SummaryController(BasicCommandController):
         metadata["os_version"] = os_version
 
         return util.Future(self.view.print_summary, common.create_summary(service_stats=service_stats, namespace_stats=namespace_stats,
-                                                    set_stats=set_stats, metadata=metadata, cluster_configs=cluster_configs),
+                                                                          set_stats=set_stats, metadata=metadata,
+                                                                          service_configs=service_configs, ns_configs=namespace_configs,
+                                                                          cluster_configs=cluster_configs),
                            list_view=enable_list_view)

@@ -18,6 +18,7 @@
 
 import json
 import logging
+import operator
 import os
 import platform
 import socket
@@ -34,8 +35,19 @@ from lib.view import terminal
 logger = logging.getLogger("asadm")
 ########## Feature ##########
 
+comp_ops = {
+    '>': operator.gt,
+    '<': operator.lt,
+    '>=': operator.ge,
+    '<=': operator.le,
+    '==': operator.eq,
+    '!=': operator.ne,
+}
+
 # Dictionary to contain feature and related stats to identify state of that feature
-# Format : { feature1: ((service_stat1, service_stat2, ....), (namespace_stat1, namespace_stat2, ...), ...}
+# Format : { feature1: ((service stat1/config1 <, comp_op, value> ), (service stat2/config2 <, comp_op, value>), ....),
+#                      ((namespace stat1/config1 <, comp_op, value>), (namespace stat2/config2 <, comp_op, value>), ...),
+#            ...}
 FEATURE_KEYS = {
     "KVS": (('stat_read_reqs', 'stat_write_reqs'),
             ('client_read_error', 'client_read_success', 'client_write_error', 'client_write_success')),
@@ -50,20 +62,24 @@ FEATURE_KEYS = {
     "SINDEX": (('sindex-used-bytes-memory'), ('memory_used_sindex_bytes')),
     "Query": (('query_reqs', 'query_success'), ('query_reqs', 'query_success')),
     "Aggregation": (('query_agg', 'query_agg_success'), ('query_agg', 'query_agg_success')),
-    "LDT": (
-        ('sub-records', 'ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes',
+    "LDT": (('sub-records', 'ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes',
          'sub_objects'),
         ('ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes')),
     "XDR Source": (('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error'), None),
     "XDR Destination": (('stat_write_reqs_xdr'), ('xdr_write_success')),
     "Rack-aware": (('self-group-id'), ('rack-id')),
+    "Security": ((('enable-security', comp_ops["=="], "true"),), None),
+    "TLS (Heartbeat)": (('heartbeat.mesh-seed-address-port'), None),
+    "TLS (Fabric)": (('fabric.tls-port'), None),
+    "TLS (Service)": (('service.tls-port'), None),
+    "SC": (None, (('strong-consistency', comp_ops["=="], "true"),)),
 }
 
 
-def _is_keyval_greater_than_value(data={}, keys=(), value=0, is_and=False, type_check=int):
+def _check_value(data={}, keys=()):
     """
-    Function takes dictionary, keys and value to compare.
-    Returns boolean to indicate value for key is greater than comparing value or not.
+    Function takes dictionary, and keys to compare.
+    Returns boolean to indicate value for key is satisfying operation over value or not.
     """
 
     if not keys:
@@ -75,12 +91,32 @@ def _is_keyval_greater_than_value(data={}, keys=(), value=0, is_and=False, type_
     if not isinstance(keys, tuple):
         keys = (keys,)
 
-    if is_and:
-        if all(util.get_value_from_dict(data, k, value, type_check) > value for k in keys):
-            return True
+    for key in keys:
+        k = key
+        value = 0
+        dv = 0
+        op = comp_ops[">"]
+        type_check = int
+        if isinstance(key, tuple):
+            if len(key) != 3:
+                return False
+            k = key[0]
+            value = key[2]
+            op = key[1]
 
-    else:
-        if any(util.get_value_from_dict(data, k, value, type_check) > value for k in keys):
+        if isinstance(value, str):
+            dv = None
+            type_check = str
+        if isinstance(value, bool):
+            dv = False
+            type_check = bool
+
+        fetched_value = util.get_value_from_dict(data, k, dv, type_check)
+
+        if fetched_value is None:
+            continue
+
+        if op(fetched_value, value):
             return True
 
     return False
@@ -93,33 +129,61 @@ def _check_feature_by_keys(service_data=None, service_keys=None, ns_data=None, n
     """
 
     if service_data and not isinstance(service_data, Exception) and service_keys:
-        if _is_keyval_greater_than_value(service_data, service_keys):
+        if _check_value(service_data, service_keys):
             return True
 
     if ns_data and ns_keys:
         for ns, nsval in ns_data.iteritems():
             if not nsval or isinstance(nsval, Exception):
                 continue
-            if _is_keyval_greater_than_value(nsval, ns_keys):
+            if _check_value(nsval, ns_keys):
                 return True
 
     return False
 
 
-def _find_features_for_cluster(service_data, ns_data, cl_data={}):
+def _deep_merge_dicts(dict_to, dict_from):
     """
-    Function takes dictionary of service stats, dictionary of namespace stats, and dictionary cluster config.
+    Function takes dictionaries to merge
+
+    Merge dict_from to dict_to and returns dict_to
+    """
+
+    if not dict_to and not dict_from:
+        return dict_to
+
+    if not dict_to:
+        return dict_from
+
+    if not isinstance(dict_to, dict):
+        return dict_to
+
+    if not dict_from or not isinstance(dict_from, dict):
+        # either dict_from is None/empty or is last value whose key matched
+        # already, so no need to add
+        return dict_to
+
+    for _key in dict_from.keys():
+        if _key not in dict_to:
+            dict_to[_key] = dict_from[_key]
+        else:
+            dict_to[_key] = _deep_merge_dicts(dict_to[_key], dict_from[_key])
+
+    return dict_to
+
+
+def _find_features_for_cluster(service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}):
+    """
+    Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
     Returns list of active (used) features identifying by comparing respective keys for non-zero value.
     """
 
     features = []
 
-    for node in service_data.keys():
-        if cl_data and node in cl_data and cl_data[node] and not isinstance(cl_data[node], Exception):
-            if service_data[node] and not isinstance(service_data[node], Exception):
-                service_data[node].update(cl_data[node])
-            else:
-                service_data[node] = cl_data[node]
+    service_data = _deep_merge_dicts(service_stats, service_configs)
+    service_data = _deep_merge_dicts(service_data, cluster_configs)
+
+    ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
     for feature, keys in FEATURE_KEYS.iteritems():
         for node, d in service_data.iteritems():
@@ -136,20 +200,17 @@ def _find_features_for_cluster(service_data, ns_data, cl_data={}):
     return features
 
 
-def find_nodewise_features(service_data, ns_data, cl_data={}):
+def find_nodewise_features(service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}):
     """
-    Function takes dictionary of service stats, dictionary of namespace stats, and dictionary cluster config.
+    Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
     Returns map of active (used) features per node identifying by comparing respective keys for non-zero value.
     """
 
     features = {}
 
-    for node in service_data.keys():
-        if node in cl_data and cl_data[node] and not isinstance(cl_data[node], Exception):
-            if service_data[node] and not isinstance(service_data[node], Exception):
-                service_data[node].update(cl_data[node])
-            else:
-                service_data[node] = cl_data[node]
+    service_data = _deep_merge_dicts(service_stats, service_configs)
+    service_data = _deep_merge_dicts(service_data, cluster_configs)
+    ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
     for feature, keys in FEATURE_KEYS.iteritems():
         for node, s_stats in service_data.iteritems():
@@ -390,13 +451,15 @@ def _initialize_summary_output(ns_list):
     return summary_dict
 
 
-def create_summary(service_stats, namespace_stats, set_stats, metadata, cluster_configs={}):
+def create_summary(service_stats, namespace_stats, set_stats, metadata,
+                   service_configs={}, ns_configs={}, cluster_configs={}):
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
     Returns dictionary with summary information.
     """
 
-    features = _find_features_for_cluster(service_stats, namespace_stats, cluster_configs)
+    features = _find_features_for_cluster(service_stats, namespace_stats, service_configs=service_configs,
+                                          ns_configs=ns_configs, cluster_configs=cluster_configs)
 
     namespace_stats = util.flip_keys(namespace_stats)
     set_stats = util.flip_keys(set_stats)
