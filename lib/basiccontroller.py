@@ -26,7 +26,7 @@ from lib.collectinfocontroller import CollectinfoRootController
 from lib.controllerlib import (BaseController, CommandController, CommandHelp,
                                ShellException)
 from lib.getcontroller import (GetConfigController, GetDistributionController,
-                               GetPmapController, GetStatisticsController,
+                               GetPmapController, GetStatisticsController, GetFeaturesController,
                                get_sindex_stats)
 from lib.health.util import (create_health_input_dict, create_snapshot_key,
                              h_eval)
@@ -1035,6 +1035,8 @@ class CollectinfoController(BasicCommandController):
         xdr_builds = util.Future(self.cluster.info_XDR_build_version, nodes=self.nodes).start()
         node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start()
         ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start()
+        endpoints = util.Future(self.cluster.info_service, nodes=self.nodes).start()
+        services = util.Future(self.cluster.info_services, nodes=self.nodes).start()
         udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start()
 
         builds = builds.result()
@@ -1042,6 +1044,8 @@ class CollectinfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         node_ids = node_ids.result()
         ips = ips.result()
+        endpoints = endpoints.result()
+        services = services.result()
         udf_data = udf_data.result()
 
         for nodeid in builds:
@@ -1051,6 +1055,8 @@ class CollectinfoController(BasicCommandController):
             self._get_meta_for_sec(xdr_builds, 'xdr_build', nodeid, metamap)
             self._get_meta_for_sec(node_ids, 'node_id', nodeid, metamap)
             self._get_meta_for_sec(ips, 'ip', nodeid, metamap)
+            self._get_meta_for_sec(endpoints, 'endpoints', nodeid, metamap)
+            self._get_meta_for_sec(services, 'services', nodeid, metamap)
             self._get_meta_for_sec(udf_data, 'udf', nodeid, metamap)
 
         return metamap
@@ -1104,8 +1110,9 @@ class CollectinfoController(BasicCommandController):
         self.aslogfile = as_logfile_prefix + 'ascinfo.json'
 
         try:
+            json_dump = json.dumps(dump, indent=4, separators=(',', ':'))
             with open(self.aslogfile, "w") as f:
-                f.write(json.dumps(dump, indent=4, separators=(',', ':')))
+                f.write(json_dump)
         except Exception as e:
             self.logger.error("Failed to write JSON file: " + str(e))
 
@@ -1567,7 +1574,7 @@ class FeaturesController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['with', 'like'])
-        self.getter = GetStatisticsController(self.cluster)
+        self.getter = GetFeaturesController(self.cluster)
 
     def _do_default(self, line):
 
@@ -1601,7 +1608,8 @@ class PagerController(BasicCommandController):
         CliView.pager = CliView.SCROLL
 
 
-@CommandHelp('Checks for common inconsistencies and print if there is any')
+@CommandHelp('Checks for common inconsistencies and print if there is any.',
+             'This command is still in beta and its output should not be directly acted upon without further analysis.')
 class HealthCheckController(BasicCommandController):
     last_snapshot_collection_time = 0
     last_snapshot_count = 0
@@ -1858,6 +1866,8 @@ class HealthCheckController(BasicCommandController):
                      [("CLUSTER", cluster_name), ("NODE", None), ("LSB", None)]),
                     ("environment", "SYSTEM", "ENVIRONMENT", True,
                      [("CLUSTER", cluster_name), ("NODE", None), ("ENVIRONMENT", None)]),
+                    ("scheduler", "SYSTEM", "SCHEDULER", False,
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DEVICE", None)]),
                 ]),
             }
             health_input = {}
@@ -2011,7 +2021,9 @@ class SummaryController(BasicCommandController):
         namespace_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=self.nodes).start()
         set_stats = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
 
-        cluster_configs = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
+        service_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='service').start()
+        namespace_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='namespace').start()
+        cluster_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='cluster').start()
 
         os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
                                                          default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["lsb"], collect_remote_data=enable_ssh)
@@ -2024,16 +2036,21 @@ class SummaryController(BasicCommandController):
         service_stats = service_stats.result()
         namespace_stats = namespace_stats.result()
         set_stats = set_stats.result()
+        service_configs = service_configs.result()
+        namespace_configs = namespace_configs.result()
         cluster_configs = cluster_configs.result()
         server_version = server_version.result()
         server_edition = server_edition.result()
 
         metadata = {}
         metadata["server_version"] = {}
+        metadata["server_build"] = {}
 
         for node, version in server_version.iteritems():
             if not version or isinstance(version, Exception):
                 continue
+
+            metadata["server_build"][node] = version
 
             if node in server_edition and server_edition[node] and not isinstance(server_edition[node], Exception):
                 if 'enterprise' in server_edition[node].lower():
@@ -2075,5 +2092,7 @@ class SummaryController(BasicCommandController):
         metadata["os_version"] = os_version
 
         return util.Future(self.view.print_summary, common.create_summary(service_stats=service_stats, namespace_stats=namespace_stats,
-                                                    set_stats=set_stats, metadata=metadata, cluster_configs=cluster_configs),
+                                                                          set_stats=set_stats, metadata=metadata,
+                                                                          service_configs=service_configs, ns_configs=namespace_configs,
+                                                                          cluster_configs=cluster_configs),
                            list_view=enable_list_view)

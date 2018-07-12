@@ -284,7 +284,7 @@ ASSERT(r, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Probable cause - namespace size misconfiguration.",
 				"Namespace disk available pct check.");
 
-s = select * from SERVICE.CONFIG ignore "heartbeat.mtu", "node-id-interface", "pidfile", like(".*address"), like(".*port")  save;
+s = select * from SERVICE.CONFIG ignore "heartbeat.mtu", "node-id-interface", "node-id", "pidfile", like(".*address"), like(".*port")  save;
 r = group by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
 ASSERT(r, False, "Different service configurations.", "OPERATIONS", WARNING,
 				"Listed Service configuration[s] are different across multiple nodes in cluster. Please run 'show config service diff' to check different configuration values. Probable cause - config file misconfiguration.",
@@ -309,6 +309,12 @@ ASSERT(r, False, "> 1 migrate thread configured.", "OPERATIONS", INFO,
 
 
 /* Device Configuration */
+s = select "scheduler" from SYSTEM.SCHEDULER save;
+r = do s == "noop";
+ASSERT(r, True, "Non-recommended IO scheduler.", "OPERATIONS", WARNING,
+				"Listed device[s] have not configured with noop scheduler. This might create situation like slow data migrations. Please contact Aerospike Support team. Ignore if device is not used in any namespace.",
+				"Device IO scheduler check.");
+
 f = select "name" from SYSTEM.DF;
 d = select like(".*device.*") from NAMESPACE.CONFIG save;
 r = do APPLY_TO_ANY(d, IN, f);

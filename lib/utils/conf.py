@@ -30,6 +30,7 @@ except ImportError:
     HAVE_JSONSCHEMA = False
 
 from lib.utils.constants import ADMIN_HOME, AuthMode
+DEFAULTPASSWORD="SomeRandomDefaultPassword"
 
 class _Namespace(object):
   def __init__(self, adict):
@@ -40,9 +41,10 @@ class _Namespace(object):
 _confdefault = {
     "cluster": {
         "host": "127.0.0.1",
+        "services-alternate": False,
         "port": 3000,
         "user": None,
-        "password": "prompt",
+        "password": DEFAULTPASSWORD,
         "auth": AuthMode.INTERNAL,
         "tls-enable":  False,
         "tls-cafile": "",
@@ -57,7 +59,6 @@ _confdefault = {
     },
     "asadm": {
         "services-alumni": False,
-        "services-alternate": False,
         "timeout": 5,
 
         "line-separator": False,
@@ -102,7 +103,6 @@ _confspec = '''{
             "type" : "object",
             "properties" : {
                 "services-alumni" : { "type" : "boolean" },
-                "services-alternate" : { "type" : "boolean" },
                 "timeout" : { "type" : "integer" },
 
                 "line-separator": { "type" : "boolean" },
@@ -126,6 +126,7 @@ _confspec = '''{
             "additionalProperties" : false,
             "properties" : {
                 "host" : {"type" : "string"},
+                "services-alternate" : { "type" : "boolean" },
                 "port" : {"type" : "integer"},
                 "user" : { "type" : "string" },
                 "password" : { "type" : "string" },
@@ -213,7 +214,12 @@ def _flatten(conf_dict, instance=None):
     for section in sections:
         if section in conf_dict.keys():
             for k,v in conf_dict[section].iteritems():
-                asadm_conf[decode(k.replace("-", "_"))] = decode(v)
+                # Empty passwords are allowed do not interpret
+                # it as None
+                if k == "password":
+                    asadm_conf[decode(k.replace("-", "_"))] = v
+                else:
+                    asadm_conf[decode(k.replace("-", "_"))] = decode(v)
 
     return asadm_conf
 
@@ -243,7 +249,7 @@ def _getseeds(conf):
         port = conf["port"]
 
     tls_name = None
-    if "tls_name" in conf.keys() and conf["tls_name"] is not None:
+    if "tls_name" in conf.keys() and conf["tls_name"] is not None and "tls_enable" in conf and conf["tls_enable"]:
         tls_name = conf["tls_name"]
 
 
@@ -357,6 +363,7 @@ def loadconfig(cli_args, logger):
 
     # -> Command line
     cli_dict = vars(cli_args)
+
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
 
@@ -422,6 +429,9 @@ def print_config_file_option():
            "                        host1\n"
            "                        host1:3000,host2:3000\n"
            "                        192.168.1.10:cert1:3000,192.168.1.20:cert2:3000")
+    print (" --services-alternate \n"
+           "                      Enable use of services-alternate instead of services in\n"
+           "                      info request during cluster tending")
     print (" -p, --port=PORT \n"
            "                      Server default port. Default: 3000")
     print (" -U, --user=USER \n"
@@ -481,9 +491,6 @@ def print_config_file_option():
            "                      is set.")
     print (" -s --services-alumni\n"
            "                      Enable use of services-alumni-list instead of services-list")
-    print (" -a --services-alternate \n"
-           "                      Enable use of services-alternate instead of services in\n"
-           "                      info request during cluster tending")
     print (" --timeout=value      Set timeout value in seconds to node level operations. \n"
            "                      TLS connection does not support timeout. Default: 5 seconds")
 
@@ -532,12 +539,13 @@ def get_cli_args():
     add_fn("--line-separator",  action="store_true")
 
     add_fn("-h", "--host")
+    add_fn("-a", "--services-alternate", action="store_true")
     add_fn("-p", "--port", type=int)
     add_fn("-U", "--user")
     if have_argparse:
-        add_fn("-P", "--password", nargs="?")
+        add_fn("-P", "--password", nargs="?", const=DEFAULTPASSWORD)
     else:
-        parser.add_option("-P", "--password", dest="password", action="store_const", const="prompt")
+        parser.add_option("-P", "--password", dest="password", action="store_const", const=DEFAULTPASSWORD)
 
     add_fn("--auth")
     add_fn("--tls-enable", action="store_true")
@@ -553,7 +561,6 @@ def get_cli_args():
 
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
-    add_fn("-a", "--services-alternate", action="store_true")
     add_fn("--timeout", type=float)
 
     add_fn("--config-file")
@@ -570,9 +577,9 @@ def get_cli_args():
     add_fn("--asinfo_mode", action="store_true")
     add_fn("--asinfo-mode", action="store_true")
     add_fn("--out_file")
-    add_fn("--no_color")
-    add_fn("--services_alumni")
-    add_fn("--services_alternate")
+    add_fn("--no_color", action="store_true")
+    add_fn("--services_alumni", action="store_true")
+    add_fn("--services_alternate", action="store_true")
     add_fn("--single_node_cluster", dest="single_node", action="store_true")
     add_fn("--tls_name")
     add_fn("--tls_enable", action="store_true")

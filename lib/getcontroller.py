@@ -61,6 +61,7 @@ def get_sindex_stats(cluster, nodes='all', for_mods=[]):
                         sindex_stats[sindex_key][node][key] = value
     return sindex_stats
 
+
 class GetDistributionController():
 
     def __init__(self, cluster):
@@ -76,7 +77,7 @@ class GetDistributionController():
         histogram_name = 'objsz'
 
         if not byte_distribution:
-            return self.do_distribution(histogram_name)
+            return self.do_distribution(histogram_name, nodes=nodes)
 
         histogram = util.Future(self.cluster.info_histogram, histogram_name, logarithmic=True, nodes=nodes).start()
         builds = util.Future(self.cluster.info, 'build', nodes=nodes).start()
@@ -84,6 +85,7 @@ class GetDistributionController():
         builds = builds.result()
 
         return common.create_histogram_output(histogram_name, histogram, byte_distribution=True, bucket_count=bucket_count, builds=builds)
+
 
 class GetLatencyController():
 
@@ -241,6 +243,7 @@ class GetConfigController():
 
         return cl_configs
 
+
 class GetStatisticsController():
 
     def __init__(self, cluster):
@@ -387,16 +390,29 @@ class GetStatisticsController():
                 return True
         return False
 
+
+class GetFeaturesController():
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+
     def get_features(self, nodes='all'):
         service_stats = util.Future(self.cluster.info_statistics, nodes=nodes).start()
         ns_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=nodes).start()
-        cl_configs = util.Future(self.cluster.info_get_config, nodes=nodes,stanza='cluster').start()
+        service_configs = util.Future(self.cluster.info_get_config, stanza='service', nodes=nodes).start()
+        ns_configs = util.Future(self.cluster.info_get_config, stanza='namespace', nodes=nodes).start()
+        cl_configs = util.Future(self.cluster.info_get_config, stanza='cluster', nodes=nodes).start()
 
         service_stats = service_stats.result()
         ns_stats = ns_stats.result()
+        service_configs = service_configs.result()
+        ns_configs = ns_configs.result()
         cl_configs = cl_configs.result()
 
-        return common.find_nodewise_features(service_data=service_stats, ns_data=ns_stats, cl_data=cl_configs)
+        return common.find_nodewise_features(service_stats=service_stats, ns_stats=ns_stats,
+                                             service_configs=service_configs, ns_configs=ns_configs,
+                                             cluster_configs=cl_configs)
+
 
 class GetPmapController():
 

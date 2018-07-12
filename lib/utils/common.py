@@ -18,6 +18,7 @@
 
 import json
 import logging
+import operator
 import os
 import platform
 import socket
@@ -34,8 +35,19 @@ from lib.view import terminal
 logger = logging.getLogger("asadm")
 ########## Feature ##########
 
+comp_ops = {
+    '>': operator.gt,
+    '<': operator.lt,
+    '>=': operator.ge,
+    '<=': operator.le,
+    '==': operator.eq,
+    '!=': operator.ne,
+}
+
 # Dictionary to contain feature and related stats to identify state of that feature
-# Format : { feature1: ((service_stat1, service_stat2, ....), (namespace_stat1, namespace_stat2, ...), ...}
+# Format : { feature1: ((service stat1/config1 <, comp_op, value> ), (service stat2/config2 <, comp_op, value>), ....),
+#                      ((namespace stat1/config1 <, comp_op, value>), (namespace stat2/config2 <, comp_op, value>), ...),
+#            ...}
 FEATURE_KEYS = {
     "KVS": (('stat_read_reqs', 'stat_write_reqs'),
             ('client_read_error', 'client_read_success', 'client_write_error', 'client_write_success')),
@@ -50,20 +62,24 @@ FEATURE_KEYS = {
     "SINDEX": (('sindex-used-bytes-memory'), ('memory_used_sindex_bytes')),
     "Query": (('query_reqs', 'query_success'), ('query_reqs', 'query_success')),
     "Aggregation": (('query_agg', 'query_agg_success'), ('query_agg', 'query_agg_success')),
-    "LDT": (
-        ('sub-records', 'ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes',
+    "LDT": (('sub-records', 'ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes',
          'sub_objects'),
         ('ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes')),
     "XDR Source": (('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error'), None),
     "XDR Destination": (('stat_write_reqs_xdr'), ('xdr_write_success')),
     "Rack-aware": (('self-group-id'), ('rack-id')),
+    "Security": ((('enable-security', comp_ops["=="], "true"),), None),
+    "TLS (Heartbeat)": (('heartbeat.mesh-seed-address-port'), None),
+    "TLS (Fabric)": (('fabric.tls-port'), None),
+    "TLS (Service)": (('service.tls-port'), None),
+    "SC": (None, (('strong-consistency', comp_ops["=="], "true"),)),
 }
 
 
-def _is_keyval_greater_than_value(data={}, keys=(), value=0, is_and=False, type_check=int):
+def _check_value(data={}, keys=()):
     """
-    Function takes dictionary, keys and value to compare.
-    Returns boolean to indicate value for key is greater than comparing value or not.
+    Function takes dictionary, and keys to compare.
+    Returns boolean to indicate value for key is satisfying operation over value or not.
     """
 
     if not keys:
@@ -75,12 +91,32 @@ def _is_keyval_greater_than_value(data={}, keys=(), value=0, is_and=False, type_
     if not isinstance(keys, tuple):
         keys = (keys,)
 
-    if is_and:
-        if all(util.get_value_from_dict(data, k, value, type_check) > value for k in keys):
-            return True
+    for key in keys:
+        k = key
+        value = 0
+        dv = 0
+        op = comp_ops[">"]
+        type_check = int
+        if isinstance(key, tuple):
+            if len(key) != 3:
+                return False
+            k = key[0]
+            value = key[2]
+            op = key[1]
 
-    else:
-        if any(util.get_value_from_dict(data, k, value, type_check) > value for k in keys):
+        if isinstance(value, str):
+            dv = None
+            type_check = str
+        if isinstance(value, bool):
+            dv = False
+            type_check = bool
+
+        fetched_value = util.get_value_from_dict(data, k, dv, type_check)
+
+        if fetched_value is None:
+            continue
+
+        if op(fetched_value, value):
             return True
 
     return False
@@ -93,33 +129,61 @@ def _check_feature_by_keys(service_data=None, service_keys=None, ns_data=None, n
     """
 
     if service_data and not isinstance(service_data, Exception) and service_keys:
-        if _is_keyval_greater_than_value(service_data, service_keys):
+        if _check_value(service_data, service_keys):
             return True
 
     if ns_data and ns_keys:
         for ns, nsval in ns_data.iteritems():
             if not nsval or isinstance(nsval, Exception):
                 continue
-            if _is_keyval_greater_than_value(nsval, ns_keys):
+            if _check_value(nsval, ns_keys):
                 return True
 
     return False
 
 
-def _find_features_for_cluster(service_data, ns_data, cl_data={}):
+def _deep_merge_dicts(dict_to, dict_from):
     """
-    Function takes dictionary of service stats, dictionary of namespace stats, and dictionary cluster config.
+    Function takes dictionaries to merge
+
+    Merge dict_from to dict_to and returns dict_to
+    """
+
+    if not dict_to and not dict_from:
+        return dict_to
+
+    if not dict_to:
+        return dict_from
+
+    if not isinstance(dict_to, dict):
+        return dict_to
+
+    if not dict_from or not isinstance(dict_from, dict):
+        # either dict_from is None/empty or is last value whose key matched
+        # already, so no need to add
+        return dict_to
+
+    for _key in dict_from.keys():
+        if _key not in dict_to:
+            dict_to[_key] = dict_from[_key]
+        else:
+            dict_to[_key] = _deep_merge_dicts(dict_to[_key], dict_from[_key])
+
+    return dict_to
+
+
+def _find_features_for_cluster(service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}):
+    """
+    Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
     Returns list of active (used) features identifying by comparing respective keys for non-zero value.
     """
 
     features = []
 
-    for node in service_data.keys():
-        if cl_data and node in cl_data and cl_data[node] and not isinstance(cl_data[node], Exception):
-            if service_data[node] and not isinstance(service_data[node], Exception):
-                service_data[node].update(cl_data[node])
-            else:
-                service_data[node] = cl_data[node]
+    service_data = _deep_merge_dicts(service_stats, service_configs)
+    service_data = _deep_merge_dicts(service_data, cluster_configs)
+
+    ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
     for feature, keys in FEATURE_KEYS.iteritems():
         for node, d in service_data.iteritems():
@@ -136,20 +200,17 @@ def _find_features_for_cluster(service_data, ns_data, cl_data={}):
     return features
 
 
-def find_nodewise_features(service_data, ns_data, cl_data={}):
+def find_nodewise_features(service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}):
     """
-    Function takes dictionary of service stats, dictionary of namespace stats, and dictionary cluster config.
+    Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
     Returns map of active (used) features per node identifying by comparing respective keys for non-zero value.
     """
 
     features = {}
 
-    for node in service_data.keys():
-        if node in cl_data and cl_data[node] and not isinstance(cl_data[node], Exception):
-            if service_data[node] and not isinstance(service_data[node], Exception):
-                service_data[node].update(cl_data[node])
-            else:
-                service_data[node] = cl_data[node]
+    service_data = _deep_merge_dicts(service_stats, service_configs)
+    service_data = _deep_merge_dicts(service_data, cluster_configs)
+    ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
     for feature, keys in FEATURE_KEYS.iteritems():
         for node, s_stats in service_data.iteritems():
@@ -173,7 +234,17 @@ def find_nodewise_features(service_data, ns_data, cl_data={}):
 
 ########## Summary ##########
 
-def _compute_set_overhead_for_ns(set_stats, ns):
+def _set_record_overhead(as_version=""):
+    overhead = 9
+    if not as_version:
+        return overhead
+
+    if LooseVersion(as_version) >= LooseVersion("4.2"):
+        return 1
+
+    return overhead
+
+def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
     """
     Function takes set stat and namespace name.
     Returns set overhead for input namespace name.
@@ -184,24 +255,35 @@ def _compute_set_overhead_for_ns(set_stats, ns):
 
     overhead = 0
     for _k, stats in set_stats.iteritems():
-        if not stats or isinstance(stats, Exception):
+        if not stats or isinstance(stats, Exception) or node not in stats:
             continue
 
-        ns_name = util.get_value_from_second_level_of_dict(stats, ("ns", "ns_name"), default_value=None,
-                                                           return_type=str).values()[0]
+        ns_name = util.get_value_from_dict(stats[node], ("ns", "ns_name"), default_value=None,
+                                                           return_type=str)
         if ns_name != ns:
             continue
 
-        set_name = util.get_value_from_second_level_of_dict(stats, ("set", "set_name"), default_value="",
-                                                            return_type=str).values()[0]
-        objects = sum(util.get_value_from_second_level_of_dict(stats, ("objects", "n_objects"), default_value=0,
-                                                               return_type=int).values())
-        overhead += objects * (9 + len(set_name))
+        set_name = util.get_value_from_dict(stats[node], ("set", "set_name"), default_value="",
+                                                            return_type=str)
+        objects = util.get_value_from_dict(stats[node], ("objects", "n_objects"), default_value=0,
+                                                               return_type=int)
+        overhead += objects * (_set_record_overhead(as_version=as_version) + len(set_name))
 
     return overhead
 
 
-def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict):
+def _device_record_overhead(as_version=""):
+    overhead = 64
+    if not as_version:
+        return overhead
+
+    if LooseVersion(as_version) >= LooseVersion("4.2"):
+        return 35
+
+    return overhead
+
+
+def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict, as_versions):
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
@@ -216,59 +298,65 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
     for ns, ns_stats in namespace_stats.iteritems():
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
-        repl_factor = max(
-            util.get_value_from_second_level_of_dict(ns_stats, ("repl-factor", "replication-factor"), default_value=0,
-                                                     return_type=int).values())
-        master_objects = sum(
-            util.get_value_from_second_level_of_dict(ns_stats, ("master_objects", "master-objects"), default_value=0,
-                                                     return_type=int).values())
-        devices_in_use = list(set(util.get_value_from_second_level_of_dict(ns_stats, (
-            "storage-engine.device", "device", "storage-engine.file", "file", "dev"), default_value=None,
-                                                                           return_type=str).values()))
-        memory_data_size = None
-        device_data_size = None
 
-        if len(devices_in_use) == 0 or (len(devices_in_use) == 1 and devices_in_use[0] == None):
-            # Data in memory only
-            memory_data_size = sum(
-                util.get_value_from_second_level_of_dict(ns_stats, ("memory_used_data_bytes", "data-used-bytes-memory"),
-                                                         default_value=0, return_type=int).values())
-            memory_data_size = memory_data_size / repl_factor
+        ns_memory_data_size = 0
+        ns_device_data_size = 0
 
-            if memory_data_size > 0:
-                memory_record_overhead = master_objects * 2
-                memory_data_size = memory_data_size - memory_record_overhead
+        for host_id, host_stats in ns_stats.iteritems():
+            master_objects = util.get_value_from_dict(host_stats, ("master_objects", "master-objects"), default_value=0,
+                                                     return_type=int)
+            replica_objects = util.get_value_from_dict(host_stats, ("prole_objects", "prole-objects", "replica_objects",
+                                                                    "replica-objects"), default_value=0, return_type=int)
+            devices_in_use = util.get_value_from_dict(host_stats, ("storage-engine.device", "device", "storage-engine.file",
+                                                                 "file", "dev"), default_value=None, return_type=str)
+            total_objects = master_objects + replica_objects
 
-        else:
-            # Data on disk
-            device_data_size = sum(
-                util.get_value_from_second_level_of_dict(ns_stats, ("device_used_bytes", "used-bytes-disk"),
-                                                         default_value=0, return_type=int).values())
+            if devices_in_use == None:
+                # Data in memory only
+                memory_data_size = util.get_value_from_dict(host_stats, ("memory_used_data_bytes", "data-used-bytes-memory"),
+                                                             default_value=0, return_type=int)
+                if total_objects > 0:
+                    memory_data_size = (memory_data_size / total_objects) * master_objects
+                else:
+                    memory_data_size = 0
 
-            if device_data_size > 0:
-                set_overhead = _compute_set_overhead_for_ns(set_stats, ns)
-                device_data_size = device_data_size - set_overhead
+                if memory_data_size > 0:
+                    memory_record_overhead = master_objects * 2
+                    ns_memory_data_size += memory_data_size - memory_record_overhead
 
-            if device_data_size > 0:
-                tombstones = sum(util.get_value_from_second_level_of_dict(ns_stats, ("tombstones",), default_value=0,
-                                                                          return_type=int).values())
-                tombstone_overhead = tombstones * 128
-                device_data_size = device_data_size - tombstone_overhead
+            else:
+                # Data on disk
+                as_version = ""
+                if as_versions and host_id in as_versions:
+                    as_version = as_versions[host_id]
 
-            device_data_size = device_data_size / repl_factor
-            if device_data_size > 0:
-                device_record_overhead = master_objects * 64
-                device_data_size = device_data_size - device_record_overhead
+                device_data_size = util.get_value_from_dict(host_stats, ("device_used_bytes", "used-bytes-disk"),
+                                                             default_value=0, return_type=int)
 
-        ns_dict[ns]["license_data_in_memory"] = 0
-        ns_dict[ns]["license_data_on_disk"] = 0
-        if memory_data_size is not None:
-            ns_dict[ns]["license_data_in_memory"] = memory_data_size
-            cl_memory_data_size += memory_data_size
+                if device_data_size > 0:
+                    set_overhead = _compute_set_overhead_for_ns(set_stats, ns, host_id, as_version=as_version)
+                    device_data_size = device_data_size - set_overhead
 
-        if device_data_size is not None:
-            ns_dict[ns]["license_data_on_disk"] = device_data_size
-            cl_device_data_size += device_data_size
+                if device_data_size > 0:
+                    tombstones = util.get_value_from_dict(host_stats, ("tombstones",), default_value=0,
+                                                                              return_type=int)
+                    tombstone_overhead = tombstones * 128
+                    device_data_size = device_data_size - tombstone_overhead
+
+                if total_objects > 0:
+                    device_data_size = (device_data_size / total_objects) * master_objects
+                else:
+                    device_data_size = 0
+
+                if device_data_size > 0:
+                    device_record_overhead = master_objects * _device_record_overhead(as_version=as_version)
+                    ns_device_data_size += device_data_size - device_record_overhead
+
+        ns_dict[ns]["license_data_in_memory"] = ns_memory_data_size
+        cl_memory_data_size += ns_memory_data_size
+
+        ns_dict[ns]["license_data_on_disk"] = ns_device_data_size
+        cl_device_data_size += ns_device_data_size
 
     cluster_dict["license_data"] = {}
     cluster_dict["license_data"]["memory_size"] = cl_memory_data_size
@@ -363,13 +451,15 @@ def _initialize_summary_output(ns_list):
     return summary_dict
 
 
-def create_summary(service_stats, namespace_stats, set_stats, metadata, cluster_configs={}):
+def create_summary(service_stats, namespace_stats, set_stats, metadata,
+                   service_configs={}, ns_configs={}, cluster_configs={}):
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
     Returns dictionary with summary information.
     """
 
-    features = _find_features_for_cluster(service_stats, namespace_stats, cluster_configs)
+    features = _find_features_for_cluster(service_stats, namespace_stats, service_configs=service_configs,
+                                          ns_configs=ns_configs, cluster_configs=cluster_configs)
 
     namespace_stats = util.flip_keys(namespace_stats)
     set_stats = util.flip_keys(set_stats)
@@ -388,7 +478,7 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata, cluster_
     cl_nodewise_device_aval = {}
 
     _compute_license_data_size(namespace_stats, set_stats, summary_dict["CLUSTER"],
-                               summary_dict["FEATURES"]["NAMESPACE"])
+                               summary_dict["FEATURES"]["NAMESPACE"], metadata["server_build"])
     _set_migration_status(namespace_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"])
 
     summary_dict["CLUSTER"]["active_features"] = features
@@ -1163,6 +1253,40 @@ def _collect_lsof(verbose=False):
     return out, None
 
 
+def _collect_env_variables(cmd=''):
+    # collets environment variables
+
+    out = "['env_variables']"
+
+    variables = [
+        "ENTITLEMENT", "SERVICE_THREADS", "TRANSACTION_QUEUES", "TRANSACTION_THREADS_PER_QUEUE", "LOGFILE",
+        "SERVICE_ADDRESS", "SERVICE_PORT", "HB_ADDRESS", "HB_PORT", "FABRIC_ADDRESS", "FABRIC_PORT", "INFO_ADDRESS",
+        "INFO_PORT", "NAMESPACE", "REPL_FACTOR", "MEM_GB", "DEFAULT_TTL", "STORAGE_GB"
+    ]
+
+    for v in variables:
+        out += "\n" + v + "=" + str(os.environ.get(v))
+
+    return out, None
+
+
+def _collect_ip_link_details(cmd=''):
+    out = "['ip -s link']"
+
+    cmd = 'ip -s link'
+    loop_count = 3
+    sleep_seconds = 5
+
+    for i in range(0, loop_count):
+        o, e = util.shell_command([cmd])
+
+        if o:
+            out += "\n" + str(o) + "\n"
+        time.sleep(sleep_seconds)
+
+    return out, None
+
+
 def _collectinfo_content(func, cmd='', alt_cmds=[]):
     fname = ''
     try:
@@ -1267,7 +1391,7 @@ def get_system_commands(port=3000):
         ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f'],
         ['cat /proc/meminfo', 'vmstat -s'],
         ['cat /proc/interrupts'],
-        ['iostat -x 1 10'],
+        ['iostat -y -x 5 4'],
         [cmd_dmesg, alt_dmesg],
         ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
         ['lscpu'],
@@ -1285,7 +1409,6 @@ def get_system_commands(port=3000):
         ['ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"'],
         ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
         ['ip addr'],
-        ['ip -s link'],
         ['sar -n DEV'],
         ['sar -n EDEV'],
         ['mpstat -P ALL 2 3'],
@@ -1417,6 +1540,18 @@ def collect_sys_info(port=3000, timestamp="", outfile="", verbose=False):
             util.write_to_file(outfile, o)
         except Exception as e:
             util.write_to_file(outfile, str(e))
+
+    try:
+        o, f_cmds = _collectinfo_content(func=_collect_env_variables)
+        util.write_to_file(outfile, o)
+    except Exception as e:
+        util.write_to_file(outfile, str(e))
+
+    try:
+        o, f_cmds = _collectinfo_content(func=_collect_ip_link_details)
+        util.write_to_file(outfile, o)
+    except Exception as e:
+        util.write_to_file(outfile, str(e))
 
     if not cluster_online:
         # Cluster is offline so collecting only system info and archiving files
