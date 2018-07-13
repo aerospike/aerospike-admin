@@ -93,8 +93,8 @@ class BaseRSheet(object):
     # Other methods.
 
     def _init_sources(self, sources):
-        # This assertion can fire when a node is leaving/joining and some
-        # commands on a subset of the nodes. Should this event be logged?
+        # TODO - This assertion can fire when a node is leaving/joining and some
+        #        commands on a subset of the nodes. Should this event be logged?
         # n_source_records = map(len, sources.itervalues())
 
         # assert len(set(n_source_records)) == 1, \
@@ -112,6 +112,7 @@ class BaseRSheet(object):
             new_source = {}
             converted_sources.append(new_source)
 
+            # FIXME - Seen value[row_key] get a KeyError when using show pmap.
             for source, value in sources.iteritems():
                 new_source[source] = value[row_key]
 
