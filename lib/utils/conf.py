@@ -217,7 +217,7 @@ def _flatten(conf_dict, instance=None):
                 # Empty passwords are allowed do not interpret
                 # it as None
                 if k == "password":
-                    asadm_conf[decode(k.replace("-", "_"))] = v
+                    asadm_conf[decode(k.replace("-", "_"))] = str(v)
                 else:
                     asadm_conf[decode(k.replace("-", "_"))] = decode(v)
 
