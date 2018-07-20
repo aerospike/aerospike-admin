@@ -8,3 +8,4 @@ ply==3.11
 toml==0.9.4
 unittest2==1.1.0
 yappi==0.98
+cryptography==2.2.2
