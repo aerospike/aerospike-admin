@@ -1396,9 +1396,10 @@ def get_system_commands(port=3000):
         ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
         ['lscpu'],
         ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"'],
-        ['sudo iptables -L'],
+        ['sudo iptables -L -vn'],
         ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null'],
         ['df -h'],
+        ['mount'],
         ['free -m'],
         ['uname -a'],
 
