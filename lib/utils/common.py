@@ -1403,7 +1403,14 @@ def get_system_commands(port=3000):
         ['free -m'],
         ['uname -a'],
 
-        # Only in pretty print
+	# Only in Pretty Print
+        ['cat /sys/class/dmi/id/product_name'],
+        ['cat /sys/class/dmi/id/sys_vendor'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/enabled'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/defrag'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/khugepaged/defrag'],
+        ['sysctl vm.min_free_kbytes'],
+        ['ps -eo rss,vsz,comm |grep asd'],
         ['cat /proc/partitions', 'fdisk -l'],
         ['ls /sys/block/{sd*,xvd*,nvme*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"'],
         ['ls /sys/block/{sd*,xvd*,nvme*}/device/model |xargs -I f sh -c "echo f; cat f;"'],
