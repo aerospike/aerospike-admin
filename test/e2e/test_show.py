@@ -137,7 +137,7 @@ class TestShowConfig(unittest.TestCase):
                         ('storage-benchmarks', None),
                         'ticker-interval',
                         'transaction-max-ms',
-                        'transaction-pending-limit',
+                        ('transaction-pending-limit', None),
                         'transaction-queues',
                         ('transaction-repeatable-read', None),
                         'transaction-retry-ms',
