@@ -1396,13 +1396,21 @@ def get_system_commands(port=3000):
         ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
         ['lscpu'],
         ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"'],
-        ['sudo iptables -L'],
+        ['sudo iptables -L -vn'],
         ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null'],
         ['df -h'],
+        ['mount'],
         ['free -m'],
         ['uname -a'],
 
-        # Only in pretty print
+	# Only in Pretty Print
+        ['cat /sys/class/dmi/id/product_name'],
+        ['cat /sys/class/dmi/id/sys_vendor'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/enabled'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/defrag'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/khugepaged/defrag'],
+        ['sysctl vm.min_free_kbytes'],
+        ['ps -eo rss,vsz,comm |grep asd'],
         ['cat /proc/partitions', 'fdisk -l'],
         ['ls /sys/block/{sd*,xvd*,nvme*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"'],
         ['ls /sys/block/{sd*,xvd*,nvme*}/device/model |xargs -I f sh -c "echo f; cat f;"'],
