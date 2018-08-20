@@ -754,6 +754,7 @@ ASSERT(r, True, "Services list discrepancy.", "OPERATIONS", WARNING,
 /*
 	Different queries for different versions. All version constraint sections should be at the bottom of file, it will avoid extra version reset at the end.
 */
+error_pct_threshold = 0
 
 SET CONSTRAINT VERSION >= 3.9;
 // Uptime
@@ -785,7 +786,7 @@ ASSERT(r, True, "High client read errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal read errors (> 5% client reads). Please run 'show statistics namespace like client_read' to see values.",
 				"High read error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client read errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero read errors. Please run 'show statistics namespace like client_read' to see values.",
@@ -834,7 +835,7 @@ ASSERT(r, True, "High client delete errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal delete errors (> 5% client deletes). Please run 'show statistics namespace like client_delete' to see values.",
 				"High delete error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client delete errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero delete errors. Please run 'show statistics namespace like client_delete' to see values.",
@@ -880,7 +881,7 @@ ASSERT(r, True, "High client write errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal write errors (> 5% client writes). Please run 'show statistics namespace like client_write' to see values.",
 				"High write error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client write errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero write errors. Please run 'show statistics namespace like client_write' to see values.",
@@ -917,7 +918,7 @@ ASSERT(r, True, "High client proxy transaction errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal proxy transaction errors (> 5% client proxy transactions). Please run 'show statistics namespace like client_proxy' to see values.",
 				"High proxy transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client proxy transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero proxy transaction errors. Please run 'show statistics namespace like client_proxy' to see values.",
@@ -956,7 +957,7 @@ ASSERT(r, True, "High xdr write errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal xdr write errors (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
 				"High xdr write error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero xdr write errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero xdr write errors. Please run 'show statistics namespace like xdr_write' to see values.",
@@ -993,7 +994,7 @@ ASSERT(r, True, "High udf transaction errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal udf transaction errors (> 5% udf transactions). Please run 'show statistics namespace like client_udf' to see values.",
 				"High udf transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero udf transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero udf transaction errors. Please run 'show statistics namespace like client_udf' to see values.",
@@ -1030,7 +1031,7 @@ ASSERT(r, True, "High udf sub-transaction errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal udf sub-transaction errors (> 5% udf sub-transactions). Please run 'show statistics namespace like udf_sub_udf' to see values.",
 				"High udf sub-transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero udf sub-transaction errors. Please run 'show statistics namespace like udf_sub_udf' to see values.",
@@ -1067,7 +1068,7 @@ ASSERT(r, True, "High batch-index sub-transaction errors", "OPERATIONS", WARNING
 				"Listed namespace[s] show higher than normal batch-index sub-transaction errors (> 5% batch-index sub-transactions). Please run 'show statistics namespace like batch_sub_proxy' to see values.",
 				"High batch-index sub-transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero batch-index sub-transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero batch-index sub-transaction errors. Please run 'show statistics namespace like batch_sub_proxy' to see values.",
@@ -1106,7 +1107,7 @@ ASSERT(r, True, "High batch-index read sub-transaction errors", "OPERATIONS", WA
 				"Listed namespace[s] show higher than normal batch-index read sub-transaction errors (> 5% batch-index read sub-transactions). Please run 'show statistics namespace like batch_sub_read' to see values.",
 				"High batch-index read sub-transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero batch-index read sub-transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero batch-index read sub-transaction errors. Please run 'show statistics namespace like batch_sub_read' to see values.",
@@ -1153,7 +1154,7 @@ ASSERT(r, True, "High client initiated udf transactions errors", "OPERATIONS", W
 				"Listed namespace[s] show higher than normal client initiated udf transactions errors (> 5% client initiated udf transactions). Please run 'show statistics namespace like client_lang' to see values.",
 				"High client initiated udf transactions error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client initiated udf transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero client initiated udf transaction errors. Please run 'show statistics namespace like client_lang' to see values.",
@@ -1182,7 +1183,7 @@ ASSERT(r, True, "High udf sub-transaction errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal udf sub-transaction errors (> 5% udf sub-transactions). Please run 'show statistics namespace like udf_sub_lang' to see values.",
 				"High udf sub-transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero udf sub-transaction errors. Please run 'show statistics namespace like udf_sub_lang' to see values.",
@@ -1205,7 +1206,7 @@ ASSERT(r, True, "High query aggregation errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal query aggregation errors (> 5% query aggregations). Please run 'show statistics namespace like query_agg' to see values.",
 				"High query aggregation error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero query aggregation errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero query aggregation errors. Please run 'show statistics namespace like query_agg' to see values.",
@@ -1228,7 +1229,7 @@ ASSERT(r, True, "High query lookup errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_lookup' to see values.",
 				"High query lookup error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero query lookup errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_lookup' to see values.",
@@ -1252,7 +1253,7 @@ ASSERT(r, True, "High scan aggregation errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal scan aggregation errors (> 5% scan aggregations). Please run 'show statistics namespace like scan_agg' to see values.",
 				"High scan aggregation error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero scan aggregation errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan aggregation errors. Please run 'show statistics namespace like scan_agg' to see values.",
@@ -1276,7 +1277,7 @@ ASSERT(r, True, "High basic scan errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal basic scan errors (> 5% basic scans). Please run 'show statistics namespace like scan_basic' to see values.",
 				"High basic scan error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero basic scan errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero basic scan errors. Please run 'show statistics namespace like scan_basic' to see values.",
@@ -1300,7 +1301,7 @@ ASSERT(r, True, "High scan background udf errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal scan background udf errors (> 5% scan background udf). Please run 'show statistics namespace like scan_udf_bg' to see values.",
 				"High scan background udf error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero scan background udf errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan background udf errors. Please run 'show statistics namespace like scan_udf_bg' to see values.",
