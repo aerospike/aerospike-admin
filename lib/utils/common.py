@@ -73,6 +73,7 @@ FEATURE_KEYS = {
     "TLS (Fabric)": (('fabric.tls-port'), None),
     "TLS (Service)": (('service.tls-port'), None),
     "SC": (None, (('strong-consistency', comp_ops["=="], "true"),)),
+    "Index-on-device": (None, ('index_flash_used_bytes')),
 }
 
 
