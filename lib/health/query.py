@@ -769,6 +769,7 @@ ASSERT(r, True, "Services list discrepancy.", "OPERATIONS", WARNING,
 /*
 	Different queries for different versions. All version constraint sections should be at the bottom of file, it will avoid extra version reset at the end.
 */
+error_pct_threshold = 0
 
 SET CONSTRAINT VERSION >= 3.9;
 // Uptime
@@ -800,7 +801,7 @@ ASSERT(r, True, "High client read errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal read errors (> 5% client reads). Please run 'show statistics namespace like client_read' to see values.",
 				"High read error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client read errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero read errors. Please run 'show statistics namespace like client_read' to see values.",
@@ -849,7 +850,7 @@ ASSERT(r, True, "High client delete errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal delete errors (> 5% client deletes). Please run 'show statistics namespace like client_delete' to see values.",
 				"High delete error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client delete errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero delete errors. Please run 'show statistics namespace like client_delete' to see values.",
@@ -895,7 +896,7 @@ ASSERT(r, True, "High client write errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal write errors (> 5% client writes). Please run 'show statistics namespace like client_write' to see values.",
 				"High write error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client write errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero write errors. Please run 'show statistics namespace like client_write' to see values.",
@@ -932,7 +933,7 @@ ASSERT(r, True, "High client proxy transaction errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal proxy transaction errors (> 5% client proxy transactions). Please run 'show statistics namespace like client_proxy' to see values.",
 				"High proxy transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client proxy transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero proxy transaction errors. Please run 'show statistics namespace like client_proxy' to see values.",
@@ -971,7 +972,7 @@ ASSERT(r, True, "High xdr write errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal xdr write errors (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
 				"High xdr write error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero xdr write errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero xdr write errors. Please run 'show statistics namespace like xdr_write' to see values.",
@@ -1008,7 +1009,7 @@ ASSERT(r, True, "High udf transaction errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal udf transaction errors (> 5% udf transactions). Please run 'show statistics namespace like client_udf' to see values.",
 				"High udf transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero udf transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero udf transaction errors. Please run 'show statistics namespace like client_udf' to see values.",
@@ -1045,7 +1046,7 @@ ASSERT(r, True, "High udf sub-transaction errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal udf sub-transaction errors (> 5% udf sub-transactions). Please run 'show statistics namespace like udf_sub_udf' to see values.",
 				"High udf sub-transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero udf sub-transaction errors. Please run 'show statistics namespace like udf_sub_udf' to see values.",
@@ -1082,7 +1083,7 @@ ASSERT(r, True, "High batch-index sub-transaction errors", "OPERATIONS", WARNING
 				"Listed namespace[s] show higher than normal batch-index sub-transaction errors (> 5% batch-index sub-transactions). Please run 'show statistics namespace like batch_sub_proxy' to see values.",
 				"High batch-index sub-transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero batch-index sub-transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero batch-index sub-transaction errors. Please run 'show statistics namespace like batch_sub_proxy' to see values.",
@@ -1121,7 +1122,7 @@ ASSERT(r, True, "High batch-index read sub-transaction errors", "OPERATIONS", WA
 				"Listed namespace[s] show higher than normal batch-index read sub-transaction errors (> 5% batch-index read sub-transactions). Please run 'show statistics namespace like batch_sub_read' to see values.",
 				"High batch-index read sub-transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero batch-index read sub-transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero batch-index read sub-transaction errors. Please run 'show statistics namespace like batch_sub_read' to see values.",
@@ -1168,7 +1169,7 @@ ASSERT(r, True, "High client initiated udf transactions errors", "OPERATIONS", W
 				"Listed namespace[s] show higher than normal client initiated udf transactions errors (> 5% client initiated udf transactions). Please run 'show statistics namespace like client_lang' to see values.",
 				"High client initiated udf transactions error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero client initiated udf transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero client initiated udf transaction errors. Please run 'show statistics namespace like client_lang' to see values.",
@@ -1197,7 +1198,7 @@ ASSERT(r, True, "High udf sub-transaction errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal udf sub-transaction errors (> 5% udf sub-transactions). Please run 'show statistics namespace like udf_sub_lang' to see values.",
 				"High udf sub-transaction error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero udf sub-transaction errors. Please run 'show statistics namespace like udf_sub_lang' to see values.",
@@ -1220,7 +1221,7 @@ ASSERT(r, True, "High query aggregation errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal query aggregation errors (> 5% query aggregations). Please run 'show statistics namespace like query_agg' to see values.",
 				"High query aggregation error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero query aggregation errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero query aggregation errors. Please run 'show statistics namespace like query_agg' to see values.",
@@ -1243,7 +1244,7 @@ ASSERT(r, True, "High query lookup errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_lookup' to see values.",
 				"High query lookup error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero query lookup errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_lookup' to see values.",
@@ -1267,7 +1268,7 @@ ASSERT(r, True, "High scan aggregation errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal scan aggregation errors (> 5% scan aggregations). Please run 'show statistics namespace like scan_agg' to see values.",
 				"High scan aggregation error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero scan aggregation errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan aggregation errors. Please run 'show statistics namespace like scan_agg' to see values.",
@@ -1291,7 +1292,7 @@ ASSERT(r, True, "High basic scan errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal basic scan errors (> 5% basic scans). Please run 'show statistics namespace like scan_basic' to see values.",
 				"High basic scan error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero basic scan errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero basic scan errors. Please run 'show statistics namespace like scan_basic' to see values.",
@@ -1315,7 +1316,7 @@ ASSERT(r, True, "High scan background udf errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal scan background udf errors (> 5% scan background udf). Please run 'show statistics namespace like scan_udf_bg' to see values.",
 				"High scan background udf error check");
 warning_breached = do p > 5;
-r = do p == 0;
+r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero scan background udf errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan background udf errors. Please run 'show statistics namespace like scan_udf_bg' to see values.",
@@ -1453,7 +1454,7 @@ ASSERT(r, False, "Sub-optimal post-write-queue", "OPERATIONS", INFO,
 				"Namespace post-write-queue check");
 
 
-SET CONSTRAINT VERSION >= 3.11;
+SET CONSTRAINT VERSION < 4.2;
 
 ptl = select "partition-tree-locks" from NAMESPACE.CONFIG save;
 cs = select "cluster_size" from SERVICE.STATISTICS;
@@ -1466,7 +1467,6 @@ ASSERT(r, True, "Non-recommended partition-tree-locks", "OPERATIONS", WARNING,
 				"Listed namespace[s] show low value for partition-tree-locks with respect to cluster size. It should be 8 for cluster-size < 16, 16 for cluster sizes 16 to 31, 32 for cluster sizes 32 to 63, etc. Please contact Aerospike support team or SA team.",
 				"Namespace partition-tree-locks check");
 
-
 m = select "memory-size" as "cnt" from NAMESPACE.CONFIG;
 s = select "stop-writes-pct" as "cnt"  from NAMESPACE.CONFIG;
 s = do 100 - s;
@@ -1474,16 +1474,24 @@ s = do s/100;
 extra_space = do m * s save as "breathing space (over stop-write)";
 extra_space = group by CLUSTER, NODE, NAMESPACE do SUM(extra_space);
 
-p = select "partition-tree-sprigs" from NAMESPACE.CONFIG save;
+p = select "partition-tree-sprigs" as "cnt" from NAMESPACE.CONFIG save as "partition-tree-sprigs";
 p = do p/16;
 
-overhead1 = do 64 * 1024;
-overhead2 = do 1024 * 1024;
-overhead = do overhead1 + overhead2;
+// sprig overhead: 1M per 16 partition-tree-sprigs
+sprig_overhead = do 1024 * 1024;
+all_sprig_overhead = do p * sprig_overhead;
 
-total_overhead = do p * overhead save as "partition-tree-sprigs overhead";
+// lock overhead: 320K per partition-tree-locks
+lock_overhead = do 320 * 1024;
+all_lock_overhead = do ptl * lock_overhead;
+
+// base overhead
+base_overhead = do 64 * 1024;
+
+total_overhead = do base_overhead + all_sprig_overhead;
+total_overhead = do total_overhead + all_lock_overhead save as "partition-tree-sprigs overhead";
+
 r = do total_overhead < extra_space;
-
 e = select "edition" from METADATA;
 e = do e == "Community";
 e = group by CLUSTER, NODE do OR(e);
@@ -1492,12 +1500,13 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", 
 				"Namespace partition-tree-sprigs check for Community edition",
 				e);
 
+// enterprise overhead: 320K per 16 partition-tree-sprigs
 ee_overhead = do 320 * 1024;
-overhead = do overhead + ee_overhead;
+ee_overhead = do p * ee_overhead;
 
-total_overhead = do p * overhead save as "partition-tree-sprigs overhead";
+total_overhead = do total_overhead + ee_overhead save as "partition-tree-sprigs overhead";
+
 r = do total_overhead < extra_space;
-
 e = select "edition" from METADATA;
 e = do e == "Enterprise";
 e = group by CLUSTER, NODE do OR(e);
@@ -1505,6 +1514,65 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition",
 				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
 				"Namespace partition-tree-sprigs check for Enterprise edition",
 				e);
+
+SET CONSTRAINT VERSION >= 4.2;
+
+cs = select "cluster_size" from SERVICE.STATISTICS;
+cs = group by CLUSTER do MAX(cs);
+repl = select "effective_replication_factor" as "cnt" from NAMESPACE.STATISTICS;
+
+m = select "memory-size" as "cnt" from NAMESPACE.CONFIG;
+s = select "stop-writes-pct" as "cnt"  from NAMESPACE.CONFIG;
+s = do 100 - s;
+s = do s/100;
+extra_space = do m * s save as "breathing space (over stop-write)";
+extra_space = group by CLUSTER, NODE, NAMESPACE do SUM(extra_space);
+
+// sprig overhead: 8bytes per partition-tree-sprigs
+sprigs = select "partition-tree-sprigs" as "cnt" from NAMESPACE.CONFIG save as "partition-tree-sprigs";
+sprig_overhead = do 8 * sprigs;
+all_sprig_overhead = do sprig_overhead * 4096;
+all_sprig_overhead = do all_sprig_overhead / cs;
+all_sprig_overhead = do all_sprig_overhead * repl;
+
+// lock overhead: 8bytes per partition-tree-locks
+ptl = 256;
+lock_overhead = do 8 * 256;
+all_lock_overhead = do lock_overhead * 4096;
+all_lock_overhead = do all_lock_overhead / cs;
+all_lock_overhead = do all_lock_overhead * repl;
+
+// base overhead
+base_overhead = do 64 * 1024;
+total_overhead = do base_overhead + all_sprig_overhead;
+total_overhead = do total_overhead + all_lock_overhead save as "partition-tree-sprigs overhead";
+
+r = do total_overhead < extra_space;
+e = select "edition" from METADATA;
+e = do e == "Community";
+e = group by CLUSTER, NODE do OR(e);
+ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", "OPERATIONS", INFO,
+				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
+				"Namespace partition-tree-sprigs check for Community edition",
+				e);
+
+// enterprise overhead: 5bytes per partition-tree-sprigs
+ee_overhead = do 5 * sprigs;
+ee_overhead = do ee_overhead * 4096;
+ee_overhead = do ee_overhead / cs;
+ee_overhead = do ee_overhead * repl;
+
+total_overhead = do total_overhead + ee_overhead save as "partition-tree-sprigs overhead";
+
+r = do total_overhead < extra_space;
+e = select "edition" from METADATA;
+e = do e == "Enterprise";
+e = group by CLUSTER, NODE do OR(e);
+ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition", "OPERATIONS", INFO,
+				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
+				"Namespace partition-tree-sprigs check for Enterprise edition",
+				e);
+
 
 SET CONSTRAINT VERSION >= 4.0.0.1;
 // SC mode rules

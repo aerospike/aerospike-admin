@@ -1439,7 +1439,7 @@ ASSERT(r, False, "Sub-optimal post-write-queue", "OPERATIONS", INFO,
 				"Namespace post-write-queue check");
 
 
-SET CONSTRAINT VERSION >= 3.11;
+SET CONSTRAINT VERSION < 4.2;
 
 ptl = select "partition-tree-locks" from NAMESPACE.CONFIG save;
 cs = select "cluster_size" from SERVICE.STATISTICS;
@@ -1452,7 +1452,6 @@ ASSERT(r, True, "Non-recommended partition-tree-locks", "OPERATIONS", WARNING,
 				"Listed namespace[s] show low value for partition-tree-locks with respect to cluster size. It should be 8 for cluster-size < 16, 16 for cluster sizes 16 to 31, 32 for cluster sizes 32 to 63, etc. Please contact Aerospike support team or SA team.",
 				"Namespace partition-tree-locks check");
 
-
 m = select "memory-size" as "cnt" from NAMESPACE.CONFIG;
 s = select "stop-writes-pct" as "cnt"  from NAMESPACE.CONFIG;
 s = do 100 - s;
@@ -1460,16 +1459,24 @@ s = do s/100;
 extra_space = do m * s save as "breathing space (over stop-write)";
 extra_space = group by CLUSTER, NODE, NAMESPACE do SUM(extra_space);
 
-p = select "partition-tree-sprigs" from NAMESPACE.CONFIG save;
+p = select "partition-tree-sprigs" as "cnt" from NAMESPACE.CONFIG save as "partition-tree-sprigs";
 p = do p/16;
 
-overhead1 = do 64 * 1024;
-overhead2 = do 1024 * 1024;
-overhead = do overhead1 + overhead2;
+// sprig overhead: 1M per 16 partition-tree-sprigs
+sprig_overhead = do 1024 * 1024;
+all_sprig_overhead = do p * sprig_overhead;
 
-total_overhead = do p * overhead save as "partition-tree-sprigs overhead";
+// lock overhead: 320K per partition-tree-locks
+lock_overhead = do 320 * 1024;
+all_lock_overhead = do ptl * lock_overhead;
+
+// base overhead
+base_overhead = do 64 * 1024;
+
+total_overhead = do base_overhead + all_sprig_overhead;
+total_overhead = do total_overhead + all_lock_overhead save as "partition-tree-sprigs overhead";
+
 r = do total_overhead < extra_space;
-
 e = select "edition" from METADATA;
 e = do e == "Community";
 e = group by CLUSTER, NODE do OR(e);
@@ -1478,12 +1485,13 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", 
 				"Namespace partition-tree-sprigs check for Community edition",
 				e);
 
+// enterprise overhead: 320K per 16 partition-tree-sprigs
 ee_overhead = do 320 * 1024;
-overhead = do overhead + ee_overhead;
+ee_overhead = do p * ee_overhead;
 
-total_overhead = do p * overhead save as "partition-tree-sprigs overhead";
+total_overhead = do total_overhead + ee_overhead save as "partition-tree-sprigs overhead";
+
 r = do total_overhead < extra_space;
-
 e = select "edition" from METADATA;
 e = do e == "Enterprise";
 e = group by CLUSTER, NODE do OR(e);
@@ -1491,6 +1499,65 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition",
 				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
 				"Namespace partition-tree-sprigs check for Enterprise edition",
 				e);
+
+SET CONSTRAINT VERSION >= 4.2;
+
+cs = select "cluster_size" from SERVICE.STATISTICS;
+cs = group by CLUSTER do MAX(cs);
+repl = select "effective_replication_factor" as "cnt" from NAMESPACE.STATISTICS;
+
+m = select "memory-size" as "cnt" from NAMESPACE.CONFIG;
+s = select "stop-writes-pct" as "cnt"  from NAMESPACE.CONFIG;
+s = do 100 - s;
+s = do s/100;
+extra_space = do m * s save as "breathing space (over stop-write)";
+extra_space = group by CLUSTER, NODE, NAMESPACE do SUM(extra_space);
+
+// sprig overhead: 8bytes per partition-tree-sprigs
+sprigs = select "partition-tree-sprigs" as "cnt" from NAMESPACE.CONFIG save as "partition-tree-sprigs";
+sprig_overhead = do 8 * sprigs;
+all_sprig_overhead = do sprig_overhead * 4096;
+all_sprig_overhead = do all_sprig_overhead / cs;
+all_sprig_overhead = do all_sprig_overhead * repl;
+
+// lock overhead: 8bytes per partition-tree-locks
+ptl = 256;
+lock_overhead = do 8 * 256;
+all_lock_overhead = do lock_overhead * 4096;
+all_lock_overhead = do all_lock_overhead / cs;
+all_lock_overhead = do all_lock_overhead * repl;
+
+// base overhead
+base_overhead = do 64 * 1024;
+total_overhead = do base_overhead + all_sprig_overhead;
+total_overhead = do total_overhead + all_lock_overhead save as "partition-tree-sprigs overhead";
+
+r = do total_overhead < extra_space;
+e = select "edition" from METADATA;
+e = do e == "Community";
+e = group by CLUSTER, NODE do OR(e);
+ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", "OPERATIONS", INFO,
+				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
+				"Namespace partition-tree-sprigs check for Community edition",
+				e);
+
+// enterprise overhead: 5bytes per partition-tree-sprigs
+ee_overhead = do 5 * sprigs;
+ee_overhead = do ee_overhead * 4096;
+ee_overhead = do ee_overhead / cs;
+ee_overhead = do ee_overhead * repl;
+
+total_overhead = do total_overhead + ee_overhead save as "partition-tree-sprigs overhead";
+
+r = do total_overhead < extra_space;
+e = select "edition" from METADATA;
+e = do e == "Enterprise";
+e = group by CLUSTER, NODE do OR(e);
+ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition", "OPERATIONS", INFO,
+				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
+				"Namespace partition-tree-sprigs check for Enterprise edition",
+				e);
+
 
 SET CONSTRAINT VERSION >= 4.0.0.1;
 // SC mode rules
