@@ -1125,8 +1125,7 @@ class CollectinfoController(BasicCommandController):
 
         histogram_map = self._get_as_histograms()
 
-        # ToDO: Fix format for latency map
-        # latency_map = self._get_as_latency()
+        latency_map = self._get_as_latency()
 
         pmap_map = self._get_as_pmap()
 
@@ -1150,8 +1149,8 @@ class CollectinfoController(BasicCommandController):
             if node in histogram_map:
                  dump_map[node]['as_stat']['histogram'] = histogram_map[node]
 
-            # if node in latency_map:
-            #      dump_map[node]['as_stat']['latency'] = latency_map[node]
+            if node in latency_map:
+                 dump_map[node]['as_stat']['latency'] = latency_map[node]
 
             if node in pmap_map:
                  dump_map[node]['as_stat']['pmap'] = pmap_map[node]
