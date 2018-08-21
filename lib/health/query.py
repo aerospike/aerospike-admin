@@ -766,6 +766,14 @@ ASSERT(r, True, "Services list discrepancy.", "OPERATIONS", WARNING,
 				"Services list discrepancy test.");
 
 
+/* RACKS */
+
+rackid = select "rack-id" from NAMESPACE.CONFIG;
+r = group by CLUSTER, NAMESPACE do VALUE_UNIFORM(rackid);
+ASSERT(r, TRUE, "Wrong rack-id distribution.", "OPERATIONS", WARNING,
+				"Listed Namespace[s] does not have uniform rack distribution. It might cause extra traffic on racks with less nodes assigned. Please set rack-id properly.",
+				"Roster misconfiguration test.");
+
 /*
 	Different queries for different versions. All version constraint sections should be at the bottom of file, it will avoid extra version reset at the end.
 */

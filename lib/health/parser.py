@@ -117,7 +117,8 @@ class HealthLexer(object):
         'MAX': 'MAX',
         'MIN': 'MIN',
         'OR' : 'OR',
-        'SUM': 'SUM'
+        'SUM': 'SUM',
+        'VALUE_UNIFORM': 'VALUE_UNIFORM',
     }
 
     complex_ops = {

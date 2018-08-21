@@ -151,6 +151,39 @@ def vector_to_scalar_equal_operation(op, v):
     return True
 
 
+def vector_to_scalar_value_uniform_operation(op, v):
+    """
+    Passed Vector values
+
+    [ {(name, tag) : value}, {(name, tag) : value} ...
+
+    Return boolean scalar result True if all values are uniformly distributed
+    """
+
+    if not op or not v or not isinstance(v, list):
+        raise HealthException("Insufficient input for Value Uniform operation ")
+
+    d = {}
+
+    for i in v:
+        k2, v2 = get_kv(i)
+        v2 = get_value_from_health_internal_tuple(v2)
+        if v2 and isinstance(v2, list):
+            v2 = sorted(v2)
+
+        if v2 not in d:
+            d[v2] = 1
+        else:
+            d[v2] = d[v2] + 1
+
+    minv = min(d.values())
+    maxv = max(d.values())
+    if (maxv - minv) > 1:
+        return False
+
+    return True
+
+
 # Complex Operations
 
 def vector_to_vector_diff_operation(kv, op, a, save_param):
@@ -517,6 +550,7 @@ class AggOperation():
         'MAX': lambda v: float_vector_to_scalar_operation(operators["MAX"], v),
         'MIN': lambda v: float_vector_to_scalar_operation(operators["MIN"], v),
         '==': lambda v: vector_to_scalar_equal_operation(operators["=="], v),
+        'VALUE_UNIFORM': lambda v: vector_to_scalar_value_uniform_operation(operators["=="], v),
         'COUNT': operators["COUNT"],
         'COUNT_ALL': operators["COUNT"],
     }

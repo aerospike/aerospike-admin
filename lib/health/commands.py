@@ -47,6 +47,7 @@ op_list = {
     "PRODUCT": AggOperation("*").operate,
     "COUNT": AggOperation("COUNT").operate,
     "COUNT_ALL": AggOperation("COUNT_ALL").operate,
+    "VALUE_UNIFORM": AggOperation("VALUE_UNIFORM").operate,
     "DIFF": ComplexOperation("DIFF").operate,
     "SD_ANOMALY": ComplexOperation("SD_ANOMALY").operate,
     "NO_MATCH": ComplexOperation("NO_MATCH").operate,
