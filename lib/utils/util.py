@@ -64,7 +64,7 @@ def shell_command(command):
     """
 
     command = pipes.quote(" ".join(command))
-    command = ['sh', '-c', "'%s'" % (command)]
+    command = ['bash', '-c', "'%s'" % (command)]
     try:
         p = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
