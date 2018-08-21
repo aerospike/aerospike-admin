@@ -160,7 +160,7 @@ def vector_to_scalar_value_uniform_operation(op, v):
     Return boolean scalar result True if all values are uniformly distributed
     """
 
-    if not op or not v or not isinstance(v, list):
+    if not v or not isinstance(v, list):
         raise HealthException("Insufficient input for Value Uniform operation ")
 
     d = {}
@@ -183,6 +183,22 @@ def vector_to_scalar_value_uniform_operation(op, v):
 
     return True
 
+def vector_to_scalar_first_operation(op, v):
+    """
+    Passed Vector values
+
+    [ {(name, tag) : value}, {(name, tag) : value} ...
+
+    Returns first value from values
+    """
+
+    if not v or not isinstance(v, list):
+        raise HealthException("Insufficient input for Random operation ")
+
+    try:
+        return get_value_from_health_internal_tuple(get_kv(v[0])[1])
+    except Exception:
+        return None
 
 # Complex Operations
 
@@ -550,6 +566,7 @@ class AggOperation():
         'MAX': lambda v: float_vector_to_scalar_operation(operators["MAX"], v),
         'MIN': lambda v: float_vector_to_scalar_operation(operators["MIN"], v),
         '==': lambda v: vector_to_scalar_equal_operation(operators["=="], v),
+        'FIRST': lambda v: vector_to_scalar_first_operation(operators["=="], v),
         'VALUE_UNIFORM': lambda v: vector_to_scalar_value_uniform_operation(operators["=="], v),
         'COUNT': operators["COUNT"],
         'COUNT_ALL': operators["COUNT"],

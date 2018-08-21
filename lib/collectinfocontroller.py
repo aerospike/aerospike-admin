@@ -930,7 +930,9 @@ class HealthCheckController(CollectinfoCommandController):
                     ("namespace", "NAMESPACE", "CONFIG", True, [
                         ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
                     ("roster", "ROSTER", "CONFIG", True, [
-                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
+                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("racks", "RACKS", "CONFIG", True, [
+                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None), (None, None), ("RACKS", None)])
                 ]),
                 "original_config": (self.loghdlr.info_get_originalconfig, [
                     ("service", "SERVICE", "ORIGINAL_CONFIG", True,
@@ -949,6 +951,8 @@ class HealthCheckController(CollectinfoCommandController):
                      ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
                     ("edition", "METADATA", "CLUSTER", True, [
                      ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
+                    ("node_id", "METADATA", "CLUSTER", True, [
+                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "node-id")]),
                 ]),
                 "endpoints": (self.loghdlr.info_meta_data, [
                     ("endpoints", "METADATA", "ENDPOINTS", True, [

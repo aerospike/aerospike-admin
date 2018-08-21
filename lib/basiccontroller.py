@@ -1643,12 +1643,16 @@ class HealthCheckController(BasicCommandController):
             return self.cluster.info_dc_get_config(nodes=self.nodes)
         elif stanza == "roster":
             return self.cluster.info_roster(nodes=self.nodes)
+        elif stanza == "racks":
+            return self.cluster.info_racks(nodes=self.nodes)
         else:
             return self.cluster.info_get_config(nodes=self.nodes, stanza=stanza)
 
     def _get_as_meta_data(self, stanza):
         if stanza == "build":
             return self.cluster.info("build", nodes=self.nodes)
+        if stanza == "node_id":
+            return self.cluster.info("node", nodes=self.nodes)
         elif stanza == "edition":
             editions = self.cluster.info("edition", nodes=self.nodes)
             if not editions:
@@ -1804,7 +1808,9 @@ class HealthCheckController(BasicCommandController):
                     ("namespace", "NAMESPACE",
                      [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
                     ("roster", "ROSTER",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("racks", "RACKS",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None), (None, None), ("RACKS", None)])
                 ]),
                 "original_config": (self.cluster.info_get_originalconfig, [
                     ("service", "SERVICE",
@@ -1823,6 +1829,8 @@ class HealthCheckController(BasicCommandController):
                      [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
                     ("edition", "METADATA",
                      [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
+                    ("node_id", "METADATA",
+                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "node-id")]),
                 ]),
                 "endpoints": (self._get_asstat_data, [
                     ("endpoints", "METADATA",

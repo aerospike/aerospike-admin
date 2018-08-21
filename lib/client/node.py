@@ -1091,6 +1091,40 @@ class Node(object):
         return roster_data
 
     @return_exceptions
+    def info_racks(self):
+        """
+        Get rack info.
+
+        Returns:
+        dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
+        """
+        rack_data = self.info('racks:')
+
+        if not rack_data:
+            return {}
+
+        rack_data = util.info_to_dict_multi_level(rack_data, "ns")
+        rack_dict = {}
+
+        for ns, ns_rack_data in rack_data.iteritems():
+            rack_dict[ns] = {}
+
+            for k, v in ns_rack_data.iteritems():
+                if k == "ns":
+                    continue
+
+                try:
+                    rack_id = k.split("_")[1]
+                    nodes = v.split(",")
+                    rack_dict[ns][rack_id] = {}
+                    rack_dict[ns][rack_id]["rack-id"] = rack_id
+                    rack_dict[ns][rack_id]["nodes"] = nodes
+                except Exception:
+                    continue
+
+        return rack_dict
+
+    @return_exceptions
     def info_dc_get_config(self):
         """
         Get config for a datacenter.

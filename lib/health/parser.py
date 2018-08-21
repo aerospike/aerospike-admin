@@ -104,6 +104,7 @@ class HealthLexer(object):
         'DC': 'DC',
         'HISTOGRAM': 'HISTOGRAM',
         'NAMESPACE': 'NAMESPACE',
+        'RACKS': 'RACKS',
         'SET': 'SET',
         'SINDEX': 'SINDEX',
     }
@@ -117,6 +118,7 @@ class HealthLexer(object):
         'MAX': 'MAX',
         'MIN': 'MIN',
         'OR' : 'OR',
+        'FIRST': 'FIRST',
         'SUM': 'SUM',
         'VALUE_UNIFORM': 'VALUE_UNIFORM',
     }
@@ -130,10 +132,6 @@ class HealthLexer(object):
     apply_ops = {
         'APPLY_TO_ANY': 'APPLY_TO_ANY',
         'APPLY_TO_ALL': 'APPLY_TO_ALL'
-    }
-
-    apply_comp_ops = {
-        'IN' : 'IN'
     }
 
     complex_params = {
@@ -166,9 +164,9 @@ class HealthLexer(object):
     tokens = ['NUMBER',     'FLOAT', 'BOOL_VAL',
               'VAR',        'NEW_VAR',
               'COMPONENT', 'GROUP_ID', 'COMPONENT_AND_GROUP_ID',
-              'AGG_OP', 'COMPLEX_OP', 'APPLY_OP', 'APPLY_COMP_OP', 'COMPLEX_PARAM', 'ASSERT_OP', 'ASSERT_LEVEL',
+              'AGG_OP', 'COMPLEX_OP', 'APPLY_OP', 'COMPLEX_PARAM', 'ASSERT_OP', 'ASSERT_LEVEL',
               'STRING',
-              'COMMA',      'DOT',
+              'COMMA',      'DOT', 'IN',
               'PLUS',       'MINUS',
               'TIMES',      'DIVIDE',
               'BINARY_AND', 'BINARY_OR',
@@ -215,8 +213,8 @@ class HealthLexer(object):
             t.type = "COMPLEX_OP"
         elif t.value in HealthLexer.apply_ops.keys():
             t.type = "APPLY_OP"
-        elif t.value in HealthLexer.apply_comp_ops.keys():
-            t.type = "APPLY_COMP_OP"
+        elif t.value == "IN":
+            t.type = "IN"
         elif t.value in HealthLexer.complex_params.keys():
             t.value = HealthLexer.complex_params[t.value]
             t.type = "COMPLEX_PARAM"
@@ -348,7 +346,7 @@ class HealthParser(object):
 
     def p_apply_comparison_op(self, p):
         """
-        apply_comparison_op : APPLY_COMP_OP
+        apply_comparison_op : IN
                               | comparison_op
         """
         p[0] = p[1]
@@ -407,6 +405,7 @@ class HealthParser(object):
             | comparison_op
             | BINARY_AND
             | BINARY_OR
+            | IN
 
         """
         p[0] = p[1]

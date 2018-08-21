@@ -240,7 +240,7 @@ oc = select * from NAMESPACE.ORIGINAL_CONFIG save;
 c = select * from NAMESPACE.CONFIG save;
 r = do oc == c on common;
 ASSERT(r, True, "Namespace configurations different than config file values.", "OPERATIONS", INFO,
-                 "Listed Namespace configuration[s] are different than actual initial value set in aerospike.conf file.",
+                 "Listed namespace configuration[s] are different than actual initial value set in aerospike.conf file.",
                             "Namespace config runtime and conf file difference check.");
 
 oc = select * from XDR.ORIGINAL_CONFIG save;
@@ -770,9 +770,36 @@ ASSERT(r, True, "Services list discrepancy.", "OPERATIONS", WARNING,
 
 rackid = select "rack-id" from NAMESPACE.CONFIG;
 r = group by CLUSTER, NAMESPACE do VALUE_UNIFORM(rackid);
-ASSERT(r, TRUE, "Wrong rack-id distribution.", "OPERATIONS", WARNING,
-				"Listed Namespace[s] does not have uniform rack distribution. It might cause extra traffic on racks with less nodes assigned. Please set rack-id properly.",
+ASSERT(r, True, "Wrong rack-id distribution.", "OPERATIONS", WARNING,
+				"Listed namespace[s] does not have uniform rack distribution. It might cause extra traffic on c with less nodes assigned. Please set rack-id properly.",
 				"Roster misconfiguration test.");
+
+node_rackid = select "rack-id" from NAMESPACE.CONFIG;
+node_rackid = group by CLUSTER, NODE, NAMESPACE do FIRST(node_rackid);
+
+node_id = select "node-id" from METADATA;
+node_id = group by CLUSTER, NODE do FIRST(node_id);
+
+rack_rackid = select "rack-id" from RACKS.CONFIG;
+rack_rackid = group by CLUSTER, NODE, NAMESPACE, RACKS do FIRST(rack_rackid);
+
+rack_nodes = select "nodes" from RACKS.CONFIG;
+rack_nodes = group by CLUSTER, NODE, NAMESPACE, RACKS do FIRST(rack_nodes);
+
+r1 = do node_rackid == rack_rackid;
+r2 = do node_id IN rack_nodes;
+r = do r1 && r2;
+r = group by CLUSTER, NODE, NAMESPACE do OR(r);
+
+ASSERT(r, True, "Node is not part of configured rack.", "OPERATIONS", WARNING,
+				"Listed node[s] is not part of configured rack. Probable cause - missed to re-cluster after changing rack-id.",
+				"Node rack membership check");
+
+rack_nodes = select "nodes" from RACKS.CONFIG;
+r = group by CLUSTER, NAMESPACE, RACKS do EQUAL(rack_nodes);
+ASSERT(r, True, "Rack configuration mismatch.", "OPERATIONS", WARNING,
+				"Listed namespace[s] having different rack configurations across multiple nodes in cluster. Please check rack configurations.",
+				"Rack configuration check");
 
 /*
 	Different queries for different versions. All version constraint sections should be at the bottom of file, it will avoid extra version reset at the end.
