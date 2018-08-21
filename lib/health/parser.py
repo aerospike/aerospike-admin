@@ -67,6 +67,7 @@ class HealthLexer(object):
         'ORIGINAL_CONFIG': 'ORIGINAL_CONFIG',
         'RAM': 'RAM',
         'ROLES': 'ROLES',
+        'ROSTER': 'ROSTER',
         'SYSTEM': 'SYSTEM',
         'SECURITY': 'SECURITY',
         'SERVICE': 'SERVICE',

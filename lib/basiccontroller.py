@@ -975,7 +975,7 @@ class CollectinfoController(BasicCommandController):
         stats = getter.get_all(nodes=self.nodes)
 
         getter = GetConfigController(self.cluster)
-        config = getter.get_all(nodes=self.nodes)
+        config = getter.get_all(nodes=self.nodes, flip=False)
 
         # All these section have have nodeid in inner level
         # flip keys to get nodeid in upper level.
@@ -986,8 +986,6 @@ class CollectinfoController(BasicCommandController):
         stats['bin'] = util.flip_keys(stats['bin'])
         stats['dc'] = util.flip_keys(stats['dc'])
         stats['sindex'] = util.flip_keys(stats['sindex'])
-        config['namespace'] = util.flip_keys(config['namespace'])
-        config['dc'] = util.flip_keys(config['dc'])
 
         self._remove_exception_from_section_output(stats)
         self._remove_exception_from_section_output(config)
@@ -1643,6 +1641,8 @@ class HealthCheckController(BasicCommandController):
             return self.cluster.info_XDR_get_config(nodes=self.nodes)
         elif stanza == "dc":
             return self.cluster.info_dc_get_config(nodes=self.nodes)
+        elif stanza == "roster":
+            return self.cluster.info_roster(nodes=self.nodes)
         else:
             return self.cluster.info_get_config(nodes=self.nodes, stanza=stanza)
 
@@ -1802,6 +1802,8 @@ class HealthCheckController(BasicCommandController):
                     ("dc", "DC",
                      [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
                     ("namespace", "NAMESPACE",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("roster", "ROSTER",
                      [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
                 ]),
                 "original_config": (self.cluster.info_get_originalconfig, [

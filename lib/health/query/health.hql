@@ -1593,4 +1593,10 @@ ASSERT(r, False, "Cluster clock_skew breached warning level", "OPERATIONS", WARN
 				"Cluster clock_skew check",
 				s);
 
+roster = select "roster", "observed_nodes" from ROSTER.CONFIG;
+r = group by CLUSTER, NAMESPACE, NODE do EQUAL(roster);
+ASSERT(r, True, "Roster misconfigured.", "CONFIG", WARNING,
+				"Listed Namespace[s] shows difference between set roster nodes and observe nodes. Please set roster properly.",
+				"Roster misconfiguration check.");
+
 SET CONSTRAINT VERSION ALL;

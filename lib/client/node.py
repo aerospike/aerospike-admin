@@ -1063,6 +1063,34 @@ class Node(object):
         return util.info_to_dict_multi_level(udf_data, "filename", delimiter2=',')
 
     @return_exceptions
+    def info_roster(self):
+        """
+        Get roster info.
+
+        Returns:
+        dict -- {ns1:{key_name : key_value, ...}, ns2:{key_name : key_value, ...}}
+        """
+        roster_data = self.info('roster:')
+
+        if not roster_data:
+            return {}
+
+        roster_data = util.info_to_dict_multi_level(roster_data, "ns")
+        list_columns = ["roster", "pending_roster", "observed_nodes"]
+
+        for ns, ns_roster_data in roster_data.iteritems():
+            for k, v in ns_roster_data.iteritems():
+                if k not in list_columns:
+                    continue
+
+                try:
+                    ns_roster_data[k] = v.split(",")
+                except Exception:
+                    ns_roster_data[k] = v
+
+        return roster_data
+
+    @return_exceptions
     def info_dc_get_config(self):
         """
         Get config for a datacenter.

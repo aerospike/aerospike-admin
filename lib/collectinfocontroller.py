@@ -928,6 +928,8 @@ class HealthCheckController(CollectinfoCommandController):
                     ("dc", "DC", "CONFIG", True, [
                         ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
                     ("namespace", "NAMESPACE", "CONFIG", True, [
+                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("roster", "ROSTER", "CONFIG", True, [
                         ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
                 ]),
                 "original_config": (self.loghdlr.info_get_originalconfig, [
