@@ -801,6 +801,14 @@ FILTER_LIST = {
         'final_section_name': 'environment',
         'regex_new': 'environment',
         # 'parser_func':
+    },
+    'ID_113': {
+        'enable': True,
+        'raw_section_name': 'roster:',
+        'final_section_name': 'roster',
+        'regex_new': 'roster',
+        'regex_old': '^roster\n'
+        # 'parser_func'
     }
 
     #{

@@ -1076,11 +1076,11 @@ class Node(object):
             return {}
 
         roster_data = util.info_to_dict_multi_level(roster_data, "ns")
-        list_columns = ["roster", "pending_roster", "observed_nodes"]
+        list_fields = ["roster", "pending_roster", "observed_nodes"]
 
         for ns, ns_roster_data in roster_data.iteritems():
             for k, v in ns_roster_data.iteritems():
-                if k not in list_columns:
+                if k not in list_fields:
                     continue
 
                 try:
