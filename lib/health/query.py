@@ -26,7 +26,7 @@ QUERIES = '''
 
 /* Variables */
 
-error_pct_threshold = 0;
+error_pct_threshold = 1;
 
 SET CONSTRAINT VERSION ALL;
 
