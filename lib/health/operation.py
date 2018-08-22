@@ -26,7 +26,7 @@ from lib.health.util import create_health_internal_tuple, create_value_list_to_s
 RESULT_TUPLE_HEADER = "RESULT"
 NOKEY = ""
 
-# Simple Operations
+# Binary Operations
 
 operators = {
     "+": operator.add,
@@ -378,7 +378,7 @@ def vector_to_vector_sd_anomaly_operation(kv, op, a, save_param):
 ###
 
 
-class SimpleOperation():
+class BinaryOperation():
 
     """
     Passed In Two Similar Vectors or Vector and Value
@@ -451,7 +451,7 @@ class SimpleOperation():
             if ((len(k1_set - k2_set) > 0 or len(k2_set - k1_set) > 0)
                     and not on_common_only):
                 raise HealthException(
-                    "Wrong operands with non-matching keys for Simple operation.")
+                    "Wrong operands with non-matching keys for Binary operation.")
             res_dict = {}
             for _k in k1_set.intersection(k2_set):
                 res_dict[_k] = self._operate_dicts(
@@ -463,7 +463,7 @@ class SimpleOperation():
     def operate(self, arg1, arg2, group_by=None, result_comp_op=None,
             result_comp_val=None, on_common_only=False, save_param=None):
         if arg1 is None or arg2 is None:
-            raise HealthException("Wrong operands for Simple operation.")
+            raise HealthException("Wrong operands for Binary operation.")
 
         # No Group By So No Key Merging
         return self._operate_dicts(arg1, arg2, on_common_only=on_common_only, save_param=save_param)
@@ -553,6 +553,57 @@ class ApplyOperation():
 
         # No Group By So No Key Merging
         return self._operate_dicts(arg1, arg2, comp_op=operators[result_comp_op], save_param=save_param)
+
+
+class SimpleOperation():
+
+    """
+    Passed In a Vector/Value and optional parameter
+
+    Returns string result by applying operations like (split, trim etc.)
+    """
+
+    string_operators={
+        'SPLIT': lambda s, v: s.split(v),
+        'UNIQUE': lambda s, v: len(s) == len(set(s))
+    }
+    def __init__(self, op):
+        self.op = self.string_operators[op]
+
+    def _operate_each_key(self, arg1, arg2, save_param=None):
+        if isinstance(arg1, dict):
+            return None
+
+        try:
+            raw_arg1 = get_value_from_health_internal_tuple(arg1)
+            raw_arg2 = get_value_from_health_internal_tuple(arg2)
+            result = self.op(raw_arg1, raw_arg2)
+            val_to_save = create_value_list_to_save(save_param, value=result, op1=arg1, op2=arg2)
+            return create_health_internal_tuple(result, val_to_save)
+
+        except Exception:
+            return create_health_internal_tuple(None, [])
+
+    def _operate_dicts(self, arg1, arg2, save_param=None):
+        if isinstance(arg2, dict):
+            raise HealthException("Wrong parameter type (dictionary) for Simple operation.")
+
+        if isinstance(arg1, dict):
+            res_dict = {}
+            for _k in arg1.keys():
+                res_dict[_k] = self._operate_dicts(arg1[_k], arg2, save_param=save_param)
+
+            return res_dict
+        else:
+            return self._operate_each_key(arg1, arg2, save_param=save_param)
+
+    def operate(self, arg1, arg2, group_by=None, result_comp_op=None,
+            result_comp_val=None, on_common_only=False, save_param=None):
+        if arg1 is None:
+            raise HealthException("Wrong operands for Simple operation.")
+
+        # No Group By So No Key Merging
+        return self._operate_dicts(arg1, arg2, save_param=save_param)
 
 
 class AggOperation():

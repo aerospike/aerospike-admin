@@ -8,6 +8,11 @@
 // SET CONSTRAINT VERSION = 3.8.4;
 // SET CONSTRAINT VERSION 3.8.4;
 // SET CONSTRAINT VERSION IN [3.8.4, 3.10.0];
+
+/* Variables */
+
+error_pct_threshold = 0;
+
 SET CONSTRAINT VERSION ALL;
 
 /* System checks */
@@ -335,6 +340,12 @@ ASSERT(r, False, "Defrag low water mark misconfigured.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have defrag-lwm-pct lower than high-water-disk-pct. This might create situation like no block to write, no eviction and no defragmentation. Please run 'show config namespace like high-water-disk-pct defrag-lwm-pct' to check configured values. Probable cause - namespace watermark misconfiguration.",
 				"Defrag low water mark misconfiguration check.");
 
+device = select "file", "storage-engine.file" as "file", "device", "storage-engine.device" as "device" from NAMESPACE.CONFIG save;
+device = do SPLIT(device);
+r = do UNIQUE(device);
+ASSERT(r, True, "Duplicate device/file configured.", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have duplication in device/file configuration. This might corrupt data. Please configure device/file names carefully.",
+				"Duplicate device/file check.");
 
 /*
 Following query collects used device space and total device space and computes available free space on each node per namespace per cluster (group by CLUSTER, NAMESPACE, NODE).
@@ -789,7 +800,6 @@ ASSERT(r, True, "Rack configuration mismatch.", "OPERATIONS", WARNING,
 /*
 	Different queries for different versions. All version constraint sections should be at the bottom of file, it will avoid extra version reset at the end.
 */
-error_pct_threshold = 0
 
 SET CONSTRAINT VERSION >= 3.9;
 // Uptime
