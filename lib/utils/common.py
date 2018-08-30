@@ -308,11 +308,12 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                                                      return_type=int)
             replica_objects = util.get_value_from_dict(host_stats, ("prole_objects", "prole-objects", "replica_objects",
                                                                     "replica-objects"), default_value=0, return_type=int)
-            devices_in_use = util.get_value_from_dict(host_stats, ("storage-engine.device", "device", "storage-engine.file",
-                                                                 "file", "dev"), default_value=None, return_type=str)
+            devices_in_use = util.get_values_from_dict(host_stats, ("^storage-engine.device$", "^device$", "^storage-engine.file$",
+                                                        "^file$", "^dev$", "^storage-engine.device\[[0-9]+\]$", "^storage-engine.file\[[0-9]+\]$")
+                                                       , return_type=str)
             total_objects = master_objects + replica_objects
 
-            if devices_in_use == None:
+            if not devices_in_use:
                 # Data in memory only
                 memory_data_size = util.get_value_from_dict(host_stats, ("memory_used_data_bytes", "data-used-bytes-memory"),
                                                              default_value=0, return_type=int)
@@ -499,9 +500,13 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
-        device_names_str = util.get_value_from_second_level_of_dict(ns_stats, (
-            "storage-engine.device", "device", "storage-engine.file", "file", "dev"), default_value="", return_type=str)
-        device_counts = dict([(k, len(v.split(',')) if v else 0) for k, v in device_names_str.iteritems()])
+        device_name_list = util.get_values_from_second_level_of_dict(ns_stats, ("^storage-engine.device$", "^device$",
+                                                                                 "^storage-engine.file$", "^file$", "^dev$",
+                                                                                 "^storage-engine.device\[[0-9]+\]$",
+                                                                                 "^storage-engine.file\[[0-9]+\]$"),
+                                                                      return_type=str)
+
+        device_counts = dict([(k, sum(len(i.split(",")) for i in v) if v else 0) for k, v in device_name_list.iteritems()])
         cl_nodewise_device_counts = util.add_dicts(cl_nodewise_device_counts, device_counts)
 
         ns_total_devices = sum(device_counts.values())
