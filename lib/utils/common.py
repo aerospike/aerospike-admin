@@ -1401,6 +1401,7 @@ def get_system_commands(port=3000):
         ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null'],
         ['df -h'],
         ['mount'],
+        ['lsblk'],
         ['free -m'],
         ['uname -a'],
 
