@@ -467,9 +467,18 @@ def do_ctrl_c(*args, **kwargs):
 
 def parse_tls_input(cli_args):
     try:
-        return SSLContext(enable_tls=cli_args.tls_enable,
-                          encrypt_only=None, cafile=cli_args.tls_cafile,
-                          capath=cli_args.tls_capath, keyfile=cli_args.tls_keyfile,
+        keyfile_password = cli_args.tls_keyfile_password
+
+        if cli_args.tls_enable and cli_args.tls_keyfile and cli_args.tls_keyfile_password == conf.DEFAULTPASSWORD:
+
+            if sys.stdin.isatty():
+                keyfile_password = getpass.getpass("Enter TLS-Keyfile Password:")
+            else:
+                keyfile_password = sys.stdin.readline().strip()
+
+        return SSLContext(enable_tls=cli_args.tls_enable, encrypt_only=None,
+                          cafile=cli_args.tls_cafile, capath=cli_args.tls_capath,
+                          keyfile=cli_args.tls_keyfile, keyfile_password=keyfile_password,
                           certfile=cli_args.tls_certfile, protocols=cli_args.tls_protocols,
                           cipher_suite=cli_args.tls_cipher_suite,
                           cert_blacklist=cli_args.tls_cert_blacklist,

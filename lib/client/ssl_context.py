@@ -14,10 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import warnings
+
 from lib.client.ssl_util import dnsname_match
 from os import listdir
 from os.path import isfile, join
-import warnings
 
 try:
     with warnings.catch_warnings():
@@ -118,9 +120,9 @@ if HAVE_PYASN1:
 class SSLContext(object):
 
     def __init__(self, enable_tls=False, encrypt_only=False, cafile=None,
-                 capath=None, keyfile=None, certfile=None, protocols=None,
-                 cipher_suite=None, cert_blacklist=None, crl_check=False,
-                 crl_check_all=False):
+                 capath=None, keyfile=None, keyfile_password=None, certfile=None,
+                 protocols=None, cipher_suite=None, cert_blacklist=None,
+                 crl_check=False, crl_check_all=False):
 
         self.ctx = None
         if not enable_tls:
@@ -130,8 +132,8 @@ class SSLContext(object):
 
         self._create_ssl_context(enable_tls=enable_tls,
                                  encrypt_only=encrypt_only, cafile=cafile, capath=capath,
-                                 keyfile=keyfile, certfile=certfile, protocols=protocols,
-                                 cipher_suite=cipher_suite)
+                                 keyfile=keyfile, keyfile_password=keyfile_password, certfile=certfile,
+                                 protocols=protocols, cipher_suite=cipher_suite)
 
         self._crl_check = crl_check
         self._crl_check_all = crl_check_all
@@ -452,8 +454,8 @@ class SSLContext(object):
         return ctx
 
     def _create_ssl_context(self, enable_tls=False, encrypt_only=False,
-                            cafile=None, capath=None, keyfile=None, certfile=None,
-                            protocols=None, cipher_suite=None):
+                            cafile=None, capath=None, keyfile=None, keyfile_password=None,
+                            certfile=None, protocols=None, cipher_suite=None):
 
         if not enable_tls:
             return
@@ -488,10 +490,74 @@ class SSLContext(object):
                     raise Exception("Failed to load certificate chain file %s \n %s"%(certfile, str(e)))
 
             if keyfile:
+                pkey = None
+                pwd = None
+
+                if keyfile_password:
+                    try:
+                        pwd = self._read_keyfile_password(keyfile_password)
+                    except Exception as e:
+                        raise Exception("Invalid keyfile_password {0} \n{1}".format(keyfile_password, e))
+
                 try:
-                    self.ctx.use_privatekey_file(keyfile)
+                    pkey = crypto.load_privatekey(crypto.FILETYPE_PEM, open(keyfile, 'rb').read(), pwd)
+                except IOError:
+                    raise Exception("Unable to locate key file {}".format(keyfile))
+                except crypto.Error:
+                    raise Exception("Invalid key file or bad passphrase {}".format(keyfile))
+                except Exception as e:
+                    raise Exception("Failed to load private key %s \n %s"%(keyfile, str(e)))
+
+                if pkey is None:
+                    raise Exception("Failed to load private key %s"%keyfile)
+
+                try:
+                    self.ctx.use_privatekey(pkey)
                 except Exception as e:
                     raise Exception("Failed to load private key %s \n %s"%(keyfile, str(e)))
 
         if cipher_suite:
             self.ctx.set_cipher_list(cipher_suite)
+
+    def _read_keyfile_password(self, keyfile_password):
+        """
+        Fetches and returns actual password from input keyfile_password.
+        If keyfile_password is "env:<VAR>" then it reads password from environment variable VAR
+        If keyfile_password is "file:<PATH>" then it reads password from file
+        Else it returns keyfile_password
+
+        :param keyfile_password: input password string
+        :return: password to read tls keyfile
+        """
+
+        if keyfile_password is None:
+            return keyfile_password
+
+        if not isinstance(keyfile_password, str):
+            raise Exception("Bad keyfile_password: not string")
+
+        keyfile_password = keyfile_password.strip()
+
+        if keyfile_password.startswith("env:"):
+            # read from environment variable
+            try:
+                return os.environ[keyfile_password[4:]]
+            except Exception as e:
+                raise Exception("Failed to read environment variable: {}".format(e))
+
+        if keyfile_password.startswith("file:"):
+            # read from file
+            file = None
+
+            try:
+                file = open(keyfile_password[5:], 'r')
+                pwd = file.read().strip()
+                file.close()
+                return pwd
+
+            except Exception as e:
+                if file is not None:
+                    file.close()
+                raise Exception("Failed to read file: {}".format(e))
+
+        return keyfile_password.strip()
