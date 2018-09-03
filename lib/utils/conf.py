@@ -55,7 +55,7 @@ _confdefault = {
         "tls-crl-check": False,
         "tls-crl-check-all": False,
         "tls-keyfile": "",
-        "tls-keyfile-password": None,
+        "tls-keyfile-password": DEFAULTPASSWORD,
         "tls-protocols": "",
     },
     "asadm": {
@@ -568,7 +568,7 @@ def get_cli_args():
     if have_argparse:
         add_fn("--tls-keyfile-password", nargs="?", const=DEFAULTPASSWORD)
     else:
-        parser.add_option("--tls-keyfile-password", dest="password", action="store_const", const=DEFAULTPASSWORD)
+        parser.add_option("--tls-keyfile-password", dest="tls-keyfile-password", action="store_const", const=DEFAULTPASSWORD)
     add_fn("--tls-certfile")
     add_fn("--tls-cert-blacklist")
     add_fn("--tls-crl-check", action="store_true")

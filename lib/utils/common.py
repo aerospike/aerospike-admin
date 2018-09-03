@@ -488,6 +488,9 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
         util.get_value_from_second_level_of_dict(service_stats, ("cluster_size",), default_value=0,
                                                  return_type=int).values()))
 
+    if "cluster_name" in metadata and metadata["cluster_name"]:
+        summary_dict["CLUSTER"]["cluster_name"] = list(set(metadata["cluster_name"].values()).difference(set(["null"])))
+
     if "server_version" in metadata and metadata["server_version"]:
         summary_dict["CLUSTER"]["server_version"] = list(set(metadata["server_version"].values()))
 
@@ -1457,14 +1460,21 @@ def get_asd_pids():
     return pids
 
 
-def set_collectinfo_path(timestamp, output_prefix=""):
+def set_collectinfo_path(timestamp, output_prefix="", cluster_name=""):
     output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
+
+    if output_prefix:
+        output_prefix = output_prefix.strip()
+
+    if not output_prefix:
+        output_prefix = cluster_name.strip()
+
     aslogdir_prefix = ""
     if output_prefix:
         output_prefix = output_prefix.strip()
         aslogdir_prefix = "%s%s" % (str(output_prefix), '_' if not output_prefix.endswith('_')
-                                                               and not output_prefix.endswith('-') else "") \
-            if output_prefix else ""
+                                                               and not output_prefix.endswith('-') else "")
+
     aslogdir = '/tmp/%scollect_info_' % (aslogdir_prefix) + output_time
     as_logfile_prefix = aslogdir + '/' + output_time + '_'
 

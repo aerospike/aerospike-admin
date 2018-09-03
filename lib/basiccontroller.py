@@ -1468,8 +1468,15 @@ class CollectinfoController(BasicCommandController):
             self.logger.error("Wrong collectinfo snapshot count")
             return
 
+        cluster_name = ""
+        try:
+            cluster_names = util.Future(self.cluster.info, 'cluster-name', nodes=self.nodes).start().result()
+            cluster_name = list(set(cluster_names.values()).difference(set(["null"])))[0]
+        except Exception:
+            pass
+
         timestamp = time.gmtime()
-        self.aslogdir, as_logfile_prefix = common.set_collectinfo_path(timestamp, output_prefix=output_prefix)
+        self.aslogdir, as_logfile_prefix = common.set_collectinfo_path(timestamp, output_prefix=output_prefix, cluster_name=cluster_name)
 
         # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
         terminal.enable_color(False)
@@ -2042,6 +2049,8 @@ class SummaryController(BasicCommandController):
 
         server_edition = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
 
+        cluster_name = util.Future(self.cluster.info, 'cluster-name', nodes=self.nodes).start()
+
         service_stats = service_stats.result()
         namespace_stats = namespace_stats.result()
         set_stats = set_stats.result()
@@ -2050,10 +2059,12 @@ class SummaryController(BasicCommandController):
         cluster_configs = cluster_configs.result()
         server_version = server_version.result()
         server_edition = server_edition.result()
+        cluster_name = cluster_name.result()
 
         metadata = {}
         metadata["server_version"] = {}
         metadata["server_build"] = {}
+        metadata["cluster_name"] = {}
 
         for node, version in server_version.iteritems():
             if not version or isinstance(version, Exception):
@@ -2071,6 +2082,9 @@ class SummaryController(BasicCommandController):
 
             else:
                 metadata["server_version"][node] = version
+
+            if node in cluster_name and cluster_name[node] and not isinstance(cluster_name[node], Exception):
+                metadata["cluster_name"][node] = cluster_name[node]
 
         try:
             try:
