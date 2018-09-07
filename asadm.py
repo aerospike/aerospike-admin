@@ -494,7 +494,7 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, auth_m
     cmds = [None]
 
     if commands_arg:
-        asinfo_command_pattern = re.compile(r'''((?:[^;"']|"[^"]*"|'[^']*')+)''')
+        asinfo_command_pattern = re.compile(r'''((?:[^;"'\n]|"[^"]*"|'[^']*')+)''')
 
         cmds = asinfo_command_pattern.split(commands_arg)[1::2]
         if not cmds:

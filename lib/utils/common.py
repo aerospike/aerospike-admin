@@ -1460,20 +1460,19 @@ def get_asd_pids():
     return pids
 
 
-def set_collectinfo_path(timestamp, output_prefix="", cluster_name=""):
+def set_collectinfo_path(timestamp, output_prefix=""):
     output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
 
     if output_prefix:
-        output_prefix = output_prefix.strip()
-
-    if not output_prefix:
-        output_prefix = cluster_name.strip()
+        output_prefix = str(output_prefix).strip()
+        output_prefix += "%s" % (
+            "_" if output_prefix and not output_prefix.endswith("-") and not output_prefix.endswith("_")
+            else ""
+        )
 
     aslogdir_prefix = ""
     if output_prefix:
-        output_prefix = output_prefix.strip()
-        aslogdir_prefix = "%s%s" % (str(output_prefix), '_' if not output_prefix.endswith('_')
-                                                               and not output_prefix.endswith('-') else "")
+        aslogdir_prefix = "%s%s" % (str(output_prefix), '_')
 
     aslogdir = '/tmp/%scollect_info_' % (aslogdir_prefix) + output_time
     as_logfile_prefix = aslogdir + '/' + output_time + '_'

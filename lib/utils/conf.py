@@ -55,7 +55,7 @@ _confdefault = {
         "tls-crl-check": False,
         "tls-crl-check-all": False,
         "tls-keyfile": "",
-        "tls-keyfile-password": DEFAULTPASSWORD,
+        "tls-keyfile-password": None,
         "tls-protocols": "",
     },
     "asadm": {

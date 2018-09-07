@@ -127,7 +127,7 @@ def fetch_argument(line, arg, default):
     return not success, default
 
 
-def fetch_line_clear_dict(line, arg, return_type, default, keys, d):
+def _fetch_line_clear_dict(line, arg, return_type, default, keys, d):
     if not line:
         return default
     try:
@@ -148,7 +148,7 @@ def fetch_line_clear_dict(line, arg, return_type, default, keys, d):
 
 def get_arg_and_delete_from_mods(line, arg, return_type, default, modifiers, mods):
     try:
-        val = fetch_line_clear_dict(
+        val = _fetch_line_clear_dict(
             line=line, arg=arg, return_type=return_type, default=default, keys=modifiers, d=mods)
         line.remove(arg)
         if val:
@@ -297,12 +297,9 @@ def get_values_from_dict(d, re_keys, return_type=None):
 
     return values
 
+
 def strip_string(search_str):
-    search_str = search_str.strip()
-    if search_str[0] == "\"" or search_str[0] == "\'":
-        return search_str[1:len(search_str) - 1]
-    else:
-        return search_str
+    return search_str.strip().strip("\'\"")
 
 
 def flip_keys(orig_data):

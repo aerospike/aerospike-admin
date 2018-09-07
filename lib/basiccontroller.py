@@ -1468,15 +1468,8 @@ class CollectinfoController(BasicCommandController):
             self.logger.error("Wrong collectinfo snapshot count")
             return
 
-        cluster_name = ""
-        try:
-            cluster_names = util.Future(self.cluster.info, 'cluster-name', nodes=self.nodes).start().result()
-            cluster_name = list(set(cluster_names.values()).difference(set(["null"])))[0]
-        except Exception:
-            pass
-
         timestamp = time.gmtime()
-        self.aslogdir, as_logfile_prefix = common.set_collectinfo_path(timestamp, output_prefix=output_prefix, cluster_name=cluster_name)
+        self.aslogdir, as_logfile_prefix = common.set_collectinfo_path(timestamp, output_prefix=output_prefix)
 
         # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
         terminal.enable_color(False)
