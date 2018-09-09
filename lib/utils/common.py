@@ -1465,14 +1465,14 @@ def set_collectinfo_path(timestamp, output_prefix=""):
 
     if output_prefix:
         output_prefix = str(output_prefix).strip()
-        output_prefix += "%s" % (
-            "_" if output_prefix and not output_prefix.endswith("-") and not output_prefix.endswith("_")
-            else ""
-        )
 
     aslogdir_prefix = ""
     if output_prefix:
-        aslogdir_prefix = "%s%s" % (str(output_prefix), '_')
+        aslogdir_prefix = "%s%s" % (
+            str(output_prefix),
+            "_" if output_prefix and not output_prefix.endswith("-") and not output_prefix.endswith("_")
+            else ""
+        )
 
     aslogdir = '/tmp/%scollect_info_' % (aslogdir_prefix) + output_time
     as_logfile_prefix = aslogdir + '/' + output_time + '_'

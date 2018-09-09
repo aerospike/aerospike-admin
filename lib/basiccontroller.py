@@ -1526,6 +1526,7 @@ class CollectinfoController(BasicCommandController):
         output_prefix = util.get_arg_and_delete_from_mods(line=line,
                 arg="--output-prefix", return_type=str, default="",
                 modifiers=self.modifiers, mods=self.mods)
+        output_prefix = util.strip_string(output_prefix)
 
         verbose = False
         if 'verbose' in line:
