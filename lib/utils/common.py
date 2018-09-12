@@ -73,6 +73,7 @@ FEATURE_KEYS = {
     "TLS (Fabric)": (('fabric.tls-port'), None),
     "TLS (Service)": (('service.tls-port'), None),
     "SC": (None, (('strong-consistency', comp_ops["=="], "true"),)),
+    "Index-on-device": (None, ('index_flash_used_bytes')),
 }
 
 
@@ -307,11 +308,12 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                                                      return_type=int)
             replica_objects = util.get_value_from_dict(host_stats, ("prole_objects", "prole-objects", "replica_objects",
                                                                     "replica-objects"), default_value=0, return_type=int)
-            devices_in_use = util.get_value_from_dict(host_stats, ("storage-engine.device", "device", "storage-engine.file",
-                                                                 "file", "dev"), default_value=None, return_type=str)
+            devices_in_use = util.get_values_from_dict(host_stats, ("^storage-engine.device$", "^device$", "^storage-engine.file$",
+                                                        "^file$", "^dev$", "^storage-engine.device\[[0-9]+\]$", "^storage-engine.file\[[0-9]+\]$")
+                                                       , return_type=str)
             total_objects = master_objects + replica_objects
 
-            if devices_in_use == None:
+            if not devices_in_use:
                 # Data in memory only
                 memory_data_size = util.get_value_from_dict(host_stats, ("memory_used_data_bytes", "data-used-bytes-memory"),
                                                              default_value=0, return_type=int)
@@ -486,6 +488,9 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
         util.get_value_from_second_level_of_dict(service_stats, ("cluster_size",), default_value=0,
                                                  return_type=int).values()))
 
+    if "cluster_name" in metadata and metadata["cluster_name"]:
+        summary_dict["CLUSTER"]["cluster_name"] = list(set(metadata["cluster_name"].values()).difference(set(["null"])))
+
     if "server_version" in metadata and metadata["server_version"]:
         summary_dict["CLUSTER"]["server_version"] = list(set(metadata["server_version"].values()))
 
@@ -498,9 +503,13 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
-        device_names_str = util.get_value_from_second_level_of_dict(ns_stats, (
-            "storage-engine.device", "device", "storage-engine.file", "file", "dev"), default_value="", return_type=str)
-        device_counts = dict([(k, len(v.split(',')) if v else 0) for k, v in device_names_str.iteritems()])
+        device_name_list = util.get_values_from_second_level_of_dict(ns_stats, ("^storage-engine.device$", "^device$",
+                                                                                 "^storage-engine.file$", "^file$", "^dev$",
+                                                                                 "^storage-engine.device\[[0-9]+\]$",
+                                                                                 "^storage-engine.file\[[0-9]+\]$"),
+                                                                      return_type=str)
+
+        device_counts = dict([(k, sum(len(i.split(",")) for i in v) if v else 0) for k, v in device_name_list.iteritems()])
         cl_nodewise_device_counts = util.add_dicts(cl_nodewise_device_counts, device_counts)
 
         ns_total_devices = sum(device_counts.values())
@@ -1396,13 +1405,22 @@ def get_system_commands(port=3000):
         ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
         ['lscpu'],
         ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"'],
-        ['sudo iptables -L'],
+        ['sudo iptables -L -vn'],
         ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null'],
         ['df -h'],
+        ['mount'],
+        ['lsblk'],
         ['free -m'],
         ['uname -a'],
 
-        # Only in pretty print
+	# Only in Pretty Print
+        ['cat /sys/class/dmi/id/product_name'],
+        ['cat /sys/class/dmi/id/sys_vendor'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/enabled'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/defrag'],
+        ['cat /sys/kernel/mm/*transparent_hugepage/khugepaged/defrag'],
+        ['sysctl vm.min_free_kbytes'],
+        ['ps -eo rss,vsz,comm |grep asd'],
         ['cat /proc/partitions', 'fdisk -l'],
         ['ls /sys/block/{sd*,xvd*,nvme*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"'],
         ['ls /sys/block/{sd*,xvd*,nvme*}/device/model |xargs -I f sh -c "echo f; cat f;"'],
@@ -1444,12 +1462,18 @@ def get_asd_pids():
 
 def set_collectinfo_path(timestamp, output_prefix=""):
     output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
+
+    if output_prefix:
+        output_prefix = str(output_prefix).strip()
+
     aslogdir_prefix = ""
     if output_prefix:
-        output_prefix = output_prefix.strip()
-        aslogdir_prefix = "%s%s" % (str(output_prefix), '_' if not output_prefix.endswith('_')
-                                                               and not output_prefix.endswith('-') else "") \
-            if output_prefix else ""
+        aslogdir_prefix = "%s%s" % (
+            str(output_prefix),
+            "_" if output_prefix and not output_prefix.endswith("-") and not output_prefix.endswith("_")
+            else ""
+        )
+
     aslogdir = '/tmp/%scollect_info_' % (aslogdir_prefix) + output_time
     as_logfile_prefix = aslogdir + '/' + output_time + '_'
 

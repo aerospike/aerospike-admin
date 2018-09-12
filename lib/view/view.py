@@ -1980,30 +1980,43 @@ class CliView(object):
                            if summary["CLUSTER"]["migrations_in_progress"] else "")
         print "=======" + ("==========================" if summary["CLUSTER"]["migrations_in_progress"] else "")
         print
+
+        if "cluster_name" in summary["CLUSTER"] and len(summary["CLUSTER"]["cluster_name"]) > 0:
+            print CliView.get_summary_line_prefix(index, "Cluster Name") + ", ".join(summary["CLUSTER"]["cluster_name"])
+            index += 1
+
         print CliView.get_summary_line_prefix(index, "Server Version") + ", ".join(summary["CLUSTER"]["server_version"])
         index += 1
+
         print CliView.get_summary_line_prefix(index, "OS Version") + ", ".join(summary["CLUSTER"]["os_version"])
         index += 1
+
         print CliView.get_summary_line_prefix(index, "Cluster Size") + ", ".join([str(cs) for cs in summary["CLUSTER"]["cluster_size"]])
         index += 1
+
         print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
             summary["CLUSTER"]["device"]["count"], summary["CLUSTER"]["device"]["count_per_node"],
             " (number differs across nodes)" if not summary["CLUSTER"]["device"]["count_same_across_nodes"] else "")
         index += 1
+
         print CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
             filesize.size(summary["CLUSTER"]["memory"]["total"]).strip(), 100.00 - summary["CLUSTER"]["memory"]["aval_pct"],
             filesize.size(summary["CLUSTER"]["memory"]["total"] - summary["CLUSTER"]["memory"]["aval"]).strip(),
             summary["CLUSTER"]["memory"]["aval_pct"], filesize.size(summary["CLUSTER"]["memory"]["aval"]).strip())
         index += 1
+
         print CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
             filesize.size(summary["CLUSTER"]["device"]["total"]).strip(), summary["CLUSTER"]["device"]["used_pct"],
             filesize.size(summary["CLUSTER"]["device"]["used"]).strip(), summary["CLUSTER"]["device"]["aval_pct"],
             filesize.size(summary["CLUSTER"]["device"]["aval"]).strip())
         index += 1
+
         print CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + "%s in-memory, %s on-disk"%(filesize.size(summary["CLUSTER"]["license_data"]["memory_size"]),filesize.size(summary["CLUSTER"]["license_data"]["device_size"]))
         index += 1
+
         print CliView.get_summary_line_prefix(index, "Active Namespaces") + "%d of %d"%(summary["CLUSTER"]["active_ns"], summary["CLUSTER"]["ns_count"])
         index += 1
+
         print CliView.get_summary_line_prefix(index, "Features") + ", ".join(sorted(summary["CLUSTER"]["active_features"]))
 
         print "\n"

@@ -536,6 +536,7 @@ def _convert_parsed_latency_map_to_collectinfo_format(parsed_map):
 
     return latency_map
 
+
 def _add_missing_latency_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_exception):
     """
     Add missing Aerospike latency data into parsed_map which is loaded from old format json file
@@ -548,6 +549,90 @@ def _add_missing_latency_data(imap, parsed_map, timestamps, node_ip_mapping, ign
     latency_map = _convert_parsed_latency_map_to_collectinfo_format(parsed_latency_map)
 
     _merge_nodelevel_map_to_mainmap(parsed_map, latency_map, timestamps, node_ip_mapping, ["as_stat"])
+
+
+def _to_map(value, delimiter1=":", delimiter2="="):
+    """
+    Converts raw string to map
+    Ex. 'ns=bar:roster=null:pending_roster=A,B,C:observed_nodes=null'
+    Returns {'ns': 'bar', 'roster': 'null', 'pending_roster': 'A,B,C', 'observed_nodes': 'null'}
+    """
+    vmap = {}
+    if not value:
+        return vmap
+
+    try:
+        data_list = value.split(delimiter1)
+    except Exception:
+        return vmap
+
+    for kv in data_list:
+        try:
+            k, v = kv.split(delimiter2)
+            vmap[k] = v
+        except Exception:
+            continue
+
+    return vmap
+
+
+def _to_roster_map(parsed_map):
+    """
+    Converts raw roster output to collectinfo format
+    Ex. {'172.17.0.3:3000': {'roster': 'ns=bar:roster=null:pending_roster=null:observed_nodes=null'}, ...}
+    Returns {'172.17.0.3:3000': {'roster':{'bar': {'ns': 'bar', 'roster': ['null'], ...}, ...}, ...}}
+    """
+    roster_map = {}
+    if not parsed_map:
+        return roster_map
+
+    list_fields = ["roster", "pending_roster", "observed_nodes"]
+
+    for node, node_data in parsed_map.iteritems():
+        if not node_data or isinstance(node_data, Exception) or "roster" not in node_data:
+            continue
+
+        roster_data = node_data["roster"]
+
+        try:
+            ns_data_list = roster_data.split(";")
+        except Exception:
+            continue
+
+        if not ns_data_list:
+            continue
+
+        ns_map = {}
+        for ns_data in ns_data_list:
+            m = _to_map(ns_data)
+            if not m or "ns" not in m:
+                continue
+            for k, v in m.iteritems():
+                if k not in list_fields:
+                    continue
+                try:
+                    m[k] = v.split(",")
+                except Exception:
+                    pass
+
+            ns_map[m["ns"]] = m
+
+        roster_map[node] = {}
+        roster_map[node]["roster"] = ns_map
+
+    return roster_map
+
+
+def _add_missing_roster_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+    """
+    Add missing Aerospike roster data into parsed_map which is loaded from old format file
+
+    """
+
+    roster_map = {}
+    parsed_roster_map = _get_as_map(imap, ["roster"], ignore_exception)
+    roster_map = _to_roster_map(parsed_roster_map)
+    _merge_nodelevel_map_to_mainmap(parsed_map, roster_map, timestamps, node_ip_mapping, ["as_stat", "config"])
 
 def _add_missing_original_config_data(parsed_conf_map, parsed_map, timestamps, node_ip_mapping, ignore_exception):
     """
@@ -669,3 +754,4 @@ def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missi
 
     if missing_version <= 4:
         _add_missing_latency_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+        _add_missing_roster_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)

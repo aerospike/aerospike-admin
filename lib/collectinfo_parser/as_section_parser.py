@@ -77,6 +77,9 @@ def parse_as_section(section_list, imap, parsed_map):
         elif section == 'services':
             _parse_services(nodes, imap, parsed_map)
 
+        elif section == 'roster':
+            _parse_roster_section(nodes, imap, parsed_map)
+
         else:
             logger.warning(
                 "Section unknown, can not be parsed. Check AS_SECTION_NAME_LIST. Section: " + section)
@@ -1214,6 +1217,10 @@ def _parse_endpoints(nodes, imap, parsed_map):
 
 def _parse_services(nodes, imap, parsed_map):
     sec_id = 'ID_56'
+    _parse_asinfo_node_value_section(sec_id, imap, parsed_map)
+
+def _parse_roster_section(nodes, imap, parsed_map):
+    sec_id = 'ID_113'
     _parse_asinfo_node_value_section(sec_id, imap, parsed_map)
 
 def _stat_exist_in_statistics(statmap, statlist):

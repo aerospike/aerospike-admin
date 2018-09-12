@@ -64,7 +64,7 @@ def shell_command(command):
     """
 
     command = pipes.quote(" ".join(command))
-    command = ['sh', '-c', "'%s'" % (command)]
+    command = ['bash', '-c', "'%s'" % (command)]
     try:
         p = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -127,7 +127,7 @@ def fetch_argument(line, arg, default):
     return not success, default
 
 
-def fetch_line_clear_dict(line, arg, return_type, default, keys, d):
+def _fetch_line_clear_dict(line, arg, return_type, default, keys, d):
     if not line:
         return default
     try:
@@ -148,7 +148,7 @@ def fetch_line_clear_dict(line, arg, return_type, default, keys, d):
 
 def get_arg_and_delete_from_mods(line, arg, return_type, default, modifiers, mods):
     try:
-        val = fetch_line_clear_dict(
+        val = _fetch_line_clear_dict(
             line=line, arg=arg, return_type=return_type, default=default, keys=modifiers, d=mods)
         line.remove(arg)
         if val:
@@ -227,40 +227,79 @@ def set_value_in_dict(d, key, value):
     d[key] = value
 
 
+def _cast(value, return_type=None):
+    """
+    Function takes value and data type to cast.
+    Returns result of casting and success status
+    """
+
+    if not return_type or value is None:
+        return value, True
+
+
+    try:
+        if return_type == bool and isinstance(value, str):
+            if value.lower() == "false":
+                return False, True
+            if value.lower() == "true":
+                return True, True
+    except Exception:
+        pass
+
+    try:
+        return return_type(value), True
+    except Exception:
+        pass
+
+    return None, False
+
 def get_value_from_dict(d, keys, default_value=None, return_type=None):
+    """
+    Function takes dictionary and keys to find values inside dictionary.
+    Returns value of first matching key from keys which is available in d else returns default_value
+    """
+
     if not isinstance(keys, tuple):
         keys = (keys,)
+
     for key in keys:
         if key in d:
-            val = d[key]
-            if val is not None:
-                if not return_type:
-                    return val
-
-                try:
-                    if return_type == bool:
-                        if val.lower() == "false":
-                            return False
-                        if val.lower() == "true":
-                            return True
-                except Exception:
-                    pass
-
-                try:
-                    return return_type(val)
-                except Exception:
-                    pass
+            val, success = _cast(d[key], return_type=return_type)
+            if success:
+                return val
 
             return default_value
     return default_value
 
 
+def get_values_from_dict(d, re_keys, return_type=None):
+    """
+    Function takes dictionary and regular expressions for keys to find values inside dictionary.
+    Returns list of values for all matching keys with any of regular expression keys else returns empty list
+    """
+
+    values = []
+    if not re_keys or not d or not isinstance(d, dict):
+        return values
+
+    if not isinstance(re_keys, tuple):
+        re_keys = (re_keys,)
+
+    keys = filter_list(d.keys(), list(re_keys))
+
+    for key in keys:
+        val, success = _cast(d[key], return_type=return_type)
+        if success:
+            values.append(val)
+            continue
+
+        values.append(d[key])
+
+    return values
+
+
 def strip_string(search_str):
-    search_str = search_str.strip()
-    if search_str[0] == "\"" or search_str[0] == "\'":
-        return search_str[1:len(search_str) - 1]
-    else:
-        return search_str
+    return search_str.strip().strip("\'\"")
 
 
 def flip_keys(orig_data):
@@ -372,8 +411,8 @@ def restructure_sys_data(content, cmd):
 
 def get_value_from_second_level_of_dict(data, keys, default_value=None, return_type=None):
     """
-    Function takes dictionary and keys to find values inside all subkeys of dictionary.
-    Returns dictionary containing subkey and value of input keys
+    Function takes dictionary and subkeys to find values inside all keys of dictionary.
+    Returns dictionary containing key and value of input keys
     """
 
     res_dict = {}
@@ -385,6 +424,24 @@ def get_value_from_second_level_of_dict(data, keys, default_value=None, return_t
             continue
 
         res_dict[_k] = get_value_from_dict(data[_k], keys, default_value=default_value, return_type=return_type)
+
+    return res_dict
+
+def get_values_from_second_level_of_dict(data, re_keys, return_type=None):
+    """
+    Function takes dictionary and regular expression subkeys to find values inside all keys of dictionary.
+    Returns dictionary containing key and all values for matching input keys
+    """
+
+    res_dict = {}
+    if not data or isinstance(data, Exception):
+        return res_dict
+
+    for _k in data:
+        if not data[_k] or isinstance(data[_k], Exception):
+            continue
+
+        res_dict[_k] = get_values_from_dict(data[_k], re_keys, return_type=return_type)
 
     return res_dict
 

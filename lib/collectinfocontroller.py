@@ -928,7 +928,11 @@ class HealthCheckController(CollectinfoCommandController):
                     ("dc", "DC", "CONFIG", True, [
                         ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
                     ("namespace", "NAMESPACE", "CONFIG", True, [
-                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
+                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("roster", "ROSTER", "CONFIG", True, [
+                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("racks", "RACKS", "CONFIG", True, [
+                        ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None), (None, None), ("RACKS", None)])
                 ]),
                 "original_config": (self.loghdlr.info_get_originalconfig, [
                     ("service", "SERVICE", "ORIGINAL_CONFIG", True,
@@ -947,6 +951,8 @@ class HealthCheckController(CollectinfoCommandController):
                      ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
                     ("edition", "METADATA", "CLUSTER", True, [
                      ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
+                    ("node_id", "METADATA", "CLUSTER", True, [
+                     ("CLUSTER", cluster_name), ("NODE", None), ("KEY", "node-id")]),
                 ]),
                 "endpoints": (self.loghdlr.info_meta_data, [
                     ("endpoints", "METADATA", "ENDPOINTS", True, [
@@ -1111,12 +1117,20 @@ class SummaryController(CollectinfoCommandController):
 
         try:
             cluster_configs = cluster_configs[last_timestamp]
-        except:
+        except Exception:
             cluster_configs = {}
+
+        cluster_name = {}
+        try:
+            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=last_timestamp)
+            cluster_name = cinfo_log.get_cluster_name()
+        except Exception:
+            pass
 
         metadata = {}
         metadata["server_version"] = {}
         metadata["server_build"] = {}
+        metadata["cluster_name"] = {}
 
         server_version = server_version[last_timestamp]
         server_edition = server_edition[last_timestamp]
@@ -1137,6 +1151,9 @@ class SummaryController(CollectinfoCommandController):
 
             else:
                 metadata["server_version"][node] = version
+
+            if node in cluster_name and cluster_name[node] and not isinstance(cluster_name[node], Exception):
+                metadata["cluster_name"][node] = cluster_name[node]
 
         os_version = os_version[last_timestamp]
         kernel_version = kernel_version[last_timestamp]

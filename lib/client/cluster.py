@@ -78,6 +78,10 @@ class Cluster(object):
         self.only_connect_seed = only_connect_seed
         self._refresh_cluster()
 
+        # to avoid same label (NODE column) for multiple nodes we need to keep track
+        # of available nodes name, if names are same then we can use ip:port
+        self._same_name_nodes = False
+
     def __str__(self):
         nodes = self.nodes.values()
         if len(nodes) == 0:
@@ -107,8 +111,20 @@ class Cluster(object):
 
     def get_node_names(self):
         node_names = {}
-        for node_key, node in self.nodes.iteritems():
-            node_names[node_key] = node.sock_name(use_fqdn=True)
+
+        if not self._same_name_nodes:
+            for node_key, node in self.nodes.iteritems():
+                name = node.sock_name(use_fqdn=True)
+                if name in node_names.values():
+                    # found same name for multiple nodes
+                    self._same_name_nodes = True
+                    node_names.clear()
+                    break
+                node_names[node_key] = name
+
+        if not node_names:
+            for node_key, node in self.nodes.iteritems():
+                node_names[node_key] = node.sock_name(use_fqdn=False)
 
         return node_names
 

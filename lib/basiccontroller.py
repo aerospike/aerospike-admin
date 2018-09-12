@@ -975,7 +975,7 @@ class CollectinfoController(BasicCommandController):
         stats = getter.get_all(nodes=self.nodes)
 
         getter = GetConfigController(self.cluster)
-        config = getter.get_all(nodes=self.nodes)
+        config = getter.get_all(nodes=self.nodes, flip=False)
 
         # All these section have have nodeid in inner level
         # flip keys to get nodeid in upper level.
@@ -986,8 +986,6 @@ class CollectinfoController(BasicCommandController):
         stats['bin'] = util.flip_keys(stats['bin'])
         stats['dc'] = util.flip_keys(stats['dc'])
         stats['sindex'] = util.flip_keys(stats['sindex'])
-        config['namespace'] = util.flip_keys(config['namespace'])
-        config['dc'] = util.flip_keys(config['dc'])
 
         self._remove_exception_from_section_output(stats)
         self._remove_exception_from_section_output(config)
@@ -1125,8 +1123,7 @@ class CollectinfoController(BasicCommandController):
 
         histogram_map = self._get_as_histograms()
 
-        # ToDO: Fix format for latency map
-        # latency_map = self._get_as_latency()
+        latency_map = self._get_as_latency()
 
         pmap_map = self._get_as_pmap()
 
@@ -1150,8 +1147,8 @@ class CollectinfoController(BasicCommandController):
             if node in histogram_map:
                  dump_map[node]['as_stat']['histogram'] = histogram_map[node]
 
-            # if node in latency_map:
-            #      dump_map[node]['as_stat']['latency'] = latency_map[node]
+            if node in latency_map:
+                 dump_map[node]['as_stat']['latency'] = latency_map[node]
 
             if node in pmap_map:
                  dump_map[node]['as_stat']['pmap'] = pmap_map[node]
@@ -1529,6 +1526,7 @@ class CollectinfoController(BasicCommandController):
         output_prefix = util.get_arg_and_delete_from_mods(line=line,
                 arg="--output-prefix", return_type=str, default="",
                 modifiers=self.modifiers, mods=self.mods)
+        output_prefix = util.strip_string(output_prefix)
 
         verbose = False
         if 'verbose' in line:
@@ -1644,12 +1642,18 @@ class HealthCheckController(BasicCommandController):
             return self.cluster.info_XDR_get_config(nodes=self.nodes)
         elif stanza == "dc":
             return self.cluster.info_dc_get_config(nodes=self.nodes)
+        elif stanza == "roster":
+            return self.cluster.info_roster(nodes=self.nodes)
+        elif stanza == "racks":
+            return self.cluster.info_racks(nodes=self.nodes)
         else:
             return self.cluster.info_get_config(nodes=self.nodes, stanza=stanza)
 
     def _get_as_meta_data(self, stanza):
         if stanza == "build":
             return self.cluster.info("build", nodes=self.nodes)
+        if stanza == "node_id":
+            return self.cluster.info("node", nodes=self.nodes)
         elif stanza == "edition":
             editions = self.cluster.info("edition", nodes=self.nodes)
             if not editions:
@@ -1803,7 +1807,11 @@ class HealthCheckController(BasicCommandController):
                     ("dc", "DC",
                      [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
                     ("namespace", "NAMESPACE",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("roster", "ROSTER",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
+                    ("racks", "RACKS",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None), (None, None), ("RACKS", None)])
                 ]),
                 "original_config": (self.cluster.info_get_originalconfig, [
                     ("service", "SERVICE",
@@ -1822,6 +1830,8 @@ class HealthCheckController(BasicCommandController):
                      [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
                     ("edition", "METADATA",
                      [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
+                    ("node_id", "METADATA",
+                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "node-id")]),
                 ]),
                 "endpoints": (self._get_asstat_data, [
                     ("endpoints", "METADATA",
@@ -2033,6 +2043,8 @@ class SummaryController(BasicCommandController):
 
         server_edition = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
 
+        cluster_name = util.Future(self.cluster.info, 'cluster-name', nodes=self.nodes).start()
+
         service_stats = service_stats.result()
         namespace_stats = namespace_stats.result()
         set_stats = set_stats.result()
@@ -2041,10 +2053,12 @@ class SummaryController(BasicCommandController):
         cluster_configs = cluster_configs.result()
         server_version = server_version.result()
         server_edition = server_edition.result()
+        cluster_name = cluster_name.result()
 
         metadata = {}
         metadata["server_version"] = {}
         metadata["server_build"] = {}
+        metadata["cluster_name"] = {}
 
         for node, version in server_version.iteritems():
             if not version or isinstance(version, Exception):
@@ -2062,6 +2076,9 @@ class SummaryController(BasicCommandController):
 
             else:
                 metadata["server_version"][node] = version
+
+            if node in cluster_name and cluster_name[node] and not isinstance(cluster_name[node], Exception):
+                metadata["cluster_name"][node] = cluster_name[node]
 
         try:
             try:

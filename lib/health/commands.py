@@ -15,7 +15,8 @@
 import re
 
 from lib.health.exceptions import HealthException
-from lib.health.operation import select_keys_from_dict, AggOperation, ApplyOperation, AssertDetailOperation, ComplexOperation, SimpleOperation
+from lib.health.operation import select_keys_from_dict, AggOperation, ApplyOperation,\
+    AssertDetailOperation, BinaryOperation, ComplexOperation, SimpleOperation
 from lib.health.util import create_health_internal_tuple, create_snapshot_key
 
 SNAPSHOT_KEY_PREFIX = "SNAPSHOT"
@@ -24,19 +25,20 @@ SNAPSHOT_KEY_PATTERN = r"SNAPSHOT(\d+)$"
 # Operation entry points
 
 op_list = {
-    "+": SimpleOperation("+").operate,
-    "-": SimpleOperation("-").operate,
-    "/": SimpleOperation("/").operate,
-    "*": SimpleOperation("*").operate,
-    ">": SimpleOperation(">").operate,
-    "<": SimpleOperation("<").operate,
-    ">=": SimpleOperation(">=").operate,
-    "<=": SimpleOperation("<=").operate,
-    "==": SimpleOperation("==").operate,
-    "!=": SimpleOperation("!=").operate,
-    "%%": SimpleOperation("%%").operate,
-    "&&": SimpleOperation("AND").operate,
-    "||": SimpleOperation("OR").operate,
+    "+": BinaryOperation("+").operate,
+    "-": BinaryOperation("-").operate,
+    "/": BinaryOperation("/").operate,
+    "*": BinaryOperation("*").operate,
+    ">": BinaryOperation(">").operate,
+    "<": BinaryOperation("<").operate,
+    ">=": BinaryOperation(">=").operate,
+    "<=": BinaryOperation("<=").operate,
+    "==": BinaryOperation("==").operate,
+    "!=": BinaryOperation("!=").operate,
+    "%%": BinaryOperation("%%").operate,
+    "&&": BinaryOperation("AND").operate,
+    "||": BinaryOperation("OR").operate,
+    "IN": BinaryOperation("IN").operate,
     "AND": AggOperation("AND").operate,
     "OR": AggOperation("OR").operate,
     "SUM": AggOperation("+").operate,
@@ -47,11 +49,15 @@ op_list = {
     "PRODUCT": AggOperation("*").operate,
     "COUNT": AggOperation("COUNT").operate,
     "COUNT_ALL": AggOperation("COUNT_ALL").operate,
+    "FIRST": AggOperation("FIRST").operate,
+    "VALUE_UNIFORM": AggOperation("VALUE_UNIFORM").operate,
     "DIFF": ComplexOperation("DIFF").operate,
     "SD_ANOMALY": ComplexOperation("SD_ANOMALY").operate,
     "NO_MATCH": ComplexOperation("NO_MATCH").operate,
     "APPLY_TO_ANY": ApplyOperation("ANY").operate,
     "APPLY_TO_ALL": ApplyOperation("ALL").operate,
+    "SPLIT": SimpleOperation("SPLIT").operate,
+    "UNIQUE": SimpleOperation("UNIQUE").operate,
 }
 
 assert_op_list = {

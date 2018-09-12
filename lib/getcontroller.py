@@ -123,7 +123,9 @@ class GetConfigController():
                    ('network', (util.Future(self.get_network, flip=flip, nodes=nodes).start())),
                    ('xdr', (util.Future(self.get_xdr, flip=flip, nodes=nodes).start())),
                    ('dc', (util.Future(self.get_dc, flip=flip, nodes=nodes).start())),
-                   ('cluster', (util.Future(self.get_cluster, flip=flip, nodes=nodes).start()))]
+                   ('cluster', (util.Future(self.get_cluster, flip=flip, nodes=nodes).start())),
+                   ('roster', (util.Future(self.get_roster, flip=flip, nodes=nodes).start())),
+                   ('racks', (util.Future(self.get_racks, flip=flip, nodes=nodes).start()))]
         config_map = dict(((k, f.result()) for k, f in futures))
 
         return config_map
@@ -242,6 +244,40 @@ class GetConfigController():
             cl_configs[node] = config
 
         return cl_configs
+
+    def get_roster(self, flip=True, nodes='all'):
+
+        configs = util.Future(self.cluster.info_roster, nodes=nodes).start()
+
+        configs = configs.result()
+        roster_configs = {}
+        for node, config in configs.iteritems():
+            if not config or isinstance(config, Exception):
+                continue
+
+            roster_configs[node] = config
+
+        if flip:
+            roster_configs = util.flip_keys(roster_configs)
+
+        return roster_configs
+
+    def get_racks(self, flip=True, nodes='all'):
+
+        configs = util.Future(self.cluster.info_racks, nodes=nodes).start()
+
+        configs = configs.result()
+        rack_configs = {}
+        for node, config in configs.iteritems():
+            if not config or isinstance(config, Exception):
+                continue
+
+            rack_configs[node] = config
+
+        if flip:
+            rack_configs = util.flip_keys(rack_configs)
+
+        return rack_configs
 
 
 class GetStatisticsController():

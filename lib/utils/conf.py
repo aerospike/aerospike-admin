@@ -55,6 +55,7 @@ _confdefault = {
         "tls-crl-check": False,
         "tls-crl-check-all": False,
         "tls-keyfile": "",
+        "tls-keyfile-password": None,
         "tls-protocols": "",
     },
     "asadm": {
@@ -137,6 +138,7 @@ _confspec = '''{
                 "tls-crl-check-all" : { "type" : "boolean" },
 
                 "tls-keyfile" : { "type" : "string" },
+                "tls-keyfile-password" : { "type" : "string" },
                 "tls-cafile" : { "type" : "string" },
                 "tls-capath" : { "type" : "string" },
                 "tls-certfile" : { "type" : "string" },
@@ -465,6 +467,15 @@ def print_config_file_option():
     print (" --tls-keyfile=path\n"
            "                      Path to the key for mutual authentication (if\n"
            "                      Aerospike Cluster is supporting it).")
+    print (" --tls-keyfile-password=password\n"
+           "                      Password to load protected tls-keyfile.\n"
+           "                      It can be one of the following:\n"
+           "                      1) Environment varaible: 'env:<VAR>'\n"
+           "                      2) File: 'file:<PATH>'\n"
+           "                      3) String: 'PASSWORD'\n"
+           "                      Default: none\n"
+           "                      User will be prompted on command line if --tls-keyfile-password specified and no\n"
+           "                      password is given.")
     print (" --tls-certfile=path\n"
            "                      Path to the chain file for mutual authentication (if\n"
            "                      Aerospike Cluster is supporting it).")
@@ -554,6 +565,10 @@ def get_cli_args():
     add_fn("--tls-protocols")
     add_fn("--tls-cipher-suite")
     add_fn("--tls-keyfile")
+    if have_argparse:
+        add_fn("--tls-keyfile-password", nargs="?", const=DEFAULTPASSWORD)
+    else:
+        parser.add_option("--tls-keyfile-password", dest="tls-keyfile-password", action="store_const", const=DEFAULTPASSWORD)
     add_fn("--tls-certfile")
     add_fn("--tls-cert-blacklist")
     add_fn("--tls-crl-check", action="store_true")

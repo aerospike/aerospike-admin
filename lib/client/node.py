@@ -201,20 +201,19 @@ class Node(object):
 
             # Original address may not be the service address, the
             # following will ensure we have the service address
-            service_addresses = self.info_service(address, return_None=True)
+            service_addresses = self.get_service_list(address, return_none=True)
             if service_addresses and not isinstance(self.service_addresses, Exception):
                 self.service_addresses = service_addresses
             # else : might be it's IP is not available, node should try all old
             # service addresses
+
             self.close()
             self._initialize_socket_pool()
-            if (not self.service_addresses or
-                (self.ip, self.port, self.tls_name) not in
-                    self.service_addresses):
-
+            _current_host = (self.ip, self.port, self.tls_name)
+            if not self.service_addresses or _current_host not in self.service_addresses:
                 # if asd >= 3.10 and node has only IPv6 address
-                self.service_addresses.append(
-                    (self.ip, self.port, self.tls_name))
+                self.service_addresses.append(_current_host)
+
             for s in self.service_addresses:
                 try:
                     address = s[0]
@@ -651,24 +650,64 @@ class Node(object):
 
         return self._info_services_helper(self.info("services-alternate"))
 
+
     @return_exceptions
-    def info_service(self, address="", return_None=False):
+    def _info_service_helper(self, service):
+        if not service or isinstance(service, Exception):
+            return []
+
+        s = map(util.info_to_tuple, util.info_to_list(service))
+        return map(lambda v: (v[0], int(self.port), self.tls_name), s)
+
+
+    @return_exceptions
+    def info_service(self, address="", return_none=False):
+        """
+        Get service endpoints of this node
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+
         try:
             service = self.info("service")
-            s = map(util.info_to_tuple, util.info_to_list(service))
-
-            return map(lambda v: (v[0], int(self.port), self.tls_name), s)
-
+            return self._info_service_helper(service)
         except Exception:
             pass
 
-        if return_None:
+        if return_none:
             return None
 
         if not address:
             address = self.ip
 
         return [(address, self.port, self.tls_name)]
+
+    @return_exceptions
+    def info_service_alt(self):
+        """
+        Get service alternate endpoints of this node
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+
+        try:
+            service = self.info("service-clear-alt")
+            return self._info_service_helper(service)
+        except Exception:
+            return []
+
+    @return_exceptions
+    def get_service_list(self, address="", return_none=False):
+        service = []
+        if self.use_services_alt:
+            service = self.info_service_alt()
+
+        if service:
+            return service
+
+        return self.info_service(address=address, return_none=return_none)
 
     @return_exceptions
     def get_alumni_peers(self):
@@ -1061,6 +1100,68 @@ class Node(object):
             return {}
 
         return util.info_to_dict_multi_level(udf_data, "filename", delimiter2=',')
+
+    @return_exceptions
+    def info_roster(self):
+        """
+        Get roster info.
+
+        Returns:
+        dict -- {ns1:{key_name : key_value, ...}, ns2:{key_name : key_value, ...}}
+        """
+        roster_data = self.info('roster:')
+
+        if not roster_data:
+            return {}
+
+        roster_data = util.info_to_dict_multi_level(roster_data, "ns")
+        list_fields = ["roster", "pending_roster", "observed_nodes"]
+
+        for ns, ns_roster_data in roster_data.iteritems():
+            for k, v in ns_roster_data.iteritems():
+                if k not in list_fields:
+                    continue
+
+                try:
+                    ns_roster_data[k] = v.split(",")
+                except Exception:
+                    ns_roster_data[k] = v
+
+        return roster_data
+
+    @return_exceptions
+    def info_racks(self):
+        """
+        Get rack info.
+
+        Returns:
+        dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
+        """
+        rack_data = self.info('racks:')
+
+        if not rack_data:
+            return {}
+
+        rack_data = util.info_to_dict_multi_level(rack_data, "ns")
+        rack_dict = {}
+
+        for ns, ns_rack_data in rack_data.iteritems():
+            rack_dict[ns] = {}
+
+            for k, v in ns_rack_data.iteritems():
+                if k == "ns":
+                    continue
+
+                try:
+                    rack_id = k.split("_")[1]
+                    nodes = v.split(",")
+                    rack_dict[ns][rack_id] = {}
+                    rack_dict[ns][rack_id]["rack-id"] = rack_id
+                    rack_dict[ns][rack_id]["nodes"] = nodes
+                except Exception:
+                    continue
+
+        return rack_dict
 
     @return_exceptions
     def info_dc_get_config(self):

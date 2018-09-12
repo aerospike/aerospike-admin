@@ -67,6 +67,7 @@ class HealthLexer(object):
         'ORIGINAL_CONFIG': 'ORIGINAL_CONFIG',
         'RAM': 'RAM',
         'ROLES': 'ROLES',
+        'ROSTER': 'ROSTER',
         'SYSTEM': 'SYSTEM',
         'SECURITY': 'SECURITY',
         'SERVICE': 'SERVICE',
@@ -103,6 +104,7 @@ class HealthLexer(object):
         'DC': 'DC',
         'HISTOGRAM': 'HISTOGRAM',
         'NAMESPACE': 'NAMESPACE',
+        'RACKS': 'RACKS',
         'SET': 'SET',
         'SINDEX': 'SINDEX',
     }
@@ -116,7 +118,9 @@ class HealthLexer(object):
         'MAX': 'MAX',
         'MIN': 'MIN',
         'OR' : 'OR',
-        'SUM': 'SUM'
+        'FIRST': 'FIRST',
+        'SUM': 'SUM',
+        'VALUE_UNIFORM': 'VALUE_UNIFORM',
     }
 
     complex_ops = {
@@ -130,8 +134,9 @@ class HealthLexer(object):
         'APPLY_TO_ALL': 'APPLY_TO_ALL'
     }
 
-    apply_comp_ops = {
-        'IN' : 'IN'
+    simple_ops = {
+        'SPLIT': 'SPLIT',
+        'UNIQUE': 'UNIQUE'
     }
 
     complex_params = {
@@ -164,9 +169,9 @@ class HealthLexer(object):
     tokens = ['NUMBER',     'FLOAT', 'BOOL_VAL',
               'VAR',        'NEW_VAR',
               'COMPONENT', 'GROUP_ID', 'COMPONENT_AND_GROUP_ID',
-              'AGG_OP', 'COMPLEX_OP', 'APPLY_OP', 'APPLY_COMP_OP', 'COMPLEX_PARAM', 'ASSERT_OP', 'ASSERT_LEVEL',
+              'AGG_OP', 'COMPLEX_OP', 'APPLY_OP', 'SIMPLE_OP', 'COMPLEX_PARAM', 'ASSERT_OP', 'ASSERT_LEVEL',
               'STRING',
-              'COMMA',      'DOT',
+              'COMMA',      'DOT', 'IN',
               'PLUS',       'MINUS',
               'TIMES',      'DIVIDE',
               'BINARY_AND', 'BINARY_OR',
@@ -213,8 +218,10 @@ class HealthLexer(object):
             t.type = "COMPLEX_OP"
         elif t.value in HealthLexer.apply_ops.keys():
             t.type = "APPLY_OP"
-        elif t.value in HealthLexer.apply_comp_ops.keys():
-            t.type = "APPLY_COMP_OP"
+        elif t.value in HealthLexer.simple_ops.keys():
+            t.type = "SIMPLE_OP"
+        elif t.value == "IN":
+            t.type = "IN"
         elif t.value in HealthLexer.complex_params.keys():
             t.value = HealthLexer.complex_params[t.value]
             t.type = "COMPLEX_PARAM"
@@ -310,9 +317,9 @@ class HealthParser(object):
         else:
             p[0] = p[1]
 
-    def p_simple_operation(self, p):
+    def p_binary_operation(self, p):
         """
-        simple_operation : operand op operand opt_on_clause
+        binary_operation : operand op operand opt_on_clause
         """
         p[0] = (p[2], p[1], p[3], None, None, p[4])
 
@@ -344,9 +351,25 @@ class HealthParser(object):
         """
         p[0] = (p[1], p[3], p[7], p[5], None, False)
 
+    def p_simple_operation(self, p):
+        """
+        simple_operation : SIMPLE_OP LPAREN operand opt_simple_operation_param RPAREN
+        """
+        p[0] = (p[1], p[3], p[4], None, None, False)
+
+    def p_opt_simple_operation_param(self, p):
+        """
+        opt_simple_operation_param : COMMA constant
+                         |
+        """
+        if len(p) == 1:
+            p[0] = None
+        else:
+            p[0] = create_health_internal_tuple(p[2], [])
+
     def p_apply_comparison_op(self, p):
         """
-        apply_comparison_op : APPLY_COMP_OP
+        apply_comparison_op : IN
                               | comparison_op
         """
         p[0] = p[1]
@@ -405,6 +428,7 @@ class HealthParser(object):
             | comparison_op
             | BINARY_AND
             | BINARY_OR
+            | IN
 
         """
         p[0] = p[1]
@@ -490,10 +514,11 @@ class HealthParser(object):
 
     def p_op_statement(self, p):
         """
-        op_statement : opt_group_by_clause DO simple_operation opt_save_clause
+        op_statement : opt_group_by_clause DO binary_operation opt_save_clause
                         | opt_group_by_clause DO agg_operation opt_save_clause
                         | opt_group_by_clause DO complex_operation opt_save_clause
                         | opt_group_by_clause DO apply_operation opt_save_clause
+                        | opt_group_by_clause DO simple_operation opt_save_clause
         """
         try:
             p[0] = do_operation(op=p[3][0], arg1=p[3][1], arg2=p[3][2], group_by=p[
