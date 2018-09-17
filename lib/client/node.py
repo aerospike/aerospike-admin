@@ -199,9 +199,12 @@ class Node(object):
                 # Not able to connect this address
                 raise self.node_id
 
+            self.features = self.info('features')
+            self.use_peers_list = self.is_feature_present(feature="peers")
+
             # Original address may not be the service address, the
             # following will ensure we have the service address
-            service_addresses = self.get_service_list(address, return_none=True)
+            service_addresses = self.info_service_list()
             if service_addresses and not isinstance(self.service_addresses, Exception):
                 self.service_addresses = service_addresses
             # else : might be it's IP is not available, node should try all old
@@ -236,10 +239,8 @@ class Node(object):
                 raise self.node_id
             self._service_IP_port = self.create_key(self.ip, self.port)
             self._key = hash(self._service_IP_port)
-            self.features = self.info('features')
-            self.use_peers_list = self.is_feature_present(feature="peers")
             if self.has_peers_changed():
-                self.peers = self._find_friend_nodes()
+                self.peers = self.info_peers_list()
             self.new_histogram_version = self._is_new_hist_version()
             self.alive = True
 
@@ -507,12 +508,104 @@ class Node(object):
 
         return self.create_key(self.ip, self.port)
 
+    ###### Services ######
+
+    # pre 3.10 services
+
     @return_exceptions
-    def _info_peers_list_helper(self, peers):
+    def info_services(self):
+        """
+        Get other services this node knows of that are active
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+
+        return self._info_services_helper(self.info("services"))
+
+    @return_exceptions
+    def info_services_alumni(self):
+        """
+        Get other services this node has ever know of
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+
+        try:
+            return self._info_services_helper(self.info("services-alumni"))
+        except IOError:
+            # Possibly old asd without alumni feature
+            return self.info_services()
+
+    @return_exceptions
+    def info_services_alt(self):
+        """
+        Get other services_alternative this node knows of that are active
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+
+        return self._info_services_helper(self.info("services-alternate"))
+
+    @return_exceptions
+    def _info_services_helper(self, services):
+        """
+        Takes an info services response and returns a list.
+        """
+        if not services or isinstance(services, Exception):
+            return []
+
+        s = map(util.info_to_tuple, util.info_to_list(services))
+        return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
+
+    # post 3.10 services
+
+    @return_exceptions
+    def info_peers(self):
+        """
+        Get peers this node knows of that are active
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        if self.enable_tls:
+            return self._info_peers_helper(self.info("peers-tls-std"))
+
+        return self._info_peers_helper(self.info("peers-clear-std"))
+
+    @return_exceptions
+    def info_peers_alumni(self):
+        """
+        Get peers this node has ever know of
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        if self.enable_tls:
+            return self._info_peers_helper(self.info("alumni-tls-std"))
+        return self._info_peers_helper(self.info("alumni-clear-std"))
+
+    @return_exceptions
+    def info_peers_alt(self):
+        """
+        Get peers this node knows of that are active alternative addresses
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        if self.enable_tls:
+            return self._info_peers_helper(self.info("peers-tls-alt"))
+
+        return self._info_peers_helper(self.info("peers-clear-alt"))
+
+    @return_exceptions
+    def _info_peers_helper(self, peers):
         """
         Takes an info peers list response and returns a list.
         """
-        gen_port_peers = util._parse_string(peers)
+        gen_port_peers = util.parse_peers_string(peers)
         if not gen_port_peers or len(gen_port_peers) < 3:
             return []
         default_port = 3000
@@ -520,12 +613,12 @@ class Node(object):
         if (gen_port_peers[1]):
             default_port = int(gen_port_peers[1])
 
-        peers_list = util._parse_string(gen_port_peers[2])
+        peers_list = util.parse_peers_string(gen_port_peers[2])
         if not peers_list or len(peers_list) < 1:
             return []
         p_list = []
         for p in peers_list:
-            p_data = util._parse_string(p)
+            p_data = util.parse_peers_string(p)
             if not p_data or len(p_data) < 3:
                 continue
             # TODO - not used node_name = p_data[0]
@@ -533,7 +626,7 @@ class Node(object):
             if p_data[1] and len(p_data[1]) > 0:
                 tls_name = p_data[1]
 
-            endpoints = util._parse_string(p_data[2])
+            endpoints = util.parse_peers_string(p_data[2])
             if not endpoints or len(endpoints) < 1:
                 continue
 
@@ -542,9 +635,9 @@ class Node(object):
             endpoint_list = []
             for e in endpoints:
                 if "[" in e and "]:" not in e:
-                    addr_port = util._parse_string(e, delim=",")
+                    addr_port = util.parse_peers_string(e, delim=",")
                 else:
-                    addr_port = util._parse_string(e, delim=":")
+                    addr_port = util.parse_peers_string(e, delim=":")
                 addr = addr_port[0]
                 if addr.startswith("["):
                     addr = addr[1:]
@@ -565,155 +658,13 @@ class Node(object):
         return p_list
 
     @return_exceptions
-    def info_peers_list(self):
-        """
-        Get peers this node knows of that are active
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_list_helper(self.info("peers-tls-std"))
-
-        return self._info_peers_list_helper(self.info("peers-clear-std"))
-
-    @return_exceptions
-    def info_alumni_peers_list(self):
-        """
-        Get peers this node has ever know of
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_list_helper(self.info("alumni-tls-std"))
-        return self._info_peers_list_helper(self.info("alumni-clear-std"))
-
-    @return_exceptions
-    def info_alternative_peers_list(self):
-        """
-        Get peers this node knows of that are active alternative addresses
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_list_helper(self.info("peers-tls-alt"))
-
-        return self._info_peers_list_helper(self.info("peers-clear-alt"))
-
-    @return_exceptions
-    def _info_services_helper(self, services):
-        """
-        Takes an info services response and returns a list.
-        """
-        if not services or isinstance(services, Exception):
-            return []
-
-        s = map(util.info_to_tuple, util.info_to_list(services))
-        return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
-
-    @return_exceptions
-    def info_services(self):
-        """
-        Get other services this node knows of that are active
-
-        Returns:
-        list -- [(ip,port),...]
-        """
-
-        return self._info_services_helper(self.info("services"))
-
-    @return_exceptions
-    def info_services_alumni(self):
-        """
-        Get other services this node has ever know of
-
-        Returns:
-        list -- [(ip,port),...]
-        """
-
-        try:
-            return self._info_services_helper(self.info("services-alumni"))
-        except IOError:
-            # Possibly old asd without alumni feature
-            return self.info_services()
-
-    @return_exceptions
-    def info_services_alt(self):
-        """
-        Get other services_alternative this node knows of that are active
-
-        Returns:
-        list -- [(ip,port),...]
-        """
-
-        return self._info_services_helper(self.info("services-alternate"))
-
-
-    @return_exceptions
-    def _info_service_helper(self, service):
-        if not service or isinstance(service, Exception):
-            return []
-
-        s = map(util.info_to_tuple, util.info_to_list(service))
-        return map(lambda v: (v[0], int(self.port), self.tls_name), s)
-
-
-    @return_exceptions
-    def info_service(self, address="", return_none=False):
-        """
-        Get service endpoints of this node
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        try:
-            service = self.info("service")
-            return self._info_service_helper(service)
-        except Exception:
-            pass
-
-        if return_none:
-            return None
-
-        if not address:
-            address = self.ip
-
-        return [(address, self.port, self.tls_name)]
-
-    @return_exceptions
-    def info_service_alt(self):
-        """
-        Get service alternate endpoints of this node
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        try:
-            service = self.info("service-clear-alt")
-            return self._info_service_helper(service)
-        except Exception:
-            return []
-
-    @return_exceptions
-    def get_service_list(self, address="", return_none=False):
-        service = []
-        if self.use_services_alt:
-            service = self.info_service_alt()
-
-        if service:
-            return service
-
-        return self.info_service(address=address, return_none=return_none)
-
-    @return_exceptions
     def get_alumni_peers(self):
         if self.use_peers_list:
-            alumni_peers = self.info_peers_list()
-            return alumni_peers + self.info_alumni_peers_list()
+            # Unlike services-alumni, info_peers_alumni for server version prior to 4.3.1 gives
+            # only old nodes (which are not part of current cluster), so to get full list we need to
+            # add info_peers
+            alumni_peers = self.info_peers()
+            return list(set(alumni_peers + self.info_peers_alumni()))
         else:
             alumni_services = self.info_services_alumni()
             if alumni_services and not isinstance(alumni_services, Exception):
@@ -724,9 +675,9 @@ class Node(object):
     def get_peers(self):
         if self.use_peers_list:
             if self.use_services_alt:
-                return self.info_alternative_peers_list()
+                return self.info_peers_alt()
 
-            return self.info_peers_list()
+            return self.info_peers()
 
         else:
             if self.use_services_alt:
@@ -735,11 +686,91 @@ class Node(object):
             return self.info_services()
 
     @return_exceptions
-    def _find_friend_nodes(self):
+    def info_peers_list(self):
         if self.consider_alumni:
             return self.get_alumni_peers()
         else:
             return self.get_peers()
+
+    @return_exceptions
+    def info_peers_flat_list(self):
+        return util.flatten(self.info_peers_list())
+
+    ###### Services End ######
+
+    ###### Service ######
+
+    # pre 3.10 service
+
+    @return_exceptions
+    def info_service(self):
+        """
+        Get service endpoints of this node
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+
+        try:
+            return self._info_service_helper(self.info("service"))
+        except Exception:
+            return []
+
+    @return_exceptions
+    def _info_service_helper(self, service, delimiter=";"):
+        if not service or isinstance(service, Exception):
+            return []
+        s = map(lambda v: util.parse_peers_string(v, ":"), util.info_to_list(service, delimiter=delimiter))
+        return map(lambda v: (v[0].strip("[]"), int(self.port), self.tls_name), s)
+
+    # post 3.10 services
+
+    @return_exceptions
+    def info_service_alt_post310(self):
+        """
+        Get service alternate endpoints of this node
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+
+        try:
+            if self.enable_tls:
+                return self._info_service_helper(self.info("service-tls-alt"), ",")
+
+            return self._info_service_helper(self.info("service-clear-alt"), ",")
+        except Exception:
+            return []
+
+    @return_exceptions
+    def info_service_post310(self):
+        """
+        Get service endpoints of this node
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+
+        try:
+            if self.enable_tls:
+                return self._info_service_helper(self.info("service-tls-std"), ",")
+
+            return self._info_service_helper(self.info("service-clear-std"), ",")
+        except Exception:
+            return []
+
+    @return_exceptions
+    def info_service_list(self):
+        if self.use_peers_list:
+            if self.use_services_alt:
+                return self.info_service_alt_post310()
+
+            return self.info_service_post310()
+
+        else:
+            return self.info_service()
+
+    ###### Service End ######
 
     @return_exceptions
     def info_statistics(self):

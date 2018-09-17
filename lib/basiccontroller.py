@@ -1033,8 +1033,8 @@ class CollectinfoController(BasicCommandController):
         xdr_builds = util.Future(self.cluster.info_XDR_build_version, nodes=self.nodes).start()
         node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start()
         ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start()
-        endpoints = util.Future(self.cluster.info_service, nodes=self.nodes).start()
-        services = util.Future(self.cluster.info_services, nodes=self.nodes).start()
+        endpoints = util.Future(self.cluster.info_service_list, nodes=self.nodes).start()
+        services = util.Future(self.cluster.info_peers_flat_list, nodes=self.nodes).start()
         udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start()
 
         builds = builds.result()
@@ -1633,9 +1633,9 @@ class HealthCheckController(BasicCommandController):
         elif stanza == "udf":
             return self.cluster.info_udf_list(nodes=self.nodes)
         elif stanza == "endpoints":
-            return self.cluster.info_service(nodes=self.nodes)
+            return self.cluster.info_service_list(nodes=self.nodes)
         elif stanza == "services":
-            return self.cluster.info_services(nodes=self.nodes)
+            return self.cluster.info_peers_flat_list(nodes=self.nodes)
 
     def _get_asconfig_data(self, stanza):
         if stanza == "xdr":
