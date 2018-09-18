@@ -138,7 +138,7 @@ def find_dns(endpoints):
     return None
 
 
-def _parse_string(s, delim=",", ignore_chars_start="[", ignore_chars_end="]"):
+def parse_peers_string(s, delim=",", ignore_chars_start="[", ignore_chars_end="]"):
     o = []
     if not s or isinstance(s, Exception):
         return o
