@@ -21,6 +21,12 @@ INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
 INSTALL = "install -o aerospike -g aerospike"
 
+PY_VER = $(shell python -c "import sys;t='{v[0]}.{v[1]}'.format(v=list(sys.version_info[:2]));sys.stdout.write(t)";)
+REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/requirements_py27.txt
+ifeq ($(PY_VER),2.6)
+	REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/requirements_py26.txt
+endif
+
 SHELL := /bin/bash
 
 define make_build
@@ -44,14 +50,14 @@ all:
 
 	mkdir -p $(BUILD_ROOT)wheels
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
-	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)wheels -r requirements.txt
+	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)wheels -r $(REQUIREMENT_FILE)
 	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)wheels
 	for pkg in "${BUILD_ROOT}wheels/"*; do \
 		if [[ "$${pkg}" == *"manylinux1_x86_64"* ]]; then \
 			mv "$${pkg}" "$${pkg/manylinux1_x86_64/linux_x86_64}"; \
 		fi \
  	done
-	pex -v -r requirements.txt --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
 	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
 	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm

@@ -316,8 +316,9 @@ class SSLContext(object):
                              "CERT_OPTIONAL or CERT_REQUIRED")
         try:
             components = cert.get_subject().get_components()
-        except Exception:
-            raise ("Wrong peer certificate for match_tlsname.")
+        except Exception as e:
+            raise Exception("Failed to read certificate components: " + str(e))
+
         cnnames = set()
         for value in self._get_common_names(components):
             try:
