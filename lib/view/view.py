@@ -729,7 +729,9 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "DC Information%s" % (title_suffix)
-        column_names = ('node', ('_dc-name', 'DC'), ('_xdr_dc_size', 'DC size'), 'namespaces', ('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'), ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
+        column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'), ('_xdr_dc_size', 'DC size'),
+                        'namespaces',('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'),
+                        ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
                         )
 
         t = Table(title, column_names, group_by=1)
@@ -738,7 +740,7 @@ class CliView(object):
             '_dc-name', lambda data: get_value_from_dict(data, ('dc-name', 'DC_Name')))
 
         t.add_data_source('_xdr_dc_size', lambda data: get_value_from_dict(
-            data, ('xdr_dc_size', 'dc_size')))
+            data, ('xdr_dc_size', 'dc_size', 'dc_as_size', 'dc_http_good_locations')))
 
         t.add_data_source(
             '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
