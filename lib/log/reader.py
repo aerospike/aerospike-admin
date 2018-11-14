@@ -45,7 +45,7 @@ class LogReader(object):
     server_log_ext = "/aerospike.log"
     server_log_file_identifier = [
         "thr_info.c::", "heartbeat_received", "Cluster_size"]
-    server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \([A-Za-z_\.\[\]]+:{1,2}-?[\d]+\)"
+    server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2}(\.\d+){0,3} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \([A-Za-z_\.\[\]]+:{1,2}-?[\d]+\)"
     logger = logging.getLogger('asadm')
 
     def get_server_node_id(self, file, fetch_end="tail",
@@ -186,6 +186,8 @@ class LogReader(object):
 
     def parse_dt(self, line, dt_len=6):
         prefix = line[0: line.find(" GMT")].split(",")[0]
+        # remove milliseconds if available
+        prefix = prefix.split(".")[0]
         return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:dt_len]))
 
     def _seek_to(self, f, c):
