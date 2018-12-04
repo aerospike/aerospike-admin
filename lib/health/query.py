@@ -355,6 +355,31 @@ ASSERT(r, False, "Defrag low water mark misconfigured.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have defrag-lwm-pct lower than high-water-disk-pct. This might create situation like no block to write, no eviction and no defragmentation. Please run 'show config namespace like high-water-disk-pct defrag-lwm-pct' to check configured values. Probable cause - namespace watermark misconfiguration.",
 				"Defrag low water mark misconfiguration check.");
 
+commit_to_device = select "storage-engine.commit-to-device" from NAMESPACE.CONFIG;
+commit_to_device = group by CLUSTER, NAMESPACE commit_to_device;
+ASSERT(commit_to_device, False, "Namespace has COMMIT-TO-DEVICE", "OPERATIONS" , INFO,
+				"Listed namespace(s) have commit-to-device=true. Please run 'show config namespace like commit-to-device' for details.",
+				"Namespace COMMIT-TO-DEVICE check.");
+
+number_of_sets = select "set" from SET.STATISTICS;
+number_of_sets = GROUP BY CLUSTER, NAMESPACE, NODE do COUNT_ALL(number_of_sets);
+p = GROUP BY CLUSTER, NAMESPACE do MAX(number_of_sets) save as "sets_count";
+warning_check = do p >= 1000;
+ASSERT(warning_check, False, "High set count per namespace", "LIMITS", WARNING,
+        		"Listed namespace(s) have high number of set count (>=1000). Please run in AQL 'show sets' for details",
+        		"Critical Namespace Set Count Check (>=1000)");
+correct_range_check = do p < 750;
+r = do warning_check || correct_range_check;
+ASSERT(r, True, "Number of Sets equal to or above 750", "LIMITS", INFO,
+        		"Listed namespace(s) have high number of set count (>=750). Please run in AQL 'show sets' for details",
+        		"Basic Set Count Check (750 =< p < 1000)");
+
+stop_writes = select "stop_writes" from NAMESPACE.STATISTICS;
+stop_writes = group by CLUSTER, NAMESPACE stop_writes;
+ASSERT(stop_writes, False, "Namespace has hit stop-writes (stop_writes = true)", "OPERATIONS" , CRITICAL,
+				"Listed namespace(s) have hit stop-write. Please run 'show statistics namespace like stop_writes' for details.",
+				"Namespace stop-writes flag check.");
+
 SET CONSTRAINT VERSION < 4.3;
 
 device = select "file", "storage-engine.file" as "file", "device", "storage-engine.device" as "device" from NAMESPACE.CONFIG save;
