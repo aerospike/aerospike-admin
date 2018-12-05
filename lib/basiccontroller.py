@@ -1219,8 +1219,6 @@ class CollectinfoController(BasicCommandController):
         summary_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
         health_params = ['health -v']
 
-        hist_list = ['ttl', 'objsz']
-        hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
 
         my_ips = (util.shell_command(["hostname -I"])[0]).split(' ')
         _ip = my_ips[0].strip()
@@ -1238,18 +1236,31 @@ class CollectinfoController(BasicCommandController):
             except Exception:
                 pass
 
+        # find all namespaces
         try:
             namespaces = self._parse_namespace(self.cluster.info("namespaces"))
         except Exception:
             namespaces = []
+
+        # add hist-dump or histogram command to collect list
+
+        hist_list = ['ttl', 'object-size', 'object-size-linear']
+        hist_dump_info_str = "histogram:namespace=%s;type=%s"
+
+        if LooseVersion(as_version) < LooseVersion("4.2.0"):
+            # histogram command introduced in 4.2.0
+            # use hist-dump command for older versions
+            hist_list = ['ttl', 'objsz']
+            hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
 
         for ns in namespaces:
             for hist in hist_list:
                 dignostic_aerospike_cluster_params.append(
                     hist_dump_info_str % (ns, hist))
 
-        if show_all:
 
+        if show_all:
+            # add additional command to collect list
             for ns in namespaces:
                 # dump-wb dumps debug information about Write Bocks, it needs
                 # namespace, device-id and write-block-id as a parameter
@@ -1259,6 +1270,7 @@ class CollectinfoController(BasicCommandController):
                     'dump-wb-summary:ns=' + ns)
 
             if verbose:
+                # enable to collect additional stats with detailed output
                 for index, param in enumerate(dignostic_aerospike_cluster_params_additional_verbose):
                     if param.startswith("dump"):
                         if not param.endswith(":"):
@@ -1270,11 +1282,6 @@ class CollectinfoController(BasicCommandController):
             dignostic_aerospike_cluster_params = dignostic_aerospike_cluster_params + \
                 dignostic_aerospike_cluster_params_additional + \
                 dignostic_aerospike_cluster_params_additional_verbose
-
-        if 'ubuntu' == (platform.linux_distribution()[0]).lower():
-            cmd_dmesg = 'cat /var/log/syslog'
-        else:
-            cmd_dmesg = 'cat /var/log/messages'
 
         ####### Dignostic info ########
 
@@ -1367,6 +1374,7 @@ class CollectinfoController(BasicCommandController):
         ##### aerospike logs #####
 
         conf_path = '/etc/aerospike/aerospike.conf'
+
         # Comparing with this version because prior to this it was
         # citrusleaf.conf
         if LooseVersion(as_version) <= LooseVersion("3.0.0"):
@@ -1416,7 +1424,9 @@ class CollectinfoController(BasicCommandController):
                     temp_node = Node(_ip)
                     log_locations = [i.split(':')[1] for i in self.cluster.call_node_method(
                         [temp_node.ip], "info", "logs").popitem()[1].split(';')]
+
                 file_name_used = {}
+
                 for log in log_locations:
                     if os.path.exists(log):
                         file_name_base = os.path.basename(log)
@@ -1431,6 +1441,7 @@ class CollectinfoController(BasicCommandController):
 
                         self._collect_local_file(
                             log, as_logfile_prefix + file_name_base)
+
                     # machine is running with systemd, so need to read logs
                     # from systemd journal
                     else:
