@@ -241,6 +241,13 @@ ASSERT(r, True, "Service configurations different than config file values.", "OP
                  "Listed Service configuration[s] are different than actual initial value set in aerospike.conf file.",
                             "Service config runtime and conf file difference check.");
 
+oc = select * from NETWORK.ORIGINAL_CONFIG save;
+c = select * from NETWORK.CONFIG save;
+r = do oc == c on common;
+ASSERT(r, True, "Network configurations different than config file values.", "OPERATIONS", INFO,
+                 "Listed Network configuration[s] are different than actual initial value set in aerospike.conf file.",
+                            "Network config runtime and conf file difference check.");
+
 oc = select * from NAMESPACE.ORIGINAL_CONFIG save;
 c = select * from NAMESPACE.CONFIG save;
 r = do oc == c on common;
@@ -366,13 +373,13 @@ number_of_sets = GROUP BY CLUSTER, NAMESPACE, NODE do COUNT_ALL(number_of_sets);
 p = GROUP BY CLUSTER, NAMESPACE do MAX(number_of_sets) save as "sets_count";
 warning_check = do p >= 1000;
 ASSERT(warning_check, False, "High set count per namespace", "LIMITS", WARNING,
-        		"Listed namespace(s) have high number of set count (>=1000). Please run in AQL 'show sets' for details",
-        		"Critical Namespace Set Count Check (>=1000)");
+        "Listed namespace(s) have high number of set count (>=1000). Please run in AQL 'show sets' for details",
+        "Critical Namespace Set Count Check (>=1000)");
 correct_range_check = do p < 750;
 r = do warning_check || correct_range_check;
 ASSERT(r, True, "Number of Sets equal to or above 750", "LIMITS", INFO,
-        		"Listed namespace(s) have high number of set count (>=750). Please run in AQL 'show sets' for details",
-        		"Basic Set Count Check (750 =< p < 1000)");
+        "Listed namespace(s) have high number of set count (>=750). Please run in AQL 'show sets' for details",
+        "Basic Set Count Check (750 =< p < 1000)");
 
 stop_writes = select "stop_writes" from NAMESPACE.STATISTICS;
 stop_writes = group by CLUSTER, NAMESPACE stop_writes;

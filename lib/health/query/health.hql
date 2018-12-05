@@ -226,6 +226,13 @@ ASSERT(r, True, "Service configurations different than config file values.", "OP
                  "Listed Service configuration[s] are different than actual initial value set in aerospike.conf file.",
                             "Service config runtime and conf file difference check.");
 
+oc = select * from NETWORK.ORIGINAL_CONFIG save;
+c = select * from NETWORK.CONFIG save;
+r = do oc == c on common;
+ASSERT(r, True, "Network configurations different than config file values.", "OPERATIONS", INFO,
+                 "Listed Network configuration[s] are different than actual initial value set in aerospike.conf file.",
+                            "Network config runtime and conf file difference check.");
+
 oc = select * from NAMESPACE.ORIGINAL_CONFIG save;
 c = select * from NAMESPACE.CONFIG save;
 r = do oc == c on common;
