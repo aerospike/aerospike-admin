@@ -1680,10 +1680,12 @@ ASSERT(r, 0, "Non-zero unavailable partitions", "OPERATIONS", WARNING,
 				"Namespace unavailable partitions check",
 				s);
 
-csw = select "cluster_clock_skew_stop_writes_sec" as "cluster_clock_skew_ms" from SERVICE.STATISTICS save as "cluster_clock_skew_stop_writes_sec";
-csw = do 0.75 * csw;
-cs = select "cluster_clock_skew_ms", "cluster_clock_skew" as "cluster_clock_skew_ms" from SERVICE.STATISTICS save;
-r = do cs > csw;
+csw = select "cluster_clock_skew_stop_writes_sec" as "skew_val" from SERVICE.STATISTICS save;
+// convert to milliseconds
+csw = do csw * 1000;
+cs_warning = do 0.75 * csw;
+cs = select "cluster_clock_skew_ms" as "skew_val", "cluster_clock_skew" as "skew_val" from SERVICE.STATISTICS save;
+r = do cs > cs_warning;
 ASSERT(r, False, "Cluster clock_skew breached warning level", "OPERATIONS", WARNING,
 				"Listed cluster[s] shows clock_skew more than 3/4th of cluster_clock_skew_stop_writes_sec. If it crossed cluster_clock_skew_stop_writes_sec then cluster will stop accepting writes.",
 				"Cluster clock_skew check",
