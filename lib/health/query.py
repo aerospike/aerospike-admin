@@ -1697,6 +1697,13 @@ ASSERT(r, True, "Roster misconfigured.", "CONFIG", WARNING,
 				"Listed namespace[s] shows difference between set roster nodes and observe nodes. Please set roster properly.",
 				"Roster misconfiguration check.");
 
+size = select "cluster_size" from SERVICE.STATISTICS;
+p = group by CLUSTER do MAX(size) save as "cluster_size";
+repl = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG save as "replication_factor";
+r = do p == repl;
+ASSERT(r, False, "Nodes equal to replication factor.", "OPERATIONS", WARNING,
+                                "Number of nodes is equal to replication factor, rolling restart not possible",
+                                "Node / replication factor check");
 SET CONSTRAINT VERSION ALL;
 
 '''
