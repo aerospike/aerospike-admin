@@ -1703,7 +1703,8 @@ repl = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG save as 
 r = do p == repl;
 ASSERT(r, False, "Nodes equal to replication factor.", "OPERATIONS", WARNING,
                                 "Number of nodes is equal to replication factor, rolling restart not possible",
-                                "Node / replication factor check");
+                                "Node / replication factor check", s);
+
 SET CONSTRAINT VERSION ALL;
 
 '''
