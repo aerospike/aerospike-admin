@@ -1,0 +1,8 @@
+bcrypt==3.1.4
+cryptography==2.1.1
+jsonschema==2.5.1
+pexpect==4.4.0
+ply==3.11
+pyOpenSSL==17.3.0
+toml==0.9.4
+yappi==0.98
