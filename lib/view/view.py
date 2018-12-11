@@ -1207,10 +1207,13 @@ class CliView(object):
     def show_log_latency(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
         tps_key = ("ops/sec", None)
+
         if grep_result:
+            # find column names
             if grep_result[grep_result.keys()[0]]:
                 column_names = CliView._sort_list_with_string_and_datetime(
                     grep_result[grep_result.keys()[0]][tps_key].keys())
+
         if len(column_names) == 0:
             return ''
         column_names.insert(0, ".")
@@ -1227,15 +1230,24 @@ class CliView(object):
             else:
                 is_first = True
                 sub_columns_per_column = len(grep_result[file].keys())
+                relative_stats_columns = []
+
                 for key, unit in sorted(grep_result[file].keys(), key=lambda tup: tup[0]):
                     if key == tps_key[0]:
                         continue
+
+                    if not unit:
+                        # this is relative stat column
+                        relative_stats_columns.append((key, unit))
+                        continue
+
                     row = grep_result[file][(key, unit)]
                     if is_first:
                         row['NODE'] = file
                         is_first = False
                     else:
                         row['NODE'] = "."
+
                     row['.'] = "%% >%d%s" % (key, unit)
                     t.insert_row(row)
 
@@ -1243,6 +1255,12 @@ class CliView(object):
                 row['NODE'] = "."
                 row['.'] = tps_key[0]
                 t.insert_row(row)
+
+                for stat in relative_stats_columns:
+                    row = grep_result[file][stat]
+                    row['NODE'] = "."
+                    row['.'] = stat[0]
+                    t.insert_row(row)
 
                 row = {}
                 for key in grep_result[file][tps_key].keys():

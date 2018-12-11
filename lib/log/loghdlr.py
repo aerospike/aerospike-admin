@@ -313,7 +313,7 @@ class Loghdlr(object):
 
     def loglatency(self, logs, hist, start_tm_arg="head", duration_arg="",
                    slice_duration="10", bucket_count=3, every_nth_bucket=1,
-                   rounding_time=True, output_page_size=10, ns=None):
+                   rounding_time=True, output_page_size=10, ns=None, show_relative_stats=False):
         """
         Function takes a serverlog logs, histogram, start time, duration, slice_duratiion, number of buckets, nth_bucket to show, rounding_time,
         output page size, namespace name
@@ -335,7 +335,7 @@ class Loghdlr(object):
                               duration=duration_arg, slice_duration=slice_duration,
                               bucket_count=bucket_count,
                               every_nth_bucket=every_nth_bucket, read_all_lines=True,
-                              rounding_time=rounding_time, ns=ns)
+                              rounding_time=rounding_time, ns=ns, show_relative_stats=show_relative_stats)
 
                 latency_itrs[log.display_name] = log.latency_iterator()
 

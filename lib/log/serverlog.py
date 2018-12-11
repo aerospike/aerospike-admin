@@ -17,6 +17,7 @@ import hashlib
 import pipes
 import re
 import subprocess
+from lib.log import utils
 
 from lib.utils.constants import COUNT_RESULT_KEY, TOTAL_ROW_HEADER, END_ROW_KEY, DT_FMT
 from lib.log.latency import LogLatency
@@ -150,7 +151,8 @@ class ServerLog(object):
     # not using this but keeping it here for future reference.
     def set_input(self, search_strs, ignore_strs=[], is_and=False, is_casesensitive=True, start_tm="", duration="",
                   slice_duration="10", every_nth_slice=1, upper_limit_check="", bucket_count=3, every_nth_bucket=1,
-                  read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None):
+                  read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None,
+                  show_relative_stats=False):
         if isinstance(search_strs, str):
             search_strs = [search_strs]
         self.search_strings = [search_str for search_str in search_strs]
@@ -176,7 +178,7 @@ class ServerLog(object):
             latency_start_tm = self.server_start_tm
         self.latency_itr = self.log_latency.compute_latency(self.show_itr, self.search_strings[0], self.slice_duration, latency_start_tm,
                                                            self.process_end_tm, bucket_count, every_nth_bucket, arg_rounding_time=rounding_time,
-                                                           arg_ns=ns)
+                                                           arg_ns=ns, arg_relative_stats=show_relative_stats)
         self.count_itr = self.count()
         self.slice_show_count = every_nth_slice
         self.uniq = uniq
@@ -400,25 +402,6 @@ class ServerLog(object):
             return slice_start, slice_end, slice_jump
         return None, None, None
 
-    def _contains_substrings_in_order(self, main_str="", sub_strs=[]):
-        if not sub_strs:
-            return True
-        if not main_str:
-            return False
-        s_str = sub_strs[0]
-        if not s_str:
-            return True
-        if s_str in main_str:
-            try:
-                main_str = main_str.split(s_str, 1)[1]
-            except Exception:
-                main_str = ""
-            if len(sub_strs) <= 1:
-                return True
-            return self._contains_substrings_in_order(main_str, sub_strs[1:])
-        else:
-            return False
-
     def _get_value_and_diff(self, prev, slice_val):
         diff = []
         value = []
@@ -474,7 +457,7 @@ class ServerLog(object):
 
         if line:
             # check line has all strings as per given order
-            if self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+            if utils.contains_substrings_in_order(line=line, strs=self.search_strings):
                 if self.is_casesensitive:
                     m1 = re.search(latency_pattern1 % (grep_str), line)
                     m2 = re.search(latency_pattern2 % (grep_str), line)
@@ -496,7 +479,7 @@ class ServerLog(object):
                     line = self.next_line()
                     if not line:
                         break
-                    if not self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+                    if not utils.contains_substrings_in_order(line=line, strs=self.search_strings):
                         continue
                 except Exception:
                     break
@@ -557,7 +540,7 @@ class ServerLog(object):
                 if not line:
                     break
 
-                if not self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+                if not utils.contains_substrings_in_order(line=line, strs=self.search_strings):
                     continue
 
                 if line_tm >= self.process_end_tm:

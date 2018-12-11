@@ -1,6 +1,3 @@
-#!/usr/bin/python
-####
-#
 # Copyright 2013-2018 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +25,7 @@ import re
 #===========================================================
 # Constants
 #
+from lib.log import utils
 from lib.utils.constants import END_ROW_KEY, DT_FMT
 
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
@@ -41,6 +39,20 @@ SCAN_SIZE = 1024 * 1024
 HIST_BUCKET_LINE_SUBSTRING = "hist.c:"
 SIZE_HIST_LIST = ["device-read-size", "device-write-size"]
 COUNT_HIST_LIST = ["query-rec-count"]
+
+
+# relative stats to input histogram
+# format:
+# histogram: (
+#	[in order path for stat with stat name],
+#	[(index of value, "name of output column")]
+# )
+relative_stat_info = {
+	"batch-index" : (
+		['batch-sub:', 'read'],
+		[(0,"recs/sec")]
+	)
+}
 
 #===========================================================
 
@@ -182,43 +194,181 @@ class LogLatency(object):
             return dt
         return dt + datetime.timedelta(0, seconds, -dt.microsecond)
 
+    #-------------------------------------------------
+    # Get a stat value from line.
+    #
+    def _read_stat(self, line, stat=[]):
+        values = []
+        if not stat:
+            return values
+
+        latency_pattern1 = '%s (\d+)'
+        latency_pattern2 = '%s \(([0-9,\s]+)\)'
+        latency_pattern3 = '(\d+)\((\d+)\) %s'
+        latency_pattern4 = '%s \((\d+)'
+
+        grep_str = stat[-1]
+
+        m = re.search(latency_pattern1 % (grep_str), line)
+        if m:
+            values.append(int(m.group(1)))
+            return values
+
+        m = re.search(latency_pattern2 % (grep_str), line)
+        if m:
+            values = map(lambda x: int(x), m.group(1).split(","))
+            return values
+
+        m = re.search(latency_pattern3 % (grep_str), line)
+        if m:
+            values = map(lambda x: int(x), list(m.groups()))
+
+        m = re.search(latency_pattern4 % (grep_str), line)
+        if m:
+            values.append(int(m.group(1)))
+            return values
+
+        return values
+
+    #------------------------------------------------
+    # Add one list of stat values to another.
+    #
+    def _add_stat_values(self, v1, v2):
+        if not v1:
+            return v2
+
+        if not v2:
+            return v1
+
+        l1 = len(v1)
+        l2 = len(v2)
+
+        values = []
+        for i in range(max(l1, l2)):
+            val = 0
+            if i < l1:
+                val += v1[i]
+
+            if i < l2:
+                val += v2[i]
+
+            values.append(val)
+
+        return values
+
+    #------------------------------------------------
+    # Subtract one list of stat values from another.
+    #
+    def _subtract_stat_values(self, new_values, old_values):
+        values = []
+
+        newl = len(new_values)
+        oldl = len(old_values)
+
+        for i in range(max(newl, oldl)):
+            if i < newl:
+                # next item from new_values
+                newval = new_values[i]
+                if i < oldl:
+                    # item available for same index in old_values
+                    values.append(newval - old_values[i])
+
+                else:
+                    # item not available for same index in old_values
+                    values.append(newval)
+
+            else:
+                # item not available in new_values
+                # add 0
+                values.append(0)
+
+        return values
+
+    #------------------------------------------------
+    # Find max from two lists of stat values.
+    #
+    def _get_max_stat_values(self, new_values, old_values):
+        values = []
+
+        newl = len(new_values)
+        oldl = len(old_values)
+
+        for i in range(max(newl, oldl)):
+            if i >= newl:
+                # no item in new_values
+                values.append(old_values[i])
+            elif i >= oldl:
+                # no item in old_values
+                values.append(new_values[i])
+            else:
+                # items available for index i in both list
+                values.append(max(old_values[i], new_values[i]))
+
+        return values
+
     #------------------------------------------------
     # Get a histogram at or just after the specified datetime.
     #
 
     def _read_hist(self, hist_tags, after_dt, file_itr, line=0, end_dt=None,
-                   before_dt=None, read_all_dumps=False):
+                   before_dt=None, read_all_dumps=False, relative_stat_path=[]):
         if not line:
+            # read next line
             line = self._read_line(file_itr)
+
+        total = 0
+        values = 0
+        stat_values = []
+        dt = ""
+
         while True:
             if not line:
-                return 0, 0, 0, 0
+                return total, values, 0, 0, stat_values
+
             dt = self.reader.parse_dt(line)
+
             if dt < after_dt:
+                # ignore lines with timestamp before before_dt
                 line = self._read_line(file_itr)
                 continue
+
             if end_dt and dt > end_dt:
-                return 0, 0, dt, line
+                # found line with timestamp after end_dt
+                return total, values, dt, line, stat_values
+
             if before_dt and dt > before_dt:
-                return 0, 0, dt, line
-            if any(re.search(ht, line) for ht in hist_tags):
+                # found line with timestamp after before_dt
+                return total, values, dt, line, stat_values
+
+            if relative_stat_path and utils.contains_substrings_in_order(line, relative_stat_path):
+                temp_sval = self._read_stat(line, relative_stat_path)
+                stat_values = self._add_stat_values(stat_values, temp_sval)
+
+            elif any(re.search(ht, line) for ht in hist_tags):
                 break
+
             line = self._read_line(file_itr)
 
         total, values, line = self._read_bucket_values(line, file_itr)
         if not line:
-            return 0, 0, 0, 0
+            return 0, 0, 0, 0, stat_values
 
-        if read_all_dumps:
+        if read_all_dumps or relative_stat_path:
             if not before_dt:
                 before_dt = dt + datetime.timedelta(seconds=NS_SLICE_SECONDS)
-            r_total, r_values, r_dt, line = self._read_hist(
-                hist_tags, after_dt, file_itr, line, end_dt, before_dt, read_all_dumps=read_all_dumps)
+
+            r_total, r_values, r_dt, line, r_stat_values = self._read_hist(
+                hist_tags, after_dt, file_itr, line, end_dt, before_dt, read_all_dumps=read_all_dumps,
+                relative_stat_path=relative_stat_path)
+
             total += r_total
             if r_values:
                 values = self._add_buckets(values, r_values)
 
-        return total, values, dt, line
+            if r_stat_values:
+                stat_values = self._add_stat_values(stat_values, r_stat_values)
+
+        return total, values, dt, line, stat_values
 
     #------------------------------------------------
     # Get a timedelta in seconds.
@@ -239,7 +389,7 @@ class LogLatency(object):
 
     def compute_latency(self, arg_log_itr, arg_hist, arg_slice, arg_from,
                         arg_end_date, arg_num_buckets, arg_every_nth,
-                        arg_rounding_time=True, arg_ns=None):
+                        arg_rounding_time=True, arg_ns=None, arg_relative_stats=False):
 
         latency = {}
         tps_key = ("ops/sec", None)
@@ -286,9 +436,22 @@ class LogLatency(object):
                 read_all_dumps = True
 
             init_dt = arg_from
+
+            relative_stat_path = []
+            relative_stat_index = []
+            if arg_relative_stats and arg_hist in relative_stat_info:
+                info = relative_stat_info[arg_hist]
+                relative_stat_path = info[0]
+                relative_stat_index = info[1]
+
+                for idx_name in relative_stat_index:
+                    latency[(idx_name[1], None)] = {}
+
             # Find first histogram:
-            old_total, old_values, old_dt, line = self._read_hist(
-                hist_tags, init_dt, file_itr, end_dt=arg_end_date, read_all_dumps=read_all_dumps)
+            old_total, old_values, old_dt, line, old_stat_values = self._read_hist(
+                    hist_tags, init_dt, file_itr, end_dt=arg_end_date, read_all_dumps=read_all_dumps,
+                    relative_stat_path=relative_stat_path)
+
             if line:
                 end_dt = arg_end_date
 
@@ -307,10 +470,15 @@ class LogLatency(object):
                 total_ops, total_seconds = 0, 0
                 max_rate = 0.0
 
+                total_stat_values = [0.0] * len(old_stat_values)
+                max_stat_values = [0.0] * len(old_stat_values)
+
                 # Process all the time slices:
                 while end_dt > old_dt:
-                    new_total, new_values, new_dt, line = self._read_hist(
-                        hist_tags, after_dt, file_itr, line, end_dt=arg_end_date, read_all_dumps=read_all_dumps)
+                    new_total, new_values, new_dt, line, new_stat_values = self._read_hist(
+                        hist_tags, after_dt, file_itr, line, end_dt=arg_end_date, read_all_dumps=read_all_dumps,
+                        relative_stat_path=relative_stat_path)
+
                     if not new_values:
                         # This can happen in either eof or end of input time
                         # range
@@ -323,12 +491,23 @@ class LogLatency(object):
                     slice_seconds_actual = self._elapsed_seconds(
                         new_dt - old_dt)
 
+                    slice_stat_values = []
+                    slice_stat_rates = []
+                    if relative_stat_path:
+                        slice_stat_values = self._subtract_stat_values(new_stat_values, old_stat_values)
+                        slice_stat_rates = [round(float(v) / slice_seconds_actual, 1)
+                                            for v in slice_stat_values]
+
                     # Get the rate for this slice:
                     rate = round(float(slice_total) / slice_seconds_actual, 1)
                     total_ops = total_ops + slice_total
                     total_seconds = total_seconds + slice_seconds_actual
                     if rate > max_rate:
                         max_rate = rate
+
+                    if relative_stat_path:
+                        total_stat_values = self._add_stat_values(total_stat_values, slice_stat_values)
+                        max_stat_values = self._get_max_stat_values(max_stat_values, slice_stat_rates)
 
                     # Convert bucket values for this slice to percentages:
                     percentages = self._bucket_percentages(
@@ -348,6 +527,7 @@ class LogLatency(object):
                     key_dt = new_dt
                     if arg_rounding_time:
                         key_dt = self.ceil_time(key_dt)
+
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
@@ -355,13 +535,24 @@ class LogLatency(object):
                             key_dt.strftime(DT_FMT)] = "%.2f" % (overs[i])
 
                     latency[tps_key][key_dt.strftime(DT_FMT)] = "%.1f" % (rate)
+
+                    if relative_stat_index:
+                        for idx_name in relative_stat_index:
+                            if idx_name[0] < len(slice_stat_rates):
+                                latency[(idx_name[1], None)][key_dt.strftime(DT_FMT)] = "%.1f" % (slice_stat_rates[idx_name[0]])
+                            else:
+                                latency[(idx_name[1], None)][key_dt.strftime(DT_FMT)] = "-"
+
                     yield key_dt, latency
+
+                    # Prepare for next slice:
                     for key in latency:
                         latency[key] = {}
-                    # Prepare for next slice:
+
                     which_slice = which_slice + 1
                     after_dt = new_dt + slice_timedelta
                     old_total, old_values, old_dt = new_total, new_values, new_dt
+                    old_stat_values = new_stat_values
 
                 # Compute averages and maximums:
                 if which_slice > 0:
@@ -369,6 +560,10 @@ class LogLatency(object):
                         if i % arg_every_nth == 0:
                             avg_overs[i] = avg_overs[i] / which_slice
                     avg_rate = total_ops / total_seconds
+                    avg_stat_values = []
+                    if relative_stat_path:
+                        avg_stat_values = [v/total_seconds for v in total_stat_values]
+
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
@@ -376,7 +571,16 @@ class LogLatency(object):
                             "avg"] = "%.2f" % (avg_overs[i])
                         latency[(labels[i], self._bucket_unit)][
                             "max"] = "%.2f" % (max_overs[i])
+
                     latency[tps_key]["avg"] = "%.1f" % (avg_rate)
                     latency[tps_key]["max"] = "%.1f" % (max_rate)
+
+                    if relative_stat_index:
+                        for idx_name in relative_stat_index:
+                            if idx_name[0] < len(avg_stat_values):
+                                latency[(idx_name[1], None)]["avg"] = "%.1f" % (avg_stat_values[idx_name[0]])
+
+                            if idx_name[0] < len(max_stat_values):
+                                latency[(idx_name[1], None)]["max"] = "%.1f" % (max_stat_values[idx_name[0]])
 
                 yield END_ROW_KEY, latency
