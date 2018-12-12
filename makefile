@@ -22,9 +22,11 @@ INSTALL_GROUP = aerospike
 INSTALL = "install -o aerospike -g aerospike"
 
 PY_VER = $(shell python -c "import sys;t='{v[0]}.{v[1]}'.format(v=list(sys.version_info[:2]));sys.stdout.write(t)";)
-REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/requirements_py27.txt
+REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/py27/requirements.txt
+PEX_REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/py27/requirements.txt
 ifeq ($(PY_VER),2.6)
-	REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/requirements_py26.txt
+	REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/py26/requirements.txt
+	PEX_REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/py26/pex_requirements.txt
 endif
 
 SHELL := /bin/bash
@@ -52,12 +54,18 @@ all:
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
 	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)wheels -r $(REQUIREMENT_FILE)
 	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)wheels
+
+ifeq ($(PY_VER),2.6)
+	cp $(SOURCE_ROOT)/requirements/py26/wheels/*.whl ${BUILD_ROOT}wheels/
+endif
+
 	for pkg in "${BUILD_ROOT}wheels/"*; do \
 		if [[ "$${pkg}" == *"manylinux1_x86_64"* ]]; then \
 			mv "$${pkg}" "$${pkg/manylinux1_x86_64/linux_x86_64}"; \
 		fi \
  	done
-	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+
+	pex -v -r $(PEX_REQUIREMENT_FILE) --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
 	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
 	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm

@@ -17,29 +17,41 @@ import re
 SPACE = re.compile("\s+")
 
 space_unit_converter = {
+    # units in capital letters
     "P": 1024*1024*1024*1024*1024,
     "T": 1024*1024*1024*1024,
     "G": 1024*1024*1024,
     "M": 1024*1024,
-    "K": 1024
+    "K": 1024,
+
+    # units in small letters
+    "p": 1024*1024*1024*1024*1024,
+    "t": 1024*1024*1024*1024,
+    "g": 1024*1024*1024,
+    "m": 1024*1024,
+    "k": 1024
 }
 
 time_unit_converter = {
+    # units in capital letters
     "D": 24*60*60,
-    "d": 24*60*60,
     "H": 60*60,
-    "h": 60*60,
     "M": 60,
-    "m": 60,
     "S": 1,
+
+    # units in small letters
+    "d": 24*60*60,
+    "h": 60*60,
+    "m": 60,
     "s": 1,
 }
 
 # space configs which need conversion to bytes
-context_space_configs = ["filesize", "memory-size", "storage-engine.max-write-cache", "storage-engine.write-block-size"]
+context_space_configs = ["filesize", "memory-size", "storage-engine.max-write-cache", "storage-engine.write-block-size",
+                         "storage-engine.commit-min-size", "dump-message-above-size"]
 
 # time configs which need conversion to seconds
-context_time_configs = ["default-ttl"]
+context_time_configs = ["default-ttl", "max-ttl"]
 
 # confings differs in configuration file and asinfo output
 # Format: (Name in config file, name expected in asinfo output)
@@ -48,6 +60,11 @@ xdr_dc_config_name_changes = [
     ("dc-node-address-port", "nodes"),
     ("dc-int-ext-ipmap", "int-ext-ipmap")
 ]
+
+# static config
+static_configs = ["access-address", "access-port", "address", "alternate-access-address", "mesh-seed-address-port",
+                  "multicast-group", "port", "tls-access-address", "tls-address", "tls-alternate-access-address",
+                  "tls-mesh-seed-address-port"]
 
 def _convert(d, unit_converter):
     if not d or not isinstance(d, str) or len(d) < 2:
@@ -106,6 +123,10 @@ def _get_kv_from_line(line, key_prefix="", value_separator=None):
 
         k = "%s%s"%((key_prefix+".") if key_prefix else "",_k)
 
+        if _k in static_configs or k in static_configs:
+            # ignore
+            return None, None
+
         if _k in context_space_configs or k in context_space_configs:
             for _v in values[1:]:
                 _values.append(_to_bytes(_v))
@@ -149,18 +170,20 @@ def _parse_context(parsed_map, fstream, key_prefix="", value_separator=None, val
             break
 
 def _parse_service_context(parsed_map, fstream, line):
-    if "service" not in parsed_map:
-        parsed_map["service"] = {}
-    dir_ptr = parsed_map["service"]
+    context = "service"
+    if context not in parsed_map:
+        parsed_map[context] = {}
+    dir_ptr = parsed_map[context]
     _parse_context(parsed_map=dir_ptr, fstream=fstream)
 
 def _parse_network_sub_context(parsed_map, fstream, subcontext):
-    _parse_context(parsed_map=parsed_map, fstream=fstream, key_prefix=subcontext)
+    _parse_context(parsed_map=parsed_map, fstream=fstream, key_prefix=subcontext, value_separator=':')
 
 def _parse_network_context(parsed_output, fstream, line):
-    if "service" not in parsed_output:
-        parsed_output["service"] = {}
-    dir_ptr = parsed_output["service"]
+    context = "network"
+    if context not in parsed_output:
+        parsed_output[context] = {}
+    dir_ptr = parsed_output[context]
     while True:
         try:
             line = fstream.readline()
@@ -253,24 +276,26 @@ def _parse_namespace_sub_context(parsed_map, fstream, subcontext):
     _parse_context(parsed_map=parsed_map, fstream=fstream, key_prefix=subcontext)
 
 def _parse_namespace_context(parsed_output, fstream, line):
-    if "namespace" not in parsed_output:
-        parsed_output["namespace"] = {}
+    context = "namespace"
+    if context not in parsed_output:
+        parsed_output[context] = {}
     if not line:
         return
 
     ns_name = line[1]
 
-    if ns_name not in parsed_output["namespace"]:
-        parsed_output["namespace"][ns_name] = {}
+    if ns_name not in parsed_output[context]:
+        parsed_output[context][ns_name] = {}
 
-    if "service" not in parsed_output["namespace"][ns_name]:
-        parsed_output["namespace"][ns_name]["service"] = {}
+    if "service" not in parsed_output[context][ns_name]:
+        parsed_output[context][ns_name]["service"] = {}
 
-    namespace_dir_ptr = parsed_output["namespace"][ns_name]["service"]
+    namespace_dir_ptr = parsed_output[context][ns_name]["service"]
 
-    if "dc" not in parsed_output:
-        parsed_output["dc"] = {}
-    dc_dir_ptr = parsed_output["dc"]
+    dc_context = "dc"
+    if dc_context not in parsed_output:
+        parsed_output[dc_context] = {}
+    dc_dir_ptr = parsed_output[dc_context]
 
     while True:
         try:
@@ -354,7 +379,7 @@ def parse_file(file_path):
 
     return parsed_output
 
+
 # f = "/Users/aerospike/Downloads/tmp 28/collect_info_20171210_050702/20171210_050702_aerospike.conf"
-#
-# print parse(f)
+# print parse_file(f)
 

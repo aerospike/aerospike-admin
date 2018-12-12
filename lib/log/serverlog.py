@@ -17,6 +17,7 @@ import hashlib
 import pipes
 import re
 import subprocess
+from lib.log import utils
 
 from lib.utils.constants import COUNT_RESULT_KEY, TOTAL_ROW_HEADER, END_ROW_KEY, DT_FMT
 from lib.log.latency import LogLatency
@@ -24,7 +25,7 @@ from lib.log.latency import LogLatency
 READ_BLOCK_BYTES = 4096
 RETURN_REQUIRED_EVERY_NTH_BLOCK = 5
 TIME_ZONE = "GMT"
-SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \((.+)\)"
+SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \(([^\)]+)\)"
 
 class ServerLog(object):
 
@@ -42,6 +43,9 @@ class ServerLog(object):
         self.server_end_tm = self.reader.parse_dt(
             self.reader.read_next_line(self.file_stream, jump=0, whence=2))
         self.log_latency = LogLatency(self.reader)
+
+        # re
+        self.server_log_line_writer_info_re = re.compile(SERVER_LOG_LINE_WRITER_INFO_PATTERN)
 
     def destroy(self):
         try:
@@ -64,10 +68,10 @@ class ServerLog(object):
             del self.slice_duration
             del self.upper_limit_check
             del self.read_all_lines
-            del self.diff_it
-            del self.show_it
-            del self.latency_it
-            del self.count_it
+            del self.diff_itr
+            del self.show_itr
+            del self.latency_itr
+            del self.count_itr
             del self.slice_show_count
             del self.uniq_lines_track
         except Exception:
@@ -147,7 +151,8 @@ class ServerLog(object):
     # not using this but keeping it here for future reference.
     def set_input(self, search_strs, ignore_strs=[], is_and=False, is_casesensitive=True, start_tm="", duration="",
                   slice_duration="10", every_nth_slice=1, upper_limit_check="", bucket_count=3, every_nth_bucket=1,
-                  read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None):
+                  read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None,
+                  show_relative_stats=False):
         if isinstance(search_strs, str):
             search_strs = [search_strs]
         self.search_strings = [search_str for search_str in search_strs]
@@ -166,15 +171,15 @@ class ServerLog(object):
         self.read_block_count = 0
         self.system_grep = system_grep
         self.set_file_stream(system_grep=system_grep)
-        self.diff_it = self.diff()
-        self.show_it = self.show()
+        self.diff_itr = self.diff()
+        self.show_itr = self.show()
         latency_start_tm = self.process_start_tm
         if latency_start_tm < self.server_start_tm:
             latency_start_tm = self.server_start_tm
-        self.latency_it = self.log_latency.compute_latency(self.show_it, self.search_strings[0], self.slice_duration, latency_start_tm,
+        self.latency_itr = self.log_latency.compute_latency(self.show_itr, self.search_strings[0], self.slice_duration, latency_start_tm,
                                                            self.process_end_tm, bucket_count, every_nth_bucket, arg_rounding_time=rounding_time,
-                                                           arg_ns=ns)
-        self.count_it = self.count()
+                                                           arg_ns=ns, arg_relative_stats=show_relative_stats)
+        self.count_itr = self.count()
         self.slice_show_count = every_nth_slice
         self.uniq = uniq
         self.uniq_lines_track = {}
@@ -340,7 +345,7 @@ class ServerLog(object):
             yield tm, line
 
     def show_iterator(self):
-        return self.show_it
+        return self.show_itr
 
     def neglect_minutes_seconds_time(self, tm):
         if not tm or type(tm) is not datetime.datetime:
@@ -379,7 +384,7 @@ class ServerLog(object):
         yield END_ROW_KEY, count_result
 
     def count_iterator(self):
-        return self.count_it
+        return self.count_itr
 
     def _get_next_slice_start_and_end_tm(self, old_slice_start, old_slice_end, slice_duration, current_line_tm):
         slice_jump = 0
@@ -396,25 +401,6 @@ class ServerLog(object):
             slice_end = slice_start + slice_duration
             return slice_start, slice_end, slice_jump
         return None, None, None
-
-    def _contains_substrings_in_order(self, main_str="", sub_strs=[]):
-        if not sub_strs:
-            return True
-        if not main_str:
-            return False
-        s_str = sub_strs[0]
-        if not s_str:
-            return True
-        if s_str in main_str:
-            try:
-                main_str = main_str.split(s_str, 1)[1]
-            except Exception:
-                main_str = ""
-            if len(sub_strs) <= 1:
-                return True
-            return self._contains_substrings_in_order(main_str, sub_strs[1:])
-        else:
-            return False
 
     def _get_value_and_diff(self, prev, slice_val):
         diff = []
@@ -440,7 +426,7 @@ class ServerLog(object):
         if not line:
             return None
 
-        m1 = re.search(SERVER_LOG_LINE_WRITER_INFO_PATTERN, line)
+        m1 = self.server_log_line_writer_info_re.search(line)
         if not m1:
             return None
 
@@ -461,6 +447,7 @@ class ServerLog(object):
             value = []
             diff = []
 
+            # ignore lines till slice_start time
             slice_start = self.process_start_tm
             slice_end = slice_start + self.slice_duration
             while(self.reader.parse_dt(line) < slice_start):
@@ -469,7 +456,8 @@ class ServerLog(object):
                     break
 
         if line:
-            if self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+            # check line has all strings as per given order
+            if utils.contains_substrings_in_order(line=line, strs=self.search_strings):
                 if self.is_casesensitive:
                     m1 = re.search(latency_pattern1 % (grep_str), line)
                     m2 = re.search(latency_pattern2 % (grep_str), line)
@@ -485,12 +473,13 @@ class ServerLog(object):
                     m4 = re.search(latency_pattern4 %
                                    (grep_str), line, re.IGNORECASE)
 
+            # check for possible key-value pattern and fix pattern for next process
             while(not m1 and not m2 and not m3 and not m4):
                 try:
                     line = self.next_line()
                     if not line:
                         break
-                    if not self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+                    if not utils.contains_substrings_in_order(line=line, strs=self.search_strings):
                         continue
                 except Exception:
                     break
@@ -547,11 +536,11 @@ class ServerLog(object):
             result["value"] = {}
             result["diff"] = {}
 
-            for line_tm, line in self.show_it:
+            for line_tm, line in self.show_itr:
                 if not line:
                     break
 
-                if not self._contains_substrings_in_order(main_str=line, sub_strs=self.search_strings):
+                if not utils.contains_substrings_in_order(line=line, strs=self.search_strings):
                     continue
 
                 if line_tm >= self.process_end_tm:
@@ -623,10 +612,10 @@ class ServerLog(object):
             yield END_ROW_KEY, result
 
     def diff_iterator(self):
-        return self.diff_it
+        return self.diff_itr
 
     def latency_iterator(self):
-        return self.latency_it
+        return self.latency_itr
 
     def get_filename(self):
         return self.file_name

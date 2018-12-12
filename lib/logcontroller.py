@@ -628,6 +628,8 @@ class _GrepFile(LogCommandController):
         time_rounding = True
         title_every_nth = 0
         ns = None
+        show_relative_stats = False
+
         while tline:
             word = tline.pop(0)
             if word == '-h':
@@ -675,6 +677,8 @@ class _GrepFile(LogCommandController):
                     ns = util.strip_string(ns)
                 except:
                     pass
+            elif word == '--relative-stats':
+                show_relative_stats = True
             else:
                 raise ShellException(
                     "Do not understand '%s' in '%s'" % (word, " ".join(line)))
@@ -692,9 +696,11 @@ class _GrepFile(LogCommandController):
         if not logs:
             self.logger.info("No log files added. Use add command to add log files.")
 
-        latency_results = self.loghdlr.loglatency(logs, hist, start_tm_arg=start_tm, duration_arg=duration, slice_duration=slice_tm,
-                                                  bucket_count=bucket_count, every_nth_bucket=every_nth_bucket,
-                                                  rounding_time=time_rounding, output_page_size=output_page_size, ns=ns)
+        latency_results = self.loghdlr.loglatency(logs, hist, start_tm_arg=start_tm, duration_arg=duration,
+                                                  slice_duration=slice_tm, bucket_count=bucket_count,
+                                                  every_nth_bucket=every_nth_bucket, rounding_time=time_rounding,
+                                                  output_page_size=output_page_size, ns=ns,
+                                                  show_relative_stats=show_relative_stats)
 
         page_index = 1
         for latency_res in latency_results:

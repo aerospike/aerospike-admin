@@ -51,7 +51,7 @@ ASSERT(r, False, "CPU configuration mismatch.", "OPERATIONS", INFO,
                             "Listed node[s] in the cluster are running with different CPU or CPU setting, performance may be skewed. Please run 'lscpu' to check CPU configuration.",
                             "CPU config check.");
 
-s = select "vm_drop_caches", "vm_nr_hugepages", "vm_nr_hugepages_policy", "vm_numa_zonelist_order", "vm_oom_dump_tasks", "vm_oom_kill_allocating_task", "vm_zone_reclaim_mode", "vm_swapiness", 
+s = select "vm_drop_caches", "vm_nr_hugepages", "vm_nr_hugepages_policy", "vm_numa_zonelist_order", "vm_oom_dump_tasks", "vm_oom_kill_allocating_task", "vm_zone_reclaim_mode", "vm_swapiness",
             "vm_nr_overcommit_hugepages", "kernel_shmmax", "kernel_shmall", "kernel_version" from SYSTEM.SYSCTLALL save;
 r = group by KEY do NO_MATCH(s, ==, MAJORITY);
 ASSERT(r, False, "Sysctl configuration mismatch.", "OPERATIONS", INFO,
@@ -59,7 +59,7 @@ ASSERT(r, False, "Sysctl configuration mismatch.", "OPERATIONS", INFO,
                             "Sysctl config check.");
 
 s = select "has_firewall" from SYSTEM.IPTABLES;
-ASSERT(s, False, "Node in cluster have firewall setting.", "OPERATIONS", INFO, 
+ASSERT(s, False, "Node in cluster have firewall setting.", "OPERATIONS", INFO,
                                 "Listed node[s] have firewall setting. Could cause cluster formation issue if misconfigured. Please run 'iptables -L' to check firewall rules.",
 				"Firewall Check.");
 
@@ -226,6 +226,13 @@ ASSERT(r, True, "Service configurations different than config file values.", "OP
                  "Listed Service configuration[s] are different than actual initial value set in aerospike.conf file.",
                             "Service config runtime and conf file difference check.");
 
+oc = select * from NETWORK.ORIGINAL_CONFIG save;
+c = select * from NETWORK.CONFIG save;
+r = do oc == c on common;
+ASSERT(r, True, "Network configurations different than config file values.", "OPERATIONS", INFO,
+                 "Listed Network configuration[s] are different than actual initial value set in aerospike.conf file.",
+                            "Network config runtime and conf file difference check.");
+
 oc = select * from NAMESPACE.ORIGINAL_CONFIG save;
 c = select * from NAMESPACE.CONFIG save;
 r = do oc == c on common;
@@ -339,6 +346,31 @@ r = group by CLUSTER, NAMESPACE r;
 ASSERT(r, False, "Defrag low water mark misconfigured.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have defrag-lwm-pct lower than high-water-disk-pct. This might create situation like no block to write, no eviction and no defragmentation. Please run 'show config namespace like high-water-disk-pct defrag-lwm-pct' to check configured values. Probable cause - namespace watermark misconfiguration.",
 				"Defrag low water mark misconfiguration check.");
+
+commit_to_device = select "storage-engine.commit-to-device" from NAMESPACE.CONFIG;
+commit_to_device = group by CLUSTER, NAMESPACE commit_to_device;
+ASSERT(commit_to_device, False, "Namespace has COMMIT-TO-DEVICE", "OPERATIONS" , INFO,
+				"Listed namespace(s) have commit-to-device=true. Please run 'show config namespace like commit-to-device' for details.",
+				"Namespace COMMIT-TO-DEVICE check.");
+
+number_of_sets = select "set" from SET.STATISTICS;
+number_of_sets = GROUP BY CLUSTER, NAMESPACE, NODE do COUNT_ALL(number_of_sets);
+p = GROUP BY CLUSTER, NAMESPACE do MAX(number_of_sets) save as "sets_count";
+warning_check = do p >= 1000;
+ASSERT(warning_check, False, "High set count per namespace", "LIMITS", WARNING,
+        "Listed namespace(s) have high number of set count (>=1000). Please run in AQL 'show sets' for details",
+        "Critical Namespace Set Count Check (>=1000)");
+correct_range_check = do p < 750;
+r = do warning_check || correct_range_check;
+ASSERT(r, True, "Number of Sets equal to or above 750", "LIMITS", INFO,
+        "Listed namespace(s) have high number of set count (>=750). Please run in AQL 'show sets' for details",
+        "Basic Set Count Check (750 =< p < 1000)");
+
+stop_writes = select "stop_writes" from NAMESPACE.STATISTICS;
+stop_writes = group by CLUSTER, NAMESPACE stop_writes;
+ASSERT(stop_writes, False, "Namespace has hit stop-writes (stop_writes = true)", "OPERATIONS" , CRITICAL,
+				"Listed namespace(s) have hit stop-write. Please run 'show statistics namespace like stop_writes' for details.",
+				"Namespace stop-writes flag check.");
 
 SET CONSTRAINT VERSION < 4.3;
 
@@ -1633,10 +1665,12 @@ ASSERT(r, 0, "Non-zero unavailable partitions", "OPERATIONS", WARNING,
 				"Namespace unavailable partitions check",
 				s);
 
-csw = select "cluster_clock_skew_stop_writes_sec" as "cluster_clock_skew_ms" from SERVICE.STATISTICS save as "cluster_clock_skew_stop_writes_sec";
-csw = do 0.75 * csw;
-cs = select "cluster_clock_skew_ms", "cluster_clock_skew" as "cluster_clock_skew_ms" from SERVICE.STATISTICS save;
-r = do cs > csw;
+csw = select "cluster_clock_skew_stop_writes_sec" as "skew_val" from SERVICE.STATISTICS save;
+// convert to milliseconds
+csw = do csw * 1000;
+cs_warning = do 0.75 * csw;
+cs = select "cluster_clock_skew_ms" as "skew_val", "cluster_clock_skew" as "skew_val" from SERVICE.STATISTICS save;
+r = do cs > cs_warning;
 ASSERT(r, False, "Cluster clock_skew breached warning level", "OPERATIONS", WARNING,
 				"Listed cluster[s] shows clock_skew more than 3/4th of cluster_clock_skew_stop_writes_sec. If it crossed cluster_clock_skew_stop_writes_sec then cluster will stop accepting writes.",
 				"Cluster clock_skew check",
@@ -1647,5 +1681,13 @@ r = group by CLUSTER, NAMESPACE, NODE do EQUAL(roster);
 ASSERT(r, True, "Roster misconfigured.", "CONFIG", WARNING,
 				"Listed namespace[s] shows difference between set roster nodes and observe nodes. Please set roster properly.",
 				"Roster misconfiguration check.");
+
+size = select "cluster_size" from SERVICE.STATISTICS;
+p = group by CLUSTER do MAX(size) save as "cluster_size";
+repl = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG save as "replication_factor";
+r = do p == repl;
+ASSERT(r, False, "Nodes equal to replication factor.", "OPERATIONS", WARNING,
+                                "Number of nodes is equal to replication factor, rolling restart not possible",
+                                "Node / replication factor check", s);
 
 SET CONSTRAINT VERSION ALL;

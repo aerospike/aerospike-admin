@@ -24,6 +24,15 @@ from os.path import isfile, join
 try:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        try:
+            # for python < 2.7.7 cryptography throws warning
+            import cryptography
+            from cryptography import utils
+            warnings.simplefilter('ignore', cryptography.utils.DeprecatedIn23)
+        except Exception:
+            pass
+
         from OpenSSL import crypto, SSL
     HAVE_PYOPENSSL = True
 except ImportError:
