@@ -19,6 +19,8 @@ from lib.client.info import authenticate_old, authenticate_new, info, login
 
 try:
     with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
         try:
             # for python < 2.7.7 cryptography throws warning
             import cryptography
@@ -27,7 +29,6 @@ try:
         except Exception:
             pass
 
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
         from OpenSSL import SSL
     HAVE_PYOPENSSL = True
 except ImportError:
