@@ -67,6 +67,7 @@ _confdefault = {
         "out-file": "",
         "profile": False,
         "single-node": False,
+        "json": False,
 
         "help": False,
         "version": False,
@@ -413,6 +414,7 @@ def print_config_help():
     print (" --log-analyser       Start asadm in log-analyser mode and analyse data from log files.")
     print (" -f --log-path=path   Path of cluster collectinfo file or directory \n"
            "                      containing collectinfo and system info files.")
+    print (" -j --json            Output as JSON (experimental).")
 
     print_config_file_option()
     config_file_help()
@@ -544,6 +546,7 @@ def get_cli_args():
     add_fn("-c", "--collectinfo",  action="store_true")
     add_fn("-l", "--log-analyser",  action="store_true")
     add_fn("-f", "--log-path")
+    add_fn("-j", "--json", action="store_true")
     add_fn("--no-color", action="store_true")
     add_fn("--profile",  action="store_true")
     add_fn("--single-node", action="store_true")

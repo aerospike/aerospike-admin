@@ -17,21 +17,35 @@ import json
 import unittest2 as unittest
 
 from lib.view import sheet
-from lib.view.sheet import (Aggregators, Converters, Field, FieldType,
-                            Formatters, Projectors, Sheet, SheetStyle,
-                            TupleField)
+from lib.view.sheet import (Aggregators, Converters, DynamicFields, Field,
+                            FieldType, Formatters, Projectors, Sheet,
+                            SheetStyle, TupleField)
 
 
 def do_render(*args, **kwargs):
+    do_row = kwargs.pop("do_row", True)
+
     # Make sure column style renders without Exceptions.
-    kwargs['sheet_style'] = SheetStyle.columns
+    kwargs['style'] = SheetStyle.columns
 
     sheet.render(*args, **kwargs)
 
+    if do_row:
+        # Make sure column style renders without Exceptions.
+        kwargs['style'] = SheetStyle.rows
+
+    print sheet.render(*args, **kwargs)
+
     # Return the json render for testing.
-    kwargs['sheet_style'] = SheetStyle.json
+    kwargs['style'] = SheetStyle.json
 
     return json.loads(sheet.render(*args, **kwargs))
+
+
+def do_render_column(*args, **kwargs):
+    kwargs['do_row'] = False
+
+    return do_render(*args, **kwargs)
 
 
 class SheetTest(unittest.TestCase):
@@ -314,7 +328,7 @@ class SheetTest(unittest.TestCase):
              Field('F2', Projectors.Number('d', 'f2'))),
             from_source=('d',))
         sources = dict(d=dict(n0=dict(f0='0', f1='1', f2='2')))
-        render = do_render(test_sheet, 'test', sources)
+        render = do_render_column(test_sheet, 'test', sources)
         record = render['groups'][0]['records'][0]
 
         self.assertIn('F2', record)
@@ -337,7 +351,7 @@ class SheetTest(unittest.TestCase):
              Field('F2', Projectors.Number('d', 'f2'))),
             from_source=('d',))
         sources = dict(d=dict(n0=dict(f1='1', f2='2')))
-        render = do_render(test_sheet, 'test', sources)
+        render = do_render_column(test_sheet, 'test', sources)
         record = render['groups'][0]['records'][0]
 
         self.assertIn('F2', record)
@@ -359,7 +373,7 @@ class SheetTest(unittest.TestCase):
              Field('F2', Projectors.Number('d', 'f2'))),
             from_source=('d',))
         sources = dict(d=dict(n0=dict(f2='2')))
-        render = do_render(test_sheet, 'test', sources)
+        render = do_render_column(test_sheet, 'test', sources)
         record = render['groups'][0]['records'][0]
 
         self.assertIn('F2', record)
@@ -375,7 +389,7 @@ class SheetTest(unittest.TestCase):
             from_source='d')
         sources = dict(d=dict(n0=dict(f='check')))
         common = dict(expected='check')
-        render = do_render(test_sheet, 'test', sources, common=common)
+        render = do_render_column(test_sheet, 'test', sources, common=common)
         record = render['groups'][0]['records'][0]
 
         self.assertEqual(record['F']['raw'], 'check')
@@ -627,3 +641,111 @@ class SheetTest(unittest.TestCase):
                 self.assertNotIn('format', record['F'])
             else:
                 assert False, 'illegal record value {}'.format(record)
+
+    def test_sheet_dynamic_field_exception(self):
+        test_sheet = Sheet(
+            (DynamicFields('d'),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=Exception("error"), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
+        render = do_render(test_sheet, 'test', sources)
+        records = render['groups'][0]['records']
+
+        self.assertEqual(len(records), 3)
+        self.assertEqual(records[0]['g']['raw'], 'error')
+
+        for record in records:
+            self.assertEqual(len(record), 2)
+
+    def test_sheet_dynamic_field_exception_all(self):
+        test_sheet = Sheet(
+            (DynamicFields('d'),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=Exception("error"), n2=Exception("error"),
+            n3=Exception("error")))
+        render = do_render(test_sheet, 'test', sources)
+        self.assertEqual(len(render['groups']), 0)
+
+    def test_sheet_dynamic_field(self):
+        test_sheet = Sheet(
+            (DynamicFields('d'),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=dict(f=1, g=1), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
+        render = do_render(test_sheet, 'test', sources)
+        records = render['groups'][0]['records']
+
+        self.assertEqual(len(records), 3)
+
+        for record in records:
+            self.assertEqual(len(record), 2)
+
+    def test_sheet_dynamic_field_selector(self):
+        test_sheet = Sheet(
+            (DynamicFields('d'),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=dict(f=1, g=1), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
+        render = do_render(test_sheet, 'test', sources, selectors=['f'])
+        records = render['groups'][0]['records']
+
+        self.assertEqual(len(records), 3)
+
+        for record in records:
+            self.assertEqual(len(record), 1)
+            self.assertEqual(record.keys()[0], 'f')
+
+    def test_sheet_dynamic_field_aggregator(self):
+        test_sheet = Sheet(
+            (DynamicFields('d'),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=dict(f=1, g=1), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
+        render = do_render(test_sheet, 'test', sources,
+                           dyn_aggr=Aggregators.sum())
+        aggrs = render['groups'][0]['aggregates']
+
+        self.assertEqual(len(aggrs), 2)
+
+        for aggr in aggrs.values():
+            self.assertEqual(aggr['raw'], 3)
+
+    def test_sheet_dynamic_field_aggregator_exception(self):
+        test_sheet = Sheet(
+            (DynamicFields('d'),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=Exception("error"), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
+        render = do_render(test_sheet, 'test', sources,
+                           dyn_aggr=Aggregators.sum())
+        aggrs = render['groups'][0]['aggregates']
+
+        self.assertEqual(len(aggrs), 2)
+
+        for aggr in aggrs.values():
+            self.assertEqual(aggr['raw'], 'error')
+
+    def test_sheet_dynamic_field_aggregator_missing(self):
+        test_sheet = Sheet(
+            (DynamicFields('d'),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=dict(f=1), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
+        render = do_render(test_sheet, 'test', sources,
+                           dyn_aggr=Aggregators.sum())
+        aggrs = render['groups'][0]['aggregates']
+
+        self.assertEqual(len(aggrs), 2)
+        self.assertEqual(aggrs['g']['raw'], 2)
+        self.assertEqual(aggrs['f']['raw'], 3)
+
+    # def test_sheet_dynamic_field_diff(self):
+    #     # from pprint import pprint
+    #     # pprint(stuff)
+    #     # assert False
+
+    #     pass
+
+    # def test_sheet_dynamic_field_every_nth(self):
+    #     pass

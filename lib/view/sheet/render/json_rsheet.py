@@ -62,7 +62,8 @@ class JSONRSheet(BaseRSheet):
                             self.do_render_field(
                                 rsubfield, group_ix, entry_ix, tuple_field)
                     else:
-                        self.do_render_field(rfield, group_ix, entry_ix, record)
+                        self.do_render_field(
+                            rfield, group_ix, entry_ix, record)
 
             for rfield in rfields:
                 field_key = rfield.decl.key
@@ -71,7 +72,8 @@ class JSONRSheet(BaseRSheet):
                     tuple_agg = {}
 
                     for rsubfield in rfield.visible:
-                        self.do_render_aggregate(rsubfield, group_ix, tuple_agg)
+                        self.do_render_aggregate(
+                            rsubfield, group_ix, tuple_agg)
 
                     if tuple_agg:
                         aggregates[field_key] = tuple_agg
@@ -92,7 +94,7 @@ class JSONRSheet(BaseRSheet):
         elif value is NoEntry:
             value = 'null'
 
-        key = rfield.decl.key  # Using key, instead of title, to ensure uniqueness.
+        key = rfield.decl.key  # use key, instead of title, for uniqueness
         record[key] = dict(raw=value, converted=converted_value)
         format_name, _ = rfield.entry_format(group_ix, entry_ix)
 
@@ -108,10 +110,11 @@ class JSONRSheet(BaseRSheet):
         elif aggregate is NoEntry:
             aggregate = 'null'
 
-        key = rfield.decl.key  # Using key, instead of title, to ensure uniqueness.
+        key = rfield.decl.key  # use key, instead of title, for uniqueness
 
         if aggregate is not None:
-            aggregates[key] = dict(raw=aggregate, converted=converted_aggregate)
+            aggregates[key] = dict(
+                raw=aggregate, converted=converted_aggregate)
 
 
 class RTupleFieldJSON(BaseRTupleField):

@@ -553,6 +553,9 @@ def main():
     if cli_args.no_color:
         disable_coloring()
 
+    if cli_args.json:
+        output_json()
+
     if not os.path.isdir(ADMIN_HOME):
         os.makedirs(ADMIN_HOME)
 
@@ -673,6 +676,12 @@ def main():
 def disable_coloring():
     from lib.view import terminal
     terminal.enable_color(False)
+
+
+def output_json():
+    from lib.view.sheet import set_style_json
+
+    set_style_json()
 
 
 def cmdloop(shell, func, args, use_yappi, single_command):

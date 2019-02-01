@@ -18,12 +18,13 @@ from collections import Counter
 from lib.utils import filesize
 from lib.view import terminal
 
-from .const import FieldAlignment, FieldType
+from .const import FieldAlignment, FieldType, SheetStyle
 
 
 class Sheet(object):
     def __init__(self, fields, from_source=None, for_each=None, where=None,
-                 group_by=None, order_by=None, title_fill='~',
+                 group_by=None, order_by=None,
+                 default_style=SheetStyle.columns, title_fill='~',
                  subtitle_fill='~', subtitle_empty_line='', separator='|',
                  no_entry='--', error_entry='~~'):
         """ Instantiates a sheet definition.
@@ -31,8 +32,8 @@ class Sheet(object):
         fields -- Sequence of fields to present.
 
         Keyword Arguments:
-        from_sources  -- (Required) A sequence of source names that are required
-                         for rendering (used for sanity checks only).
+        from_sources  -- (Required) A sequence of source names that are
+                         required for rendering (used for sanity checks only).
         for_each      -- A field who's data-source contains multiple sets of
                          values.
         where         -- Function to determine if a record should be shown.
@@ -42,17 +43,18 @@ class Sheet(object):
         subtitle_fill --
         subtitle_empty_line --
         separator     -- String used to separate fields.
-        no_entry      -- String used when a field is present but a particular key
-                         is missing.
-        error_entry   -- String used when a field's data-source is not a dict or
-                         sequence.
+        no_entry      -- String used when a field is present but a particular
+                         key is missing.
+        error_entry   -- String used when a field's data-source is not a dict
+                         or sequence.
         """
         self.fields = fields
         self.from_sources = self._arg_as_tuple(from_source)
+        self.where = where
         self.for_each = self._arg_as_tuple(for_each)
         self.group_bys = self._arg_as_tuple(group_by)
         self.order_bys = self._arg_as_tuple(order_by)
-        self.where = where
+        self.default_style = default_style
 
         self.separator = separator
         self.formatted_separator = terminal.dim() + separator + terminal.undim()
@@ -86,13 +88,15 @@ class Sheet(object):
     def _init_sanity_check(self):
         # Ensure 'group_bys' and 'sort_bys' are in 'fields'.
         # NOTE - currently cannot group_by/sort_by a member of a TupleField.
-        field_set = set(field.key for field in self.fields)
+        static_fields = [field for field in self.fields
+                         if not isinstance(field, DynamicFields)]
+        field_set = set(field.key for field in static_fields)
 
-        if len(field_set) != len(self.fields):
+        if len(field_set) != len(static_fields):
             field_keys = ','.join(
                 ('{} appears {} times'.format((key, count))
                  for count, key in Counter(
-                         field.key for field in self.fields).iteritems()
+                         field.key for field in static_fields).iteritems()
                  if count > 1))
 
             assert False, 'Field keys are not unique: {}'.format(field_keys)
@@ -112,8 +116,8 @@ class Sheet(object):
         error_groups = group_by_set - field_set
         error_orders = order_by_set - field_set
 
-        assert not error_groups
-        assert not error_orders
+        assert not error_groups, error_groups
+        assert not error_orders, error_orders
 
         assert self.from_sources, 'require a list of expected field sources'
 
@@ -128,6 +132,9 @@ class Sheet(object):
                 if isinstance(field, TupleField):
                     return populate_seen_sources(field.fields)
 
+                assert not isinstance(field, DynamicFields), \
+                    "DynamicFields cannot be members of TupleFields."
+
                 try:
                     sources = field.projector.sources
                 except AttributeError:
@@ -138,7 +145,11 @@ class Sheet(object):
 
                 seen_sources_set.update(sources)
 
-        populate_seen_sources(self.fields)
+        populate_seen_sources(static_fields)
+
+        for field in self.fields:
+            if isinstance(field, DynamicFields):
+                seen_sources_set.add(field.source)
 
         assert len(seen_sources_set) == len(sources_set)
 
@@ -183,9 +194,9 @@ class Field(object):
                       first format to not return None is applied - rest will be
                       ignored. These may *not* change the length of the
                       rendered value.
-        aggregator -- Function that generates an aggregate value to be displayed
-                      at the end of a group.
-        align      -- None    : Left align strings and right align numbers.
+        aggregator -- Function that generates an aggregate value to be
+                      displayed at the end of a group.
+        align      -- *None   : Left align strings and right align numbers.
                       'left'  : Always align left.
                       'right' : Always align right.
                       'center': Always align center.
@@ -217,11 +228,27 @@ class Field(object):
         self.min_title_width = max(map(len, self.title_words))
 
 
+class DynamicFields(object):
+    def __init__(self, source, infer_projectors=True):
+        """
+        Arguments:
+        source -- Data source to project fields from.
+
+        Keyword Arguments:
+        infer_projectors -- True : If true, will try to infer a projector for a
+                            field.
+        """
+        self.source = source
+        self.infer_projectors = infer_projectors
+
+        self.has_aggregate = False  # XXX - hack
+
+
 class Aggregator(object):
     def __init__(self, aggregate_func, initializer=None, converter=None):
         """
         Arguments:
-        aggregate_func -- function that accepts 2 arguments and returns a value.
+        aggregate_func -- function accepts 2 arguments and returns a value.
 
         Keyword Arguments:
         initializer -- None : Initial value will be the first cell.
@@ -267,11 +294,11 @@ class BaseProjector(object):
         source -- Name of the source to project from.
         *keys  -- Sequence : Key aliases to project in order of preference
                              (typically newest term to oldest term).
-                  [None]   : Use entire value of the source (typically used when
-                             source contains individual value instead of dict of
-                             values).
-                  [number]: Use number as index into source (used when source is
-                            a sequence of values).
+                  [None]   : Use entire value of the source (typically used
+                             when source contains individual value instead of
+                             dict of values).
+                  [number]: Use number as index into source (used when source
+                            is a sequence of values).
 
         Keyword Arguments:
         for_each_key -- If True, return the key to the source when iterated by
@@ -291,10 +318,12 @@ class BaseProjector(object):
         except Exception as e:
             # XXX - A debug log may be useful.
             # print 'debug - ', e, self.source, self.source
-            raise ErrorEntryException('unexpected error occurred: {}'.format(e))
+            raise ErrorEntryException(
+                'unexpected error occurred: {}'.format(e))
 
         if result is None:
-            raise NoEntryException('No entry found for source {}'.format(self.source))
+            raise NoEntryException(
+                'No entry found for source {}'.format(self.source))
 
         return result
 
@@ -320,12 +349,12 @@ class BaseProjector(object):
             raise ErrorEntryException('Error occurred fetching row')
 
         if self.keys is None:
-            # Setting 'self.keys' to None indicates that the field needs the entire
-            # value contained in the source.
+            # Setting 'self.keys' to None indicates that the field needs the
+            # entire value contained in the source.
             return row
         elif isinstance(self.keys[0], types.IntType):
-            # Setting 'self.keys' to an integer indicate that the field needs to
-            # access contents of row by index.
+            # Setting 'self.keys' to an integer indicate that the field needs
+            # to access contents of row by index.
             return row[self.keys[0]]
         else:
             # Setting 'self.keys' to one or more strings indicates that the
@@ -339,6 +368,12 @@ class BaseProjector(object):
 
 
 class Projectors(object):
+    class Identity(BaseProjector):
+        field_type = FieldType.undefined
+
+        def do_project(self, sheet, sources):
+            return self.project_raw(sheet, sources)
+
     class String(BaseProjector):
         field_type = FieldType.string
 
@@ -434,7 +469,8 @@ class Projectors(object):
             field_projectors  -- Projectors to be summed.
             """
             self.field_projectors = field_projectors
-            self.sources = set((field_fn.source for field_fn in field_projectors))
+            self.sources = set(
+                (field_fn.source for field_fn in field_projectors))
 
         def do_project(self, sheet, sources):
             """
@@ -458,7 +494,8 @@ class Projectors(object):
                                 to func.
             """
             self.field_type = field_type
-            self.sources = set((field_fn.source for field_fn in field_projectors))
+            self.sources = set(
+                (field_fn.source for field_fn in field_projectors))
             self.func = func
             self.field_projectors = field_projectors
 

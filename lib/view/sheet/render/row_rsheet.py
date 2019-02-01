@@ -18,26 +18,19 @@ from ..const import FieldAlignment
 from .base_rsheet import BaseRField, BaseRSheet, BaseRTupleField
 
 
-class ColumnRSheet(BaseRSheet):
+class RowRSheet(BaseRSheet):
     # =========================================================================
     # Required overrides.
 
     def do_create_tuple_field(self, field, groups):
-        return RTupleFieldColumn(self, field, groups)
+        raise NotImplementedError("Row styles doesn't support tuple fields")
 
     def do_create_field(self, field, groups, parent_key=None):
-        return RFieldColumn(self, field, groups, parent_key=parent_key)
+        return RFieldRow(self, field, groups, parent_key=parent_key)
 
     def do_render(self):
         rfields = self.visible_rfields
         n_records = self.n_records
-
-        try:
-            n_title_lines = max(rfield.n_title_lines for rfield in rfields)
-        except ValueError:
-            # Sheet is empty.
-            return ''
-
         render = []
 
         # Render field titles.
@@ -46,10 +39,6 @@ class ColumnRSheet(BaseRSheet):
 
         self._do_render_title(render, title_width)
         self._do_render_description(render, title_width, title_width - 10)
-
-        for line_num in range(n_title_lines):
-            render.append(self.decl.formatted_separator.join(
-                rfield.get_title_line(line_num) for rfield in rfields))
 
         # Render fields.
         n_groups = 0 if not rfields else rfields[0].n_groups
@@ -119,14 +108,17 @@ class ColumnRSheet(BaseRSheet):
 
         render.append(description)
 
+    def _do_render_row_titles(self, render):
+        pass
+
     def _do_render_n_records(self, render, n_records):
         render.append(
             terminal.dim() + 'Number of rows: {}'.format(n_records) +
             terminal.undim())
 
 
-class RTupleFieldColumn(BaseRTupleField):
-    # =========================================================================
+class RTupleFieldRow(BaseRTupleField):
+    # ==========================================================================
     # Optional overrides.
 
     def do_prepare(self):
@@ -138,7 +130,7 @@ class RTupleFieldColumn(BaseRTupleField):
 
         self._do_prepare_count_title_lines()
 
-    # =========================================================================
+    # ==========================================================================
     # Other methods.
 
     def _do_prepare_find_width(self):
@@ -233,7 +225,7 @@ class RTupleFieldColumn(BaseRTupleField):
             sub.aggregate_cell(group_ix) for sub in self.visible)
 
 
-class RFieldColumn(BaseRField):
+class RFieldRow(BaseRField):
     # =========================================================================
     # Optional overrides.
 

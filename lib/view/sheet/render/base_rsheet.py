@@ -18,13 +18,15 @@ from itertools import groupby
 from operator import itemgetter
 
 from lib.view import terminal
+from lib.utils.util import compile_likes
 
 from .. import decl
 from .render_utils import Aggregator, ErrorEntry, NoEntry
 
 
 class BaseRSheet(object):
-    def __init__(self, sheet, title, sources, common, description=None):
+    def __init__(self, sheet, title, sources, common, description=None,
+                 selectors=None, dyn_aggr=None):
         """
         Arguments:
         sheet       -- The decl.sheet to render.
@@ -37,14 +39,22 @@ class BaseRSheet(object):
                        'SheetStyle.json'   : Show sheet represented as JSON.
         common      -- A dict of common information passed to each entry.
         description -- A description of the sheet.
+        selectors   -- List of regular expressions to select which fields
+                       from dynamic fields.
+        dyn_aggr    -- Aggregate for dynamic fields only have numeric values.
         """
         self.decl = sheet
         self.title = title
 
+        self._debug_sources = sources
         self._init_sources(sources)
 
         self.common = common
         self.description = description
+        self.selector = compile_likes(selectors)
+        self.dyn_aggr = dyn_aggr
+
+        self.dfields = self.get_dfields()
 
         projections = self.project_fields()
         projections = self.where(projections)
@@ -57,7 +67,7 @@ class BaseRSheet(object):
         for rfield in self.rfields:
             rfield.prepare()
 
-    # ==========================================================================
+    # =========================================================================
     # Required overrides.
 
     def do_render(self):
@@ -89,32 +99,33 @@ class BaseRSheet(object):
         """
         raise NotImplementedError('override')
 
-    # ==========================================================================
+    # =========================================================================
     # Other methods.
 
     def _init_sources(self, sources):
-        # TODO - This assertion can fire when a node is leaving/joining and some
-        #        commands on a subset of the nodes. Should this event be logged?
+        # TODO - This assertion can fire when a node is leaving/joining and
+        #        some commands on a subset of the nodes. Should this event be
+        #        logged?
         # n_source_records = map(len, sources.itervalues())
 
         # assert len(set(n_source_records)) == 1, \
         #     "sources contain different numbers of records {}".format(
         #         zip(sources.keys(), n_source_records))
 
-        source_keys = set(keys for d in sources.itervalues()
-                          for keys in d.iterkeys())
-
         # Change sources from: {'source':{'row_key':value}}
         #                  to: [{'source':value}]
+
+        source_keys = set(keys for d in sources.itervalues()
+                          for keys in d.iterkeys())
         converted_sources = []
 
         for row_key in source_keys:
             new_source = {}
-            converted_sources.append(new_source)
 
-            # FIXME - Seen value[row_key] get a KeyError when using show pmap.
             for source, value in sources.iteritems():
-                new_source[source] = value[row_key]
+                new_source[source] = value.get(row_key)
+            else:
+                converted_sources.append(new_source)
 
         # Expand for_each
         expanded_sources = []
@@ -139,13 +150,92 @@ class BaseRSheet(object):
                     expanded_sources.append(new_source)
 
         self.sources = expanded_sources
-
         self.n_records = len(expanded_sources)
 
     def render(self):
         # XXX - Could be useful to pass 'group_by' and 'order_by' into the render
         #       function. Could use the decl's copy as their defaults.
         return self.do_render()
+
+    def get_dfields(self):
+        dfields = []
+
+        for dfield in self.decl.fields:
+            if isinstance(dfield, decl.DynamicFields):
+                keys = set()
+
+                for sources in self.sources:
+                    try:
+                        keys.update(sources[dfield.source].keys())
+                    except (AttributeError):
+                        pass
+
+                if self.selector is not None:
+                    keys = [key for key in keys if self.selector.search(key)
+                            is not None]
+
+                for key in sorted(keys):
+                    proj = self._infer_projector(dfield, key)
+
+                    if self.dyn_aggr and self._is_projector_numeric(proj):
+                        aggr = decl.Aggregators.sum()
+                    else:
+                        aggr = None
+
+                    dfields.append(decl.Field(key, proj, aggregator=aggr))
+            else:
+                dfields.append(dfield)
+
+        return dfields
+
+    def _is_projector_numeric(self, projector):
+        return isinstance(projector, decl.Projectors.Float) or \
+            isinstance(projector, decl.Projectors.Number)
+
+    def _infer_projector(self, dfield, key):
+        proj_args = (dfield.source, key)
+
+        if not dfield.infer_projectors:
+            return decl.Projectors.String(*proj_args)
+
+        entries = []
+
+        for sources in self.sources:
+            try:
+                entries.append(sources[dfield.source][key])
+            except (KeyError, TypeError):
+                # Missing or error retrieving, ignore for inference.
+                pass
+
+        has_string = False
+        has_float = False
+        has_int = False
+
+        for entry in entries:
+            try:
+                int(entry)
+                has_int = True
+                continue
+            except ValueError:
+                pass
+
+            try:
+                float(entry)
+                has_float = True
+                continue
+            except ValueError:
+                pass
+
+            has_string = True
+
+        if has_string:
+            return decl.Projectors.String(*proj_args)
+        elif has_float:
+            return decl.Projectors.Float(*proj_args)
+        elif has_int:
+            return decl.Projectors.Number(*proj_args)
+        else:  # no entries
+            return decl.Projectors.String(*proj_args)
 
     def project_fields(self):
         projections = []
@@ -154,7 +244,7 @@ class BaseRSheet(object):
             projection = OrderedDict()
             projections.append(projection)
 
-            for dfield in self.decl.fields:
+            for dfield in self.dfields:
                 self._project_field(dfield, sources, projection)
 
         return projections
@@ -239,7 +329,7 @@ class BaseRSheet(object):
         groups = projections_groups.values()
 
         return [self.create_rfield(field, groups)
-                for field in self.decl.fields]
+                for field in self.dfields]
 
     def create_rfield(self, field, groups, parent_key=None):
         if isinstance(field, decl.TupleField):
@@ -264,7 +354,7 @@ class BaseRTupleField(object):
 
         self._init_as_tuple_field(groups)
 
-    # ==========================================================================
+    # =========================================================================
     # Optional overrides.
 
     def do_prepare(self):
@@ -274,7 +364,7 @@ class BaseRTupleField(object):
         """
         return  # Override if as needed.
 
-    # ==========================================================================
+    # =========================================================================
     # Other methods.
 
     def _init_as_tuple_field(self, groups):
@@ -335,7 +425,7 @@ class BaseRField(object):
 
         self._init_as_field(groups)
 
-    # ==========================================================================
+    # =========================================================================
     # Optional overrides.
 
     def do_prepare(self):
@@ -345,7 +435,7 @@ class BaseRField(object):
         """
         return  # Override as needed.
 
-    # ==========================================================================
+    # =========================================================================
     # Other methods.
 
     def _init_as_field(self, raw_groups):

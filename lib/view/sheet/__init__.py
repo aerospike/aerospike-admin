@@ -14,4 +14,4 @@
 
 from .const import FieldAlignment, FieldType, SheetStyle
 from .decl import *
-from .render import render
+from .render import render, set_style_json

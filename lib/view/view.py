@@ -26,11 +26,11 @@ from lib.health.constants import (AssertLevel, AssertResultKey,
 from lib.health.util import print_dict
 from lib.utils import filesize
 from lib.utils.constants import COUNT_RESULT_KEY, DT_FMT
-from lib.utils.util import (compile_likes, find_delimiter_in)
+from lib.utils.util import compile_likes, find_delimiter_in
 from lib.view import sheet, terminal
-from lib.view.sheet import (Aggregators, Converters, Field, FieldAlignment,
-                            FieldType, Formatters, Projectors, Sheet,
-                            TupleField)
+from lib.view.sheet import (Aggregators, Converters, DynamicFields, Field,
+                            FieldAlignment, FieldType, Formatters, Projectors,
+                            Sheet, TupleField, SheetStyle)
 from lib.view.table import Extractors, Styles, Table, TitleFormats
 
 H1_offset = 13
@@ -48,7 +48,8 @@ node_field = Field('Node', Projectors.String('prefixes', None),
                        lambda edata: edata.record['Node ID'] == edata.common['principal']),))
 hidden_node_id_field = Field('Node ID',
                              Projectors.String('node_ids', None), hidden=True)
-namespace_field = Field('Namespace', Projectors.String('ns_stats', None, for_each_key=True))
+namespace_field = Field('Namespace',
+                        Projectors.String('ns_stats', None, for_each_key=True))
 
 
 def project_build(b, v):
@@ -107,8 +108,8 @@ namespace_usage_sheet = Sheet(
      hidden_node_id_field,
      Field('Total Records',
            Projectors.Sum(
-               Projectors.Number('ns_stats',
-                                 'master_objects', 'master-objects'),
+               Projectors.Number(
+                   'ns_stats', 'master_objects', 'master-objects'),
                Projectors.Number('ns_stats', 'master_tombstones'),
                Projectors.Number('ns_stats', 'prole_objects', 'prole-objects'),
                Projectors.Number('ns_stats', 'non_replica_objects'),
@@ -130,21 +131,21 @@ namespace_usage_sheet = Sheet(
      TupleField(
          'Disk',
          (Field('Used',
-                Projectors.Number('ns_stats',
-                                  'device_used_bytes', 'used-bytes-disk'),
+                Projectors.Number(
+                    'ns_stats', 'device_used_bytes', 'used-bytes-disk'),
                 converter=Converters.byte,
                 aggregator=Aggregators.sum()),
           Field('Used%',
-                Projectors.Percent('ns_stats',
-                                   'device_free_pct', 'free_pct_disk',
-                                   invert=True),
+                Projectors.Percent(
+                    'ns_stats', 'device_free_pct', 'free_pct_disk',
+                    invert=True),
                 formatters=(Formatters.yellow_alert(
                     lambda edata: edata.value >= edata.record['HWM Disk%']),)),
           Field('HWM%',
                 Projectors.Number('ns_stats', 'high-water-disk-pct')),
           Field('Avail%',
-                Projectors.Number('ns_stats',
-                                  'device_available_pct', 'available_pct'),
+                Projectors.Number(
+                    'ns_stats', 'device_available_pct', 'available_pct'),
                 formatters=(Formatters.red_alert(
                     lambda edata: edata.value < 10),)))),
      TupleField(
@@ -153,9 +154,9 @@ namespace_usage_sheet = Sheet(
                 converter=Converters.byte,
                 aggregator=Aggregators.sum()),
           Field('Used%',
-                Projectors.Percent('ns_stats',
-                                   'memory_free_pct', 'free_pct_memory',
-                                   invert=True),
+                Projectors.Percent(
+                    'ns_stats', 'memory_free_pct', 'free_pct_memory',
+                    invert=True),
                 formatters=(Formatters.yellow_alert(
                     lambda edata: edata.value > edata.record['HWM Mem%']),)),
           Field('HWM%',
@@ -181,8 +182,8 @@ namespace_object_sheet = Sheet(
          'repl-factor')),
      Field('Total Records',
            Projectors.Sum(
-               Projectors.Number('ns_stats',
-                                 'master_objects', 'master-objects'),
+               Projectors.Number(
+                   'ns_stats', 'master_objects', 'master-objects'),
                Projectors.Number('ns_stats', 'master_tombstones'),
                Projectors.Number('ns_stats', 'prole_objects', 'prole-objects'),
                Projectors.Number('ns_stats', 'prole_tombstones'),
@@ -193,8 +194,8 @@ namespace_object_sheet = Sheet(
      TupleField(
          'Objects',
          (Field('Master',
-                Projectors.Number('ns_stats',
-                                  'master_objects', 'master-objects'),
+                Projectors.Number(
+                    'ns_stats', 'master_objects', 'master-objects'),
                 converter=Converters.sif, aggregator=Aggregators.sum()),
           Field('Prole',
                 Projectors.Number('ns_stats', 'prole_objects', 'prole-objects'),
@@ -241,8 +242,8 @@ set_sheet = Sheet(
      Field('Set Delete',
            Projectors.Boolean('set_stats', 'deleting', 'set-delete')),
      Field('Mem Used',
-           Projectors.Number('set_stats',
-                             'memory_data_bytes', 'n-bytes-memory'),
+           Projectors.Number(
+               'set_stats', 'memory_data_bytes', 'n-bytes-memory'),
            converter=Converters.byte,
            aggregator=Aggregators.sum()),
      Field('Objects', Projectors.Number('set_stats', 'objects', 'n_objects'),
@@ -314,34 +315,34 @@ xdr_sheet = Sheet(
                 Projectors.Func(
                     FieldType.number,
                     project_xdr_req_shipped_success,
-                    Projectors.Number('xdr_stats',
-                                      'xdr_ship_success',
-                                      'stat_recs_shipped_ok'),
-                    Projectors.Number('xdr_stats',
-                                      'stat_recs_shipped', 'stat-recs-shipped'),
-                    Projectors.Number('xdr_stats',
-                                      'err_ship_client', 'error-ship-client'),
-                    Projectors.Number('xdr_stats',
-                                      'err_ship_server', 'err-ship-server')),
+                    Projectors.Number(
+                        'xdr_stats', 'xdr_ship_success',
+                        'stat_recs_shipped_ok'),
+                    Projectors.Number(
+                        'xdr_stats', 'stat_recs_shipped', 'stat-recs-shipped'),
+                    Projectors.Number(
+                        'xdr_stats', 'err_ship_client', 'error-ship-client'),
+                    Projectors.Number(
+                        'xdr_stats', 'err_ship_server', 'err-ship-server')),
                 aggregator=Aggregators.sum()),
           Field('Shipped Errors',
                 Projectors.Func(
                     FieldType.number,
                     project_xdr_req_shipped_errors,
                     Projectors.Number('xdr_stats', 'stat_recs_ship_errors'),
-                    Projectors.Number('xdr_stats',
-                                      'err_ship_client', 'err-ship-client',
-                                      'xdr_ship_source_error'),
-                    Projectors.Number('xdr_stats',
-                                      'err_ship_server', 'err-ship-server',
-                                      'xdr_ship_destination_error')),
+                    Projectors.Number(
+                        'xdr_stats', 'err_ship_client', 'err-ship-client',
+                        'xdr_ship_source_error'),
+                    Projectors.Number(
+                        'xdr_stats', 'err_ship_server', 'err-ship-server',
+                        'xdr_ship_destination_error')),
                 aggregator=Aggregators.sum()))),
      Field('Throughput',
            Projectors.Number('xdr_stats', 'xdr_throughput', 'cur_throughput'),
            aggregator=Aggregators.sum()),
      Field('Avg Latency (ms)',
-           Projectors.Number('xdr_stats',
-                             'xdr_ship_latency_avg', 'latency_avg_ship')),
+           Projectors.Number(
+               'xdr_stats', 'xdr_ship_latency_avg', 'latency_avg_ship')),
      Field('XDR Uptime',  # obsolete since 3.11.1.1
            Projectors.Number('xdr_stats', 'xdr_uptime', 'xdr-uptime'),
            converter=Converters.time)),
@@ -357,20 +358,20 @@ xdr_dc_sheet = Sheet(
      Field('DC Size', Projectors.Number('dc_stats', 'xdr_dc_size', 'dc_size')),
      Field('Namespaces', Projectors.String('dc_stats', 'namespaces')),
      Field('Lag',
-           Projectors.Number('dc_stats', 'xdr_dc_timelag', 'xdr-dc-timelag',
-                             'dc_timelag'),
+           Projectors.Number(
+               'dc_stats', 'xdr_dc_timelag', 'xdr-dc-timelag', 'dc_timelag'),
            converter=Converters.time),
      Field('Records Shipped',
-           Projectors.Number('dc_stats',
-                             'xdr_dc_remote_ship_ok', 'dc_remote_ship_ok',
-                             'dc_recs_shipped_ok', 'dc_ship_success')),
+           Projectors.Number(
+               'dc_stats', 'xdr_dc_remote_ship_ok', 'dc_remote_ship_ok',
+               'dc_recs_shipped_ok', 'dc_ship_success')),
      Field('Avg Latency (ms)',
-           Projectors.Number('dc_stats',
-                             'latency_avg_ship_ema', 'dc_latency_avg_ship',
-                             'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')),
+           Projectors.Number(
+               'dc_stats', 'latency_avg_ship_ema', 'dc_latency_avg_ship',
+               'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')),
      Field('Status',
-           Projectors.Number('dc_stats',
-                             'xdr_dc_state', 'xdr-dc-state', 'dc_state'))),
+           Projectors.Number(
+               'dc_stats', 'xdr_dc_state', 'xdr-dc-state', 'dc_state'))),
     from_source=('node_ids', 'prefixes', 'dc_stats'),
     for_each='dc_stats',
     where=lambda record: record['DC'],
@@ -405,12 +406,12 @@ sindex_sheet = Sheet(
      TupleField(
          'Updates',
          (Field('Writes',
-                Projectors.Number('sindex_stats',
-                                  'write_success', 'stat_write_success'),
+                Projectors.Number(
+                    'sindex_stats', 'write_success', 'stat_write_success'),
                 converter=Converters.sif, aggregator=Aggregators.sum()),
           Field('Deletes',
-                Projectors.Number('sindex_stats',
-                                  'delete_success', 'stat_delete_success'),
+                Projectors.Number(
+                    'sindex_stats', 'delete_success', 'stat_delete_success'),
                 converter=Converters.sif, aggregator=Aggregators.sum())))),
     from_source=('node_ids', 'prefixes', 'sindex_stats'),
     for_each='sindex_stats',
@@ -430,48 +431,51 @@ distribution_sheet = Sheet(
 
 
 summary_namespace_sheet = Sheet(
-    (Field('Namespace', Projectors.String('ns_stats', None),
-           Formatters.red_alert(
-               lambda edata: edata.record['active_migrations'])),
-     Field('active_migrations', Projectors.Boolean('ns_stats',
-                                                   'migrations_in_progress'),
-           hidden=True),
-     TupleField('Devices',
-                (Field('Total', Projectors.Number('ns_stats', 'devices_total')),
-                 Field('Per-Node', Projectors.Number('ns_stats',
-                                                     'devices_per_node')))),
-     TupleField('Memory',
-                (Field('Total', Projectors.Number('ns_stats', 'memory_total'),
-                       converter=Converters.byte),
-                 Field('Used%',
-                       Projectors.Percent('ns_stats',
-                                          'memory_available_pct', invert=True)),
-                 Field('Avail%', Projectors.Number('ns_stats',
-                                                   'memory_available_pct'),
-                       converter=Converters.byte))),
-     TupleField('Disk',
-                (Field('Total', Projectors.Number('ns_stats', 'disk_total'),
-                       converter=Converters.byte),
-                 Field('Used%', Projectors.Number('ns_stats', 'disk_used_pct')),
-                 Field('Avail%', Projectors.Number('ns_stats',
-                                                   'disk_available_pct'),
-                       converter=Converters.byte))),
+    (Field('Namespace', Projectors.String('ns_stats', None, for_each_key=True),
+           formatters=(Formatters.red_alert(
+               lambda edata: edata.record['active_migrations']),)),
+     Field('active_migrations', Projectors.Boolean(
+         'ns_stats', 'migrations_in_progress'), hidden=True),
+     TupleField(
+         'Devices',
+         (Field('Total', Projectors.Number('ns_stats', 'devices_total')),
+          Field('Per-Node',
+                Projectors.Number('ns_stats', 'devices_per_node')))),
+     TupleField(
+         'Memory',
+         (Field('Total', Projectors.Number('ns_stats', 'memory_total'),
+                converter=Converters.byte),
+          Field('Used%',
+                Projectors.Percent(
+                    'ns_stats', 'memory_available_pct', invert=True)),
+          Field('Avail%', Projectors.Percent(
+              'ns_stats', 'memory_available_pct')))),
+     TupleField(
+         'Disk',
+         (Field('Total', Projectors.Number('ns_stats', 'disk_total'),
+                converter=Converters.byte),
+          Field('Used%', Projectors.Percent('ns_stats', 'disk_used_pct')),
+          Field('Avail%',
+                Projectors.Percent('ns_stats', 'disk_available_pct')))),
      Field('Replication Factors',
            Projectors.Func(FieldType.string,
-                           lambda *v: ','.join(map(str, v[0])),
-                           Projectors.String('ns_stats', 'repl_factor')),
+                           lambda v: ",".join(map(str, v)),
+                           Projectors.Identity('ns_stats', 'repl_factor')),
            align=FieldAlignment.right),
-     Field('Cache Read%', Projectors.Number('ns_stats', 'cache_read_pct')),
+     Field('Cache Read%', Projectors.Percent('ns_stats', 'cache_read_pct')),
      Field('Master Objects', Projectors.Number('ns_stats', 'master_objects'),
            Converters.sif),
-     TupleField('Usage (Unique-Data)',
-                (Field('In-Memory',
-                       Projectors.Number('ns_stats', 'license_data_in_memory'),
-                       Converters.byte),
-                 Field('On-Disk',
-                       Projectors.Number('ns_stats', 'license_data_on_disk'),
-                       Converters.byte)))),
+     TupleField(
+         'Usage (Unique-Data)',
+         (Field('In-Memory',
+                Projectors.Number('ns_stats', 'license_data_in_memory'),
+                Converters.byte),
+          Field('On-Disk',
+                Projectors.Number('ns_stats', 'license_data_on_disk'),
+                Converters.byte)))),
     from_source=('ns_stats',),
+    for_each='ns_stats',
+    group_by='Namespace',
     order_by='Namespace'
 )
 
@@ -480,20 +484,30 @@ pmap_sheet = Sheet(
      node_field,
      hidden_node_id_field,
      Field('Cluster Key', Projectors.Number('pmap', 'cluster_key')),
-     Field('Primary Partitions',
-           Projectors.Number('pmap', 'master_partition_count'),
-           aggregator=Aggregators.sum()),
-     Field('Secondary Partitions',
-           Projectors.Number('pmap', 'prole_partition_count'),
-           aggregator=Aggregators.sum()),
-     Field('Missing Partitions',
-           Projectors.Number('pmap', 'missing_partition_count'),
-           aggregator=Aggregators.sum())),
+     TupleField(
+         'Partitions',
+         (Field('Primary', Projectors.Number('pmap', 'master_partition_count'),
+                aggregator=Aggregators.sum()),
+          Field('Secondary',
+                Projectors.Number('pmap', 'prole_partition_count'),
+                aggregator=Aggregators.sum()),
+          Field('Missing',
+                Projectors.Number('pmap', 'missing_partition_count'),
+                aggregator=Aggregators.sum())))),
     from_source=('prefixes', 'node_ids', 'pmap'),
     for_each='pmap',
     group_by='Namespace',
     order_by='Node'
 )
+
+config_sheet = Sheet(
+    (Field('Node', Projectors.String('prefixes', None)),
+     DynamicFields('data')),
+    from_source=('prefixes', 'data'),
+    order_by='Node',
+    default_style=SheetStyle.rows
+)
+
 
 class CliView(object):
     NO_PAGER, LESS, MORE, SCROLL = range(4)
@@ -535,7 +549,6 @@ class CliView(object):
                      timestamp='', **ignore):
         prefixes = cluster.get_node_names()
         hosts = cluster.nodes
-
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Network Information' + title_suffix
         sources = dict(
@@ -556,7 +569,6 @@ class CliView(object):
     @staticmethod
     def info_namespace_usage(stats, cluster, timestamp='', **ignore):
         prefixes = cluster.get_node_names()
-
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Namespace Usage Information' + title_suffix
         sources = dict(
@@ -574,7 +586,6 @@ class CliView(object):
     @staticmethod
     def info_namespace_object(stats, cluster, timestamp='', **ignore):
         prefixes = cluster.get_node_names()
-
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Namespace Object Information' + title_suffix
         sources = dict(
@@ -592,7 +603,6 @@ class CliView(object):
     @staticmethod
     def info_set(stats, cluster, timestamp='', **ignore):
         prefixes = cluster.get_node_names()
-
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Set Information%s' + title_suffix
         sources = dict(
@@ -672,17 +682,8 @@ class CliView(object):
             sheet.render(sindex_sheet, title, sources, common=common))
 
     @staticmethod
-    def show_grep(title, summary):
-        if not summary or len(summary.strip()) == 0:
-            return
-        if title:
-            print "************************** %s **************************" % (title)
-        CliView.print_result(summary)
-
-    @staticmethod
     def show_distribution(title, histogram, unit, hist, cluster, like=None,
                           timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
         likes = compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = 'Percentage of records having {} less than or '.format(hist) + \
@@ -690,13 +691,14 @@ class CliView(object):
         namespaces = set(filter(likes.search, histogram.keys()))
 
         for namespace, node_data in histogram.iteritems():
-            if namespace not in namespaces or not node_data or isinstance(node_data, Exception):
+            if namespace not in namespaces or not node_data or \
+               isinstance(node_data, Exception):
                 continue
 
             this_title = '{} - {} in {}{}'.format(
                 namespace, title, unit, title_suffix)
             sources = dict(
-                prefixes=prefixes,
+                prefixes=cluster.get_node_names(),
                 histogram=dict((k, d['percentiles']) for k, d in node_data.iteritems())
             )
 
@@ -707,13 +709,10 @@ class CliView(object):
     @staticmethod
     def show_object_distribution(title, histogram, unit, hist, bucket_count, set_bucket_count, cluster, like=None, timestamp="", loganalyser_mode=False, **ignore):
         prefixes = cluster.get_node_names()
-
         likes = compile_likes(like)
-
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = "Number of records having %s in the range " % (hist) + \
                       "measured in %s" % (unit)
-
         namespaces = set(filter(likes.search, histogram.keys()))
 
         for namespace, node_data in histogram.iteritems():
@@ -754,7 +753,7 @@ class CliView(object):
         for column in data["columns"]:
             if column[0] == '>':
                 c = int(column[1:-2])
-                all_columns.add((c,(column, "%%>%dMs"%c)))
+                all_columns.add((c, (column, "%%>%dMs" % c)))
 
             elif column[0:2] == "%>":
                 c = int(column[2:-2])
@@ -862,73 +861,39 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        column_names = set()
+    def show_config(title, service_configs, cluster, like=None, diff=None,
+                    show_total=False, title_every_nth=0, flip_output=False,
+                    timestamp="", **ignore):
+        # if diff and service_configs:
+        #     config_sets = [set(service_configs[d].iteritems())
+        #                    for d in service_configs if service_configs[d]]
+        #     union = set.union(*config_sets)
+        #     intersection = set.intersection(*config_sets)
+        #     column_names = dict(union - intersection).keys()
+        # else:
+        #     for config in service_configs.itervalues():
+        #         if isinstance(config, Exception):
+        #             continue
 
-        if diff and service_configs:
-            config_sets = (set(service_configs[d].iteritems())
-                           for d in service_configs if service_configs[d])
-            union = set.union(*config_sets)
-            # Regenerating generator expression for config_sets.
-            config_sets = (set(service_configs[d].iteritems())
-                           for d in service_configs if service_configs[d])
-            intersection = set.intersection(*config_sets)
-            column_names = dict(union - intersection).keys()
-        else:
-            for config in service_configs.itervalues():
-                if isinstance(config, Exception):
-                    continue
-                column_names.update(config.keys())
-
-        column_names = sorted(column_names)
-        if like:
-            likes = compile_likes(like)
-
-            column_names = filter(likes.search, column_names)
-
-        if len(column_names) == 0:
-            return ''
-
-        column_names.insert(0, "NODE")
-
-        table_style = Styles.VERTICAL
-        if flip_output:
-            table_style = Styles.HORIZONTAL
-
-        if show_total:
-            n_last_columns_ignore_sort = 1
-        else:
-            n_last_columns_ignore_sort = 0
+        #         column_names.update(config.keys())
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
-        t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
+        sources = dict(
+            prefixes=cluster.get_node_names(),
+            data=service_configs)
+        aggr = Aggregators.sum() if show_total else None
 
-        row = None
-        if show_total:
-            row_total = {}
-        for node_id, row in service_configs.iteritems():
-            if isinstance(row, Exception):
-                row = {}
+        style = SheetStyle.columns if flip_output else None
 
-            row['NODE'] = prefixes[node_id]
-            t.insert_row(row)
-
-            if show_total:
-                for key, val in row.iteritems():
-                    if (val.isdigit()):
-                        try:
-                            row_total[key] = row_total[key] + int(val)
-                        except Exception:
-                            row_total[key] = int(val)
-        if show_total:
-            row_total['NODE'] = "Total"
-            t.insert_row(row_total)
+        # TODO - table_style.HORIZONTAL.
+        # TODO - diff.
+        # TODO - Don't print if there would be no results in data.
+        # TODO - show header every nth.
 
         CliView.print_result(
-            t.__str__(horizontal_title_every_nth=title_every_nth))
+            sheet.render(config_sheet, title, sources, selectors=like,
+                         dyn_aggr=aggr, style=style))
 
     @staticmethod
     def show_stats(*args, **kwargs):
@@ -937,6 +902,14 @@ class CliView(object):
     @staticmethod
     def show_health(*args, **kwargs):
         CliView.show_config(*args, **kwargs)
+
+    @staticmethod
+    def show_grep(title, summary):
+        if not summary or len(summary.strip()) == 0:
+            return
+        if title:
+            print "************************** %s **************************" % (title)
+        CliView.print_result(summary)
 
     @staticmethod
     def show_grep_count(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
@@ -1733,7 +1706,11 @@ class CliView(object):
     @staticmethod
     def _summary_namespace_table_view(stats, **ignore):
         title = "Namespaces"
-        sources = dict(ns_stats=stats)
+
+        # XXX: Hack
+        new_stats = dict(node_hack=stats)
+        sources = dict(ns_stats=new_stats)
+
         CliView.print_result(
             sheet.render(summary_namespace_sheet, title, sources))
 

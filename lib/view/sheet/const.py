@@ -17,6 +17,8 @@ class FieldType(object):
     boolean = 'boolean'
     number = 'number'
     string = 'string'
+    dynamic = 'dynamic'
+    undefined = 'undefined'
 
 
 class FieldAlignment(object):
