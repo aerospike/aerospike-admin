@@ -56,16 +56,24 @@ class BaseRSheet(object):
 
         self.dfields = self.get_dfields()
 
+        if not self.dfields:
+            self.rfields = None  # nothing to display
+            return
+
         projections = self.project_fields()
         projections = self.where(projections)
-        projections_groups = self.group_by_fields(projections)
-        projections_groups = self.order_by_fields(projections_groups)
-        self.rfields = self.create_rfields(projections_groups)
-        self.visible_rfields = [rfield for rfield in self.rfields
-                                if not rfield.hidden]
 
-        for rfield in self.rfields:
-            rfield.prepare()
+        if self.has_all_required_fields(projections):
+            projections_groups = self.group_by_fields(projections)
+            projections_groups = self.order_by_fields(projections_groups)
+            self.rfields = self.create_rfields(projections_groups)
+            self.visible_rfields = [rfield for rfield in self.rfields
+                                    if not rfield.hidden]
+
+            for rfield in self.rfields:
+                rfield.prepare()
+        else:
+            self.rfields = None  # nothing to display
 
     # =========================================================================
     # Required overrides.
@@ -155,6 +163,9 @@ class BaseRSheet(object):
     def render(self):
         # XXX - Could be useful to pass 'group_by' and 'order_by' into the render
         #       function. Could use the decl's copy as their defaults.
+        if self.rfields is None:
+            return None
+
         return self.do_render()
 
     def get_dfields(self):
@@ -182,7 +193,8 @@ class BaseRSheet(object):
                     else:
                         aggr = None
 
-                    dfields.append(decl.Field(key, proj, aggregator=aggr))
+                    dfields.append(decl.Field(key, proj, aggregator=aggr,
+                                              dynamic_field_decl=dfield))
             else:
                 dfields.append(dfield)
 
@@ -272,11 +284,35 @@ class BaseRSheet(object):
         if self.decl.where:
             where_fn = self.decl.where
 
-            for record_ix in xrange(len(projections) - 1, -1, -1):
+            for record_ix in range(len(projections) - 1, -1, -1):
                 if not where_fn(projections[record_ix]):
                     del projections[record_ix]
 
         return projections
+
+    def has_all_required_fields(self, projections):
+        required_dfields = set()
+
+        for dfield in self.decl.fields:
+            if not isinstance(dfield, decl.DynamicFields):
+                continue
+
+            if dfield.required:
+                required_dfields.add(dfield)
+
+        if not required_dfields:
+            return True
+
+        unfound_fields = required_dfields
+
+        for dfield in self.dfields:
+            if dfield.dynamic_field_decl in unfound_fields:
+                unfound_fields.remove(dfield.dynamic_field_decl)
+
+                if not unfound_fields:
+                    return True
+
+        return False
 
     def group_by_fields(self, projections):
         """

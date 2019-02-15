@@ -501,8 +501,10 @@ pmap_sheet = Sheet(
 )
 
 config_sheet = Sheet(
-    (Field('Node', Projectors.String('prefixes', None)),
-     DynamicFields('data')),
+    (Field('Node', Projectors.String('prefixes', None),
+           formatters=(Formatters.bold(
+               lambda _: True),)),
+     DynamicFields('data', required=True)),
     from_source=('prefixes', 'data'),
     order_by='Node',
     default_style=SheetStyle.rows
@@ -515,6 +517,9 @@ class CliView(object):
 
     @staticmethod
     def print_result(out):
+        if out is None or out is "":
+            return
+
         if type(out) is not str:
             out = str(out)
         if CliView.pager == CliView.LESS:
@@ -688,7 +693,10 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = 'Percentage of records having {} less than or '.format(hist) + \
                       'equal to value measured in {}'.format(unit)
-        namespaces = set(filter(likes.search, histogram.keys()))
+        namespaces = histogram.keys()
+
+        if likes is not None:
+            namespaces = set(filter(likes.search, namespaces))
 
         for namespace, node_data in histogram.iteritems():
             if namespace not in namespaces or not node_data or \
@@ -863,7 +871,7 @@ class CliView(object):
     @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=None,
                     show_total=False, title_every_nth=0, flip_output=False,
-                    timestamp="", **ignore):
+                    timestamp="", **mods):
         # if diff and service_configs:
         #     config_sets = [set(service_configs[d].iteritems())
         #                    for d in service_configs if service_configs[d]]
@@ -877,20 +885,18 @@ class CliView(object):
 
         #         column_names.update(config.keys())
 
+        with_mod = mods.get('with', [])
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
         sources = dict(
-            prefixes=cluster.get_node_names(),
+            prefixes=cluster.get_node_names(with_mod),
             data=service_configs)
         aggr = Aggregators.sum() if show_total else None
-
         style = SheetStyle.columns if flip_output else None
 
-        # TODO - table_style.HORIZONTAL.
         # TODO - diff.
-        # TODO - Don't print if there would be no results in data.
         # TODO - show header every nth.
-
+        # TODO - -flip and with still shows other nodes.
         CliView.print_result(
             sheet.render(config_sheet, title, sources, selectors=like,
                          dyn_aggr=aggr, style=style))

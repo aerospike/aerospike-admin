@@ -723,6 +723,7 @@ def parse_commands(file):
             commands = line
     return commands
 
+
 def get_version():
     if __version__.startswith('$$'):
         import string

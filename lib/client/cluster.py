@@ -108,11 +108,27 @@ class Cluster(object):
 
         return node_names
 
-    def get_node_names(self):
+    def get_node_names(self, with_mod=None):
+        nodes = self.nodes.items()
+
+        if with_mod:
+            with_nodes = set()
+
+            for w in with_mod:
+                with_nodes.update(self.get_node(w))
+
+            new_nodes = []
+
+            for node_key, node in nodes:
+                if node in with_nodes:
+                    new_nodes.append((node_key, node))
+
+            nodes = new_nodes
+
         node_names = {}
 
         if not self._same_name_nodes:
-            for node_key, node in self.nodes.iteritems():
+            for node_key, node in nodes:
                 name = node.sock_name(use_fqdn=True)
                 if name in node_names.values():
                     # found same name for multiple nodes
@@ -122,7 +138,7 @@ class Cluster(object):
                 node_names[node_key] = name
 
         if not node_names:
-            for node_key, node in self.nodes.iteritems():
+            for node_key, node in nodes:
                 node_names[node_key] = node.sock_name(use_fqdn=False)
 
         return node_names

@@ -180,9 +180,9 @@ class TupleField(object):
 
 
 class Field(object):
-    def __init__(self, title, projector, converter=None,
-                 formatters=None, aggregator=None, align=None, key=None,
-                 hidden=None):
+    def __init__(self, title, projector, converter=None, formatters=None,
+                 aggregator=None, align=None, key=None, hidden=None,
+                 dynamic_field_decl=None):
         """
         Arguments:
         title     -- Name in this Field's heading
@@ -196,7 +196,7 @@ class Field(object):
                       rendered value.
         aggregator -- Function that generates an aggregate value to be
                       displayed at the end of a group.
-        align      -- *None   : Left align strings and right align numbers.
+        align      -- None    : Allow sheet to choose alignment.
                       'left'  : Always align left.
                       'right' : Always align right.
                       'center': Always align center.
@@ -204,6 +204,8 @@ class Field(object):
         hidden     -- None : Visible if there are any entries.
                       True : Always visible.
                       False: Always hidden.
+        dynamic_field_decl -- None if not from DynamicFields.
+                              Otherwise DynamicFields instance.
         """
         self.title = title
         self.projector = projector
@@ -211,15 +213,9 @@ class Field(object):
         self.formatters = [] if formatters is None else formatters
         self.aggregator = aggregator
         self.align = align
-
-        if align is None:
-            if projector.field_type == FieldType.number:
-                self.align = FieldAlignment.right
-            else:
-                self.align = FieldAlignment.left
-
         self.key = title if key is None else key
         self.hidden = hidden
+        self.dynamic_field_decl = dynamic_field_decl
 
         self.has_aggregate = self.aggregator is not None
 
@@ -229,7 +225,7 @@ class Field(object):
 
 
 class DynamicFields(object):
-    def __init__(self, source, infer_projectors=True):
+    def __init__(self, source, infer_projectors=True, required=False):
         """
         Arguments:
         source -- Data source to project fields from.
@@ -240,6 +236,7 @@ class DynamicFields(object):
         """
         self.source = source
         self.infer_projectors = infer_projectors
+        self.required = required
 
         self.has_aggregate = False  # XXX - hack
 
@@ -624,6 +621,12 @@ class Formatters(object):
         """Similar to red_alert but green instead of red."""
         return 'green-alert', Formatters._should_apply(
             predicate_fn, terminal.fg_green, terminal.fg_not_green)
+
+    @staticmethod
+    def bold(predicate_fn):
+        """Applies bold formatting if predicate evaluates to True."""
+        return 'bold', Formatters._should_apply(
+            predicate_fn, terminal.bold, terminal.unbold)
 
 
 class NoEntryException(Exception):

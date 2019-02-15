@@ -28,16 +28,27 @@ def do_render(*args, **kwargs):
     # Make sure column style renders without Exceptions.
     kwargs['style'] = SheetStyle.columns
 
-    sheet.render(*args, **kwargs)
+    res = sheet.render(*args, **kwargs)
+
+    if res is not None:
+        print res
 
     if do_row:
         # Make sure column style renders without Exceptions.
         kwargs['style'] = SheetStyle.rows
 
-    print sheet.render(*args, **kwargs)
+        res = sheet.render(*args, **kwargs)
+
+        if res is not None:
+            print res
 
     # Return the json render for testing.
     kwargs['style'] = SheetStyle.json
+
+    res = sheet.render(*args, **kwargs)
+
+    if res is None:
+        return res
 
     return json.loads(sheet.render(*args, **kwargs))
 
@@ -404,7 +415,7 @@ class SheetTest(unittest.TestCase):
         sources = dict(d=dict(
             n0=dict(g='a', f=0),
             n1=dict(g='b', f=1)))
-        render = do_render(test_sheet, 'test', sources)
+        render = do_render_column(test_sheet, 'test', sources)
 
         self.assertEqual(len(render['groups']), 2)
 
@@ -431,7 +442,7 @@ class SheetTest(unittest.TestCase):
             n0=dict(g='a', f=1),
             n1=dict(g='a', f=1),
             n2=dict(g='b', f=3)))
-        render = do_render(test_sheet, 'test', sources)
+        render = do_render_column(test_sheet, 'test', sources)
 
         self.assertEqual(len(render['groups']), 2)
 
@@ -455,7 +466,7 @@ class SheetTest(unittest.TestCase):
             n1=dict(g0='a', g1='false', f=1),
             n2=dict(g0='b', g1='false', f=2),
             n3=dict(g0='b', g1='false', f=3)))
-        render = do_render(test_sheet, 'test', sources)
+        render = do_render_column(test_sheet, 'test', sources)
         groups = render['groups']
 
         self.assertEqual(len(groups), 3)
@@ -525,7 +536,7 @@ class SheetTest(unittest.TestCase):
             n0=dict(a=dict(f='success')),
             n1=dict(a=dict(f='success'),
                     b=dict(f='success'))))
-        render = do_render(test_sheet, 'test', sources)
+        render = do_render_column(test_sheet, 'test', sources)
 
         self.assertEqual(len(render['groups']), 2)
 
@@ -665,7 +676,23 @@ class SheetTest(unittest.TestCase):
             n0=Exception("error"), n2=Exception("error"),
             n3=Exception("error")))
         render = do_render(test_sheet, 'test', sources)
-        self.assertEqual(len(render['groups']), 0)
+        self.assertEqual(render, None)
+
+    def test_sheet_dynamic_field_required(self):
+        test_sheet = Sheet(
+            (Field('F', Projectors.Number('d', 'f')),
+             DynamicFields('d', required=True),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=dict(f=1, g=1), n2=dict(f=1), n3=dict(f=1)))
+        render = do_render(test_sheet, 'test', sources, selectors=['f'])
+        records = render['groups'][0]['records']
+
+        self.assertEqual(len(records), 3)
+
+        render = do_render(test_sheet, 'test', sources, selectors=['nothing'])
+
+        self.assertEqual(render, None)
 
     def test_sheet_dynamic_field(self):
         test_sheet = Sheet(

@@ -14,7 +14,7 @@
 
 from lib.view import terminal
 
-from ..const import FieldAlignment
+from ..const import FieldAlignment, FieldType
 from .base_rsheet import BaseRField, BaseRSheet, BaseRTupleField
 
 
@@ -316,11 +316,19 @@ class RFieldColumn(BaseRField):
         return cell
 
     def _entry_cell_align(self, converted):
-        if self.decl.align is FieldAlignment.right:
+        align = self.decl.align
+
+        if align is None:
+            if self.decl.projector.field_type == FieldType.number:
+                align = FieldAlignment.right
+            else:
+                align = FieldAlignment.left
+
+        if align is FieldAlignment.right:
             return converted.rjust(self.width)
-        elif self.decl.align is FieldAlignment.left:
+        elif align is FieldAlignment.left:
             return converted.ljust(self.width)
-        elif self.decl.align is FieldAlignment.center:
+        elif align is FieldAlignment.center:
             return converted.center(self.width)
         else:
             raise
