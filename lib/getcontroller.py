@@ -501,7 +501,7 @@ class GetPmapController():
         # fields present in version >= 3.15.0
         optional_new_fields = [("working_master_index", "working_master", None)]
 
-        for _node, partitions in pmap_info.items():
+        for _node, partitions in pmap_info.iteritems():
             node_pmap = dict()
             ck = cluster_keys[_node]
             node_id = node_ids[_node]
@@ -520,47 +520,45 @@ class GetPmapController():
 
             for item in partitions.split(';'):
                 fields = item.split(':')
+                field_set = set(fields)
 
                 if not index_set:
                     # pmap format contains headers from server 3.8.4 onwards
-
                     index_set = True
 
-                    if all(i[1] in fields for i in required_fields):
+                    if all(i[1] in field_set for i in required_fields):
                         for t in required_fields:
                             f_indices[t[0]] = fields.index(t[1])
 
-                        if all(i[1] in fields for i in optional_old_fields):
-
+                        if all(i[1] in field_set for i in optional_old_fields):
                             for t in optional_old_fields:
                                 f_indices[t[0]] = fields.index(t[1])
-
-                        elif all(i[1] in fields for i in optional_new_fields):
-
+                        elif all(i[1] in field_set for i in optional_new_fields):
                             for t in optional_new_fields:
                                 f_indices[t[0]] = fields.index(t[1])
 
                         continue
 
-                ns, pid, state, replica = fields[f_indices["namespace_index"]], int(fields[f_indices["partition_index"]]),\
-                                         fields[f_indices["state_index"]], int(fields[f_indices["replica_index"]])
+                ns = fields[f_indices["namespace_index"]]
+                pid = int(fields[f_indices["partition_index"]])
+                state = fields[f_indices["state_index"]]
+                replica = int(fields[f_indices["replica_index"]])
 
                 if f_indices["working_master_index"]:
                     working_master = fields[f_indices["working_master_index"]]
-                    origin, target = None, None
-
+                    origin = target = None
                 else:
-                    origin, target = fields[f_indices["origin_index"]], fields[f_indices["target_index"]]
+                    origin = fields[f_indices["origin_index"]]
+                    target = fields[f_indices["target_index"]]
                     working_master = None
 
-                if pid not in range(pid_range):
+                if pid not in xrange(pid_range):
                     print "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid)
                     continue
 
                 if ns not in node_pmap:
-                    node_pmap[ns] = { 'master_partition_count' : 0,
-                                      'prole_partition_count' : 0,
-                                    }
+                    node_pmap[ns] = {'master_partition_count': 0,
+                                     'prole_partition_count': 0}
 
                 if ck not in ns_available_part:
                     ns_available_part[ck] = {}
@@ -573,53 +571,46 @@ class GetPmapController():
                     if node_id == working_master:
                         # Working master
                         node_pmap[ns]['master_partition_count'] += 1
-
                     elif replica == 0 or state == 'S' or state == 'D':
                         # Eventual master or replicas
                         node_pmap[ns]['prole_partition_count'] += 1
-
                 elif replica == 0:
                     if origin == '0':
                         # Working master (Final and proper master)
                         node_pmap[ns]['master_partition_count'] += 1
-
                     else:
                         # Eventual master
                         node_pmap[ns]['prole_partition_count'] += 1
-
                 else:
                     if target == '0':
                         if state == 'S' or state == 'D':
                             node_pmap[ns]['prole_partition_count'] += 1
-
                     else:
                         # Working master (Acting master)
                         node_pmap[ns]['master_partition_count'] += 1
 
             pmap_data[_node] = node_pmap
 
-        for _node, _ns_data in pmap_data.items():
+        for _node, _ns_data in pmap_data.iteritems():
             ck = cluster_keys[_node]
-            for ns, params in _ns_data.items():
+            for ns, params in _ns_data.iteritems():
                 params['cluster_key'] = ck
 
                 try:
                     params.update(ns_info[ck][ns][_node])
-
-                except Exception as e:
+                except Exception:
                     pass
 
         return pmap_data
 
     def get_pmap(self, nodes='all'):
         getter = GetStatisticsController(self.cluster)
+        service_stats = util.Future(getter.get_service, nodes=nodes).start()
+        namespace_stats = util.Future(getter.get_namespace, nodes=nodes).start()
         node_ids = util.Future(self.cluster.info, 'node', nodes=nodes).start()
         pmap_info = util.Future(self.cluster.info, 'partition-info', nodes=nodes).start()
-        service_stats = getter.get_service(nodes=nodes)
-        namespace_stats = getter.get_namespace(nodes=nodes)
 
-        node_ids = node_ids.result()
-        pmap_info = pmap_info.result()
+        service_stats = service_stats.result()
 
         cluster_keys = {}
         for node in service_stats.keys():
@@ -628,7 +619,10 @@ class GetPmapController():
             else:
                 cluster_keys[node] = util.get_value_from_dict(service_stats[node], ('cluster_key'), default_value="N/E")
 
+        namespace_stats = namespace_stats.result()
         ns_info = self._get_namespace_data(namespace_stats, cluster_keys)
+        node_ids = node_ids.result()
+        pmap_info = pmap_info.result()
 
         pmap_data = self._get_pmap_data(pmap_info, ns_info, cluster_keys, node_ids)
 
