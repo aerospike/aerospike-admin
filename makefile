@@ -21,12 +21,11 @@ INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
 INSTALL = "install -o aerospike -g aerospike"
 
-PY_VER = $(shell python -c "import sys;t='{v[0]}.{v[1]}'.format(v=list(sys.version_info[:2]));sys.stdout.write(t)";)
-REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/py27/requirements.txt
-PEX_REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/py27/requirements.txt
-ifeq ($(PY_VER),2.6)
-	REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/py26/requirements.txt
-	PEX_REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements/py26/pex_requirements.txt
+REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements.txt
+
+LINUX_VERSION = ""
+ifeq ($(OS),Linux)
+	LINUX_VERSION = $(shell build/os_version)
 endif
 
 SHELL := /bin/bash
@@ -41,10 +40,15 @@ define make_build
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
+	$(if $(filter $(LINUX_VERSION),el6),
+	sed -i 's/\/usr\/bin\/env python/\/usr\/bin\/env python2.7/' $(BUILD_ROOT)tmp/asadm/asadm.py
+	)
+
 	$(if $(filter $(OS),Darwin),
 	sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py,
 	sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
 	)
+
 endef
 
 all:
@@ -55,17 +59,7 @@ all:
 	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)wheels -r $(REQUIREMENT_FILE)
 	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)wheels
 
-ifeq ($(PY_VER),2.6)
-	cp $(SOURCE_ROOT)/requirements/py26/wheels/*.whl ${BUILD_ROOT}wheels/
-endif
-
-	for pkg in "${BUILD_ROOT}wheels/"*; do \
-		if [[ "$${pkg}" == *"manylinux1_x86_64"* ]]; then \
-			mv "$${pkg}" "$${pkg/manylinux1_x86_64/linux_x86_64}"; \
-		fi \
- 	done
-
-	pex -v -r $(PEX_REQUIREMENT_FILE) --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
 	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
 	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm
@@ -84,4 +78,3 @@ install:
 	install -o $(INSTALL_USER) -g $(INSTALL_GROUP) -d -m 755 $(INSTALL_ROOT)
 	install -o $(INSTALL_USER) -g $(INSTALL_GROUP) -m 755 $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
 	ln -sf $(INSTALL_ROOT)asadm $(SYMLINK)
-

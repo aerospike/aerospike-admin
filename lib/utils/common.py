@@ -303,6 +303,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
 
         ns_memory_data_size = 0
         ns_device_data_size = 0
+        ns_device_compressed_data_size = 0
 
         for host_id, host_stats in ns_stats.iteritems():
             master_objects = util.get_value_from_dict(host_stats, ("master_objects", "master-objects"), default_value=0,
@@ -336,11 +337,16 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                 device_data_size = util.get_value_from_dict(host_stats, ("device_used_bytes", "used-bytes-disk"),
                                                              default_value=0, return_type=int)
 
+                device_compression_ratio = util.get_value_from_dict(host_stats, ("device_compression_ratio"), default_value=0.0,
+                                                     return_type=float)
+
                 if device_data_size > 0:
+                    # remove set overhead
                     set_overhead = _compute_set_overhead_for_ns(set_stats, ns, host_id, as_version=as_version)
                     device_data_size = device_data_size - set_overhead
 
                 if device_data_size > 0:
+                    # remove tombstone overhead
                     tombstones = util.get_value_from_dict(host_stats, ("tombstones",), default_value=0,
                                                                               return_type=int)
                     tombstone_overhead = tombstones * 128
@@ -352,14 +358,28 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                     device_data_size = 0
 
                 if device_data_size > 0:
+                    # remove record overhead
                     device_record_overhead = master_objects * _device_record_overhead(as_version=as_version)
-                    ns_device_data_size += device_data_size - device_record_overhead
+                    device_data_size = device_data_size - device_record_overhead
+
+                if device_data_size > 0:
+
+                    if device_compression_ratio > 0:
+                        # update compressed_data_size
+                        ns_device_compressed_data_size += device_data_size
+
+                        # compute actual size
+                        device_data_size = device_data_size/device_compression_ratio
+
+                    ns_device_data_size += device_data_size
 
         ns_dict[ns]["license_data_in_memory"] = ns_memory_data_size
         cl_memory_data_size += ns_memory_data_size
 
         ns_dict[ns]["license_data_on_disk"] = ns_device_data_size
         cl_device_data_size += ns_device_data_size
+        if ns_device_compressed_data_size > 0:
+            ns_dict[ns]["compression_ratio"] = ns_device_compressed_data_size/ns_device_data_size
 
     cluster_dict["license_data"] = {}
     cluster_dict["license_data"]["memory_size"] = cl_memory_data_size
@@ -532,8 +552,10 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
         cl_nodewise_mem_aval = util.add_dicts(cl_nodewise_mem_aval, mem_aval)
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = sum(mem_size.values())
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_aval"] = sum(mem_aval.values())
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = (float(sum(mem_aval.values())) / float(
-            sum(mem_size.values()))) * 100.0
+        if sum(mem_size.values()) == 0:
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = 0
+        else:
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = (float(sum(mem_aval.values())) / float(sum(mem_size.values()))) * 100.0
 
         device_size = util.get_value_from_second_level_of_dict(ns_stats, ("device_total_bytes", "total-bytes-disk"),
                                                                default_value=0, return_type=int)
@@ -586,9 +608,9 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
             rack_ids = list(set(rack_ids.values()))
             if len(rack_ids) > 1 or rack_ids[0] is not None:
                 if any((i is not None and i > 0) for i in rack_ids):
-                    summary_dict["FEATURES"]["NAMESPACE"][ns]["rack-aware"] = True
+                    summary_dict["FEATURES"]["NAMESPACE"][ns]["rack_aware"] = True
                 else:
-                    summary_dict["FEATURES"]["NAMESPACE"][ns]["rack-aware"] = False
+                    summary_dict["FEATURES"]["NAMESPACE"][ns]["rack_aware"] = False
         except Exception:
             pass
 
@@ -1022,16 +1044,20 @@ def parse_raw_histogram(histogram, histogram_data, logarithmic=False, new_histog
 ########## System Collectinfo ##########
 
 
-def _get_metadata(response_str, prefix='', old_response=''):
+def _get_aws_metadata(response_str, prefix='', old_response=''):
     aws_c = ''
     aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
 
     # set of values which will give same old_response, so no need to go further
     last_values = []
     for rsp in response_str.split("\n"):
+        if "credential" in rsp:
+            # ignore credentials
+            continue
+
         if rsp[-1:] == '/':
             rsp_p = rsp.strip('/')
-            aws_c += _get_metadata(rsp_p, prefix, old_response=old_response)
+            aws_c += _get_aws_metadata(rsp_p, prefix, old_response=old_response)
         else:
             meta_url = aws_metadata_base_url + prefix + rsp
 
@@ -1044,7 +1070,7 @@ def _get_metadata(response_str, prefix='', old_response=''):
                     last_values.append(rsp.strip())
                     continue
                 try:
-                    aws_c += _get_metadata(response, prefix + rsp + "/", old_response=response)
+                    aws_c += _get_aws_metadata(response, prefix + rsp + "/", old_response=response)
                 except Exception:
                     aws_c += (prefix + rsp).strip('/') + '\n' + response + "\n\n"
 
@@ -1054,7 +1080,7 @@ def _get_metadata(response_str, prefix='', old_response=''):
     return aws_c
 
 
-def _collect_awsdata(cmd=''):
+def _collect_aws_data(cmd=''):
     aws_rsp = ''
     aws_timeout = 1
     socket.setdefaulttimeout(aws_timeout)
@@ -1066,7 +1092,7 @@ def _collect_awsdata(cmd=''):
         # r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
         if r.code == 200:
             rsp = r.read()
-            aws_rsp += _get_metadata(rsp, '/')
+            aws_rsp += _get_aws_metadata(rsp, '/')
             out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(aws_metadata_base_url, aws_rsp)
         else:
             aws_rsp = " Not likely in AWS"
@@ -1107,7 +1133,7 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=''):
     return res_str
 
 
-def _collect_gcedata(cmd=''):
+def _collect_gce_data(cmd=''):
     gce_timeout = 1
     socket.setdefaulttimeout(gce_timeout)
     gce_metadata_base_url = 'http://metadata.google.internal/computeMetadata/v1/instance/'
@@ -1134,7 +1160,7 @@ def _collect_gcedata(cmd=''):
     return out, None
 
 
-def _collect_azuredata(cmd=''):
+def _collect_azure_data(cmd=''):
     azure_timeout = 1
     socket.setdefaulttimeout(azure_timeout)
     azure_metadata_base_url = 'http://169.254.169.254/metadata/instance?api-version=2017-04-02'
@@ -1415,6 +1441,8 @@ def get_system_commands(port=3000):
         ['uname -a'],
 
 	# Only in Pretty Print
+        ['dmidecode -s system-product-name'],
+        ['systemd-detect-virt'],
         ['cat /sys/class/dmi/id/product_name'],
         ['cat /sys/class/dmi/id/sys_vendor'],
         ['cat /sys/kernel/mm/*transparent_hugepage/enabled'],
@@ -1504,7 +1532,7 @@ def print_collecinto_summary(logdir, failed_cmds):
     terminal.enable_color(True)
 
 
-def collect_sys_info(port=3000, timestamp="", outfile="", verbose=False):
+def collect_sys_info(port=3000, timestamp="", outfile=""):
     failed_cmds = []
 
     cluster_online = True
@@ -1536,19 +1564,19 @@ def collect_sys_info(port=3000, timestamp="", outfile="", verbose=False):
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_awsdata)
+        o, f_cmds = _collectinfo_content(func=_collect_aws_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_gcedata)
+        o, f_cmds = _collectinfo_content(func=_collect_gce_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_azuredata)
+        o, f_cmds = _collectinfo_content(func=_collect_azure_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
@@ -1558,13 +1586,6 @@ def collect_sys_info(port=3000, timestamp="", outfile="", verbose=False):
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
-
-    if verbose:
-        try:
-            o, f_cmds = _collectinfo_content(func=_collect_lsof(verbose=verbose))
-            util.write_to_file(outfile, o)
-        except Exception as e:
-            util.write_to_file(outfile, str(e))
 
     try:
         o, f_cmds = _collectinfo_content(func=_collect_env_variables)

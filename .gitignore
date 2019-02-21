@@ -8,7 +8,9 @@ __pycache__/
 # Distribution / packaging
 .Python
 env/
-build/
+build/bin
+build/tmp
+build/wheels
 develop-eggs/
 dist/
 downloads/

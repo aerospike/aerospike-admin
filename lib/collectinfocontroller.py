@@ -454,7 +454,7 @@ class ShowDistributionController(CollectinfoCommandController):
                                                 timestamp=timestamp,
                                                 loganalyser_mode=True, like=self.mods['for'])
 
-    @CommandHelp('Shows the distribution of Eviction TTLs for namespaces')
+    @CommandHelp('Shows the distribution of namespace Eviction TTLs for server version 3.7.5 and below')
     def do_eviction(self, line):
         return self._do_distribution('evict', 'Eviction Distribution', 'Seconds')
 

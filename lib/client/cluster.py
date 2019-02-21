@@ -68,7 +68,6 @@ class Cluster(object):
         # and (ip, port) -> Node, and node.node_id -> Node
         self.node_lookup = LookupDict()
 
-        self._original_seed_nodes = set(seed_nodes)
         self._seed_nodes = set(seed_nodes)
         self._live_nodes = set()
         self.ssl_context = ssl_context
@@ -220,7 +219,7 @@ class Cluster(object):
                 if not self.only_connect_seed:
                     peers = peers + node.peers
         else:
-            peers = self._original_seed_nodes
+            peers = self._seed_nodes
 
         if not added_endpoints:
             return peers
@@ -503,3 +502,6 @@ class Cluster(object):
                 pass
         self.nodes = None
         self.node_lookup = None
+
+    def get_seed_nodes(self):
+        return list(self._seed_nodes)

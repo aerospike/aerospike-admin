@@ -760,6 +760,23 @@ ASSERT(r, True, "Cluster size is near the max configured cluster size.", "OPERAT
 				"Cluster size check.",
 				heartbeat_proto_v2);
 
+paxos_replica_limit = select "paxos-single-replica-limit" from SERVICE.CONFIG save as "paxos-single-replica-limit";
+paxos_replica_limit = group by CLUSTER paxos_replica_limit;
+
+cluster_size = select "cluster_size" from SERVICE.STATISTICS;
+cluster_size = group by CLUSTER do MAX(cluster_size);
+
+replication_factor_check = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG;
+replication_factor_check = group by CLUSTER, NODE do MAX(replication_factor_check);
+replication_factor_check = do replication_factor_check >=2;
+
+r = do cluster_size <= paxos_replica_limit;
+r = do r && replication_factor_check;
+
+ASSERT(r, False, "Critical Cluster State - Only one copy of data exists", "OPERATIONS", CRITICAL,
+				"Listed node[s] have cluster size less than or equal to paxos-single-replica-limit. Only one copy of the data (no replicas) will be kept in the cluster",
+				"Paxos single replica limit check");
+
 
 /* UDF */
 
@@ -1693,7 +1710,7 @@ ASSERT(r, False, "Cluster clock_skew breached warning level", "OPERATIONS", WARN
 
 roster = select "roster", "observed_nodes" from ROSTER.CONFIG;
 r = group by CLUSTER, NAMESPACE, NODE do EQUAL(roster);
-ASSERT(r, True, "Roster misconfigured.", "CONFIG", WARNING,
+ASSERT(r, True, "Roster misconfigured.", "OPERATIONS", WARNING,
 				"Listed namespace[s] shows difference between set roster nodes and observe nodes. Please set roster properly.",
 				"Roster misconfiguration check.");
 
@@ -1704,6 +1721,19 @@ r = do p == repl;
 ASSERT(r, False, "Nodes equal to replication factor.", "OPERATIONS", WARNING,
                                 "Number of nodes is equal to replication factor, rolling restart not possible",
                                 "Node / replication factor check", s);
+
+sc_check = select "strong-consistency" from NAMESPACE.CONFIG;
+sc_check = group by CLUSTER, NAMESPACE do OR(sc_check);
+
+roster_null_check = select "roster" from ROSTER.CONFIG;
+roster_null_check = group by CLUSTER, NAMESPACE, NODE roster_null_check;
+roster_null_check = do "null" IN roster_null_check;
+
+r = do roster_null_check && sc_check;
+
+ASSERT(r, False, "Roster is null or NOT set.", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] shows ROSTER as NULL or NOT SET. Please check and set roster properly.",
+				"Roster null check.");
 
 SET CONSTRAINT VERSION ALL;
 

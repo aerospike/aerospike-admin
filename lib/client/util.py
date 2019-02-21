@@ -51,7 +51,8 @@ def info_to_dict(value, delimiter=';', ignore_field_without_key_value_delimiter=
         for _v in _tmp_value_list:
             if delimiter2 not in _v:
                 try:
-                    _value_list[-1] = str(_value_list[-1]) + delimiter + str(_v)
+                    _value_list[-1] = str(_value_list[-1]) + \
+                        delimiter + str(_v)
 
                 except Exception:
                     pass
@@ -97,7 +98,8 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ign
         return value_dict
 
     for v in value_list:
-        values = info_to_dict(v, delimiter2, ignore_field_without_key_value_delimiter=ignore_field_without_key_value_delimiter)
+        values = info_to_dict(
+            v, delimiter2, ignore_field_without_key_value_delimiter=ignore_field_without_key_value_delimiter)
         if not values or isinstance(values, Exception):
             continue
         for _k in keyname:
@@ -115,6 +117,8 @@ def info_colon_to_dict(value):
 
 
 def info_to_list(value, delimiter=";"):
+    if isinstance(value, Exception):
+        return []
     return re.split(delimiter, value)
 
 

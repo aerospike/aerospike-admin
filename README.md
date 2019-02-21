@@ -5,50 +5,52 @@ of their Aerospike Cluster by fetching information from running cluster (Cluster
 Start the tool with *asadm* and run the *help* command to get started.
 
 ## Installing Aerospike Admin
-Two ways to install asadm
 
-- Install asadm as PEX:
+### Build Dependencies
+
+- pip >= 9.0.3
+- pex == 1.6.1
+- requests == 2.18.4
+
+### Install asadm as PEX
 ```
 sudo make
 sudo make install
 ```
 
-- Install asadm without PEX:
+### Install asadm without PEX
 ```
-sudo ./asadm-deps/install.sh
+sudo pip install -r requirements.txt
 sudo make no_pex
 sudo make install
 ```
 
 ## Running Aerospike Admin in Live Cluster Mode.
-asadm -h <Aerospike Server Address>
+asadm -h <Aerospike Server Address\>
 Admin> help
 
 ## Running Aerospike Admin in Log-analyser Mode.
-asadm -l [-f <location of logs>]
+asadm -l [-f <location of logs\>]
 Admin> help
 
 ## Running Aerospike Admin in Collectinfo Mode.
-asadm -c [-f <location of collectinfo>]
+asadm -c [-f <location of collectinfo\>]
 Admin> help
 
 
 ## Dependencies
-- python 2.6+ (< 3)
+- python 2.7+ (< 3)
 
 ### Python Modules
-- jsonschema >= 2.5.1 (for centos6 please install jsonschema==2.5.1)
+- bcrypt == 3.1.4
+- cryptography >= 2.4.2
+- jsonschema >= 2.5.1
 - pexpect: >= 3.0
 - ply: >= 3.4
-- pyOpenSSL: >= 16.2.0
+- pyOpenSSL: >= 18.0.0
 - pyasn1: >= 0.3.1
 - toml
 
-
-### Installing Python Module Dependencies
-```
-sudo ./asadm-deps/install.sh
-```
 
 ### Mac OSX
 Run following command to ensure asadm history works properly:

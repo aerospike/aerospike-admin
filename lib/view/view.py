@@ -1875,8 +1875,9 @@ class CliView(object):
         title = "Namespaces"
         column_names = ('namespace', ('_devices', 'Devices (Total,Per-Node)'), ('_memory', 'Memory (Total,Used%,Avail%)'),
                         ('_disk', 'Disk (Total,Used%,Avail%)'), ('repl_factor', 'Replication Factor'), ('cache_read_pct','Post-Write-Queue Hit-Rate'),
-                        'rack-aware', ('master_objects', 'Master Objects'),
-                        ('license_data_in_memory', 'Usage (Unique-Data) In-Memory'), ('license_data_on_disk', 'Usage (Unique-Data) On-Disk')
+                        'rack_aware', ('master_objects', 'Master Objects'),
+                        ('license_data_in_memory', 'Usage (Unique-Data) In-Memory'), ('license_data_on_disk', 'Usage (Unique-Data) On-Disk'),
+                        'compression_ratio'
                         )
 
 
@@ -1974,8 +1975,8 @@ class CliView(object):
                 print CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.sif))
                 index += 1
 
-            if "rack-aware" in stats[ns]:
-                print CliView.get_summary_line_prefix(index, "Rack-aware") + "%s"%(str(stats[ns]["rack-aware"]))
+            if "rack_aware" in stats[ns]:
+                print CliView.get_summary_line_prefix(index, "Rack-aware") + "%s"%(str(stats[ns]["rack_aware"]))
                 index += 1
 
             print CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.sif))
@@ -1990,6 +1991,11 @@ class CliView(object):
                     s += ", "
                 s += "%s on-disk"%(filesize.size(stats[ns]["license_data_on_disk"]))
             print CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s
+            index += 1
+
+            if "compression_ratio" in stats[ns]:
+                print CliView.get_summary_line_prefix(index, "Compression-ratio") + "%s"%(str(stats[ns]["compression_ratio"]))
+                index += 1
             print
 
     @staticmethod

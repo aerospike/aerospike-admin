@@ -359,7 +359,7 @@ class ShowDistributionController(BasicCommandController):
                 histogram, 'Seconds', 'ttl', self.cluster, like=self.mods['for'])
 
 
-    @CommandHelp('Shows the distribution of Eviction TTLs for namespaces')
+    @CommandHelp('Shows the distribution of namespace Eviction TTLs for server version 3.7.5 and below')
     def do_eviction(self, line):
 
         histogram = self.getter.do_distribution('evict', nodes=self.nodes)
@@ -882,7 +882,7 @@ class CollectinfoController(BasicCommandController):
         return namespaces
 
     ###########################################################################
-    # Function for dumping json
+    # Functions for dumping json
 
     def _restructure_set_section(self, stats):
         for node, node_data in stats.iteritems():
@@ -1182,13 +1182,15 @@ class CollectinfoController(BasicCommandController):
 
         self._dump_in_json_file(as_logfile_prefix, snpshots)
 
-    def _dump_collectinfo_pretty_print(self, timestamp, as_logfile_prefix,
-            show_all=False, verbose=False):
+    ###########################################################################
+    # Functions for dumping pretty print files
+
+    def _dump_collectinfo_pretty_print(self, timestamp, as_logfile_prefix):
 
         # getting service port to use in ss/netstat command
         port = 3000
         try:
-            host, port, tls = list(self.cluster._original_seed_nodes)[0]
+            _, port, _ = self.cluster.get_seed_nodes()[0]
         except Exception:
             port = 3000
 
@@ -1202,39 +1204,17 @@ class CollectinfoController(BasicCommandController):
         dignostic_show_params = ['config', 'config xdr', 'config dc', 'config cluster', 'distribution', 'distribution eviction',
                                  'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex', 'pmap']
         dignostic_aerospike_cluster_params = ['service', 'services', 'roster:']
-        dignostic_aerospike_cluster_params_additional = [
-            'partition-info',
-            'dump-msgs:',
-            'dump-wr:'
-        ]
-        dignostic_aerospike_cluster_params_additional_verbose = [
-            'dump-fabric:',
-            'dump-hb:',
-            'dump-migrates:',
-            'dump-paxos:',
-            'dump-smd:'
-        ]
 
         summary_params = ['summary']
         summary_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
         health_params = ['health -v']
 
-
-        my_ips = (util.shell_command(["hostname -I"])[0]).split(' ')
-        _ip = my_ips[0].strip()
+        # find version
         as_version = None
-
-        # Need to find correct IP as per the configuration
-        for ip in my_ips:
-            try:
-                as_version = self.cluster.call_node_method(
-                    [ip.strip()], "info", "build").popitem()[1]
-                if not as_version or isinstance(as_version, Exception):
-                    continue
-                _ip = ip.strip()
-                break
-            except Exception:
-                pass
+        try:
+            as_version = self.cluster.info("build").popitem()[1]
+        except Exception:
+            as_version = None
 
         # find all namespaces
         try:
@@ -1258,30 +1238,6 @@ class CollectinfoController(BasicCommandController):
                 dignostic_aerospike_cluster_params.append(
                     hist_dump_info_str % (ns, hist))
 
-
-        if show_all:
-            # add additional command to collect list
-            for ns in namespaces:
-                # dump-wb dumps debug information about Write Bocks, it needs
-                # namespace, device-id and write-block-id as a parameter
-                # dignostic_cluster_params_additional.append('dump-wb:ns=' + ns)
-
-                dignostic_aerospike_cluster_params_additional.append(
-                    'dump-wb-summary:ns=' + ns)
-
-            if verbose:
-                # enable to collect additional stats with detailed output
-                for index, param in enumerate(dignostic_aerospike_cluster_params_additional_verbose):
-                    if param.startswith("dump"):
-                        if not param.endswith(":"):
-                            param = param + ";"
-                        param = param + "verbose=true"
-                    dignostic_aerospike_cluster_params_additional_verbose[
-                        index] = param
-
-            dignostic_aerospike_cluster_params = dignostic_aerospike_cluster_params + \
-                dignostic_aerospike_cluster_params_additional + \
-                dignostic_aerospike_cluster_params_additional_verbose
 
         ####### Dignostic info ########
 
@@ -1367,11 +1323,9 @@ class CollectinfoController(BasicCommandController):
         ####### System info ########
 
         self.aslogfile = as_logfile_prefix + 'sysinfo.log'
-        self.failed_cmds = common.collect_sys_info(port=port, timestamp=collect_output, outfile=self.aslogfile, verbose=show_all & verbose)
+        self.failed_cmds = common.collect_sys_info(port=port, timestamp=collect_output, outfile=self.aslogfile)
 
-        ####### Logs and conf ########
-
-        ##### aerospike logs #####
+        ##### aerospike conf file #####
 
         conf_path = '/etc/aerospike/aerospike.conf'
 
@@ -1380,82 +1334,6 @@ class CollectinfoController(BasicCommandController):
         if LooseVersion(as_version) <= LooseVersion("3.0.0"):
             conf_path = '/etc/citrusleaf/citrusleaf.conf'
 
-        if show_all:
-            ##### aerospike xdr logs #####
-            # collectinfo can read the xdr log file from default path for old aerospike version which can not provide xdr log path in asinfo command
-            # for latest xdr-in-asd versions, 'asinfo -v logs' provide all logs
-            # including xdr log, so no need to read it separately
-            try:
-                if True in self.cluster.is_XDR_enabled().values():
-                    is_xdr_in_asd_version = False
-                    try:
-                        is_xdr_in_asd_version = self.cluster.call_node_method(
-                            [_ip], "is_feature_present", "xdr").popitem()[1]
-                    except Exception:
-                        from lib.client.node import Node
-                        temp_node = Node(_ip)
-                        is_xdr_in_asd_version = self.cluster.call_node_method(
-                            [temp_node.ip], "is_feature_present", "xdr").popitem()[1]
-
-                    if not is_xdr_in_asd_version:
-                        try:
-                            o, e = util.shell_command(
-                                ["grep errorlog-path " + conf_path])
-                            if e:
-                                xdr_log_location = '/var/log/aerospike/*xdr.log'
-                            else:
-                                xdr_log_location = o.split()[1]
-                        except Exception:
-                            xdr_log_location = '/var/log/aerospike/*xdr.log'
-
-                        self.aslogfile = as_logfile_prefix + 'asxdr.log'
-                        self._collect_local_file(xdr_log_location, self.aslogfile)
-
-            except Exception as e:
-                util.write_to_file(self.aslogfile, str(e))
-                sys.stdout = sys.__stdout__
-
-            try:
-                try:
-                    log_locations = [i.split(':')[1] for i in self.cluster.call_node_method(
-                        [_ip], "info", "logs").popitem()[1].split(';')]
-                except Exception:
-                    from lib.client.node import Node
-                    temp_node = Node(_ip)
-                    log_locations = [i.split(':')[1] for i in self.cluster.call_node_method(
-                        [temp_node.ip], "info", "logs").popitem()[1].split(';')]
-
-                file_name_used = {}
-
-                for log in log_locations:
-                    if os.path.exists(log):
-                        file_name_base = os.path.basename(log)
-                        if file_name_base in file_name_used:
-                            file_name_used[file_name_base] = file_name_used[
-                                file_name_base] + 1
-                            file_name, ext = os.path.splitext(file_name_base)
-                            file_name_base = file_name + "-" + \
-                                str(file_name_used[file_name_base]) + ext
-                        else:
-                            file_name_used[file_name_base] = 1
-
-                        self._collect_local_file(
-                            log, as_logfile_prefix + file_name_base)
-
-                    # machine is running with systemd, so need to read logs
-                    # from systemd journal
-                    else:
-                        try:
-                            self._collect_logs_from_systemd_journal(
-                                as_logfile_prefix)
-                        except Exception as e1:
-                            util.write_to_file(self.aslogfile, str(e1))
-                            sys.stdout = sys.__stdout__
-            except Exception as e:
-                util.write_to_file(self.aslogfile, str(e))
-                sys.stdout = sys.__stdout__
-
-        ##### aerospike conf file #####
         try:
             # Comparing with this version because prior to this it was
             # citrusleaf.conf & citrusleaf.log
@@ -1470,9 +1348,12 @@ class CollectinfoController(BasicCommandController):
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
+    ###########################################################################
+    # Collectinfo caller functions
+
     def _main_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
                           credential_file, snp_count, wait_time, enable_ssh=False,
-                          show_all=False, verbose=False, output_prefix=""):
+                          output_prefix=""):
 
         # JSON collectinfo snapshot count check
         if snp_count < 1:
@@ -1494,7 +1375,7 @@ class CollectinfoController(BasicCommandController):
                                     credential_file, enable_ssh, snp_count, wait_time,)
 
         # Pretty print collectinfo
-        self._dump_collectinfo_pretty_print(timestamp, as_logfile_prefix, show_all=show_all, verbose=verbose)
+        self._dump_collectinfo_pretty_print(timestamp, as_logfile_prefix)
 
         # Archive collectinfo directory
         common.archive_log(self.aslogdir)
@@ -1502,7 +1383,7 @@ class CollectinfoController(BasicCommandController):
         # printing collectinfo summary
         common.print_collecinto_summary(self.aslogdir, failed_cmds=self.failed_cmds)
 
-    def _collect_info(self, line, show_all=False):
+    def _collect_info(self, line):
 
         snp_count = util.get_arg_and_delete_from_mods(line=line, arg="-n",
                 return_type=int, default=1, modifiers=self.modifiers,
@@ -1539,13 +1420,10 @@ class CollectinfoController(BasicCommandController):
                 modifiers=self.modifiers, mods=self.mods)
         output_prefix = util.strip_string(output_prefix)
 
-        verbose = False
-        if 'verbose' in line:
-            verbose = True
 
         self._main_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
                                credential_file, snp_count, wait_time, enable_ssh=enable_ssh,
-                               show_all=show_all, verbose=verbose, output_prefix=output_prefix)
+                               output_prefix=output_prefix)
 
     @CommandHelp('Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.',
                  'If credentials are not available then it will collect system stats from local node only.',
@@ -1570,13 +1448,6 @@ class CollectinfoController(BasicCommandController):
                  )
     def _do_default(self, line):
         self._collect_info(line=line)
-
-    @CommandHelp('Collects all default stats and additional stats like "info dump-*" commands output',
-                 '  Options:',
-                 '    verbose     - Enable to collect additional stats with detailed output of "info dump-*" commands'
-                 )
-    def do_all(self, line):
-        self._collect_info(line=line, show_all=True)
 
 @CommandHelp('Displays features used in running Aerospike cluster.')
 class FeaturesController(BasicCommandController):
