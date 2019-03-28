@@ -55,7 +55,7 @@ class RowRSheet(BaseRSheet):
         # XXX - Add handling for more than one group.
         assert n_groups == 1
 
-        # XXX - Add handling for TupleFields?
+        # XXX - Add handling for Subgroups?
 
         has_aggregate = any(rfield.has_aggregate() for rfield in rfields)
 

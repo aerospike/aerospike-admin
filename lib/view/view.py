@@ -30,7 +30,7 @@ from lib.utils.util import compile_likes, find_delimiter_in
 from lib.view import sheet, terminal
 from lib.view.sheet import (Aggregators, Converters, DynamicFields, Field,
                             FieldAlignment, FieldType, Formatters, Projectors,
-                            Sheet, TupleField, SheetStyle)
+                            Sheet, SheetStyle, Subgroup)
 from lib.view.table import Extractors, Styles, Table, TitleFormats
 
 H1_offset = 13
@@ -82,7 +82,7 @@ network_sheet = Sheet(
      Field('Migrations',
            Projectors.Number('stats', 'migrate_partitions_remaining'),
            converter=Converters.sif),
-     TupleField(
+     Subgroup(
          'Cluster',
          (Field('Size', Projectors.Number('stats', 'cluster_size')),
           Field('Key', Projectors.String('stats', 'cluster_key'),
@@ -128,7 +128,7 @@ namespace_usage_sheet = Sheet(
            Projectors.Boolean('ns_stats', 'stop_writes', 'stop-writes'),
            formatters=(Formatters.red_alert(
                lambda edata: edata.value),)),
-     TupleField(
+     Subgroup(
          'Disk',
          (Field('Used',
                 Projectors.Number(
@@ -148,7 +148,7 @@ namespace_usage_sheet = Sheet(
                     'ns_stats', 'device_available_pct', 'available_pct'),
                 formatters=(Formatters.red_alert(
                     lambda edata: edata.value < 10),)))),
-     TupleField(
+     Subgroup(
          'Memory',
          (Field('Used', Projectors.Number('ns_stats', 'memory_used_bytes'),
                 converter=Converters.byte,
@@ -191,7 +191,7 @@ namespace_object_sheet = Sheet(
                Projectors.Number('ns_stats', 'non_replica_tombstones')),
            converter=Converters.sif,
            aggregator=Aggregators.sum()),
-     TupleField(
+     Subgroup(
          'Objects',
          (Field('Master',
                 Projectors.Number(
@@ -203,7 +203,7 @@ namespace_object_sheet = Sheet(
           Field('Non-Replica',
                 Projectors.Number('ns_stats', 'non_replica_objects'),
                 converter=Converters.sif, aggregator=Aggregators.sum()))),
-     TupleField(
+     Subgroup(
          'Tombstones',
          (Field('Master',
                 Projectors.Number('ns_stats', 'master_tombstones'),
@@ -213,7 +213,7 @@ namespace_object_sheet = Sheet(
           Field('Non-Replica',
                 Projectors.Number('ns_stats', 'non_replica_tombstones'),
                 converter=Converters.sif, aggregator=Aggregators.sum()))),
-     TupleField(
+     Subgroup(
          'Pending Migrates',
          (Field('Tx',
                 Projectors.Number(
@@ -304,7 +304,7 @@ xdr_sheet = Sheet(
            converter=Converters.time,
            formatters=(
                Formatters.red_alert(lambda edata: edata.value >= 300),)),
-     TupleField(
+     Subgroup(
          'Records',
          (Field('Outstanding',
                 Projectors.Number('xdr_stats',
@@ -397,14 +397,14 @@ sindex_sheet = Sheet(
      Field('Memory Used',
            Projectors.Number('sindex_stats', 'si_accounted_memory'),
            converter=Converters.byte, aggregator=Aggregators.sum()),
-     TupleField(
+     Subgroup(
          'Queries',
          (Field('Requests', Projectors.Number('sindex_stats', 'query_reqs'),
                 converter=Converters.sif, aggregator=Aggregators.sum()),
           Field('Avg Num Recs',
                 Projectors.Number('sindex_stats', 'query_avg_rec_count'),
                 converter=Converters.sif, aggregator=Aggregators.sum()))),
-     TupleField(
+     Subgroup(
          'Updates',
          (Field('Writes',
                 Projectors.Number(
@@ -437,12 +437,12 @@ summary_namespace_sheet = Sheet(
                lambda edata: edata.record['active_migrations']),)),
      Field('active_migrations', Projectors.Boolean(
          'ns_stats', 'migrations_in_progress'), hidden=True),
-     TupleField(
+     Subgroup(
          'Devices',
          (Field('Total', Projectors.Number('ns_stats', 'devices_total')),
           Field('Per-Node',
                 Projectors.Number('ns_stats', 'devices_per_node')))),
-     TupleField(
+     Subgroup(
          'Memory',
          (Field('Total', Projectors.Number('ns_stats', 'memory_total'),
                 converter=Converters.byte),
@@ -451,7 +451,7 @@ summary_namespace_sheet = Sheet(
                     'ns_stats', 'memory_available_pct', invert=True)),
           Field('Avail%', Projectors.Percent(
               'ns_stats', 'memory_available_pct')))),
-     TupleField(
+     Subgroup(
          'Disk',
          (Field('Total', Projectors.Number('ns_stats', 'disk_total'),
                 converter=Converters.byte),
@@ -466,7 +466,7 @@ summary_namespace_sheet = Sheet(
      Field('Cache Read%', Projectors.Percent('ns_stats', 'cache_read_pct')),
      Field('Master Objects', Projectors.Number('ns_stats', 'master_objects'),
            Converters.sif),
-     TupleField(
+     Subgroup(
          'Usage (Unique-Data)',
          (Field('In-Memory',
                 Projectors.Number('ns_stats', 'license_data_in_memory'),
@@ -487,7 +487,7 @@ pmap_sheet = Sheet(
      node_field,
      hidden_node_id_field,
      Field('Cluster Key', Projectors.Number('pmap', 'cluster_key')),
-     TupleField(
+     Subgroup(
          'Partitions',
          (Field('Primary', Projectors.Number('pmap', 'master_partition_count'),
                 aggregator=Aggregators.sum()),
@@ -511,6 +511,20 @@ config_sheet = Sheet(
     from_source=('prefixes', 'data'),
     order_by='Node',
     default_style=SheetStyle.rows
+)
+
+mapping_to_ip_sheet = Sheet(
+    (Field('Node ID', Projectors.String('mapping', 0)),
+     Field('IP', Projectors.String('mapping', 1))),
+    from_source=('mapping',),
+    order_by='Node ID'
+)
+
+mapping_to_id_sheet = Sheet(
+    (Field('IP', Projectors.String('mapping', 0)),
+     Field('Node ID', Projectors.String('mapping', 1))),
+    from_source=('mapping',),
+    order_by='IP'
 )
 
 
@@ -875,19 +889,6 @@ class CliView(object):
     def show_config(title, service_configs, cluster, like=None, diff=False,
                     show_total=False, title_every_nth=0, flip_output=False,
                     timestamp="", **mods):
-        # if diff and service_configs:
-        #     config_sets = [set(service_configs[d].iteritems())
-        #                    for d in service_configs if service_configs[d]]
-        #     union = set.union(*config_sets)
-        #     intersection = set.intersection(*config_sets)
-        #     column_names = dict(union - intersection).keys()
-        # else:
-        #     for config in service_configs.itervalues():
-        #         if isinstance(config, Exception):
-        #             continue
-
-        #         column_names.update(config.keys())
-
         with_mod = mods.get('with', [])
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
@@ -897,7 +898,6 @@ class CliView(object):
         aggr = Aggregators.sum() if show_total else None
         style = SheetStyle.columns if flip_output else None
 
-        # TODO - diff.
         # TODO - show header every nth.
         CliView.print_result(
             sheet.render(config_sheet, title, sources, selectors=like,
@@ -1117,27 +1117,24 @@ class CliView(object):
         if not mapping:
             return
 
-        column_names = [col1, col2]
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        t = Table("%s to %s Mapping%s" % (col1, col2, title_suffix), column_names,
-                  title_format=TitleFormats.no_change, style=Styles.HORIZONTAL)
-
         if like:
             likes = compile_likes(like)
-            filtered_keys = filter(likes.search, mapping.keys())
-
+            filtered_keys = set(filter(likes.search, mapping.keys()))
         else:
-            filtered_keys = mapping.keys()
+            filtered_keys = set(mapping.keys())
 
-        for col1_val, col2_val in mapping.iteritems():
-            if col1_val not in filtered_keys:
-                continue
-            row = {}
-            if not isinstance(col2_val, Exception):
-                row[col1] = col1_val
-                row[col2] = col2_val
-            t.insert_row(row)
-        CliView.print_result(t)
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "{} to {} Mappings{}".format(col1, col2, title_suffix)
+        sources = dict(mapping=dict(
+            enumerate((k, v) for k, v in mapping.iteritems()
+                      if k in filtered_keys)))
+
+        if col2 == 'IPs':
+            map_sheet = mapping_to_ip_sheet
+        else:
+            map_sheet = mapping_to_id_sheet
+
+        CliView.print_result(sheet.render(map_sheet, title, sources))
 
     @staticmethod
     def show_pmap(pmap_data, cluster, timestamp='', **ignore):

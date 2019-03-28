@@ -607,14 +607,14 @@ class ShowMappingController(BasicCommandController):
     @CommandHelp('Displays IP to Node_id mapping')
     def do_ip(self, line):
         ip_to_node_map = self.cluster.get_IP_to_node_map()
-        return util.Future(self.view.show_mapping, "IP", "NODE-ID",
-                ip_to_node_map, **self.mods)
+        return util.Future(self.view.show_mapping, "IP", "Node ID",
+                           ip_to_node_map, **self.mods)
 
     @CommandHelp('Displays Node_id to IPs mapping')
     def do_node(self, line):
         node_to_ip_map = self.cluster.get_node_to_IP_map()
-        return util.Future(self.view.show_mapping, "NODE-ID", "IPs",
-                node_to_ip_map, **self.mods)
+        return util.Future(self.view.show_mapping, "Node ID", "IPs",
+                           node_to_ip_map, **self.mods)
 
 
 @CommandHelp('Displays statistics for Aerospike components.')

@@ -19,7 +19,7 @@ import unittest2 as unittest
 from lib.view import sheet
 from lib.view.sheet import (Aggregators, Converters, DynamicFields, Field,
                             FieldType, Formatters, Projectors, Sheet,
-                            SheetStyle, TupleField)
+                            SheetStyle, Subgroup)
 
 
 def do_render(*args, **kwargs):
@@ -332,7 +332,7 @@ class SheetTest(unittest.TestCase):
 
     def test_sheet_tuple_field(self):
         test_sheet = Sheet(
-            (TupleField(
+            (Subgroup(
                 'T',
                 (Field('F0', Projectors.Number('d', 'f0')),
                  Field('F1', Projectors.Number('d', 'f1')))),
@@ -355,7 +355,7 @@ class SheetTest(unittest.TestCase):
 
     def test_sheet_tuple_field_hide_one(self):
         test_sheet = Sheet(
-            (TupleField(
+            (Subgroup(
                 'T',
                 (Field('F0', Projectors.Number('d', 'f0')),
                  Field('F1', Projectors.Number('d', 'f1')))),
@@ -377,7 +377,7 @@ class SheetTest(unittest.TestCase):
 
     def test_sheet_tuple_field_hide_all(self):
         test_sheet = Sheet(
-            (TupleField(
+            (Subgroup(
                 'T',
                 (Field('F0', Projectors.Number('d', 'f0')),
                  Field('F1', Projectors.Number('d', 'f1')))),

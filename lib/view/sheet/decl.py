@@ -84,7 +84,7 @@ class Sheet(object):
 
     def _init_sanity_check(self):
         # Ensure 'group_bys' and 'sort_bys' are in 'fields'.
-        # NOTE - currently cannot group_by/sort_by a member of a TupleField.
+        # NOTE - currently cannot group_by/sort_by a member of a Subgroup.
         static_fields = [field for field in self.fields
                          if not isinstance(field, DynamicFields)]
         field_set = set(field.key for field in static_fields)
@@ -126,11 +126,11 @@ class Sheet(object):
 
         def populate_seen_sources(fields):
             for field in fields:
-                if isinstance(field, TupleField):
+                if isinstance(field, Subgroup):
                     return populate_seen_sources(field.fields)
 
                 assert not isinstance(field, DynamicFields), \
-                    "DynamicFields cannot be members of TupleFields."
+                    "DynamicFields cannot be members of Subgroups."
 
                 try:
                     sources = field.projector.sources
@@ -159,7 +159,7 @@ class Sheet(object):
         assert for_each_set - sources_set == set()
 
 
-class TupleField(object):
+class Subgroup(object):
     def __init__(self, title, fields, key=None):
         """
         Arguments:

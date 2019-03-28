@@ -54,10 +54,6 @@ def render(sheet, title, data_source, style=None, common=None,
     dyn_aggr    -- Aggregate for dynamic fields only have numeric values.
     dyn_diff    -- Only show dynamic fields that aren't uniform.
     """
-    # NOTE - Other than the title's suffix, it doesn't change.
-    #        Title without suffix could move to decl and suffix be passed in
-    #        here. Likewise, if the title moves to decl, the description should
-    #        also move.
     tcommon = defaultdict(lambda: None)
 
     if common is not None:

@@ -17,8 +17,8 @@ from collections import OrderedDict
 from itertools import groupby
 from operator import itemgetter
 
-from lib.view import terminal
 from lib.utils.util import compile_likes
+from lib.view import terminal
 
 from .. import decl
 from .render_utils import Aggregator, ErrorEntry, NoEntry
@@ -89,10 +89,10 @@ class BaseRSheet(object):
 
     def do_create_tuple_field(self, field, groups):
         """
-        Each RSheet may define custom versions of RTupleField.
+        Each RSheet may define custom versions of RSubgroup.
 
         Arguments:
-        field  -- The decl.TupleField describing this tuple field.
+        field  -- The decl.Subgroup describing this tuple field.
         groups -- The data sources having already been processed into groups.
         """
         raise NotImplementedError('override')
@@ -105,8 +105,8 @@ class BaseRSheet(object):
         groups -- The data sources having already been processed into groups.
 
         Keyword Arguments:
-        parent_key -- If this field is the child of a TupleField, then this is
-                      the key defined within that TupleField.
+        parent_key -- If this field is the child of a Subgroup, then this is
+                      the key defined within that Subgroup.
         """
         raise NotImplementedError('override')
 
@@ -265,7 +265,7 @@ class BaseRSheet(object):
         return projections
 
     def _project_field(self, dfield, sources, projection):
-        if isinstance(dfield, decl.TupleField):
+        if isinstance(dfield, decl.Subgroup):
             child_projections = OrderedDict()
             projection[dfield.key] = child_projections
 
@@ -345,7 +345,7 @@ class BaseRSheet(object):
         """
         Single or composite key grouping
         """
-        # XXX - Allow 'group by' on a field within a TupleField.
+        # XXX - Allow 'group by' on a field within a Subgroup.
 
         grouping = (((), projections),)
         group_bys = self.decl.group_bys
@@ -374,7 +374,7 @@ class BaseRSheet(object):
         return OrderedDict(grouping)
 
     def order_by_fields(self, projections_groups):
-        # XXX - Allow 'order by' on a field within a TupleField.
+        # XXX - Allow 'order by' on a field within a Subgroup.
         # XXX - Allow desc order.
 
         order_bys = self.decl.order_bys
@@ -395,18 +395,18 @@ class BaseRSheet(object):
                 for field in self.dfields]
 
     def create_rfield(self, field, groups, parent_key=None):
-        if isinstance(field, decl.TupleField):
+        if isinstance(field, decl.Subgroup):
             return self.do_create_tuple_field(field, groups)
 
         return self.do_create_field(field, groups, parent_key=parent_key)
 
 
-class BaseRTupleField(object):
+class BaseRSubgroup(object):
     def __init__(self, rsheet, field, groups):
         """
         Arguments:
         rsheet -- BaseRSheet being rendered.
-        field  -- decl.TupleField.
+        field  -- decl.Subgroup.
         groups -- Sequence of sub-sequences where each sub-sequence is a group
                   determined by 'rsheet.decl.group_bys'.
         """
@@ -464,12 +464,12 @@ class BaseRField(object):
         """
         Arguments:
         rsheet -- BaseRSheet being rendered.
-        field  -- 'decl.TupleField'.
+        field  -- 'decl.Subgroup'.
         groups -- Sequence of sub-sequences where each sub-sequence is a group
                   determined by 'rsheet.decl.group_bys'.
 
         Keyword Argument:
-        parent_key -- Not None: the decl.key value for the parent 'TupleField'.
+        parent_key -- Not None: the decl.key value for the parent 'Subgroup'.
         """
         self.rsheet = rsheet
         self.decl = field

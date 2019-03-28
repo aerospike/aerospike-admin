@@ -14,13 +14,13 @@
 
 import json
 
-from .base_rsheet import (BaseRField, BaseRSheet, BaseRTupleField, ErrorEntry,
+from .base_rsheet import (BaseRField, BaseRSheet, BaseRSubgroup, ErrorEntry,
                           NoEntry)
 
 
 class JSONRSheet(BaseRSheet):
     def do_create_tuple_field(self, field, groups):
-        return RTupleFieldJSON(self, field, groups)
+        return RSubgroupJSON(self, field, groups)
 
     def do_create_field(self, field, groups, parent_key=None):
         return RFieldJSON(self, field, groups, parent_key=parent_key)
@@ -117,7 +117,7 @@ class JSONRSheet(BaseRSheet):
                 raw=aggregate, converted=converted_aggregate)
 
 
-class RTupleFieldJSON(BaseRTupleField):
+class RSubgroupJSON(BaseRSubgroup):
     pass
 
 

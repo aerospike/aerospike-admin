@@ -15,7 +15,7 @@
 from lib.view import terminal
 
 from ..const import FieldAlignment, FieldType
-from .base_rsheet import BaseRField, BaseRSheet, BaseRTupleField
+from .base_rsheet import BaseRField, BaseRSheet, BaseRSubgroup
 
 
 class ColumnRSheet(BaseRSheet):
@@ -23,7 +23,7 @@ class ColumnRSheet(BaseRSheet):
     # Required overrides.
 
     def do_create_tuple_field(self, field, groups):
-        return RTupleFieldColumn(self, field, groups)
+        return RSubgroupColumn(self, field, groups)
 
     def do_create_field(self, field, groups, parent_key=None):
         return RFieldColumn(self, field, groups, parent_key=parent_key)
@@ -125,7 +125,7 @@ class ColumnRSheet(BaseRSheet):
             terminal.undim())
 
 
-class RTupleFieldColumn(BaseRTupleField):
+class RSubgroupColumn(BaseRSubgroup):
     # =========================================================================
     # Optional overrides.
 
