@@ -26,7 +26,7 @@ from .render_utils import Aggregator, ErrorEntry, NoEntry
 
 class BaseRSheet(object):
     def __init__(self, sheet, title, sources, common, description=None,
-                 selectors=None, dyn_aggr=None):
+                 selectors=None, dyn_aggr=None, dyn_diff=False):
         """
         Arguments:
         sheet       -- The decl.sheet to render.
@@ -42,6 +42,7 @@ class BaseRSheet(object):
         selectors   -- List of regular expressions to select which fields
                        from dynamic fields.
         dyn_aggr    -- Aggregate for dynamic fields only have numeric values.
+        dyn_diff    -- Only show dynamic fields that aren't uniform.
         """
         self.decl = sheet
         self.title = title
@@ -53,6 +54,7 @@ class BaseRSheet(object):
         self.description = description
         self.selector = compile_likes(selectors)
         self.dyn_aggr = dyn_aggr
+        self.dyn_diff = dyn_diff
 
         self.dfields = self.get_dfields()
 
@@ -64,6 +66,7 @@ class BaseRSheet(object):
         projections = self.where(projections)
 
         if self.has_all_required_fields(projections):
+            projections = self.diff(projections)
             projections_groups = self.group_by_fields(projections)
             projections_groups = self.order_by_fields(projections_groups)
             self.rfields = self.create_rfields(projections_groups)
@@ -161,8 +164,8 @@ class BaseRSheet(object):
         self.n_records = len(expanded_sources)
 
     def render(self):
-        # XXX - Could be useful to pass 'group_by' and 'order_by' into the render
-        #       function. Could use the decl's copy as their defaults.
+        # XXX - Could be useful to pass 'group_by' and 'order_by' into the
+        #       render function. Could use the decl's copy as their defaults.
         if self.rfields is None:
             return None
 
@@ -313,6 +316,30 @@ class BaseRSheet(object):
                     return True
 
         return False
+
+    def diff(self, projections):
+        if not self.dyn_diff:
+            return projections
+
+        dyn_dfields = (dfield for dfield in self.dfields
+                       if isinstance(dfield.dynamic_field_decl,
+                                     decl.DynamicFields))
+        drop_dfields = []
+
+        for dfield in dyn_dfields:
+            entries = [projection[dfield.key] for projection in projections
+                       if not projection[dfield.key] in (NoEntry, ErrorEntry)]
+
+            if all(entries[0] == entry for entry in entries):
+                drop_dfields.append(dfield)
+
+        for dfield in drop_dfields:
+            for projection in projections:
+                del projection[dfield.key]
+
+            self.dfields.remove(dfield)
+
+        return projections
 
     def group_by_fields(self, projections):
         """

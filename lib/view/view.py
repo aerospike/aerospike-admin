@@ -872,7 +872,7 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def show_config(title, service_configs, cluster, like=None, diff=None,
+    def show_config(title, service_configs, cluster, like=None, diff=False,
                     show_total=False, title_every_nth=0, flip_output=False,
                     timestamp="", **mods):
         # if diff and service_configs:
@@ -899,10 +899,9 @@ class CliView(object):
 
         # TODO - diff.
         # TODO - show header every nth.
-        # TODO - -flip and with still shows other nodes.
         CliView.print_result(
             sheet.render(config_sheet, title, sources, selectors=like,
-                         dyn_aggr=aggr, style=style))
+                         dyn_aggr=aggr, style=style, dyn_diff=diff))
 
     @staticmethod
     def show_stats(*args, **kwargs):

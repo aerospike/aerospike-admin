@@ -767,12 +767,19 @@ class SheetTest(unittest.TestCase):
         self.assertEqual(aggrs['g']['raw'], 2)
         self.assertEqual(aggrs['f']['raw'], 3)
 
-    # def test_sheet_dynamic_field_diff(self):
-    #     # from pprint import pprint
-    #     # pprint(stuff)
-    #     # assert False
+    def test_sheet_dynamic_field_diff(self):
+        test_sheet = Sheet(
+            (DynamicFields('d'),),
+            from_source='d')
+        sources = dict(d=dict(
+            n0=dict(f=2, g=1), n2=dict(f=1, g=1), n3=dict(meh=1),
+            n4=Exception()))
+        render = do_render(test_sheet, 'test', sources, dyn_diff=True)
+        records = render['groups'][0]['records']
 
-    #     pass
+        for record in records:
+            assert 'g' not in record
+            assert 'f' in record
 
     # def test_sheet_dynamic_field_every_nth(self):
     #     pass

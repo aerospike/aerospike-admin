@@ -18,7 +18,7 @@ from collections import Counter
 from lib.utils import filesize
 from lib.view import terminal
 
-from .const import FieldAlignment, FieldType, SheetStyle
+from .const import FieldType, SheetStyle
 
 
 class Sheet(object):
@@ -72,14 +72,11 @@ class Sheet(object):
     def _arg_as_tuple(self, arg):
         if arg is None:
             return tuple()
-
-        if arg is None or isinstance(arg, types.TupleType):
+        elif isinstance(arg, types.TupleType):
             return arg
-
-        if isinstance(arg, types.ListType):
+        elif isinstance(arg, types.ListType):
             return tuple(arg)
-
-        if isinstance(arg, types.StringType):
+        elif isinstance(arg, types.StringType):
             return (arg,)
 
         raise ValueError('Expected tuple, list or string - instead {}'.format(

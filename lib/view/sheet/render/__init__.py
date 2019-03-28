@@ -36,7 +36,7 @@ def set_style_json():
 
 
 def render(sheet, title, data_source, style=None, common=None,
-           description=None, selectors=None, dyn_aggr=None):
+           description=None, selectors=None, dyn_aggr=None, dyn_diff=False):
     """
     Arguments:
     sheet       -- The decl.sheet to render.
@@ -52,6 +52,7 @@ def render(sheet, title, data_source, style=None, common=None,
     selectors   -- List of regular expressions to select which fields from
                    dynamic fields.
     dyn_aggr    -- Aggregate for dynamic fields only have numeric values.
+    dyn_diff    -- Only show dynamic fields that aren't uniform.
     """
     # NOTE - Other than the title's suffix, it doesn't change.
     #        Title without suffix could move to decl and suffix be passed in
@@ -72,7 +73,7 @@ def render(sheet, title, data_source, style=None, common=None,
     try:
         return render_class[style](
             sheet, title, data_source, tcommon, description=description,
-            selectors=selectors, dyn_aggr=dyn_aggr).render()
+            selectors=selectors, dyn_aggr=dyn_aggr, dyn_diff=dyn_diff).render()
     except Exception as e:
         # FIXME - Temporary debugging - should be removed before release.
         print e
