@@ -140,9 +140,9 @@ namespace_usage_sheet = Sheet(
                     'ns_stats', 'device_free_pct', 'free_pct_disk',
                     invert=True),
                 formatters=(Formatters.yellow_alert(
-                    lambda edata: edata.value >= edata.record['HWM Disk%']),)),
-          Field('HWM%',
-                Projectors.Number('ns_stats', 'high-water-disk-pct')),
+                    lambda edata: edata.value >= edata.record[
+                        'Disk']['HWM%']),)),
+          Field('HWM%', Projectors.Number('ns_stats', 'high-water-disk-pct')),
           Field('Avail%',
                 Projectors.Number(
                     'ns_stats', 'device_available_pct', 'available_pct'),
@@ -158,11 +158,27 @@ namespace_usage_sheet = Sheet(
                     'ns_stats', 'memory_free_pct', 'free_pct_memory',
                     invert=True),
                 formatters=(Formatters.yellow_alert(
-                    lambda edata: edata.value > edata.record['HWM Mem%']),)),
+                    lambda edata: edata.value > edata.record[
+                        'Memory']['HWM%']),)),
           Field('HWM%',
                 Projectors.Number('ns_stats', 'high-water-memory-pct')),
-          Field('Stop%',
-                Projectors.Number('ns_stats', 'stop-writes-pct'))))),
+          Field('Stop%', Projectors.Number('ns_stats', 'stop-writes-pct')))),
+     Subgroup(
+         'Primary Index',
+         (Field('Type', Projectors.String('ns_stats', 'index-type')),
+          Field('Used',
+                Projectors.Number('ns_stats', 'index_flash_used_bytes',
+                                  'index_pmem_used_bytes'),
+                converter=Converters.byte, aggregator=Aggregators.sum()),
+          Field('Used%',
+                Projectors.Percent('ns_stats', 'index_flash_used_pct',
+                                   'index_pmem_used_pct'),
+                formatters=(Formatters.yellow_alert(
+                    lambda edata: edata.value >= edata.record[
+                        'Primary Index']['HWM%']),)),
+          Field('HWM%',
+                Projectors.Number('ns_stats',
+                                  'index-type.mounts-high-water-pct'))))),
     from_source=('cluster_names', 'node_ids', 'prefixes', 'ns_stats'),
     for_each='ns_stats',
     group_by=('cluster_name', 'Namespace'),
@@ -732,7 +748,10 @@ class CliView(object):
                              description=description))
 
     @staticmethod
-    def show_object_distribution(title, histogram, unit, hist, bucket_count, set_bucket_count, cluster, like=None, timestamp="", loganalyser_mode=False, **ignore):
+    def show_object_distribution(
+            title, histogram, unit, hist, bucket_count, set_bucket_count,
+            cluster, like=None, timestamp="", loganalyser_mode=False,
+            **ignore):
         prefixes = cluster.get_node_names()
         likes = compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
@@ -768,7 +787,9 @@ class CliView(object):
 
             CliView.print_result(t)
             if set_bucket_count and (len(columns) - 1) < bucket_count:
-                print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n" % (terminal.fg_green(), (len(columns) - 1), "s" if (len(columns) - 1) > 1 else "", terminal.fg_clear())
+                print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n" % (
+                    terminal.fg_green(), (len(columns) - 1),
+                    "s" if (len(columns) - 1) > 1 else "", terminal.fg_clear())
 
     @staticmethod
     def _update_latency_column_list(data, all_columns):
