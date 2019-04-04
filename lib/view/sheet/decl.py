@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,6 +49,9 @@ class Sheet(object):
                          or sequence.
         """
         self.fields = fields
+        # XXX - Support TitleFields in SubGroups?
+        self.title_field_keys = set(
+            field.key for field in fields if isinstance(field, TitleField))
         self.from_sources = self._arg_as_tuple(from_source)
         self.where = where
         self.for_each = self._arg_as_tuple(for_each)
@@ -219,6 +222,17 @@ class Field(object):
         # Pre-compute commonly accessed data.
         self.title_words = tuple(title.split(' '))
         self.min_title_width = max(map(len, self.title_words))
+
+
+class TitleField(Field):
+    def __init__(self, title, projector, converter=None, formatters=None,
+                 aggregator=None, align=None, key=None):
+        if formatters is None:
+            formatters = (Formatters.bold(lambda _: True),)
+
+        super(TitleField, self).__init__(
+            title, projector, converter=converter, formatters=formatters,
+            aggregator=aggregator, align=align, key=key)
 
 
 class DynamicFields(object):

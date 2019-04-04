@@ -30,7 +30,7 @@ from lib.utils.util import compile_likes, find_delimiter_in
 from lib.view import sheet, terminal
 from lib.view.sheet import (Aggregators, Converters, DynamicFields, Field,
                             FieldAlignment, FieldType, Formatters, Projectors,
-                            Sheet, SheetStyle, Subgroup)
+                            Sheet, SheetStyle, Subgroup, TitleField)
 from lib.view.table import Extractors, Styles, Table, TitleFormats
 
 H1_offset = 13
@@ -520,9 +520,7 @@ pmap_sheet = Sheet(
 )
 
 config_sheet = Sheet(
-    (Field('Node', Projectors.String('prefixes', None),
-           formatters=(Formatters.bold(
-               lambda _: True),)),
+    (TitleField('Node', Projectors.String('prefixes', None)),
      DynamicFields('data', required=True)),
     from_source=('prefixes', 'data'),
     order_by='Node',
@@ -919,10 +917,11 @@ class CliView(object):
         aggr = Aggregators.sum() if show_total else None
         style = SheetStyle.columns if flip_output else None
 
-        # TODO - show header every nth.
         CliView.print_result(
-            sheet.render(config_sheet, title, sources, selectors=like,
-                         dyn_aggr=aggr, style=style, dyn_diff=diff))
+            sheet.render(
+                config_sheet, title, sources, style=style, selectors=like,
+                title_repeat=title_every_nth != 0, dyn_aggr=aggr,
+                dyn_diff=diff))
 
     @staticmethod
     def show_stats(*args, **kwargs):

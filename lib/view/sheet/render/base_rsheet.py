@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from itertools import groupby
 from operator import itemgetter
 
 from lib.utils.util import compile_likes
-from lib.view import terminal
+from lib.view.terminal import get_terminal_size, terminal
 
 from .. import decl
 from .render_utils import Aggregator, ErrorEntry, NoEntry
@@ -26,7 +26,8 @@ from .render_utils import Aggregator, ErrorEntry, NoEntry
 
 class BaseRSheet(object):
     def __init__(self, sheet, title, sources, common, description=None,
-                 selectors=None, dyn_aggr=None, dyn_diff=False):
+                 selectors=None, title_repeat=False, dyn_aggr=None,
+                 dyn_diff=False):
         """
         Arguments:
         sheet       -- The decl.sheet to render.
@@ -34,15 +35,18 @@ class BaseRSheet(object):
         data_source -- Dictionary of data-sources to project fields from.
 
         Keyword Arguments:
-        sheet_style -- 'SheetStyle.columns': Show sheet where records are
-                                             represented as rows.
-                       'SheetStyle.json'   : Show sheet represented as JSON.
-        common      -- A dict of common information passed to each entry.
-        description -- A description of the sheet.
-        selectors   -- List of regular expressions to select which fields
-                       from dynamic fields.
-        dyn_aggr    -- Aggregate for dynamic fields only have numeric values.
-        dyn_diff    -- Only show dynamic fields that aren't uniform.
+        sheet_style  -- 'SheetStyle.columns': Output fields as columns.
+                        'SheetStyle.rows'   : Output fields as rows.
+                        'SheetStyle.json'   : Output sheet as JSON.
+        common       -- A dict of common information passed to each entry.
+        description  -- A description of the sheet.
+        selectors    -- List of regular expressions to select which fields
+                        from dynamic fields.
+        title_repeat -- Repeat title/row headers every screen width.
+                        Doesn't affect SheetStyle.json.
+        dyn_aggr     -- Aggregate for dynamic fields only have numeric
+                        values.
+        dyn_diff     -- Only show dynamic fields that aren't uniform.
         """
         self.decl = sheet
         self.title = title
@@ -53,8 +57,10 @@ class BaseRSheet(object):
         self.common = common
         self.description = description
         self.selector = compile_likes(selectors)
+        self.title_repeat = title_repeat
         self.dyn_aggr = dyn_aggr
         self.dyn_diff = dyn_diff
+        self.terminal_size = get_terminal_size()
 
         self.dfields = self.get_dfields()
 
@@ -287,7 +293,7 @@ class BaseRSheet(object):
         if self.decl.where:
             where_fn = self.decl.where
 
-            for record_ix in range(len(projections) - 1, -1, -1):
+            for record_ix in xrange(len(projections) - 1, -1, -1):
                 if not where_fn(projections[record_ix]):
                     del projections[record_ix]
 
@@ -382,7 +388,7 @@ class BaseRSheet(object):
         if order_bys is None:
             return projections_groups
 
-        for projections_group in projections_groups.values():
+        for projections_group in projections_groups.itervalues():
             for order_by in order_bys[::-1]:
                 projections_group.sort(key=itemgetter(order_by))
 
@@ -677,3 +683,73 @@ class BaseRField(object):
                 return name, format_fn
 
         return None, None
+
+
+class BaseRSheetCLI(BaseRSheet):
+    def _do_render_title(self, render, width):
+        # XXX - Same as column.
+        filler = self.decl.title_fill
+        columns = self.terminal_size.columns
+        min_columns = len(self.title) + 6
+
+        if min_columns < columns:
+            min_columns = columns
+
+        n_repeates = width // min_columns
+
+        if width > min_columns and n_repeates != 1:
+            extra_columns = (columns % min_columns) // n_repeates
+            new_width = min_columns + extra_columns
+
+            t = "".join([self.title.center(new_width, filler)
+                         for _ in range(n_repeates)])
+            t = t.ljust(width, filler)
+        else:
+            t = self.title.center(width, filler)
+
+        if len(t) > 0:
+            if not t.startswith(filler):
+                t = filler + t
+            if not t.endswith(filler):
+                t += filler
+
+        t = terminal.bold() + t + terminal.unbold()
+
+        render.append(t)
+
+    def _do_render_description(self, render, line_width, desc_width):
+        # XXX - Same as column.
+        if self.description is None or self.description == '':
+            return []
+
+        tdesc = self.description[:].split(' ')
+        lines = []
+        words = []
+
+        while tdesc != []:
+            words.append(tdesc.pop(0))
+            line = ' '.join(words)
+
+            if len(line) >= desc_width:
+                if len(words) > 1:
+                    tdesc.insert(0, words.pop())
+                    line = ' '.join(words)
+
+                words = []
+                lines.append(line)
+        else:
+            if words:
+                line = ' '.join(words)
+                lines.append(line)
+
+        description = [terminal.dim() + l.center(line_width) + terminal.reset()
+                       for l in lines]
+        description = '\n'.join(description)
+
+        render.append(description)
+
+    def _do_render_n_rows(self, render, n_records):
+        # XXX - Same as column.
+        render.append(
+            terminal.dim() + 'Number of rows: {}'.format(n_records) +
+            terminal.undim())

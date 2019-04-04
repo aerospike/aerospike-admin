@@ -1,4 +1,4 @@
-# Copyright 2019 Aerospike, Inc.
+# Copyright 2013-2018 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,22 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-class FieldType(object):
-    boolean = 'boolean'
-    number = 'number'
-    string = 'string'
-    dynamic = 'dynamic'
-    undefined = 'undefined'
-
-
-class FieldAlignment(object):
-    center = 'center'
-    left = 'left'
-    right = 'right'
-
-
-class SheetStyle(object):
-    columns = 'columns'
-    rows = 'rows'
-    json = 'json'
+from get_terminal_size import get_terminal_size
+from terminal import *

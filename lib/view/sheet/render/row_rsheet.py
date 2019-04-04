@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
 from lib.view import terminal
 
 from ..const import FieldAlignment
-from .base_rsheet import BaseRField, BaseRSheet
+from .base_rsheet import BaseRField, BaseRSheetCLI
 
 
-class RowRSheet(BaseRSheet):
+class RowRSheet(BaseRSheetCLI):
     # =========================================================================
     # Required overrides.
 
@@ -39,11 +39,37 @@ class RowRSheet(BaseRSheet):
         row_aggr_width = max(rfield.aggregate_widths[0] + 1
                              for rfield in rfields)
         column_widths = [max(rfield.widths[i] for rfield in rfields)
-                         for i in range(n_records)]
-        title_width = row_title_width + len(self.decl.separator) \
-            + sum(column_widths) + (n_records - 1) * len(self.decl.separator) \
-            + row_aggr_width
+                         for i in xrange(n_records)]
+        has_aggregate = any(rfield.has_aggregate() for rfield in rfields)
+        title_indicies = set([0])
 
+        if self.title_repeat:
+            terminal_width = self.terminal_size.columns
+            title_incr = row_title_width + len(self.decl.separator)
+            cur_pos = title_incr
+            n_repeats = 1
+            need_column = True
+
+            for i, column_width in enumerate(column_widths):
+                if need_column or cur_pos + column_width < terminal_width:
+                    cur_pos += column_width
+                    need_column = False
+                else:
+                    title_indicies.add(i)
+                    cur_pos = title_incr + column_width
+                    n_repeats += 1
+
+            if has_aggregate:
+                if cur_pos + row_aggr_width >= terminal_width:
+                    title_indicies.add('aggr')
+                    n_repeats += 1
+
+            total_row_title_width = n_repeats * title_incr
+        else:
+            total_row_title_width = row_title_width + len(self.decl.separator)
+
+        title_width = total_row_title_width + sum(column_widths) + \
+            (n_records - 1) * len(self.decl.separator) + row_aggr_width
         render = []
 
         self._do_render_title(render, title_width)
@@ -57,15 +83,36 @@ class RowRSheet(BaseRSheet):
 
         # XXX - Add handling for Subgroups?
 
-        has_aggregate = any(rfield.has_aggregate() for rfield in rfields)
+        if self.title_repeat:
+            title_field_keys = self.decl.title_field_keys
+            title_rfields = [rfield for rfield in rfields
+                             if rfield.decl.key in title_field_keys]
+            terminal_height = self.terminal_size.lines
+            repeated_rfields = []
+
+            for i, rfield in enumerate(
+                    rfield for rfield in rfields
+                    if rfield.decl.key not in title_field_keys):
+                if i % (terminal_height - 2) == 0:
+                    repeated_rfields.extend(title_rfields)
+
+                repeated_rfields.append(rfield)
+
+            rfields = repeated_rfields
 
         for rfield in rfields:
-            row = [rfield.get_title(row_title_width)]
+            row = []
 
-            for i in range(n_records):
+            for i in xrange(n_records):
+                if i in title_indicies:
+                    row.append(rfield.get_title(row_title_width))
+
                 row.append(rfield.entry_cell(0, i, column_widths[i]))
 
             if has_aggregate:
+                if 'aggr' in title_indicies:
+                    row.append(rfield.get_title(row_title_width))
+
                 if rfield.has_aggregate():
                     row.append(rfield.aggregate_cell(0))
                 else:
@@ -83,59 +130,6 @@ class RowRSheet(BaseRSheet):
     def _get_column_width(self, column_idx):
         return max(
             rfield.widths[column_idx] for rfield in self.visible_rfields)
-
-    def _do_render_title(self, render, width):
-        filler = self.decl.title_fill
-
-        t = self.title.center(width, filler)
-
-        if len(t) > 0:
-            if not t.startswith(filler):
-                t = filler + t
-            if not t.endswith(filler):
-                t += filler
-
-        t = terminal.bold() + t + terminal.unbold()
-
-        render.append(t)
-
-    def _do_render_description(self, render, line_width, desc_width):
-        if self.description is None or self.description == '':
-            return []
-
-        tdesc = self.description[:].split(' ')
-        lines = []
-        words = []
-
-        while tdesc != []:
-            words.append(tdesc.pop(0))
-            line = ' '.join(words)
-
-            if len(line) >= desc_width:
-                if len(words) > 1:
-                    tdesc.insert(0, words.pop())
-                    line = ' '.join(words)
-
-                words = []
-                lines.append(line)
-        else:
-            if words:
-                line = ' '.join(words)
-                lines.append(line)
-
-        description = [terminal.dim() + l.center(line_width) + terminal.reset()
-                       for l in lines]
-        description = '\n'.join(description)
-
-        render.append(description)
-
-    def _do_render_row_titles(self, render):
-        pass
-
-    def _do_render_n_rows(self, render, n_rows):
-        render.append(
-            terminal.dim() + 'Number of rows: {}'.format(n_rows) +
-            terminal.undim())
 
 
 class RFieldRow(BaseRField):

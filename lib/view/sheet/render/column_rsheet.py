@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
 from lib.view import terminal
 
 from ..const import FieldAlignment, FieldType
-from .base_rsheet import BaseRField, BaseRSheet, BaseRSubgroup
+from .base_rsheet import BaseRField, BaseRSheetCLI, BaseRSubgroup
 
 
-class ColumnRSheet(BaseRSheet):
+class ColumnRSheet(BaseRSheetCLI):
     # =========================================================================
     # Required overrides.
 
@@ -30,7 +30,6 @@ class ColumnRSheet(BaseRSheet):
 
     def do_render(self):
         rfields = self.visible_rfields
-        n_records = self.n_records
 
         try:
             n_title_lines = max(rfield.n_title_lines for rfield in rfields)
@@ -38,91 +37,80 @@ class ColumnRSheet(BaseRSheet):
             # Sheet is empty.
             return ''
 
-        render = []
-
         # Render field titles.
+        if self.title_repeat:
+            title_field_keys = self.decl.title_field_keys
+            title_rfields = [rfield for rfield in rfields
+                             if rfield.decl.key in title_field_keys]
+            other_rfields = (rfield for rfield in rfields
+                             if rfield.decl.key not in title_field_keys)
+            terminal_width = self.terminal_size.columns
+            repeated_rfields = []
+            title_incr = sum(rfield.width for rfield in title_rfields) + \
+                (len(title_rfields) - 1 * len(self.decl.separator))
+            cur_pos = title_incr
+            need_column = True
+            repeated_rfields = []
+
+            repeated_rfields.extend(title_rfields)
+
+            for rfield in other_rfields:
+                column_width = rfield.width + len(self.decl.separator)
+
+                if need_column or cur_pos + column_width < terminal_width:
+                    repeated_rfields.append(rfield)
+                    cur_pos += column_width
+                    need_column = False
+                else:
+                    repeated_rfields.extend(title_rfields)
+                    cur_pos = title_incr + column_width
+
+            rfields = repeated_rfields
+
         title_width = sum(rfield.width for rfield in rfields) + (
             len(rfields) - 1) * len(self.decl.separator)
+        render = []
 
         self._do_render_title(render, title_width)
         self._do_render_description(render, title_width, title_width - 10)
 
-        for line_num in range(n_title_lines):
-            render.append(self.decl.formatted_separator.join(
-                rfield.get_title_line(line_num) for rfield in rfields))
-
         # Render fields.
+        title_lines = [
+            self.decl.formatted_separator.join(rfield.get_title_line(line_num)
+                                               for rfield in rfields)
+            for line_num in xrange(n_title_lines)]
         n_groups = 0 if not rfields else rfields[0].n_groups
         has_aggregates = any(rfield.has_aggregate() for rfield in rfields)
+        terminal_height = self.terminal_size.lines
+        repeate_every = max([24, terminal_height - len(title_lines) - 1])
+        n_lines = 0
 
-        for group_ix in range(n_groups):
+        render.extend(title_lines)
+
+        for group_ix in xrange(n_groups):
             n_entries = rfields[0].n_entries_in_group(group_ix)
 
-            for entry_ix in range(n_entries):
+            for entry_ix in xrange(n_entries):
+                if self.title_repeat and n_lines != 0 and \
+                   n_lines % repeate_every == 0:
+                    render.extend(title_lines)
+
+                n_lines += 1
                 row = [rfield.entry_cell(group_ix, entry_ix)
                        for rfield in rfields]
                 render.append(self.decl.formatted_separator.join(row))
 
             if has_aggregates:
+                if self.title_repeat and n_lines % repeate_every == 0:
+                    render.extend(title_lines)
+
+                n_lines += 1
                 row = [rfield.aggregate_cell(group_ix) for rfield in rfields]
                 render.append(self.decl.formatted_separator.join(row))
 
-        self._do_render_n_records(render, n_records)
+        self._do_render_n_rows(render, self.n_records)
 
         return "\n".join(render) + "\n"
-
-    # =========================================================================
-    # Other methods.
-
-    def _do_render_title(self, render, width):
-        filler = self.decl.title_fill
-
-        t = self.title.center(width, filler)
-
-        if len(t) > 0:
-            if not t.startswith(filler):
-                t = filler + t
-            if not t.endswith(filler):
-                t += filler
-
-        t = terminal.bold() + t + terminal.unbold()
-
-        render.append(t)
-
-    def _do_render_description(self, render, line_width, desc_width):
-        if self.description is None or self.description == '':
-            return []
-
-        tdesc = self.description[:].split(' ')
-        lines = []
-        words = []
-
-        while tdesc != []:
-            words.append(tdesc.pop(0))
-            line = ' '.join(words)
-
-            if len(line) >= desc_width:
-                if len(words) > 1:
-                    tdesc.insert(0, words.pop())
-                    line = ' '.join(words)
-
-                words = []
-                lines.append(line)
-        else:
-            if words:
-                line = ' '.join(words)
-                lines.append(line)
-
-        description = [terminal.dim() + l.center(line_width) + terminal.reset()
-                       for l in lines]
-        description = '\n'.join(description)
-
-        render.append(description)
-
-    def _do_render_n_records(self, render, n_records):
-        render.append(
-            terminal.dim() + 'Number of rows: {}'.format(n_records) +
-            terminal.undim())
 
 
 class RSubgroupColumn(BaseRSubgroup):
@@ -263,6 +251,7 @@ class RFieldColumn(BaseRField):
         self._ready_title()
 
     def _ready_title(self):
+        # NOTE - Same as RSubgroupColumn.
         if len(self.decl.title) <= self.width:
             self.title_lines = [self.decl.title]
             self.n_title_lines = 1

@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,7 +36,8 @@ def set_style_json():
 
 
 def render(sheet, title, data_source, style=None, common=None,
-           description=None, selectors=None, dyn_aggr=None, dyn_diff=False):
+           description=None, selectors=None, title_repeat=False, dyn_aggr=None,
+           dyn_diff=False):
     """
     Arguments:
     sheet       -- The decl.sheet to render.
@@ -44,15 +45,16 @@ def render(sheet, title, data_source, style=None, common=None,
     data_source -- Dictionary of data_sources to project fields from.
 
     Keyword Arguments:
-    style       -- 'SheetStyle.columns': Output fields as columns.
-                   'SheetStyle.rows'   : Output fields as rows.
-                   'SheetStyle.json'   : Output sheet as JSON.
-    common      -- A dict of common information passed to each entry.
-    description -- A description of the sheet.
-    selectors   -- List of regular expressions to select which fields from
-                   dynamic fields.
-    dyn_aggr    -- Aggregate for dynamic fields only have numeric values.
-    dyn_diff    -- Only show dynamic fields that aren't uniform.
+    style        -- 'SheetStyle.columns': Output fields as columns.
+                    'SheetStyle.rows'   : Output fields as rows.
+                    'SheetStyle.json'   : Output sheet as JSON.
+    common       -- A dict of common information passed to each entry.
+    description  -- A description of the sheet.
+    selectors    -- List of regular expressions to select which fields from
+                    dynamic fields.
+    title_repeat -- Repeat title and row headers every n columns.
+    dyn_aggr     -- Aggregate for dynamic fields only have numeric values.
+    dyn_diff     -- Only show dynamic fields that aren't uniform.
     """
     tcommon = defaultdict(lambda: None)
 
@@ -69,7 +71,8 @@ def render(sheet, title, data_source, style=None, common=None,
     try:
         return render_class[style](
             sheet, title, data_source, tcommon, description=description,
-            selectors=selectors, dyn_aggr=dyn_aggr, dyn_diff=dyn_diff).render()
+            selectors=selectors, title_repeat=title_repeat, dyn_aggr=dyn_aggr,
+            dyn_diff=dyn_diff).render()
     except Exception as e:
         # FIXME - Temporary debugging - should be removed before release.
         print e
