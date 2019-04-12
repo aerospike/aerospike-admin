@@ -1051,7 +1051,7 @@ ASSERT(r, True, "High client proxy transaction timeouts", "OPERATIONS", WARNING,
 
 // XDR Write statistics
 
-s = select "xdr_write_success" as "cnt" from NAMESPACE.STATISTICS;
+s = select "xdr_write_success" as "cnt", "xdr_client_write_success" as "cnt" from NAMESPACE.STATISTICS;
 t = select "xdr_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
 e = select "xdr_write_error" as "cnt" from NAMESPACE.STATISTICS;
 total_xdr_writes = do s + t;

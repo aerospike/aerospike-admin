@@ -825,17 +825,19 @@ class CollectinfoController(BasicCommandController):
         self.logger.info("Copying file %s to %s" % (src, dest_dir))
         try:
             shutil.copy2(src, dest_dir)
-        except Exception, e:
-            self.logger.error(e)
+        except Exception as e:
+            raise e
 
     def _collectinfo_content(self, func, parm='', alt_parms=''):
         name = ''
         capture_stdout = util.capture_stdout
         sep = constants.COLLECTINFO_SEPRATOR
+
         try:
             name = func.func_name
         except Exception:
             pass
+
         info_line = constants.COLLECTINFO_PROGRESS_MSG %(name, "%s" % (" %s" % (str(parm)) if parm else ""))
         self.logger.info(info_line)
         if parm:
@@ -1185,7 +1187,7 @@ class CollectinfoController(BasicCommandController):
     ###########################################################################
     # Functions for dumping pretty print files
 
-    def _dump_collectinfo_pretty_print(self, timestamp, as_logfile_prefix):
+    def _dump_collectinfo_pretty_print(self, timestamp, as_logfile_prefix, config_path=""):
 
         # getting service port to use in ss/netstat command
         port = 3000
@@ -1327,33 +1329,31 @@ class CollectinfoController(BasicCommandController):
 
         ##### aerospike conf file #####
 
-        conf_path = '/etc/aerospike/aerospike.conf'
+        conf_path = config_path
+        self.aslogfile = as_logfile_prefix + 'aerospike.conf'
 
-        # Comparing with this version because prior to this it was
-        # citrusleaf.conf
-        if LooseVersion(as_version) <= LooseVersion("3.0.0"):
-            conf_path = '/etc/citrusleaf/citrusleaf.conf'
+        if not conf_path:
+            conf_path = "/etc/aerospike/aerospike.conf"
 
-        try:
             # Comparing with this version because prior to this it was
-            # citrusleaf.conf & citrusleaf.log
-            if LooseVersion(as_version) > LooseVersion("3.0.0"):
-                self.aslogfile = as_logfile_prefix + 'aerospike.conf'
-            else:
+            # citrusleaf.conf
+            if LooseVersion(as_version) <= LooseVersion("3.0.0"):
+                conf_path = "/etc/citrusleaf/citrusleaf.conf"
                 self.aslogfile = as_logfile_prefix + 'citrusleaf.conf'
 
+        try:
             self._collect_local_file(conf_path, self.aslogfile)
-
         except Exception as e:
+            self.logger.warning(str(e))
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
     ###########################################################################
     # Collectinfo caller functions
 
-    def _main_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
+    def _run_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
                           credential_file, snp_count, wait_time, enable_ssh=False,
-                          output_prefix=""):
+                          output_prefix="", config_path=""):
 
         # JSON collectinfo snapshot count check
         if snp_count < 1:
@@ -1375,7 +1375,7 @@ class CollectinfoController(BasicCommandController):
                                     credential_file, enable_ssh, snp_count, wait_time,)
 
         # Pretty print collectinfo
-        self._dump_collectinfo_pretty_print(timestamp, as_logfile_prefix)
+        self._dump_collectinfo_pretty_print(timestamp, as_logfile_prefix, config_path=config_path)
 
         # Archive collectinfo directory
         common.archive_log(self.aslogdir)
@@ -1420,10 +1420,15 @@ class CollectinfoController(BasicCommandController):
                 modifiers=self.modifiers, mods=self.mods)
         output_prefix = util.strip_string(output_prefix)
 
+        config_path = util.get_arg_and_delete_from_mods(line=line,
+                arg="--asconfig-file", return_type=str, default="",
+                modifiers=self.modifiers, mods=self.mods)
+        config_path = util.strip_string(config_path)
 
-        self._main_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
+
+        self._run_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
                                credential_file, snp_count, wait_time, enable_ssh=enable_ssh,
-                               output_prefix=output_prefix)
+                               output_prefix=output_prefix, config_path=config_path)
 
     @CommandHelp('Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.',
                  'If credentials are not available then it will collect system stats from local node only.',
@@ -1445,6 +1450,7 @@ class CollectinfoController(BasicCommandController):
                  '                                             [2001::1234:10],uid,pwd',
                  '                                             [2001::1234:10]:3232,uid,,key_path',
                  '    --output-prefix <string>     - Output directory name prefix.',
+                 '    --asconfig-file <string>     - Aerospike config file path to collect. Default: /etc/aerospike/aerospike.conf',
                  )
     def _do_default(self, line):
         self._collect_info(line=line)

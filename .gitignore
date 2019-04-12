@@ -10,7 +10,6 @@ __pycache__/
 env/
 build/bin
 build/tmp
-build/wheels
 develop-eggs/
 dist/
 downloads/

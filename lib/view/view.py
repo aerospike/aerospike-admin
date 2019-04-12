@@ -168,7 +168,10 @@ class CliView(object):
             ('high-water-disk-pct', 'HWM Disk%'), ('available_pct', 'Avail%'),
             ('_used_bytes_memory', 'Mem Used'), ('_used_mem_pct', 'Mem Used%'),
             ('high-water-memory-pct', 'HWM Mem%'),
-            ('stop-writes-pct', 'Stop Writes%')
+            ('stop-writes-pct', 'Stop Writes%'),
+            ('_index_type', 'PI Type'),
+            ('_index_used_bytes', 'PI Used'),
+            ('index_used_pct', 'PI Used%'), ('index-type.mounts-high-water-pct', 'PI HWM%'),
         )
 
         t = Table(title, column_names, sort_by=0)
@@ -183,6 +186,11 @@ class CliView(object):
             ('used-bytes-disk', 'device_used_bytes')))
         t.add_data_source('_used_bytes_memory', Extractors.byte_extractor(
             ('used-bytes-memory', 'memory_used_bytes')))
+
+        t.add_data_source('_index_type',
+            lambda data: get_value_from_dict( data, ('index-type'), default_value="shmem"))
+        t.add_data_source('_index_used_bytes',
+            Extractors.byte_extractor(('index_used_bytes')))
 
         t.add_data_source('_used_disk_pct', lambda data: 100 -
                           int(data['free_pct_disk']) if data['free_pct_disk'] is not " " else " ")
@@ -211,6 +219,7 @@ class CliView(object):
             '_used_bytes_disk', lambda data: data['node'] is " ", color=terminal.fg_blue)
         t.add_cell_alert(
             '_expired_and_evicted', lambda data: data['node'] is " ", color=terminal.fg_blue)
+        t.add_cell_alert('_index_used_bytes', lambda data: data['node'] is " ", color=terminal.fg_blue)
 
         total_res = {}
 
@@ -247,6 +256,7 @@ class CliView(object):
                     total_res[ns]["used-bytes-disk"] = 0
                     total_res[ns]["evicted_objects"] = 0
                     total_res[ns]["expired_objects"] = 0
+                    total_res[ns]["index_used_bytes"] = 0
 
                 try:
                     _total_records += get_value_from_dict(
@@ -307,20 +317,28 @@ class CliView(object):
                 except Exception:
                     pass
 
+                try:
+                    total_res[ns]["index_used_bytes"] += get_value_from_dict(
+                        ns_stats, ('index_flash_used_bytes', 'index_pmem_used_bytes'), default_value=0, return_type=int)
+                except Exception:
+                    pass
+
                 row['namespace'] = ns
                 row['real_node_id'] = node.node_id
                 row['node'] = prefixes[node_key]
-                set_value_in_dict(row, "available_pct", get_value_from_dict(
-                    row, ('available_pct', 'device_available_pct')))
-                set_value_in_dict(row, "free_pct_disk", get_value_from_dict(
-                    row, ('free-pct-disk', 'device_free_pct')))
-                set_value_in_dict(row, "free_pct_memory", get_value_from_dict(
-                    row, ('free-pct-memory', 'memory_free_pct')))
-                set_value_in_dict(
-                    row, "stop_writes", get_value_from_dict(row, ('stop-writes', 'stop_writes')))
-                set_value_in_dict(
-                    row, "_total_records", _total_records)
+                set_value_in_dict(row, "available_pct", get_value_from_dict(row, ('available_pct', 'device_available_pct')))
+                set_value_in_dict(row, "free_pct_disk", get_value_from_dict(row, ('free-pct-disk', 'device_free_pct')))
+                set_value_in_dict(row, "free_pct_memory", get_value_from_dict(row, ('free-pct-memory', 'memory_free_pct')))
+                set_value_in_dict(row, "stop_writes", get_value_from_dict(row, ('stop-writes', 'stop_writes')))
+                set_value_in_dict(row, "_total_records", _total_records)
+
                 total_res[ns]["_total_records"] += _total_records
+
+                set_value_in_dict(row, "index-type", get_value_from_dict(row, ('index-type'), default_value="shmem"))
+                set_value_in_dict(row, "index_used_bytes", get_value_from_dict(row, ('index_flash_used_bytes', 'index_pmem_used_bytes', 'memory_used_index_bytes'), default_value=0))
+
+                if row['index-type'] != "shmem":
+                    set_value_in_dict(row, "index_used_pct", get_value_from_dict(row, ('index_flash_used_pct', 'index_pmem_used_pct'), default_value=0))
 
                 t.insert_row(row)
 
@@ -334,6 +352,9 @@ class CliView(object):
             row["free_pct_memory"] = " "
             row["high-water-memory-pct"] = " "
             row["stop-writes-pct"] = " "
+            row["index-type"] = " "
+            row["index_used_pct"] = " "
+            row["index-type.mounts-high-water-pct"] = " "
 
             row['namespace'] = ns
             row["_total_records"] = str(total_res[ns]["_total_records"])
@@ -341,6 +362,7 @@ class CliView(object):
             row["used-bytes-disk"] = str(total_res[ns]["used-bytes-disk"])
             row["evicted_objects"] = str(total_res[ns]["evicted_objects"])
             row["expired_objects"] = str(total_res[ns]["expired_objects"])
+            row["index_used_bytes"] = str(total_res[ns]["index_used_bytes"])
 
             t.insert_row(row)
 
@@ -371,9 +393,9 @@ class CliView(object):
         t.add_data_source(
             '_repl_factor',
             lambda data: get_value_from_dict(
-                data, ('repl-factor',
-                       'replication-factor',
-                       'effective_replication_factor')  # introduced post 3.15.0.1
+                data, ('effective_replication_factor',  # introduced post 3.15.0.1
+                       'repl-factor',
+                       'replication-factor')
             ))
 
         t.add_data_source_tuple(
