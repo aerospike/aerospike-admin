@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -369,10 +369,10 @@ class SSLContext(object):
         return ok
 
     def _parse_protocols(self, protocols):
-        protocols_to_disable = [
-            "SSLv2", "SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"]
+        all_protocols = ["TLSv1", "TLSv1.1", "TLSv1.2"]
         protocols_to_enable = set()
         method = None
+
         if not protocols:
             try:
                 method = SSL.TLSv1_2_METHOD
@@ -384,76 +384,88 @@ class SSLContext(object):
             protocols = protocols.split()
             for proto in protocols:
                 try:
-                    if proto == "SSLv3" or proto == "+SSLv3":
-                        protocols_to_enable.add("SSLv3")
-                    elif proto == "-SSLv3":
-                        protocols_to_enable.remove("SSLv3")
-                    elif proto == "TLSv1" or proto == "+TLSv1":
+                    if proto == "TLSv1" or proto == "+TLSv1":
                         protocols_to_enable.add("TLSv1")
                     elif proto == "-TLSv1":
                         protocols_to_enable.remove("TLSv1")
+
                     elif proto == "TLSv1.1" or proto == "+TLSv1.1":
                         protocols_to_enable.add("TLSv1.1")
                     elif proto == "-TLSv1.1":
                         protocols_to_enable.remove("TLSv1.1")
+
                     elif proto == "TLSv1.2" or proto == "+TLSv1.2":
                         protocols_to_enable.add("TLSv1.2")
                     elif proto == "-TLSv1.2":
                         protocols_to_enable.remove("TLSv1.2")
+
                     elif proto == "all" or proto == "+all":
-                        protocols_to_enable.add("SSLv3")
-                        protocols_to_enable.add("TLSv1")
-                        protocols_to_enable.add("TLSv1.1")
-                        protocols_to_enable.add("TLSv1.2")
+                        protocols_to_enable += all_protocols
                     elif proto == "-all":
                         protocols_to_enable.clear()
+
                     elif proto == "SSLv2" or proto == "+SSLv2":
-                        raise Exception(
-                            "Protocol SSLv2 not supported (RFC 6176)")
+                        raise Exception("Protocol SSLv2 not supported (RFC 6176)")
                     elif proto == "-SSLv2":
                         continue
+
+                    elif proto == "SSLv3" or proto == "+SSLv3":
+                        raise Exception("Protocol SSLv3 not supported")
+                    elif proto == "-SSLv3":
+                        continue
+
                     else:
-                        raise Exception(
-                            "Wrong protocol entry %s" % (str(proto)))
+                        raise Exception("Wrong protocol entry %s" % (str(proto)))
+
                 except KeyError:
                     pass
+
         if not protocols_to_enable:
             raise Exception("Wrong protocol entries")
+
         protocols_to_enable = list(protocols_to_enable)
+
         if len(protocols_to_enable) > 1:
             # Multiple protocols are enabled
             method = SSL.SSLv23_METHOD
         else:
-            if protocols_to_enable[0] == "SSLv3":
-                method = SSL.SSLv3_METHOD
-            elif protocols_to_enable[0] == "TLSv1":
+            if protocols_to_enable[0] == "TLSv1":
                 method = SSL.TLSv1_METHOD
+
             elif protocols_to_enable[0] == "TLSv1.1":
                 try:
                     method = SSL.TLSv1_1_METHOD
                 except Exception:
                     raise Exception(
-                        "No support to protocol %s. Wrong OpenSSL or Python version. Please use PyOpenSSL >= 0.15." % ("TLSv1.1"))
+                        "No support to protocol TLSv1.1. Wrong OpenSSL or Python version. Please use PyOpenSSL >= 0.15.")
+
             elif protocols_to_enable[0] == "TLSv1.2":
                 try:
                     method = SSL.TLSv1_2_METHOD
                 except Exception:
                     raise Exception(
-                        "No support to protocol %s. Wrong OpenSSL or Python version. Please use PyOpenSSL >= 0.15." % ("TLSv1.2"))
-        protocols_to_disable = list(
-            set(protocols_to_disable) - set(protocols_to_enable))
+                        "No support to protocol TLSv1.2. Wrong OpenSSL or Python version. Please use PyOpenSSL >= 0.15.")
+
+        protocols_to_disable = list(set(all_protocols) - set(protocols_to_enable))
+
         return method, protocols_to_disable
 
     def _set_context_options(self, ctx, protocols_to_disable):
+        try:
+            # always disable SSLv2, as per RFC 6176
+            ctx.set_options(SSL.OP_NO_SSLv2)
+
+            # aerospike does not support SSLv3
+            ctx.set_options(SSL.OP_NO_SSLv3)
+        except Exception:
+            pass
+
         if not protocols_to_disable:
             return ctx
+
         for proto in protocols_to_disable:
             try:
-                if proto == "SSLv2":
-                    ctx.set_options(SSL.OP_NO_SSLv2)
-                elif proto == "SSLv3":
-                    ctx.set_options(SSL.OP_NO_SSLv3)
-                elif proto == "TLSv1":
+                if proto == "TLSv1":
                     ctx.set_options(SSL.OP_NO_TLSv1)
                 elif proto == "TLSv1.1":
                     ctx.set_options(SSL.OP_NO_TLSv1_1)

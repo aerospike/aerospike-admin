@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -482,7 +482,7 @@ class ShowLatencyController(BasicCommandController):
 class ShowConfigController(BasicCommandController):
 
     def __init__(self):
-        self.modifiers = set(['with', 'like', 'diff'])
+        self.modifiers = set(['with', 'like', 'diff', 'for'])
         self.getter = GetConfigController(self.cluster)
 
     @CommandHelp('Displays service, network, and namespace configuration',
@@ -546,7 +546,7 @@ class ShowConfigController(BasicCommandController):
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
-        ns_configs = self.getter.get_namespace(nodes=self.nodes)
+        ns_configs = self.getter.get_namespace(nodes=self.nodes, for_mods=self.mods['for'])
 
         return [util.Future(self.view.show_config,
             "%s Namespace Configuration" % (ns), configs, self.cluster,
@@ -1038,6 +1038,7 @@ class CollectinfoController(BasicCommandController):
         endpoints = util.Future(self.cluster.info_service_list, nodes=self.nodes).start()
         services = util.Future(self.cluster.info_peers_flat_list, nodes=self.nodes).start()
         udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start()
+        health_outliers = util.Future(self.cluster.info_health_outliers, nodes=self.nodes).start()
 
         builds = builds.result()
         editions = editions.result()
@@ -1047,6 +1048,7 @@ class CollectinfoController(BasicCommandController):
         endpoints = endpoints.result()
         services = services.result()
         udf_data = udf_data.result()
+        health_outliers = health_outliers.result()
 
         for nodeid in builds:
             metamap[nodeid] = {}
@@ -1058,6 +1060,7 @@ class CollectinfoController(BasicCommandController):
             self._get_meta_for_sec(endpoints, 'endpoints', nodeid, metamap)
             self._get_meta_for_sec(services, 'services', nodeid, metamap)
             self._get_meta_for_sec(udf_data, 'udf', nodeid, metamap)
+            self._get_meta_for_sec(health_outliers, 'health', nodeid, metamap)
 
         return metamap
 
@@ -1200,12 +1203,17 @@ class CollectinfoController(BasicCommandController):
 
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
 
-        dignostic_info_params = [
-            'network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
+        dignostic_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
+
         dignostic_features_params = ['features']
-        dignostic_show_params = ['config', 'config xdr', 'config dc', 'config cluster', 'distribution', 'distribution eviction',
-                                 'distribution object_size -b', 'latency', 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex', 'pmap']
-        dignostic_aerospike_cluster_params = ['service', 'services', 'roster:']
+
+        dignostic_show_params = ['config', 'config xdr', 'config dc', 'config cluster', 'distribution',
+                                 'distribution eviction', 'distribution object_size -b', 'latency',
+                                 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex', 'pmap']
+
+        dignostic_aerospike_cluster_params = ['service', 'services', 'peers-clear-std', 'peers-clear-alt',
+                                              'peers-tls-std', 'peers-tls-alt', 'alumni-clear-std',
+                                              'alumni-tls-std', 'peers-generation', 'roster:']
 
         summary_params = ['summary']
         summary_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
@@ -1555,6 +1563,8 @@ class HealthCheckController(BasicCommandController):
                 editions_in_shortform[node] = util.convert_edition_to_shortform(edition)
 
             return editions_in_shortform
+        elif stanza == "health":
+            return self.cluster.info_health_outliers(nodes=self.nodes)
 
     @CommandHelp(
         'Displays health summary. If remote server System credentials provided, then it will collect remote system stats',
@@ -1732,6 +1742,10 @@ class HealthCheckController(BasicCommandController):
                 "metadata": (self._get_asstat_data, [
                     ("udf", "UDF",
                      [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILENAME", None)]),
+                ]),
+                "health": (self._get_as_meta_data, [
+                    ("health", "METADATA",
+                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("OUTLIER", None)]),
                 ]),
             }
             sys_cmd_dict = {

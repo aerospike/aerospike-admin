@@ -663,7 +663,7 @@ class Node(object):
             # Unlike services-alumni, info_peers_alumni for server version prior to 4.3.1 gives
             # only old nodes (which are not part of current cluster), so to get full list we need to
             # add info_peers
-            alumni_peers = self.info_peers()
+            alumni_peers = self.get_peers()
             return list(set(alumni_peers + self.info_peers_alumni()))
         else:
             alumni_services = self.info_services_alumni()
@@ -672,14 +672,20 @@ class Node(object):
             return self.info_services()
 
     @return_exceptions
-    def get_peers(self):
+    def get_peers(self, all=False):
         if self.use_peers_list:
+            if all:
+                return self.info_peers_alt() + self.info_peers()
+
             if self.use_services_alt:
                 return self.info_peers_alt()
 
             return self.info_peers()
 
         else:
+            if all:
+                return self.info_services_alt() + self.info_services()
+
             if self.use_services_alt:
                 return self.info_services_alt()
 
@@ -848,6 +854,22 @@ class Node(object):
             set_dict.update(stat)
 
         return sets
+    
+    @return_exceptions
+    def info_health_outliers(self):
+        stats = self.info("health-outliers")
+        stats = util.info_to_list(stats)
+        if not stats:
+            return {}
+        stats = [util.info_colon_to_dict(stat) for stat in stats]
+        health_dict = {}
+        
+        for i, stat  in enumerate(stats):
+            key = "outlier" + str(i)
+            health_dict[key] = stat
+
+        return health_dict
+
 
     @return_exceptions
     def info_bin_statistics(self):

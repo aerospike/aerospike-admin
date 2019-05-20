@@ -54,6 +54,7 @@ class HealthLexer(object):
         'ENVIRONMENT': 'ENVIRONMENT',
         'FREE': 'FREE',
         'HDPARM': 'HDPARM',
+        'HEALTH': 'HEALTH',
         'INTERRUPTS': 'INTERRUPTS',
         'IOSTAT': 'IOSTAT',
         'IPTABLES': 'IPTABLES',
@@ -97,6 +98,7 @@ class HealthLexer(object):
         'INTERRUPT_TYPE': 'INTERRUPT_TYPE',
         'KEY': 'KEY',
         'NODE': 'NODE',
+        'OUTLIER': 'OUTLIER',
         'SNAPSHOT': 'SNAPSHOT'
     }
 
