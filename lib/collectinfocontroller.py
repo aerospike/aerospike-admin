@@ -966,6 +966,10 @@ class HealthCheckController(CollectinfoCommandController):
                     ("udf", "UDF", "METADATA", True, [
                      ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILENAME", None)]),
                 ]),
+                "health": (self.loghdlr.info_meta_data, [
+                    ("health", "METADATA", "HEALTH", True, [
+                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("OUTLIER", None)]),
+                ]),
 
                 "sys_stats": (self.loghdlr.get_sys_data, [
                     ("free-m", "SYSTEM", "FREE", True,

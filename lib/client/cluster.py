@@ -183,8 +183,9 @@ class Cluster(object):
                     # in case of using alumni services, we might have offline
                     # nodes which can't detect online nodes
                     continue
+
                 alumni_peers = util.flatten(node.get_alumni_peers())
-                peers = util.flatten(node.get_peers())
+                peers = util.flatten(node.get_peers(all=True))
                 not_visible = set(alumni_peers) - set(peers)
                 if len(not_visible) >= 1:
                     for n in not_visible:

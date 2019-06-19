@@ -1036,7 +1036,7 @@ ASSERT(r, True, "High client proxy transaction timeouts", "OPERATIONS", WARNING,
 
 // XDR Write statistics
 
-s = select "xdr_write_success" as "cnt" from NAMESPACE.STATISTICS;
+s = select "xdr_write_success" as "cnt", "xdr_client_write_success" as "cnt" from NAMESPACE.STATISTICS;
 t = select "xdr_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
 e = select "xdr_write_error" as "cnt" from NAMESPACE.STATISTICS;
 total_xdr_writes = do s + t;
@@ -1719,5 +1719,18 @@ r = do roster_null_check && sc_check;
 ASSERT(r, False, "Roster is null or NOT set.", "OPERATIONS", CRITICAL,
 				"Listed namespace[s] shows ROSTER as NULL or NOT SET. Please check and set roster properly.",
 				"Roster null check.");
+
+SET CONSTRAINT VERSION ALL;
+
+/*
+Server Health Check
+*/
+
+SET CONSTRAINT VERSION >= 4.3.1;
+
+m = select * from METADATA.HEALTH save;
+ASSERT(m, False, "Outlier[s] detected by the server health check.", "OPERATIONS", WARNING,
+			    "Listed outlier[s] have been reported by the server health check and they might be misbehaving.",
+			    "Server health check outlier detection. Run command 'asinfo -v health-outliers' to see list of outliers");
 
 SET CONSTRAINT VERSION ALL;

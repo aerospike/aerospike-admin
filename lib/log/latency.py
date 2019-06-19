@@ -404,6 +404,11 @@ class LogLatency(object):
             self._set_bucket_details(arg_hist)
 
             slice_timedelta = arg_slice
+
+            # sometimes slice timestamps are not perfect, there might be some delta
+            if slice_timedelta > self.reader.parse_timedelta("1"):
+                slice_timedelta -= self.reader.parse_timedelta("1")
+
             # Find index + 1 of last bucket to display:
             for b in range(self._all_buckets):
                 if b % arg_every_nth == 0:

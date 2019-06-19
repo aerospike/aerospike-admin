@@ -66,7 +66,7 @@ FEATURE_KEYS = {
          'sub_objects'),
         ('ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes')),
     "XDR Source": (('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error'), None),
-    "XDR Destination": (('stat_write_reqs_xdr'), ('xdr_write_success')),
+    "XDR Destination": (('stat_write_reqs_xdr'), ('xdr_write_success', 'xdr_client_write_success')),
     "Rack-aware": (('self-group-id'), ('rack-id')),
     "Security": ((('enable-security', comp_ops["=="], "true"),), None),
     "TLS (Heartbeat)": (('heartbeat.mesh-seed-address-port'), None),

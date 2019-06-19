@@ -181,19 +181,30 @@ class GetConfigController():
 
         return network_configs
 
-    def get_namespace(self, flip=True, nodes='all'):
-        configs = self.cluster.info_get_config(
-            nodes=nodes, stanza='namespace')
-        for node in configs:
-            if isinstance(configs[node], Exception):
-                configs[node] = {}
+    def get_namespace(self, flip=True, nodes='all', for_mods=[]):
+        namespaces = util.Future(self.cluster.info_namespaces, nodes=nodes).start().result()
+        namespaces = namespaces.values()
+        namespace_set = set()
 
-        ns_configs = {}
-        for node, node_config in configs.iteritems():
-            if not node_config or isinstance(node_config, Exception):
+        for namespace in namespaces:
+            if isinstance(namespace, Exception):
                 continue
 
-            ns_configs[node] = node_config
+            namespace_set.update(namespace)
+
+        namespace_list = util.filter_list(list(namespace_set), for_mods)
+        ns_configs = {}
+
+        for index, namespace in enumerate(namespace_list):
+            node_configs = util.Future(self.cluster.info_get_config, stanza='namespace', namespace=namespace, namespace_id=index, nodes=nodes).start().result()
+            for node, node_config in node_configs.items():
+                if not node_config or isinstance(node_config, Exception) or not namespace in node_config:
+                    continue
+
+                if node not in ns_configs:
+                    ns_configs[node] = {}
+
+                ns_configs[node][namespace] = node_config[namespace]
 
         if flip:
             ns_configs = util.flip_keys(ns_configs)

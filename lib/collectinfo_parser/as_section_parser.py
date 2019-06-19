@@ -1361,7 +1361,7 @@ def _identify_features_from_stats(nodes, imap, parsed_map, section_name):
             for namespace in ns_map:
                 if service_sec in ns_map[namespace]:
                     ns_service_map = ns_map[namespace][service_sec]
-                    if _stat_exist_in_statistics(ns_service_map, ['xdr_write_success']):
+                    if _stat_exist_in_statistics(ns_service_map, ['xdr_write_success', 'xdr_client_write_success']):
                         featureobj['XDR DESTINATION'] = 'YES'
                         break
         parsed_map[node][section_name] = featureobj

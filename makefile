@@ -54,12 +54,18 @@ endef
 all:
 	$(call make_build)
 
-	mkdir -p $(BUILD_ROOT)wheels
+	mkdir -p $(BUILD_ROOT)tmp/wheels
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
-	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)wheels -r $(REQUIREMENT_FILE)
-	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)wheels
+	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)tmp/wheels -r $(REQUIREMENT_FILE)
+	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)tmp/wheels
 
-	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+ifneq ($(PYUCS2PATH),)
+	$(PYUCS2PATH) -m pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)tmp/wheels -r $(REQUIREMENT_FILE)
+	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)tmp/wheels --platform=linux_x86_64-cp-27-cp27m --platform=linux_x86_64-cp-27-cp27mu --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+else
+	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)tmp/wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+endif
+
 	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
 	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm
