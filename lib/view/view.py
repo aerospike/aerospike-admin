@@ -582,8 +582,8 @@ class CliView(object):
 
     @staticmethod
     def info_network(stats, cluster_names, versions, builds, cluster,
-                     timestamp='', **ignore):
-        prefixes = cluster.get_node_names()
+                     timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         hosts = cluster.nodes
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Network Information' + title_suffix
@@ -603,8 +603,8 @@ class CliView(object):
             sheet.render(network_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_namespace_usage(stats, cluster, timestamp='', **ignore):
-        prefixes = cluster.get_node_names()
+    def info_namespace_usage(stats, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Namespace Usage Information' + title_suffix
         sources = dict(
@@ -620,8 +620,8 @@ class CliView(object):
             sheet.render(namespace_usage_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_namespace_object(stats, cluster, timestamp='', **ignore):
-        prefixes = cluster.get_node_names()
+    def info_namespace_object(stats, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Namespace Object Information' + title_suffix
         sources = dict(
@@ -637,8 +637,8 @@ class CliView(object):
             sheet.render(namespace_object_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_set(stats, cluster, timestamp='', **ignore):
-        prefixes = cluster.get_node_names()
+    def info_set(stats, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Set Information%s' + title_suffix
         sources = dict(
@@ -654,11 +654,11 @@ class CliView(object):
             sheet.render(set_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_XDR(stats, builds, xdr_enable, cluster, timestamp='', **ignore):
+    def info_XDR(stats, builds, xdr_enable, cluster, timestamp='', **mods):
         if not any(xdr_enable.itervalues()):
             return
 
-        prefixes = cluster.get_node_names()
+        prefixes = cluster.get_node_names(mods.get('with', []))
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'XDR Information' + title_suffix
@@ -675,8 +675,8 @@ class CliView(object):
             sheet.render(xdr_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_dc(stats, cluster, timestamp='', **ignore):
-        prefixes = cluster.get_node_names()
+    def info_dc(stats, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'DC Information%s' % (title_suffix)
@@ -691,7 +691,7 @@ class CliView(object):
             sheet.render(xdr_dc_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_sindex(stats, cluster, timestamp='', **ignore):
+    def info_sindex(stats, cluster, timestamp='', **mods):
         # return if sindex stats are empty.
         if not stats:
             return
@@ -704,7 +704,7 @@ class CliView(object):
                 sindex_stats[node] = node_stats = sindex_stats.get(node, {})
                 node_stats[iname] = values
 
-        prefixes = cluster.get_node_names()
+        prefixes = cluster.get_node_names(mods.get('with', []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Secondary Index Information' + title_suffix
         sources = dict(
@@ -719,7 +719,7 @@ class CliView(object):
 
     @staticmethod
     def show_distribution(title, histogram, unit, hist, cluster, like=None,
-                          timestamp="", **ignore):
+                          timestamp="", **mods):
         likes = compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = 'Percentage of records having {} less than or '.format(hist) + \
@@ -737,7 +737,7 @@ class CliView(object):
             this_title = '{} - {} in {}{}'.format(
                 namespace, title, unit, title_suffix)
             sources = dict(
-                prefixes=cluster.get_node_names(),
+                prefixes=cluster.get_node_names(mods.get('with', [])),
                 histogram=dict((k, d['percentiles']) for k, d in node_data.iteritems())
             )
 
@@ -748,9 +748,8 @@ class CliView(object):
     @staticmethod
     def show_object_distribution(
             title, histogram, unit, hist, bucket_count, set_bucket_count,
-            cluster, like=None, timestamp="", loganalyser_mode=False,
-            **ignore):
-        prefixes = cluster.get_node_names()
+            cluster, like=None, timestamp="", loganalyser_mode=False, **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         likes = compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = "Number of records having %s in the range " % (hist) + \
@@ -819,8 +818,9 @@ class CliView(object):
         return rows
 
     @staticmethod
-    def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
+    def show_latency(latency, cluster, machine_wise_display=False,
+                     show_ns_details=False, like=None, timestamp="", **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
 
         if like:
             likes = compile_likes(like)
@@ -908,11 +908,10 @@ class CliView(object):
     def show_config(title, service_configs, cluster, like=None, diff=False,
                     show_total=False, title_every_nth=0, flip_output=False,
                     timestamp="", **mods):
-        with_mod = mods.get('with', [])
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
         sources = dict(
-            prefixes=cluster.get_node_names(with_mod),
+            prefixes=cluster.get_node_names(mods.get('with', [])),
             data=service_configs)
         aggr = Aggregators.sum() if show_total else None
         style = SheetStyle.columns if flip_output else None
@@ -1157,8 +1156,8 @@ class CliView(object):
         CliView.print_result(sheet.render(map_sheet, title, sources))
 
     @staticmethod
-    def show_pmap(pmap_data, cluster, timestamp='', **ignore):
-        prefixes = cluster.get_node_names()
+    def show_pmap(pmap_data, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = 'Partition Map Analysis' + title_suffix
         sources = dict(
@@ -1172,15 +1171,15 @@ class CliView(object):
         CliView.print_result(sheet.render(pmap_sheet, title, sources, common=common))
 
     @staticmethod
-    def asinfo(results, line_sep, show_node_name, cluster, **kwargs):
+    def asinfo(results, line_sep, show_node_name, cluster, **mods):
         like = set([])
-        if 'like' in kwargs:
-            like = set(kwargs['like'])
+        if 'like' in mods:
+            like = set(mods['like'])
 
         for node_id, value in results.iteritems():
 
             if show_node_name:
-                prefix = cluster.get_node_names()[node_id]
+                prefix = cluster.get_node_names(mods.get('with', []))[node_id]
                 node = cluster.get_node(node_id)[0]
                 print "%s%s (%s) returned%s:" % (terminal.bold(), prefix, node.ip, terminal.reset())
 

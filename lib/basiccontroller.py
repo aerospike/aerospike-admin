@@ -159,23 +159,27 @@ class InfoController(BasicCommandController):
     def do_xdr(self, line):
         stats = util.Future(self.cluster.info_XDR_statistics,
                             nodes=self.nodes).start()
+
         builds = util.Future(self.cluster.info_XDR_build_version,
                              nodes=self.nodes).start()
+
         xdr_enable = util.Future(self.cluster.is_XDR_enabled,
                                  nodes=self.nodes).start()
 
         stats = stats.result()
         builds = builds.result()
         xdr_enable = xdr_enable.result()
-
         return util.Future(self.view.info_XDR, stats, builds, xdr_enable,
                            self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for each datacenter.')
     def do_dc(self, line):
+
         stats = util.Future(self.cluster.info_all_dc_statistics,
                             nodes=self.nodes).start()
+
         configs = self.config_getter.get_dc(flip=False, nodes=self.nodes)
+
         stats = stats.result()
 
         for node in stats.keys():

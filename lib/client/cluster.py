@@ -108,13 +108,14 @@ class Cluster(object):
 
         return node_names
 
-    def get_node_names(self, with_mod=None):
+    def get_node_names(self, nodes=None):
+        selected_nodes = nodes
         nodes = self.nodes.items()
 
-        if with_mod:
+        if selected_nodes:
             with_nodes = set()
 
-            for w in with_mod:
+            for w in selected_nodes:
                 with_nodes.update(self.get_node(w))
 
             new_nodes = []

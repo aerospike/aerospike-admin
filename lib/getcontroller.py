@@ -582,20 +582,25 @@ class GetPmapController():
                     if node_id == working_master:
                         # Working master
                         node_pmap[ns]['master_partition_count'] += 1
+
                     elif replica == 0 or state == 'S' or state == 'D':
                         # Eventual master or replicas
                         node_pmap[ns]['prole_partition_count'] += 1
+
                 elif replica == 0:
                     if origin == '0':
                         # Working master (Final and proper master)
                         node_pmap[ns]['master_partition_count'] += 1
+
                     else:
                         # Eventual master
                         node_pmap[ns]['prole_partition_count'] += 1
+
                 else:
                     if target == '0':
                         if state == 'S' or state == 'D':
                             node_pmap[ns]['prole_partition_count'] += 1
+
                     else:
                         # Working master (Acting master)
                         node_pmap[ns]['master_partition_count'] += 1
