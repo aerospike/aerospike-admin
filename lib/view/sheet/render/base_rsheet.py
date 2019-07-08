@@ -182,11 +182,12 @@ class BaseRSheet(object):
 
         for dfield in self.decl.fields:
             if isinstance(dfield, decl.DynamicFields):
-                keys = set()
+                keys = OrderedDict()
 
                 for sources in self.sources:
                     try:
-                        keys.update(sources[dfield.source].keys())
+                        keys.update(((k, None)
+                                     for k in sources[dfield.source].keys()))
                     except (AttributeError):
                         pass
 
@@ -194,7 +195,12 @@ class BaseRSheet(object):
                     keys = [key for key in keys if self.selector.search(key)
                             is not None]
 
-                for key in sorted(keys):
+                if dfield.order == decl.DynamicFieldOrder.ASCENDING:
+                    keys.sort()
+                elif dfield.order == decl.DynamicFieldOrder.DESCENDING:
+                    keys.sort(reverse=True)
+
+                for key in keys:
                     proj = self._infer_projector(dfield, key)
 
                     if self.dyn_aggr and self._is_projector_numeric(proj):

@@ -28,9 +28,10 @@ from lib.utils import filesize
 from lib.utils.constants import COUNT_RESULT_KEY, DT_FMT
 from lib.utils.util import compile_likes, find_delimiter_in
 from lib.view import sheet, terminal
-from lib.view.sheet import (Aggregators, Converters, DynamicFields, Field,
-                            FieldAlignment, FieldType, Formatters, Projectors,
-                            Sheet, SheetStyle, Subgroup, TitleField)
+from lib.view.sheet import (Aggregators, Converters, DynamicFieldOrder,
+                            DynamicFields, Field, FieldAlignment, FieldType,
+                            Formatters, Projectors, Sheet, SheetStyle,
+                            Subgroup, TitleField)
 from lib.view.table import Extractors, Styles, Table, TitleFormats
 
 H1_offset = 13
@@ -541,6 +542,14 @@ mapping_to_id_sheet = Sheet(
     order_by='IP'
 )
 
+object_size_sheet = Sheet(
+    (TitleField('Node', Projectors.String('prefixes', None)),
+     DynamicFields('histogram', required=True,
+                   order=DynamicFieldOrder.SOURCE)),
+    from_source=('prefixes', 'histogram'),
+    order_by='Node',
+)
+
 
 class CliView(object):
     NO_PAGER, LESS, MORE, SCROLL = range(4)
@@ -724,10 +733,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = 'Percentage of records having {} less than or '.format(hist) + \
                       'equal to value measured in {}'.format(unit)
-        namespaces = histogram.keys()
-
-        if likes is not None:
-            namespaces = set(filter(likes.search, namespaces))
+        namespaces = set(filter(likes.search, histogram.keys()))
 
         for namespace, node_data in histogram.iteritems():
             if namespace not in namespaces or not node_data or \
@@ -759,34 +765,17 @@ class CliView(object):
         for namespace, node_data in histogram.iteritems():
             if namespace not in namespaces:
                 continue
-            columns = []
-            for column in node_data["columns"]:
-                # Tuple is required to give specific column display name,
-                # otherwise it will print same column name but in title_format
-                # (ex. KB -> Kb)
-                columns.append((column, column))
-            columns.insert(0, 'node')
-            t = Table("%s - %s in %s%s" % (namespace, title, unit,
-                                           title_suffix), columns, description=description)
-            if not loganalyser_mode:
-                for column in columns:
-                    if column is not 'node':
-                        t.add_data_source(
-                            column, Extractors.sif_extractor(column))
 
-            for node_id, data in node_data.iteritems():
-                if node_id == "columns":
-                    continue
+            ns_title = "{} - {} in {}{}".format(
+                namespace, title, unit, title_suffix)
+            sources = dict(
+                prefixes=prefixes,
+                histogram={h: d.get('data', {})
+                           for h, d in node_data.iteritems()
+                           if h != 'columns'})
 
-                row = data['values']
-                row['node'] = prefixes[node_id]
-                t.insert_row(row)
-
-            CliView.print_result(t)
-            if set_bucket_count and (len(columns) - 1) < bucket_count:
-                print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n" % (
-                    terminal.fg_green(), (len(columns) - 1),
-                    "s" if (len(columns) - 1) > 1 else "", terminal.fg_clear())
+            CliView.print_result(sheet.render(
+                object_size_sheet, ns_title, sources, description=description))
 
     @staticmethod
     def _update_latency_column_list(data, all_columns):

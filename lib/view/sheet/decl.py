@@ -235,8 +235,15 @@ class TitleField(Field):
             aggregator=aggregator, align=align, key=key)
 
 
+class DynamicFieldOrder(object):
+    SOURCE = 0      # preserve source's order
+    ASCENDING = 1   # ascending key order
+    DESCENDING = 2  # descending key order
+
+
 class DynamicFields(object):
-    def __init__(self, source, infer_projectors=True, required=False):
+    def __init__(self, source, infer_projectors=True, required=False,
+                 order=DynamicFieldOrder.ASCENDING):
         """
         Arguments:
         source -- Data source to project fields from.
@@ -248,6 +255,7 @@ class DynamicFields(object):
         self.source = source
         self.infer_projectors = infer_projectors
         self.required = required
+        self.order = order
 
         self.has_aggregate = False  # XXX - hack
 
