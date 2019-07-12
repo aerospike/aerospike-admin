@@ -21,6 +21,7 @@ from lib.utils.util import compile_likes
 from lib.view.terminal import get_terminal_size, terminal
 
 from .. import decl
+from ..const import DynamicFieldOrder
 from .render_utils import Aggregator, ErrorEntry, NoEntry
 
 
@@ -156,9 +157,9 @@ class BaseRSheet(object):
                 sub_source = source[for_each]
 
                 try:
-                    for value in sub_source.iteritems():
+                    for item in sub_source.iteritems():
                         new_source = source.copy()
-                        new_source[for_each] = value
+                        new_source[for_each] = item
                         expanded_sources.append(new_source)
                 except AttributeError:
                     # Non-iterable - probably an Exception.
@@ -186,18 +187,25 @@ class BaseRSheet(object):
 
                 for sources in self.sources:
                     try:
-                        keys.update(((k, None)
-                                     for k in sources[dfield.source].keys()))
-                    except (AttributeError):
+                        if dfield.source in self.decl.for_each and \
+                           isinstance(sources[dfield.source], tuple):
+                            keys.update(
+                                ((k, None)
+                                 for k in sources[dfield.source][1].keys()))
+                        else:
+                            keys.update(
+                                ((k, None)
+                                 for k in sources[dfield.source].keys()))
+                    except AttributeError:
                         pass
 
                 if self.selector is not None:
                     keys = [key for key in keys if self.selector.search(key)
                             is not None]
 
-                if dfield.order == decl.DynamicFieldOrder.ASCENDING:
+                if dfield.order is DynamicFieldOrder.ascending:
                     keys.sort()
-                elif dfield.order == decl.DynamicFieldOrder.DESCENDING:
+                elif dfield.order is DynamicFieldOrder.descending:
                     keys.sort(reverse=True)
 
                 for key in keys:
@@ -205,6 +213,8 @@ class BaseRSheet(object):
 
                     if self.dyn_aggr and self._is_projector_numeric(proj):
                         aggr = decl.Aggregators.sum()
+                    elif dfield.aggregator_selector is not None:
+                        aggr = dfield.aggregator_selector(key)
                     else:
                         aggr = None
 

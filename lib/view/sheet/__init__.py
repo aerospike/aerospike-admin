@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .const import FieldAlignment, FieldType, SheetStyle
+from .const import DynamicFieldOrder, FieldAlignment, FieldType, SheetStyle
 from .decl import *
 from .render import render, set_style_json

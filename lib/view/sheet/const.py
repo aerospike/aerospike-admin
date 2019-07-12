@@ -31,3 +31,9 @@ class SheetStyle(object):
     columns = 'columns'
     rows = 'rows'
     json = 'json'
+
+
+class DynamicFieldOrder(object):
+    source = 'source'          # preserve source's order
+    ascending = 'ascending'    # ascending key order
+    descending = 'descending'  # descending key order

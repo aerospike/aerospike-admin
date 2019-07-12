@@ -18,7 +18,7 @@ from collections import Counter
 from lib.utils import filesize
 from lib.view import terminal
 
-from .const import FieldType, SheetStyle
+from .const import DynamicFieldOrder, FieldType, SheetStyle
 
 
 class Sheet(object):
@@ -235,15 +235,9 @@ class TitleField(Field):
             aggregator=aggregator, align=align, key=key)
 
 
-class DynamicFieldOrder(object):
-    SOURCE = 0      # preserve source's order
-    ASCENDING = 1   # ascending key order
-    DESCENDING = 2  # descending key order
-
-
 class DynamicFields(object):
     def __init__(self, source, infer_projectors=True, required=False,
-                 order=DynamicFieldOrder.ASCENDING):
+                 aggregator_selector=None, order=DynamicFieldOrder.ascending):
         """
         Arguments:
         source -- Data source to project fields from.
@@ -255,6 +249,7 @@ class DynamicFields(object):
         self.source = source
         self.infer_projectors = infer_projectors
         self.required = required
+        self.aggregator_selector = aggregator_selector # FIXME - should eliminate dyn_aggr now that this exists.
         self.order = order
 
         self.has_aggregate = False  # XXX - hack
