@@ -302,6 +302,8 @@ class CliView(object):
 
     @staticmethod
     def format_latency(orig_latency):
+        # XXX - eventually, node.py could return this format. Changing here
+        #       because loganalyser also sends this format.
         latency = {}
 
         for hist, nodes_data in orig_latency.iteritems():
@@ -399,42 +401,25 @@ class CliView(object):
         CliView.print_result(summary)
 
     @staticmethod
-    def show_grep_count(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
-        column_names = set()
-        if grep_result:
-            if grep_result[grep_result.keys()[0]]:
-                column_names = CliView._sort_list_with_string_and_datetime(
-                    grep_result[grep_result.keys()[0]][COUNT_RESULT_KEY].keys())
+    def show_grep_count(title, grep_result, title_every_nth=0, **ignore):
+        data = {}
+        node_ids = {}
 
-        if len(column_names) == 0:
-            return ''
+        for node, res in grep_result.iteritems():
+            node = node.strip()
+            # TODO - get rid of total row and add column aggregations to sheets.
+            data[node] = res[COUNT_RESULT_KEY]
+            # TODO - sheet should be able to use the key in data.
+            node_ids[node] = dict(node=node)
 
-        column_names.insert(0, "NODE")
-
-        t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
-
-        for file in sorted(grep_result.keys()):
-            if isinstance(grep_result[file], Exception):
-                row1 = {}
-                row2 = {}
-            else:
-                row1 = grep_result[file]["count_result"]
-                row2 = {}
-                for key in grep_result[file]["count_result"].keys():
-                    row2[key] = "|"
-
-            row1['NODE'] = file
-
-            row2['NODE'] = "|"
-
-            t.insert_row(row1)
-            t.insert_row(row2)
-
-        t.ignore_sort()
+        from pprint import pprint
+        pprint(data)
 
         CliView.print_result(
-            t.__str__(horizontal_title_every_nth=2 * title_every_nth))
+            sheet.render(
+                templates.grep_count_sheet, title,
+                dict(data=data, node_ids=node_ids),
+                title_repeat=title_every_nth != 0))
 
     @staticmethod
     def show_grep_diff(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):

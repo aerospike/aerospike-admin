@@ -17,8 +17,9 @@ import hashlib
 import pipes
 import re
 import subprocess
-from lib.log import utils
+from collections import OrderedDict
 
+from lib.log import utils
 from lib.utils.constants import COUNT_RESULT_KEY, TOTAL_ROW_HEADER, END_ROW_KEY, DT_FMT
 from lib.log.latency import LogLatency
 
@@ -354,7 +355,7 @@ class ServerLog(object):
 
     def count(self):
         count_result = {}
-        count_result[COUNT_RESULT_KEY] = {}
+        count_result[COUNT_RESULT_KEY] = OrderedDict()
         slice_start = self.process_start_tm
         slice_end = slice_start + self.slice_duration
         if slice_end > self.process_end_tm:

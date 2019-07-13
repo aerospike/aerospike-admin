@@ -559,7 +559,9 @@ latency_sheet = Sheet(
     order_by='Node',
 )
 
-# Only difference between this and latency_sheet is the group_by contains 'Node'.
+# Only difference between this and latency_sheet is the group_by contains
+# 'Node'. TODO - allowing render to override group_by would eliminate this
+# template.
 latency_machine_wise_sheet = Sheet(
     (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
      Field('Hist', Projectors.String('histogram', 1, for_each_key=True)),
@@ -571,4 +573,12 @@ latency_machine_wise_sheet = Sheet(
     for_each='histogram',
     group_by=('Node', 'Namespace', 'Hist'),
     order_by='Node',
+)
+
+grep_count_sheet = Sheet(
+    (TitleField('Node', Projectors.String('node_ids', 'node')),
+     DynamicFields('data', required=False, order=DynamicFieldOrder.source)),
+    from_source=('node_ids', 'data'),
+    order_by='Node',
+    default_style=SheetStyle.rows
 )
