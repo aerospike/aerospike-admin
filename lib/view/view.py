@@ -402,29 +402,26 @@ class CliView(object):
 
     @staticmethod
     def show_grep_count(title, grep_result, title_every_nth=0, **ignore):
-        data = {}
+        # TODO - get rid of total row in grep_result and add column aggregations to sheets.
         node_ids = {}
 
         for node, res in grep_result.iteritems():
-            node = node.strip()
-            # TODO - get rid of total row and add column aggregations to sheets.
-            data[node] = res[COUNT_RESULT_KEY]
             # TODO - sheet should be able to use the key in data.
             node_ids[node] = dict(node=node)
-
-        from pprint import pprint
-        pprint(data)
 
         CliView.print_result(
             sheet.render(
                 templates.grep_count_sheet, title,
-                dict(data=data, node_ids=node_ids),
+                dict(data=grep_result, node_ids=node_ids),
                 title_repeat=title_every_nth != 0))
 
     @staticmethod
     def show_grep_diff(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
         different_writer_info = False
+        from pprint import pprint
+
+        pprint(grep_result)
 
         if grep_result and grep_result[grep_result.keys()[0]]:
             if "diff_end" in grep_result[grep_result.keys()[0]]["value"]:

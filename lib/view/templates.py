@@ -481,7 +481,7 @@ summary_namespace_sheet = Sheet(
                 Converters.byte))),
      Field('Compression Ratio',
            Projectors.Float('ns_stats', 'compression-ratio'))),
-    from_source=('ns_stats',),
+    from_source='ns_stats',
     for_each='ns_stats',
     group_by='Namespace',
     order_by='Namespace'
@@ -519,14 +519,14 @@ config_sheet = Sheet(
 mapping_to_ip_sheet = Sheet(
     (Field('Node ID', Projectors.String('mapping', 0)),
      Field('IP', Projectors.String('mapping', 1))),
-    from_source=('mapping',),
+    from_source='mapping',
     order_by='Node ID'
 )
 
 mapping_to_id_sheet = Sheet(
     (Field('IP', Projectors.String('mapping', 0)),
      Field('Node ID', Projectors.String('mapping', 1))),
-    from_source=('mapping',),
+    from_source='mapping',
     order_by='IP'
 )
 
@@ -540,10 +540,8 @@ object_size_sheet = Sheet(
 
 
 def latency_aggregator_selector(key):
-    if key == 'ops/sec' or '>' in key[:2]:
+    if key != 'Time Span':
         return Aggregators.max()
-
-    return None
 
 
 latency_sheet = Sheet(
@@ -581,4 +579,23 @@ grep_count_sheet = Sheet(
     from_source=('node_ids', 'data'),
     order_by='Node',
     default_style=SheetStyle.rows
+)
+
+grep_count_sheet = Sheet(
+    (TitleField('Node', Projectors.String('node_ids', 'node')),
+     DynamicFields('data.count_result', required=False,
+                   order=DynamicFieldOrder.source)),
+    from_source=('node_ids', 'data'),
+    order_by='Node',
+    default_style=SheetStyle.rows
+)
+
+grep_diff_sheet = Sheet(
+    (TitleField('Node', Projectors.String('node_ids', 'node')),
+     DynamicFields('data.Total', required=False,
+                   order=DynamicFieldOrder.source),
+     DynamicFields('data.Diff', required=False,
+                   order=DynamicFieldOrder.source)),
+    from_source=('node_ids', 'data'),
+    group_by='Node'
 )

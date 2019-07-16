@@ -19,6 +19,7 @@ from lib.utils import filesize
 from lib.view import terminal
 
 from .const import DynamicFieldOrder, FieldType, SheetStyle
+from .source import source_lookup, source_root
 
 
 class Sheet(object):
@@ -121,7 +122,7 @@ class Sheet(object):
 
         assert self.from_sources, 'require a list of expected field sources'
 
-        sources_set = set(self.from_sources)
+        sources_set = set(source_root(s) for s in self.from_sources)
 
         assert len(sources_set) == len(self.from_sources)
 
@@ -149,7 +150,7 @@ class Sheet(object):
 
         for field in self.fields:
             if isinstance(field, DynamicFields):
-                seen_sources_set.add(field.source)
+                seen_sources_set.add(source_root(field.source))
 
         assert len(seen_sources_set) == len(sources_set)
 
@@ -342,7 +343,7 @@ class BaseProjector(object):
         raise NotImplementedError('override do_project')
 
     def project_raw(self, sheet, sources):
-        row = sources[self.source]
+        row = source_lookup(sources, self.source)
 
         if self.source in sheet.for_each:
             if self.for_each_key:

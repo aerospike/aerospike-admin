@@ -31,7 +31,7 @@ SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\
 class ServerLog(object):
 
     def __init__(self, display_name, file_name, reader):
-        self.display_name = display_name
+        self.display_name = display_name.strip()
         self.file_name = file_name
         self.reader = reader
         self.indices = self.reader.generate_server_log_indices(self.file_name)

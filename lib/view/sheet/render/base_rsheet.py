@@ -22,6 +22,7 @@ from lib.view.terminal import get_terminal_size, terminal
 
 from .. import decl
 from ..const import DynamicFieldOrder
+from ..source import source_hierarchy, source_lookup, source_root
 from .render_utils import Aggregator, ErrorEntry, NoEntry
 
 
@@ -191,12 +192,14 @@ class BaseRSheet(object):
                            isinstance(sources[dfield.source], tuple):
                             keys.update(
                                 ((k, None)
-                                 for k in sources[dfield.source][1].keys()))
+                                 for k in source_lookup(
+                                    sources, dfield.source)[1].keys()))
                         else:
                             keys.update(
                                 ((k, None)
-                                 for k in sources[dfield.source].keys()))
-                    except AttributeError:
+                                 for k in source_lookup(
+                                    sources, dfield.source).keys()))
+                    except (AttributeError, TypeError):
                         pass
 
                 if self.selector is not None:
@@ -239,7 +242,7 @@ class BaseRSheet(object):
 
         for sources in self.sources:
             try:
-                entries.append(sources[dfield.source][key])
+                entries.append(source_lookup(sources, dfield.source)[key])
             except (KeyError, TypeError):
                 # Missing or error retrieving, ignore for inference.
                 pass
