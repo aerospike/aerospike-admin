@@ -250,7 +250,7 @@ class DynamicFields(object):
         self.source = source
         self.infer_projectors = infer_projectors
         self.required = required
-        self.aggregator_selector = aggregator_selector # FIXME - should eliminate dyn_aggr now that this exists.
+        self.aggregator_selector = aggregator_selector
         self.order = order
 
         self.has_aggregate = False  # XXX - hack

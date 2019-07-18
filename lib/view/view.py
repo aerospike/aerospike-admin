@@ -27,10 +27,10 @@ from lib.health.constants import (AssertLevel, AssertResultKey,
                                   HealthResultCounter, HealthResultType)
 from lib.health.util import print_dict
 from lib.utils import filesize
-from lib.utils.constants import COUNT_RESULT_KEY, DT_FMT
+from lib.utils.constants import DT_FMT
 from lib.utils.util import compile_likes, find_delimiter_in
 from lib.view import sheet, terminal
-from lib.view.sheet import Aggregators, SheetStyle
+from lib.view.sheet import SheetStyle
 from lib.view.table import Styles, Table, TitleFormats
 
 H1_offset = 13
@@ -236,7 +236,8 @@ class CliView(object):
                 namespace, title, unit, title_suffix)
             sources = dict(
                 prefixes=cluster.get_node_names(mods.get('with', [])),
-                histogram=dict((k, d['percentiles']) for k, d in node_data.iteritems())
+                histogram=dict((k, d['percentiles'])
+                               for k, d in node_data.iteritems())
             )
 
             CliView.print_result(
@@ -324,6 +325,8 @@ class CliView(object):
             return CliView.show_latency_machine_wise(
                 latency, cluster, like=like, timestamp=timestamp, **mods)
 
+        # TODO - May not need to converter now that dicts can be nested.
+
         prefixes = cluster.get_node_names(mods.get('with', []))
         likes = compile_likes(like)
         title = 'Latency ' + CliView._get_timestamp_suffix(timestamp)
@@ -375,14 +378,14 @@ class CliView(object):
         sources = dict(
             prefixes=cluster.get_node_names(mods.get('with', [])),
             data=service_configs)
-        aggr = Aggregators.sum() if show_total else None
+        disable_aggregations = not show_total
         style = SheetStyle.columns if flip_output else None
 
         CliView.print_result(
             sheet.render(
                 templates.config_sheet, title, sources, style=style,
                 selectors=like, title_repeat=title_every_nth != 0,
-                dyn_aggr=aggr, dyn_diff=diff))
+                disable_aggregations=disable_aggregations, dyn_diff=diff))
 
     @staticmethod
     def show_stats(*args, **kwargs):
@@ -1174,8 +1177,7 @@ class CliView(object):
     def _summary_namespace_table_view(stats, **ignore):
         title = "Namespaces"
 
-        # XXX: Hack
-        new_stats = dict(node_hack=stats)
+        new_stats = dict(node_hack=stats)  # XXX - hack
         sources = dict(ns_stats=new_stats)
 
         CliView.print_result(

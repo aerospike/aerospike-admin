@@ -508,9 +508,16 @@ pmap_sheet = Sheet(
     order_by='Node'
 )
 
+
+def numeric_sum_aggregator_selector(key, is_numeric):
+    if is_numeric:
+        return Aggregators.sum()
+
+
 config_sheet = Sheet(
     (TitleField('Node', Projectors.String('prefixes', None)),
-     DynamicFields('data', required=True)),
+     DynamicFields('data', aggregator_selector=numeric_sum_aggregator_selector,
+                   required=True)),
     from_source=('prefixes', 'data'),
     order_by='Node',
     default_style=SheetStyle.rows
@@ -539,7 +546,7 @@ object_size_sheet = Sheet(
 )
 
 
-def latency_aggregator_selector(key):
+def latency_aggregator_selector(key, is_numeric):
     if key != 'Time Span':
         return Aggregators.max()
 
@@ -575,7 +582,7 @@ latency_machine_wise_sheet = Sheet(
 
 grep_count_sheet = Sheet(
     (TitleField('Node', Projectors.String('node_ids', 'node')),
-     DynamicFields('data', required=False, order=DynamicFieldOrder.source)),
+     DynamicFields('data', required=True, order=DynamicFieldOrder.source)),
     from_source=('node_ids', 'data'),
     order_by='Node',
     default_style=SheetStyle.rows
@@ -583,7 +590,7 @@ grep_count_sheet = Sheet(
 
 grep_count_sheet = Sheet(
     (TitleField('Node', Projectors.String('node_ids', 'node')),
-     DynamicFields('data.count_result', required=False,
+     DynamicFields('data.count_result', required=True,
                    order=DynamicFieldOrder.source)),
     from_source=('node_ids', 'data'),
     order_by='Node',
@@ -592,9 +599,9 @@ grep_count_sheet = Sheet(
 
 grep_diff_sheet = Sheet(
     (TitleField('Node', Projectors.String('node_ids', 'node')),
-     DynamicFields('data.Total', required=False,
+     DynamicFields('data.Total', required=True,
                    order=DynamicFieldOrder.source),
-     DynamicFields('data.Diff', required=False,
+     DynamicFields('data.Diff', required=True,
                    order=DynamicFieldOrder.source)),
     from_source=('node_ids', 'data'),
     group_by='Node'

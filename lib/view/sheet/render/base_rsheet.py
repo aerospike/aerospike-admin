@@ -28,8 +28,8 @@ from .render_utils import Aggregator, ErrorEntry, NoEntry
 
 class BaseRSheet(object):
     def __init__(self, sheet, title, sources, common, description=None,
-                 selectors=None, title_repeat=False, dyn_aggr=None,
-                 dyn_diff=False):
+                 selectors=None, title_repeat=False,
+                 disable_aggregations=False, dyn_diff=False):
         """
         Arguments:
         sheet       -- The decl.sheet to render.
@@ -46,8 +46,7 @@ class BaseRSheet(object):
                         from dynamic fields.
         title_repeat -- Repeat title/row headers every screen width.
                         Doesn't affect SheetStyle.json.
-        dyn_aggr     -- Aggregate for dynamic fields only have numeric
-                        values.
+        disable_aggregations -- Disable sheet aggregations.
         dyn_diff     -- Only show dynamic fields that aren't uniform.
         """
         self.decl = sheet
@@ -60,7 +59,7 @@ class BaseRSheet(object):
         self.description = description
         self.selector = compile_likes(selectors if selectors else [])
         self.title_repeat = title_repeat
-        self.dyn_aggr = dyn_aggr
+        self.disable_aggregations = disable_aggregations
         self.dyn_diff = dyn_diff
         self.terminal_size = get_terminal_size()
 
@@ -214,10 +213,10 @@ class BaseRSheet(object):
                 for key in keys:
                     proj = self._infer_projector(dfield, key)
 
-                    if self.dyn_aggr and self._is_projector_numeric(proj):
-                        aggr = decl.Aggregators.sum()
-                    elif dfield.aggregator_selector is not None:
-                        aggr = dfield.aggregator_selector(key)
+                    if not self.disable_aggregations and \
+                       dfield.aggregator_selector is not None:
+                        aggr = dfield.aggregator_selector(
+                            key, self._is_projector_numeric(proj))
                     else:
                         aggr = None
 
@@ -564,7 +563,7 @@ class BaseRField(object):
             self.aggregates_converted.append('')
             return
 
-        if self.decl.aggregator is None:
+        if self.rsheet.disable_aggregations or self.decl.aggregator is None:
             if self.is_grouped_by and self.rsheet.decl.has_aggregates:
                 # If a grouped field doesn't have an aggregator then the grouped
                 # value will appear in the aggregates line.

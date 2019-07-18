@@ -723,14 +723,18 @@ class SheetTest(unittest.TestCase):
             self.assertEqual(len(record), 1)
             self.assertEqual(record.keys()[0], 'f')
 
+    def numeric_sum_selector(self, key, is_numeric):
+        if is_numeric:
+            return Aggregators.sum()
+
     def test_sheet_dynamic_field_aggregator(self):
         test_sheet = Sheet(
-            (DynamicFields('d'),),
+            (DynamicFields(
+                'd', aggregator_selector=self.numeric_sum_selector),),
             from_source='d')
         sources = dict(d=dict(
             n0=dict(f=1, g=1), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
-        render = do_render(test_sheet, 'test', sources,
-                           dyn_aggr=Aggregators.sum())
+        render = do_render(test_sheet, 'test', sources)
         aggrs = render['groups'][0]['aggregates']
 
         self.assertEqual(len(aggrs), 2)
@@ -740,12 +744,12 @@ class SheetTest(unittest.TestCase):
 
     def test_sheet_dynamic_field_aggregator_exception(self):
         test_sheet = Sheet(
-            (DynamicFields('d'),),
+            (DynamicFields(
+                'd', aggregator_selector=self.numeric_sum_selector),),
             from_source='d')
         sources = dict(d=dict(
             n0=Exception("error"), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
-        render = do_render(test_sheet, 'test', sources,
-                           dyn_aggr=Aggregators.sum())
+        render = do_render(test_sheet, 'test', sources)
         aggrs = render['groups'][0]['aggregates']
 
         self.assertEqual(len(aggrs), 2)
@@ -755,12 +759,12 @@ class SheetTest(unittest.TestCase):
 
     def test_sheet_dynamic_field_aggregator_missing(self):
         test_sheet = Sheet(
-            (DynamicFields('d'),),
+            (DynamicFields(
+                'd', aggregator_selector=self.numeric_sum_selector),),
             from_source='d')
         sources = dict(d=dict(
             n0=dict(f=1), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
-        render = do_render(test_sheet, 'test', sources,
-                           dyn_aggr=Aggregators.sum())
+        render = do_render(test_sheet, 'test', sources)
         aggrs = render['groups'][0]['aggregates']
 
         self.assertEqual(len(aggrs), 2)
@@ -788,4 +792,7 @@ class SheetTest(unittest.TestCase):
     #     pass
 
     # def test_title_field(self):
+    #     pass
+
+    # def test_sheet_nested_dict_source(self):
     #     pass
