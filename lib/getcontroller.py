@@ -215,11 +215,13 @@ class GetConfigController():
         configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
         xdr_configs = {}
-        for node, config in configs.iteritems():
-            if isinstance(config, Exception):
-                continue
 
-            xdr_configs[node] = config
+        if configs:
+            for node, config in configs.iteritems():
+                if isinstance(config, Exception):
+                    continue
+
+                xdr_configs[node] = config
 
         return xdr_configs
 
@@ -230,14 +232,15 @@ class GetConfigController():
                 configs[node] = {}
 
         dc_configs = {}
-        for node, node_config in configs.iteritems():
-            if not node_config or isinstance(node_config, Exception):
-                continue
+        if configs:
+            for node, node_config in configs.iteritems():
+                if not node_config or isinstance(node_config, Exception):
+                    continue
 
-            dc_configs[node] = node_config
+                dc_configs[node] = node_config
 
-        if flip:
-            dc_configs = util.flip_keys(dc_configs)
+            if flip:
+                dc_configs = util.flip_keys(dc_configs)
 
         return dc_configs
 
@@ -248,11 +251,12 @@ class GetConfigController():
 
         configs = configs.result()
         cl_configs = {}
-        for node, config in configs.iteritems():
-            if not config or isinstance(config, Exception):
-                continue
+        if configs:
+            for node, config in configs.iteritems():
+                if not config or isinstance(config, Exception):
+                    continue
 
-            cl_configs[node] = config
+                cl_configs[node] = config
 
         return cl_configs
 
@@ -262,14 +266,15 @@ class GetConfigController():
 
         configs = configs.result()
         roster_configs = {}
-        for node, config in configs.iteritems():
-            if not config or isinstance(config, Exception):
-                continue
+        if configs:
+            for node, config in configs.iteritems():
+                if not config or isinstance(config, Exception):
+                    continue
 
-            roster_configs[node] = config
+                roster_configs[node] = config
 
-        if flip:
-            roster_configs = util.flip_keys(roster_configs)
+            if flip:
+                roster_configs = util.flip_keys(roster_configs)
 
         return roster_configs
 
@@ -279,14 +284,16 @@ class GetConfigController():
 
         configs = configs.result()
         rack_configs = {}
-        for node, config in configs.iteritems():
-            if not config or isinstance(config, Exception):
-                continue
 
-            rack_configs[node] = config
+        if configs:
+            for node, config in configs.iteritems():
+                if not config or isinstance(config, Exception):
+                    continue
 
-        if flip:
-            rack_configs = util.flip_keys(rack_configs)
+                rack_configs[node] = config
+
+            if flip:
+                rack_configs = util.flip_keys(rack_configs)
 
         return rack_configs
 

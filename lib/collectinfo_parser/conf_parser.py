@@ -47,11 +47,17 @@ time_unit_converter = {
 }
 
 # space configs which need conversion to bytes
-context_space_configs = ["filesize", "memory-size", "storage-engine.max-write-cache", "storage-engine.write-block-size",
-                         "storage-engine.commit-min-size", "dump-message-above-size"]
+context_space_configs = ["dump-message-above-size", "filesize", "memory-size", "storage-engine.commit-min-size",
+                         "storage-engine.max-write-cache", "storage-engine.write-block-size", "xdr-max-ship-bandwidth"]
 
 # time configs which need conversion to seconds
-context_time_configs = ["default-ttl", "max-ttl"]
+context_time_configs = ["dc-connections-idle-ms", "default-ttl", "defrag-sleep", "hist-track-slice", "interval",
+                        "keepalive-time", "max-ttl", "mcast-ttl", "migrate-fill-delay", "migrate-retransmit-ms",
+                        "migrate-sleep", "nsup-hist-period", "nsup-period", "polling-period", "proto-fd-idle-ms",
+                        "query-untracked-time-ms", "session-ttl", "sindex-gc-period", "ticker-interval",
+                        "tomb-raider-eligable-age", "tomb-raider-period", "tomb-raider-sleep", "transaction-max-ms",
+                        "transaction-retry-ms", "xdr-digestlog-iowait-ms", "xdr-hotkey-time-ms",
+                        "xdr-info-timeout", "xdr-write-timeout"]
 
 # confings differs in configuration file and asinfo output
 # Format: (Name in config file, name expected in asinfo output)

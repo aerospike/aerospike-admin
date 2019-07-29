@@ -982,7 +982,7 @@ def create_histogram_output(histogram_name, histogram_data, **params):
         return _create_histogram_percentiles_output(histogram_name, histogram_data)
 
     try:
-        units = is_new_histogram_version(histogram_data)
+        units = get_histogram_units(histogram_data)
 
         if units is not None:
             return _restructure_new_log_histogram(histogram_data)
@@ -996,7 +996,7 @@ def create_histogram_output(histogram_name, histogram_data, **params):
     return _create_bytewise_histogram_percentiles_output(histogram_data, params["bucket_count"], params["builds"])
 
 
-def is_new_histogram_version(histogram_data):
+def get_histogram_units(histogram_data):
     """
     Function takes dictionary of histogram data.
     Checks for units key which indicates it is newer format or older and return unit.
@@ -1038,6 +1038,22 @@ def parse_raw_histogram(histogram, histogram_data, logarithmic=False, new_histog
         return _parse_new_log_histogram(histogram, histogram_data)
 
     return _parse_new_linear_histogram(histogram, histogram_data)
+
+
+def is_new_histogram_version(version):
+    """
+    Function takes version to check
+
+    It returns true if version is supporting new histogram command else returns false
+    """
+
+    if not version:
+        return False
+
+    if LooseVersion(version) >= LooseVersion(constants.SERVER_NEW_HISTOGRAM_FIRST_VERSION):
+        return True
+
+    return False
 
 #################################
 

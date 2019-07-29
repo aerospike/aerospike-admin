@@ -125,7 +125,14 @@ class InfoController(BasicCommandController):
         # 'info namespace object', but since it is not correct command it should print output for partial correct
         # command, in this case it should print data for 'info'. To keep consistent output format, we are passing empty
         # list as line.
-        actions.extend(self.controller_map['namespace'](get_futures=True)([])['futures'])
+        res = self.controller_map['namespace'](get_futures=True)(line)
+        if isinstance(res, dict):
+            if 'futures' in res:
+                actions.extend(res['futures'])
+        else:
+            for action in res:
+                if action:
+                    actions.append(action)
         actions.append(util.Future(self.do_xdr, line).start())
 
         return [action.result() for action in actions]
@@ -389,7 +396,7 @@ class ShowDistributionController(BasicCommandController):
             units = None
 
             try:
-                units = common.is_new_histogram_version(histogram)
+                units = common.get_histogram_units(histogram)
 
                 if units is None:
                     units = 'Record Blocks'

@@ -18,7 +18,6 @@ import os
 import re
 import socket
 import threading
-from distutils.version import LooseVersion
 from time import time
 
 from lib.client import util
@@ -26,7 +25,7 @@ from lib.client.assocket import ASSocket
 from lib.collectinfo_parser import conf_parser
 from lib.collectinfo_parser.full_parser import parse_system_live_command
 from lib.utils import common
-from lib.utils.constants import AuthMode, SERVER_OLD_HISTOGRAM_LAST_VERSION
+from lib.utils.constants import AuthMode
 
 #### Remote Server connection module
 
@@ -241,7 +240,7 @@ class Node(object):
             self._key = hash(self._service_IP_port)
             if self.has_peers_changed():
                 self.peers = self.info_peers_list()
-            self.new_histogram_version = self._is_new_hist_version()
+            self.new_histogram_version = self._is_new_histogram_version()
             self.alive = True
 
         except Exception:
@@ -353,15 +352,12 @@ class Node(object):
         except Exception:
             return True
 
-    def _is_new_hist_version(self):
+    def _is_new_histogram_version(self):
         as_version = self.info("build")
         if isinstance(as_version, Exception):
             return False
 
-        if LooseVersion(as_version) > LooseVersion(SERVER_OLD_HISTOGRAM_LAST_VERSION):
-            return True
-
-        return False
+        return common.is_new_histogram_version(as_version)
 
     def _get_connection(self, ip, port):
         sock = None
@@ -1468,7 +1464,11 @@ class Node(object):
                 if (e and not ignore_error) or not o:
                     continue
                 else:
-                    parse_system_live_command(_key, o, sys_stats)
+                    try:
+                        parse_system_live_command(_key, o, sys_stats)
+                    except Exception:
+                        pass
+
                     break
 
         return sys_stats

@@ -16,7 +16,7 @@ import copy
 from distutils.version import LooseVersion
 
 from lib.collectinfo_parser.full_parser import parse_info_all
-from lib.utils import constants, util
+from lib.utils import common, util
 from lib.utils.lookupdict import LookupDict
 
 
@@ -224,13 +224,14 @@ class CollectinfoSnapshot(object):
 
                         else:
                             # old collectinfo does not have object-size-logarithmic
-                            # it should return objsz if server version is <= SERVER_OLD_HISTOGRAM_LAST_VERSION
+                            # it should return objsz if server version is old
                             as_version = node_data['as_stat']['meta_data']['asd_build']
-                            if not LooseVersion(as_version) > LooseVersion(constants.SERVER_OLD_HISTOGRAM_LAST_VERSION):
+                            if not common.is_new_histogram_version(as_version) and 'objsz' in d:
                                 data[node] = copy.deepcopy(d['objsz'])
 
                             else:
                                 data[node] = {}
+
                     else:
                         data[node] = copy.deepcopy(d[stanza])
 
@@ -409,8 +410,10 @@ class CollectinfoLog(object):
             for ts in sorted(self.data.keys(), reverse=True):
                 if self.data[ts]:
                     for cl in self.data[ts]:
-                        self.snapshots[ts] = CollectinfoSnapshot(
-                            cl, ts, self.data[ts][cl], cinfo_path)
+                        cinfo_data = self.data[ts][cl]
+                        if cinfo_data and not isinstance(cinfo_data, Exception):
+                            self.snapshots[ts] = CollectinfoSnapshot(
+                                cl, ts, cinfo_data, cinfo_path)
 
                     # Since we are not dealing with timeseries we should fetch only one snapshot
                     break

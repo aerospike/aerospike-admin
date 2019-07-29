@@ -85,6 +85,20 @@ AuthMode = Enumeration([
 	"EXTERNAL_INSECURE",
 ])
 
+AdminMode = Enumeration([
+    # Connect to live cluster
+
+	"LIVE_CLUSTER",
+
+    # Analyse collectinfo
+
+	"COLLECTINFO_ANALYZER",
+
+    # Analyse Aerospike logs
+
+	"LOG_ANALYZER",
+])
+
 
 # server versions with critical changes
-SERVER_OLD_HISTOGRAM_LAST_VERSION = "4.1.0.1"
+SERVER_NEW_HISTOGRAM_FIRST_VERSION = "4.2"

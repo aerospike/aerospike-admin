@@ -372,6 +372,12 @@ ASSERT(stop_writes, False, "Namespace has hit stop-writes (stop_writes = true)",
 				"Listed namespace(s) have hit stop-write. Please run 'show statistics namespace like stop_writes' for details.",
 				"Namespace stop-writes flag check.");
 
+clock_skew_stop_writes = select "clock_skew_stop_writes" from NAMESPACE.STATISTICS;
+clock_skew_stop_writes = group by CLUSTER, NAMESPACE clock_skew_stop_writes;
+ASSERT(clock_skew_stop_writes, False, "Namespace has hit clock-skew-stop-writes (clock_skew_stop_writes = true)", "OPERATIONS" , CRITICAL,
+				"Listed namespace(s) have hit clock-skew-stop-writes. Please run 'show statistics namespace like clock_skew_stop_writes' for details.",
+				"Namespace clock-skew-stop-writes flag check.");
+
 SET CONSTRAINT VERSION < 4.3;
 
 device = select "file", "storage-engine.file" as "file", "device", "storage-engine.device" as "device" from NAMESPACE.CONFIG save;
@@ -696,6 +702,22 @@ r = do s > 5000;
 ASSERT(r, False, "Record shipping takes too long (>5 sec).", "PERFORMANCE", WARNING,
 				"Listed node[s] have more than normal (>5sec) average shipping latency to remote data center. Possible high connectivity latency or performance issue at the remote data center.",
 				"XDR average ship latency check.",
+				xdr_enabled);
+
+/* XDR dlog_overwritten_error check */
+s = select "dlog_overwritten_error" from XDR.STATISTICS save;
+r = do s > 0;
+ASSERT(r, False, "XDR digest log entries got overwritten.", "PERFORMANCE", WARNING,
+				"Listed node[s] have a non zero value for XDR digest log entries that got overwritten.",
+				"XDR dlog overwritten error check.",
+				xdr_enabled);
+
+/* XDR xdr_queue_overflow_error check */
+s = select "xdr_queue_overflow_error" from XDR.STATISTICS save;
+r = do s > 0;
+ASSERT(r, False, "XDR queue overflows.", "PERFORMANCE", WARNING,
+				"Listed node[s] have a non zero value for XDR queue overflow errors. Typically happens when there are no physical space available on the storage holding the digest log, or if the writes are happening at such a rate that elements are not written fast enough to the digest log. The number of entries this queue can hold is 1 million.",
+				"XDR queue overflow error check.",
 				xdr_enabled);
 
 

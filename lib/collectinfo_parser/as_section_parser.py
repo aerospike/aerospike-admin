@@ -906,7 +906,7 @@ def _parse_xdr_config_section(nodes, imap, parsed_map):
     _parse_nondefault_section(sec_id, nodes, imap, parsed_map)
 
 def _parse_cluster_config_section(nodes, imap, parsed_map):
-    sec_id = 'ID_102'
+    sec_id = 'ID_101'
     _parse_nondefault_section(sec_id, nodes, imap, parsed_map)
 
 def _get_stat_sindex_section(imap):

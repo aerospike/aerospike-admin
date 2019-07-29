@@ -96,7 +96,7 @@ from lib.client.ssl_context import SSLContext
 from lib.collectinfocontroller import CollectinfoRootController
 from lib.logcontroller import LogRootController
 from lib.utils import common, util, conf
-from lib.utils.constants import ADMIN_HOME, AuthMode
+from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
 from lib.view import terminal, view
 
 __version__ = '$$__version__$$'
@@ -104,24 +104,22 @@ CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
 CMD_FILE_MULTI_LINE_COMMENT_START = "/*"
 CMD_FILE_MULTI_LINE_COMMENT_END = "*/"
 
-ADMINHIST = ADMIN_HOME + 'admin_hist'
-
 MULTILEVEL_COMMANDS = ["show", "info"]
 
 
 class AerospikeShell(cmd.Cmd):
-    def __init__(self, admin_version, seeds, user=None, password=None, auth_mode=AuthMode.INTERNAL, use_services_alumni=False, use_services_alt=False,
-                 log_path="", log_analyser=False, collectinfo=False,
+    def __init__(self, admin_version, seeds, user=None, password=None, auth_mode=AuthMode.INTERNAL,
+                 use_services_alumni=False, use_services_alt=False, log_path="", mode=AdminMode.LIVE_CLUSTER,
                  ssl_context=None, only_connect_seed=False, execute_only_mode=False, timeout=5):
 
         # indicates shell created successfully and connected to cluster/collectinfo/logfile
         self.connected  = True
-
+        self.admin_history = ADMIN_HOME + 'admin_' + str(mode).lower() + "_history"
         self.execute_only_mode = execute_only_mode
 
-        if log_analyser:
+        if mode == AdminMode.LOG_ANALYZER:
             self.name = 'Aerospike Log Analyzer Shell'
-        elif collectinfo:
+        elif mode == AdminMode.COLLECTINFO_ANALYZER:
             self.name = 'Aerospike Collectinfo Shell'
         else:
             self.name = 'Aerospike Interactive Shell'
@@ -133,13 +131,13 @@ class AerospikeShell(cmd.Cmd):
         cmd.Cmd.__init__(self)
 
         try:
-            if log_analyser:
+            if mode == AdminMode.LOG_ANALYZER:
                 if not log_path:
                     log_path = " "
                 self.ctrl = LogRootController(admin_version, log_path)
 
                 self.prompt = "Log-analyzer> "
-            elif collectinfo:
+            elif mode == AdminMode.COLLECTINFO_ANALYZER:
                 if not log_path:
                     logger.error(
                         "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>")
@@ -203,10 +201,11 @@ class AerospikeShell(cmd.Cmd):
             logger.critical(str(e))
 
         if not execute_only_mode:
+
             try:
-                readline.read_history_file(ADMINHIST)
+                readline.read_history_file(self.admin_history)
             except Exception:
-                readline.write_history_file(ADMINHIST)
+                readline.write_history_file(self.admin_history)
 
         self.commands = set()
 
@@ -411,7 +410,7 @@ class AerospikeShell(cmd.Cmd):
     def do_exit(self, line):
         self.close()
         if not self.execute_only_mode and readline.get_current_history_length() > 0:
-            readline.write_history_file(ADMINHIST)
+            readline.write_history_file(self.admin_history)
 
         return True
 
@@ -466,6 +465,9 @@ def do_ctrl_c(*args, **kwargs):
 
 
 def parse_tls_input(cli_args):
+    if cli_args.collectinfo:
+        return None
+
     try:
         keyfile_password = cli_args.tls_keyfile_password
 
@@ -553,6 +555,15 @@ def main():
     if cli_args.no_color:
         disable_coloring()
 
+    mode = AdminMode.LIVE_CLUSTER
+    if cli_args.collectinfo:
+        mode = AdminMode.COLLECTINFO_ANALYZER
+
+    if cli_args.log_analyser:
+        if cli_args.collectinfo:
+            logger.critical("collectinfo-analyser and log-analyser are mutually exclusive options. Please enable only one.")
+        mode = AdminMode.LOG_ANALYZER
+
     if not os.path.isdir(ADMIN_HOME):
         os.makedirs(ADMIN_HOME)
 
@@ -572,7 +583,7 @@ def main():
 
     if cli_args.asinfo_mode:
 
-        if cli_args.collectinfo or cli_args.log_analyser:
+        if mode == AdminMode.COLLECTINFO_ANALYZER or mode == AdminMode.LOG_ANALYZER:
             logger.critical("asinfo mode can not work with Collectinfo-analyser or Log-analyser mode.")
 
         commands_arg = cli_args.execute
@@ -597,8 +608,7 @@ def main():
                            use_services_alumni=cli_args.services_alumni,
                            use_services_alt=cli_args.services_alternate,
                            log_path=cli_args.log_path,
-                           log_analyser=cli_args.log_analyser,
-                           collectinfo=cli_args.collectinfo,
+                           mode=mode,
                            ssl_context=ssl_context,
                            only_connect_seed=cli_args.single_node,
                            execute_only_mode=execute_only_mode, timeout=cli_args.timeout)

@@ -101,7 +101,7 @@ def parse_sys_section(section_list, imap, parsed_map):
             parsed_map[section] = copy.deepcopy(param_map[section])
 
 
-def _get_mem_in_byte_from_str(memstr, mem_unit_len):
+def _get_mem_in_byte_from_str(memstr, mem_unit_len, shift=0):
     # Some files have float in (a,b) format rather than (a.b)
     if ',' in memstr:
         memstr = memstr.replace(',', '.')
@@ -124,7 +124,7 @@ def _get_mem_in_byte_from_str(memstr, mem_unit_len):
         return _get_bytes_from_float(memstr, 80, mem_unit_len)
 
     else:
-        return int(memstr)
+        return _get_bytes_from_float(memstr, shift, 0)
 
 
 def _get_bytes_from_float(memstr, shift, mem_unit_len):
@@ -135,6 +135,7 @@ def _get_bytes_from_float(memstr, shift, mem_unit_len):
             memnum = float(memstr[:-mem_unit_len])
     except ValueError:
         return memstr
+
     if memstr == '0':
         return int(0)
     f, i = math.modf(memnum)
@@ -194,14 +195,11 @@ def _parse_top_section(imap, parsed_map):
     top_section = imap[raw_section_name][0]
     asd_flag = False
     xdr_flag = False
-    kib_format = False
+
     for index, line in enumerate(top_section):
         line = line.strip()
         if re.search('top -n3 -b', line):
             continue
-
-        if 'Ki_b' in line or 'KiB' in line:
-            kib_format = True
 
         # Match object to get uptime in days.
         # "top - 18:56:45 up 103 days, 13:00,  2 users,  load average: 1.29, 1.34, 1.35\n"
@@ -247,12 +245,24 @@ def _parse_top_section(imap, parsed_map):
             topdata['cpu_utilization'] = obj
 
         elif re.search(r'Mem.*total', line):
+            shift = 1
+            if 'Ki_b' in line or 'KiB' in line:
+                shift = 10
+            if 'Mi_b' in line or 'MiB' in line:
+                shift = 20
+
             obj = _parse_top_section_line(line, ',', [' ', '+'])
             topdata['ram'] = obj
             for mem in topdata['ram']:
-                topdata['ram'][mem] = _get_mem_in_byte_from_str(topdata['ram'][mem], 1)
+                topdata['ram'][mem] = _get_mem_in_byte_from_str(topdata['ram'][mem], 1, shift=shift)
 
         elif matchobj_2 or matchobj_3:
+            shift = 1
+            if 'Ki_b' in line or 'KiB' in line:
+                shift = 10
+            if 'Mi_b' in line or 'MiB' in line:
+                shift = 20
+
             if matchobj_2:
                 topdata['swap']['total'] = matchobj_2.group(1)
                 topdata['swap']['used'] = matchobj_2.group(2)
@@ -263,8 +273,9 @@ def _parse_top_section(imap, parsed_map):
                 topdata['swap']['free'] = matchobj_3.group(2)
                 topdata['swap']['used'] = matchobj_3.group(3)
                 topdata['swap']['avail'] = matchobj_3.group(4)
+
             for mem in topdata['swap']:
-                topdata['swap'][mem] = _get_mem_in_byte_from_str(topdata['swap'][mem], 1)
+                topdata['swap'][mem] = _get_mem_in_byte_from_str(topdata['swap'][mem], 1, shift=shift)
 
         else:
             # Break, If we found data for both process.
@@ -298,18 +309,6 @@ def _parse_top_section(imap, parsed_map):
                         continue
                     topdata['xdr_process'][field] = _get_mem_in_byte_from_str(
                                                         topdata['xdr_process'][field], 1)
-    if kib_format:
-
-        for key in topdata['ram']:
-            try:
-                topdata['ram'][key] = _get_bytes_from_float(topdata['ram'][key], 10, 0)
-            except Exception:
-                pass
-        for key in topdata['swap']:
-            try:
-                topdata['swap'][key] = _get_bytes_from_float(topdata['swap'][key], 10, 0)
-            except Exception:
-                pass
 
     _replace_comma_from_map_value_field(topdata)
 
@@ -725,10 +724,16 @@ def _parse_hdparm_section(imap, parsed_map):
     device_info = {}
     hdparm_section = imap[raw_section_name][0]
 
+    device = ""
+
     for line in hdparm_section:
 
         if re.search("/dev.*:", line, re.IGNORECASE):
             device = line
+            continue
+
+        if not device:
+            continue
 
         if ('Sector size' in line
             or 'device size' in line
@@ -739,6 +744,9 @@ def _parse_hdparm_section(imap, parsed_map):
             or 'Queue Depth' in line):
 
             lineobj = line.rstrip().split(':')
+            if len(lineobj) < 2:
+                continue
+
             key = str(device) + str(lineobj[0]).strip()
             val = str(lineobj[1]).strip()
 

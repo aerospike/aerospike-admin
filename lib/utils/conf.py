@@ -385,7 +385,9 @@ def loadconfig(cli_args, logger):
     if not cli_args.asinfo_mode:
         if cli_args.instance:
             print("Instance:    " + cli_args.instance )
-        print("Seed:        " + str(seeds))
+
+        if not cli_args.collectinfo:
+            print("Seed:        " + str(seeds))
 
         if cli_args.no_config_file or not conffiles:
             print("Config_file: None")

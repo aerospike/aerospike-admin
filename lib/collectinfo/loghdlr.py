@@ -22,7 +22,7 @@ import zipfile
 
 from lib.collectinfo.reader import CollectinfoReader
 from lib.collectinfo.cinfolog import CollectinfoLog
-from lib.utils.constants import ADMIN_HOME, CLUSTER_FILE, JSON_FILE, SERVER_OLD_HISTOGRAM_LAST_VERSION, SYSTEM_FILE
+from lib.utils.constants import ADMIN_HOME
 from lib.utils import common, logutil, util
 
 ###### Constants ######
@@ -54,10 +54,11 @@ class CollectinfoLoghdlr(object):
         self.cinfo_timestamp = None
 
         self.reader = CollectinfoReader()
-        snapshot_added, err_cinfo = self._add_cinfo_log_files(cinfo_path)
-
-        if snapshot_added == 0:
-            raise Exception(str(err_cinfo))
+        try:
+            self._add_cinfo_log_files(cinfo_path)
+        except Exception as e:
+            self.close()
+            raise e
 
     def __str__(self):
         status_str = ""
@@ -137,7 +138,7 @@ class CollectinfoLoghdlr(object):
                     try:
                         as_version = version[timestamp][node]
                         d = common.parse_raw_histogram(stanza, namespace_snapshot, logarithmic=byte_distribution,
-                            new_histogram_version=LooseVersion(as_version) > LooseVersion(SERVER_OLD_HISTOGRAM_LAST_VERSION))
+                            new_histogram_version=common.is_new_histogram_version(as_version))
                         if d and not isinstance(d, Exception):
                             res_dict[timestamp][node][namespace] = d
 
@@ -171,54 +172,52 @@ class CollectinfoLoghdlr(object):
 
         return res_dict
 
-    def _get_files_by_type(self, file_type, cinfo_path=""):
+    def _get_valid_files(self, cinfo_path=""):
         try:
             if not cinfo_path:
                 cinfo_path = self.cinfo_path
 
             log_files = logutil.get_all_files(cinfo_path)
-            if file_type == CLUSTER_FILE:
-                cinfo_files = []
-                for log_file in log_files:
-                    try:
-                        if self.reader.is_cinfo_log_file(log_file):
-                            cinfo_files.append(log_file)
-                    except Exception:
-                        pass
+            valid_files = []
+            for log_file in log_files:
+                try:
+                    if self.reader.is_cinfo_log_file(log_file):
+                        valid_files.append(log_file)
+                        continue
+                except Exception:
+                    pass
 
-                return cinfo_files
+                try:
+                    # ToDo: It should be some proper check for asadm
+                    # collectinfo json file.
+                    if os.path.splitext(log_file)[1] == ".json":
+                        valid_files.append(log_file)
+                        continue
+                except Exception:
+                    pass
 
-            if file_type == JSON_FILE:
-                json_files = []
-                for log_file in log_files:
-                    try:
-                        # ToDo: It should be some proper check for asadm
-                        # collectinfo json file.
-                        if os.path.splitext(log_file)[1] == ".json":
-                            json_files.append(log_file)
-                    except Exception:
-                        pass
+                try:
+                    if self.reader.is_system_log_file(log_file):
+                        valid_files.append(log_file)
+                        continue
+                except Exception:
+                    pass
 
-                return json_files
+                try:
+                    # ToDo: It should be some proper check for asadm
+                    # conf file.
+                    if os.path.splitext(log_file)[1] == ".conf":
+                        valid_files.append(log_file)
+                except Exception:
+                    pass
 
-            if file_type == SYSTEM_FILE:
-                system_files = []
-                for log_file in log_files:
-                    try:
-                        if self.reader.is_system_log_file(log_file):
-                            system_files.append(log_file)
-                    except Exception:
-                        pass
+            return valid_files
 
-                return system_files
-
-            return []
         except Exception:
             return []
 
     def _get_all_file_paths(self, cinfo_path):
         files = []
-
 
         if os.path.isfile(cinfo_path):
             if not self._is_compressed_file(cinfo_path):
@@ -228,47 +227,34 @@ class CollectinfoLoghdlr(object):
 
         elif os.path.isdir(cinfo_path):
             files += logutil.get_all_files(cinfo_path)
-
             if os.path.exists(self.collectinfo_dir):
                 # ToDo: Before adding file from collectinfo_dir, we need to check file already exists in input file list or not,
                 # ToDo: collectinfo_parser fails if same file exists twice in input file list. This is possible if input has zip file and
                 # ToDo: user unzipped it but did not remove zipped file, in that case collectinfo-analyser creates new unzipped file,
                 # ToDo: which results in two copies of same file (one unzipped by user and one unzipped by collectinfo-analyser).
 
-                if not self._get_files_by_type(JSON_FILE, cinfo_path):
-                    for collectinfo_json_file in self._get_files_by_type(JSON_FILE, self.collectinfo_dir):
-                        files.append(collectinfo_json_file)
-
-                if not self._get_files_by_type(CLUSTER_FILE, cinfo_path):
-                    for old_collectinfo_file in self._get_files_by_type(CLUSTER_FILE, self.collectinfo_dir):
-                        files.append(old_collectinfo_file)
-
-                if not self._get_files_by_type(SYSTEM_FILE, cinfo_path):
-                    for sysinfo_file in self._get_files_by_type(SYSTEM_FILE, self.collectinfo_dir):
-                        files.append(sysinfo_file)
+                files += self._get_valid_files(self.collectinfo_dir)
 
         return files
 
     def _add_cinfo_log_files(self, cinfo_path=""):
 
-        snapshots_added = 0
         if not cinfo_path:
-            return snapshots_added, "Collectinfo path not specified."
+            raise Exception("Collectinfo path not specified.")
 
         if not os.path.exists(cinfo_path):
-            return snapshots_added, "Wrong Collectinfo path."
+            raise Exception("Wrong Collectinfo path.")
 
         files = self._get_all_file_paths(cinfo_path)
-        if files:
-            cinfo_log = CollectinfoLog(cinfo_path, files, self.reader)
-            self.selected_cinfo_logs = cinfo_log.snapshots
-            self.all_cinfo_logs = cinfo_log.snapshots
-            snapshots_added = len(self.all_cinfo_logs)
-            return snapshots_added, ""
-        else:
-            return snapshots_added, "Incorrect collectinfo path " + str(cinfo_path) + " specified. Please provide correct collectinfo directory path."
+        if not files:
+            raise Exception("No valid Aerospike collectinfo log available.")
 
-        return snapshots_added, ""
+        cinfo_log = CollectinfoLog(cinfo_path, files, self.reader)
+        self.selected_cinfo_logs = cinfo_log.snapshots
+        self.all_cinfo_logs = cinfo_log.snapshots
+        snapshots_added = len(self.all_cinfo_logs)
+        if not snapshots_added:
+            raise Exception("Multiple snapshots available without JSON dump.")
 
     def _fetch_from_cinfo_log(self, type="", stanza="", flip=False):
         res_dict = {}
