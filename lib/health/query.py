@@ -1730,12 +1730,6 @@ ASSERT(r, False, "Cluster clock_skew breached warning level", "OPERATIONS", WARN
 				"Cluster clock_skew check",
 				s);
 
-roster = select "roster", "observed_nodes" from ROSTER.CONFIG;
-r = group by CLUSTER, NAMESPACE, NODE do EQUAL(roster);
-ASSERT(r, True, "Roster misconfigured.", "OPERATIONS", WARNING,
-				"Listed namespace[s] shows difference between set roster nodes and observe nodes. Please set roster properly.",
-				"Roster misconfiguration check.");
-
 size = select "cluster_size" from SERVICE.STATISTICS;
 p = group by CLUSTER do MAX(size) save as "cluster_size";
 repl = select "replication-factor", "repl-factor" from NAMESPACE.CONFIG save as "replication_factor";
@@ -1746,6 +1740,12 @@ ASSERT(r, False, "Nodes equal to replication factor.", "OPERATIONS", WARNING,
 
 sc_check = select "strong-consistency" from NAMESPACE.CONFIG;
 sc_check = group by CLUSTER, NAMESPACE do OR(sc_check);
+
+roster = select "roster", "observed_nodes" from ROSTER.CONFIG;
+r = group by CLUSTER, NAMESPACE, NODE do EQUAL(roster);
+ASSERT(r, True, "Roster misconfigured.", "OPERATIONS", WARNING,
+				"Listed namespace[s] shows difference between set roster nodes and observe nodes. Please set roster properly.",
+				"Roster misconfiguration check.", sc_check);
 
 roster_null_check = select "roster" from ROSTER.CONFIG;
 roster_null_check = group by CLUSTER, NAMESPACE, NODE roster_null_check;
