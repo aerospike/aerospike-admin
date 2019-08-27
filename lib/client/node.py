@@ -723,7 +723,7 @@ class Node(object):
         if not service or isinstance(service, Exception):
             return []
         s = map(lambda v: util.parse_peers_string(v, ":"), util.info_to_list(service, delimiter=delimiter))
-        return map(lambda v: (v[0].strip("[]"), int(self.port), self.tls_name), s)
+        return map(lambda v: (v[0].strip("[]"), int(v[1]) if len(v)>1 and v[1] else int(self.port), self.tls_name), s)
 
     # post 3.10 services
 
