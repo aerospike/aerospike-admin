@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from mock import patch, Mock, MagicMock
+from mock import patch, Mock
 import socket
 import unittest2 as unittest
 
