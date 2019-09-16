@@ -17,7 +17,7 @@ import re
 from lib.health.exceptions import HealthException
 from lib.health.operation import select_keys_from_dict, AggOperation, ApplyOperation,\
     AssertDetailOperation, BinaryOperation, ComplexOperation, SimpleOperation
-from lib.health.util import create_health_internal_tuple, create_snapshot_key
+from lib.health.util import create_health_internal_tuple, create_snapshot_key, get_value_from_health_internal_tuple
 
 SNAPSHOT_KEY_PREFIX = "SNAPSHOT"
 SNAPSHOT_KEY_PATTERN = r"SNAPSHOT(\d+)$"
@@ -137,6 +137,8 @@ def is_data_true(data):
         return False
 
     if not isinstance(data, dict):
+        if not get_value_from_health_internal_tuple(data):
+            return False
         return True
 
     for _k in data:

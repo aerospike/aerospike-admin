@@ -94,8 +94,8 @@ class TestShowConfig(unittest.TestCase):
         exp_header = "NODE"
         exp_params = [  ('allow-inline-transactions', None),
                         'batch-max-requests',
-                        'batch-priority',
-                        'batch-threads',
+                        ('batch-priority', None),
+                        ('batch-threads', None),
                         ('fabric-workers', None),
                         'info-threads',
                         ('ldt-benchmarks', None),
@@ -105,7 +105,7 @@ class TestShowConfig(unittest.TestCase):
                         'migrate-max-num-incoming',
                         ('migrate-rx-lifetime-ms', None),
                         'migrate-threads',
-                        'nsup-startup-evict',
+                        ('nsup-startup-evict', None),
                         ('paxos-max-cluster-size', None),
                         ('paxos-protocol', None),
                         ('paxos-recovery-policy', None),
@@ -596,10 +596,10 @@ class TestShowStatistics(unittest.TestCase):
         """
         exp_heading = "~Service Statistics"
         exp_header = "NODE"
-        exp_params = [  ('batch_errors', 'batch_error'),
-                        'batch_initiate',
-                        'batch_queue',
-                        'batch_timeout',
+        exp_params = [  ('batch_errors', 'batch_error', None),
+                        ('batch_initiate', None),
+                        ('batch_queue', None),
+                        ('batch_timeout', None),
                         ('batch_tree_count', None),
                         'client_connections',
                         'cluster_integrity',
@@ -727,7 +727,7 @@ class TestShowStatistics(unittest.TestCase):
                         ('storage_defrag_corrupt_record', None),
                         ('sub-records', 'sub_objects', None),
                         'system_free_mem_pct',
-                        'system_swapping',
+                        ('system_swapping', None),
                         ('total-bytes-disk', None),
                         ('total-bytes-memory', None),
                         ('transactions', None),
