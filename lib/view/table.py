@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,9 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import division
+from builtins import str
+from builtins import map
+from builtins import range
+from builtins import object
+from past.utils import old_div
+
 import re
 
 from lib.utils import filesize
+from lib.utils.util import is_str
 from lib.view import terminal
 
 
@@ -74,8 +82,8 @@ class Extractors(object):
                     break
 
             time_stamp = int(data[column])
-            hours = time_stamp / 3600
-            minutes = (time_stamp % 3600) / 60
+            hours = old_div(time_stamp, 3600)
+            minutes = old_div((time_stamp % 3600), 60)
             seconds = time_stamp % 60
 
             return "%02d:%02d:%02d" % (hours, minutes, seconds)
@@ -88,7 +96,7 @@ class TitleFormats(object):
     @staticmethod
     def var_to_title(name):
         rename = re.split('[\-_ ]', name)
-        rename = ' '.join(map(lambda w: w.title(), rename)).strip()
+        rename = ' '.join([w.title() for w in rename]).strip()
         return rename.replace(' Pct', '%')
 
     @staticmethod
@@ -126,7 +134,7 @@ class Table(object):
         self._column_display_names = []
         self._render_column_ids = set()
         for name in column_names:
-            if type(name) == str:
+            if is_str(name):
                 self._column_names.append(name)
                 self._column_display_names.append(title_format(name))
             elif type(name) == tuple or type(name) == list:
@@ -160,7 +168,7 @@ class Table(object):
                     # TODO - never used cell_format = self._no_alert_style
 
                 if header:
-                    max_length = max(map(len, cell.split(' ')))
+                    max_length = max(list(map(len, cell.split(' '))))
                 else:
                     max_length = len(cell)
                 if self._column_widths[i] < max_length:
@@ -171,8 +179,7 @@ class Table(object):
                             self._column_types[i] = "string"
         elif self._style == Styles.VERTICAL:
             length = max(
-                map(lambda r:
-                    len(r[1]) if type(r) is tuple else len(r), row))
+                [len(r[1]) if type(r) is tuple else len(r) for r in row])
             self._column_widths.append(length)
         else:
             raise ValueError("Style must be either HORIZONAL or VERTICAL")
@@ -286,9 +293,9 @@ class Table(object):
             else:  # style is Vertical
                 # Need to sort but messes with column widths
                 transform = sorted(
-                    range(len(data_to_process)), key=lambda d: data_to_process[d][self._sort_by][1])
+                    list(range(len(data_to_process))), key=lambda d: data_to_process[d][self._sort_by][1])
 
-                self._data = map(lambda i: data_to_process[i], transform)
+                self._data = [data_to_process[i] for i in transform]
                 first = self._column_widths[0]
 
                 if self._n_last_columns_ignore_sort > 0:
@@ -296,8 +303,7 @@ class Table(object):
                 else:
                     fixed_column_widths = []
 
-                self._column_widths = map(lambda i:
-                                          self._column_widths[i + 1], transform)
+                self._column_widths = [self._column_widths[i + 1] for i in transform]
                 self._column_widths.insert(0, first)
                 self._column_widths = self._column_widths + fixed_column_widths
                 self._need_sort = False
@@ -366,13 +372,12 @@ class Table(object):
         total_repeat_titles = 0
         if title_every_nth:
             total_columns = len(self._render_column_display_names) - 1 # Ignoring first columns of Row Header
-            total_repeat_titles = (total_columns-1)/title_every_nth
+            total_repeat_titles = old_div((total_columns-1),title_every_nth)
         width += total_repeat_titles * self._render_column_widths[0] # Width is same as first column
         width += len(self._column_padding) * \
             (len(self._render_column_widths) + total_repeat_titles - 1)
-        column_name_lines = map(
-            lambda h: h.split(" "), self._render_column_display_names)
-        max_deep = max(map(len, column_name_lines))
+        column_name_lines = [h.split(" ") for h in self._render_column_display_names]
+        max_deep = max(list(map(len, column_name_lines)))
 
         output = [terminal.bold()]
         output.append(self._get_title(self._title, width=width))
@@ -397,7 +402,7 @@ class Table(object):
                 row.append(self._column_padding)
             output.append(row)
 
-        output = "\n".join(map(lambda r: "".join(r), output))
+        output = "\n".join(["".join(r) for r in output])
         return output
 
     def __str__(self, horizontal_title_every_nth=0):
@@ -459,7 +464,7 @@ class Table(object):
         total_titles = 1
         if title_every_nth:
             total_columns = len(self._render_column_widths) - 1
-            extra_header_columns = (total_columns - 1) / title_every_nth
+            extra_header_columns = old_div((total_columns - 1), title_every_nth)
             total_titles = extra_header_columns + 1  # 1 for default
         if total_titles > 1:
             slice_title_width = self._render_column_widths[0] + 1

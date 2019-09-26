@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from future import standard_library
+standard_library.install_aliases()
+from builtins import object
+
 import signal
-import commands
+import subprocess
 
 DEFAULT_TIMEOUT = 5.0
 
@@ -24,7 +28,7 @@ class TimeoutException(Exception):
     pass
 
 
-class call_with_timeout:
+class call_with_timeout(object):
 
     def __init__(self, function, timeout=DEFAULT_TIMEOUT):
         self.timeout = timeout
@@ -60,8 +64,8 @@ def default_timeout(function):
 
 
 def getstatusoutput(command, timeout=DEFAULT_TIMEOUT):
-    """This is a timeout wrapper aroung getstatusoutput."""
-    _gso = call_with_timeout(commands.getstatusoutput, timeout)
+    """This is a timeout wrapper around getstatusoutput."""
+    _gso = call_with_timeout(subprocess.getstatusoutput, timeout)
     try:
         return _gso(command)
     except TimeoutException:

@@ -15,7 +15,9 @@
 import re
 import sys
 import logging
-import section_filter_list
+
+from lib.collectinfo_parser import section_filter_list
+
 # Assumption - Always a valid number is passed to convert to integer/float
 
 logger = logging.getLogger(__name__)

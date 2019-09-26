@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import range
+
 import unittest2 as unittest
+
 import time
 
 from lib.utils import timeout
@@ -114,8 +117,8 @@ class UtilTest(unittest.TestCase):
         self.assertEqual(result, expected, "parse_peers_string did not return the expected result")
 
     def test_concurrent_map(self):
-        value = range(10)
-        expected = map(lambda v: v*v, value)
+        value = list(range(10))
+        expected = [v*v for v in value]
         result = util.concurrent_map(lambda v: v*v, value)
         self.assertEqual(result, expected, "concurrent_map did not return the expected result")
 

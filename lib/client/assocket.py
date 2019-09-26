@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from __future__ import print_function
+from builtins import str
+from builtins import object
 
 import socket
 import warnings
@@ -35,7 +39,7 @@ except ImportError:
     HAVE_PYOPENSSL = False
 
 
-class ASSocket:
+class ASSocket(object):
 
     def __init__(self, ip, port, tls_name, user, password, auth_mode, ssl_context, timeout=5):
         self.sock = None
@@ -79,7 +83,7 @@ class ASSocket:
 
                     sock.do_handshake()
                 except Exception as tlse:
-                    print "TLS connection exception: " + str(tlse)
+                    print("TLS connection exception: " + str(tlse))
                     if sock:
                         sock.close()
                         sock = None
@@ -115,7 +119,7 @@ class ASSocket:
         rc, self.session_token, self.session_expiration = login(self.sock, self.user, self.password, self.auth_mode)
 
         if rc != 0:
-            print "Login failed for", self.user, ":", rc
+            print("Login failed for", self.user, ":", rc)
             self.sock.close()
             return False
 
@@ -136,7 +140,7 @@ class ASSocket:
             rc = authenticate_new(self.sock, self.user, session_token)
 
         if rc != 0:
-            print "Authentication failed for", self.user, ":", rc
+            print("Authentication failed for", self.user, ":", rc)
             self.sock.close()
             return False
 

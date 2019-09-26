@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from future import standard_library
+standard_library.install_aliases()
+
 from mock import patch, Mock
-import sys
-from cStringIO import StringIO
 import unittest2 as unittest
 
-from lib.client.cluster import Cluster
 from lib.client.node import Node
 from lib.basiccontroller import *
 from lib.utils.lookupdict import LookupDict

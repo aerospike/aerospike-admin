@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import unittest2 as unittest
+
 from lib.controllerlib import BaseController, CommandController, CommandHelp, ShellException
 
 class CommandHelpTest(unittest.TestCase):

@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from __future__ import division
+from builtins import str
+from past.utils import old_div
 
 byte = [
     (1024.0 ** 5, ' PB'),
@@ -65,7 +69,7 @@ def size(bytes, system=byte):
     for factor, suffix in system:
         if bytes >= factor:
             break
-    amount = bytes / factor
+    amount = old_div(bytes, factor)
     if isinstance(suffix, tuple):
         singular, multiple = suffix
         if amount == 1:

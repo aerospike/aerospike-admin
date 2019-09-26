@@ -1,3 +1,4 @@
+# -*- coding: latin-1 -*-
 # Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -118,11 +119,11 @@ class UtilTest(unittest.TestCase):
                     ('NS1', 'NAMESPACE'): {
                         ('CONFIG1', 'KEY'): "false",
                         ('CONFIG2', 'KEY'): "TRUE",
-                        ('CONFIG3', 'KEY'): "1",
+                        ('CONFIG3', 'KEY'): "1000000000000000000000000000000000000000000000000000000000",
                         ('CONFIG4', 'KEY'): "9.5",
                     },
                     ('NS2', 'NAMESPACE'): {
-                        ('CONFIG1', 'KEY'): "abcd",
+                        ('CONFIG1', 'KEY'): "\uabcdé",
                         ('CONFIG2', 'KEY'): "100%",
                         ('CONFIG3', 'KEY'): "n/e"
                     }
@@ -134,11 +135,11 @@ class UtilTest(unittest.TestCase):
                     ('NS1', 'NAMESPACE'): {
                         ('CONFIG1', 'KEY'): False,
                         ('CONFIG2', 'KEY'): True,
-                        ('CONFIG3', 'KEY'): 1,
+                        ('CONFIG3', 'KEY'): 1000000000000000000000000000000000000000000000000000000000,
                         ('CONFIG4', 'KEY'): 9.5
                     },
                     ('NS2', 'NAMESPACE'): {
-                        ('CONFIG1', 'KEY'): "abcd",
+                        ('CONFIG1', 'KEY'): "\uabcdé",
                         ('CONFIG2', 'KEY'): 100
                     }
                 }

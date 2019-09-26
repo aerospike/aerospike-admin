@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import map
+from builtins import str
+from builtins import range
+from builtins import object
+
 import re
 import itertools
 import threading
@@ -19,6 +24,7 @@ from time import time
 import subprocess
 import pipes
 
+from lib.utils.util import bytes_to_str
 
 def info_to_dict(value, delimiter=';', ignore_field_without_key_value_delimiter=True):
     """
@@ -60,12 +66,12 @@ def info_to_dict(value, delimiter=';', ignore_field_without_key_value_delimiter=
             else:
                 _value_list.append(_v)
 
-    stat_param = itertools.imap(lambda sp: info_to_tuple(sp, delimiter2),
+    stat_param = map(lambda sp: info_to_tuple(sp, delimiter2),
                                 _value_list)
 
     for g in itertools.groupby(stat_param, lambda x: x[0]):
         try:
-            value = map(lambda v: v[1], g[1])
+            value = [v[1] for v in g[1]]
             value = ",".join(sorted(value)) if len(value) > 1 else value[0]
             stat_dict[g[0]] = value
         except Exception:
@@ -89,7 +95,7 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ign
     if isinstance(value, Exception):
         return value
 
-    if isinstance(keyname, str):
+    if not isinstance(keyname, list):
         keyname = [keyname]
 
     value_list = info_to_list(value, delimiter1)
@@ -103,7 +109,7 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ign
         if not values or isinstance(values, Exception):
             continue
         for _k in keyname:
-            if _k not in values.keys():
+            if _k not in list(values.keys()):
                 continue
             value_dict[values[_k]] = values
     return value_dict
@@ -208,7 +214,7 @@ def concurrent_map(func, data):
         result[i] = func(data[i])
 
     threads = [
-        threading.Thread(target=task_wrapper, args=(i,)) for i in xrange(N)]
+        threading.Thread(target=task_wrapper, args=(i,)) for i in range(N)]
     for t in threads:
         t.start()
     for t in threads:
@@ -293,20 +299,3 @@ def get_value_from_dict(d, keys, default_value=None, return_type=None):
                     pass
             return val
     return default_value
-
-
-def shell_command(command):
-    """
-    command is a list of ['cmd','arg1','arg2',...]
-    """
-    command = pipes.quote(" ".join(command))
-    command = ['sh', '-c', "'%s'" % (command)]
-    try:
-        p = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-        out, err = p.communicate()
-    except Exception:
-        return '', 'error'
-    else:
-        return out, err

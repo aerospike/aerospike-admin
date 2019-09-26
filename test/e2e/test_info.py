@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import test_util
 import unittest2 as unittest
 
 import lib.basiccontroller as controller
 import lib.utils.util as util
+from test.e2e import test_util
 
 
 class TestInfo(unittest.TestCase):
@@ -72,7 +72,6 @@ class TestInfo(unittest.TestCase):
         exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
         actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.network_info, horizontal = True)
-
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(set(exp_header).issubset(actual_header))
         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 ####
 #
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,11 +20,15 @@
 #
 #
 
+from __future__ import print_function
+from builtins import str
+
 import sys
 import struct
 from ctypes import create_string_buffer		 # gives us pre-allocated buffers
 from time import time
-import types
+
+from lib.utils.util import bytes_to_str, is_str, str_to_bytes
 
 try:
     import bcrypt
@@ -107,7 +111,7 @@ def _receivedata(sock, sz):
 
 def _hashpassword(password):
     if hasbcrypt == False:
-        print "Authentication failed: bcrypt not installed."
+        print("Authentication failed: bcrypt not installed.")
         sys.exit(1)
 
     if password == None:
@@ -312,19 +316,20 @@ def _info_request(sock, buf):
 def info(sock, names=None):
     if not sock:
         raise IOError("Error: Could not connect to node")
-    # Passed a set of names: created output buffer
 
-    if names == None:
+    # Passed a set of names: created output buffer
+    if names is None:
         q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48)
         if g_proto_header != None:
             buf = g_proto_header.pack(q)
         else:
             buf = struct.pack(proto_header_fmt, q)
 
-    elif type(names) == types.StringType:
+    elif is_str(names):
         q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48) | (len(names) + 1)
         fmt_str = "! Q %ds B" % len(names)
-        buf = struct.pack(fmt_str, q, names, 10)
+        names_bytes = str_to_bytes(names)
+        buf = struct.pack(fmt_str, q, names_bytes, 10)
 
     else:  # better be iterable of strings
         # annoyingly, join won't post-pend a seperator. So make a new list
@@ -336,20 +341,22 @@ def info(sock, names=None):
         namestr = "".join(names_l)
         q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48) | (len(namestr))
         fmt_str = "! Q %ds" % len(namestr)
-        buf = struct.pack(fmt_str, q, namestr)
+        names_bytes = str_to_bytes(namestr)
+        buf = struct.pack(fmt_str, q, names_bytes)
 
     rsp_data = _info_request(sock, buf)
+    rsp_data = bytes_to_str(rsp_data)
 
     if rsp_data == -1 or rsp_data is None:
         return -1
 
     # if the original request was a single string, return a single string
-    if type(names) == types.StringType:
+    if is_str(names):
         lines = rsp_data.split("\n")
         name, sep, value = g_partition(lines[0], "\t")
 
         if name != names:
-            print " problem: requested name ", names, " got name ", name
+            print(" problem: requested name ", names, " got name ", name)
             return(-1)
         return value
 

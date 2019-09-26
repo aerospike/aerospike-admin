@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2019 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from builtins import str
+from builtins import object
 
 import copy
 import itertools
@@ -31,7 +34,7 @@ NOKEY = ""
 operators = {
     "+": operator.add,
     "-": operator.sub,
-    "/": operator.div,
+    "/": operator.truediv,
     "*": operator.mul,
     "%": operator.mod,
     '>': operator.gt,
@@ -378,7 +381,7 @@ def vector_to_vector_sd_anomaly_operation(kv, op, a, save_param):
 ###
 
 
-class BinaryOperation():
+class BinaryOperation(object):
 
     """
     Passed In Two Similar Vectors or Vector and Value
@@ -405,17 +408,17 @@ class BinaryOperation():
             return None
 
         if not isinstance(arg1, dict) and not isinstance(arg2, dict):
-
             try:
                 raw_arg1 = get_value_from_health_internal_tuple(arg1)
                 raw_arg2 = get_value_from_health_internal_tuple(arg2)
-                if self.op == operator.div and raw_arg2 == 0:
+
+                if self.op == operator.truediv and raw_arg2 == 0:
                     val_to_save = create_value_list_to_save(save_param, value=0, op1=arg1, op2=arg2)
                     return (0, val_to_save)
 
                 # if any of the arg is type float or operation is division
                 # cast all argument to float
-                if self.op == operator.div or isinstance(raw_arg1, float) or isinstance(raw_arg2, float):
+                if self.op == operator.truediv or isinstance(raw_arg1, float) or isinstance(raw_arg2, float):
                     raw_arg1 = float(raw_arg1)
                     raw_arg2 = float(raw_arg2)
 
@@ -469,7 +472,7 @@ class BinaryOperation():
         return self._operate_dicts(arg1, arg2, on_common_only=on_common_only, save_param=save_param)
 
 
-class ApplyOperation():
+class ApplyOperation(object):
 
     """
     Passed In Two Vectors or Vector and Value
@@ -555,7 +558,7 @@ class ApplyOperation():
         return self._operate_dicts(arg1, arg2, comp_op=operators[result_comp_op], save_param=save_param)
 
 
-class SimpleOperation():
+class SimpleOperation(object):
 
     """
     Passed In a Vector/Value and optional parameter
@@ -590,7 +593,7 @@ class SimpleOperation():
 
         if isinstance(arg1, dict):
             res_dict = {}
-            for _k in arg1.keys():
+            for _k in list(arg1.keys()):
                 res_dict[_k] = self._operate_dicts(arg1[_k], arg2, save_param=save_param)
 
             return res_dict
@@ -606,7 +609,7 @@ class SimpleOperation():
         return self._operate_dicts(arg1, arg2, save_param=save_param)
 
 
-class AggOperation():
+class AggOperation(object):
 
     operator_and_function = {
         '+': lambda v: float_vector_to_scalar_operation(operators["+"], v),
@@ -655,7 +658,7 @@ class AggOperation():
             raise HealthException(str(e) + " for Aggregation Operation")
 
 
-class ComplexOperation():
+class ComplexOperation(object):
 
     operator_and_function = {
         'DIFF': lambda kv, op, a, sp: vector_to_vector_diff_operation(kv, op, a, sp),
@@ -691,7 +694,7 @@ class ComplexOperation():
             raise HealthException(str(e) + " for Complex Operation")
 
 
-class AssertDetailOperation():
+class AssertDetailOperation(object):
 
     """
     Takes vector as input and checks for assertion failure. In case of
@@ -763,7 +766,7 @@ def do_group_by(data, group_by, keys=[]):
             "Wrong group id %s for group by operation." % (str(group_by)))
 
     res = {}
-    for k, t in data.keys():
+    for k, t in list(data.keys()):
         temp_d = res
         if t == group_by:
             if (k, t) not in temp_d:
@@ -906,7 +909,7 @@ def apply_operator(data, key, op_fn, group_by=None, arg2=None, recurse=False, on
     if not group_by:
         raise HealthException("No Group Id ")
 
-    for _key in data.keys():
+    for _key in list(data.keys()):
         k = merge_key(key, _key, recurse)
         if _key[1] == group_by:
             # User merged key for aggregation result
@@ -917,7 +920,7 @@ def apply_operator(data, key, op_fn, group_by=None, arg2=None, recurse=False, on
                 # Apply operation on next level only, no further
                 if isinstance(data[_key], dict):
                     # Next level is dict, so apply operation on keys
-                    res_dict[k] = op_fn(data[_key].keys(), save_param)
+                    res_dict[k] = op_fn(list(data[_key].keys()), save_param)
                 else:
                     # Next level is not dict, so apply operation on value
                     res_dict[k] = op_fn([data[_key]], save_param)
