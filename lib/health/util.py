@@ -216,42 +216,55 @@ def h_eval(data):
             if data[_k] is None or (isinstance(data[_k], dict) and not data[_k]):
                 data.pop(_k)
         return data
-    else:
-        try:
-            if isinstance(data, unicode):
-                data = str(data.encode('utf-8'))
 
-            if isinstance(data, str):
-                if data.endswith("%"):
-                    data = data[:-1]
+    if isinstance(data, list) or isinstance(data, tuple) or isinstance(data, set):
+        res = []
+        for _k in data:
+            res.append(h_eval(_k))
 
-                if data.lower() == "false":
-                    return False
+        if isinstance(data, tuple):
+            return tuple(res)
 
-                if data.lower() == "true":
-                    return True
+        if isinstance(data, set):
+            return set(res)
 
-                if data.lower() == "n/e":
-                    return None
+        return res
 
-                try:
-                    return int(data)
-                except Exception:
-                    pass
+    try:
+        if isinstance(data, unicode):
+            data = str(data.encode('utf-8'))
 
-                try:
-                    return long(data)
-                except Exception:
-                    pass
+        if isinstance(data, str):
+            if data.endswith("%"):
+                data = data[:-1]
 
-                try:
-                    return float(data)
-                except Exception:
-                    pass
+            if data.lower() == "false":
+                return False
 
-            return data
-        except:
-            return data
+            if data.lower() == "true":
+                return True
+
+            if data.lower() == "n/e":
+                return None
+
+            try:
+                return int(data)
+            except Exception:
+                pass
+
+            try:
+                return long(data)
+            except Exception:
+                pass
+
+            try:
+                return float(data)
+            except Exception:
+                pass
+
+        return data
+    except:
+        return data
 
 
 def print_dict(data, padding=" "):

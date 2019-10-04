@@ -21,15 +21,15 @@ run_test(){
     cmd_status="$?"
 #    echo ${cmd_out}
     if [ "$cmd_status" -ne 0 ]; then
-       echo
+    #    echo
        return 1
     fi
     if [[ $cmd_out == *"${unknown_option_error}"* ]]; then
-       echo
+    #    echo
        return 1
     fi
     if [[ $cmd_out != *"$2"* ]];then
-       echo
+    #    echo
        return 1
     fi
     echo -n "."

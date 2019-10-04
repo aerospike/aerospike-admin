@@ -142,41 +142,50 @@ def find_dns(endpoints):
     return None
 
 
-def parse_peers_string(s, delim=",", ignore_chars_start="[", ignore_chars_end="]"):
-    o = []
-    if not s or isinstance(s, Exception):
-        return o
-    s = s.strip()
-    if not s:
-        return o
-    if s[0] in ignore_chars_start and s[-1] in ignore_chars_end:
-        s = s[1:-1]
-    if not s:
-        return o
+def parse_peers_string(peers_str, delim=",", ignore_chars_start="[", ignore_chars_end="]"):
+    peers_list = []
+    if not peers_str or isinstance(peers_str, Exception):
+        return peers_list
+
+    peers_str = peers_str.strip()
+    if not peers_str:
+        return peers_list
+
+    if peers_str[0] in ignore_chars_start and peers_str[-1] in ignore_chars_end:
+        peers_str = peers_str[1:-1]
+
+    if not peers_str:
+        return peers_list
+
     push_bracket = ignore_chars_start
     pop_bracket = ignore_chars_end
     b_stack = []
     current_str = ""
-    for i in s:
+    for i in peers_str:
         if i == delim:
             if len(b_stack) > 0:
                 current_str += i
             else:
-                o.append(current_str.strip())
+                peers_list.append(current_str.strip())
                 current_str = ""
             continue
+
         if i in push_bracket:
             current_str += i
             b_stack.append(i)
             continue
+
         if i in pop_bracket:
             current_str += i
             b_stack.pop()
             continue
+
         current_str += i
+
     if current_str:
-        o.append(current_str.strip())
-    return o
+        peers_list.append(current_str.strip())
+
+    return peers_list
 
 
 def concurrent_map(func, data):
@@ -234,6 +243,12 @@ class cached(object):
 
 
 def flatten(list1):
+    """
+    Simple function to flatten peers list
+    Format: [((node1 endpoint1 tuple), (node1 endpoint2 tuple), ..., (node1 endpointm tuple)), ....]
+    Example: [(("172.17.0.1",3000,None),), (("2001:db8:85a3::8a2e",6666,None), ("172.17.0.3",3004,None))]
+    """
+
     f_list = []
     for i in list1:
         if isinstance(i[0], tuple):
@@ -245,6 +260,10 @@ def flatten(list1):
 
 
 def remove_suffix(input_string, suffix):
+    """
+    Simple function to remove suffix from input_string if available
+    """
+
     try:
         input_string = input_string.strip()
         if not input_string.endswith(suffix):
@@ -255,8 +274,15 @@ def remove_suffix(input_string, suffix):
 
 
 def get_value_from_dict(d, keys, default_value=None, return_type=None):
+    """
+    Simple function to fetch and return value from dict d for first available key from keys
+    If no key available then it returns default_value
+    If return_type provided then it covnerts and returns fetched value
+    """
+
     if not isinstance(keys, tuple):
         keys = (keys,)
+
     for key in keys:
         if key in d:
             val = d[key]

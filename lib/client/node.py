@@ -612,11 +612,14 @@ class Node(object):
         peers_list = util.parse_peers_string(gen_port_peers[2])
         if not peers_list or len(peers_list) < 1:
             return []
+
         p_list = []
+
         for p in peers_list:
             p_data = util.parse_peers_string(p)
             if not p_data or len(p_data) < 3:
                 continue
+
             # TODO - not used node_name = p_data[0]
             tls_name = None
             if p_data[1] and len(p_data[1]) > 0:
@@ -628,15 +631,19 @@ class Node(object):
 
             if not tls_name:
                 tls_name = util.find_dns(endpoints)
+
             endpoint_list = []
+
             for e in endpoints:
                 if "[" in e and "]:" not in e:
                     addr_port = util.parse_peers_string(e, delim=",")
                 else:
                     addr_port = util.parse_peers_string(e, delim=":")
+
                 addr = addr_port[0]
                 if addr.startswith("["):
                     addr = addr[1:]
+
                 if addr.endswith("]"):
                     addr = addr[:-1].strip()
 
@@ -645,12 +652,16 @@ class Node(object):
                     port = addr_port[1]
                 else:
                     port = default_port
+
                 try:
                     port = int(port)
                 except Exception:
                     port = default_port
+
                 endpoint_list.append((addr, port, tls_name))
+
             p_list.append(tuple(endpoint_list))
+
         return p_list
 
     @return_exceptions
@@ -723,7 +734,7 @@ class Node(object):
         if not service or isinstance(service, Exception):
             return []
         s = map(lambda v: util.parse_peers_string(v, ":"), util.info_to_list(service, delimiter=delimiter))
-        return map(lambda v: (v[0].strip("[]"), int(self.port), self.tls_name), s)
+        return map(lambda v: (v[0].strip("[]"), int(v[1]) if len(v)>1 and v[1] else int(self.port), self.tls_name), s)
 
     # post 3.10 services
 

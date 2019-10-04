@@ -246,6 +246,7 @@ def _set_record_overhead(as_version=""):
 
     return overhead
 
+
 def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
     """
     Function takes set stat and namespace name.
@@ -274,6 +275,54 @@ def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
     return overhead
 
 
+def _round_up(value, rounding_factor):
+    if not rounding_factor or not value:
+        return value
+
+    d = int(value / rounding_factor)
+    m = value % rounding_factor
+    if m > 0:
+        d += 1
+
+    return d * rounding_factor
+
+def _compute_tombstone_overhead_for_ns(set_stats, ns, node, as_version=""):
+    """
+    Function takes set stat and namespace name.
+    Returns tombstone overhead for input namespace name.
+    """
+
+    if not ns or not set_stats or isinstance(set_stats, Exception):
+        return 0
+
+    overhead = 0
+    set_overhead = _set_record_overhead(as_version=as_version)
+
+    record_overhead = 64
+    rounding_factor = 128
+
+    if LooseVersion(as_version) >= LooseVersion("4.2"):
+        record_overhead = 35
+        rounding_factor = 16
+
+    for _k, stats in set_stats.iteritems():
+        if not stats or isinstance(stats, Exception) or node not in stats:
+            continue
+
+        ns_name = util.get_value_from_dict(stats[node], ("ns", "ns_name"), default_value=None,
+                                                           return_type=str)
+        if ns_name != ns:
+            continue
+
+        set_name = util.get_value_from_dict(stats[node], ("set", "set_name"), default_value="",
+                                                            return_type=str)
+        tombstones = util.get_value_from_dict(stats[node], ("tombstones",), default_value=0,
+                                                               return_type=int)
+        overhead += tombstones * _round_up(record_overhead + set_overhead + len(set_name), rounding_factor)
+
+    return overhead
+
+
 def _device_record_overhead(as_version=""):
     overhead = 64
     if not as_version:
@@ -289,6 +338,8 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
+    Please check formulae at https://aerospike.atlassian.net/wiki/spaces/SUP/pages/198344706/License+Data+Formulae.
+    For more detail please see https://www.aerospike.com/docs/operations/plan/capacity/index.html.
     """
 
     if not namespace_stats:
@@ -347,9 +398,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
 
                 if device_data_size > 0:
                     # remove tombstone overhead
-                    tombstones = util.get_value_from_dict(host_stats, ("tombstones",), default_value=0,
-                                                                              return_type=int)
-                    tombstone_overhead = tombstones * 128
+                    tombstone_overhead = _compute_tombstone_overhead_for_ns(set_stats, ns, host_id, as_version=as_version)
                     device_data_size = device_data_size - tombstone_overhead
 
                 if total_objects > 0:
