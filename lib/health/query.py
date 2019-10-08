@@ -706,7 +706,7 @@ ASSERT(r, False, "Too many outstanding objects (>10000) to ship !!.", "OPERATION
 s = select "xdr_ship_inflight_objects", "stat_recs_inflight" from XDR.STATISTICS save;
 r = do s > 5000;
 ASSERT(r, False, "Too many inflight objects (>5000).", "PERFORMANCE", WARNING,
-                "Listed node[s] have too many objects inflight. This might lead to XDR throttling itself, consider tuning this parameter to a lower value.",
+                "Listed node[s] have too many objects inflight. This might lead to XDR throttling itself. Consider reducing xdr-max-ship-throughput to a lower value if it is set (non-zero).",
                 "Crossing xdr-max-ship-throughput check.",
                 xdr_enabled);
 
