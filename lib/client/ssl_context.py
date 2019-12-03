@@ -1,6 +1,6 @@
 #!/bin/sh
 """:"
-for interp in python2 python ; do
+for interp in python python2 ; do
    command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
 done
 echo >&2 "No Python interpreter found!"
