@@ -407,7 +407,7 @@ class SSLContext(object):
                         protocols_to_enable.remove("TLSv1.2")
 
                     elif proto == "all" or proto == "+all":
-                        protocols_to_enable += all_protocols
+                        protocols_to_enable.update(all_protocols)
                     elif proto == "-all":
                         protocols_to_enable.clear()
 
