@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -73,7 +73,7 @@ class LogRootController(BaseController):
     '  Options:',
     '    -s <string>  - Space seprated Strings to search in log files, MANDATORY - NO DEFAULT',
     '                   Format -s \'string1\' \'string2\'... \'stringn\'',
-    '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all serach strings in it.',
+    '    -a           - Set \'AND\'ing of search strings (provided with -s): Finding lines with all search strings in it.',
     '                   Default is \'OR\'ing: Finding lines with atleast one search string in it.',
     '    -v <string>  - Non-matching strings (space separated).',
     '    -i           - Perform case insensitive matching of search strings (-s) and non-matching strings (-v).',
@@ -391,7 +391,7 @@ class _GrepFile(LogCommandController):
             return
 
         logs = self.loghdlr.get_logs_by_index(sources)
-        
+
         if not logs:
             self.logger.info("No log files added. Use add command to add log files.")
 
