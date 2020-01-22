@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -145,7 +145,7 @@ def _check_feature_by_keys(service_data=None, service_keys=None, ns_data=None, n
             return True
 
     if ns_data and ns_keys:
-        for ns, nsval in ns_data.items():
+        for ns, nsval in list(ns_data.items()):
             if not nsval or isinstance(nsval, Exception):
                 continue
             if _check_value(nsval, ns_keys):
@@ -197,8 +197,8 @@ def _find_features_for_cluster(service_stats, ns_stats, service_configs={}, ns_c
 
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
-    for feature, keys in FEATURE_KEYS.items():
-        for node, d in service_data.items():
+    for feature, keys in list(FEATURE_KEYS.items()):
+        for node, d in list(service_data.items()):
 
             ns_d = None
 
@@ -224,8 +224,8 @@ def find_nodewise_features(service_stats, ns_stats, service_configs={}, ns_confi
     service_data = _deep_merge_dicts(service_data, cluster_configs)
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
-    for feature, keys in FEATURE_KEYS.items():
-        for node, s_stats in service_data.items():
+    for feature, keys in list(FEATURE_KEYS.items()):
+        for node, s_stats in list(service_data.items()):
 
             if node not in features:
                 features[node] = {}
@@ -266,7 +266,7 @@ def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
         return 0
 
     overhead = 0
-    for _k, stats in set_stats.items():
+    for _k, stats in list(set_stats.items()):
         if not stats or isinstance(stats, Exception) or node not in stats:
             continue
 
@@ -280,6 +280,54 @@ def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
         objects = util.get_value_from_dict(stats[node], ("objects", "n_objects"), default_value=0,
                                                                return_type=int)
         overhead += objects * (_set_record_overhead(as_version=as_version) + len(set_name))
+
+    return overhead
+
+
+def _round_up(value, rounding_factor):
+    if not rounding_factor or not value:
+        return value
+
+    d = int(old_div(value, rounding_factor))
+    m = value % rounding_factor
+    if m > 0:
+        d += 1
+
+    return d * rounding_factor
+
+def _compute_tombstone_overhead_for_ns(set_stats, ns, node, as_version=""):
+    """
+    Function takes set stat and namespace name.
+    Returns tombstone overhead for input namespace name.
+    """
+
+    if not ns or not set_stats or isinstance(set_stats, Exception):
+        return 0
+
+    overhead = 0
+    set_overhead = _set_record_overhead(as_version=as_version)
+
+    record_overhead = 64
+    rounding_factor = 128
+
+    if LooseVersion(as_version) >= LooseVersion("4.2"):
+        record_overhead = 35
+        rounding_factor = 16
+
+    for _k, stats in list(set_stats.items()):
+        if not stats or isinstance(stats, Exception) or node not in stats:
+            continue
+
+        ns_name = util.get_value_from_dict(stats[node], ("ns", "ns_name"), default_value=None,
+                                                           return_type=str)
+        if ns_name != ns:
+            continue
+
+        set_name = util.get_value_from_dict(stats[node], ("set", "set_name"), default_value="",
+                                                            return_type=str)
+        tombstones = util.get_value_from_dict(stats[node], ("tombstones",), default_value=0,
+                                                               return_type=int)
+        overhead += tombstones * _round_up(record_overhead + set_overhead + len(set_name), rounding_factor)
 
     return overhead
 
@@ -307,7 +355,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
     cl_memory_data_size = 0
     cl_device_data_size = 0
 
-    for ns, ns_stats in namespace_stats.items():
+    for ns, ns_stats in list(namespace_stats.items()):
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
@@ -315,7 +363,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
         ns_device_data_size = 0
         ns_device_compressed_data_size = 0
 
-        for host_id, host_stats in ns_stats.items():
+        for host_id, host_stats in list(ns_stats.items()):
             master_objects = util.get_value_from_dict(host_stats, ("master_objects", "master-objects"), default_value=0,
                                                      return_type=int)
             replica_objects = util.get_value_from_dict(host_stats, ("prole_objects", "prole-objects", "replica_objects",
@@ -405,7 +453,7 @@ def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
     if not namespace_stats:
         return
 
-    for ns, ns_stats in namespace_stats.items():
+    for ns, ns_stats in list(namespace_stats.items()):
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
@@ -530,7 +578,7 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
             util.get_value_from_second_level_of_dict(metadata["os_version"], ("description",), default_value="",
                                                      return_type=str).values()))
 
-    for ns, ns_stats in namespace_stats.items():
+    for ns, ns_stats in list(namespace_stats.items()):
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
@@ -540,7 +588,7 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
                                                                                  "^storage-engine.file\[[0-9]+\]$"),
                                                                       return_type=str)
 
-        device_counts = dict([(k, sum(len(i.split(",")) for i in v) if v else 0) for k, v in device_name_list.items()])
+        device_counts = dict([(k, sum(len(i.split(",")) for i in v) if v else 0) for k, v in list(device_name_list.items())])
         cl_nodewise_device_counts = util.add_dicts(cl_nodewise_device_counts, device_counts)
 
         ns_total_devices = sum(device_counts.values())
@@ -658,11 +706,11 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
 def _create_histogram_percentiles_output(histogram_name, histogram_data):
     histogram_data = util.flip_keys(histogram_data)
 
-    for namespace, host_data in histogram_data.items():
+    for namespace, host_data in list(histogram_data.items()):
         if not host_data or isinstance(host_data, Exception):
             continue
 
-        for host_id, data in host_data.items():
+        for host_id, data in list(host_data.items()):
             if not data or isinstance(data, Exception):
                 continue
 
@@ -702,12 +750,12 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
 def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, builds):
     histogram_data = util.flip_keys(histogram_data)
 
-    for namespace, host_data in histogram_data.items():
+    for namespace, host_data in list(histogram_data.items()):
         result = []
         rblock_size_bytes = 128
         width = 1
 
-        for host_id, data in host_data.items():
+        for host_id, data in list(host_data.items()):
 
             try:
                 as_version = builds[host_id]
@@ -772,7 +820,7 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             need_to_show[key] = False
             columns.append(key)
 
-        for host_id, data in host_data.items():
+        for host_id, data in list(host_data.items()):
 
             rblock_size_bytes = 128
 
@@ -863,7 +911,7 @@ def _string_to_bytes(k):
         'E': 1024 ** 6,
     }
 
-    for suffix, val in b.items():
+    for suffix, val in list(b.items()):
         if s.endswith(suffix):
             s = s[:-1 * len(suffix)]
             return int(s) * val
@@ -874,20 +922,20 @@ def _string_to_bytes(k):
 def _restructure_new_log_histogram(histogram_data):
     histogram_data = util.flip_keys(histogram_data)
 
-    for namespace, ns_data in histogram_data.items():
+    for namespace, ns_data in list(histogram_data.items()):
         if not ns_data or isinstance(ns_data, Exception):
             continue
 
         columns = []
 
-        for host_id, host_data in ns_data.items():
+        for host_id, host_data in list(ns_data.items()):
             if not host_data or isinstance(host_data, Exception):
                 continue
 
             hist = host_data['data']
             host_data['values'] = {}
 
-            for k, v in hist.items():
+            for k, v in list(hist.items()):
                 try:
                     kl = k.split("-")
                     s, e = kl[0], kl[1]
@@ -899,7 +947,7 @@ def _restructure_new_log_histogram(histogram_data):
                 except Exception:
                     continue
 
-        for host_id, host_data in ns_data.items():
+        for host_id, host_data in list(ns_data.items()):
             if not host_data or isinstance(host_data, Exception):
                 continue
 
@@ -1016,11 +1064,11 @@ def get_histogram_units(histogram_data):
     units_present = False
     units_absent = False
 
-    for k1, v1 in histogram_data.items():
+    for k1, v1 in list(histogram_data.items()):
         if not v1 or isinstance(v1, Exception):
             continue
 
-        for k2, v2 in v1.items():
+        for k2, v2 in list(v1.items()):
             if not v2 or isinstance(v2, Exception):
                 continue
 

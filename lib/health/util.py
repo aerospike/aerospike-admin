@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -219,11 +219,29 @@ def h_eval(data):
                 data.pop(_k)
         return data
 
-    else:
-        try:
-            if is_str(data):
-                if data.endswith("%"):
-                    data = data[:-1]
+    if isinstance(data, list) or isinstance(data, tuple) or isinstance(data, set):
+        res = []
+        for _k in data:
+            res.append(h_eval(_k))
+
+        if isinstance(data, tuple):
+            return tuple(res)
+
+        if isinstance(data, set):
+            return set(res)
+
+        return res
+
+    try:
+        if isinstance(data, str):
+            data = str(data.encode('utf-8'))
+
+        if isinstance(data, str):
+            if data.endswith("%"):
+                data = data[:-1]
+
+            if data.lower() == "false":
+                return False
 
                 if data.lower() == "false":
                     return False
@@ -234,10 +252,10 @@ def h_eval(data):
                 if data.lower() == "n/e":
                     return None
 
-                try:
-                    return int(data)
-                except Exception:
-                    pass
+            try:
+                return int(data)
+            except Exception:
+                pass
 
                 try:
                     return float(data)
@@ -245,7 +263,7 @@ def h_eval(data):
                     pass
 
             return data
-        except:
+    except:
             return data
 
 

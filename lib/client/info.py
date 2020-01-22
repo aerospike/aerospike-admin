@@ -1,7 +1,14 @@
-#!/usr/bin/python
+#!/bin/sh
+""":"
+for interp in python python2 ; do
+   command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
+done
+echo >&2 "No Python interpreter found!"
+exit 1
+":"""
 ####
 #
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.

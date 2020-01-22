@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ import copy
 import logging
 from datetime import datetime
 
-from lib.collectinfo_parser import section_filter_list
-from lib.collectinfo_parser.utils import is_valid_section, get_section_name_from_id, type_check_basic_values, change_key_name_in_map
+from . import section_filter_list
+from .utils import is_valid_section, get_section_name_from_id, type_check_basic_values, change_key_name_in_map
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)

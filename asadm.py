@@ -1,6 +1,13 @@
-#!/usr/bin/env python
+#!/bin/sh
+""":"
+for interp in python python2 ; do
+   command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
+done
+echo >&2 "No Python interpreter found!"
+exit 1
+":"""
 
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License")
 # you may not use this file except in compliance with the License.
@@ -15,7 +22,7 @@
 # limitations under the License.
 
 from __future__ import print_function
-#from __future__ import absolute_import
+from __future__ import absolute_import
 from future import standard_library
 standard_library.install_aliases()
 from builtins import filter
@@ -101,8 +108,8 @@ from lib.basiccontroller import BasicRootController
 from lib.client import info
 from lib.client.assocket import ASSocket
 from lib.client.ssl_context import SSLContext
-# from lib.collectinfocontroller import CollectinfoRootController
-# from lib.logcontroller import LogRootController
+from lib.collectinfocontroller import CollectinfoRootController
+from lib.logcontroller import LogRootController
 from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
 from lib.view import terminal, view
@@ -696,7 +703,7 @@ def main():
 
 
 def disable_coloring():
-    from lib.view import terminal
+    from .lib.view import terminal
     terminal.enable_color(False)
 
 

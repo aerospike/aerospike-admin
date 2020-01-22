@@ -1,3 +1,4 @@
+from __future__ import division
 # Copyright 2013-2018 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +19,10 @@
 # Imports
 #
 
+from builtins import next
+from builtins import range
+from builtins import object
+from past.utils import old_div
 import datetime
 import re
 
@@ -91,7 +96,7 @@ class LogLatency(object):
     def _read_line(self, file_itr):
         line = ""
         try:
-            tm, line = file_itr.next()
+            tm, line = next(file_itr)
             if not line:
                 return None
             return line
@@ -103,7 +108,7 @@ class LogLatency(object):
     #
 
     def _parse_total_ops(self, line):
-        return long(line[line.rfind("(") + 1: line.rfind(" total)")])
+        return int(line[line.rfind("(") + 1: line.rfind(" total)")])
 
     #------------------------------------------------
     # Get one set of bucket values.
@@ -127,7 +132,7 @@ class LogLatency(object):
                     r = re.compile(pattern)
                     if r.search(line):
                         found = found + 1
-                        values[b] = long(r.search(line).group(1))
+                        values[b] = int(r.search(line).group(1))
                         b_total = b_total + values[b]
                 if found == 0:
                     break
@@ -216,12 +221,12 @@ class LogLatency(object):
 
         m = re.search(latency_pattern2 % (grep_str), line)
         if m:
-            values = map(lambda x: int(x), m.group(1).split(","))
+            values = [int(x) for x in m.group(1).split(",")]
             return values
 
         m = re.search(latency_pattern3 % (grep_str), line)
         if m:
-            values = map(lambda x: int(x), list(m.groups()))
+            values = [int(x) for x in list(m.groups())]
 
         m = re.search(latency_pattern4 % (grep_str), line)
         if m:
@@ -563,11 +568,11 @@ class LogLatency(object):
                 if which_slice > 0:
                     for i in range(max_bucket):
                         if i % arg_every_nth == 0:
-                            avg_overs[i] = avg_overs[i] / which_slice
-                    avg_rate = total_ops / total_seconds
+                            avg_overs[i] = old_div(avg_overs[i], which_slice)
+                    avg_rate = old_div(total_ops, total_seconds)
                     avg_stat_values = []
                     if relative_stat_path:
-                        avg_stat_values = [v/total_seconds for v in total_stat_values]
+                        avg_stat_values = [old_div(v,total_seconds) for v in total_stat_values]
 
                     for i in range(max_bucket):
                         if i % arg_every_nth:

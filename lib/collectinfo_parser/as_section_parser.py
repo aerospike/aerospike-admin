@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import absolute_import
+
 from builtins import str
 from builtins import range
 import re
 import copy
 import logging
-
-from lib.collectinfo_parser import section_filter_list
-from lib.collectinfo_parser.utils import is_valid_section, get_section_name_from_id, is_bool, is_collision_allowed_for_section
+from . import section_filter_list
+from .utils import is_valid_section, get_section_name_from_id, is_bool, is_collision_allowed_for_section
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)

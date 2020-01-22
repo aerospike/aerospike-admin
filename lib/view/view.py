@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import datetime
 import locale
 import sys
 import time
+import types
 from io import StringIO
 from pydoc import pipepager
 
@@ -110,7 +111,7 @@ class CliView(object):
         t.add_cell_alert(
             '_cluster_integrity', lambda data: data['cluster_integrity'] != 'true')
 
-        for node_key, n_stats in stats.items():
+        for node_key, n_stats in list(stats.items()):
             if isinstance(n_stats, Exception):
                 n_stats = {}
 
@@ -247,7 +248,7 @@ class CliView(object):
                     {'real_node_id': node.node_id, 'node': prefixes[node_key]})
                 continue
 
-            for ns, ns_stats in n_stats.items():
+            for ns, ns_stats in list(n_stats.items()):
 
                 if isinstance(ns_stats, Exception):
                     row = {}
@@ -461,7 +462,7 @@ class CliView(object):
                     {'real_node_id': node.node_id, 'node': prefixes[node_key]})
                 continue
 
-            for ns, ns_stats in n_stats.items():
+            for ns, ns_stats in list(n_stats.items()):
                 if isinstance(ns_stats, Exception):
                     row = {}
                 else:
@@ -624,7 +625,7 @@ class CliView(object):
                     {'real_node_id': node.node_id, 'node': prefixes[node_key]})
                 continue
 
-            for (ns, set), set_stats in s_stats.items():
+            for (ns, set), set_stats in list(s_stats.items()):
                 if isinstance(set_stats, Exception):
                     row = {}
                 else:
@@ -716,7 +717,7 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         row = None
-        for node_key, row in stats.items():
+        for node_key, row in list(stats.items()):
             if isinstance(row, Exception):
                 row = {}
 
@@ -787,11 +788,11 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         row = None
-        for node_key, dc_stats in stats.items():
+        for node_key, dc_stats in list(stats.items()):
             if isinstance(dc_stats, Exception):
                 dc_stats = {}
             node = cluster.get_node(node_key)[0]
-            for dc, row in dc_stats.items():
+            for dc, row in list(dc_stats.items()):
                 if isinstance(row, Exception):
                     row = {}
                 if row:
@@ -828,7 +829,7 @@ class CliView(object):
         t.add_cell_alert(
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
         for stat in list(stats.values()):
-            for node_key, n_stats in stat.items():
+            for node_key, n_stats in list(stat.items()):
                 node = cluster.get_node(node_key)[0]
                 if isinstance(n_stats, Exception):
                     row = {}
@@ -864,13 +865,13 @@ class CliView(object):
 
         namespaces = set(filter(likes.search, list(histogram.keys())))
 
-        for namespace, node_data in histogram.items():
+        for namespace, node_data in list(histogram.items()):
             if namespace not in namespaces or not node_data or isinstance(node_data, Exception):
                 continue
 
             t = Table("%s - %s in %s%s" % (namespace, title, unit,
                                            title_suffix), columns, description=description)
-            for node_id, data in node_data.items():
+            for node_id, data in list(node_data.items()):
                 if not data or isinstance(data, Exception):
                     continue
 
@@ -896,7 +897,7 @@ class CliView(object):
 
         namespaces = set(filter(likes.search, list(histogram.keys())))
 
-        for namespace, node_data in histogram.items():
+        for namespace, node_data in list(histogram.items()):
             if namespace not in namespaces:
                 continue
             columns = []
@@ -914,7 +915,7 @@ class CliView(object):
                         t.add_data_source(
                             column, Extractors.sif_extractor(column))
 
-            for node_id, data in node_data.items():
+            for node_id, data in list(node_data.items()):
                 if node_id == "columns":
                     continue
 
@@ -949,7 +950,7 @@ class CliView(object):
 
         columns = data.pop("columns", None)
         for _values in data["values"]:
-            row = dict(zip(columns, _values))
+            row = dict(list(zip(columns, _values)))
             row['namespace'] = ns
             rows.append(row)
 
@@ -981,11 +982,11 @@ class CliView(object):
                 else:
                     histograms = set(data.keys())
             all_columns = set()
-            for node_or_hist_id, _data in data.items():
+            for node_or_hist_id, _data in list(data.items()):
                 if machine_wise_display and node_or_hist_id not in histograms:
                     continue
 
-                for _type, _type_data in _data.items():
+                for _type, _type_data in list(_data.items()):
                     if _type == "namespace" and not show_ns_details:
                         continue
 
@@ -993,7 +994,7 @@ class CliView(object):
                         CliView._update_latency_column_list(_type_data, all_columns=all_columns)
 
                     else:
-                        for ns, ns_data in _type_data.items():
+                        for ns, ns_data in list(_type_data.items()):
                             CliView._update_latency_column_list(ns_data, all_columns=all_columns)
 
             all_columns = [c[1] for c in sorted(all_columns, key=lambda c:c[0])]
@@ -1011,7 +1012,7 @@ class CliView(object):
                 for c in all_columns:
                     t.add_cell_alert(
                         c, lambda data: data['namespace'] is " ", color=terminal.fg_blue)
-            for node_or_hist_id, _data in data.items():
+            for node_or_hist_id, _data in list(data.items()):
                 if machine_wise_display and node_or_hist_id not in histograms:
                     continue
 
@@ -1026,7 +1027,7 @@ class CliView(object):
                         rows = CliView._create_latency_row(_type_data)
 
                     else:
-                        for _ns, _ns_data in _type_data.items():
+                        for _ns, _ns_data in list(_type_data.items()):
                             rows += CliView._create_latency_row(_ns_data, ns=_ns)
 
                     for row in rows:
@@ -1056,7 +1057,7 @@ class CliView(object):
             intersection = set.intersection(*config_sets)
             column_names = list(dict(union - intersection).keys())
         else:
-            for config in service_configs.values():
+            for config in list(service_configs.values()):
                 if isinstance(config, Exception):
                     continue
                 column_names.update(list(config.keys()))
@@ -1089,7 +1090,7 @@ class CliView(object):
         row = None
         if show_total:
             row_total = {}
-        for node_id, row in service_configs.items():
+        for node_id, row in list(service_configs.items()):
             if isinstance(row, Exception):
                 row = {}
 
@@ -1097,7 +1098,7 @@ class CliView(object):
             t.insert_row(row)
 
             if show_total:
-                for key, val in row.items():
+                for key, val in list(row.items()):
                     if (val.isdigit()):
                         try:
                             row_total[key] = row_total[key] + int(val)
@@ -1328,7 +1329,7 @@ class CliView(object):
         else:
             filtered_keys = list(mapping.keys())
 
-        for col1_val, col2_val in mapping.items():
+        for col1_val, col2_val in list(mapping.items()):
             if col1_val not in filtered_keys:
                 continue
             row = {}
@@ -1348,7 +1349,7 @@ class CliView(object):
         if 'like' in kwargs:
             like = set(kwargs['like'])
 
-        for node_id, value in results.items():
+        for node_id, value in list(results.items()):
 
             if show_node_name:
                 prefix = cluster.get_node_names()[node_id]
@@ -1377,7 +1378,7 @@ class CliView(object):
                         print()
                 else:
                     i = 1
-                    for name, val in value.items():
+                    for name, val in list(value.items()):
                         print(i, ": ", name)
                         print("    ", val)
                         i += 1
@@ -1514,15 +1515,12 @@ class CliView(object):
                 st = datetime.datetime.fromtimestamp(
                     ts).strftime(' %Y-%m-%d %H:%M:%S')
                 command = " ".join(line)
-
-
-                watch_output = "[%s '%s' sleep: %ss iteration: %s" % (
-                    st, command, sleep, count)
+                print("[%s '%s' sleep: %ss iteration: %s" % (
+                    st, command, sleep, count), end=' ', file=real_stdout)
                 if num_iterations:
-                    watch_output += " of %s" % (num_iterations)
-                watch_output += "]\n%s" % (result)
-
-                print(str(watch_output), file=real_stdout)
+                    print(" of %s" % (num_iterations), end=' ', file=real_stdout)
+                print("]", file=real_stdout)
+                print(result, file=real_stdout)
 
                 if num_iterations and num_iterations <= count:
                     break
@@ -1958,7 +1956,7 @@ class CliView(object):
             Extractors.byte_extractor('license_data_on_disk')
         )
 
-        for ns, ns_stats in stats.items():
+        for ns, ns_stats in list(stats.items()):
             if isinstance(ns_stats, Exception):
                 row = {}
             else:
@@ -2101,9 +2099,9 @@ class CliView(object):
                         )
         t = Table(title, column_names, group_by=0, sort_by=1)
 
-        for node_key, n_stats in pmap_data.items():
+        for node_key, n_stats in list(pmap_data.items()):
 
-            for ns, ns_stats in n_stats.items():
+            for ns, ns_stats in list(n_stats.items()):
                 row = ns_stats
                 row['node'] = prefixes[node_key]
                 row['namespace'] = ns

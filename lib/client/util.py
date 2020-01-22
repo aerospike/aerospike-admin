@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import map
 from builtins import str
 from builtins import range
 from builtins import object
-
 import re
 import itertools
 import threading
@@ -66,8 +64,7 @@ def info_to_dict(value, delimiter=';', ignore_field_without_key_value_delimiter=
             else:
                 _value_list.append(_v)
 
-    stat_param = map(lambda sp: info_to_tuple(sp, delimiter2),
-                                _value_list)
+    stat_param = [info_to_tuple(sp, delimiter2) for sp in _value_list]
 
     for g in itertools.groupby(stat_param, lambda x: x[0]):
         try:

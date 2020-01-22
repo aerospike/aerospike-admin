@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+
+from builtins import str
+from builtins import range
 import logging
 
 from lib.controllerlib import BaseController, CommandController, CommandHelp, ShellException
@@ -220,9 +224,9 @@ class AddController(LogCommandController):
             n_log_added, error = self.loghdlr.add_log_files_at_path(path)
 
             if n_log_added == 1:
-                print "%d server log added for server analysis." % (n_log_added)
+                print("%d server log added for server analysis." % (n_log_added))
             elif n_log_added > 1:
-                print "%d server logs added for server analysis." % (n_log_added)
+                print("%d server logs added for server analysis." % (n_log_added))
 
             if error:
                 self.logger.error(error)
@@ -236,27 +240,27 @@ class ListController(LogCommandController):
         self.modifiers = set()
 
     def _do_default(self, line):
-        print terminal.bold() + "Added Logs:" + terminal.unbold(),
+        print(terminal.bold() + "Added Logs:" + terminal.unbold(), end=' ')
         index = 1
         all_log_files = self.loghdlr.get_log_files(all_list=True)
         for key in sorted(all_log_files.keys()):
-            print "\n" + str(index) + "  : " + key.ljust(20) + all_log_files[key],
+            print("\n" + str(index) + "  : " + key.ljust(20) + all_log_files[key], end=' ')
             index += 1
         if index == 1:
-            print " None",
-        print "\n"
+            print(" None", end=' ')
+        print("\n")
 
 
-        print "\n" + terminal.bold() + "Selected Logs:" + terminal.unbold(),
+        print("\n" + terminal.bold() + "Selected Logs:" + terminal.unbold(), end=' ')
         index = 1
         selected_log_files = self.loghdlr.get_log_files(all_list=False)
         for key in sorted(selected_log_files.keys()):
-            print "\n" + " ".ljust(5) + key.ljust(20) + selected_log_files[key],
+            print("\n" + " ".ljust(5) + key.ljust(20) + selected_log_files[key], end=' ')
             index += 1
         if index == 1:
-            print " None",
+            print(" None", end=' ')
 
-        print "\n"
+        print("\n")
 
 
 @CommandHelp(

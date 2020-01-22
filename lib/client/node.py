@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1184,8 +1184,8 @@ class Node(object):
         roster_data = util.info_to_dict_multi_level(roster_data, "ns")
         list_fields = ["roster", "pending_roster", "observed_nodes"]
 
-        for ns, ns_roster_data in roster_data.items():
-            for k, v in ns_roster_data.items():
+        for ns, ns_roster_data in list(roster_data.items()):
+            for k, v in list(ns_roster_data.items()):
                 if k not in list_fields:
                     continue
 
@@ -1212,10 +1212,10 @@ class Node(object):
         rack_data = util.info_to_dict_multi_level(rack_data, "ns")
         rack_dict = {}
 
-        for ns, ns_rack_data in rack_data.items():
+        for ns, ns_rack_data in list(rack_data.items()):
             rack_dict[ns] = {}
 
-            for k, v in ns_rack_data.items():
+            for k, v in list(ns_rack_data.items()):
                 if k == "ns":
                     continue
 

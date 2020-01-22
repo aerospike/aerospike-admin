@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import next
+from builtins import str
+from builtins import range
+from builtins import object
 import os
 import re
 import hashlib
@@ -62,18 +66,14 @@ class Loghdlr(object):
             self.logger.info(err)
 
         fg_color_re = re.compile("^(fg_(.*))$")
-        self.fg_colors = map(
-            lambda v: (
+        self.fg_colors = [(
                 fg_color_re.match(v).groups()[1], getattr(
-                    terminal, fg_color_re.match(v).group(1))), filter(
-                lambda x: fg_color_re.search(x) and "clear" not in x, dir(terminal)))
+                    terminal, fg_color_re.match(v).group(1))) for v in [x for x in dir(terminal) if fg_color_re.search(x) and "clear" not in x]]
 
         bg_color_re = re.compile("^(bg_(.*))$")
-        self.bg_colors = map(
-            lambda v: (
+        self.bg_colors = [(
                 bg_color_re.match(v).groups()[1], getattr(
-                    terminal, bg_color_re.match(v).group(1))), filter(
-                lambda x: bg_color_re.search(x) and "clear" not in x, dir(terminal)))
+                    terminal, bg_color_re.match(v).group(1))) for v in [x for x in dir(terminal) if bg_color_re.search(x) and "clear" not in x]]
 
     def __str__(self):
         return ""
@@ -112,7 +112,7 @@ class Loghdlr(object):
         else:
             server_list = self.selected_logs
 
-        for server in server_list.keys():
+        for server in list(server_list.keys()):
             log_entries[server] = server_list[server].file_name
 
         return log_entries
@@ -145,7 +145,7 @@ class Loghdlr(object):
         log_names = sorted(self.all_logs.keys())
 
         if indices == 'all' or 'all' in indices:
-            indices = range(len(self.all_logs))
+            indices = list(range(len(self.all_logs)))
 
         for index in indices:
             try:
@@ -172,7 +172,7 @@ class Loghdlr(object):
 
         all_log_keys = sorted(all_list.keys())
         if indices == 'all' or 'all' in indices:
-            indices = range(len(all_log_keys))
+            indices = list(range(len(all_log_keys)))
 
         for index in indices:
             try:
@@ -434,12 +434,12 @@ class Loghdlr(object):
         keys_in_input = []
         result_count = 0
 
-        for key in file_streams.keys():
+        for key in list(file_streams.keys()):
             if not return_strings:
                 merge_result[key] = {}
 
             try:
-                tm, res = file_streams[key].next()
+                tm, res = next(file_streams[key])
                 if not tm:
                     continue
 
@@ -455,7 +455,7 @@ class Loghdlr(object):
             tm_keys[key] = {}
             if not return_strings:
                 if not keys_in_input:
-                    keys_in_input = res.keys()
+                    keys_in_input = list(res.keys())
 
             tm_keys[key] = tm
             result[key] = res
@@ -467,7 +467,7 @@ class Loghdlr(object):
             need_to_process = False
             try:
                 min_keys = [
-                    k for k, x in tm_keys.items() if not any(y < x for y in tm_keys.values())]
+                    k for k, x in list(tm_keys.items()) if not any(y < x for y in list(tm_keys.values()))]
             except Exception:
                 break
 
@@ -481,12 +481,12 @@ class Loghdlr(object):
                         try:
                             merge_result[SHOW_RESULT_KEY] += "%s  %s%s::" % (
                                     self.bg_colors[colors[(
-                                        file_streams.keys().index(file_key))][0]][1](),
+                                        list(file_streams.keys()).index(file_key))][0]][1](),
                                     terminal.reset(), file_key)
                         except Exception:
                             merge_result[SHOW_RESULT_KEY] = "%s  %s%s::" %(
                                     self.bg_colors[colors[(
-                                        file_streams.keys().index(file_key))][0]][1](),
+                                        list(file_streams.keys()).index(file_key))][0]][1](),
                                     terminal.reset(), file_key)
 
                         merge_result[SHOW_RESULT_KEY] += result[file_key]
@@ -504,7 +504,7 @@ class Loghdlr(object):
                     del tm_keys[file_key]
 
                     try:
-                        tm, res = file_streams[file_key].next()
+                        tm, res = next(file_streams[file_key])
                         if not tm:
                             continue
 
@@ -540,13 +540,13 @@ class Loghdlr(object):
                 if return_strings:
                     continue
 
-                for key in file_streams.keys():
+                for key in list(file_streams.keys()):
                     merge_result[key] = {}
 
         if not latency_end:
             yield merge_result
         else:
-            self._balance_dict(latency_end, file_streams.keys(), default_value)
+            self._balance_dict(latency_end, list(file_streams.keys()), default_value)
             for file_key in latency_end:
                 if file_key not in merge_result or not merge_result[file_key]:
                     merge_result[file_key] = latency_end[file_key]
@@ -566,11 +566,11 @@ class Loghdlr(object):
         if not data or not isinstance(data, dict):
             return data
 
-        structure = self._get_dict_structure(data[data.keys()[0]],
+        structure = self._get_dict_structure(data[list(data.keys())[0]],
                                              default_value)
 
         for _key in keys:
-            if not _key in data.keys() or not data[_key]:
+            if not _key in list(data.keys()) or not data[_key]:
                 data[_key] = structure
 
     def _get_dict_structure(self, data, val=[]):
@@ -578,7 +578,7 @@ class Loghdlr(object):
             return val
         structure = {}
 
-        for _key in data.keys():
+        for _key in list(data.keys()):
             if not isinstance(data[_key], dict):
                 structure[_key] = val
             else:

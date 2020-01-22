@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -104,7 +104,7 @@ class Cluster(object):
 
     def get_node_displaynames(self):
         node_names = {}
-        for node_key, node in self.nodes.items():
+        for node_key, node in list(self.nodes.items()):
             k = node.sock_name(use_fqdn=True)
             if commonutil.is_valid_ip_port(k):
                 node_names[node_key] = k
@@ -117,7 +117,7 @@ class Cluster(object):
         node_names = {}
 
         if not self._same_name_nodes:
-            for node_key, node in self.nodes.items():
+            for node_key, node in list(self.nodes.items()):
                 name = node.sock_name(use_fqdn=True)
                 if name in list(node_names.values()):
                     # found same name for multiple nodes
@@ -127,7 +127,7 @@ class Cluster(object):
                 node_names[node_key] = name
 
         if not node_names:
-            for node_key, node in self.nodes.items():
+            for node_key, node in list(self.nodes.items()):
                 node_names[node_key] = node.sock_name(use_fqdn=False)
 
         return node_names
@@ -288,7 +288,7 @@ class Cluster(object):
                 self.nodes.pop(n)
 
     def _refresh_node_liveliness(self):
-        live_nodes = [node for node in self.nodes.values() if node.alive]
+        live_nodes = [node for node in list(self.nodes.values()) if node.alive]
         self._live_nodes.clear()
         self._live_nodes.update(
             ((node.ip, node.port, node.tls_name) for node in live_nodes))

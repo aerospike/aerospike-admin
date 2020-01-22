@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import absolute_import
+
 from builtins import str
 import os
 import json
 import re
 import logging
-
-from lib.collectinfo_parser import section_filter_list
+from . import section_filter_list
 
 SECTION_DELIMITER = 'ASCOLLECTINFO'
 MIN_MATCH_COUNT = 2

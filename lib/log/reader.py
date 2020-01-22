@@ -1,3 +1,4 @@
+from __future__ import division
 # Copyright 2013-2018 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import str
+from builtins import object
+from past.utils import old_div
 import datetime
 import re
 import time
@@ -120,7 +124,7 @@ class LogReader(object):
                     matched_count += 1
             except Exception:
                 pass
-        if matched_count > (len(lines)/2):
+        if matched_count > (old_div(len(lines),2)):
             return True
         return False
 
@@ -152,11 +156,11 @@ class LogReader(object):
             return 0
         toks.reverse()
         try:
-            arg_seconds = long(toks[0].strip())
+            arg_seconds = int(toks[0].strip())
             if num_toks > 1:
-                arg_seconds = arg_seconds + (60 * long(toks[1].strip()))
+                arg_seconds = arg_seconds + (60 * int(toks[1].strip()))
             if num_toks > 2:
-                arg_seconds = arg_seconds + (3600 * long(toks[2].strip()))
+                arg_seconds = arg_seconds + (3600 * int(toks[2].strip()))
         except Exception:
             return 0
         return datetime.timedelta(seconds=arg_seconds)
@@ -235,7 +239,7 @@ class LogReader(object):
             else:
                 return None, None
 
-        jump = (max - min) / 2
+        jump = old_div((max - min), 2)
         f.seek(int(jump) + min, 0)
         self._seek_to(f, '\n')
         last_read = f.tell()

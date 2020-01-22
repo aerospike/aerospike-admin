@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -220,7 +220,7 @@ def _flatten(conf_dict, instance=None):
 
     for section in sections:
         if section in list(conf_dict.keys()):
-            for k,v in conf_dict[section].items():
+            for k,v in list(conf_dict[section].items()):
                 # Empty passwords are allowed do not interpret
                 # it as None
                 if k == "password":
@@ -232,7 +232,7 @@ def _flatten(conf_dict, instance=None):
 
 
 def _merge(dct, merge_dct, ignore_false=False):
-    for k, v in merge_dct.items():
+    for k, v in list(merge_dct.items()):
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
             _merge(dct[k], merge_dct[k], ignore_false=ignore_false)

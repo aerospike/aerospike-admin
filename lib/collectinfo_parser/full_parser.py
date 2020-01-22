@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,17 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import absolute_import
+
+from builtins import str
 import copy
 from datetime import datetime
 import json
 import logging
 import os
 
-from lib.collectinfo_parser import cinfo_parser
-from lib.collectinfo_parser import conf_parser
-from lib.collectinfo_parser import section_filter_list
-from lib.collectinfo_parser.as_section_parser import parse_as_section, get_meta_info, get_cluster_name
-from lib.collectinfo_parser.sys_section_parser import parse_sys_section
+from .as_section_parser import parse_as_section, get_meta_info, get_cluster_name
+from . import cinfo_parser
+from . import conf_parser
+from . import section_filter_list
+from .sys_section_parser import parse_sys_section
+
 from lib.utils.util import is_str
 
 logger = logging.getLogger(__name__)
@@ -322,7 +326,11 @@ def _stringify(data):
 
     """
 
-    if data is None:
+    if isinstance(input, dict):
+        data = {}
+        for _k,v in list(input.items()):
+            data[_stringify(_k)] = _stringify(v)
+
         return data
 
     if isinstance(data, dict):
@@ -330,7 +338,8 @@ def _stringify(data):
         for _k,v in data.items():
             data_str[_stringify(_k)] = _stringify(v)
 
-        return data_str
+    elif isinstance(input, str):
+        return str(input.encode('utf-8'))
 
     if isinstance(data, list):
         return [_stringify(element) for element in data]
@@ -518,13 +527,13 @@ def _add_missing_histogram_data(imap, parsed_map, timestamps, node_ip_mapping, i
 def _convert_parsed_latency_map_to_collectinfo_format(parsed_map):
     latency_map = {}
 
-    for node, node_data in parsed_map.items():
+    for node, node_data in list(parsed_map.items()):
         if not node_data or isinstance(node_data, Exception) or "latency" not in node_data:
             continue
 
         latency_data = node_data["latency"]
 
-        for hist, hist_data in latency_data.items():
+        for hist, hist_data in list(latency_data.items()):
             if not hist_data or isinstance(hist_data, Exception):
                 continue
 
@@ -539,7 +548,7 @@ def _convert_parsed_latency_map_to_collectinfo_format(parsed_map):
                 latency_map[node]["latency"][hist]["total"]["values"] = []
 
             _vl = []
-            for _k, _v in hist_data.items():
+            for _k, _v in list(hist_data.items()):
                 latency_map[node]["latency"][hist]["total"]["columns"].append(_k)
                 _vl.append(_v)
             latency_map[node]["latency"][hist]["total"]["values"].append(_vl)
@@ -598,7 +607,7 @@ def _to_roster_map(parsed_map):
 
     list_fields = ["roster", "pending_roster", "observed_nodes"]
 
-    for node, node_data in parsed_map.items():
+    for node, node_data in list(parsed_map.items()):
         if not node_data or isinstance(node_data, Exception) or "roster" not in node_data:
             continue
 
@@ -617,7 +626,7 @@ def _to_roster_map(parsed_map):
             m = _to_map(ns_data)
             if not m or "ns" not in m:
                 continue
-            for k, v in m.items():
+            for k, v in list(m.items()):
                 if k not in list_fields:
                     continue
                 try:

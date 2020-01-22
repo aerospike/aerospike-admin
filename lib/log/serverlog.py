@@ -1,3 +1,4 @@
+from __future__ import division
 # Copyright 2013-2018 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import next
+from builtins import zip
+from builtins import object
+from past.utils import old_div
 import datetime
 import hashlib
 import pipes
@@ -232,7 +237,7 @@ class ServerLog(object):
                     self.read_prev_line = False
                     if self.prev_line:
                         return self.prev_line
-                line = self.system_grep_itr.next()
+                line = next(self.system_grep_itr)
                 self.prev_line = line
                 # if line:
                 #     line = line + "\n"
@@ -396,7 +401,7 @@ class ServerLog(object):
         if current_line_tm >= old_slice_end:
             d = current_line_tm - old_slice_start
             slice_jump = int(
-                (d.seconds + 86400 * d.days) / slice_duration.seconds)
+                old_div((d.seconds + 86400 * d.days), slice_duration.seconds))
             slice_start = old_slice_start + slice_duration * slice_jump
             slice_end = slice_start + slice_duration
             return slice_start, slice_end, slice_jump
@@ -519,12 +524,12 @@ class ServerLog(object):
             elif m2:
                 pattern = latency_pattern2 % (grep_str)
                 if not slice_count % self.slice_show_count:
-                    slice_val = map(lambda x: int(x), m2.group(1).split(","))
+                    slice_val = [int(x) for x in m2.group(1).split(",")]
                 pattern_type = 1
             elif m3:
                 pattern = latency_pattern3 % (grep_str)
                 if not slice_count % self.slice_show_count:
-                    slice_val = map(lambda x: int(x), list(m3.groups()))
+                    slice_val = [int(x) for x in list(m3.groups())]
                 pattern_type = 2
             elif m4:
                 pattern = latency_pattern4 % (grep_str)
@@ -590,10 +595,9 @@ class ServerLog(object):
                             different_writer_info = True
 
                         if pattern_type == 2:
-                            current = map(lambda x: int(x), list(m.groups()))
+                            current = [int(x) for x in list(m.groups())]
                         else:
-                            current = map(
-                                lambda x: int(x), m.group(1).split(","))
+                            current = [int(x) for x in m.group(1).split(",")]
                         if slice_val:
                             slice_val = (
                                 [b + a for b, a in zip(current, slice_val)])

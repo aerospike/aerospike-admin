@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import filter
 from builtins import str
+from future.utils import raise_
 from builtins import object
-
 import copy
 import io
 import pipes
 import re
 import socket
+import io
 import subprocess
 import sys
 import threading
@@ -59,7 +60,7 @@ class Future(object):
 
     def result(self):
         if self.exc:
-            raise self.exc
+            raise_(self.exc[0], self.exc[1], self.exc[2])
 
         self._worker.join()
         return self._result
@@ -314,10 +315,10 @@ def strip_string(search_str):
 
 def flip_keys(orig_data):
     new_data = {}
-    for key1, data1 in orig_data.items():
+    for key1, data1 in list(orig_data.items()):
         if isinstance(data1, Exception):
             continue
-        for key2, data2 in data1.items():
+        for key2, data2 in list(data1.items()):
             if key2 not in new_data:
                 new_data[key2] = {}
             new_data[key2][key1] = data2
@@ -329,7 +330,7 @@ def first_key_to_upper(data):
     if not data or not isinstance(data, dict):
         return data
     updated_dict = {}
-    for k, v in data.items():
+    for k, v in list(data.items()):
         updated_dict[k.upper()] = v
     return updated_dict
 
