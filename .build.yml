@@ -1,0 +1,14 @@
+name: aerospike-admin
+
+container:
+  - base:
+      - docker.qe.aerospike.com/build/aerospike-admin:manylinux
+
+build:
+  - name: build
+    environment:
+      PYTHONS: /opt/python/cp27-cp27m/bin,/opt/python/cp27-cp27mu/bin,/opt/python/cp36-cp36m/bin,/opt/python/cp37-cp37m/bin,/opt/python/cp38-cp38/bin
+    script:
+      - make
+    artifact:
+      - /work/source/build/bin/asadm
