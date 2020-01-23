@@ -40,10 +40,6 @@ define make_build
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
-	$(if $(filter $(LINUX_VERSION),el6),
-	sed -i 's/\/usr\/bin\/env python/\/usr\/bin\/env python2.7/' $(BUILD_ROOT)tmp/asadm/asadm.py
-	)
-
 	$(if $(filter $(OS),Darwin),
 	sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py,
 	sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
@@ -55,14 +51,12 @@ all:
 	$(call make_build)
 
 	mkdir -p $(BUILD_ROOT)tmp/wheels
+ifneq ($(PYTHONS),)
+	./build_pex.sh
+else
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
 	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)tmp/wheels -r $(REQUIREMENT_FILE)
 	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)tmp/wheels
-
-ifneq ($(PYUCS2PATH),)
-	$(PYUCS2PATH) -m pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)tmp/wheels -r $(REQUIREMENT_FILE)
-	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)tmp/wheels --platform=linux_x86_64-cp-27-cp27m --platform=linux_x86_64-cp-27-cp27mu --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
-else
 	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)tmp/wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
 endif
 
