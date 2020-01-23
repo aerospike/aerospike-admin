@@ -338,6 +338,8 @@ def _stringify(data):
         for _k,v in data.items():
             data_str[_stringify(_k)] = _stringify(v)
 
+        return data_str
+
     elif isinstance(input, str):
         return str(input.encode('utf-8'))
 

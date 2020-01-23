@@ -739,7 +739,7 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
             if result == []:
                 result = [0] * 10
 
-            if histogram_name is "objsz":
+            if histogram_name == "objsz":
                 data['percentiles'] = [(r * width) - 1 if r > 0 else r for r in result]
             else:
                 data['percentiles'] = [r * width for r in result]
