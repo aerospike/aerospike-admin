@@ -233,36 +233,36 @@ def h_eval(data):
         return res
 
     try:
-        if isinstance(data, str):
-            data = str(data.encode('utf-8'))
 
-        if isinstance(data, str):
+        if is_str(data):
             if data.endswith("%"):
                 data = data[:-1]
 
             if data.lower() == "false":
                 return False
 
-                if data.lower() == "false":
-                    return False
+            if data.lower() == "true":
+                return True
 
-                if data.lower() == "true":
-                    return True
-
-                if data.lower() == "n/e":
-                    return None
+            if data.lower() == "n/e":
+                return None
 
             try:
                 return int(data)
             except Exception:
                 pass
 
-                try:
-                    return float(data)
-                except Exception:
-                    pass
+            try:
+                return long(data)
+            except Exception:
+                pass
 
-            return data
+            try:
+                return float(data)
+            except Exception:
+                pass
+
+        return data
     except:
             return data
 
