@@ -157,23 +157,17 @@ class AerospikeShell(cmd.Cmd):
                 return
 
             elif mode == AdminMode.COLLECTINFO_ANALYZER:
-                # if not log_path:
-                #     logger.error(
-                #         "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>")
-                #     self.do_exit('')
-                #     exit(1)
-                #
-                # self.ctrl = CollectinfoRootController(admin_version,
-                #                                       clinfo_path=log_path)
-                # self.prompt = "Collectinfo-analyzer> "
-                # if not execute_only_mode:
-                #     self.intro = str(self.ctrl.loghdlr)
-
-                # self.ctrl = LogRootController(admin_version, log_path)
-                # self.prompt = "Log-analyzer> "
-
-                # TODO: Upgrade CollectinfoController to support python3 and remove return
-                return
+                if not log_path:
+                    logger.error(
+                        "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>")
+                    self.do_exit('')
+                    exit(1)
+                
+                self.ctrl = CollectinfoRootController(admin_version,
+                                                      clinfo_path=log_path)
+                self.prompt = "Collectinfo-analyzer> "
+                if not execute_only_mode:
+                    self.intro = str(self.ctrl.loghdlr)
 
             else:
                 if user is not None:
