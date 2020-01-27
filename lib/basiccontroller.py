@@ -315,7 +315,12 @@ class ASInfoController(BasicCommandController):
                 "Do not understand '%s' in '%s'" % (word, " ".join(line)))
             return
         if value is not None:
-            value = value.translate(None, "'\"")
+            try:
+                # python3
+                value = value.translate(str.maketrans('','',"'\""))
+            except:
+                # python2
+                value = value.translate(None, "'\"")
         if xdr:
             results = self.cluster.xdr_info(value, nodes=nodes)
         else:
