@@ -26,6 +26,7 @@ from lib.log import utils
 
 from lib.utils.constants import COUNT_RESULT_KEY, TOTAL_ROW_HEADER, END_ROW_KEY, DT_FMT
 from lib.log.latency import LogLatency
+from lib.utils.util import is_str, bytes_to_str
 
 READ_BLOCK_BYTES = 4096
 RETURN_REQUIRED_EVERY_NTH_BLOCK = 5
@@ -39,7 +40,7 @@ class ServerLog(object):
         self.file_name = file_name
         self.reader = reader
         self.indices = self.reader.generate_server_log_indices(self.file_name)
-        self.file_stream = open(self.file_name, "r")
+        self.file_stream = open(self.file_name, "rb") # read in binary mode to enable relative seeks
         self.file_stream.seek(0, 0)
 
         self.server_start_tm = self.reader.parse_dt(
@@ -158,10 +159,10 @@ class ServerLog(object):
                   slice_duration="10", every_nth_slice=1, upper_limit_check="", bucket_count=3, every_nth_bucket=1,
                   read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None,
                   show_relative_stats=False):
-        if isinstance(search_strs, str):
+        if is_str(search_strs):
             search_strs = [search_strs]
         self.search_strings = [search_str for search_str in search_strs]
-        if isinstance(ignore_strs, str):
+        if is_str(ignore_strs):
             ignore_strs = [ignore_strs]
         self.ignore_strs = ignore_strs
         self.is_and = is_and
@@ -196,6 +197,7 @@ class ServerLog(object):
             while(True):
                 self.read_block = []
                 self.read_block = self.file_stream.readlines(READ_BLOCK_BYTES)
+                self.read_block = [bytes_to_str(line) for line in self.read_block]
                 self.read_block_count += 1
                 if not self.read_block or self.read_all_lines:
                     break

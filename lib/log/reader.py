@@ -21,7 +21,7 @@ import re
 import time
 import logging
 
-from lib.utils.util import shell_command
+from lib.utils.util import shell_command, bytes_to_str
 from lib.utils.constants import DT_FMT
 
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
@@ -189,6 +189,7 @@ class LogReader(object):
         return line[0: line.find(" GMT")]
 
     def parse_dt(self, line, dt_len=6):
+        line = bytes_to_str(line) # bytes for py3 compatibility
         prefix = line[0: line.find(" GMT")].split(",")[0]
         # remove milliseconds if available
         prefix = prefix.split(".")[0]
@@ -209,11 +210,11 @@ class LogReader(object):
 
     def set_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
-        self._seek_to(file_stream, "\n")
+        self._seek_to(file_stream, b"\n") # marked as bytes for py3 compatibility
 
     def read_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
-        self._seek_to(file_stream, "\n")
+        self._seek_to(file_stream, b"\n") # marked as bytes for py3 compatibility
         ln = self.read_line(file_stream)
         return ln
 

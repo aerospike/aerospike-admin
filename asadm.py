@@ -150,11 +150,8 @@ class AerospikeShell(cmd.Cmd):
                 if not log_path:
                     log_path = " "
 
-                # self.ctrl = LogRootController(admin_version, log_path)
-                # self.prompt = "Log-analyzer> "
-
-                # TODO: Upgrade LogController to support python3 and remove return
-                return
+                self.ctrl = LogRootController(admin_version, log_path)
+                self.prompt = "Log-analyzer> "
 
             elif mode == AdminMode.COLLECTINFO_ANALYZER:
                 if not log_path:
