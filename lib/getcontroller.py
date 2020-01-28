@@ -24,7 +24,7 @@ def get_sindex_stats(cluster, nodes='all', for_mods=[]):
 
     sindex_stats = {}
     if stats:
-        for host, stat_list in stats.items():
+        for host, stat_list in list(stats.items()):
             if not stat_list or isinstance(stat_list, Exception):
                 continue
 
@@ -61,7 +61,7 @@ def get_sindex_stats(cluster, nodes='all', for_mods=[]):
                     if (not sindex_stats[sindex_key][node]
                             or isinstance(sindex_stats[sindex_key][node], Exception)):
                         continue
-                    for key, value in stat.items():
+                    for key, value in list(stat.items()):
                         sindex_stats[sindex_key][node][key] = value
     return sindex_stats
 
@@ -105,10 +105,10 @@ class GetLatencyController(object):
             nodes=nodes, back=None, duration=None, slice=None, ns_set=None)
         hist_latency = {}
 
-        for node_id, hist_data in latency.items():
+        for node_id, hist_data in list(latency.items()):
             if isinstance(hist_data, Exception):
                 continue
-            for hist_name, data in hist_data.items():
+            for hist_name, data in list(hist_data.items()):
                 if hist_name not in hist_latency:
                     hist_latency[hist_name] = {node_id: data}
                 else:
@@ -221,7 +221,7 @@ class GetConfigController(object):
         xdr_configs = {}
 
         if configs:
-            for node, config in configs.items():
+            for node, config in list(configs.items()):
                 if isinstance(config, Exception):
                     continue
 
@@ -237,7 +237,7 @@ class GetConfigController(object):
 
         dc_configs = {}
         if configs:
-            for node, node_config in configs.items():
+            for node, node_config in list(configs.items()):
                 if not node_config or isinstance(node_config, Exception):
                     continue
 
@@ -256,7 +256,7 @@ class GetConfigController(object):
         configs = configs.result()
         cl_configs = {}
         if configs:
-            for node, config in configs.items():
+            for node, config in list(configs.items()):
                 if not config or isinstance(config, Exception):
                     continue
 
@@ -271,7 +271,7 @@ class GetConfigController(object):
         configs = configs.result()
         roster_configs = {}
         if configs:
-            for node, config in configs.items():
+            for node, config in list(configs.items()):
                 if not config or isinstance(config, Exception):
                     continue
 
@@ -290,7 +290,7 @@ class GetConfigController(object):
         rack_configs = {}
 
         if configs:
-            for node, config in configs.items():
+            for node, config in list(configs.items()):
                 if not config or isinstance(config, Exception):
                     continue
 
@@ -357,7 +357,7 @@ class GetStatisticsController(object):
         sets = self.cluster.info_set_statistics(nodes=nodes)
 
         set_stats = {}
-        for host_id, key_values in sets.items():
+        for host_id, key_values in list(sets.items()):
             if isinstance(key_values, Exception) or not key_values:
                 continue
 
@@ -373,7 +373,7 @@ class GetStatisticsController(object):
             except Exception:
                 pass
 
-            for key, values in key_values.items():
+            for key, values in list(key_values.items()):
                 if key[0] not in namespace_list or key[1] not in set_list:
                     continue
 
@@ -392,13 +392,13 @@ class GetStatisticsController(object):
         bin_stats = self.cluster.info_bin_statistics(nodes=nodes)
         new_bin_stats = {}
 
-        for node_id, bin_stat in bin_stats.items():
+        for node_id, bin_stat in list(bin_stats.items()):
             if not bin_stat or isinstance(bin_stat, Exception):
                 continue
 
             namespace_list = util.filter_list(list(bin_stat.keys()), for_mods)
 
-            for namespace, stats in bin_stat.items():
+            for namespace, stats in list(bin_stat.items()):
                 if namespace not in namespace_list:
                     continue
                 if namespace not in new_bin_stats:
@@ -420,10 +420,10 @@ class GetStatisticsController(object):
     def get_dc(self, nodes='all'):
         all_dc_stats = self.cluster.info_all_dc_statistics(nodes=nodes)
         dc_stats = {}
-        for host, stats in all_dc_stats.items():
+        for host, stats in list(all_dc_stats.items()):
             if not stats or isinstance(stats, Exception):
                 continue
-            for dc, stat in stats.items():
+            for dc, stat in list(stats.items()):
                 if dc not in dc_stats:
                     dc_stats[dc] = {}
 

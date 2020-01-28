@@ -12,10 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import range
-
 import unittest2 as unittest
-
 import time
 
 from lib.utils import timeout

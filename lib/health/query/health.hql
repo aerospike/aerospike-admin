@@ -297,6 +297,22 @@ ASSERT(r, False, "Different heartbeat.mtu.", "OPERATIONS", WARNING,
 				"heartbeat.mtu check.",
 				multicast_mode_enabled);
 
+interval = select "heartbeat.interval" from NETWORK.CONFIG save;
+r1 = do interval < 150;
+r2 = do interval > 250;
+r = do r1 || r2;
+ASSERT(r, False, "Heartbeat interval is not in expected range (150 <= p <= 250)", "OPERATIONS", INFO,
+        "Listed nodes(s) have heartbeat interval value not in expected range (150 <= p <= 250). New node might fail to join cluster.",
+        "Heartbeat interval Check (150 <= p <= 250)");
+
+timeout = select "heartbeat.timeout" from NETWORK.CONFIG save;
+r1 = do timeout < 10;
+r2 = do timeout > 15;
+r = do r1 || r2;
+ASSERT(r, False, "Heartbeat timeout is not in expected range (10 <= p <= 15)", "OPERATIONS", INFO,
+        "Listed nodes(s) have heartbeat timeout value not in expected range (10 <= p <= 15). New node might fail to join cluster.",
+        "Heartbeat timeout Check (10 <= p <= 15)");
+
 
 s = select "migrate-threads", "migrate_threads" from SERVICE.CONFIG save;
 r = do s > 1;
@@ -364,7 +380,7 @@ correct_range_check = do p < 750;
 r = do warning_check || correct_range_check;
 ASSERT(r, True, "Number of Sets equal to or above 750", "LIMITS", INFO,
         "Listed namespace(s) have high number of set count (>=750). Please run in AQL 'show sets' for details",
-        "Basic Set Count Check (750 =< p < 1000)");
+        "Basic Set Count Check (750 <= p < 1000)");
 
 stop_writes = select "stop_writes" from NAMESPACE.STATISTICS;
 stop_writes = group by CLUSTER, NAMESPACE stop_writes;
@@ -1678,6 +1694,58 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition",
 				"Namespace partition-tree-sprigs check for Enterprise edition",
 				e);
 
+
+SET CONSTRAINT VERSION >= 4.3.0.2;
+// sprig mounts-size-limit checks
+
+// critical case
+cs = select "cluster_size" as "sprig_limit_critical" from SERVICE.STATISTICS;
+cs = group by CLUSTER do MAX(cs) save as "cluster-size";
+repl = select "replication-factor" as "sprig_limit_critical" from NAMESPACE.STATISTICS;
+pts = select "partition-tree-sprigs" as "sprig_limit_critical" from NAMESPACE.CONFIG;
+msl = select "index-type.mounts-size-limit" as "sprig_limit_critical" from NAMESPACE.CONFIG;
+// below statement adds thousand delimiter to mounts-size-limiter when it prints
+msl = do msl * 1 save as "mounts-size-limit";
+
+// check for enterprise edition
+e = select "edition" from METADATA;
+e = do e == "Enterprise";
+e = group by CLUSTER, NODE do OR(e);
+
+// calculate sprig overhead
+r = do 4096 * repl;
+r = do r/cs;
+r = do r * pts;
+r = do r * 4096 save as "Minimum space required";
+r = do r > msl;
+ASSERT(r, False, "ALL FLASH / PMEM - Too many sprigs per partition for current available index mounted space. Some records are likely failing to be created.", "OPERATIONS", CRITICAL,
+				"Minimum space required for sprig overhead at current cluster size exceeds mounts-size-limit.
+				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
+				"Check for too many sprigs for current cluster size.",
+				e);
+
+
+// warning case
+mcs = select "min-cluster-size" as "sprig_limit_warning" from SERVICE;
+mcs = group by CLUSTER do MAX(mcs) save as "min-cluster-size";
+repl = select "replication-factor" as "sprig_limit_warning" from NAMESPACE.STATISTICS;
+pts = select "partition-tree-sprigs" as "sprig_limit_warning" from NAMESPACE.CONFIG;
+msl = select "index-type.mounts-size-limit" as "sprig_limit_warning" from NAMESPACE.CONFIG;
+// below statement adds thousand delimiter to mounts-size-limiter when it prints
+msl = do msl * 1 save as "mounts-size-limit";
+
+// calculate sprig overhead
+r = do 4096 * repl;
+r = do r/mcs;
+r = do r * pts;
+r = do r * 4096 save as "Minimum space required";
+r = do r > msl;
+ASSERT(r, False, "ALL FLASH / PMEM - Too many sprigs per partition for configured min-cluster-size.", "OPERATIONS", WARNING,
+				"Minimum space required for sprig overhead at min-cluster-size exceeds mounts-size-limit. 
+				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
+				"Check for too many sprigs for minimum cluster size.",
+				e);
+SET CONSTRAINT VERSION ALL;
 
 SET CONSTRAINT VERSION >= 4.0.0.1;
 // SC mode rules

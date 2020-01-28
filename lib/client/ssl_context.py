@@ -1,4 +1,11 @@
-#!/usr/bin/env python
+#!/bin/sh
+""":"
+for interp in python python2 ; do
+   command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
+done
+echo >&2 "No Python interpreter found!"
+exit 1
+":"""
 
 # Copyright 2013-2020 Aerospike, Inc.
 #
@@ -405,7 +412,7 @@ class SSLContext(object):
                         protocols_to_enable.remove("TLSv1.2")
 
                     elif proto == "all" or proto == "+all":
-                        protocols_to_enable += all_protocols
+                        protocols_to_enable.update(all_protocols)
                     elif proto == "-all":
                         protocols_to_enable.clear()
 

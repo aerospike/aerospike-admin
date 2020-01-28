@@ -482,7 +482,7 @@ class Cluster(object):
             except Exception:
                 pass
 
-        for node, ip_list in ip_map.items():
+        for node, ip_list in list(ip_map.items()):
             ip_map[node] = ",".join(sorted(ip_map[node]))
 
         return ip_map

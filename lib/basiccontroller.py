@@ -479,10 +479,10 @@ class ShowLatencyController(BasicCommandController):
         if machine_wise_display:
             hist_latency = latency
         else:
-            for node_id, hist_data in latency.items():
+            for node_id, hist_data in list(latency.items()):
                 if isinstance(hist_data, Exception):
                     continue
-                for hist_name, data in hist_data.items():
+                for hist_name, data in list(hist_data.items()):
                     if hist_name not in hist_latency:
                         hist_latency[hist_name] = {node_id: data}
                     else:
@@ -566,7 +566,7 @@ class ShowConfigController(BasicCommandController):
         return [util.Future(self.view.show_config,
             "%s Namespace Configuration" % (ns), configs, self.cluster,
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-                for ns, configs in ns_configs.items()]
+                for ns, configs in list(ns_configs.items())]
 
     @CommandHelp('Displays XDR configuration')
     def do_xdr(self, line):
@@ -601,7 +601,7 @@ class ShowConfigController(BasicCommandController):
         return [util.Future(self.view.show_config,
             "%s DC Configuration" % (dc), configs, self.cluster,
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for dc, configs in dc_configs.items()]
+            for dc, configs in list(dc_configs.items())]
 
     @CommandHelp('Displays Cluster configuration')
     def do_cluster(self, line):
@@ -752,7 +752,7 @@ class ShowStatisticsController(BasicCommandController):
             "%s %s Set Statistics" % (namespace, set_name), stats,
             self.cluster, show_total=show_total,
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for (namespace, set_name), stats in set_stats.items()]
+            for (namespace, set_name), stats in list(set_stats.items())]
 
     @CommandHelp('Displays bin statistics')
     def do_bins(self, line):
@@ -773,7 +773,7 @@ class ShowStatisticsController(BasicCommandController):
         return [util.Future(self.view.show_stats,
             "%s Bin Statistics" % (namespace), new_bin_stat, self.cluster,
             show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for namespace, new_bin_stat in new_bin_stats.items()]
+            for namespace, new_bin_stat in list(new_bin_stats.items())]
 
     @CommandHelp('Displays XDR statistics')
     def do_xdr(self, line):
@@ -814,7 +814,7 @@ class ShowStatisticsController(BasicCommandController):
         return [util.Future(self.view.show_config, "%s DC Statistics" % (dc),
             stats, self.cluster, show_total=show_total,
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for dc, stats in dc_stats.items()]
+            for dc, stats in list(dc_stats.items())]
 
 
 @CommandHelp('Displays partition map analysis of Aerospike cluster.')
@@ -902,11 +902,11 @@ class CollectinfoController(BasicCommandController):
     # Functions for dumping json
 
     def _restructure_set_section(self, stats):
-        for node, node_data in stats.items():
+        for node, node_data in list(stats.items()):
             if 'set' not in list(node_data.keys()):
                 continue
 
-            for key, val in node_data['set'].items():
+            for key, val in list(node_data['set'].items()):
                 ns_name = key[0]
                 setname = key[1]
 
@@ -927,11 +927,11 @@ class CollectinfoController(BasicCommandController):
         # there is possibility that different nodes will have different namespaces and
         # old sindex info available for node which does not have namespace for that sindex.
 
-        for node, node_data in stats.items():
+        for node, node_data in list(stats.items()):
             if 'sindex' not in list(node_data.keys()):
                 continue
 
-            for key, val in node_data['sindex'].items():
+            for key, val in list(node_data['sindex'].items()):
                 key_list = key.split()
                 ns_name = key_list[0]
                 sindex_name = key_list[2]
@@ -947,10 +947,10 @@ class CollectinfoController(BasicCommandController):
             del node_data['sindex']
 
     def _restructure_bin_section(self, stats):
-        for node, node_data in stats.items():
+        for node, node_data in list(stats.items()):
             if 'bin' not in list(node_data.keys()):
                 continue
-            for ns_name, val in node_data['bin'].items():
+            for ns_name, val in list(node_data['bin'].items()):
                 if ns_name not in node_data['namespace']:
                     continue
 
@@ -960,21 +960,21 @@ class CollectinfoController(BasicCommandController):
             del node_data['bin']
 
     def _init_stat_ns_subsection(self, data):
-        for node, node_data in data.items():
+        for node, node_data in list(data.items()):
             if 'namespace' not in list(node_data.keys()):
                 continue
             ns_map = node_data['namespace']
-            for ns, data in ns_map.items():
+            for ns, data in list(ns_map.items()):
                 ns_map[ns]['set'] = {}
                 ns_map[ns]['bin'] = {}
                 ns_map[ns]['sindex'] = {}
 
     def _restructure_ns_section(self, data):
-        for node, node_data in data.items():
+        for node, node_data in list(data.items()):
             if 'namespace' not in list(node_data.keys()):
                 continue
             ns_map = node_data['namespace']
-            for ns, data in ns_map.items():
+            for ns, data in list(ns_map.items()):
                 stat = {}
                 stat[ns] = {}
                 stat[ns]['service'] = data
@@ -1571,7 +1571,7 @@ class HealthCheckController(BasicCommandController):
                 return editions
 
             editions_in_shortform = {}
-            for node, edition in editions.items():
+            for node, edition in list(editions.items()):
                 if not edition or isinstance(edition, Exception):
                     continue
 
@@ -1811,7 +1811,7 @@ class HealthCheckController(BasicCommandController):
                 sys_stats = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
                                                                 default_ssh_port=default_ssh_port, credential_file=credential_file, collect_remote_data=enable_ssh)
 
-                for _key, (info_function, stanza_list) in stanza_dict.items():
+                for _key, (info_function, stanza_list) in list(stanza_dict.items()):
 
                     for stanza_item in stanza_list:
 
@@ -1819,7 +1819,7 @@ class HealthCheckController(BasicCommandController):
                         fetched_as_val[(_key, stanza)] = info_function(stanza)
 
                 # Creating health input model
-                for _key, (info_function, stanza_list) in stanza_dict.items():
+                for _key, (info_function, stanza_list) in list(stanza_dict.items()):
 
                     for stanza_item in stanza_list:
 
@@ -1844,7 +1844,7 @@ class HealthCheckController(BasicCommandController):
 
                 sys_stats = util.flip_keys(sys_stats)
 
-                for cmd_key, (sys_function, sys_cmd_list) in sys_cmd_dict.items():
+                for cmd_key, (sys_function, sys_cmd_list) in list(sys_cmd_dict.items()):
 
                     for cmd_item in sys_cmd_list:
 
@@ -1977,7 +1977,7 @@ class SummaryController(BasicCommandController):
         metadata["server_build"] = {}
         metadata["cluster_name"] = {}
 
-        for node, version in server_version.items():
+        for node, version in list(server_version.items()):
             if not version or isinstance(version, Exception):
                 continue
 
@@ -2006,7 +2006,7 @@ class SummaryController(BasicCommandController):
             os_version = util.flip_keys(os_version)["lsb"]
 
             if kernel_version:
-                for node, version in os_version.items():
+                for node, version in list(os_version.items()):
                     if not version or isinstance(version, Exception):
                         continue
 

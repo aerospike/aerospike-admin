@@ -587,7 +587,10 @@ def _parse_free_m_section(imap, parsed_map):
 
             mem_obj = {}
             for idx, val in enumerate(tok_list):
-                mem_obj[val] = data_list[idx + 1]
+                try:
+                    mem_obj[val] = int(data_list[idx + 1])
+                except Exception:
+                    mem_obj[val] = data_list[idx + 1]
 
             free_m_data['mem'] = mem_obj
             continue
@@ -596,8 +599,15 @@ def _parse_free_m_section(imap, parsed_map):
             data_list = line.rstrip().split()
 
             buffer_obj = {}
-            buffer_obj[tok_list[1]] = data_list[2]
-            buffer_obj[tok_list[2]] = data_list[3]
+            try:
+                buffer_obj[tok_list[1]] = int(data_list[2])
+            except Exception:
+                buffer_obj[tok_list[1]] = data_list[2]
+
+            try:
+                buffer_obj[tok_list[2]] = int(data_list[3])
+            except Exception:
+                buffer_obj[tok_list[2]] = data_list[3]
 
             free_m_data['buffers/cache'] = buffer_obj
             continue
@@ -606,9 +616,20 @@ def _parse_free_m_section(imap, parsed_map):
             data_list = line.rstrip().split()
 
             swap_obj = {}
-            swap_obj[tok_list[0]] = data_list[1]
-            swap_obj[tok_list[1]] = data_list[2]
-            swap_obj[tok_list[2]] = data_list[3]
+            try:
+                swap_obj[tok_list[0]] = int(data_list[1])
+            except Exception:
+                swap_obj[tok_list[0]] = data_list[1]
+
+            try:
+                swap_obj[tok_list[1]] = int(data_list[2])
+            except Exception:
+                swap_obj[tok_list[1]] = data_list[2]
+
+            try:
+                swap_obj[tok_list[2]] = int(data_list[3])
+            except Exception:
+                swap_obj[tok_list[2]] = data_list[3]
 
             free_m_data['swap'] = swap_obj
             continue

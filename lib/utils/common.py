@@ -256,6 +256,7 @@ def _set_record_overhead(as_version=""):
 
     return overhead
 
+
 def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
     """
     Function takes set stat and namespace name.
@@ -347,6 +348,8 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
+    Please check formulae at https://aerospike.atlassian.net/wiki/spaces/SUP/pages/198344706/License+Data+Formulae.
+    For more detail please see https://www.aerospike.com/docs/operations/plan/capacity/index.html.
     """
 
     if not namespace_stats:
@@ -405,9 +408,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
 
                 if device_data_size > 0:
                     # remove tombstone overhead
-                    tombstones = util.get_value_from_dict(host_stats, ("tombstones",), default_value=0,
-                                                                              return_type=int)
-                    tombstone_overhead = tombstones * 128
+                    tombstone_overhead = _compute_tombstone_overhead_for_ns(set_stats, ns, host_id, as_version=as_version)
                     device_data_size = device_data_size - tombstone_overhead
 
                 if total_objects > 0:
