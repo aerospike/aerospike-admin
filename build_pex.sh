@@ -4,7 +4,7 @@ set -e
 BUILD_ROOT="./build/"
 REQUIREMENT_FILE="./requirements.txt"
 PEX_PYTHONS=""
-SHEBANG="/usr/bin/env python"
+SHEBANG=`cat pex_shebang.txt`
 
 IFS=',' read -ra ADDR <<< "$PYTHONS"
 for i in "${ADDR[@]}"; do
