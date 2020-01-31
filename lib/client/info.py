@@ -125,7 +125,7 @@ def _hashpassword(password):
         password = ""
 
     if len(password) != 60 or password.startswith("$2a$") == False:
-        password = bcrypt.hashpw(str_to_bytes(password), "$2a$10$7EqJtq98hPqEX7fNZaFWoO")
+        password = bcrypt.hashpw(password, str_to_bytes("$2a$10$7EqJtq98hPqEX7fNZaFWoO"))
 
     return password
 
@@ -202,13 +202,18 @@ def _parse_session_info(data, field_count):
 
 
 def _buffer_to_string(buf):
-    buf_str = ""
-    for s in buf:
-        buf_str += s
-    return buf_str
+    if sys.version_info < (3, 0):
+        buf_str = ""
+        for s in buf:
+            buf_str += s
+        return buf_str
+    else:
+        return bytes(buf)
 
 
 def _authenticate(sock, user, password, password_field_id):
+    user = str_to_bytes(user)
+    password = str_to_bytes(password)
     sz = len(user) + len(password) + 34 # 2 * 5 + 24
     send_buf = _admin_write_header(sz, _AUTHENTICATE, 2)
     fmt_str = "! I B %ds I B %ds" % (len(user), len(password))
@@ -232,6 +237,8 @@ def authenticate_old(sock, user, password):
     return _authenticate(sock, user, password=_hashpassword(password), password_field_id=_CREDENTIAL_FIELD_ID)
 
 def login(sock, user, password, auth_mode):
+    user = str_to_bytes(user)
+    password = str_to_bytes(password)
     credential = _hashpassword(password)
 
     if auth_mode == AuthMode.INTERNAL:
