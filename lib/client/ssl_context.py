@@ -30,6 +30,7 @@ import os
 import warnings
 
 from lib.client.ssl_util import dnsname_match
+from lib.utils.util import is_str
 from os import listdir
 from os.path import isfile, join
 
@@ -567,7 +568,7 @@ class SSLContext(object):
         if keyfile_password is None:
             return keyfile_password
 
-        if not isinstance(keyfile_password, str):
+        if not is_str(keyfile_password):
             raise Exception("Bad keyfile_password: not string")
 
         keyfile_password = keyfile_password.strip()
