@@ -532,7 +532,7 @@ def _parse_multi_column_stat_sub_section(raw_section, parsed_map, section_name):
     sec_line = raw_section[0]
     section = raw_section[1:]
     if '~' in sec_line:
-        split_names = re.split("~*", sec_line)
+        split_names = re.split("~+", sec_line)
         sub_section_name = split_names[1]
         if not sub_section_name.strip() and split_names[0]:
             # Lengthy section names might have single ~ at the end, for which we get section name at index 0.
@@ -633,7 +633,7 @@ def _parse_multi_column_config_sub_section(raw_section, parsed_map, section_name
     section = raw_section[1:]
 
     if '~' in sec_line:
-        sub_section_name = re.split("~*", sec_line)[1]
+        sub_section_name = re.split("~+", sec_line)[1]
     else:
         sub_section_name = sec_line
     SEC_MAP = {'ns_section': 'namespace',
@@ -708,7 +708,7 @@ def _parse_multi_column_sub_section(raw_section, parsed_map, final_section_name,
     section = raw_section[1:]
 
     if '~' in sec_line:
-        sub_section_name = re.split("~*", sec_line)[1]
+        sub_section_name = re.split("~+", sec_line)[1]
     else:
         sub_section_name = sec_line
     xdr_section = 'xdr'
