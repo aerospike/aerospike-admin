@@ -30,7 +30,7 @@ import os
 import warnings
 
 from lib.client.ssl_util import dnsname_match
-from lib.utils.util import is_str
+from lib.utils.util import is_str, bytes_to_str
 from os import listdir
 from os.path import isfile, join
 
