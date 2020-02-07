@@ -337,7 +337,10 @@ class SSLContext(object):
                              "SSL socket or SSL context with either "
                              "CERT_OPTIONAL or CERT_REQUIRED")
         try:
-            components = cert.get_subject().get_components()
+            components = []
+            for component in cert.get_subject().get_components():
+                component_string = tuple(bytes_to_str(elem) for elem in component)
+                components.append(component_string)
         except Exception as e:
             raise Exception("Failed to read certificate components: " + str(e))
 
