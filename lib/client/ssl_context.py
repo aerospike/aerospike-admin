@@ -30,7 +30,7 @@ import os
 import warnings
 
 from lib.client.ssl_util import dnsname_match
-from lib.utils.util import is_str, bytes_to_str
+from lib.utils.util import is_str, bytes_to_str, str_to_bytes
 from os import listdir
 from os.path import isfile, join
 
@@ -538,7 +538,7 @@ class SSLContext(object):
                         raise Exception("Invalid keyfile_password {0} \n{1}".format(keyfile_password, e))
 
                 try:
-                    pkey = crypto.load_privatekey(crypto.FILETYPE_PEM, open(keyfile, 'rb').read(), pwd)
+                    pkey = crypto.load_privatekey(crypto.FILETYPE_PEM, open(keyfile, 'rb').read(), str_to_bytes(pwd))
                 except IOError:
                     raise Exception("Unable to locate key file {}".format(keyfile))
                 except crypto.Error:
