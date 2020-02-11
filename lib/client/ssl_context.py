@@ -319,7 +319,7 @@ class SSLContext(object):
         alt_names = []
         for i in range(cert.get_extension_count()):
             e = cert.get_extension(i)
-            e_name = e.get_short_name()
+            e_name = bytes_to_str(e.get_short_name())
             if e_name == "subjectAltName":
                 e_data = e.get_data()
                 decoded_data = der_decoder.decode(
