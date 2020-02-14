@@ -14,7 +14,6 @@
 
 from __future__ import absolute_import
 
-from builtins import str
 import copy
 from datetime import datetime
 import json
@@ -326,37 +325,24 @@ def _stringify(data):
 
     """
 
-    if isinstance(input, dict):
-        data = {}
-        for _k,v in list(input.items()):
-            data[_stringify(_k)] = _stringify(v)
-
-        return data
-
     if isinstance(data, dict):
         data_str = {}
-        for _k,v in data.items():
+        for _k,v in list(data.items()):
             data_str[_stringify(_k)] = _stringify(v)
 
         return data_str
 
-    elif isinstance(input, str):
-        return str(input.encode('utf-8'))
-
-    if isinstance(data, list):
+    elif isinstance(data, list):
         return [_stringify(element) for element in data]
 
-    if is_str(data):
+    else:
+        try:
+            if isinstance(data, unicode):
+                return str(data.encode('utf-8'))
+        except:
+            pass
+
         return data
-
-    try:
-        # python2.7
-        if isinstance(data, unicode):
-            return str(data.encode('utf-8'))
-    except Exception:
-        pass
-
-    return str(data)
 
 def _merge_samelevel_maps(main_map, from_map):
     '''
