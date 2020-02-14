@@ -111,7 +111,7 @@ def get_cluster_name(parsed_map):
 			'service' in parsed_map[node]['config'] and \
 				'cluster-name' in parsed_map[node]['config']['service']:
 			# Return cluster name when get a valid one.
-			if parsed_map[node]['config']['service']['cluster-name'] is not "null":
+			if parsed_map[node]['config']['service']['cluster-name'] != "null":
 				return parsed_map[node]['config']['service']['cluster-name']
 	return "null"
 

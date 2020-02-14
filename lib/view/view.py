@@ -1011,7 +1011,7 @@ class CliView(object):
             if show_ns_details:
                 for c in all_columns:
                     t.add_cell_alert(
-                        c, lambda data: data['namespace'] is " ", color=terminal.fg_blue)
+                        c, lambda data: data['namespace'] == " ", color=terminal.fg_blue)
             for node_or_hist_id, _data in list(data.items()):
                 if machine_wise_display and node_or_hist_id not in histograms:
                     continue
