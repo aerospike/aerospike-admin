@@ -404,7 +404,7 @@ def _get_nodes_from_network_info(imap):
             if skip_lines == 0:
                 # Get node ip
                 node_line = info_section_lines[i].split()
-                if node_line[nodeid].rstrip() is '' or node_line[nodeid] is '.':
+                if node_line[nodeid].rstrip() == '' or node_line[nodeid] == '.':
                     logger.debug(
                         "Node_id absent in info_network section line" + info_section_lines[i])
                     continue

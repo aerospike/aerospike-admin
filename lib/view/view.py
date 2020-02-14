@@ -201,10 +201,10 @@ class CliView(object):
             Extractors.byte_extractor(('index_used_bytes')))
 
         t.add_data_source('_used_disk_pct', lambda data: 100 -
-                          int(data['free_pct_disk']) if data['free_pct_disk'] is not " " else " ")
+                          int(data['free_pct_disk']) if data['free_pct_disk'] != " " else " ")
 
         t.add_data_source('_used_mem_pct', lambda data: 100 - int(
-            data['free_pct_memory']) if data['free_pct_memory'] is not " " else " ")
+            data['free_pct_memory']) if data['free_pct_memory'] != " " else " ")
 
         t.add_cell_alert('available_pct', lambda data: data['available_pct'] != " " and int(data['available_pct']) <= 10)
 
@@ -218,16 +218,16 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_total_records', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_total_records', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_used_bytes_memory', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_used_bytes_memory', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_used_bytes_disk', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_used_bytes_disk', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_expired_and_evicted', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert('_index_used_bytes', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_expired_and_evicted', lambda data: data['node'] == " ", color=terminal.fg_blue)
+        t.add_cell_alert('_index_used_bytes', lambda data: data['node'] == " ", color=terminal.fg_blue)
 
         total_res = {}
 
@@ -431,15 +431,15 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_total_records', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_total_records', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_objects', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_objects', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_tombstones', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_tombstones', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_migrates', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_migrates', lambda data: data['node'] == " ", color=terminal.fg_blue)
 
         total_res = {}
 
@@ -599,13 +599,13 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         t.add_cell_alert(
-            'set', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            'set', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_n-bytes-memory', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_n-bytes-memory', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_n_objects', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_n_objects', lambda data: data['node'] == " ", color=terminal.fg_blue)
 
         total_res = {}
 
@@ -911,7 +911,7 @@ class CliView(object):
                                            title_suffix), columns, description=description)
             if not loganalyser_mode:
                 for column in columns:
-                    if column is not 'node':
+                    if column != 'node':
                         t.add_data_source(
                             column, Extractors.sif_extractor(column))
 
