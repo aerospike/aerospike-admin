@@ -1262,7 +1262,7 @@ class CliView(object):
                 sub_columns_per_column = len(list(grep_result[file].keys()))
                 relative_stats_columns = []
 
-                for key, unit in sorted(list(grep_result[file].keys()), key=lambda tup: tup[0]):
+                for key, unit in sorted(list(grep_result[file].keys()), key=lambda tup: str(tup[0])):
                     if key == tps_key[0]:
                         continue
 
