@@ -121,6 +121,11 @@ def info_to_list(value, delimiter=";"):
         return []
     return re.split(delimiter, value)
 
+def dcs_info_to_list(value, delimiter=","):
+    value = (re.search("=(.*);", value)).group(1)
+    if isinstance(value, Exception):
+        return []
+    return re.split(delimiter, value)
 
 def info_to_tuple(value, delimiter=":"):
     return tuple(info_to_list(value, delimiter))

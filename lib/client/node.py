@@ -325,11 +325,20 @@ class Node(object):
         config = self.info_get_config('xdr')
         if isinstance(config, Exception):
             return False
+
+        # for xdr 5.0
+        try:
+            xdr_enabled = config['xdr']
+            return xdr_enabled == 'true'
+        except Exception:
+            pass
+
         try:
             xdr_enabled = config['enable-xdr']
             return xdr_enabled == 'true'
         except Exception:
             pass
+
         return False
 
     def is_feature_present(self, feature):
@@ -1113,9 +1122,12 @@ class Node(object):
         Returns:
         list -- list of dcs
         """
-        if self.is_feature_present('xdr'):
-            return util.info_to_list(self.info("dcs"))
+        # for server versions >= 4.9 using XDR5.0
+        xdr_info = self.info("get-config:context=xdr")
+        if xdr_info != "Error: Invalid command 'dcs'":
+            return util.dcs_info_to_list(xdr_info)
 
+        # for older servers/XDRs
         return util.info_to_list(self.xdr_info("dcs"))
 
     @return_exceptions
