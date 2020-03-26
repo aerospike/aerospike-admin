@@ -1140,7 +1140,6 @@ class Node(object):
         """
         if self.is_feature_present('xdr'):
             xdr_dc_stats = self.info("get-stats:context=xdr;dc=%s" % dc)
-            print("xdr_dc_stats is ", xdr_dc_stats)
             dc_stats_list = util.info_to_dict(xdr_dc_stats)
             # If xdr version is < XDR5.0 return output of old asinfo command.
             if util.info_valid(xdr_dc_stats):
