@@ -130,6 +130,9 @@ def dcs_info_to_list(value, delimiter=","):
 def info_to_tuple(value, delimiter=":"):
     return tuple(info_to_list(value, delimiter))
 
+def info_valid(info_command_output):
+    return "Invalid command" not in info_command_output
+
 
 def find_dns(endpoints):
     if not endpoints:

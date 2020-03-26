@@ -1139,8 +1139,21 @@ class Node(object):
         dict -- {stat_name : stat_value, ...}
         """
         if self.is_feature_present('xdr'):
-            return util.info_to_dict(self.info("dc/%s" % dc))
-        return util.info_to_dict(self.xdr_info("dc/%s" % dc))
+            xdr_dc_stats = self.info("get-stats:context=xdr;dc=%s" % dc)
+            print("xdr_dc_stats is ", xdr_dc_stats)
+            dc_stats_list = util.info_to_dict(xdr_dc_stats)
+            # If xdr version is < XDR5.0 return output of old asinfo command.
+            if util.info_valid(xdr_dc_stats):
+                return util.info_to_dict(xdr_dc_stats)
+            else:
+                return util.info_to_dict(self.info("dc/%s" % dc))
+        
+        xdr_dc_stats = self.xdr_info("get-stats:context=xdr;dc=%s" % dc)
+        # If xdr version is < XDR5.0 return output of old asinfo command.
+        if util.info_valid(xdr_dc_stats):
+            return util.info_to_dict(xdr_dc_stats)
+        else:
+            return util.info_to_dict(self.xdr_info("dc/%s" % dc))
 
     @return_exceptions
     def info_all_dc_statistics(self):
