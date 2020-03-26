@@ -326,18 +326,9 @@ class Node(object):
         if isinstance(config, Exception):
             return False
 
-        # for xdr 5.0
-        try:
-            xdr_enabled = config['xdr']
-            return xdr_enabled == 'true'
-        except Exception:
-            pass
-
-        try:
-            xdr_enabled = config['enable-xdr']
-            return xdr_enabled == 'true'
-        except Exception:
-            pass
+        # 'enable-xdr' was removed in XDR5.0, so just check that get-config:context=xdr does not return an error.
+        if util.info_valid(config):
+            return True
 
         return False
 

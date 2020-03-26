@@ -131,7 +131,8 @@ def info_to_tuple(value, delimiter=":"):
     return tuple(info_to_list(value, delimiter))
 
 def info_valid(info_command_output):
-    return "Invalid command" not in info_command_output
+    return ("" != info_command_output or
+            "Error" not in info_command_output)
 
 
 def find_dns(endpoints):
