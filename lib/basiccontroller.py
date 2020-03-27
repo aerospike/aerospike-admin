@@ -172,7 +172,7 @@ class InfoController(BasicCommandController):
 
     @CommandHelp('Displays summary information for Cross Datacenter',
                  'Replication (XDR).')
-    def do_xdr(self, line):
+    def do_old_xdr(self, line):
         stats = util.Future(self.cluster.info_XDR_statistics,
                             nodes=self.nodes).start()
 
@@ -187,9 +187,10 @@ class InfoController(BasicCommandController):
         xdr_enable = xdr_enable.result()
         return util.Future(self.view.info_XDR, stats, builds, xdr_enable,
                            self.cluster, **self.mods)
+    # TODO add old info dc method
 
     @CommandHelp('Displays summary information for each datacenter.')
-    def do_dc(self, line):
+    def do_xdr(self, line):
 
         stats = util.Future(self.cluster.info_all_dc_statistics,
                             nodes=self.nodes).start()
@@ -222,7 +223,7 @@ class InfoController(BasicCommandController):
                 except Exception:
                     pass
 
-        return util.Future(self.view.info_dc, stats, self.cluster, **self.mods)
+        return util.Future(self.view.info_XDR, stats, self.cluster, **self.mods)
 
     @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):

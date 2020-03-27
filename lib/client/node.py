@@ -905,10 +905,13 @@ class Node(object):
         """
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
-        if self.is_feature_present('xdr'):
-            return util.info_to_dict(self.info("statistics/xdr"))
+        if int(self.info_XDR_build_version()[0]) < 5:
+            if self.is_feature_present('xdr'):
+                return util.info_to_dict(self.info("statistics/xdr"))
 
-        return util.info_to_dict(self.xdr_info('statistics'))
+            return util.info_to_dict(self.xdr_info('statistics'))
+        else:
+            return self.info_all_dc_statistics()
 
     @return_exceptions
     def info_get_config(self, stanza="", namespace="", namespace_id=""):
@@ -1129,21 +1132,19 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        if self.is_feature_present('xdr'):
-            xdr_dc_stats = self.info("get-stats:context=xdr;dc=%s" % dc)
-            dc_stats_list = util.info_to_dict(xdr_dc_stats)
-            # If xdr version is < XDR5.0 return output of old asinfo command.
-            if util.info_valid(xdr_dc_stats):
-                return util.info_to_dict(xdr_dc_stats)
-            else:
-                return util.info_to_dict(self.info("dc/%s" % dc))
-        
-        xdr_dc_stats = self.xdr_info("get-stats:context=xdr;dc=%s" % dc)
+        xdr_major_version = int(self.info_XDR_build_version()[0])
+
         # If xdr version is < XDR5.0 return output of old asinfo command.
-        if util.info_valid(xdr_dc_stats):
-            return util.info_to_dict(xdr_dc_stats)
+        if xdr_major_version < 5:
+            if self.is_feature_present('xdr'):
+                return util.info_to_dict(self.info("dc/%s" % dc))
+            else:
+                return util.info_to_dict(self.xdr_info("dc/%s" % dc))
         else:
-            return util.info_to_dict(self.xdr_info("dc/%s" % dc))
+            if self.is_feature_present('xdr'):
+                return util.info_to_dict(self.info("get-stats:context=xdr;dc=%s" % dc))
+            else:
+                return util.info_to_dict(self.xdr_info("get-stats:context=xdr;dc=%s" % dc))
 
     @return_exceptions
     def info_all_dc_statistics(self):
@@ -1344,6 +1345,7 @@ class Node(object):
         """
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
+        return '5'
         if self.is_feature_present('xdr'):
             return self.info('build')
 

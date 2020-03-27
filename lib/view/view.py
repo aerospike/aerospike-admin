@@ -662,7 +662,56 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
+    def info_dc(stats, cluster, timestamp="", **ignore):
+        prefixes = cluster.get_node_names()
+        principal = cluster.get_expected_principal()
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "DC Information%s" % (title_suffix)
+        column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'), ('_xdr_dc_size', 'DC size'),
+                        'namespaces',('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'),
+                        ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
+                        )
+
+        t = Table(title, column_names, group_by=1)
+
+        t.add_data_source(
+            '_dc-name', lambda data: get_value_from_dict(data, ('dc-name', 'DC_Name')))
+
+        t.add_data_source('_xdr_dc_size', lambda data: get_value_from_dict(
+            data, ('xdr_dc_size', 'dc_size', 'dc_as_size', 'dc_http_good_locations')))
+
+        t.add_data_source(
+            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
+
+        t.add_data_source('_xdr_dc_remote_ship_ok', lambda data: get_value_from_dict(
+            data, ('xdr_dc_remote_ship_ok', 'dc_remote_ship_ok', 'dc_recs_shipped_ok', 'dc_ship_success')))
+
+        t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
+            data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
+
+        t.add_data_source('_xdr-dc-state', lambda data:
+                          get_value_from_dict(data, ('xdr_dc_state', 'xdr-dc-state', 'dc_state')))
+
+        t.add_cell_alert(
+            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
+
+        row = None
+        for node_key, dc_stats in stats.iteritems():
+            if isinstance(dc_stats, Exception):
+                dc_stats = {}
+            node = cluster.get_node(node_key)[0]
+            for dc, row in dc_stats.iteritems():
+                if isinstance(row, Exception):
+                    row = {}
+                if row:
+                    row['real_node_id'] = node.node_id
+                    row['node'] = prefixes[node_key]
+                    t.insert_row(row)
+        CliView.print_result(t)
+
+    @staticmethod
+    def info_old_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
         if not max(xdr_enable.itervalues()):
             return
 
@@ -745,15 +794,16 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_dc(stats, cluster, timestamp="", **ignore):
+    def info_XDR(stats, cluster, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "DC Information%s" % (title_suffix)
-        column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'), ('_xdr_dc_size', 'DC size'),
-                        'namespaces',('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'),
-                        ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
+        column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'),
+                        'namespaces',('_lag-secs', 'Lag (sec)'), ('success', 'Success'),
+                        ('retry_conn_reset', 'Retry Connection Reset'), ('retry_dest', 'Retry Destination'),
+                        ('total_recoveries', 'Recoveries'), ('_latency_avg_ship_ema', 'Avg Latency (ms)')
                         )
 
         t = Table(title, column_names, group_by=1)
@@ -761,20 +811,23 @@ class CliView(object):
         t.add_data_source(
             '_dc-name', lambda data: get_value_from_dict(data, ('dc-name', 'DC_Name')))
 
-        t.add_data_source('_xdr_dc_size', lambda data: get_value_from_dict(
-            data, ('xdr_dc_size', 'dc_size', 'dc_as_size', 'dc_http_good_locations')))
-
         t.add_data_source(
             '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
 
-        t.add_data_source('_xdr_dc_remote_ship_ok', lambda data: get_value_from_dict(
-            data, ('xdr_dc_remote_ship_ok', 'dc_remote_ship_ok', 'dc_recs_shipped_ok', 'dc_ship_success')))
+        t.add_data_source('success', lambda data: get_value_from_dict(
+            data, ('success')))
+        
+        t.add_data_source('retry_conn_reset', lambda data: get_value_from_dict(
+            data, ('retry_conn_reset')))
+
+        t.add_data_source('rety_dest', lambda data: get_value_from_dict(
+            data, ('rety_dest')))
+
+        t.add_data_source('total_recoveries', lambda data: get_value_from_dict(
+            data, ('total_recoveries')))
 
         t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
             data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
-
-        t.add_data_source('_xdr-dc-state', lambda data:
-                          get_value_from_dict(data, ('xdr_dc_state', 'xdr-dc-state', 'dc_state')))
 
         t.add_cell_alert(
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
@@ -790,6 +843,8 @@ class CliView(object):
                 if row:
                     row['real_node_id'] = node.node_id
                     row['node'] = prefixes[node_key]
+                    row['total_recoveries'] = int(row['recoveries']) + int(row['recoveries_pending'])
+                    row['dc-name'] = dc
                     t.insert_row(row)
         CliView.print_result(t)
 
@@ -1299,6 +1354,7 @@ class CliView(object):
 
     @staticmethod
     def show_stats(*args, **kwargs):
+        print("in show_stats")
         CliView.show_config(*args, **kwargs)
 
     @staticmethod

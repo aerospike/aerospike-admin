@@ -186,7 +186,7 @@ class InfoController(CollectinfoCommandController):
                 except Exception:
                     pass
 
-            self.view.info_dc(util.flip_keys(dc_stats[timestamp]),
+            self.view.info_XDR(util.flip_keys(dc_stats[timestamp]),
                               self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
                               timestamp=timestamp, **self.mods)
 
