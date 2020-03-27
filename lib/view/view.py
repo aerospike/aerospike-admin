@@ -1090,6 +1090,82 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
+    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
+        prefixes = cluster.get_node_names()
+        principal = cluster.get_expected_principal()
+        service_configs = {
+            '10.0.2.15:3000': {'DC1': {'retry_dest': '3', 'filtered_out': '3', 'abandoned': '3', 'success': '3', 'outstanding': '3', 'unprocessed': '3', 'recoveries': '3', 'lap_us': '388', 'retry_conn_reset': '3', 'uncompressed_pct': '50.000', 'recoveries_pending': '3', 'hot_keys': '3', 'not_found': '3', 'time_lag': '3', 'compression_ratio': '1.000'}, 'DC2': {'retry_dest': '0', 'filtered_out': '0', 'abandoned': '0', 'success': '0', 'outstanding': '0', 'unprocessed': '0', 'recoveries': '0', 'lap_us': '388', 'retry_conn_reset': '0', 'uncompressed_pct': '0.000', 'recoveries_pending': '0', 'hot_keys': '0', 'not_found': '0', 'time_lag': '0', 'compression_ratio': '1.000'}}}
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "DC Information%s" % (title_suffix)
+        column_names = ('node', ('_dc-name', 'DC'),
+                        ('dc-type', 'DC type'),
+                        'namespaces',('_lag-secs', 'Lag (sec)'),
+                        ('unprocessed', 'unprocessed'),
+                        ('outstanding','outstanding'),
+                        ('success', 'success'),
+                        ('abandoned','abandoned'),
+                        ('not_found','not_found'),
+                        ('filtered_out','filtered_out'),
+                        ('retry_conn_reset', 'retry_conn_reset'),
+                        ('retry_dest', 'retry_dest'),
+                        ('recoveries', 'recoveries'),
+                        ('recoveries_pending', 'recoveries_pending'),
+                        ('hot_keys', 'hot_keys'),
+                        ('uncrompressed_pct', 'uncrompressed_pct'),
+                        ('compression_ratio', 'compression_ratio'),
+                        ('lap_us','lap_us')
+        )
+
+        table_style = Styles.HORIZONTAL
+        t = Table(title, column_names, title_format=TitleFormats.no_change, group_by=1, style=table_style)
+
+        t.add_data_source(
+            '_dc-name', lambda data: get_value_from_dict(data, ('dc-name', 'DC_Name')))
+
+        t.add_data_source(
+            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
+
+        t.add_data_source(
+            'unprocessed', lambda data: get_value_from_dict(data, ('unprocessed')))
+        
+        t.add_data_source(
+            'outstanding', lambda data: get_value_from_dict(data, ('outstanding')))
+
+        t.add_data_source('success', lambda data: get_value_from_dict(
+            data, ('success')))
+        
+        t.add_data_source('retry_conn_reset', lambda data: get_value_from_dict(
+            data, ('retry_conn_reset')))
+
+        t.add_data_source('rety_dest', lambda data: get_value_from_dict(
+            data, ('rety_dest')))
+
+        t.add_data_source('total_recoveries', lambda data: get_value_from_dict(
+            data, ('total_recoveries')))
+
+        t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
+            data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
+
+        t.add_cell_alert(
+            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
+
+        row = None
+        for node_key, dc_stats in service_configs.iteritems():
+            if isinstance(dc_stats, Exception):
+                dc_stats = {}
+            node = cluster.get_node(node_key)[0]
+            for dc, row in dc_stats.iteritems():
+                if isinstance(row, Exception):
+                    row = {}
+                if row:
+                    row['real_node_id'] = node.node_id
+                    row['node'] = prefixes[node_key]
+                    row['dc-name'] = dc
+                    t.insert_row(row)
+        CliView.print_result(t)
+
+    @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         column_names = set()
@@ -1348,14 +1424,13 @@ class CliView(object):
                 t.insert_row(row)
 
         t.ignore_sort()
-        # print t
         CliView.print_result(t.__str__(
             horizontal_title_every_nth=title_every_nth * (sub_columns_per_column + 1)))
 
     @staticmethod
     def show_stats(*args, **kwargs):
-        print("in show_stats")
-        CliView.show_config(*args, **kwargs)
+        CliView.show_xdr5_config(*args, **kwargs)
+        #CliView.show_config(*args, **kwargs)
 
     @staticmethod
     def show_mapping(col1, col2, mapping, like=None, timestamp="", **ignore):
