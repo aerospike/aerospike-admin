@@ -1345,7 +1345,6 @@ class Node(object):
         """
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
-        return '5'
         if self.is_feature_present('xdr'):
             return self.info('build')
 
