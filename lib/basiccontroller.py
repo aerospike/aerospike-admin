@@ -782,7 +782,21 @@ class ShowStatisticsController(BasicCommandController):
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start().result()
+
         xdr_stats = self.getter.get_xdr(nodes=self.nodes)
+        old_xdr_stats = {}
+        xdr5_stats = {}
+
+        for node in xdr_stats:
+            node_xdr_build_major_version = int(xdr_builds[node][0])
+            if node_xdr_build_major_version < 5:
+                old_xdr_stats[node] = xdr_stats[node]
+            else:
+                xdr5_stats[node] = xdr_stats[node]
+        
+        xdr_stats = {'old_xdr_stats': old_xdr_stats, 'xdr5_stats': xdr5_stats}
 
         return util.Future(self.view.show_stats, "XDR Statistics", xdr_stats,
                 self.cluster, show_total=show_total,
