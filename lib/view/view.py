@@ -661,8 +661,13 @@ class CliView(object):
 
         CliView.print_result(t)
 
+    # pre 5.0
     @staticmethod
     def info_dc(stats, cluster, timestamp="", **ignore):
+        if 'nodesv5' in stats:
+            print("""WARNING: some nodes are running aerospike version >= 5.0. Please use 'asadm -e "info xdr"'
+                     for versions 5.0 and up.""")
+
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
@@ -710,6 +715,7 @@ class CliView(object):
                     t.insert_row(row)
         CliView.print_result(t)
 
+    # pre 5.0
     @staticmethod
     def info_old_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
         if not max(xdr_enable.itervalues()):
@@ -795,6 +801,15 @@ class CliView(object):
 
     @staticmethod
     def info_XDR(stats, cluster, timestamp="", **ignore):
+
+        if stats['old_xdr_info']:
+            CliView.info_dc(stats['old_xdr_info'], cluster, timestamp)
+
+        if stats['xdr5_info']:
+            stats = stats['xdr5_info']
+        else:
+            return
+
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
@@ -803,7 +818,8 @@ class CliView(object):
         column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'),
                         'namespaces',('_lag-secs', 'Lag (sec)'), ('success', 'Success'),
                         ('retry_conn_reset', 'Retry Connection Reset'), ('retry_dest', 'Retry Destination'),
-                        ('total_recoveries', 'Recoveries'), ('_latency_avg_ship_ema', 'Avg Latency (ms)')
+                        ('total_recoveries', 'Recoveries'), ('latency_ms', 'Avg Latency (ms)'),
+                        ('throughput', 'Throughput (rec/s)')
                         )
 
         t = Table(title, column_names, group_by=1, style=Styles.HORIZONTAL)
@@ -826,6 +842,12 @@ class CliView(object):
         t.add_data_source('total_recoveries', lambda data: get_value_from_dict(
             data, ('total_recoveries')))
 
+        t.add_data_source('Avg Latency (ms)', lambda data: get_value_from_dict(
+            data, ('latency_ms')))
+
+        t.add_data_source('Throughput (records per second)', lambda data: get_value_from_dict(
+            data, ('throughput')))
+
         t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
             data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
 
@@ -846,6 +868,7 @@ class CliView(object):
                     row['total_recoveries'] = int(row['recoveries']) + int(row['recoveries_pending'])
                     row['dc-name'] = dc
                     t.insert_row(row)
+
         CliView.print_result(t)
 
     @staticmethod
@@ -1097,7 +1120,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "DC Information%s" % (title_suffix)
         column_names = ('node', ('dc-name', 'DC'),
-                        ('unprocessed', 'unprocessed'),
+                        ('in_queue', 'in_queue'),
                         ('outstanding','outstanding'),
                         ('success', 'success'),
                         ('abandoned','abandoned'),
@@ -1110,7 +1133,10 @@ class CliView(object):
                         ('hot_keys', 'hot_keys'),
                         ('uncompressed_pct', 'uncompressed_pct'),
                         ('compression_ratio', 'compression_ratio'),
-                        ('lap_us','lap_us')
+                        ('lap_us','lap_us'),
+                        ('lag', 'lag'),
+                        ('throughput', 'throughput'),
+                        ('latency_ms', 'latency_ms')
         )
 
         table_style = Styles.VERTICAL
@@ -1134,9 +1160,11 @@ class CliView(object):
             t.__str__(horizontal_title_every_nth=title_every_nth))
 
     @staticmethod
+    def my_print(arg):
+        print(arg)
+
+    @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        column_names = set()
 
         if title == 'XDR Statistics':
             if service_configs['xdr5_stats']:
@@ -1146,7 +1174,9 @@ class CliView(object):
                 service_configs = service_configs['old_xdr_stats']
             else:
                 return
-
+        
+        prefixes = cluster.get_node_names()
+        column_names = set()
 
         if diff and service_configs:
             config_sets = (set(service_configs[d].iteritems())

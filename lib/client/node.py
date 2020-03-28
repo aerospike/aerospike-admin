@@ -1116,10 +1116,11 @@ class Node(object):
         Returns:
         list -- list of dcs
         """
-        # for server versions >= 4.9 using XDR5.0
-        xdr_info = self.info("get-config:context=xdr")
-        if xdr_info != "Error: Invalid command 'dcs'":
-            return util.dcs_info_to_list(xdr_info)
+        xdr_major_version = int(self.info_XDR_build_version()[0])
+
+        # for server versions >= 5 using XDR5.0
+        if xdr_major_version >= 5:
+            return util.dcs_info_to_list(self.info("get-config:context=xdr"))
 
         # for older servers/XDRs
         return util.info_to_list(self.xdr_info("dcs"))
