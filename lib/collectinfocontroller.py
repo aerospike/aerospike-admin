@@ -146,13 +146,27 @@ class InfoController(CollectinfoCommandController):
             xdr_enable = {}
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
+            old_xdr_stats = {}
+            xdr5_stats = {}
 
             for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
+                node_xdr_build_major_version = int(builds[xdr_node][0])
 
-            self.view.info_XDR(xdr_stats[timestamp], builds, xdr_enable,
-                               cluster=cinfo_log, timestamp=timestamp,
-                               **self.mods)
+                if node_xdr_build_major_version < 5:
+                    old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+                else:
+                    xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+
+            if xdr5_stats:
+                self.view.info_XDR(xdr5_stats, builds, xdr_enable, 
+                                    cluster=cinfo_log, timestamp=timestamp, 
+                                    **self.mods)
+
+            if old_xdr_stats:
+                self.view.info_old_XDR(xdr5_stats, builds, xdr_enable, 
+                                    cluster=cinfo_log, timestamp=timestamp, 
+                                    **self.mods)
 
     @CommandHelp(
         'Displays datacenter summary information.')
@@ -160,6 +174,9 @@ class InfoController(CollectinfoCommandController):
         dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
         dc_config = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
         for timestamp in sorted(dc_stats.keys()):
+            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_xdr_build()
+
             if not dc_stats[timestamp]:
                 continue
 
@@ -186,9 +203,25 @@ class InfoController(CollectinfoCommandController):
                 except Exception:
                     pass
 
-            self.view.info_XDR(util.flip_keys(dc_stats[timestamp]),
-                              self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                              timestamp=timestamp, **self.mods)
+            nodes_running_v5_or_higher = False
+            nodes_running_v49_or_lower = False
+            for version in builds.values():
+                node_xdr_build_major_version = int(version[0])
+                
+                if node_xdr_build_major_version >= 5:
+                    nodes_running_v5_or_higher = True
+                else:
+                    nodes_running_v49_or_lower = True
+
+            if nodes_running_v49_or_lower:
+                self.view.info_dc(util.flip_keys(dc_stats[timestamp]),
+                                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                                timestamp=timestamp, **self.mods)
+            
+            if nodes_running_v5_or_higher:
+                self.view.print_result("WARNING: Detected nodes running " +
+                 "aerospike version >= 5.0. Please use 'asadm -e \"info xdr\"'" + 
+                 " for versions 5.0 and up.")
 
     @CommandHelp(
         'Displays secondary index (SIndex) summary information).')
@@ -695,7 +728,18 @@ class ShowStatisticsController(CollectinfoCommandController):
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
-        xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
+        # cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+        # builds = cinfo_log.get_xdr_build()
+
+        # xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
+
+        # for xdr_node in xdr_stats:
+        #     node_xdr_build_major_version = int(builds[xdr_node][0])
+
+        #     if node_xdr_build_major_version < 5:
+        #         old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+        #     else:
+        #         xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
 
         for timestamp in sorted(xdr_stats.keys()):
             self.view.show_config(

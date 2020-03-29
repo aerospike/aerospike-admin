@@ -664,10 +664,6 @@ class CliView(object):
     # pre 5.0
     @staticmethod
     def info_dc(stats, cluster, timestamp="", **ignore):
-        if 'nodesv5' in stats:
-            print("""WARNING: some nodes are running aerospike version >= 5.0. Please use 'asadm -e "info xdr"'
-                     for versions 5.0 and up.""")
-
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
@@ -800,14 +796,8 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_XDR(stats, cluster, timestamp="", **ignore):
-
-        if stats['old_xdr_info']:
-            CliView.info_dc(stats['old_xdr_info'], cluster, timestamp)
-
-        if stats['xdr5_info']:
-            stats = stats['xdr5_info']
-        else:
+    def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
+        if not max(xdr_enable.itervalues()):
             return
 
         prefixes = cluster.get_node_names()
@@ -1160,21 +1150,7 @@ class CliView(object):
             t.__str__(horizontal_title_every_nth=title_every_nth))
 
     @staticmethod
-    def my_print(arg):
-        print(arg)
-
-    @staticmethod
-    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
-
-        if title == 'XDR Statistics':
-            if service_configs['xdr5_stats']:
-                CliView.show_xdr5_stats(title, service_configs['xdr5_stats'], cluster, like, diff, show_total, title_every_nth, flip_output, timestamp)
-
-            if service_configs['old_xdr_stats']:
-                service_configs = service_configs['old_xdr_stats']
-            else:
-                return
-        
+    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):        
         prefixes = cluster.get_node_names()
         column_names = set()
 
