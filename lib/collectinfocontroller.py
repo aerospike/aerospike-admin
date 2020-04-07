@@ -168,6 +168,7 @@ class InfoController(CollectinfoCommandController):
                                     cluster=cinfo_log, timestamp=timestamp, 
                                     **self.mods)
 
+    # pre 5.0
     @CommandHelp(
         'Displays datacenter summary information.')
     def do_dc(self, line):
@@ -392,6 +393,7 @@ class ShowConfigController(CollectinfoCommandController):
                                   title_every_nth=title_every_nth, flip_output=flip_output,
                                   timestamp=timestamp, **self.mods)
 
+    # pre 5.0
     @CommandHelp('Displays datacenter configuration')
     def do_dc(self, line):
 
@@ -760,6 +762,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                     show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
                     timestamp=timestamp, **self.mods)
 
+    # pre 5.0
     @CommandHelp('Displays datacenter statistics')
     def do_dc(self, line):
 

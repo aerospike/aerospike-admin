@@ -133,7 +133,6 @@ class InfoController(BasicCommandController):
             for action in res:
                 if action:
                     actions.append(action)
-        #TODO make this work for both 5.0 and 4.9 and mixed
         actions.append(util.Future(self.do_xdr, line).start())
 
         return [action.result() for action in actions]
@@ -189,7 +188,7 @@ class InfoController(BasicCommandController):
         return util.Future(self.view.info_XDR, stats, builds, xdr_enable,
                            self.cluster, **self.mods)
 
-    #pre 5.0
+    # pre 5.0
     @CommandHelp('Displays summary information for each datacenter.')
     def do_dc(self, line):
         stats = util.Future(self.cluster.info_all_dc_statistics,
@@ -227,7 +226,6 @@ class InfoController(BasicCommandController):
                     pass
         
         xdr_builds = xdr_builds.result()
-
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
         for node in stats:
@@ -264,12 +262,10 @@ class InfoController(BasicCommandController):
 
         stats = stats.result()
         xdr_builds = xdr_builds.result()
-
         old_xdr_stats = {}
         xdr5_stats = {}
 
         for node in stats:
-
             node_xdr_build_major_version = int(xdr_builds[node][0])
 
             if node_xdr_build_major_version < 5:
@@ -855,7 +851,6 @@ class ShowStatisticsController(BasicCommandController):
         xdr5_stats = {}
 
         for node in xdr_stats:
-
             node_xdr_build_major_version = int(xdr_builds[node][0])
             if node_xdr_build_major_version < 5:
                 old_xdr_stats[node] = xdr_stats[node]
@@ -876,6 +871,7 @@ class ShowStatisticsController(BasicCommandController):
 
         return futures
 
+    # pre 5.0
     @CommandHelp('Displays datacenter statistics')
     def do_dc(self, line):
 
@@ -900,7 +896,6 @@ class ShowStatisticsController(BasicCommandController):
         for dc in dc_stats.values():
 
             for node in dc:
-
                 node_xdr_build_major_version = int(xdr_builds[node][0])
 
                 if node_xdr_build_major_version >= 5:
