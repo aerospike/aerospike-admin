@@ -1111,7 +1111,7 @@ class CliView(object):
         title = "DC Information%s" % (title_suffix)
         column_names = ('node', ('dc-name', 'DC'),
                         ('in_queue', 'in_queue'),
-                        ('outstanding','outstanding'),
+                        ('in_progress','in_progress'),
                         ('success', 'success'),
                         ('abandoned','abandoned'),
                         ('not_found','not_found'),

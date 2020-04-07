@@ -220,7 +220,8 @@ class InfoController(CollectinfoCommandController):
             
             if nodes_running_v5_or_higher:
                 self.view.print_result("WARNING: Detected nodes running " +
-                 "aerospike version >= 5.0. Please use 'asadm -e \"info xdr\"'" + 
+                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
+                 "/path/to/collect_info_file -e \"info xdr\"'" + 
                  " for versions 5.0 and up.")
 
     @CommandHelp(
@@ -798,7 +799,8 @@ class ShowStatisticsController(CollectinfoCommandController):
 
             if nodes_running_v5_or_higher:
                 self.view.print_result("WARNING: Detected nodes running " +
-                 "aerospike version >= 5.0. Please use 'asadm -e \"info xdr\"'" + 
+                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
+                 "/path/to/collect_info_file -e \"show statistics xdr\"'" + 
                  " for versions 5.0 and up.")
             
 
