@@ -1137,11 +1137,13 @@ class Node(object):
 
         # If xdr version is < XDR5.0 return output of old asinfo command.
         if xdr_major_version < 5:
+
             if self.is_feature_present('xdr'):
                 return util.info_to_dict(self.info("dc/%s" % dc))
             else:
                 return util.info_to_dict(self.xdr_info("dc/%s" % dc))
         else:
+
             if self.is_feature_present('xdr'):
                 return util.info_to_dict(self.info("get-stats:context=xdr;dc=%s" % dc))
             else:
@@ -1347,14 +1349,17 @@ class Node(object):
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port 
         # TODO remove '4.9' check.
+        return '5.0'
         if self.is_feature_present('xdr'):
             build = self.info('build')
             if '4.9.0.2-2' in build:
                 return '5.0'
+            return build
 
         build = self.xdr_info('build')
         if '4.9.0.2-2' in build:
             return '5.0'
+        return build
 
     def _set_default_system_credentials(self, default_user=None, default_pwd=None, default_ssh_key=None,
                                         default_ssh_port=None, credential_file=None):

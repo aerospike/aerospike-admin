@@ -804,7 +804,7 @@ class CliView(object):
         principal = cluster.get_expected_principal()
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "DC Information%s" % (title_suffix)
+        title = "XDR Information%s" % (title_suffix)
         column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'),
                         'namespaces',('_lag-secs', 'Lag (sec)'), ('success', 'Success'),
                         ('retry_conn_reset', 'Retry Connection Reset'), ('retry_dest', 'Retry Destination'),
@@ -1103,35 +1103,45 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def show_xdr5_stats(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
+    def show_xdr5_stats(title, service_configs, cluster, like=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
+        columns = set()
         
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "DC Information%s" % (title_suffix)
-        column_names = ('node', ('dc-name', 'DC'),
-                        ('in_queue', 'in_queue'),
-                        ('in_progress','in_progress'),
-                        ('success', 'success'),
-                        ('abandoned','abandoned'),
-                        ('not_found','not_found'),
-                        ('filtered_out','filtered_out'),
-                        ('retry_conn_reset', 'retry_conn_reset'),
-                        ('retry_dest', 'retry_dest'),
-                        ('recoveries', 'recoveries'),
-                        ('recoveries_pending', 'recoveries_pending'),
-                        ('hot_keys', 'hot_keys'),
-                        ('uncompressed_pct', 'uncompressed_pct'),
-                        ('compression_ratio', 'compression_ratio'),
-                        ('lap_us','lap_us'),
-                        ('lag', 'lag'),
-                        ('throughput', 'throughput'),
-                        ('latency_ms', 'latency_ms')
+        title = "XDR Statistics%s" % (title_suffix)
+        column_names =  ('node',
+                        'dc-name',
+                        'in_queue',
+                        'in_progress',
+                        'success',
+                        'abandoned',
+                        'not_found',
+                        'filtered_out',
+                        'retry_conn_reset',
+                        'retry_dest',
+                        'recoveries',
+                        'recoveries_pending',
+                        'hot_keys',
+                        'uncompressed_pct',
+                        'compression_ratio',
+                        'lap_us',
+                        'lag',
+                        'throughput',
+                        'latency_ms',
         )
+        columns.update(list(column_names))
+
+        if like:
+            likes = compile_likes(like)
+
+            column_names = filter(likes.search, column_names)
 
         table_style = Styles.VERTICAL
-        t = Table(title, column_names, title_format=TitleFormats.no_change, group_by=1, style=table_style)
+        if flip_output:
+            table_style = Styles.HORIZONTAL
 
+        t = Table(title, column_names, title_format=TitleFormats.no_change, group_by=1, style=table_style)
         row = None
         for node_key, dc_stats in service_configs.iteritems():
             if isinstance(dc_stats, Exception):

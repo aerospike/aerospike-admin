@@ -126,6 +126,7 @@ def dcs_info_to_list(value, delimiter=","):
     value = (re.search("=(.*);", value)).group(1)
     if isinstance(value, Exception):
         return []
+
     return re.split(delimiter, value)
 
 

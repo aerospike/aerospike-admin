@@ -177,6 +177,8 @@ class InfoController(CollectinfoCommandController):
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
+            nodes_running_v5_or_higher = False
+            nodes_running_v49_or_lower = False
 
             if not dc_stats[timestamp]:
                 continue
@@ -204,11 +206,8 @@ class InfoController(CollectinfoCommandController):
                 except Exception:
                     pass
 
-            nodes_running_v5_or_higher = False
-            nodes_running_v49_or_lower = False
             for version in builds.values():
                 node_xdr_build_major_version = int(version[0])
-                
                 if node_xdr_build_major_version >= 5:
                     nodes_running_v5_or_higher = True
                 else:
@@ -750,14 +749,14 @@ class ShowStatisticsController(CollectinfoCommandController):
 
             if xdr5_stats:
                 self.view.show_xdr5_stats(
-                    "XDR Statistics", xdr_stats[timestamp],
+                    "XDR Statistics", xdr5_stats,
                     self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
                     timestamp=timestamp, **self.mods)
 
             if old_xdr_stats:
                 self.view.show_config(
-                    "XDR Statistics", xdr_stats[timestamp],
+                    "XDR Statistics", old_xdr_stats,
                     self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
                     timestamp=timestamp, **self.mods)
@@ -781,9 +780,9 @@ class ShowStatisticsController(CollectinfoCommandController):
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
-
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
+
             for version in builds.values():
                 node_xdr_build_major_version = int(version[0])
                 
