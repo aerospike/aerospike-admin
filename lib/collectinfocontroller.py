@@ -213,7 +213,6 @@ class InfoController(CollectinfoCommandController):
                 else:
                     nodes_running_v49_or_lower = True
 
-            print(dc_stats)
             if nodes_running_v49_or_lower:
                 self.view.info_dc(util.flip_keys(dc_stats[timestamp]),
                                 self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
@@ -737,18 +736,14 @@ class ShowStatisticsController(CollectinfoCommandController):
 
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
-            print(xdr_stats)
 
             for xdr_node in xdr_stats[timestamp]:
                 node_xdr_build_major_version = int(builds[xdr_node][0])
-                print(builds)
 
                 if node_xdr_build_major_version < 5:
                     old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
                 else:
                     xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
-            
-            print(old_xdr_stats)
 
             if xdr5_stats:
                 self.view.show_xdr5_stats(
@@ -779,14 +774,34 @@ class ShowStatisticsController(CollectinfoCommandController):
                 mods=self.mods)
 
         dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
-
         for timestamp in sorted(dc_stats.keys()):
-            for dc, stats in dc_stats[timestamp].iteritems():
-                self.view.show_stats(
-                    "%s DC Statistics" % (dc), stats,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                    show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
-                    timestamp=timestamp, **self.mods)
+            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_xdr_build()
+
+            nodes_running_v5_or_higher = False
+            nodes_running_v49_or_lower = False
+            for version in builds.values():
+                node_xdr_build_major_version = int(version[0])
+                
+                if node_xdr_build_major_version >= 5:
+                    nodes_running_v5_or_higher = True
+                else:
+                    nodes_running_v49_or_lower = True
+
+            if nodes_running_v49_or_lower:
+                for dc, stats in dc_stats[timestamp].iteritems():
+                    self.view.show_stats(
+                        "%s DC Statistics" % (dc), stats,
+                        self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                        show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
+                        timestamp=timestamp, **self.mods)
+
+            if nodes_running_v5_or_higher:
+                self.view.print_result("WARNING: Detected nodes running " +
+                 "aerospike version >= 5.0. Please use 'asadm -e \"info xdr\"'" + 
+                 " for versions 5.0 and up.")
+            
+
 
     @CommandHelp('Displays sindex statistics')
     def do_sindex(self, line):
