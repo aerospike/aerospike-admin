@@ -576,7 +576,7 @@ ASSERT(r, False, "Skewed cluster set object count.", "ANOMALY", WARNING,
 				"Listed set[s] have skewed object distribution. Please run 'show statistics set like object' to check counts. It may be non-issue if cluster is undergoing migrations.",
 				"Set object count anomaly check.");
 
-/* XDR */
+/* XDR < 5 */
 
 s = select * from XDR.CONFIG save;
 r = GROUP by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
@@ -751,6 +751,7 @@ ASSERT(r, False, "XDR queue overflows.", "PERFORMANCE", WARNING,
 				"XDR queue overflow error check.",
 				xdr_enabled);
 
+/* XDR > 5 */
 
 /* CLUSTER STATE */
 

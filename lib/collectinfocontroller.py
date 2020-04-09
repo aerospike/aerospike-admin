@@ -157,11 +157,21 @@ class InfoController(CollectinfoCommandController):
                     old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
                 else:
                     xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+            
+            temp = {}
+            for node in xdr5_stats:
+                for dc in xdr5_stats[node]:
+                    if dc not in temp:
+                        temp[dc] = {}
+                    temp[dc][node] = xdr5_stats[node][dc]
+
+            xdr5_stats = temp
 
             if xdr5_stats:
-                self.view.info_XDR(xdr5_stats, builds, xdr_enable, 
-                                    cluster=cinfo_log, timestamp=timestamp, 
-                                    **self.mods)
+                for dc in xdr5_stats:
+                    self.view.info_XDR(xdr5_stats[dc], builds, xdr_enable, 
+                                        cluster=cinfo_log, timestamp=timestamp, 
+                                        title="XDR Statistics %s" % dc, **self.mods)
 
             if old_xdr_stats:
                 self.view.info_old_XDR(old_xdr_stats, builds, xdr_enable, 
@@ -747,12 +757,23 @@ class ShowStatisticsController(CollectinfoCommandController):
                 else:
                     xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
 
+            temp = {}
+            for node in xdr5_stats:
+                for dc in xdr5_stats[node]:
+                    if dc not in temp:
+                        temp[dc] = {}
+                    temp[dc][node] = xdr5_stats[node][dc]
+
+            xdr5_stats = temp
+
             if xdr5_stats:
-                self.view.show_xdr5_stats(
-                    "XDR Statistics", xdr5_stats,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                    show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
-                    timestamp=timestamp, **self.mods)
+                for dc in xdr5_stats:
+                    self.view.show_xdr5_stats(
+                        "XDR Statistics %s" % dc, xdr5_stats[dc],
+                        self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                        show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
+                        timestamp=timestamp, **self.mods)
+                
 
             if old_xdr_stats:
                 self.view.show_config(

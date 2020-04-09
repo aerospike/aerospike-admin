@@ -276,9 +276,22 @@ class InfoController(BasicCommandController):
         xdr_enable = xdr_enable.result()
         futures = []
 
+        temp = {}
+        for node in xdr5_stats:
+            for dc in xdr5_stats[node]:
+                if dc not in temp:
+                    temp[dc] = {}
+                temp[dc][node] = xdr5_stats[node][dc]
+
+        xdr5_stats = temp
+
         if xdr5_stats:
-            futures.append(util.Future(self.view.info_XDR, xdr5_stats, xdr_builds,
-                                        xdr_enable, self.cluster, **self.mods))
+            futures = [ 
+                util.Future(self.view.info_XDR, xdr5_stats[dc], xdr_builds,
+                            xdr_enable, self.cluster, title="XDR Statistics %s" % dc,
+                            **self.mods)
+                for dc in xdr5_stats
+            ]
 
         if old_xdr_stats:
             util.Future(self.view.info_old_XDR, old_xdr_stats,
@@ -859,15 +872,27 @@ class ShowStatisticsController(BasicCommandController):
 
         futures = []
 
+        temp = {}
+        for node in xdr5_stats:
+            for dc in xdr5_stats[node]:
+                if dc not in temp:
+                    temp[dc] = {}
+                temp[dc][node] = xdr5_stats[node][dc]
+
+        xdr5_stats = temp
+
         if xdr5_stats:
-            futures.append(util.Future(self.view.show_xdr5_stats, "XDR Statistics", xdr5_stats,
-                                    self.cluster, show_total=show_total,
-                                    title_every_nth=title_every_nth, flip_output=flip_output, **self.mods))
+            futures = [
+                    util.Future(self.view.show_xdr5_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],
+                                self.cluster, show_total=show_total,
+                                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
+                    for dc in xdr5_stats
+                ]
 
         if old_xdr_stats:
             futures.append(util.Future(self.view.show_stats, "XDR Statistics", old_xdr_stats,
-                                    self.cluster, show_total=show_total,
-                                    title_every_nth=title_every_nth, flip_output=flip_output, **self.mods))
+                                        self.cluster, show_total=show_total,
+                                        title_every_nth=title_every_nth, flip_output=flip_output, **self.mods))
 
         return futures
 
