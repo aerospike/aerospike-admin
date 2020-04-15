@@ -148,21 +148,6 @@ class InfoController(CollectinfoCommandController):
             builds = cinfo_log.get_xdr_build()
             old_xdr_stats = {}
             xdr5_stats = {}
-            for_mods = self.mods['for']
-
-            if for_mods:
-                filtered_xdr_stats = {}
-                
-                for node in xdr_stats[timestamp]:
-                    if isinstance(node, Exception):
-                        continue
-                    matches = util.filter_list(list(xdr_stats[timestamp][node].keys()), for_mods)
-                    if matches:
-                        filtered_xdr_stats[node] = {}
-                    for match in matches:
-                        filtered_xdr_stats[node][match] = xdr_stats[timestamp][node][match]
-                
-                xdr_stats[timestamp] = filtered_xdr_stats
 
             for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
@@ -183,10 +168,14 @@ class InfoController(CollectinfoCommandController):
 
                 xdr5_stats = temp
 
+                if self.mods['for']:
+                    matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+
                 for dc in xdr5_stats:
-                    self.view.info_XDR(xdr5_stats[dc], builds, xdr_enable, 
-                                        cluster=cinfo_log, timestamp=timestamp, 
-                                        title="XDR Statistics %s" % dc, **self.mods)
+                    if not self.mods['for'] or dc in matches:
+                        self.view.info_XDR(xdr5_stats[dc], builds, xdr_enable, 
+                                            cluster=cinfo_log, timestamp=timestamp, 
+                                            title="XDR Statistics %s" % dc, **self.mods)
 
             if old_xdr_stats:
                 self.view.info_old_XDR(old_xdr_stats, builds, xdr_enable, 
@@ -765,20 +754,6 @@ class ShowStatisticsController(CollectinfoCommandController):
             builds = cinfo_log.get_xdr_build()
             for_mods = self.mods['for']
 
-            if for_mods:
-                filtered_xdr_stats = {}
-                
-                for node in xdr_stats[timestamp]:
-                    if isinstance(node, Exception):
-                        continue
-                    matches = util.filter_list(list(xdr_stats[timestamp][node].keys()), for_mods)
-                    if matches:
-                        filtered_xdr_stats[node] = {}
-                    for match in matches:
-                        filtered_xdr_stats[node][match] = xdr_stats[timestamp][node][match]
-                
-                xdr_stats[timestamp] = filtered_xdr_stats
-
             for xdr_node in xdr_stats[timestamp]:
                 node_xdr_build_major_version = int(builds[xdr_node][0])
 
@@ -797,12 +772,16 @@ class ShowStatisticsController(CollectinfoCommandController):
 
                 xdr5_stats = temp
 
+                if self.mods['for']:
+                    matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+
                 for dc in xdr5_stats:
-                    self.view.show_xdr5_stats(
-                        "XDR Statistics %s" % dc, xdr5_stats[dc],
-                        self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                        show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
-                        timestamp=timestamp, **self.mods)
+                    if not self.mods['for'] or dc in matches:
+                        self.view.show_xdr5_stats(
+                            "XDR Statistics %s" % dc, xdr5_stats[dc],
+                            self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                            show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
+                            timestamp=timestamp, **self.mods)
                 
 
             if old_xdr_stats:

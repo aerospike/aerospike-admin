@@ -1097,7 +1097,6 @@ class CliView(object):
     @staticmethod
     def show_xdr5_stats(title, service_configs, cluster, like=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
         prefixes = cluster.get_node_names()
-        prefixes = {'10.0.2.15:3000': 'dylan-VirtualBox:3000', '20.0.2.15:3000': 'dylan2-VirtualBox:3000'}
         principal = cluster.get_expected_principal()
         columns = set()
         
@@ -1138,8 +1137,8 @@ class CliView(object):
         for node_key, row in service_configs.iteritems():
             if isinstance(row, Exception):
                 row = {}
-            #node = cluster.get_node(node_key)[0]
-            #row['real_node_id'] = node.node_id
+            node = cluster.get_node(node_key)[0]
+            row['real_node_id'] = node.node_id
             row['node'] = prefixes[node_key]
             t.insert_row(row)
 
