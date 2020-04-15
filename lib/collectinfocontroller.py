@@ -80,7 +80,7 @@ class CollectinfoRootController(BaseController):
     'of Aerospike functionality.')
 class InfoController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set()
+        self.modifiers = set(['for'])
 
         self.controller_map = dict(
             namespace=InfoNamespaceController)
@@ -148,6 +148,21 @@ class InfoController(CollectinfoCommandController):
             builds = cinfo_log.get_xdr_build()
             old_xdr_stats = {}
             xdr5_stats = {}
+            for_mods = self.mods['for']
+
+            if for_mods:
+                filtered_xdr_stats = {}
+                
+                for node in xdr_stats[timestamp]:
+                    if isinstance(node, Exception):
+                        continue
+                    matches = util.filter_list(list(xdr_stats[timestamp][node].keys()), for_mods)
+                    if matches:
+                        filtered_xdr_stats[node] = {}
+                    for match in matches:
+                        filtered_xdr_stats[node][match] = xdr_stats[timestamp][node][match]
+                
+                xdr_stats[timestamp] = filtered_xdr_stats
 
             for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
@@ -748,6 +763,21 @@ class ShowStatisticsController(CollectinfoCommandController):
 
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
+            for_mods = self.mods['for']
+
+            if for_mods:
+                filtered_xdr_stats = {}
+                
+                for node in xdr_stats[timestamp]:
+                    if isinstance(node, Exception):
+                        continue
+                    matches = util.filter_list(list(xdr_stats[timestamp][node].keys()), for_mods)
+                    if matches:
+                        filtered_xdr_stats[node] = {}
+                    for match in matches:
+                        filtered_xdr_stats[node][match] = xdr_stats[timestamp][node][match]
+                
+                xdr_stats[timestamp] = filtered_xdr_stats
 
             for xdr_node in xdr_stats[timestamp]:
                 node_xdr_build_major_version = int(builds[xdr_node][0])

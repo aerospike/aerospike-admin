@@ -110,7 +110,7 @@ class BasicRootController(BaseController):
              'of Aerospike functionality.')
 class InfoController(BasicCommandController):
     def __init__(self):
-        self.modifiers = set(['with'])
+        self.modifiers = set(['with', 'for'])
 
         self.controller_map = dict(
             namespace=InfoNamespaceController)
@@ -264,6 +264,21 @@ class InfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         old_xdr_stats = {}
         xdr5_stats = {}
+        for_mods = self.mods['for']
+
+        if for_mods:
+            filtered_xdr_stats = {}
+            
+            for node in stats:
+                if isinstance(node, Exception):
+                    continue
+                matches = util.filter_list(list(stats[node].keys()), for_mods)
+                if matches:
+                    filtered_xdr_stats[node] = {}
+                for match in matches:
+                    filtered_xdr_stats[node][match] = stats[node][match]
+            
+            stats = filtered_xdr_stats
 
         for node in stats:
             node_xdr_build_major_version = int(xdr_builds[node][0])
@@ -859,6 +874,7 @@ class ShowStatisticsController(BasicCommandController):
         xdr_builds = util.Future(self.cluster.info_XDR_build_version,
                 nodes=self.nodes).start().result()
 
+        xdr_builds = {'10.0.2.15:3000': '5.0', '20.0.2.15:3000': '5.0'}
         xdr_stats = self.getter.get_xdr(nodes=self.nodes)
         old_xdr_stats = {}
         xdr5_stats = {}
@@ -879,14 +895,17 @@ class ShowStatisticsController(BasicCommandController):
                     if dc not in temp:
                         temp[dc] = {}
                     temp[dc][node] = xdr5_stats[node][dc]
-
+            
             xdr5_stats = temp
+
+            if self.mods['for']:
+                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
 
             futures = [
                     util.Future(self.view.show_xdr5_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],
                                 self.cluster, show_total=show_total,
                                 title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-                    for dc in xdr5_stats
+                    for dc in xdr5_stats if not self.mods['for'] or dc in matches
                 ]
 
         if old_xdr_stats:
