@@ -157,17 +157,17 @@ class InfoController(CollectinfoCommandController):
                     old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
                 else:
                     xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
-            
-            temp = {}
-            for node in xdr5_stats:
-                for dc in xdr5_stats[node]:
-                    if dc not in temp:
-                        temp[dc] = {}
-                    temp[dc][node] = xdr5_stats[node][dc]
-
-            xdr5_stats = temp
 
             if xdr5_stats:
+                temp = {}
+                for node in xdr5_stats:
+                    for dc in xdr5_stats[node]:
+                        if dc not in temp:
+                            temp[dc] = {}
+                        temp[dc][node] = xdr5_stats[node][dc]
+
+                xdr5_stats = temp
+
                 for dc in xdr5_stats:
                     self.view.info_XDR(xdr5_stats[dc], builds, xdr_enable, 
                                         cluster=cinfo_log, timestamp=timestamp, 
@@ -757,16 +757,16 @@ class ShowStatisticsController(CollectinfoCommandController):
                 else:
                     xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
 
-            temp = {}
-            for node in xdr5_stats:
-                for dc in xdr5_stats[node]:
-                    if dc not in temp:
-                        temp[dc] = {}
-                    temp[dc][node] = xdr5_stats[node][dc]
-
-            xdr5_stats = temp
-
             if xdr5_stats:
+                temp = {}
+                for node in xdr5_stats:
+                    for dc in xdr5_stats[node]:
+                        if dc not in temp:
+                            temp[dc] = {}
+                        temp[dc][node] = xdr5_stats[node][dc]
+
+                xdr5_stats = temp
+
                 for dc in xdr5_stats:
                     self.view.show_xdr5_stats(
                         "XDR Statistics %s" % dc, xdr5_stats[dc],

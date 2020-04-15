@@ -1349,7 +1349,6 @@ class Node(object):
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port 
         # TODO remove '4.9' check.
-        return '5.0'
         if self.is_feature_present('xdr'):
             build = self.info('build')
             if '4.9.0.2-2' in build:

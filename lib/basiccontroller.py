@@ -276,16 +276,16 @@ class InfoController(BasicCommandController):
         xdr_enable = xdr_enable.result()
         futures = []
 
-        temp = {}
-        for node in xdr5_stats:
-            for dc in xdr5_stats[node]:
-                if dc not in temp:
-                    temp[dc] = {}
-                temp[dc][node] = xdr5_stats[node][dc]
-
-        xdr5_stats = temp
-
         if xdr5_stats:
+            temp = {}
+            for node in xdr5_stats:
+                for dc in xdr5_stats[node]:
+                    if dc not in temp:
+                        temp[dc] = {}
+                    temp[dc][node] = xdr5_stats[node][dc]
+
+            xdr5_stats = temp
+
             futures = [ 
                 util.Future(self.view.info_XDR, xdr5_stats[dc], xdr_builds,
                             xdr_enable, self.cluster, title="XDR Statistics %s" % dc,
@@ -872,16 +872,16 @@ class ShowStatisticsController(BasicCommandController):
 
         futures = []
 
-        temp = {}
-        for node in xdr5_stats:
-            for dc in xdr5_stats[node]:
-                if dc not in temp:
-                    temp[dc] = {}
-                temp[dc][node] = xdr5_stats[node][dc]
-
-        xdr5_stats = temp
-
         if xdr5_stats:
+            temp = {}
+            for node in xdr5_stats:
+                for dc in xdr5_stats[node]:
+                    if dc not in temp:
+                        temp[dc] = {}
+                    temp[dc][node] = xdr5_stats[node][dc]
+
+            xdr5_stats = temp
+
             futures = [
                     util.Future(self.view.show_xdr5_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],
                                 self.cluster, show_total=show_total,
