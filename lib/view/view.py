@@ -661,8 +661,59 @@ class CliView(object):
 
         CliView.print_result(t)
 
+    # pre 5.0
     @staticmethod
-    def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
+    def info_dc(stats, cluster, timestamp="", **ignore):
+        prefixes = cluster.get_node_names()
+        principal = cluster.get_expected_principal()
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "DC Information%s" % (title_suffix)
+        column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'), ('_xdr_dc_size', 'DC size'),
+                        'namespaces',('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'),
+                        ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
+                        )
+
+        t = Table(title, column_names, group_by=1)
+
+        t.add_data_source(
+            '_dc-name', lambda data: get_value_from_dict(data, ('dc-name', 'DC_Name')))
+
+        t.add_data_source('_xdr_dc_size', lambda data: get_value_from_dict(
+            data, ('xdr_dc_size', 'dc_size', 'dc_as_size', 'dc_http_good_locations')))
+
+        t.add_data_source(
+            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
+
+        t.add_data_source('_xdr_dc_remote_ship_ok', lambda data: get_value_from_dict(
+            data, ('xdr_dc_remote_ship_ok', 'dc_remote_ship_ok', 'dc_recs_shipped_ok', 'dc_ship_success')))
+
+        t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
+            data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
+
+        t.add_data_source('_xdr-dc-state', lambda data:
+                          get_value_from_dict(data, ('xdr_dc_state', 'xdr-dc-state', 'dc_state')))
+
+        t.add_cell_alert(
+            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
+
+        row = None
+        for node_key, dc_stats in stats.iteritems():
+            if isinstance(dc_stats, Exception):
+                dc_stats = {}
+            node = cluster.get_node(node_key)[0]
+            for dc, row in dc_stats.iteritems():
+                if isinstance(row, Exception):
+                    row = {}
+                if row:
+                    row['real_node_id'] = node.node_id
+                    row['node'] = prefixes[node_key]
+                    t.insert_row(row)
+        CliView.print_result(t)
+
+    # pre 5.0
+    @staticmethod
+    def info_old_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
         if not max(xdr_enable.itervalues()):
             return
 
@@ -745,52 +796,61 @@ class CliView(object):
         CliView.print_result(t)
 
     @staticmethod
-    def info_dc(stats, cluster, timestamp="", **ignore):
+    def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore):
+        if not max(xdr_enable.itervalues()):
+            return
+
         prefixes = cluster.get_node_names()
         principal = cluster.get_expected_principal()
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "DC Information%s" % (title_suffix)
-        column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'), ('_xdr_dc_size', 'DC size'),
-                        'namespaces',('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'),
-                        ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
+        title = title + "%s" % (title_suffix)
+        column_names = ('node', 'namespaces', ('_lag-secs', 'Lag (sec)'), ('success', 'Success'),
+                        ('retry_conn_reset', 'Retry Connection Reset'), ('retry_dest', 'Retry Destination'),
+                        ('total_recoveries', 'Recoveries'), ('latency_ms', 'Avg Latency (ms)'),
+                        ('throughput', 'Throughput (rec/s)')
                         )
 
-        t = Table(title, column_names, group_by=1)
+        t = Table(title, column_names, group_by=1, style=Styles.HORIZONTAL)
 
-        t.add_data_source(
-            '_dc-name', lambda data: get_value_from_dict(data, ('dc-name', 'DC_Name')))
-
-        t.add_data_source('_xdr_dc_size', lambda data: get_value_from_dict(
-            data, ('xdr_dc_size', 'dc_size', 'dc_as_size', 'dc_http_good_locations')))
 
         t.add_data_source(
             '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
 
-        t.add_data_source('_xdr_dc_remote_ship_ok', lambda data: get_value_from_dict(
-            data, ('xdr_dc_remote_ship_ok', 'dc_remote_ship_ok', 'dc_recs_shipped_ok', 'dc_ship_success')))
+        t.add_data_source('success', lambda data: get_value_from_dict(
+            data, ('success')))
+        
+        t.add_data_source('retry_conn_reset', lambda data: get_value_from_dict(
+            data, ('retry_conn_reset')))
+
+        t.add_data_source('retry_dest', lambda data: get_value_from_dict(
+            data, ('retry_dest')))
+
+        t.add_data_source('total_recoveries', lambda data: get_value_from_dict(
+            data, ('total_recoveries')))
+
+        t.add_data_source('Avg Latency (ms)', lambda data: get_value_from_dict(
+            data, ('latency_ms')))
+
+        t.add_data_source('Throughput (records per second)', lambda data: get_value_from_dict(
+            data, ('throughput')))
 
         t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
             data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
-
-        t.add_data_source('_xdr-dc-state', lambda data:
-                          get_value_from_dict(data, ('xdr_dc_state', 'xdr-dc-state', 'dc_state')))
 
         t.add_cell_alert(
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         row = None
-        for node_key, dc_stats in stats.iteritems():
-            if isinstance(dc_stats, Exception):
-                dc_stats = {}
+        for node_key, row in stats.iteritems():
+            if isinstance(row, Exception):
+                row = {}
             node = cluster.get_node(node_key)[0]
-            for dc, row in dc_stats.iteritems():
-                if isinstance(row, Exception):
-                    row = {}
-                if row:
-                    row['real_node_id'] = node.node_id
-                    row['node'] = prefixes[node_key]
-                    t.insert_row(row)
+            row['real_node_id'] = node.node_id
+            row['node'] = prefixes[node_key]
+            row['total_recoveries'] = int(row['recoveries']) + int(row['recoveries_pending'])
+            t.insert_row(row)
+
         CliView.print_result(t)
 
     @staticmethod
@@ -1035,7 +1095,58 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
+    def show_xdr5_stats(title, service_configs, cluster, like=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
+        prefixes = cluster.get_node_names()
+        principal = cluster.get_expected_principal()
+        columns = set()
+        
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = title + "%s" % (title_suffix)
+        column_names =  ('node',
+                        'in_queue',
+                        'in_progress',
+                        'success',
+                        'abandoned',
+                        'not_found',
+                        'filtered_out',
+                        'retry_conn_reset',
+                        'retry_dest',
+                        'recoveries',
+                        'recoveries_pending',
+                        'hot_keys',
+                        'uncompressed_pct',
+                        'compression_ratio',
+                        'lap_us',
+                        'lag',
+                        'throughput',
+                        'latency_ms',
+        )
+        columns.update(list(column_names))
+
+        if like:
+            likes = compile_likes(like)
+
+            column_names = filter(likes.search, column_names)
+
+        table_style = Styles.VERTICAL
+        if flip_output:
+            table_style = Styles.HORIZONTAL
+
+        t = Table(title, column_names, title_format=TitleFormats.no_change, group_by=1, style=table_style)
+        row = None
+        for node_key, row in service_configs.iteritems():
+            if isinstance(row, Exception):
+                row = {}
+            node = cluster.get_node(node_key)[0]
+            row['real_node_id'] = node.node_id
+            row['node'] = prefixes[node_key]
+            t.insert_row(row)
+
+        CliView.print_result(
+            t.__str__(horizontal_title_every_nth=title_every_nth))
+
+    @staticmethod
+    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):        
         prefixes = cluster.get_node_names()
         column_names = set()
 
@@ -1293,7 +1404,6 @@ class CliView(object):
                 t.insert_row(row)
 
         t.ignore_sort()
-        # print t
         CliView.print_result(t.__str__(
             horizontal_title_every_nth=title_every_nth * (sub_columns_per_column + 1)))
 
