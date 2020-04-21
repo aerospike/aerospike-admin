@@ -1351,13 +1351,9 @@ class Node(object):
         # TODO remove '4.9' check.
         if self.is_feature_present('xdr'):
             build = self.info('build')
-            if '4.9.0.3-2' in build:
-                return '5.0'
             return build
 
         build = self.xdr_info('build')
-        if '4.9.0.3-2' in build:
-            return '5.0'
         return build
 
     def _set_default_system_credentials(self, default_user=None, default_pwd=None, default_ssh_key=None,
