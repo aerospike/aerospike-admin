@@ -577,6 +577,7 @@ ASSERT(r, False, "Skewed cluster set object count.", "ANOMALY", WARNING,
 				"Set object count anomaly check.");
 
 /* XDR < 5 */
+SET CONSTRAINT VERSION < 5.0;
 
 s = select * from XDR.CONFIG save;
 r = GROUP by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
@@ -751,6 +752,7 @@ ASSERT(r, False, "XDR queue overflows.", "PERFORMANCE", WARNING,
 				"XDR queue overflow error check.",
 				xdr_enabled);
 
+SET CONSTRAINT VERSION ALL;
 /* XDR > 5 */
 
 /* CLUSTER STATE */
