@@ -381,7 +381,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                     memory_record_overhead = master_objects * 2
                     ns_memory_data_size += memory_data_size - memory_record_overhead
 
-            elif devices_in_use:
+            else:
                 # Data on disk
                 as_version = ""
                 if as_versions and host_id in as_versions:
