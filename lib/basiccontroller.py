@@ -871,7 +871,7 @@ class ShowStatisticsController(BasicCommandController):
                 matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
 
             futures = [
-                    util.Future(self.view.show_xdr5_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],
+                    util.Future(self.view.show_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],
                                 self.cluster, show_total=show_total,
                                 title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
                     for dc in xdr5_stats if not self.mods['for'] or dc in matches

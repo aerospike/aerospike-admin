@@ -1095,57 +1095,6 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def show_xdr5_stats(title, service_configs, cluster, like=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
-        columns = set()
-        
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = title + "%s" % (title_suffix)
-        column_names =  ('node',
-                        'in_queue',
-                        'in_progress',
-                        'success',
-                        'abandoned',
-                        'not_found',
-                        'filtered_out',
-                        'retry_conn_reset',
-                        'retry_dest',
-                        'recoveries',
-                        'recoveries_pending',
-                        'hot_keys',
-                        'uncompressed_pct',
-                        'compression_ratio',
-                        'lap_us',
-                        'lag',
-                        'throughput',
-                        'latency_ms',
-        )
-        columns.update(list(column_names))
-
-        if like:
-            likes = compile_likes(like)
-
-            column_names = filter(likes.search, column_names)
-
-        table_style = Styles.VERTICAL
-        if flip_output:
-            table_style = Styles.HORIZONTAL
-
-        t = Table(title, column_names, title_format=TitleFormats.no_change, group_by=1, style=table_style)
-        row = None
-        for node_key, row in service_configs.iteritems():
-            if isinstance(row, Exception):
-                row = {}
-            node = cluster.get_node(node_key)[0]
-            row['real_node_id'] = node.node_id
-            row['node'] = prefixes[node_key]
-            t.insert_row(row)
-
-        CliView.print_result(
-            t.__str__(horizontal_title_every_nth=title_every_nth))
-
-    @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):        
         prefixes = cluster.get_node_names()
         column_names = set()
