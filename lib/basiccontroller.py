@@ -279,8 +279,8 @@ class InfoController(BasicCommandController):
             ]
 
         if old_xdr_stats:
-            util.Future(self.view.info_old_XDR, old_xdr_stats,
-                        xdr_builds, xdr_enable, self.cluster, **self.mods)
+            futures.append(util.Future(self.view.info_old_XDR, old_xdr_stats,
+                        xdr_builds, xdr_enable, self.cluster, **self.mods))
 
         return futures
 
