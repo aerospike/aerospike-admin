@@ -170,24 +170,6 @@ class InfoController(BasicCommandController):
         stats = self.cluster.info_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
 
-    @CommandHelp('Displays summary information for Cross Datacenter',
-                 'Replication (XDR).')
-    def do_old_xdr(self, line):
-        stats = util.Future(self.cluster.info_XDR_statistics,
-                            nodes=self.nodes).start()
-
-        builds = util.Future(self.cluster.info_XDR_build_version,
-                             nodes=self.nodes).start()
-
-        xdr_enable = util.Future(self.cluster.is_XDR_enabled,
-                                 nodes=self.nodes).start()
-
-        stats = stats.result()
-        builds = builds.result()
-        xdr_enable = xdr_enable.result()
-        return util.Future(self.view.info_XDR, stats, builds, xdr_enable,
-                           self.cluster, **self.mods)
-
     # pre 5.0
     @CommandHelp('Displays summary information for each datacenter.')
     def do_dc(self, line):
@@ -251,7 +233,7 @@ class InfoController(BasicCommandController):
     @CommandHelp('Displays summary information for each datacenter.')
     def do_xdr(self, line):
 
-        stats = util.Future(self.cluster.info_all_dc_statistics,
+        stats = util.Future(self.cluster.info_XDR_statistics,
                             nodes=self.nodes).start()
 
         xdr_enable = util.Future(self.cluster.is_XDR_enabled,

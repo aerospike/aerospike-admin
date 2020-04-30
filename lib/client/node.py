@@ -1120,10 +1120,17 @@ class Node(object):
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
-            return util.dcs_info_to_list(self.info("get-config:context=xdr"))
+            if self.is_feature_present('xdr'):
+                return util.dcs_info_to_list(self.info("get-config:context=xdr"))
+            else:
+                return util.dcs_info_to_list(self.xdr_info("get-config:context=xdr"))
 
         # for older servers/XDRs
-        return util.info_to_list(self.xdr_info("dcs"))
+        else:
+            if self.is_feature_present('xdr'):
+                return util.info_to_list(self.info("dcs"))
+            else:
+                return util.info_to_list(self.xdr_info("dcs"))
 
     @return_exceptions
     def info_dc_statistics(self, dc):
@@ -1348,7 +1355,6 @@ class Node(object):
         """
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port 
-        # TODO remove '4.9' check.
         if self.is_feature_present('xdr'):
             build = self.info('build')
             return build
