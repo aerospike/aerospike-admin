@@ -183,8 +183,8 @@ class InfoController(CollectinfoCommandController):
                                     **self.mods)
 
     # pre 5.0
-    @CommandHelp(
-        'Displays datacenter summary information.')
+    @CommandHelp('Displays datacenter summary information.',
+                 'Replaced by "info xdr" for server >= 5.0.')
     def do_dc(self, line):
         dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
         dc_config = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
@@ -792,7 +792,8 @@ class ShowStatisticsController(CollectinfoCommandController):
                     timestamp=timestamp, **self.mods)
 
     # pre 5.0
-    @CommandHelp('Displays datacenter statistics')
+    @CommandHelp('Displays datacenter statistics',
+                 'Replaced by "show statistics xdr" for server >= 5.0.')
     def do_dc(self, line):
 
         show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",

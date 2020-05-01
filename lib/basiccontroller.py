@@ -171,7 +171,8 @@ class InfoController(BasicCommandController):
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
 
     # pre 5.0
-    @CommandHelp('Displays summary information for each datacenter.')
+    @CommandHelp('Displays summary information for each datacenter.',
+                'Replaced by "info xdr" for server >= 5.0.')
     def do_dc(self, line):
         stats = util.Future(self.cluster.info_all_dc_statistics,
                             nodes=self.nodes).start()
@@ -210,6 +211,7 @@ class InfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
+
         for node in stats:
             node_xdr_build_major_version = int(xdr_builds[node][0])
 
@@ -232,7 +234,6 @@ class InfoController(BasicCommandController):
 
     @CommandHelp('Displays summary information for each datacenter.')
     def do_xdr(self, line):
-
         stats = util.Future(self.cluster.info_XDR_statistics,
                             nodes=self.nodes).start()
 
@@ -842,9 +843,12 @@ class ShowStatisticsController(BasicCommandController):
                 mods=self.mods)
 
         xdr_builds = util.Future(self.cluster.info_XDR_build_version,
-                nodes=self.nodes).start().result()
+                nodes=self.nodes).start()
 
-        xdr_stats = self.getter.get_xdr(nodes=self.nodes)
+        xdr_stats = util.Future(self.getter.get_xdr, nodes=self.nodes).start()
+
+        xdr_builds = xdr_builds.result()
+        xdr_stats = xdr_stats.result()
         old_xdr_stats = {}
         xdr5_stats = {}
 
@@ -885,7 +889,8 @@ class ShowStatisticsController(BasicCommandController):
         return futures
 
     # pre 5.0
-    @CommandHelp('Displays datacenter statistics')
+    @CommandHelp('Displays datacenter statistics.',
+                'Replaced by "show statistics xdr" for server >= 5.0.')
     def do_dc(self, line):
 
         show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
@@ -899,13 +904,16 @@ class ShowStatisticsController(BasicCommandController):
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
-        dc_stats = self.getter.get_dc(nodes=self.nodes)
+        dc_stats = util.Future(self.getter.get_dc, nodes=self.nodes).start()
 
         xdr_builds = util.Future(self.cluster.info_XDR_build_version,
-                nodes=self.nodes).start().result()
+                nodes=self.nodes).start()
 
+        dc_stats = dc_stats.result()
+        xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
+
         for dc in dc_stats.values():
 
             for node in dc:
