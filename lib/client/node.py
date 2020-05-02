@@ -332,11 +332,11 @@ class Node(object):
         config = self.info_get_config('xdr')
         if isinstance(config, Exception):
             return False
-        try:
-            xdr_enabled = config['enable-xdr']
-            return xdr_enabled == 'true'
-        except Exception:
-            pass
+
+        # 'enable-xdr' was removed in XDR5.0, so check that get-config:context=xdr does not return an error.
+        if util.info_valid(config):
+            return True
+
         return False
 
     def is_feature_present(self, feature):
@@ -912,10 +912,13 @@ class Node(object):
         """
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
-        if self.is_feature_present('xdr'):
-            return util.info_to_dict(self.info("statistics/xdr"))
+        if int(self.info_XDR_build_version()[0]) < 5:
+            if self.is_feature_present('xdr'):
+                return util.info_to_dict(self.info("statistics/xdr"))
 
-        return util.info_to_dict(self.xdr_info('statistics'))
+            return util.info_to_dict(self.xdr_info('statistics'))
+        else:
+            return self.info_all_dc_statistics()
 
     @return_exceptions
     def info_get_config(self, stanza="", namespace="", namespace_id=""):
@@ -1120,10 +1123,21 @@ class Node(object):
         Returns:
         list -- list of dcs
         """
-        if self.is_feature_present('xdr'):
-            return util.info_to_list(self.info("dcs"))
+        xdr_major_version = int(self.info_XDR_build_version()[0])
 
-        return util.info_to_list(self.xdr_info("dcs"))
+        # for server versions >= 5 using XDR5.0
+        if xdr_major_version >= 5:
+            if self.is_feature_present('xdr'):
+                return util.dcs_info_to_list(self.info("get-config:context=xdr"))
+            else:
+                return util.dcs_info_to_list(self.xdr_info("get-config:context=xdr"))
+
+        # for older servers/XDRs
+        else:
+            if self.is_feature_present('xdr'):
+                return util.info_to_list(self.info("dcs"))
+            else:
+                return util.info_to_list(self.xdr_info("dcs"))
 
     @return_exceptions
     def info_dc_statistics(self, dc):
@@ -1133,9 +1147,21 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        if self.is_feature_present('xdr'):
-            return util.info_to_dict(self.info("dc/%s" % dc))
-        return util.info_to_dict(self.xdr_info("dc/%s" % dc))
+        xdr_major_version = int(self.info_XDR_build_version()[0])
+
+        # If xdr version is < XDR5.0 return output of old asinfo command.
+        if xdr_major_version < 5:
+
+            if self.is_feature_present('xdr'):
+                return util.info_to_dict(self.info("dc/%s" % dc))
+            else:
+                return util.info_to_dict(self.xdr_info("dc/%s" % dc))
+        else:
+
+            if self.is_feature_present('xdr'):
+                return util.info_to_dict(self.info("get-stats:context=xdr;dc=%s" % dc))
+            else:
+                return util.info_to_dict(self.xdr_info("get-stats:context=xdr;dc=%s" % dc))
 
     @return_exceptions
     def info_all_dc_statistics(self):
@@ -1335,7 +1361,7 @@ class Node(object):
         string -- build version
         """
         # for new aerospike version (>=3.8) with
-        # xdr-in-asd stats available on service port
+        # xdr-in-asd stats available on service port 
         if self.is_feature_present('xdr'):
             return self.info('build')
 

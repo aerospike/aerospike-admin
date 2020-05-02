@@ -242,11 +242,12 @@ class BaseController(object):
 
                     indent += 2
                     for command in sorted(self.commands.keys()):
-                        CommandHelp.print_text(
-                            "- %s%s%s:" % (terminal.bold(), command,
-                                           terminal.reset()), indent=indent - 1)
+                        if command != "health":
+                            CommandHelp.print_text(
+                                "- %s%s%s:" % (terminal.bold(), command,
+                                            terminal.reset()), indent=indent - 1)
 
-                        self.execute_help([command], indent=indent)
+                            self.execute_help([command], indent=indent)
                     return
 
                 elif isinstance(method, ShellException):
