@@ -779,7 +779,7 @@ class ShowStatisticsController(CollectinfoCommandController):
 
                 for dc in xdr5_stats:
                     if not self.mods['for'] or dc in matches:
-                        self.view.show_xdr5_stats(
+                        self.view.show_config(
                             "XDR Statistics %s" % dc, xdr5_stats[dc],
                             self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
                             show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
