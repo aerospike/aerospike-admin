@@ -838,7 +838,6 @@ class ShowStatisticsController(BasicCommandController):
 
     @CommandHelp('Displays XDR statistics')
     def do_xdr(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
