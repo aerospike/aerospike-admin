@@ -80,7 +80,7 @@ class CollectinfoRootController(BaseController):
     'of Aerospike functionality.')
 class InfoController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set()
+        self.modifiers = set(['for'])
 
         self.controller_map = dict(
             namespace=InfoNamespaceController)
@@ -146,20 +146,54 @@ class InfoController(CollectinfoCommandController):
             xdr_enable = {}
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
+            old_xdr_stats = {}
+            xdr5_stats = {}
 
             for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
+                node_xdr_build_major_version = int(builds[xdr_node][0])
 
-            self.view.info_XDR(xdr_stats[timestamp], builds, xdr_enable,
-                               cluster=cinfo_log, timestamp=timestamp,
-                               **self.mods)
+                if node_xdr_build_major_version < 5:
+                    old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+                else:
+                    xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
 
-    @CommandHelp(
-        'Displays datacenter summary information.')
+            if xdr5_stats:
+                temp = {}
+                for node in xdr5_stats:
+                    for dc in xdr5_stats[node]:
+                        if dc not in temp:
+                            temp[dc] = {}
+                        temp[dc][node] = xdr5_stats[node][dc]
+
+                xdr5_stats = temp
+
+                if self.mods['for']:
+                    matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+
+                for dc in xdr5_stats:
+                    if not self.mods['for'] or dc in matches:
+                        self.view.info_XDR(xdr5_stats[dc], builds, xdr_enable, 
+                                            cluster=cinfo_log, timestamp=timestamp, 
+                                            title="XDR Statistics %s" % dc, **self.mods)
+
+            if old_xdr_stats:
+                self.view.info_old_XDR(old_xdr_stats, builds, xdr_enable, 
+                                    cluster=cinfo_log, timestamp=timestamp, 
+                                    **self.mods)
+
+    # pre 5.0
+    @CommandHelp('Displays datacenter summary information.',
+                 'Replaced by "info xdr" for server >= 5.0.')
     def do_dc(self, line):
         dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
         dc_config = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
         for timestamp in sorted(dc_stats.keys()):
+            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_xdr_build()
+            nodes_running_v5_or_higher = False
+            nodes_running_v49_or_lower = False
+
             if not dc_stats[timestamp]:
                 continue
 
@@ -186,9 +220,23 @@ class InfoController(CollectinfoCommandController):
                 except Exception:
                     pass
 
-            self.view.info_dc(util.flip_keys(dc_stats[timestamp]),
-                              self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                              timestamp=timestamp, **self.mods)
+            for version in builds.values():
+                node_xdr_build_major_version = int(version[0])
+                if node_xdr_build_major_version >= 5:
+                    nodes_running_v5_or_higher = True
+                else:
+                    nodes_running_v49_or_lower = True
+
+            if nodes_running_v49_or_lower:
+                self.view.info_dc(util.flip_keys(dc_stats[timestamp]),
+                                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                                timestamp=timestamp, **self.mods)
+            
+            if nodes_running_v5_or_higher:
+                self.view.print_result("WARNING: Detected nodes running " +
+                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
+                 "/path/to/collect_info_file -e \"info xdr\"'" + 
+                 " for versions 5.0 and up.")
 
     @CommandHelp(
         'Displays secondary index (SIndex) summary information).')
@@ -696,15 +744,55 @@ class ShowStatisticsController(CollectinfoCommandController):
                 mods=self.mods)
 
         xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
+        old_xdr_stats = {}
+        xdr5_stats = {}
 
         for timestamp in sorted(xdr_stats.keys()):
-            self.view.show_config(
-                "XDR Statistics", xdr_stats[timestamp],
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
-                timestamp=timestamp, **self.mods)
 
-    @CommandHelp('Displays datacenter statistics')
+            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_xdr_build()
+            for_mods = self.mods['for']
+
+            for xdr_node in xdr_stats[timestamp]:
+                node_xdr_build_major_version = int(builds[xdr_node][0])
+
+                if node_xdr_build_major_version < 5:
+                    old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+                else:
+                    xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+
+            if xdr5_stats:
+                temp = {}
+                for node in xdr5_stats:
+                    for dc in xdr5_stats[node]:
+                        if dc not in temp:
+                            temp[dc] = {}
+                        temp[dc][node] = xdr5_stats[node][dc]
+
+                xdr5_stats = temp
+
+                if self.mods['for']:
+                    matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+
+                for dc in xdr5_stats:
+                    if not self.mods['for'] or dc in matches:
+                        self.view.show_config(
+                            "XDR Statistics %s" % dc, xdr5_stats[dc],
+                            self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                            show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
+                            timestamp=timestamp, **self.mods)
+                
+
+            if old_xdr_stats:
+                self.view.show_config(
+                    "XDR Statistics", old_xdr_stats,
+                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
+                    timestamp=timestamp, **self.mods)
+
+    # pre 5.0
+    @CommandHelp('Displays datacenter statistics',
+                 'Replaced by "show statistics xdr" for server >= 5.0.')
     def do_dc(self, line):
 
         show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
@@ -719,14 +807,35 @@ class ShowStatisticsController(CollectinfoCommandController):
                 mods=self.mods)
 
         dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
-
         for timestamp in sorted(dc_stats.keys()):
-            for dc, stats in dc_stats[timestamp].iteritems():
-                self.view.show_stats(
-                    "%s DC Statistics" % (dc), stats,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                    show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
-                    timestamp=timestamp, **self.mods)
+            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_xdr_build()
+            nodes_running_v5_or_higher = False
+            nodes_running_v49_or_lower = False
+
+            for version in builds.values():
+                node_xdr_build_major_version = int(version[0])
+                
+                if node_xdr_build_major_version >= 5:
+                    nodes_running_v5_or_higher = True
+                else:
+                    nodes_running_v49_or_lower = True
+
+            if nodes_running_v49_or_lower:
+                for dc, stats in dc_stats[timestamp].iteritems():
+                    self.view.show_stats(
+                        "%s DC Statistics" % (dc), stats,
+                        self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                        show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output,
+                        timestamp=timestamp, **self.mods)
+
+            if nodes_running_v5_or_higher:
+                self.view.print_result("WARNING: Detected nodes running " +
+                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
+                 "/path/to/collect_info_file -e \"show statistics xdr\"'" + 
+                 " for versions 5.0 and up.")
+            
+
 
     @CommandHelp('Displays sindex statistics')
     def do_sindex(self, line):

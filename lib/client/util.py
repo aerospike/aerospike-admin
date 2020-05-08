@@ -122,8 +122,21 @@ def info_to_list(value, delimiter=";"):
     return re.split(delimiter, value)
 
 
+def dcs_info_to_list(value, delimiter=","):
+    value = (re.search("=(.*);", value)).group(1)
+    if isinstance(value, Exception):
+        return []
+
+    return re.split(delimiter, value)
+
+
 def info_to_tuple(value, delimiter=":"):
     return tuple(info_to_list(value, delimiter))
+
+
+def info_valid(info_command_output):
+    return ("" != info_command_output or
+            "Error" not in info_command_output)
 
 
 def find_dns(endpoints):

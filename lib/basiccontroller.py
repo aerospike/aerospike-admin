@@ -110,7 +110,7 @@ class BasicRootController(BaseController):
              'of Aerospike functionality.')
 class InfoController(BasicCommandController):
     def __init__(self):
-        self.modifiers = set(['with'])
+        self.modifiers = set(['with', 'for'])
 
         self.controller_map = dict(
             namespace=InfoNamespaceController)
@@ -170,29 +170,15 @@ class InfoController(BasicCommandController):
         stats = self.cluster.info_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
 
-    @CommandHelp('Displays summary information for Cross Datacenter',
-                 'Replication (XDR).')
-    def do_xdr(self, line):
-        stats = util.Future(self.cluster.info_XDR_statistics,
-                            nodes=self.nodes).start()
-
-        builds = util.Future(self.cluster.info_XDR_build_version,
-                             nodes=self.nodes).start()
-
-        xdr_enable = util.Future(self.cluster.is_XDR_enabled,
-                                 nodes=self.nodes).start()
-
-        stats = stats.result()
-        builds = builds.result()
-        xdr_enable = xdr_enable.result()
-        return util.Future(self.view.info_XDR, stats, builds, xdr_enable,
-                           self.cluster, **self.mods)
-
-    @CommandHelp('Displays summary information for each datacenter.')
+    # pre 5.0
+    @CommandHelp('Displays summary information for each datacenter.',
+                'Replaced by "info xdr" for server >= 5.0.')
     def do_dc(self, line):
-
         stats = util.Future(self.cluster.info_all_dc_statistics,
                             nodes=self.nodes).start()
+        
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
 
         configs = self.config_getter.get_dc(flip=False, nodes=self.nodes)
 
@@ -221,8 +207,83 @@ class InfoController(BasicCommandController):
                     stats[node] = configs[node]
                 except Exception:
                     pass
+        
+        xdr_builds = xdr_builds.result()
+        nodes_running_v5_or_higher = False
+        nodes_running_v49_or_lower = False
 
-        return util.Future(self.view.info_dc, stats, self.cluster, **self.mods)
+        for node in stats:
+            node_xdr_build_major_version = int(xdr_builds[node][0])
+
+            if node_xdr_build_major_version >= 5:
+                nodes_running_v5_or_higher = True
+            else:
+                nodes_running_v49_or_lower = True
+
+        futures = []
+
+        if nodes_running_v49_or_lower:
+            futures.append(util.Future(self.view.info_dc, stats, self.cluster, **self.mods))
+
+        if nodes_running_v5_or_higher:
+            futures.append(util.Future(self.view.print_result, 
+            "WARNING: Detected nodes running aerospike version >= 5.0. " +
+            "Please use 'asadm -e \"info xdr\"' for versions 5.0 and up."))
+
+        return futures
+
+    @CommandHelp('Displays summary information for each datacenter.')
+    def do_xdr(self, line):
+        stats = util.Future(self.cluster.info_XDR_statistics,
+                            nodes=self.nodes).start()
+
+        xdr_enable = util.Future(self.cluster.is_XDR_enabled,
+                                 nodes=self.nodes).start()
+            
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
+
+        stats = stats.result()
+        xdr_builds = xdr_builds.result()
+        old_xdr_stats = {}
+        xdr5_stats = {}
+
+        for node in stats:
+            node_xdr_build_major_version = int(xdr_builds[node][0])
+
+            if node_xdr_build_major_version < 5:
+                old_xdr_stats[node] = stats[node]
+            else:
+                xdr5_stats[node] = stats[node]
+
+        xdr_enable = xdr_enable.result()
+        futures = []
+
+        if xdr5_stats:
+            temp = {}
+            for node in xdr5_stats:
+                for dc in xdr5_stats[node]:
+                    if dc not in temp:
+                        temp[dc] = {}
+                    temp[dc][node] = xdr5_stats[node][dc]
+
+            xdr5_stats = temp
+
+            if self.mods['for']:
+                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+
+            futures = [ 
+                util.Future(self.view.info_XDR, xdr5_stats[dc], xdr_builds,
+                            xdr_enable, self.cluster, title="XDR Statistics %s" % dc,
+                            **self.mods)
+                for dc in xdr5_stats if not self.mods['for'] or dc in matches
+            ]
+
+        if old_xdr_stats:
+            futures.append(util.Future(self.view.info_old_XDR, old_xdr_stats,
+                        xdr_builds, xdr_enable, self.cluster, **self.mods))
+
+        return futures
 
     @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):
@@ -781,13 +842,55 @@ class ShowStatisticsController(BasicCommandController):
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
-        xdr_stats = self.getter.get_xdr(nodes=self.nodes)
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
 
-        return util.Future(self.view.show_stats, "XDR Statistics", xdr_stats,
-                self.cluster, show_total=show_total,
-                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
+        xdr_stats = util.Future(self.getter.get_xdr, nodes=self.nodes).start()
 
-    @CommandHelp('Displays datacenter statistics')
+        xdr_builds = xdr_builds.result()
+        xdr_stats = xdr_stats.result()
+        old_xdr_stats = {}
+        xdr5_stats = {}
+
+        for node in xdr_stats:
+            node_xdr_build_major_version = int(xdr_builds[node][0])
+            if node_xdr_build_major_version < 5:
+                old_xdr_stats[node] = xdr_stats[node]
+            else:
+                xdr5_stats[node] = xdr_stats[node]
+
+        futures = []
+
+        if xdr5_stats:
+            temp = {}
+            for node in xdr5_stats:
+                for dc in xdr5_stats[node]:
+                    if dc not in temp:
+                        temp[dc] = {}
+                    temp[dc][node] = xdr5_stats[node][dc]
+            
+            xdr5_stats = temp
+
+            if self.mods['for']:
+                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+
+            futures = [
+                    util.Future(self.view.show_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],
+                                self.cluster, show_total=show_total,
+                                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
+                    for dc in xdr5_stats if not self.mods['for'] or dc in matches
+                ]
+
+        if old_xdr_stats:
+            futures.append(util.Future(self.view.show_stats, "XDR Statistics", old_xdr_stats,
+                                        self.cluster, show_total=show_total,
+                                        title_every_nth=title_every_nth, flip_output=flip_output, **self.mods))
+
+        return futures
+
+    # pre 5.0
+    @CommandHelp('Displays datacenter statistics.',
+                'Replaced by "show statistics xdr" for server >= 5.0.')
     def do_dc(self, line):
 
         show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
@@ -801,12 +904,40 @@ class ShowStatisticsController(BasicCommandController):
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
-        dc_stats = self.getter.get_dc(nodes=self.nodes)
+        dc_stats = util.Future(self.getter.get_dc, nodes=self.nodes).start()
 
-        return [util.Future(self.view.show_config, "%s DC Statistics" % (dc),
-            stats, self.cluster, show_total=show_total,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for dc, stats in dc_stats.iteritems()]
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
+
+        dc_stats = dc_stats.result()
+        xdr_builds = xdr_builds.result()
+        nodes_running_v5_or_higher = False
+        nodes_running_v49_or_lower = False
+
+        for dc in dc_stats.values():
+
+            for node in dc:
+                node_xdr_build_major_version = int(xdr_builds[node][0])
+
+                if node_xdr_build_major_version >= 5:
+                    nodes_running_v5_or_higher = True
+                else:
+                    nodes_running_v49_or_lower = True
+        
+        futures = []
+
+        if nodes_running_v49_or_lower:
+            futures = [util.Future(self.view.show_config, "%s DC Statistics" % (dc),
+                stats, self.cluster, show_total=show_total,
+                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
+                for dc, stats in dc_stats.iteritems()]
+        
+        if nodes_running_v5_or_higher:
+            futures.append(util.Future(self.view.print_result, 
+            "WARNING: Detected nodes running aerospike version >= 5.0. " +
+            "Please use 'asadm -e \"show statistics xdr\"' for versions 5.0 and up."))
+
+        return futures
 
 
 @CommandHelp('Displays partition map analysis of Aerospike cluster.')
