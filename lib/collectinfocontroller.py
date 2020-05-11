@@ -151,7 +151,10 @@ class InfoController(CollectinfoCommandController):
 
             for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
-                node_xdr_build_major_version = int(builds[xdr_node][0])
+                try:
+                    node_xdr_build_major_version = int(builds[xdr_node][0])
+                except:
+                    continue
 
                 if node_xdr_build_major_version < 5:
                     old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
@@ -221,7 +224,11 @@ class InfoController(CollectinfoCommandController):
                     pass
 
             for version in builds.values():
-                node_xdr_build_major_version = int(version[0])
+                try:
+                    node_xdr_build_major_version = int(version[0])
+                except:
+                    continue
+
                 if node_xdr_build_major_version >= 5:
                     nodes_running_v5_or_higher = True
                 else:
@@ -754,7 +761,10 @@ class ShowStatisticsController(CollectinfoCommandController):
             for_mods = self.mods['for']
 
             for xdr_node in xdr_stats[timestamp]:
-                node_xdr_build_major_version = int(builds[xdr_node][0])
+                try:
+                    node_xdr_build_major_version = int(builds[xdr_node][0])
+                except:
+                    continue
 
                 if node_xdr_build_major_version < 5:
                     old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
@@ -814,7 +824,10 @@ class ShowStatisticsController(CollectinfoCommandController):
             nodes_running_v49_or_lower = False
 
             for version in builds.values():
-                node_xdr_build_major_version = int(version[0])
+                try:
+                    node_xdr_build_major_version = int(version[0])
+                except:
+                    continue
                 
                 if node_xdr_build_major_version >= 5:
                     nodes_running_v5_or_higher = True

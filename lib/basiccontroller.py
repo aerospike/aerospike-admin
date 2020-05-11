@@ -213,7 +213,10 @@ class InfoController(BasicCommandController):
         nodes_running_v49_or_lower = False
 
         for node in stats:
-            node_xdr_build_major_version = int(xdr_builds[node][0])
+            try:
+                node_xdr_build_major_version = int(xdr_builds[node][0])
+            except:
+                continue
 
             if node_xdr_build_major_version >= 5:
                 nodes_running_v5_or_higher = True
@@ -249,7 +252,10 @@ class InfoController(BasicCommandController):
         xdr5_stats = {}
 
         for node in stats:
-            node_xdr_build_major_version = int(xdr_builds[node][0])
+            try:
+                node_xdr_build_major_version = int(xdr_builds[node][0])
+            except:
+                continue
 
             if node_xdr_build_major_version < 5:
                 old_xdr_stats[node] = stats[node]
@@ -853,7 +859,11 @@ class ShowStatisticsController(BasicCommandController):
         xdr5_stats = {}
 
         for node in xdr_stats:
-            node_xdr_build_major_version = int(xdr_builds[node][0])
+            try:
+                node_xdr_build_major_version = int(xdr_builds[node][0])
+            except:
+                continue
+
             if node_xdr_build_major_version < 5:
                 old_xdr_stats[node] = xdr_stats[node]
             else:
@@ -917,7 +927,10 @@ class ShowStatisticsController(BasicCommandController):
         for dc in dc_stats.values():
 
             for node in dc:
-                node_xdr_build_major_version = int(xdr_builds[node][0])
+                try:
+                    node_xdr_build_major_version = int(xdr_builds[node][0])
+                except:
+                    continue
 
                 if node_xdr_build_major_version >= 5:
                     nodes_running_v5_or_higher = True

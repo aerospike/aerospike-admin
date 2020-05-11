@@ -328,6 +328,11 @@ class Node(object):
 
         # 'enable-xdr' was removed in XDR5.0, so check that get-config:context=xdr does not return an error.
         if util.info_valid(config):
+            try:
+                xdr_enabled = config['enable-xdr']
+                return xdr_enabled == 'true'
+            except Exception:
+                pass
             return True
 
         return False
