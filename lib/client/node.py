@@ -1353,12 +1353,7 @@ class Node(object):
         Returns:
         string -- build version
         """
-        # for new aerospike version (>=3.8) with
-        # xdr-in-asd stats available on service port 
-        if self.is_feature_present('xdr'):
-            return self.info('build')
-
-        return self.xdr_info('build')
+        return self.info('build')
 
     def _set_default_system_credentials(self, default_user=None, default_pwd=None, default_ssh_key=None,
                                         default_ssh_port=None, credential_file=None):
