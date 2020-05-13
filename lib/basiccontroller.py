@@ -1377,6 +1377,9 @@ class CollectinfoController(BasicCommandController):
         except Exception:
             as_version = None
 
+        if isinstance(as_version, Exception):
+            as_version = None
+
         # find all namespaces
         try:
             namespaces = self._parse_namespace(self.cluster.info("namespaces"))
@@ -1388,11 +1391,14 @@ class CollectinfoController(BasicCommandController):
         hist_list = ['ttl', 'object-size', 'object-size-linear']
         hist_dump_info_str = "histogram:namespace=%s;type=%s"
 
-        if LooseVersion(as_version) < LooseVersion("4.2.0"):
-            # histogram command introduced in 4.2.0
-            # use hist-dump command for older versions
-            hist_list = ['ttl', 'objsz']
-            hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
+        try:
+            if LooseVersion(as_version) < LooseVersion("4.2.0"):
+                # histogram command introduced in 4.2.0
+                # use hist-dump command for older versions
+                hist_list = ['ttl', 'objsz']
+                hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
+        except: # probably failed to get build version, node may be down
+            pass
 
         for ns in namespaces:
             for hist in hist_list:
@@ -1496,9 +1502,12 @@ class CollectinfoController(BasicCommandController):
 
             # Comparing with this version because prior to this it was
             # citrusleaf.conf
-            if LooseVersion(as_version) <= LooseVersion("3.0.0"):
-                conf_path = "/etc/citrusleaf/citrusleaf.conf"
-                self.aslogfile = as_logfile_prefix + 'citrusleaf.conf'
+            try:
+                if LooseVersion(as_version) <= LooseVersion("3.0.0"):
+                    conf_path = "/etc/citrusleaf/citrusleaf.conf"
+                    self.aslogfile = as_logfile_prefix + 'citrusleaf.conf'
+            except: # probably failed to get build version, node may be down
+                pass
 
         try:
             self._collect_local_file(conf_path, self.aslogfile)
