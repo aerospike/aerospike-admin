@@ -335,6 +335,11 @@ class Node(object):
 
         # 'enable-xdr' was removed in XDR5.0, so check that get-config:context=xdr does not return an error.
         if util.info_valid(config):
+            try:
+                xdr_enabled = config['enable-xdr']
+                return xdr_enabled == 'true'
+            except Exception:
+                pass
             return True
 
         return False
@@ -1360,12 +1365,7 @@ class Node(object):
         Returns:
         string -- build version
         """
-        # for new aerospike version (>=3.8) with
-        # xdr-in-asd stats available on service port 
-        if self.is_feature_present('xdr'):
-            return self.info('build')
-
-        return self.xdr_info('build')
+        return self.info('build')
 
     def _set_default_system_credentials(self, default_user=None, default_pwd=None, default_ssh_key=None,
                                         default_ssh_port=None, credential_file=None):

@@ -364,7 +364,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
 
         ns_memory_data_size = 0
         ns_device_data_size = 0
-        ns_device_compressed_data_size = 0
+        device_compression_ratio = 0.0
 
         for host_id, host_stats in list(ns_stats.items()):
             master_objects = util.get_value_from_dict(host_stats, ("master_objects", "master-objects"), default_value=0,
@@ -404,6 +404,12 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                                                      return_type=float)
 
                 if device_data_size > 0:
+
+                    if device_compression_ratio > 0:
+                        # compute estimated uncompressed size
+                        device_data_size = device_data_size/device_compression_ratio
+
+                if device_data_size > 0:
                     # remove set overhead
                     set_overhead = _compute_set_overhead_for_ns(set_stats, ns, host_id, as_version=as_version)
                     device_data_size = device_data_size - set_overhead
@@ -424,14 +430,6 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                     device_data_size = device_data_size - device_record_overhead
 
                 if device_data_size > 0:
-
-                    if device_compression_ratio > 0:
-                        # update compressed_data_size
-                        ns_device_compressed_data_size += device_data_size
-
-                        # compute actual size
-                        device_data_size = old_div(device_data_size,device_compression_ratio)
-
                     ns_device_data_size += device_data_size
 
         ns_dict[ns]["license_data_in_memory"] = ns_memory_data_size
@@ -439,8 +437,8 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
 
         ns_dict[ns]["license_data_on_disk"] = ns_device_data_size
         cl_device_data_size += ns_device_data_size
-        if ns_device_compressed_data_size > 0:
-            ns_dict[ns]["compression_ratio"] = old_div(ns_device_compressed_data_size,ns_device_data_size)
+        if device_compression_ratio > 0:
+            ns_dict[ns]["compression_ratio"] = device_compression_ratio
 
     cluster_dict["license_data"] = {}
     cluster_dict["license_data"]["memory_size"] = cl_memory_data_size
