@@ -39,7 +39,7 @@ Admin> help
 
 
 ## Dependencies
-- python 2.7+ (< 3)
+- python 2.7 or 3.4+
 
 ### Python Modules
 - bcrypt == 3.1.4

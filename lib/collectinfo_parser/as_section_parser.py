@@ -13,9 +13,9 @@
 # limitations under the License.
 
 from __future__ import absolute_import
-
 from builtins import str
 from builtins import range
+
 import re
 import copy
 import logging

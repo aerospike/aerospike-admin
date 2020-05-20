@@ -1,5 +1,5 @@
 from __future__ import division
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ from __future__ import division
 from builtins import next
 from builtins import range
 from builtins import object
+
 from past.utils import old_div
 import datetime
 import re

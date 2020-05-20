@@ -159,7 +159,7 @@ class AerospikeShell(cmd.Cmd):
                         "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>")
                     self.do_exit('')
                     exit(1)
-                
+
                 self.ctrl = CollectinfoRootController(admin_version,
                                                       clinfo_path=log_path)
                 self.prompt = "Collectinfo-analyzer> "
