@@ -1,6 +1,6 @@
 #!/bin/sh
 """:"
-for interp in python python3 python2 ; do
+for interp in python python3 ; do
    command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
 done
 echo >&2 "No Python interpreter found!"
@@ -20,14 +20,6 @@ exit 1
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from __future__ import print_function
-from __future__ import absolute_import
-from future import standard_library
-standard_library.install_aliases()
-from builtins import filter
-from builtins import map
-from builtins import str
 
 import cmd
 import copy
@@ -226,7 +218,7 @@ class AerospikeShell(cmd.Cmd):
         self.commands = set()
 
         regex = re.compile("^do_(.*)$")
-        commands = [regex.match(v).groups()[0] for v in list(filter(regex.search, dir(self)))]
+        commands = [regex.match(v).groups()[0] for v in filter(regex.search, dir(self))]
 
         for command in commands:
             if command != 'help':
