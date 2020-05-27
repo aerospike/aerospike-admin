@@ -981,7 +981,7 @@ class CollectinfoController(BasicCommandController):
         capture_stdout = util.capture_stdout
         sep = constants.COLLECTINFO_SEPRATOR
 
-        try: # TODO is this try catch really needed?
+        try:
             name = func.__name__
         except Exception:
             pass
