@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import str
-from builtins import object
-
 import socket
 import warnings
 
@@ -26,10 +22,8 @@ try:
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         try:
-            # for python < 2.7.7 cryptography throws warning
             import cryptography
             from cryptography import utils
-            warnings.simplefilter('ignore', cryptography.utils.DeprecatedIn23)
         except Exception:
             pass
 
@@ -39,7 +33,7 @@ except ImportError:
     HAVE_PYOPENSSL = False
 
 
-class ASSocket(object):
+class ASSocket():
 
     def __init__(self, ip, port, tls_name, user, password, auth_mode, ssl_context, timeout=5):
         self.sock = None
