@@ -21,7 +21,6 @@ from future.utils import raise_
 from builtins import object
 
 import copy
-import io
 import pipes
 import re
 import socket
