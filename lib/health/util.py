@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+from builtins import str
+from builtins import range
+
 import copy
-import re
 
 from lib.health.constants import HEALTH_PARSER_VAR
-from lib.health.exceptions import HealthException
-from lib.utils.util import get_value_from_dict
+from lib.utils.util import get_value_from_dict, is_str
 
 
 def deep_merge_dicts(dict_to, dict_from):
@@ -41,7 +43,7 @@ def deep_merge_dicts(dict_to, dict_from):
         # already, so no need to add
         return dict_to
 
-    for _key in dict_from.keys():
+    for _key in list(dict_from.keys()):
         if _key not in dict_to:
             dict_to[_key] = dict_from[_key]
         else:
@@ -122,7 +124,7 @@ def merge_dicts_with_new_tuple_keys(dict_from, main_dict, new_tuple_keys,
     poped_nks, key_level_separator_found = pop_tuple_keys_for_next_level(
         new_tuple_keys)
 
-    for _key in dict_from.keys():
+    for _key in list(dict_from.keys()):
         temp_dict = main_dict
         last_level = False
 
@@ -211,7 +213,7 @@ def h_eval(data):
     Evaluate values and convert string to correct type (boolean/int/float/long/string)
     """
     if isinstance(data, dict):
-        for _k in data.keys():
+        for _k in list(data.keys()):
             data[_k] = h_eval(data[_k])
             if data[_k] is None or (isinstance(data[_k], dict) and not data[_k]):
                 data.pop(_k)
@@ -231,10 +233,8 @@ def h_eval(data):
         return res
 
     try:
-        if isinstance(data, unicode):
-            data = str(data.encode('utf-8'))
 
-        if isinstance(data, str):
+        if is_str(data):
             if data.endswith("%"):
                 data = data[:-1]
 
@@ -278,12 +278,12 @@ def print_dict(data, padding=" "):
         for _k in data:
             s = "%s%s" % (padding, str(_k))
             if isinstance(data[_k], dict):
-                print s
+                print(s)
                 print_dict(data[_k], padding + "  ")
             else:
-                print "%s : %s" % (s, str(data[_k]))
+                print("%s : %s" % (s, str(data[_k])))
     else:
-        print "%s%s" % (padding, str(data))
+        print("%s%s" % (padding, str(data)))
 
 
 def merge_key(key, _key, recurse=False):

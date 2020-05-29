@@ -1,13 +1,13 @@
 #!/bin/sh
 """:"
-for interp in python python2 ; do
+for interp in python python3 python2 ; do
    command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
 done
 echo >&2 "No Python interpreter found!"
 exit 1
 ":"""
 
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License")
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,14 @@ exit 1
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from __future__ import print_function
+from __future__ import absolute_import
+from future import standard_library
+standard_library.install_aliases()
+from builtins import filter
+from builtins import map
+from builtins import str
 
 import cmd
 import copy
@@ -64,7 +72,7 @@ class BaseLogger(logging.Logger, object):
         if red_color:
             message = terminal.fg_red() + message + terminal.fg_clear()
 
-        print message
+        print(message)
 
     def debug(self, msg, *args, **kwargs):
         if self.level <= logging.DEBUG:
@@ -132,8 +140,8 @@ class AerospikeShell(cmd.Cmd):
             self.name = 'Aerospike Interactive Shell'
 
         if not execute_only_mode:
-            print terminal.bold() + self.name + ', version ' +\
-                admin_version + terminal.reset() + "\n"
+            print(terminal.bold() + self.name + ', version ' +\
+                admin_version + terminal.reset() + "\n")
 
         cmd.Cmd.__init__(self)
 
@@ -141,9 +149,10 @@ class AerospikeShell(cmd.Cmd):
             if mode == AdminMode.LOG_ANALYZER:
                 if not log_path:
                     log_path = " "
-                self.ctrl = LogRootController(admin_version, log_path)
 
+                self.ctrl = LogRootController(admin_version, log_path)
                 self.prompt = "Log-analyzer> "
+
             elif mode == AdminMode.COLLECTINFO_ANALYZER:
                 if not log_path:
                     logger.error(
@@ -153,10 +162,10 @@ class AerospikeShell(cmd.Cmd):
 
                 self.ctrl = CollectinfoRootController(admin_version,
                                                       clinfo_path=log_path)
-
                 self.prompt = "Collectinfo-analyzer> "
                 if not execute_only_mode:
                     self.intro = str(self.ctrl.loghdlr)
+
             else:
                 if user is not None:
                     if password == conf.DEFAULTPASSWORD:
@@ -217,8 +226,7 @@ class AerospikeShell(cmd.Cmd):
         self.commands = set()
 
         regex = re.compile("^do_(.*)$")
-        commands = map(lambda v: regex.match(v).groups()[0],
-                       filter(regex.search, dir(self)))
+        commands = [regex.match(v).groups()[0] for v in list(filter(regex.search, dir(self)))]
 
         for command in commands:
             if command != 'help':
@@ -279,8 +287,8 @@ class AerospikeShell(cmd.Cmd):
                     # If single level command then print from first index. For example: health, features, grep etc.
                     index = 0
 
-                print "\n~~~ %s%s%s ~~~" % (
-                    terminal.bold(), ' '.join(line[index:]), terminal.reset())
+                print("\n~~~ %s%s%s ~~~" % (
+                    terminal.bold(), ' '.join(line[index:]), terminal.reset()))
 
             sys.stdout.write(terminal.reset())
             try:
@@ -324,12 +332,10 @@ class AerospikeShell(cmd.Cmd):
             return []
 
         if args[-1].startswith("\'"):
-            names = map(
-                lambda v: "\'" + v, self._complete_path(args[-1].split("\'")[-1]))
+            names = ["\'" + v for v in self._complete_path(args[-1].split("\'")[-1])]
             return names
         if args[-1].startswith("\""):
-            names = map(
-                lambda v: "\"" + v, self._complete_path(args[-1].split("\"")[-1]))
+            names = ["\"" + v for v in self._complete_path(args[-1].split("\"")[-1])]
             return names
 
         # treat the last arg as a path and complete it
@@ -341,7 +347,7 @@ class AerospikeShell(cmd.Cmd):
 
             if isinstance(origline, str):
                 line = origline.split(" ")
-                line = filter(lambda v: v, map(str.strip, line))
+                line = [v for v in map(str.strip, line) if v]
                 if origline and origline[-1] == ' ':
                     line.append('')
 
@@ -378,7 +384,7 @@ class AerospikeShell(cmd.Cmd):
 
         except Exception:
             return []
-        return map(lambda n: "%s " % n, names)
+        return ["%s " % n for n in names]
 
     def complete(self, text, state):
         """Return the next possible completion for 'text'.
@@ -459,16 +465,16 @@ class AerospikeShell(cmd.Cmd):
         from time import sleep
         s = 0.5
         for line in msg.split('\n'):
-            print line
+            print(line)
             sleep(s)
             s = s / 1.2
-        print terminal.bold() + \
+        print(terminal.bold() + \
             "Let there be CAKE!".center(80) + \
-            terminal.reset()
+            terminal.reset())
 
 
 def do_ctrl_c(*args, **kwargs):
-    print "Please press ctrl+d or type exit"
+    print("Please press ctrl+d or type exit")
 
 
 def parse_tls_input(cli_args):
@@ -555,8 +561,8 @@ def main():
         exit(0)
 
     if cli_args.version:
-        print "Aerospike Administration Shell"
-        print "Version " + str(admin_version)
+        print("Aerospike Administration Shell")
+        print("Version " + str(admin_version))
         exit(0)
 
     if cli_args.no_color:
@@ -626,9 +632,9 @@ def main():
             import yappi
             use_yappi = True
         except Exception as a:
-            print "Unable to load profiler"
-            print "Yappi Exception:"
-            print str(a)
+            print("Unable to load profiler")
+            print("Yappi Exception:")
+            print(str(a))
             exit(1)
 
     func = None
@@ -659,7 +665,7 @@ def main():
                 max_commands_to_print_header = 0
                 command_index_to_print_from = 0
             except Exception as e:
-                print e
+                print(e)
 
         if shell.connected:
             line = shell.precmd(commands_arg,
@@ -688,7 +694,7 @@ def main():
 
 
 def disable_coloring():
-    from lib.view import terminal
+    from .lib.view import terminal
     terminal.enable_color(False)
 
 
@@ -734,9 +740,13 @@ def parse_commands(file):
 def get_version():
     if __version__.startswith('$$'):
         import string
-        vfile = string.join(sys.argv[0].split('/')[:-1], '/') + "/version.txt"
-        output = util.shell_command(["cat " + vfile])
-        return str(output[0])
+        path = sys.argv[0].split('/')[:-1]
+        path.append("version.txt")
+        vfile = '/'.join(path)
+        f = open(vfile)
+        version = f.readline()
+        f.close()
+        return str(version)
     else:
         return __version__
 

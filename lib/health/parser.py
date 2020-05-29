@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from builtins import str
+from builtins import object
 
 import copy
 import re
@@ -201,35 +204,35 @@ class HealthLexer(object):
         t.type = HealthLexer.reserved.get(t.value.lower(), 'NEW_VAR')
         if not t.type == "NEW_VAR":
             return t
-        elif t.value.lower() in HealthLexer.bool_vals.keys():
+        elif t.value.lower() in list(HealthLexer.bool_vals.keys()):
             t.type = "BOOL_VAL"
             t.value = HealthLexer.bool_vals.get(t.value.lower())
         elif re.match(HealthLexer.SNAPSHOT_KEY_PATTERN, t.value):
             t.value = create_snapshot_key(
                 int(re.search(HealthLexer.SNAPSHOT_KEY_PATTERN, t.value).group(1)))
             t.type = "COMPONENT"
-        elif t.value in HealthLexer.components.keys():
+        elif t.value in list(HealthLexer.components.keys()):
             t.type = "COMPONENT"
-        elif t.value in HealthLexer.group_ids.keys():
+        elif t.value in list(HealthLexer.group_ids.keys()):
             t.type = "GROUP_ID"
         elif t.value in HealthLexer.component_and_group_id:
             t.type = "COMPONENT_AND_GROUP_ID"
-        elif t.value in HealthLexer.agg_ops.keys():
+        elif t.value in list(HealthLexer.agg_ops.keys()):
             t.type = "AGG_OP"
-        elif t.value in HealthLexer.complex_ops.keys():
+        elif t.value in list(HealthLexer.complex_ops.keys()):
             t.type = "COMPLEX_OP"
-        elif t.value in HealthLexer.apply_ops.keys():
+        elif t.value in list(HealthLexer.apply_ops.keys()):
             t.type = "APPLY_OP"
-        elif t.value in HealthLexer.simple_ops.keys():
+        elif t.value in list(HealthLexer.simple_ops.keys()):
             t.type = "SIMPLE_OP"
         elif t.value == "IN":
             t.type = "IN"
-        elif t.value in HealthLexer.complex_params.keys():
+        elif t.value in list(HealthLexer.complex_params.keys()):
             t.value = HealthLexer.complex_params[t.value]
             t.type = "COMPLEX_PARAM"
-        elif t.value in HealthLexer.assert_ops.keys():
+        elif t.value in list(HealthLexer.assert_ops.keys()):
             t.type = "ASSERT_OP"
-        elif t.value in HealthLexer.assert_levels.keys():
+        elif t.value in list(HealthLexer.assert_levels.keys()):
             t.value = HealthLexer.assert_levels[t.value]
             t.type = "ASSERT_LEVEL"
         elif t.value in HealthVars:

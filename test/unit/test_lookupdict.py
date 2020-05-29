@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import unittest2 as unittest
+
 from lib.utils.lookupdict import PrefixDict, LookupDict
 
 class PrefixDictTest(unittest.TestCase):
@@ -54,7 +55,7 @@ class PrefixDictTest(unittest.TestCase):
         self.assertRaises(KeyError, self.test_dict.get_key, 'asdf')
 
     def test_keys(self):
-        keys = self.test_dict.keys()
+        keys = list(self.test_dict.keys())
         self.assertTrue(len(keys), 4)
         self.assertTrue('u01.citrusleaf.local' in keys)
         self.assertTrue('u02.citrusleaf.local' in keys)
@@ -120,7 +121,7 @@ class LookupDictTest(unittest.TestCase):
         self.assertRaises(KeyError, self.test_dict.get_key, 'asdf')
 
     def test_keys(self):
-        keys = self.test_dict.keys()
+        keys = list(self.test_dict.keys())
         self.assertTrue(len(keys), 4)
         self.assertTrue('192.168.0.11' in keys)
         self.assertTrue('192.168.0.12' in keys)

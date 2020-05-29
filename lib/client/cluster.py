@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from __future__ import print_function
+from builtins import zip
+from builtins import str
+from builtins import object
 
 import copy
 import re
@@ -82,12 +87,12 @@ class Cluster(object):
         self._same_name_nodes = False
 
     def __str__(self):
-        nodes = self.nodes.values()
+        nodes = list(self.nodes.values())
         if len(nodes) == 0:
             return ""
 
-        online = [n.key for n in filter(lambda n: n.alive, nodes)]
-        offline = [n.key for n in filter(lambda n: not n.alive, nodes)]
+        online = [n.key for n in [n for n in nodes if n.alive]]
+        offline = [n.key for n in [n for n in nodes if not n.alive]]
 
         retval = "Found %s nodes" % (len(nodes))
         if online:
@@ -99,7 +104,7 @@ class Cluster(object):
 
     def get_node_displaynames(self):
         node_names = {}
-        for node_key, node in self.nodes.iteritems():
+        for node_key, node in list(self.nodes.items()):
             k = node.sock_name(use_fqdn=True)
             if commonutil.is_valid_ip_port(k):
                 node_names[node_key] = k
@@ -112,9 +117,9 @@ class Cluster(object):
         node_names = {}
 
         if not self._same_name_nodes:
-            for node_key, node in self.nodes.iteritems():
+            for node_key, node in list(self.nodes.items()):
                 name = node.sock_name(use_fqdn=True)
-                if name in node_names.values():
+                if name in list(node_names.values()):
                     # found same name for multiple nodes
                     self._same_name_nodes = True
                     node_names.clear()
@@ -122,7 +127,7 @@ class Cluster(object):
                 node_names[node_key] = name
 
         if not node_names:
-            for node_key, node in self.nodes.iteritems():
+            for node_key, node in list(self.nodes.items()):
                 node_names[node_key] = node.sock_name(use_fqdn=False)
 
         return node_names
@@ -130,13 +135,13 @@ class Cluster(object):
     def get_expected_principal(self):
         try:
             principal = "0"
-            for k in self.nodes.keys():
+            for k in list(self.nodes.keys()):
                 n = self.nodes[k]
                 if n.node_id.zfill(16) > principal.zfill(16):
                     principal = n.node_id
             return principal
         except Exception as e:
-            print e
+            print(e)
             return ''
 
     def get_live_nodes(self):
@@ -145,7 +150,7 @@ class Cluster(object):
     def get_visibility_error_nodes(self):
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
-        for k in self.nodes.keys():
+        for k in list(self.nodes.keys()):
             node = self.nodes[k]
             if not node.alive:
                 # in case of using alumni services, we might have offline nodes
@@ -160,7 +165,7 @@ class Cluster(object):
 
     def get_down_nodes(self):
         cluster_down_nodes = []
-        for k in self.nodes.keys():
+        for k in list(self.nodes.keys()):
             try:
                 node = self.nodes[k]
                 if not node.alive:
@@ -207,7 +212,7 @@ class Cluster(object):
         peers = []
         aliases = {}
         if self.nodes:
-            for node_key in self.nodes.keys():
+            for node_key in list(self.nodes.keys()):
                 node = self.nodes[node_key]
                 node.refresh_connection()
                 if node.key != node_key:
@@ -278,12 +283,12 @@ class Cluster(object):
         # helps to remove multiple entries of same node ( in case of service
         # list change or node is up after going down)
         service_nodes = set(self.aliases.values())
-        for n in self.nodes.keys():
+        for n in list(self.nodes.keys()):
             if n not in service_nodes:
                 self.nodes.pop(n)
 
     def _refresh_node_liveliness(self):
-        live_nodes = [node for node in self.nodes.itervalues() if node.alive]
+        live_nodes = [node for node in list(self.nodes.values()) if node.alive]
         self._live_nodes.clear()
         self._live_nodes.update(
             ((node.ip, node.port, node.tls_name) for node in live_nodes))
@@ -351,9 +356,9 @@ class Cluster(object):
                 addr, port = addr_port_tls
                 tls_name = None
             except Exception:
-                print "ip_port is expected to be a tuple of len 2, " + \
+                print("ip_port is expected to be a tuple of len 2, " + \
                     "instead it is of type %s and str value of %s" % (
-                        type(addr_port_tls), str(addr_port_tls))
+                        type(addr_port_tls), str(addr_port_tls)))
                 return None
         try:
             if self.is_present_as_alias(addr, port):
@@ -410,7 +415,7 @@ class Cluster(object):
                     self._crawl()
                     self.last_cluster_refresh_time = time()
             except Exception as e:
-                print e
+                print(e)
                 raise e
 
     def call_node_method(self, nodes, method_name, *args, **kwargs):
@@ -423,7 +428,7 @@ class Cluster(object):
             self._refresh_cluster()
 
         if nodes == 'all':
-            use_nodes = self.nodes.values()
+            use_nodes = list(self.nodes.values())
         elif isinstance(nodes, list):
             use_nodes = []
             for node in nodes:
@@ -456,7 +461,7 @@ class Cluster(object):
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
         node_map = {}
-        for a in self.aliases.keys():
+        for a in list(self.aliases.keys()):
             try:
                 node_map[a] = self.nodes.get(self.aliases[a]).node_id
             except Exception:
@@ -467,15 +472,19 @@ class Cluster(object):
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
         ip_map = {}
-        for a in self.aliases.keys():
+        for addr in list(self.aliases.keys()):
             try:
-                id = self.nodes.get(self.aliases[a]).node_id
+                id = self.nodes.get(self.aliases[addr]).node_id
                 if id in ip_map:
-                    ip_map[id] = ip_map[id] + ", " + a
+                    ip_map[id].append(addr)
                 else:
-                    ip_map[id] = a
+                    ip_map[id] = [addr]
             except Exception:
                 pass
+
+        for node, ip_list in list(ip_map.items()):
+            ip_map[node] = ",".join(sorted(ip_map[node]))
+
         return ip_map
 
     def __getattr__(self, name):
@@ -495,7 +504,7 @@ class Cluster(object):
             raise AttributeError("Cluster has not attribute '%s'" % (name))
 
     def close(self):
-        for node_key in self.nodes.keys():
+        for node_key in list(self.nodes.keys()):
             try:
                 node = self.nodes[node_key]
                 node.close()

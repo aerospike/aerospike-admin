@@ -39,7 +39,7 @@ Admin> help
 
 
 ## Dependencies
-- python 2.7+ (< 3)
+- python 2.7 or 3.4+
 
 ### Python Modules
 - bcrypt == 3.1.4
@@ -63,8 +63,15 @@ sudo easy_install -a readline
 - unittest2: 0.5.1
 - Mock: 1.0.1
 
+### Setting Test Environment
+asadm has unit and e2e tests. To setup environment for e2e tests, execute following steps:
+- Start Aerospike cluster: Test machine should be part of this cluster with 3000 as asinfo port.
+- Write few records to cluster
+- Wait for few seconds so cluster can return histogram output properly.
+
 ### Running Tests
-./run_tests.sh or unit2 discover
+- pip install -r requirements.txt
+- ./run_tests.sh
 
 ## Profiling
 ### Dependencies

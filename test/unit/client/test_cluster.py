@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from builtins import str
+from builtins import range
 
 from mock import patch, Mock
 import socket
@@ -31,6 +34,10 @@ class ClusterTest(unittest.TestCase):
         return cl
 
     def get_info_mock(self, return_value, return_key_value={}, ip="127.0.0.1"):
+
+        if "build" not in return_key_value:
+            return_key_value["build"] = "3.1.0"
+
         def info_cinfo_side_effect(*args):
             ip_last_digit = ip.split(".")[3]
             cmd = args[0]
@@ -130,13 +137,13 @@ class ClusterTest(unittest.TestCase):
 
         cl._live_nodes = ['127.0.0.1:3000', '127.0.0.2:3000', '127.0.0.0:3000']
         expected = ['127.0.0.1:3000', '127.0.0.2:3000', '127.0.0.0:3000']
-        self.assertEqual(cl.get_visibility_error_nodes(), expected, "get_visibility_error_nodes did not return the expected result")
+        self.assertEqual(sorted(cl.get_visibility_error_nodes()), sorted(expected), "get_visibility_error_nodes did not return the expected result")
 
     def test_get_down_nodes(self):
         cl = self.get_cluster_mock(3)
 
         expected = ['192.168.123.2:3000', '127.3.0.2:3000']
-        self.assertEqual(cl.get_down_nodes(), expected, "get_down_nodes did not return the expected result")
+        self.assertEqual(sorted(cl.get_down_nodes()), sorted(expected), "get_down_nodes did not return the expected result")
 
     def test_update_aliases(self):
         cl = self.get_cluster_mock(3)
@@ -170,7 +177,7 @@ class ClusterTest(unittest.TestCase):
         cl = self.get_cluster_mock(2)
 
         cl.call_node_method(nodes='all', method_name='info_peers')
-        for n in cl.nodes.itervalues():
+        for n in cl.nodes.values():
             n._info_cinfo.assert_any_call('peers-clear-std', n.ip)
 
         key = '127.0.0.1:3000'

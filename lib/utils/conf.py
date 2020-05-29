@@ -1,4 +1,4 @@
-# Copyright 2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from __future__ import print_function
+from builtins import str
+from past.builtins import basestring
+from builtins import object
 
 import collections
 import json
@@ -164,12 +169,12 @@ def _loadfile(fname, logger):
             raise ImportError("No module named toml")
 
         include_files = []
-        if "include" in conf_dict.keys():
-            if "file" in conf_dict["include"].keys():
+        if "include" in list(conf_dict.keys()):
+            if "file" in list(conf_dict["include"].keys()):
                 f = conf_dict["include"]["file"]
                 include_files.append(os.path.expanduser(f))
 
-            if "directory" in conf_dict["include"].keys():
+            if "directory" in list(conf_dict["include"].keys()):
                 d = conf_dict["include"]["directory"]
                 include_files = include_files + sorted([os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(d)) for f in fn])
 
@@ -214,8 +219,8 @@ def _flatten(conf_dict, instance=None):
             sections.append("asadm")
 
     for section in sections:
-        if section in conf_dict.keys():
-            for k,v in conf_dict[section].iteritems():
+        if section in list(conf_dict.keys()):
+            for k,v in list(conf_dict[section].items()):
                 # Empty passwords are allowed do not interpret
                 # it as None
                 if k == "password":
@@ -227,7 +232,7 @@ def _flatten(conf_dict, instance=None):
 
 
 def _merge(dct, merge_dct, ignore_false=False):
-    for k, v in merge_dct.iteritems():
+    for k, v in list(merge_dct.items()):
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
             _merge(dct[k], merge_dct[k], ignore_false=ignore_false)
@@ -247,15 +252,15 @@ def _getseeds(conf):
     # Set up default port and tls-name if not specified in
     # host string
     port = 3000
-    if "port" in conf.keys() and conf["port"] is not None:
+    if "port" in list(conf.keys()) and conf["port"] is not None:
         port = conf["port"]
 
     tls_name = None
-    if "tls_name" in conf.keys() and conf["tls_name"] is not None and "tls_enable" in conf and conf["tls_enable"]:
+    if "tls_name" in list(conf.keys()) and conf["tls_name"] is not None and "tls_enable" in conf and conf["tls_enable"]:
         tls_name = conf["tls_name"]
 
 
-    if "host" in conf.keys() and conf["host"] is not None:
+    if "host" in list(conf.keys()) and conf["host"] is not None:
         seeds = []
         hosts = conf["host"].split(",")
 
@@ -297,7 +302,7 @@ def _getseeds(conf):
                 seeds.append((str(host), port, tls_name))
 
             except Exception as e:
-                print "host parse error " + str(e) +  " " + str(hosts)
+                print("host parse error " + str(e) +  " " + str(hosts))
 
         return seeds
     else:
@@ -312,7 +317,7 @@ def loadconfig(cli_args, logger):
 
 
     if cli_args.no_config_file and cli_args.only_config_file:
-        print "--no-config-file and only-config-file are mutually exclusive option. Please enable only one."
+        print("--no-config-file and only-config-file are mutually exclusive option. Please enable only one.")
         exit(1)
 
     conf_dict = {}
@@ -508,7 +513,7 @@ def print_config_file_option():
            "                      TLS connection does not support timeout. Default: 5 seconds")
 
 def config_file_help():
-    print "\n\n"
+    print("\n\n")
     print ("Default configuration files are read from the following files in the given order:\n"
           "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
           "The following sections are read: (cluster asadm include)\n"

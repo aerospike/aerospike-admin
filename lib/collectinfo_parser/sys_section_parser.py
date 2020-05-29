@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import str
 import re
 import math
 import copy
 import logging
 from datetime import datetime
 
-import section_filter_list
-from utils import is_valid_section, get_section_name_from_id, type_check_basic_values, change_key_name_in_map
+from . import section_filter_list
+from .utils import is_valid_section, get_section_name_from_id, type_check_basic_values, change_key_name_in_map
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
@@ -792,7 +793,7 @@ def _parse_limits_section(imap, parsed_map):
         if "Max" not in line:
             continue
 
-        lineobj = filter(None, line.rstrip().split('  '))
+        lineobj = [_f for _f in line.rstrip().split('  ') if _f]
         key = str(lineobj[0]).strip()
         limits["Soft " + key] = str(lineobj[1]).strip()
         limits["Hard " + key] = str(lineobj[2]).strip()

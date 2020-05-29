@@ -1,13 +1,13 @@
 #!/bin/sh
 """:"
-for interp in python python2 ; do
+for interp in python python3 python2 ; do
    command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
 done
 echo >&2 "No Python interpreter found!"
 exit 1
 ":"""
 
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,10 +21,16 @@ exit 1
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import hex
+from builtins import str
+from builtins import range
+from builtins import object
+
 import os
 import warnings
 
 from lib.client.ssl_util import dnsname_match
+from lib.utils.util import is_str, bytes_to_str, str_to_bytes
 from os import listdir
 from os.path import isfile, join
 
@@ -313,7 +319,7 @@ class SSLContext(object):
         alt_names = []
         for i in range(cert.get_extension_count()):
             e = cert.get_extension(i)
-            e_name = e.get_short_name()
+            e_name = bytes_to_str(e.get_short_name())
             if e_name == "subjectAltName":
                 e_data = e.get_data()
                 decoded_data = der_decoder.decode(
@@ -331,7 +337,10 @@ class SSLContext(object):
                              "SSL socket or SSL context with either "
                              "CERT_OPTIONAL or CERT_REQUIRED")
         try:
-            components = cert.get_subject().get_components()
+            components = []
+            for component in cert.get_subject().get_components():
+                component_string = tuple(bytes_to_str(elem) for elem in component)
+                components.append(component_string)
         except Exception as e:
             raise Exception("Failed to read certificate components: " + str(e))
 
@@ -529,7 +538,7 @@ class SSLContext(object):
                         raise Exception("Invalid keyfile_password {0} \n{1}".format(keyfile_password, e))
 
                 try:
-                    pkey = crypto.load_privatekey(crypto.FILETYPE_PEM, open(keyfile, 'rb').read(), pwd)
+                    pkey = crypto.load_privatekey(crypto.FILETYPE_PEM, open(keyfile, 'rb').read(), str_to_bytes(pwd))
                 except IOError:
                     raise Exception("Unable to locate key file {}".format(keyfile))
                 except crypto.Error:
@@ -562,7 +571,7 @@ class SSLContext(object):
         if keyfile_password is None:
             return keyfile_password
 
-        if not isinstance(keyfile_password, str):
+        if not is_str(keyfile_password):
             raise Exception("Bad keyfile_password: not string")
 
         keyfile_password = keyfile_password.strip()

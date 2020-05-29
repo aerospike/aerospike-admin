@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import str
+
 import re
+
+from lib.utils.util import is_str
 
 SPACE = re.compile("\s+")
 
@@ -73,7 +77,7 @@ static_configs = ["access-address", "access-port", "address", "alternate-access-
                   "tls-mesh-seed-address-port"]
 
 def _convert(d, unit_converter):
-    if not d or not isinstance(d, str) or len(d) < 2:
+    if not d or not is_str(d) or len(d) < 2:
         return d
 
     try:

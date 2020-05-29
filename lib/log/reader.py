@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import division
+from builtins import str
+from builtins import object
+from past.utils import old_div
+
 import datetime
 import re
 import time
 import logging
 
-from lib.utils.util import shell_command
+from lib.utils.util import shell_command, bytes_to_str
 from lib.utils.constants import DT_FMT
 
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
@@ -120,7 +125,7 @@ class LogReader(object):
                     matched_count += 1
             except Exception:
                 pass
-        if matched_count > (len(lines)/2):
+        if matched_count > (old_div(len(lines),2)):
             return True
         return False
 
@@ -152,11 +157,11 @@ class LogReader(object):
             return 0
         toks.reverse()
         try:
-            arg_seconds = long(toks[0].strip())
+            arg_seconds = int(toks[0].strip())
             if num_toks > 1:
-                arg_seconds = arg_seconds + (60 * long(toks[1].strip()))
+                arg_seconds = arg_seconds + (60 * int(toks[1].strip()))
             if num_toks > 2:
-                arg_seconds = arg_seconds + (3600 * long(toks[2].strip()))
+                arg_seconds = arg_seconds + (3600 * int(toks[2].strip()))
         except Exception:
             return 0
         return datetime.timedelta(seconds=arg_seconds)
@@ -185,6 +190,7 @@ class LogReader(object):
         return line[0: line.find(" GMT")]
 
     def parse_dt(self, line, dt_len=6):
+        line = bytes_to_str(line) # bytes for py3 compatibility
         prefix = line[0: line.find(" GMT")].split(",")[0]
         # remove milliseconds if available
         prefix = prefix.split(".")[0]
@@ -205,11 +211,11 @@ class LogReader(object):
 
     def set_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
-        self._seek_to(file_stream, "\n")
+        self._seek_to(file_stream, b"\n") # marked as bytes for py3 compatibility
 
     def read_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
-        self._seek_to(file_stream, "\n")
+        self._seek_to(file_stream, b"\n") # marked as bytes for py3 compatibility
         ln = self.read_line(file_stream)
         return ln
 
@@ -235,7 +241,7 @@ class LogReader(object):
             else:
                 return None, None
 
-        jump = (max - min) / 2
+        jump = old_div((max - min), 2)
         f.seek(int(jump) + min, 0)
         self._seek_to(f, '\n')
         last_read = f.tell()

@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -114,8 +114,8 @@ class UtilTest(unittest.TestCase):
         self.assertEqual(result, expected, "parse_peers_string did not return the expected result")
 
     def test_concurrent_map(self):
-        value = range(10)
-        expected = map(lambda v: v*v, value)
+        value = list(range(10))
+        expected = [v*v for v in value]
         result = util.concurrent_map(lambda v: v*v, value)
         self.assertEqual(result, expected, "concurrent_map did not return the expected result")
 

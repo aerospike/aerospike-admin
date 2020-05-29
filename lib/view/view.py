@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+from future import standard_library
+standard_library.install_aliases()
+from builtins import zip
+from builtins import filter
+from builtins import str
+from builtins import range
+from builtins import object
+
 import datetime
-import itertools
 import locale
 import sys
 import time
 import types
-from cStringIO import StringIO
+from io import StringIO
 from pydoc import pipepager
 
 from lib.health.constants import (AssertLevel, AssertResultKey,
@@ -27,7 +35,7 @@ from lib.health.util import print_dict
 from lib.utils import filesize
 from lib.utils.constants import COUNT_RESULT_KEY, DT_FMT
 from lib.utils.util import (compile_likes, find_delimiter_in,
-                            get_value_from_dict, set_value_in_dict)
+                            get_value_from_dict, is_str, set_value_in_dict)
 from lib.view import terminal
 from lib.view.table import Extractors, Styles, Table, TitleFormats
 
@@ -37,7 +45,7 @@ H_width = 80
 
 
 class CliView(object):
-    NO_PAGER, LESS, MORE, SCROLL = range(4)
+    NO_PAGER, LESS, MORE, SCROLL = list(range(4))
     pager = NO_PAGER
 
     @staticmethod
@@ -48,21 +56,21 @@ class CliView(object):
             pipepager(out, cmd='less -RSX')
         elif CliView.pager == CliView.SCROLL:
             for i in out.split('\n'):
-                print i
+                print(i)
                 time.sleep(.05)
         else:
-            print out
+            print(out)
 
     @staticmethod
     def print_pager():
         if CliView.pager == CliView.LESS:
-            print "LESS"
+            print("LESS")
         elif CliView.pager == CliView.MORE:
-            print "MORE"
+            print("MORE")
         elif CliView.pager == CliView.SCROLL:
-            print "SCROLL"
+            print("SCROLL")
         else:
-            print "NO PAGER"
+            print("NO PAGER")
 
     @staticmethod
     def _get_timestamp_suffix(timestamp):
@@ -103,7 +111,7 @@ class CliView(object):
         t.add_cell_alert(
             '_cluster_integrity', lambda data: data['cluster_integrity'] != 'true')
 
-        for node_key, n_stats in stats.iteritems():
+        for node_key, n_stats in list(stats.items()):
             if isinstance(n_stats, Exception):
                 n_stats = {}
 
@@ -193,10 +201,10 @@ class CliView(object):
             Extractors.byte_extractor(('index_used_bytes')))
 
         t.add_data_source('_used_disk_pct', lambda data: 100 -
-                          int(data['free_pct_disk']) if data['free_pct_disk'] is not " " else " ")
+                          int(data['free_pct_disk']) if data['free_pct_disk'] != " " else " ")
 
         t.add_data_source('_used_mem_pct', lambda data: 100 - int(
-            data['free_pct_memory']) if data['free_pct_memory'] is not " " else " ")
+            data['free_pct_memory']) if data['free_pct_memory'] != " " else " ")
 
         t.add_cell_alert('available_pct', lambda data: data['available_pct'] != " " and int(data['available_pct']) <= 10)
 
@@ -210,16 +218,16 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_total_records', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_total_records', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_used_bytes_memory', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_used_bytes_memory', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_used_bytes_disk', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_used_bytes_disk', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_expired_and_evicted', lambda data: data['node'] is " ", color=terminal.fg_blue)
-        t.add_cell_alert('_index_used_bytes', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_expired_and_evicted', lambda data: data['node'] == " ", color=terminal.fg_blue)
+        t.add_cell_alert('_index_used_bytes', lambda data: data['node'] == " ", color=terminal.fg_blue)
 
         total_res = {}
 
@@ -227,7 +235,7 @@ class CliView(object):
         # If set sort_by in table, it will affect total rows. TODO: implement group_by
         # So we need to add rows as Nodes ascending order. So need to sort
         # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
+        node_key_list = list(stats.keys())
         node_column_list = [prefixes[key] for key in node_key_list]
         sorted_node_list = [x for (y, x) in sorted(
             zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
@@ -240,7 +248,7 @@ class CliView(object):
                     {'real_node_id': node.node_id, 'node': prefixes[node_key]})
                 continue
 
-            for ns, ns_stats in n_stats.iteritems():
+            for ns, ns_stats in list(n_stats.items()):
 
                 if isinstance(ns_stats, Exception):
                     row = {}
@@ -423,15 +431,15 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_total_records', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_total_records', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_objects', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_objects', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_tombstones', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_tombstones', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_migrates', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_migrates', lambda data: data['node'] == " ", color=terminal.fg_blue)
 
         total_res = {}
 
@@ -439,7 +447,7 @@ class CliView(object):
         # If set sort_by in table, it will affect total rows.
         # So we need to add rows as Nodes ascending order. So need to sort
         # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
+        node_key_list = list(stats.keys())
         node_column_list = [prefixes[key] for key in node_key_list]
         sorted_node_list = [x for (y, x) in sorted(
             zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
@@ -454,7 +462,7 @@ class CliView(object):
                     {'real_node_id': node.node_id, 'node': prefixes[node_key]})
                 continue
 
-            for ns, ns_stats in n_stats.iteritems():
+            for ns, ns_stats in list(n_stats.items()):
                 if isinstance(ns_stats, Exception):
                     row = {}
                 else:
@@ -591,20 +599,20 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         t.add_cell_alert(
-            'set', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            'set', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            'namespace', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_n-bytes-memory', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_n-bytes-memory', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
-            '_n_objects', lambda data: data['node'] is " ", color=terminal.fg_blue)
+            '_n_objects', lambda data: data['node'] == " ", color=terminal.fg_blue)
 
         total_res = {}
 
         # Need to maintain Node column ascending order per <set,namespace>. If set sort_by in table, it will affect total rows.
         # So we need to add rows as Nodes ascending order. So need to sort
         # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
+        node_key_list = list(stats.keys())
         node_column_list = [prefixes[key] for key in node_key_list]
         sorted_node_list = [x for (y, x) in sorted(
             zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
@@ -617,7 +625,7 @@ class CliView(object):
                     {'real_node_id': node.node_id, 'node': prefixes[node_key]})
                 continue
 
-            for (ns, set), set_stats in s_stats.iteritems():
+            for (ns, set), set_stats in list(s_stats.items()):
                 if isinstance(set_stats, Exception):
                     row = {}
                 else:
@@ -698,11 +706,11 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         row = None
-        for node_key, dc_stats in stats.iteritems():
+        for node_key, dc_stats in list(stats.items()):
             if isinstance(dc_stats, Exception):
                 dc_stats = {}
             node = cluster.get_node(node_key)[0]
-            for dc, row in dc_stats.iteritems():
+            for dc, row in list(dc_stats.items()):
                 if isinstance(row, Exception):
                     row = {}
                 if row:
@@ -760,7 +768,7 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         row = None
-        for node_key, row in stats.iteritems():
+        for node_key, row in list(stats.items()):
             if isinstance(row, Exception):
                 row = {}
 
@@ -797,7 +805,7 @@ class CliView(object):
 
     @staticmethod
     def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore):
-        if not max(xdr_enable.itervalues()):
+        if not max(xdr_enable.values()):
             return
 
         prefixes = cluster.get_node_names()
@@ -842,7 +850,7 @@ class CliView(object):
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
 
         row = None
-        for node_key, row in stats.iteritems():
+        for node_key, row in list(stats.items()):
             if isinstance(row, Exception):
                 row = {}
             node = cluster.get_node(node_key)[0]
@@ -880,8 +888,8 @@ class CliView(object):
             '_query_avg_rec_count', Extractors.sif_extractor(('query_avg_rec_count')))
         t.add_cell_alert(
             'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-        for stat in stats.values():
-            for node_key, n_stats in stat.iteritems():
+        for stat in list(stats.values()):
+            for node_key, n_stats in list(stat.items()):
                 node = cluster.get_node(node_key)[0]
                 if isinstance(n_stats, Exception):
                     row = {}
@@ -898,7 +906,7 @@ class CliView(object):
         if not summary or len(summary.strip()) == 0:
             return
         if title:
-            print "************************** %s **************************" % (title)
+            print("************************** %s **************************" % (title))
         CliView.print_result(summary)
 
     @staticmethod
@@ -907,7 +915,7 @@ class CliView(object):
 
         likes = compile_likes(like)
 
-        columns = ["%s%%" % (n) for n in xrange(10, 110, 10)]
+        columns = ["%s%%" % (n) for n in range(10, 110, 10)]
         percentages = columns[:]
         columns.insert(0, 'node')
 
@@ -915,15 +923,15 @@ class CliView(object):
         description = "Percentage of records having %s less than or " % (hist) + \
                       "equal to value measured in %s" % (unit)
 
-        namespaces = set(filter(likes.search, histogram.keys()))
+        namespaces = set(filter(likes.search, list(histogram.keys())))
 
-        for namespace, node_data in histogram.iteritems():
+        for namespace, node_data in list(histogram.items()):
             if namespace not in namespaces or not node_data or isinstance(node_data, Exception):
                 continue
 
             t = Table("%s - %s in %s%s" % (namespace, title, unit,
                                            title_suffix), columns, description=description)
-            for node_id, data in node_data.iteritems():
+            for node_id, data in list(node_data.items()):
                 if not data or isinstance(data, Exception):
                     continue
 
@@ -947,9 +955,9 @@ class CliView(object):
         description = "Number of records having %s in the range " % (hist) + \
                       "measured in %s" % (unit)
 
-        namespaces = set(filter(likes.search, histogram.keys()))
+        namespaces = set(filter(likes.search, list(histogram.keys())))
 
-        for namespace, node_data in histogram.iteritems():
+        for namespace, node_data in list(histogram.items()):
             if namespace not in namespaces:
                 continue
             columns = []
@@ -963,11 +971,11 @@ class CliView(object):
                                            title_suffix), columns, description=description)
             if not loganalyser_mode:
                 for column in columns:
-                    if column is not 'node':
+                    if column != 'node':
                         t.add_data_source(
                             column, Extractors.sif_extractor(column))
 
-            for node_id, data in node_data.iteritems():
+            for node_id, data in list(node_data.items()):
                 if node_id == "columns":
                     continue
 
@@ -977,7 +985,7 @@ class CliView(object):
 
             CliView.print_result(t)
             if set_bucket_count and (len(columns) - 1) < bucket_count:
-                print "%sShowing only %s bucket%s as remaining buckets have zero objects%s\n" % (terminal.fg_green(), (len(columns) - 1), "s" if (len(columns) - 1) > 1 else "", terminal.fg_clear())
+                print("%sShowing only %s bucket%s as remaining buckets have zero objects%s\n" % (terminal.fg_green(), (len(columns) - 1), "s" if (len(columns) - 1) > 1 else "", terminal.fg_clear()))
 
     @staticmethod
     def _update_latency_column_list(data, all_columns):
@@ -1002,7 +1010,7 @@ class CliView(object):
 
         columns = data.pop("columns", None)
         for _values in data["values"]:
-            row = dict(itertools.izip(columns, _values))
+            row = dict(list(zip(columns, _values)))
             row['namespace'] = ns
             rows.append(row)
 
@@ -1017,28 +1025,28 @@ class CliView(object):
 
         if not machine_wise_display:
             if like:
-                histograms = set(filter(likes.search, latency.keys()))
+                histograms = set(filter(likes.search, list(latency.keys())))
             else:
                 histograms = set(latency.keys())
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
 
-        for hist_or_node, data in sorted(latency.iteritems()):
+        for hist_or_node, data in sorted(latency.items()):
             if not machine_wise_display and hist_or_node not in histograms:
                 continue
             title = "%s Latency%s" % (hist_or_node, title_suffix)
 
             if machine_wise_display:
                 if like:
-                    histograms = set(filter(likes.search, data.keys()))
+                    histograms = set(filter(likes.search, list(data.keys())))
                 else:
                     histograms = set(data.keys())
             all_columns = set()
-            for node_or_hist_id, _data in data.iteritems():
+            for node_or_hist_id, _data in list(data.items()):
                 if machine_wise_display and node_or_hist_id not in histograms:
                     continue
 
-                for _type, _type_data in _data.iteritems():
+                for _type, _type_data in list(_data.items()):
                     if _type == "namespace" and not show_ns_details:
                         continue
 
@@ -1046,7 +1054,7 @@ class CliView(object):
                         CliView._update_latency_column_list(_type_data, all_columns=all_columns)
 
                     else:
-                        for ns, ns_data in _type_data.iteritems():
+                        for ns, ns_data in list(_type_data.items()):
                             CliView._update_latency_column_list(ns_data, all_columns=all_columns)
 
             all_columns = [c[1] for c in sorted(all_columns, key=lambda c:c[0])]
@@ -1063,8 +1071,8 @@ class CliView(object):
             if show_ns_details:
                 for c in all_columns:
                     t.add_cell_alert(
-                        c, lambda data: data['namespace'] is " ", color=terminal.fg_blue)
-            for node_or_hist_id, _data in data.iteritems():
+                        c, lambda data: data['namespace'] == " ", color=terminal.fg_blue)
+            for node_or_hist_id, _data in list(data.items()):
                 if machine_wise_display and node_or_hist_id not in histograms:
                     continue
 
@@ -1079,7 +1087,7 @@ class CliView(object):
                         rows = CliView._create_latency_row(_type_data)
 
                     else:
-                        for _ns, _ns_data in _type_data.iteritems():
+                        for _ns, _ns_data in list(_type_data.items()):
                             rows += CliView._create_latency_row(_ns_data, ns=_ns)
 
                     for row in rows:
@@ -1100,25 +1108,25 @@ class CliView(object):
         column_names = set()
 
         if diff and service_configs:
-            config_sets = (set(service_configs[d].iteritems())
+            config_sets = (set(service_configs[d].items())
                            for d in service_configs if service_configs[d])
             union = set.union(*config_sets)
             # Regenerating generator expression for config_sets.
-            config_sets = (set(service_configs[d].iteritems())
+            config_sets = (set(service_configs[d].items())
                            for d in service_configs if service_configs[d])
             intersection = set.intersection(*config_sets)
-            column_names = dict(union - intersection).keys()
+            column_names = list(dict(union - intersection).keys())
         else:
-            for config in service_configs.itervalues():
+            for config in list(service_configs.values()):
                 if isinstance(config, Exception):
                     continue
-                column_names.update(config.keys())
+                column_names.update(list(config.keys()))
 
         column_names = sorted(column_names)
         if like:
             likes = compile_likes(like)
 
-            column_names = filter(likes.search, column_names)
+            column_names = list(filter(likes.search, column_names))
 
         if len(column_names) == 0:
             return ''
@@ -1142,7 +1150,7 @@ class CliView(object):
         row = None
         if show_total:
             row_total = {}
-        for node_id, row in service_configs.iteritems():
+        for node_id, row in list(service_configs.items()):
             if isinstance(row, Exception):
                 row = {}
 
@@ -1150,7 +1158,7 @@ class CliView(object):
             t.insert_row(row)
 
             if show_total:
-                for key, val in row.iteritems():
+                for key, val in list(row.items()):
                     if (val.isdigit()):
                         try:
                             row_total[key] = row_total[key] + int(val)
@@ -1167,9 +1175,9 @@ class CliView(object):
     def show_grep_count(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
         if grep_result:
-            if grep_result[grep_result.keys()[0]]:
+            if grep_result[list(grep_result.keys())[0]]:
                 column_names = CliView._sort_list_with_string_and_datetime(
-                    grep_result[grep_result.keys()[0]][COUNT_RESULT_KEY].keys())
+                    list(grep_result[list(grep_result.keys())[0]][COUNT_RESULT_KEY].keys()))
 
         if len(column_names) == 0:
             return ''
@@ -1186,7 +1194,7 @@ class CliView(object):
             else:
                 row1 = grep_result[file]["count_result"]
                 row2 = {}
-                for key in grep_result[file]["count_result"].keys():
+                for key in list(grep_result[file]["count_result"].keys()):
                     row2[key] = "|"
 
             row1['NODE'] = file
@@ -1206,9 +1214,9 @@ class CliView(object):
         column_names = set()
         different_writer_info = False
 
-        if grep_result and grep_result[grep_result.keys()[0]]:
-            if "diff_end" in grep_result[grep_result.keys()[0]]["value"]:
-                for _k in grep_result.keys():
+        if grep_result and grep_result[list(grep_result.keys())[0]]:
+            if "diff_end" in grep_result[list(grep_result.keys())[0]]["value"]:
+                for _k in list(grep_result.keys()):
                     try:
                         if grep_result[_k]["value"]["diff_end"]:
                             different_writer_info = True
@@ -1217,7 +1225,7 @@ class CliView(object):
                         continue
 
             column_names = CliView._sort_list_with_string_and_datetime(
-                grep_result[grep_result.keys()[0]]["value"].keys())
+                list(grep_result[list(grep_result.keys())[0]]["value"].keys()))
 
         if len(column_names) == 0:
             return ''
@@ -1237,7 +1245,7 @@ class CliView(object):
                 row1 = grep_result[file]["value"]
                 row2 = grep_result[file]["diff"]
                 row3 = {}
-                for key in grep_result[file]["value"].keys():
+                for key in list(grep_result[file]["value"].keys()):
                     row3[key] = "|"
 
             row1['NODE'] = file
@@ -1292,9 +1300,9 @@ class CliView(object):
 
         if grep_result:
             # find column names
-            if grep_result[grep_result.keys()[0]]:
+            if grep_result[list(grep_result.keys())[0]]:
                 column_names = CliView._sort_list_with_string_and_datetime(
-                    grep_result[grep_result.keys()[0]][tps_key].keys())
+                    list(grep_result[list(grep_result.keys())[0]][tps_key].keys()))
 
         if len(column_names) == 0:
             return ''
@@ -1311,10 +1319,10 @@ class CliView(object):
                 continue
             else:
                 is_first = True
-                sub_columns_per_column = len(grep_result[file].keys())
+                sub_columns_per_column = len(list(grep_result[file].keys()))
                 relative_stats_columns = []
 
-                for key, unit in sorted(grep_result[file].keys(), key=lambda tup: tup[0]):
+                for key, unit in sorted(list(grep_result[file].keys()), key=lambda tup: str(tup[0])):
                     if key == tps_key[0]:
                         continue
 
@@ -1345,7 +1353,7 @@ class CliView(object):
                     t.insert_row(row)
 
                 row = {}
-                for key in grep_result[file][tps_key].keys():
+                for key in list(grep_result[file][tps_key].keys()):
                     row[key] = "|"
 
                 row['NODE'] = "|"
@@ -1375,12 +1383,12 @@ class CliView(object):
 
         if like:
             likes = compile_likes(like)
-            filtered_keys = filter(likes.search, mapping.keys())
+            filtered_keys = list(filter(likes.search, list(mapping.keys())))
 
         else:
-            filtered_keys = mapping.keys()
+            filtered_keys = list(mapping.keys())
 
-        for col1_val, col2_val in mapping.iteritems():
+        for col1_val, col2_val in list(mapping.items()):
             if col1_val not in filtered_keys:
                 continue
             row = {}
@@ -1400,41 +1408,41 @@ class CliView(object):
         if 'like' in kwargs:
             like = set(kwargs['like'])
 
-        for node_id, value in results.iteritems():
+        for node_id, value in list(results.items()):
 
             if show_node_name:
                 prefix = cluster.get_node_names()[node_id]
                 node = cluster.get_node(node_id)[0]
-                print "%s%s (%s) returned%s:" % (terminal.bold(), prefix, node.ip, terminal.reset())
+                print("%s%s (%s) returned%s:" % (terminal.bold(), prefix, node.ip, terminal.reset()))
 
             if isinstance(value, Exception):
-                print "%s%s%s" % (terminal.fg_red(), value, terminal.reset())
-                print "\n"
+                print("%s%s%s" % (terminal.fg_red(), value, terminal.reset()))
+                print("\n")
             else:
-                if isinstance(value, types.StringType):
+                if is_str(value):
                     delimiter = find_delimiter_in(value)
                     value = value.split(delimiter)
 
                     if like:
                         likes = compile_likes(like)
-                        value = filter(likes.search, value)
+                        value = list(filter(likes.search, value))
 
                     if line_sep:
                         value = "\n".join(value)
                     else:
                         value = delimiter.join(value)
 
-                    print value
+                    print(value)
                     if show_node_name:
-                        print
+                        print()
                 else:
                     i = 1
-                    for name, val in value.iteritems():
-                        print i, ": ", name
-                        print "    ", val
+                    for name, val in list(value.items()):
+                        print(i, ": ", name)
+                        print("    ", val)
                         i += 1
                     if show_node_name:
-                        print
+                        print()
 
     @staticmethod
     def group_output(output):
@@ -1566,12 +1574,12 @@ class CliView(object):
                 st = datetime.datetime.fromtimestamp(
                     ts).strftime(' %Y-%m-%d %H:%M:%S')
                 command = " ".join(line)
-                print >> real_stdout, "[%s '%s' sleep: %ss iteration: %s" % (
-                    st, command, sleep, count),
+                print("[%s '%s' sleep: %ss iteration: %s" % (
+                    st, command, sleep, count), end=' ', file=real_stdout)
                 if num_iterations:
-                    print >> real_stdout, " of %s" % (num_iterations),
-                print >> real_stdout, "]"
-                print >> real_stdout, result
+                    print(" of %s" % (num_iterations), end=' ', file=real_stdout)
+                print("]", file=real_stdout)
+                print(result, file=real_stdout)
 
                 if num_iterations and num_iterations <= count:
                     break
@@ -1583,7 +1591,7 @@ class CliView(object):
             return
         finally:
             sys.stdout = real_stdout
-            print ''
+            print(str(''))
 
 ###########################
 ### Health Print functions
@@ -1594,22 +1602,22 @@ class CliView(object):
         if d is None:
             return
         if isinstance(d, tuple):
-            print d
+            print(d)
         elif isinstance(d, dict):
             print_dict(d)
         else:
-            print str(d)
+            print(str(d))
 
     @staticmethod
     def _print_counter_list(data, header=None):
         if not data:
             return
-        print "\n" + ("_" * 100) + "\n"
+        print("\n" + ("_" * 100) + "\n")
         if header:
-            print terminal.fg_red() + terminal.bold() + str(header) + " ::\n" + terminal.unbold() + terminal.fg_clear()
+            print(terminal.fg_red() + terminal.bold() + str(header) + " ::\n" + terminal.unbold() + terminal.fg_clear())
         for d in data:
             CliView._print_data(d)
-            print ""
+            print("")
 
     @staticmethod
     def _print_status(status_counters, verbose=False):
@@ -1622,14 +1630,14 @@ class CliView(object):
         s += CliView._get_header("Skipped") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER]
                                                         - status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER]
                                                         - status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])])
-        print s
+        print(s)
 
     @staticmethod
     def _print_debug_messages(ho):
         try:
             for d in ho[HealthResultType.DEBUG_MESSAGES]:
                 try:
-                    print "Value of %s:" % (d[1])
+                    print("Value of %s:" % (d[1]))
                     CliView._print_data(d[2])
                 except Exception:
                     pass
@@ -1905,14 +1913,14 @@ class CliView(object):
                 all_success_cnt += total_success_msg_cnt
 
         if all_success_cnt > 0:
-            print "\n\n" + terminal.bold() + str(" %s: count(%d) " %("PASS", all_success_cnt)).center(H_width, "_") + terminal.unbold()
-            print all_success_str
+            print("\n\n" + terminal.bold() + str(" %s: count(%d) " %("PASS", all_success_cnt)).center(H_width, "_") + terminal.unbold())
+            print(all_success_str)
 
         if all_fail_cnt > 0:
-            print "\n\n" + terminal.bold() + str(" %s: count(%d) " %("FAIL", all_fail_cnt)).center(H_width, "_") + terminal.unbold()
-            print all_fail_str
+            print("\n\n" + terminal.bold() + str(" %s: count(%d) " %("FAIL", all_fail_cnt)).center(H_width, "_") + terminal.unbold())
+            print(all_fail_str)
 
-        print "_" * H_width + "\n"
+        print("_" * H_width + "\n")
 
     @staticmethod
     def print_health_output(ho, verbose=False, debug=False, output_file=None, output_filter_category=[], output_filter_warning_level=None):
@@ -2007,7 +2015,7 @@ class CliView(object):
             Extractors.byte_extractor('license_data_on_disk')
         )
 
-        for ns, ns_stats in stats.iteritems():
+        for ns, ns_stats in list(stats.items()):
             if isinstance(ns_stats, Exception):
                 row = {}
             else:
@@ -2022,45 +2030,45 @@ class CliView(object):
 
     @staticmethod
     def _summary_namespace_list_view(stats, **ignore):
-        print "Namespaces"
-        print "=========="
-        print
+        print("Namespaces")
+        print("==========")
+        print()
         for ns in stats:
             index = 1
-            print "   " + ("%s"%(terminal.fg_red() + ns + terminal.fg_clear())
-                           if stats[ns]["migrations_in_progress"] else ns)
-            print "   " + "=" * len(ns)
+            print("   " + ("%s"%(terminal.fg_red() + ns + terminal.fg_clear())
+                           if stats[ns]["migrations_in_progress"] else ns))
+            print("   " + "=" * len(ns))
 
-            print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
+            print(CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
                 stats[ns]["devices_total"], stats[ns]["devices_per_node"],
-                " (number differs across nodes)" if not stats[ns]["devices_count_same_across_nodes"] else "")
+                " (number differs across nodes)" if not stats[ns]["devices_count_same_across_nodes"] else ""))
             index += 1
 
-            print CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
+            print(CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
                 filesize.size(stats[ns]["memory_total"]).strip(), 100.00 - stats[ns]["memory_available_pct"],
                 filesize.size(stats[ns]["memory_total"] - stats[ns]["memory_aval"]).strip(),
-                stats[ns]["memory_available_pct"], filesize.size(stats[ns]["memory_aval"]).strip())
+                stats[ns]["memory_available_pct"], filesize.size(stats[ns]["memory_aval"]).strip()))
             index += 1
 
             if stats[ns]["disk_total"]:
-                print CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
+                print(CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
                     filesize.size(stats[ns]["disk_total"]).strip(), stats[ns]["disk_used_pct"],
                     filesize.size(stats[ns]["disk_used"]).strip(), stats[ns]["disk_available_pct"],
-                    filesize.size(stats[ns]["disk_aval"]).strip())
+                    filesize.size(stats[ns]["disk_aval"]).strip()))
                 index += 1
 
-            print CliView.get_summary_line_prefix(index, "Replication Factor") + "%s"%(",".join([str(rf) for rf in stats[ns]["repl_factor"]]))
+            print(CliView.get_summary_line_prefix(index, "Replication Factor") + "%s"%(",".join([str(rf) for rf in stats[ns]["repl_factor"]])))
             index += 1
 
             if "cache_read_pct" in stats[ns]:
-                print CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.sif))
+                print(CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.sif)))
                 index += 1
 
             if "rack_aware" in stats[ns]:
-                print CliView.get_summary_line_prefix(index, "Rack-aware") + "%s"%(str(stats[ns]["rack_aware"]))
+                print(CliView.get_summary_line_prefix(index, "Rack-aware") + "%s"%(str(stats[ns]["rack_aware"])))
                 index += 1
 
-            print CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.sif))
+            print(CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.sif)))
             index += 1
             s = ""
 
@@ -2071,62 +2079,62 @@ class CliView(object):
                 if s:
                     s += ", "
                 s += "%s on-disk"%(filesize.size(stats[ns]["license_data_on_disk"]))
-            print CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s
+            print(CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s)
             index += 1
 
             if "compression_ratio" in stats[ns]:
-                print CliView.get_summary_line_prefix(index, "Compression-ratio") + "%s"%(str(stats[ns]["compression_ratio"]))
+                print(CliView.get_summary_line_prefix(index, "Compression-ratio") + "%s"%(str(stats[ns]["compression_ratio"])))
                 index += 1
-            print
+            print()
 
     @staticmethod
     def print_summary(summary, list_view=True):
 
         index = 1
-        print "Cluster" + ("  (%s)"%(terminal.fg_red() + "Migrations in Progress" + terminal.fg_clear())
-                           if summary["CLUSTER"]["migrations_in_progress"] else "")
-        print "=======" + ("==========================" if summary["CLUSTER"]["migrations_in_progress"] else "")
-        print
+        print("Cluster" + ("  (%s)"%(terminal.fg_red() + "Migrations in Progress" + terminal.fg_clear())
+                           if summary["CLUSTER"]["migrations_in_progress"] else ""))
+        print("=======" + ("==========================" if summary["CLUSTER"]["migrations_in_progress"] else ""))
+        print()
 
         if "cluster_name" in summary["CLUSTER"] and len(summary["CLUSTER"]["cluster_name"]) > 0:
-            print CliView.get_summary_line_prefix(index, "Cluster Name") + ", ".join(summary["CLUSTER"]["cluster_name"])
+            print(CliView.get_summary_line_prefix(index, "Cluster Name") + ", ".join(summary["CLUSTER"]["cluster_name"]))
             index += 1
 
-        print CliView.get_summary_line_prefix(index, "Server Version") + ", ".join(summary["CLUSTER"]["server_version"])
+        print(CliView.get_summary_line_prefix(index, "Server Version") + ", ".join(summary["CLUSTER"]["server_version"]))
         index += 1
 
-        print CliView.get_summary_line_prefix(index, "OS Version") + ", ".join(summary["CLUSTER"]["os_version"])
+        print(CliView.get_summary_line_prefix(index, "OS Version") + ", ".join(summary["CLUSTER"]["os_version"]))
         index += 1
 
-        print CliView.get_summary_line_prefix(index, "Cluster Size") + ", ".join([str(cs) for cs in summary["CLUSTER"]["cluster_size"]])
+        print(CliView.get_summary_line_prefix(index, "Cluster Size") + ", ".join([str(cs) for cs in summary["CLUSTER"]["cluster_size"]]))
         index += 1
 
-        print CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
+        print(CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
             summary["CLUSTER"]["device"]["count"], summary["CLUSTER"]["device"]["count_per_node"],
-            " (number differs across nodes)" if not summary["CLUSTER"]["device"]["count_same_across_nodes"] else "")
+            " (number differs across nodes)" if not summary["CLUSTER"]["device"]["count_same_across_nodes"] else ""))
         index += 1
 
-        print CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
+        print(CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
             filesize.size(summary["CLUSTER"]["memory"]["total"]).strip(), 100.00 - summary["CLUSTER"]["memory"]["aval_pct"],
             filesize.size(summary["CLUSTER"]["memory"]["total"] - summary["CLUSTER"]["memory"]["aval"]).strip(),
-            summary["CLUSTER"]["memory"]["aval_pct"], filesize.size(summary["CLUSTER"]["memory"]["aval"]).strip())
+            summary["CLUSTER"]["memory"]["aval_pct"], filesize.size(summary["CLUSTER"]["memory"]["aval"]).strip()))
         index += 1
 
-        print CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
+        print(CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
             filesize.size(summary["CLUSTER"]["device"]["total"]).strip(), summary["CLUSTER"]["device"]["used_pct"],
             filesize.size(summary["CLUSTER"]["device"]["used"]).strip(), summary["CLUSTER"]["device"]["aval_pct"],
-            filesize.size(summary["CLUSTER"]["device"]["aval"]).strip())
+            filesize.size(summary["CLUSTER"]["device"]["aval"]).strip()))
         index += 1
 
-        print CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + "%s in-memory, %s on-disk"%(filesize.size(summary["CLUSTER"]["license_data"]["memory_size"]),filesize.size(summary["CLUSTER"]["license_data"]["device_size"]))
+        print(CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + "%s in-memory, %s on-disk"%(filesize.size(summary["CLUSTER"]["license_data"]["memory_size"]),filesize.size(summary["CLUSTER"]["license_data"]["device_size"])))
         index += 1
 
-        print CliView.get_summary_line_prefix(index, "Active Namespaces") + "%d of %d"%(summary["CLUSTER"]["active_ns"], summary["CLUSTER"]["ns_count"])
+        print(CliView.get_summary_line_prefix(index, "Active Namespaces") + "%d of %d"%(summary["CLUSTER"]["active_ns"], summary["CLUSTER"]["ns_count"]))
         index += 1
 
-        print CliView.get_summary_line_prefix(index, "Features") + ", ".join(sorted(summary["CLUSTER"]["active_features"]))
+        print(CliView.get_summary_line_prefix(index, "Features") + ", ".join(sorted(summary["CLUSTER"]["active_features"])))
 
-        print "\n"
+        print("\n")
 
         if list_view:
             CliView._summary_namespace_list_view(summary["FEATURES"]["NAMESPACE"])
@@ -2150,9 +2158,9 @@ class CliView(object):
                         )
         t = Table(title, column_names, group_by=0, sort_by=1)
 
-        for node_key, n_stats in pmap_data.iteritems():
+        for node_key, n_stats in list(pmap_data.items()):
 
-            for ns, ns_stats in n_stats.iteritems():
+            for ns, ns_stats in list(n_stats.items()):
                 row = ns_stats
                 row['node'] = prefixes[node_key]
                 row['namespace'] = ns

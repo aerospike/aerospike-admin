@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import absolute_import
+from builtins import str
+from builtins import range
+
 import re
 import copy
 import logging
-import section_filter_list
-from utils import is_valid_section, get_section_name_from_id, is_bool, is_collision_allowed_for_section
+from . import section_filter_list
+from .utils import is_valid_section, get_section_name_from_id, is_bool, is_collision_allowed_for_section
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
@@ -107,7 +111,7 @@ def get_cluster_name(parsed_map):
 			'service' in parsed_map[node]['config'] and \
 				'cluster-name' in parsed_map[node]['config']['service']:
 			# Return cluster name when get a valid one.
-			if parsed_map[node]['config']['service']['cluster-name'] is not "null":
+			if parsed_map[node]['config']['service']['cluster-name'] != "null":
 				return parsed_map[node]['config']['service']['cluster-name']
 	return "null"
 
@@ -400,7 +404,7 @@ def _get_nodes_from_network_info(imap):
             if skip_lines == 0:
                 # Get node ip
                 node_line = info_section_lines[i].split()
-                if node_line[nodeid].rstrip() is '' or node_line[nodeid] is '.':
+                if node_line[nodeid].rstrip() == '' or node_line[nodeid] == '.':
                     logger.debug(
                         "Node_id absent in info_network section line" + info_section_lines[i])
                     continue
@@ -528,7 +532,7 @@ def _parse_multi_column_stat_sub_section(raw_section, parsed_map, section_name):
     sec_line = raw_section[0]
     section = raw_section[1:]
     if '~' in sec_line:
-        split_names = re.split("~*", sec_line)
+        split_names = re.split("~+", sec_line)
         sub_section_name = split_names[1]
         if not sub_section_name.strip() and split_names[0]:
             # Lengthy section names might have single ~ at the end, for which we get section name at index 0.
@@ -629,7 +633,7 @@ def _parse_multi_column_config_sub_section(raw_section, parsed_map, section_name
     section = raw_section[1:]
 
     if '~' in sec_line:
-        sub_section_name = re.split("~*", sec_line)[1]
+        sub_section_name = re.split("~+", sec_line)[1]
     else:
         sub_section_name = sec_line
     SEC_MAP = {'ns_section': 'namespace',
@@ -704,7 +708,7 @@ def _parse_multi_column_sub_section(raw_section, parsed_map, final_section_name,
     section = raw_section[1:]
 
     if '~' in sec_line:
-        sub_section_name = re.split("~*", sec_line)[1]
+        sub_section_name = re.split("~+", sec_line)[1]
     else:
         sub_section_name = sec_line
     xdr_section = 'xdr'
@@ -1139,7 +1143,7 @@ def _parse_hist_dump(section):
     if not parsed_section:
         return namespace, parsed_section
 
-    for node, hist_dump in parsed_section.items():
+    for node, hist_dump in list(parsed_section.items()):
         if not node or not hist_dump or isinstance(hist_dump, Exception) or ":" not in hist_dump:
             continue
 
@@ -1162,7 +1166,7 @@ def _parse_hist_dump_section(sec_id, nodes, imap, parsed_map):
         if not namespace:
             continue
 
-        for node, hist_dump in hist_dump_section.items():
+        for node, hist_dump in list(hist_dump_section.items()):
             map_ptr = None
             if node not in parsed_map:
                 parsed_map[node] = {}
@@ -1195,7 +1199,7 @@ def _parse_asinfo_node_value_section(sec_id, imap, parsed_map):
 
     for raw_dump in imap[raw_section_name]:
         try:
-            for node, val in eval(raw_dump[0]).items():
+            for node, val in list(eval(raw_dump[0]).items()):
                 map_ptr = None
                 if node not in parsed_map:
                     parsed_map[node] = {}
