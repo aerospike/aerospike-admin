@@ -595,10 +595,7 @@ def is_str(data):
     if data is None:
         return False
 
-    try:
-        return isinstance(data, basestring)
-    except:
-        return isinstance(data, str)
+    return isinstance(data, str)
 
 
 def bytes_to_str(data):

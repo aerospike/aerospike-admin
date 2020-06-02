@@ -1,6 +1,6 @@
 #!/bin/sh
 """:"
-for interp in python python3 python2 ; do
+for interp in python python3 ; do
    command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
 done
 echo >&2 "No Python interpreter found!"
@@ -21,16 +21,11 @@ exit 1
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import hex
-from builtins import str
-from builtins import range
-from builtins import object
-
 import os
 import warnings
 
 from lib.client.ssl_util import dnsname_match
-from lib.utils.util import is_str, bytes_to_str, str_to_bytes
+from lib.utils.util import bytes_to_str, str_to_bytes
 from os import listdir
 from os.path import isfile, join
 
@@ -339,8 +334,8 @@ class SSLContext(object):
         try:
             components = []
             for component in cert.get_subject().get_components():
-                component_string = tuple(bytes_to_str(elem) for elem in component)
-                components.append(component_string)
+                component_tuple = tuple(bytes_to_str(elem) for elem in component)
+                components.append(component_tuple)
         except Exception as e:
             raise Exception("Failed to read certificate components: " + str(e))
 
@@ -571,7 +566,7 @@ class SSLContext(object):
         if keyfile_password is None:
             return keyfile_password
 
-        if not is_str(keyfile_password):
+        if not isinstance(keyfile_password, str):
             raise Exception("Bad keyfile_password: not string")
 
         keyfile_password = keyfile_password.strip()
