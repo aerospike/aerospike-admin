@@ -12,12 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import map
-from builtins import str
-from builtins import object
-from past.utils import old_div
-
 import copy
 import logging
 import os
@@ -565,7 +559,7 @@ class Node(object):
         if not services or isinstance(services, Exception):
             return []
 
-        s = list(map(util.info_to_tuple, util.info_to_list(services)))
+        s = map(util.info_to_tuple, util.info_to_list(services))
         return [(v[0], int(v[1]), self.tls_name) for v in s]
 
     # post 3.10 services
@@ -985,7 +979,7 @@ class Node(object):
             conf_path = "/etc/aerospike/aerospike.conf"
             self.conf_data = conf_parser.parse_file(conf_path)
             if "namespace" in self.conf_data:
-                for ns in list(self.conf_data["namespace"].keys()):
+                for ns in self.conf_data["namespace"].keys():
                     if "service" in self.conf_data["namespace"][ns]:
                         self.conf_data["namespace"][ns] = self.conf_data["namespace"][ns]["service"]
 
@@ -1016,7 +1010,7 @@ class Node(object):
                         o_t = float((o_sum * t_p) / 100.00)
                         n_t = float((n_sum * row[i + 2]) / 100.00)
                         t_row[
-                            i + 2] = round(float(old_div(((o_t + n_t) * 100), (o_sum + n_sum))), 2)
+                            i + 2] = round(float(((o_t + n_t) * 100) // (o_sum + n_sum)), 2)
                     t_row[1] = round(o_sum + n_sum, 2)
                 updated = True
                 break
@@ -1215,8 +1209,8 @@ class Node(object):
         roster_data = util.info_to_dict_multi_level(roster_data, "ns")
         list_fields = ["roster", "pending_roster", "observed_nodes"]
 
-        for ns, ns_roster_data in list(roster_data.items()):
-            for k, v in list(ns_roster_data.items()):
+        for ns, ns_roster_data in roster_data.items():
+            for k, v in ns_roster_data.items():
                 if k not in list_fields:
                     continue
 
@@ -1243,10 +1237,10 @@ class Node(object):
         rack_data = util.info_to_dict_multi_level(rack_data, "ns")
         rack_dict = {}
 
-        for ns, ns_rack_data in list(rack_data.items()):
+        for ns, ns_rack_data in rack_data.items():
             rack_dict[ns] = {}
 
-            for k, v in list(ns_rack_data.items()):
+            for k, v in ns_rack_data.items():
                 if k == "ns":
                     continue
 
