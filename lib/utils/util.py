@@ -603,19 +603,8 @@ def is_str(data):
 
 def bytes_to_str(data):
     if data is not None and not is_str(data):
-        try:
-            # python3
-            return data.decode("utf-8")
-        except Exception:
-            pass
+        return data.decode("utf-8")
 
-    # python2.7
-    return data
 
 def str_to_bytes(data):
-    try:
-        # python3
-        return str.encode(data, "utf-8")
-    except:
-        # python2.7
-        return data
+    return str.encode(data, "utf-8")
