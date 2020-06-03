@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import object
 from lib.utils.util import shell_command
 
 
-class CollectinfoReader(object):
+class CollectinfoReader():
     cinfo_log_file_identifier_key = "=ASCOLLECTINFO"
     cinfo_log_file_identifiers = ["Configuration~~~\|Configuration (.*)~", "Statistics~\|Statistics (.*)~"]
     system_log_file_identifier_key = "=ASCOLLECTINFO"
