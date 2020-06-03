@@ -190,7 +190,6 @@ class LogReader(object):
         return line[0: line.find(" GMT")]
 
     def parse_dt(self, line, dt_len=6):
-        line = bytes_to_str(line) # bytes for py3 compatibility
         prefix = line[0: line.find(" GMT")].split(",")[0]
         # remove milliseconds if available
         prefix = prefix.split(".")[0]
@@ -307,6 +306,8 @@ class LogReader(object):
             try:
                 # checking for valid line with timestamp
                 ln = f.readline()
+                if isinstance(ln, bytes): # need this check for serverlog.py's reading in binary mode
+                    ln = bytes_to_str(ln)
                 tm = self.parse_dt(ln)
                 break
             except Exception:
