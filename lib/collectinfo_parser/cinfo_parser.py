@@ -328,6 +328,7 @@ def _parse_new_collectinfo_to_imap(cinfo_path, section_list, section_skip_list, 
 
 def get_timestamp_from_file(cinfo_path):
     timestamp = ''
+    fileline = ''
     if not os.path.exists(cinfo_path):
         logger.warning("collectinfo doesn't exist at Path: " + cinfo_path)
         return
