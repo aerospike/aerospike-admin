@@ -12,10 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from builtins import object
-
-class Errors(object):
+class Errors():
     errors = {
         "HEALTH_ERROR1": "System Has Low Memory Pct",
         "HEALTH_ERROR2": "System Has Low Memory Pct",

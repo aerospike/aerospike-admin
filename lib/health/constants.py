@@ -12,19 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from builtins import object
-
 HEALTH_PARSER_VAR = "health_parser_var"
 MAJORITY = "MAJORITY_VALUE"
 
-class AssertLevel(object):
+class AssertLevel():
     CRITICAL = 0
     WARNING = 1
     INFO = 2
 
 
-class AssertResultKey(object):
+class AssertResultKey():
     FAIL_MSG = "Failmsg"
     KEYS = "Keys"
     CATEGORY = "Category"
@@ -34,11 +31,11 @@ class AssertResultKey(object):
     SUCCESS = "Success"
 
 
-class ParserResultType(object):
+class ParserResultType():
     ASSERT = "assert_result"
 
 
-class HealthResultType(object):
+class HealthResultType():
     ASSERT = "assert_summary"
     EXCEPTIONS = "exceptions"
     EXCEPTIONS_SYNTAX = "syntax"
@@ -48,7 +45,7 @@ class HealthResultType(object):
     DEBUG_MESSAGES = "debug_messages"
 
 
-class HealthResultCounter(object):
+class HealthResultCounter():
     QUERY_COUNTER = "queries"
     QUERY_SUCCESS_COUNTER = "queries_success"
     QUERY_SKIPPED_COUNTER = "queries_skipped"
