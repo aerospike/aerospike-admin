@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import str
 import copy
 
 from lib.controllerlib import BaseController, CommandHelp, CommandController
@@ -118,7 +116,7 @@ class InfoController(CollectinfoCommandController):
                                    timestamp=timestamp, **self.mods)
 
     def _convert_key_to_tuple(self, stats):
-        for key in list(stats.keys()):
+        for key in stats.keys():
             key_tuple = tuple(key.split())
             stats[key_tuple] = stats[key]
             del stats[key]
@@ -151,7 +149,7 @@ class InfoController(CollectinfoCommandController):
             old_xdr_stats = {}
             xdr5_stats = {}
 
-            for xdr_node in list(xdr_stats[timestamp].keys()):
+            for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
                 try:
                     node_xdr_build_major_version = int(builds[xdr_node][0])
@@ -202,7 +200,7 @@ class InfoController(CollectinfoCommandController):
             if not dc_stats[timestamp]:
                 continue
 
-            for dc in list(dc_stats[timestamp].keys()):
+            for dc in dc_stats[timestamp].keys():
                 try:
                     if (dc_stats[timestamp][dc]
                             and not isinstance(dc_stats[timestamp][dc], Exception)
@@ -210,7 +208,7 @@ class InfoController(CollectinfoCommandController):
                             and dc_config[timestamp][dc]
                             and not isinstance(dc_config[timestamp][dc], Exception)):
 
-                        for node in list(dc_stats[timestamp][dc].keys()):
+                        for node in dc_stats[timestamp][dc].keys():
                             if node in dc_config[timestamp][dc]:
                                 dc_stats[timestamp][dc][node].update(dc_config[timestamp][dc][node])
 
@@ -541,7 +539,7 @@ class ShowLatencyController(CollectinfoCommandController):
             namespace_set = set()
             _latency = {}
             if timestamp in namespaces:
-                _namespaces = list(namespaces[timestamp].values())
+                _namespaces = namespaces[timestamp].values()
                 for _namespace in _namespaces:
                     if isinstance(_namespace, Exception):
                         continue
@@ -681,7 +679,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             if not set_stats[timestamp]:
                 continue
             namespace_list = [ns_set.split()[0]
-                              for ns_set in list(set_stats[timestamp].keys())]
+                              for ns_set in set_stats[timestamp].keys()]
 
             try:
                 namespace_list = util.filter_list(namespace_list, self.mods['for'][:1])
@@ -689,7 +687,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 pass
 
             set_list = [ns_set.split()[1]
-                              for ns_set in list(set_stats[timestamp].keys())]
+                              for ns_set in set_stats[timestamp].keys()]
             try:
                 set_list = util.filter_list(set_list, self.mods['for'][1:2])
             except Exception:
@@ -874,14 +872,14 @@ class ShowStatisticsController(CollectinfoCommandController):
                 continue
 
             namespace_list = [ns_set_sindex.split()[0]
-                              for ns_set_sindex in list(sindex_stats[timestamp].keys())]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()]
             try:
                 namespace_list = util.filter_list(namespace_list, self.mods['for'][:1])
             except Exception:
                 pass
 
             sindex_list = [ns_set_sindex.split()[2]
-                              for ns_set_sindex in list(sindex_stats[timestamp].keys())]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()]
             try:
                 sindex_list = util.filter_list(sindex_list, self.mods['for'][1:2])
             except Exception:
@@ -1189,7 +1187,7 @@ class ListController(CollectinfoCommandController):
     @CommandHelp('Displays list of all added collectinfos files.')
     def do_all(self, line):
         cinfo_logs = self.loghdlr.all_cinfo_logs
-        for timestamp, snapshot in list(cinfo_logs.items()):
+        for timestamp, snapshot in cinfo_logs.items():
             print(terminal.bold() + str(timestamp) + terminal.unbold() + ": " + str(snapshot.cinfo_file))
 
 
