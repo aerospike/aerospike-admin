@@ -27,7 +27,7 @@ from lib.view import terminal
 VERSION_CONSTRAINT_PATTERN = "SET CONSTRAINT VERSION(.+)"
 
 
-class HealthChecker(object):
+class HealthChecker():
 
     def __init__(self):
         try:
