@@ -247,7 +247,7 @@ class HealthChecker():
 
     def _filter_health_input_data(self):
         data = copy.deepcopy(self.health_input_data)
-        for sn in data.keys():
+        for sn in list(data.keys()):
             # SNAPSHOT level
             remove_nodes = self._filter_nodes_to_remove(data[sn])
             if remove_nodes == 1:
