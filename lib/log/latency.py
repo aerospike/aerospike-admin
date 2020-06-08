@@ -1,4 +1,3 @@
-from __future__ import division
 # Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +18,6 @@ from __future__ import division
 # Imports
 #
 
-from builtins import next
-from builtins import range
-from builtins import object
-
-from past.utils import old_div
 import datetime
 import re
 
@@ -569,11 +563,11 @@ class LogLatency(object):
                 if which_slice > 0:
                     for i in range(max_bucket):
                         if i % arg_every_nth == 0:
-                            avg_overs[i] = old_div(avg_overs[i], which_slice)
-                    avg_rate = old_div(total_ops, total_seconds)
+                            avg_overs[i] = avg_overs[i] // which_slice
+                    avg_rate = total_ops // total_seconds
                     avg_stat_values = []
                     if relative_stat_path:
-                        avg_stat_values = [old_div(v,total_seconds) for v in total_stat_values]
+                        avg_stat_values = [v // total_seconds for v in total_stat_values]
 
                     for i in range(max_bucket):
                         if i % arg_every_nth:
