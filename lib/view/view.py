@@ -722,7 +722,7 @@ class CliView(object):
     # pre 5.0
     @staticmethod
     def info_old_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
-        if not max(xdr_enable.itervalues()):
+        if not max(xdr_enable.values()):
             return
 
         prefixes = cluster.get_node_names()
