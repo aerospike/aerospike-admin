@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import str
-from builtins import object
-from past.utils import old_div
-
 import datetime
 import re
 import time
@@ -125,7 +120,7 @@ class LogReader(object):
                     matched_count += 1
             except Exception:
                 pass
-        if matched_count > (old_div(len(lines),2)):
+        if matched_count > (len(lines) // 2):
             return True
         return False
 
@@ -240,7 +235,7 @@ class LogReader(object):
             else:
                 return None, None
 
-        jump = old_div((max - min), 2)
+        jump = (max - min) // 2
         f.seek(int(jump) + min, 0)
         self._seek_to(f, '\n')
         last_read = f.tell()
