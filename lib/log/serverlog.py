@@ -12,12 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import next
-from builtins import zip
-from builtins import object
-from past.utils import old_div
-
 import datetime
 import hashlib
 import pipes
@@ -41,7 +35,7 @@ class ServerLog(object):
         self.file_name = file_name
         self.reader = reader
         self.indices = self.reader.generate_server_log_indices(self.file_name)
-        self.file_stream = open(self.file_name, "rb") # read in binary mode to enable relative seeks
+        self.file_stream = open(self.file_name, "rb") # read in binary mode to enable relative seeks in Python3
         self.file_stream.seek(0, 0)
 
         self.server_start_tm = self.reader.parse_dt(
@@ -160,10 +154,10 @@ class ServerLog(object):
                   slice_duration="10", every_nth_slice=1, upper_limit_check="", bucket_count=3, every_nth_bucket=1,
                   read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None,
                   show_relative_stats=False):
-        if is_str(search_strs):
+        if isinstance(search_strs, str):
             search_strs = [search_strs]
         self.search_strings = [search_str for search_str in search_strs]
-        if is_str(ignore_strs):
+        if isinstance(ignore_strs, str):
             ignore_strs = [ignore_strs]
         self.ignore_strs = ignore_strs
         self.is_and = is_and
@@ -198,7 +192,7 @@ class ServerLog(object):
             while(True):
                 self.read_block = []
                 self.read_block = self.file_stream.readlines(READ_BLOCK_BYTES)
-                self.read_block = [bytes_to_str(line) for line in self.read_block]
+                self.read_block = [bytes_to_str(line) for line in self.read_block] # convert bytes from rb file to string for Python3
                 self.read_block_count += 1
                 if not self.read_block or self.read_all_lines:
                     break
@@ -404,7 +398,7 @@ class ServerLog(object):
         if current_line_tm >= old_slice_end:
             d = current_line_tm - old_slice_start
             slice_jump = int(
-                old_div((d.seconds + 86400 * d.days), slice_duration.seconds))
+                (d.seconds + 86400 * d.days) // slice_duration.seconds)
             slice_start = old_slice_start + slice_duration * slice_jump
             slice_end = slice_start + slice_duration
             return slice_start, slice_end, slice_jump
