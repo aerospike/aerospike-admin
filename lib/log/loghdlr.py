@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import next
-from builtins import str
-from builtins import range
-from builtins import object
 import os
 import re
 import hashlib
@@ -112,7 +108,7 @@ class Loghdlr(object):
         else:
             server_list = self.selected_logs
 
-        for server in list(server_list.keys()):
+        for server in server_list.keys():
             log_entries[server] = server_list[server].file_name
 
         return log_entries
@@ -145,7 +141,7 @@ class Loghdlr(object):
         log_names = sorted(self.all_logs.keys())
 
         if indices == 'all' or 'all' in indices:
-            indices = list(range(len(self.all_logs)))
+            indices = range(len(self.all_logs))
 
         for index in indices:
             try:
@@ -172,7 +168,7 @@ class Loghdlr(object):
 
         all_log_keys = sorted(all_list.keys())
         if indices == 'all' or 'all' in indices:
-            indices = list(range(len(all_log_keys)))
+            indices = range(len(all_log_keys))
 
         for index in indices:
             try:
@@ -434,7 +430,7 @@ class Loghdlr(object):
         keys_in_input = []
         result_count = 0
 
-        for key in list(file_streams.keys()):
+        for key in file_streams.keys():
             if not return_strings:
                 merge_result[key] = {}
 
@@ -455,7 +451,7 @@ class Loghdlr(object):
             tm_keys[key] = {}
             if not return_strings:
                 if not keys_in_input:
-                    keys_in_input = list(res.keys())
+                    keys_in_input = res.keys()
 
             tm_keys[key] = tm
             result[key] = res
@@ -467,7 +463,7 @@ class Loghdlr(object):
             need_to_process = False
             try:
                 min_keys = [
-                    k for k, x in list(tm_keys.items()) if not any(y < x for y in list(tm_keys.values()))]
+                    k for k, x in tm_keys.items() if not any(y < x for y in tm_keys.values())]
             except Exception:
                 break
 
@@ -540,13 +536,13 @@ class Loghdlr(object):
                 if return_strings:
                     continue
 
-                for key in list(file_streams.keys()):
+                for key in file_streams.keys():
                     merge_result[key] = {}
 
         if not latency_end:
             yield merge_result
         else:
-            self._balance_dict(latency_end, list(file_streams.keys()), default_value)
+            self._balance_dict(latency_end, file_streams.keys(), default_value)
             for file_key in latency_end:
                 if file_key not in merge_result or not merge_result[file_key]:
                     merge_result[file_key] = latency_end[file_key]
@@ -570,7 +566,7 @@ class Loghdlr(object):
                                              default_value)
 
         for _key in keys:
-            if not _key in list(data.keys()) or not data[_key]:
+            if not _key in data.keys() or not data[_key]:
                 data[_key] = structure
 
     def _get_dict_structure(self, data, val=[]):
@@ -578,7 +574,7 @@ class Loghdlr(object):
             return val
         structure = {}
 
-        for _key in list(data.keys()):
+        for _key in data.keys():
             if not isinstance(data[_key], dict):
                 structure[_key] = val
             else:
