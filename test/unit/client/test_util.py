@@ -114,7 +114,7 @@ class UtilTest(unittest.TestCase):
         self.assertEqual(result, expected, "parse_peers_string did not return the expected result")
 
     def test_concurrent_map(self):
-        value = list(range(10))
+        value = range(10)
         expected = [v*v for v in value]
         result = util.concurrent_map(lambda v: v*v, value)
         self.assertEqual(result, expected, "concurrent_map did not return the expected result")
