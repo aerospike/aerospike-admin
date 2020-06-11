@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import str
-from past.builtins import basestring
-from builtins import object
-
 import collections
 import json
 import os
@@ -169,12 +164,12 @@ def _loadfile(fname, logger):
             raise ImportError("No module named toml")
 
         include_files = []
-        if "include" in list(conf_dict.keys()):
-            if "file" in list(conf_dict["include"].keys()):
+        if "include" in conf_dict.keys():
+            if "file" in conf_dict["include"].keys():
                 f = conf_dict["include"]["file"]
                 include_files.append(os.path.expanduser(f))
 
-            if "directory" in list(conf_dict["include"].keys()):
+            if "directory" in conf_dict["include"].keys():
                 d = conf_dict["include"]["directory"]
                 include_files = include_files + sorted([os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(d)) for f in fn])
 
@@ -190,14 +185,6 @@ def _loadfile(fname, logger):
             raise ImportError("No module named jsonschema")
 
     return conf_dict
-
-def decode(v):
-    if isinstance(v, basestring):
-        if len(v) == 0:
-            return None
-        return str(v)
-    else:
-        return v
 
 def _flatten(conf_dict, instance=None):
     # _flatten global and asadm specific property
@@ -219,20 +206,20 @@ def _flatten(conf_dict, instance=None):
             sections.append("asadm")
 
     for section in sections:
-        if section in list(conf_dict.keys()):
-            for k,v in list(conf_dict[section].items()):
+        if section in conf_dict.keys():
+            for k,v in conf_dict[section].items():
                 # Empty passwords are allowed do not interpret
                 # it as None
                 if k == "password":
-                    asadm_conf[decode(k.replace("-", "_"))] = str(v)
+                    asadm_conf[k.replace("-", "_")] = str(v)
                 else:
-                    asadm_conf[decode(k.replace("-", "_"))] = decode(v)
+                    asadm_conf[k.replace("-", "_")] = v
 
     return asadm_conf
 
 
 def _merge(dct, merge_dct, ignore_false=False):
-    for k, v in list(merge_dct.items()):
+    for k, v in merge_dct.items():
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
             _merge(dct[k], merge_dct[k], ignore_false=ignore_false)
@@ -252,15 +239,15 @@ def _getseeds(conf):
     # Set up default port and tls-name if not specified in
     # host string
     port = 3000
-    if "port" in list(conf.keys()) and conf["port"] is not None:
+    if "port" in conf.keys() and conf["port"] is not None:
         port = conf["port"]
 
     tls_name = None
-    if "tls_name" in list(conf.keys()) and conf["tls_name"] is not None and "tls_enable" in conf and conf["tls_enable"]:
+    if "tls_name" in conf.keys() and conf["tls_name"] is not None and "tls_enable" in conf and conf["tls_enable"]:
         tls_name = conf["tls_name"]
 
 
-    if "host" in list(conf.keys()) and conf["host"] is not None:
+    if "host" in conf.keys() and conf["host"] is not None:
         seeds = []
         hosts = conf["host"].split(",")
 

@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import str
-from past.utils import old_div
-
 byte = [
     (1024.0 ** 5, ' PB'),
     (1024.0 ** 4, ' TB'),
@@ -69,7 +65,7 @@ def size(bytes, system=byte):
     for factor, suffix in system:
         if bytes >= factor:
             break
-    amount = old_div(bytes, factor)
+    amount = bytes // factor
     if isinstance(suffix, tuple):
         singular, multiple = suffix
         if amount == 1:
