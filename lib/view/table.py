@@ -12,13 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import str
-from builtins import map
-from builtins import range
-from builtins import object
-from past.utils import old_div
-
 import re
 
 from lib.utils import filesize
@@ -26,7 +19,7 @@ from lib.utils.util import is_str
 from lib.view import terminal
 
 
-class Extractors(object):
+class Extractors():
     # standard set of extractors
 
     @staticmethod
@@ -82,8 +75,8 @@ class Extractors(object):
                     break
 
             time_stamp = int(data[column])
-            hours = old_div(time_stamp, 3600)
-            minutes = old_div((time_stamp % 3600), 60)
+            hours = time_stamp // 3600
+            minutes = (time_stamp % 3600) // 60
             seconds = time_stamp % 60
 
             return "%02d:%02d:%02d" % (hours, minutes, seconds)
@@ -91,7 +84,7 @@ class Extractors(object):
         return t_extractor
 
 
-class TitleFormats(object):
+class TitleFormats():
 
     @staticmethod
     def var_to_title(name):
@@ -104,13 +97,13 @@ class TitleFormats(object):
         return name.strip()
 
 
-class Styles(object):
+class Styles():
     # Styles
     HORIZONTAL = 0
     VERTICAL = 1
 
 
-class Table(object):
+class Table():
 
     def __init__(self, title, column_names, sort_by=0, group_by=None,
                  style=Styles.HORIZONTAL, title_format=TitleFormats.var_to_title,
@@ -134,7 +127,7 @@ class Table(object):
         self._column_display_names = []
         self._render_column_ids = set()
         for name in column_names:
-            if is_str(name):
+            if isinstance(name, str):
                 self._column_names.append(name)
                 self._column_display_names.append(title_format(name))
             elif type(name) == tuple or type(name) == list:
@@ -168,7 +161,7 @@ class Table(object):
                     # TODO - never used cell_format = self._no_alert_style
 
                 if header:
-                    max_length = max(list(map(len, cell.split(' '))))
+                    max_length = max(map(len, cell.split(' ')))
                 else:
                     max_length = len(cell)
                 if self._column_widths[i] < max_length:
@@ -293,7 +286,7 @@ class Table(object):
             else:  # style is Vertical
                 # Need to sort but messes with column widths
                 transform = sorted(
-                    list(range(len(data_to_process))), key=lambda d: data_to_process[d][self._sort_by][1])
+                    range(len(data_to_process)), key=lambda d: data_to_process[d][self._sort_by][1]) # This might need to be a list
 
                 self._data = [data_to_process[i] for i in transform]
                 first = self._column_widths[0]
@@ -372,12 +365,12 @@ class Table(object):
         total_repeat_titles = 0
         if title_every_nth:
             total_columns = len(self._render_column_display_names) - 1 # Ignoring first columns of Row Header
-            total_repeat_titles = old_div((total_columns-1),title_every_nth)
+            total_repeat_titles = (total_columns-1) // title_every_nth
         width += total_repeat_titles * self._render_column_widths[0] # Width is same as first column
         width += len(self._column_padding) * \
             (len(self._render_column_widths) + total_repeat_titles - 1)
         column_name_lines = [h.split(" ") for h in self._render_column_display_names]
-        max_deep = max(list(map(len, column_name_lines)))
+        max_deep = max(map(len, column_name_lines))
 
         output = [terminal.bold()]
         output.append(self._get_title(self._title, width=width))
@@ -464,7 +457,7 @@ class Table(object):
         total_titles = 1
         if title_every_nth:
             total_columns = len(self._render_column_widths) - 1
-            extra_header_columns = old_div((total_columns - 1), title_every_nth)
+            extra_header_columns = (total_columns - 1) // title_every_nth
             total_titles = extra_header_columns + 1  # 1 for default
         if total_titles > 1:
             slice_title_width = self._render_column_widths[0] + 1
