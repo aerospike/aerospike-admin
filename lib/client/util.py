@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import str
+from builtins import range
+from builtins import object
 import re
 import itertools
 import threading
@@ -89,7 +92,7 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ign
     if isinstance(value, Exception):
         return value
 
-    if isinstance(keyname, str):
+    if not isinstance(keyname, list):
         keyname = [keyname]
 
     value_list = info_to_list(value, delimiter1)
@@ -103,7 +106,7 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ign
         if not values or isinstance(values, Exception):
             continue
         for _k in keyname:
-            if _k not in values.keys():
+            if _k not in list(values.keys()):
                 continue
             value_dict[values[_k]] = values
     return value_dict

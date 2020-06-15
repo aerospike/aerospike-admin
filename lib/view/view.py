@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+from future import standard_library
+standard_library.install_aliases()
+from builtins import zip
+from builtins import filter
+from builtins import str
+from builtins import range
+from builtins import object
+
 import datetime
 import locale
 import sys
@@ -36,7 +45,7 @@ H_width = 80
 
 
 class CliView(object):
-    NO_PAGER, LESS, MORE, SCROLL = range(4)
+    NO_PAGER, LESS, MORE, SCROLL = list(range(4))
     pager = NO_PAGER
 
     @staticmethod
@@ -226,7 +235,7 @@ class CliView(object):
         # If set sort_by in table, it will affect total rows. TODO: implement group_by
         # So we need to add rows as Nodes ascending order. So need to sort
         # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
+        node_key_list = list(stats.keys())
         node_column_list = [prefixes[key] for key in node_key_list]
         sorted_node_list = [x for (y, x) in sorted(
             zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
@@ -438,7 +447,7 @@ class CliView(object):
         # If set sort_by in table, it will affect total rows.
         # So we need to add rows as Nodes ascending order. So need to sort
         # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
+        node_key_list = list(stats.keys())
         node_column_list = [prefixes[key] for key in node_key_list]
         sorted_node_list = [x for (y, x) in sorted(
             zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
@@ -914,7 +923,7 @@ class CliView(object):
         description = "Percentage of records having %s less than or " % (hist) + \
                       "equal to value measured in %s" % (unit)
 
-        namespaces = set(filter(likes.search, histogram.keys()))
+        namespaces = set(filter(likes.search, list(histogram.keys())))
 
         for namespace, node_data in histogram.items():
             if namespace not in namespaces or not node_data or isinstance(node_data, Exception):
@@ -946,7 +955,7 @@ class CliView(object):
         description = "Number of records having %s in the range " % (hist) + \
                       "measured in %s" % (unit)
 
-        namespaces = set(filter(likes.search, histogram.keys()))
+        namespaces = set(filter(likes.search, list(histogram.keys())))
 
         for namespace, node_data in histogram.items():
             if namespace not in namespaces:
@@ -1016,7 +1025,7 @@ class CliView(object):
 
         if not machine_wise_display:
             if like:
-                histograms = set(filter(likes.search, latency.keys()))
+                histograms = set(filter(likes.search, list(latency.keys())))
             else:
                 histograms = set(latency.keys())
 
@@ -1029,7 +1038,7 @@ class CliView(object):
 
             if machine_wise_display:
                 if like:
-                    histograms = set(filter(likes.search, data.keys()))
+                    histograms = set(filter(likes.search, list(data.keys())))
                 else:
                     histograms = set(data.keys())
             all_columns = set()
@@ -1106,18 +1115,18 @@ class CliView(object):
             config_sets = (set(service_configs[d].items())
                            for d in service_configs if service_configs[d])
             intersection = set.intersection(*config_sets)
-            column_names = dict(union - intersection).keys()
+            column_names = list(dict(union - intersection).keys())
         else:
             for config in service_configs.values():
                 if isinstance(config, Exception):
                     continue
-                column_names.update(config.keys())
+                column_names.update(list(config.keys()))
 
         column_names = sorted(column_names)
         if like:
             likes = compile_likes(like)
 
-            column_names = filter(likes.search, column_names)
+            column_names = list(filter(likes.search, column_names))
 
         if len(column_names) == 0:
             return ''
@@ -1185,7 +1194,7 @@ class CliView(object):
             else:
                 row1 = grep_result[file]["count_result"]
                 row2 = {}
-                for key in grep_result[file]["count_result"].keys():
+                for key in list(grep_result[file]["count_result"].keys()):
                     row2[key] = "|"
 
             row1['NODE'] = file
@@ -1236,7 +1245,7 @@ class CliView(object):
                 row1 = grep_result[file]["value"]
                 row2 = grep_result[file]["diff"]
                 row3 = {}
-                for key in grep_result[file]["value"].keys():
+                for key in list(grep_result[file]["value"].keys()):
                     row3[key] = "|"
 
             row1['NODE'] = file
@@ -1310,7 +1319,7 @@ class CliView(object):
                 continue
             else:
                 is_first = True
-                sub_columns_per_column = len(grep_result[file].keys())
+                sub_columns_per_column = len(list(grep_result[file].keys()))
                 relative_stats_columns = []
 
                 for key, unit in sorted(grep_result[file].keys(), key=lambda tup: str(tup[0])):
@@ -1344,7 +1353,7 @@ class CliView(object):
                     t.insert_row(row)
 
                 row = {}
-                for key in grep_result[file][tps_key].keys():
+                for key in list(grep_result[file][tps_key].keys()):
                     row[key] = "|"
 
                 row['NODE'] = "|"
@@ -1374,10 +1383,10 @@ class CliView(object):
 
         if like:
             likes = compile_likes(like)
-            filtered_keys = filter(likes.search, mapping.keys())
+            filtered_keys = list(filter(likes.search, list(mapping.keys())))
 
         else:
-            filtered_keys = mapping.keys()
+            filtered_keys = list(mapping.keys())
 
         for col1_val, col2_val in mapping.items():
             if col1_val not in filtered_keys:
@@ -1416,7 +1425,7 @@ class CliView(object):
 
                     if like:
                         likes = compile_likes(like)
-                        value = filter(likes.search, value)
+                        value = list(filter(likes.search, value))
 
                     if line_sep:
                         value = "\n".join(value)

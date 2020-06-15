@@ -27,6 +27,9 @@ exit 1
 #
 #
 
+from __future__ import print_function
+from builtins import str
+
 import sys
 import struct
 from ctypes import create_string_buffer		 # gives us pre-allocated buffers

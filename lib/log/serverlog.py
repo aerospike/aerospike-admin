@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import division
+from builtins import next
+from builtins import zip
+from builtins import object
+from past.utils import old_div
+
 import datetime
 import hashlib
 import pipes
@@ -154,10 +160,10 @@ class ServerLog(object):
                   slice_duration="10", every_nth_slice=1, upper_limit_check="", bucket_count=3, every_nth_bucket=1,
                   read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None,
                   show_relative_stats=False):
-        if isinstance(search_strs, str):
+        if is_str(search_strs):
             search_strs = [search_strs]
         self.search_strings = [search_str for search_str in search_strs]
-        if isinstance(ignore_strs, str):
+        if is_str(ignore_strs):
             ignore_strs = [ignore_strs]
         self.ignore_strs = ignore_strs
         self.is_and = is_and

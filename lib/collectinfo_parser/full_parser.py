@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import absolute_import
+
 import copy
 from datetime import datetime
 import json
@@ -64,7 +66,7 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
                 logger.info("File is already pasred_json: " + cinfo_path_name)
                 parsed_map.update(cinfo_map)
                 _missing_version = _find_missing_data_version(cinfo_map)
-                json_parsed_timestamps = cinfo_map.keys()
+                json_parsed_timestamps = list(cinfo_map.keys())
                 break
 
     parsed_conf_map = {}
@@ -121,7 +123,7 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
             parsed_map[timestamp][cluster_name] = copy.deepcopy(parsed_map[timestamp]['null'])
             (parsed_map[timestamp]).pop('null', None)
         elif 'null' not in parsed_map[timestamp] and cluster_name == 'null':
-            cluster_name = parsed_map[timestamp].keys()[0]
+            cluster_name = list(parsed_map[timestamp].keys())[0]
 
     # Insert as_stat
     _merge_nodelevel_map_to_mainmap(parsed_map, as_map, [timestamp], keys_after_node_id=["as_stat"], create_new_node=True)

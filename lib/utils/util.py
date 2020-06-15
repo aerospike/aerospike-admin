@@ -112,7 +112,7 @@ def filter_list(ilist, pattern_list):
     if not ilist or not pattern_list:
         return ilist
     likes = compile_likes(pattern_list)
-    return filter(likes.search, ilist)
+    return list(filter(likes.search, ilist))
 
 
 def clear_val_from_dict(keys, d, val):
@@ -291,7 +291,7 @@ def get_values_from_dict(d, re_keys, return_type=None):
     if not isinstance(re_keys, tuple):
         re_keys = (re_keys,)
 
-    keys = filter_list(d.keys(), list(re_keys))
+    keys = filter_list(list(d.keys()), list(re_keys))
 
     for key in keys:
         val, success = _cast(d[key], return_type=return_type)
@@ -342,7 +342,7 @@ def restructure_sys_data(content, cmd):
         content = first_key_to_upper(content)
     elif cmd == "iostat":
         try:
-            for n in content.keys():
+            for n in list(content.keys()):
                 c = content[n]
                 c = c["iostats"][-1]
                 if "device_stat" in c:
@@ -357,7 +357,7 @@ def restructure_sys_data(content, cmd):
         content = first_key_to_upper(content)
     elif cmd == "interrupts":
         try:
-            for n in content.keys():
+            for n in list(content.keys()):
                 try:
                     interrupt_list = content[n]["device_interrupts"]
                 except Exception:
@@ -382,7 +382,7 @@ def restructure_sys_data(content, cmd):
         content = first_key_to_upper(content)
     elif cmd == "df":
         try:
-            for n in content.keys():
+            for n in list(content.keys()):
                 try:
                     file_system_list = content[n]["Filesystems"]
                 except Exception:
@@ -400,7 +400,7 @@ def restructure_sys_data(content, cmd):
 
     elif cmd == "scheduler":
         try:
-            for n in content.keys():
+            for n in list(content.keys()):
                 c = content[n]
                 c = c["scheduler_stat"]
                 sch = {}
@@ -495,7 +495,7 @@ def mbytes_to_bytes(data):
         return data * 1048576
 
     if isinstance(data, dict):
-        for _k in data.keys():
+        for _k in list(data.keys()):
             data[_k] = copy.deepcopy(mbytes_to_bytes(data[_k]))
         return data
 

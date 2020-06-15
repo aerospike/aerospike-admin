@@ -16,6 +16,16 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyser / log-analyser)
 #############################################################################################################
 
+
+from __future__ import division
+from __future__ import print_function
+from future import standard_library
+standard_library.install_aliases()
+from builtins import map
+from builtins import str
+from builtins import range
+from past.utils import old_div
+
 import json
 import logging
 import operator
@@ -536,9 +546,9 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
     namespace_stats = util.flip_keys(namespace_stats)
     set_stats = util.flip_keys(set_stats)
 
-    summary_dict = _initialize_summary_output(namespace_stats.keys())
+    summary_dict = _initialize_summary_output(list(namespace_stats.keys()))
 
-    total_nodes = len(service_stats.keys())
+    total_nodes = len(list(service_stats.keys()))
 
     cl_nodewise_device_counts = {}
 
@@ -583,7 +593,7 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
         cl_nodewise_device_counts = util.add_dicts(cl_nodewise_device_counts, device_counts)
 
         ns_total_devices = sum(device_counts.values())
-        ns_total_nodes = len(ns_stats.keys())
+        ns_total_nodes = len(list(ns_stats.keys()))
 
         if ns_total_devices:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = ns_total_devices
@@ -635,8 +645,8 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
                                                      default_value=False, return_type=bool).values())[0]
 
         if data_in_memory:
-            cache_read_pcts = util.get_value_from_second_level_of_dict(ns_stats, ("cache_read_pct", "cache-read-pct"),
-                                                                       default_value="N/E", return_type=int).values()
+            cache_read_pcts = list(util.get_value_from_second_level_of_dict(ns_stats, ("cache_read_pct", "cache-read-pct"),
+                                                                       default_value="N/E", return_type=int).values())
             if cache_read_pcts:
                 try:
                     summary_dict["FEATURES"]["NAMESPACE"][ns]["cache_read_pct"] = sum(cache_read_pcts) // len(
@@ -943,7 +953,7 @@ def _restructure_new_log_histogram(histogram_data):
                 continue
 
             for k in columns:
-                if k not in host_data['values'].keys():
+                if k not in list(host_data['values'].keys()):
                     host_data['values'][k] = 0
 
         ns_data['columns'] = sorted(columns, key=_string_to_bytes)
@@ -956,7 +966,7 @@ def _parse_old_histogram(histogram, histogram_data):
     datum.pop(0)  # don't care about ns, hist_name, or length
     width = int(datum.pop(0))
     datum[-1] = datum[-1].split(';')[0]
-    datum = map(int, datum)
+    datum = list(map(int, datum))
     return {"histogram": histogram, "width": width, "data": datum}
 
 
@@ -984,7 +994,7 @@ def _parse_new_linear_histogram(histogram, histogram_data):
     if result:
         buckets = result["data"]
         buckets = buckets.split(',')
-        result["data"] = map(int, buckets)
+        result["data"] = list(map(int, buckets))
         result["width"] = int(result["width"])
         result["histogram"] = histogram
 
@@ -1267,13 +1277,13 @@ def _collect_cpuinfo(cmd=''):
 
             if len(items) == 2:
                 key = items[1].strip()
-                if key in cpu_info.keys():
+                if key in list(cpu_info.keys()):
                     cpu_info[key] = cpu_info[key] + 1
                 else:
                     cpu_info[key] = 1
         out += "\nvendor_id\tprocessor count"
 
-        for key in cpu_info.keys():
+        for key in list(cpu_info.keys()):
             out += "\n" + key + "\t" + str(cpu_info[key])
 
     return out, None

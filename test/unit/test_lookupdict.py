@@ -55,7 +55,7 @@ class PrefixDictTest(unittest.TestCase):
         self.assertRaises(KeyError, self.test_dict.get_key, 'asdf')
 
     def test_keys(self):
-        keys = self.test_dict.keys()
+        keys = list(self.test_dict.keys())
         self.assertTrue(len(keys), 4)
         self.assertTrue('u01.citrusleaf.local' in keys)
         self.assertTrue('u02.citrusleaf.local' in keys)
@@ -121,7 +121,7 @@ class LookupDictTest(unittest.TestCase):
         self.assertRaises(KeyError, self.test_dict.get_key, 'asdf')
 
     def test_keys(self):
-        keys = self.test_dict.keys()
+        keys = list(self.test_dict.keys())
         self.assertTrue(len(keys), 4)
         self.assertTrue('192.168.0.11' in keys)
         self.assertTrue('192.168.0.12' in keys)

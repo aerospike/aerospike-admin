@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import division
+from builtins import str
+from builtins import map
+from builtins import range
+from builtins import object
+from past.utils import old_div
+
 import re
 
 from lib.utils import filesize
@@ -161,7 +168,7 @@ class Table():
                     # TODO - never used cell_format = self._no_alert_style
 
                 if header:
-                    max_length = max(map(len, cell.split(' ')))
+                    max_length = max(list(map(len, cell.split(' '))))
                 else:
                     max_length = len(cell)
                 if self._column_widths[i] < max_length:
@@ -286,7 +293,7 @@ class Table():
             else:  # style is Vertical
                 # Need to sort but messes with column widths
                 transform = sorted(
-                    range(len(data_to_process)), key=lambda d: data_to_process[d][self._sort_by][1])
+                    list(range(len(data_to_process))), key=lambda d: data_to_process[d][self._sort_by][1])
 
                 self._data = [data_to_process[i] for i in transform]
                 first = self._column_widths[0]

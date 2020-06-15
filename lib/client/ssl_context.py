@@ -21,6 +21,11 @@ exit 1
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import hex
+from builtins import str
+from builtins import range
+from builtins import object
+
 import os
 import warnings
 
@@ -566,7 +571,7 @@ class SSLContext(object):
         if keyfile_password is None:
             return keyfile_password
 
-        if not isinstance(keyfile_password, str):
+        if not is_str(keyfile_password):
             raise Exception("Bad keyfile_password: not string")
 
         keyfile_password = keyfile_password.strip()

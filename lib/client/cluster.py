@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+from builtins import zip
+from builtins import str
+from builtins import object
+
 import copy
 import re
 import threading
@@ -82,7 +87,7 @@ class Cluster(object):
         self._same_name_nodes = False
 
     def __str__(self):
-        nodes = self.nodes.values()
+        nodes = list(self.nodes.values())
         if len(nodes) == 0:
             return ""
 
@@ -114,7 +119,7 @@ class Cluster(object):
         if not self._same_name_nodes:
             for node_key, node in self.nodes.items():
                 name = node.sock_name(use_fqdn=True)
-                if name in node_names.values():
+                if name in list(node_names.values()):
                     # found same name for multiple nodes
                     self._same_name_nodes = True
                     node_names.clear()
@@ -130,7 +135,7 @@ class Cluster(object):
     def get_expected_principal(self):
         try:
             principal = "0"
-            for k in self.nodes.keys():
+            for k in list(self.nodes.keys()):
                 n = self.nodes[k]
                 if n.node_id.zfill(16) > principal.zfill(16):
                     principal = n.node_id
@@ -145,7 +150,7 @@ class Cluster(object):
     def get_visibility_error_nodes(self):
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
-        for k in self.nodes.keys():
+        for k in list(self.nodes.keys()):
             node = self.nodes[k]
             if not node.alive:
                 # in case of using alumni services, we might have offline nodes
@@ -160,7 +165,7 @@ class Cluster(object):
 
     def get_down_nodes(self):
         cluster_down_nodes = []
-        for k in self.nodes.keys():
+        for k in list(self.nodes.keys()):
             try:
                 node = self.nodes[k]
                 if not node.alive:
@@ -207,7 +212,7 @@ class Cluster(object):
         peers = []
         aliases = {}
         if self.nodes:
-            for node_key in self.nodes.keys():
+            for node_key in list(self.nodes.keys()):
                 node = self.nodes[node_key]
                 node.refresh_connection()
                 if node.key != node_key:
@@ -278,7 +283,7 @@ class Cluster(object):
         # helps to remove multiple entries of same node ( in case of service
         # list change or node is up after going down)
         service_nodes = set(self.aliases.values())
-        for n in self.nodes.keys():
+        for n in list(self.nodes.keys()):
             if n not in service_nodes:
                 self.nodes.pop(n)
 
@@ -423,7 +428,7 @@ class Cluster(object):
             self._refresh_cluster()
 
         if nodes == 'all':
-            use_nodes = self.nodes.values()
+            use_nodes = list(self.nodes.values())
         elif isinstance(nodes, list):
             use_nodes = []
             for node in nodes:
@@ -456,7 +461,7 @@ class Cluster(object):
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
         node_map = {}
-        for a in self.aliases.keys():
+        for a in list(self.aliases.keys()):
             try:
                 node_map[a] = self.nodes.get(self.aliases[a]).node_id
             except Exception:
@@ -499,7 +504,7 @@ class Cluster(object):
             raise AttributeError("Cluster has not attribute '%s'" % (name))
 
     def close(self):
-        for node_key in self.nodes.keys():
+        for node_key in list(self.nodes.keys()):
             try:
                 node = self.nodes[node_key]
                 node.close()
