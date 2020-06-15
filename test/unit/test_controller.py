@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from mock import patch, Mock
-import unittest2 as unittest
+import unittest
 
 from lib.client.node import Node
 from lib.basiccontroller import *

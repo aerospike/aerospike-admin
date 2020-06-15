@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from mock import patch, Mock
-import unittest2 as unittest
+import unittest
 
 import lib
 from lib.utils import util

@@ -286,7 +286,7 @@ class Table():
             else:  # style is Vertical
                 # Need to sort but messes with column widths
                 transform = sorted(
-                    range(len(data_to_process)), key=lambda d: data_to_process[d][self._sort_by][1]) # This might need to be a list
+                    range(len(data_to_process)), key=lambda d: data_to_process[d][self._sort_by][1])
 
                 self._data = [data_to_process[i] for i in transform]
                 first = self._column_widths[0]

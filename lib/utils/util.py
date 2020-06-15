@@ -342,7 +342,7 @@ def restructure_sys_data(content, cmd):
         content = first_key_to_upper(content)
     elif cmd == "iostat":
         try:
-            for n in content.keys(): # This might need to be a list
+            for n in content.keys():
                 c = content[n]
                 c = c["iostats"][-1]
                 if "device_stat" in c:
@@ -382,7 +382,7 @@ def restructure_sys_data(content, cmd):
         content = first_key_to_upper(content)
     elif cmd == "df":
         try:
-            for n in content.keys(): # This might need to be a list
+            for n in content.keys():
                 try:
                     file_system_list = content[n]["Filesystems"]
                 except Exception:
@@ -400,7 +400,7 @@ def restructure_sys_data(content, cmd):
 
     elif cmd == "scheduler":
         try:
-            for n in content.keys(): # This might need to be a list
+            for n in content.keys():
                 c = content[n]
                 c = c["scheduler_stat"]
                 sch = {}
@@ -495,7 +495,7 @@ def mbytes_to_bytes(data):
         return data * 1048576
 
     if isinstance(data, dict):
-        for _k in data.keys(): # This might need to be a list
+        for _k in data.keys():
             data[_k] = copy.deepcopy(mbytes_to_bytes(data[_k]))
         return data
 

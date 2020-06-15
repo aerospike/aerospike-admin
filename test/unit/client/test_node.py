@@ -14,7 +14,7 @@
 
 from mock import patch, Mock
 import socket
-import unittest2 as unittest
+import unittest
 
 import lib
 from lib.client.node import Node
