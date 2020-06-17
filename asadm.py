@@ -40,7 +40,7 @@ import logging
 import traceback
 
 if sys.version_info[0] < 3:
-    raise Exception("Asadm requires Python 3.")
+    raise Exception("Asadm requires Python 3. Use tools package <= 3.27.x for Python 2 support.")
 
 if '-e' not in sys.argv and '--asinfo' not in sys.argv:
     # asinfo mode or non-interactive mode does not need readline
