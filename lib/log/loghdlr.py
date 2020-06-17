@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import next
-from builtins import str
-from builtins import range
-from builtins import object
 import os
 import re
 import hashlib

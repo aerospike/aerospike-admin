@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import str
-
 import re
 
 from lib.utils.util import is_str

@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import range
-
 import re
 
 def parse_output(actual_out = "", horizontal = False, mearge_header = True):
