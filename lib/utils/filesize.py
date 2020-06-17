@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import str
-from past.utils import old_div
-
 byte = [
     (1024.0 ** 5, ' PB'),
     (1024.0 ** 4, ' TB'),

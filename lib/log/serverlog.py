@@ -12,12 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import next
-from builtins import zip
-from builtins import object
-from past.utils import old_div
-
 import datetime
 import hashlib
 import pipes

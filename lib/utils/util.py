@@ -12,14 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from future import standard_library
-standard_library.install_aliases()
-from builtins import filter
-from builtins import str
-from future.utils import raise_
-from builtins import object
-
 import copy
 import io
 import pipes

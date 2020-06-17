@@ -12,13 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import str
-from builtins import map
-from builtins import range
-from builtins import object
-from past.utils import old_div
-
 import re
 
 from lib.utils import filesize

@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import str
-from builtins import object
-from past.utils import old_div
-
 import datetime
 import re
 import time
