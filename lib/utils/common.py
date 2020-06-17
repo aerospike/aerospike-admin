@@ -175,7 +175,7 @@ def _deep_merge_dicts(dict_to, dict_from):
         # already, so no need to add
         return dict_to
 
-    for _key in list(dict_from.keys()): # does deep_merge need list
+    for _key in dict_from.keys():
         if _key not in dict_to:
             dict_to[_key] = dict_from[_key]
         else:

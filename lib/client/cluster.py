@@ -449,7 +449,7 @@ class Cluster(object):
             util.concurrent_map(
                 lambda node:
                 (node.key, getattr(node, method_name)(*args, **kwargs)),
-                list(use_nodes)))
+                use_nodes))
 
     def is_XDR_enabled(self, nodes='all'):
         return self.call_node_method(nodes, 'is_XDR_enabled')
