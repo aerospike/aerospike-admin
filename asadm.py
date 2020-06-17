@@ -39,6 +39,9 @@ import sys
 import logging
 import traceback
 
+if sys.version_info[0] < 3:
+    raise Exception("Asadm requires Python 3.")
+
 if '-e' not in sys.argv and '--asinfo' not in sys.argv:
     # asinfo mode or non-interactive mode does not need readline
     # if we import readline then it adds escape character, which breaks some of asinfo use-cases.
