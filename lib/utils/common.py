@@ -956,7 +956,7 @@ def _parse_old_histogram(histogram, histogram_data):
     datum.pop(0)  # don't care about ns, hist_name, or length
     width = int(datum.pop(0))
     datum[-1] = datum[-1].split(';')[0]
-    datum = list(map(int, datum))
+    datum = [int(data) for data in datum]
     return {"histogram": histogram, "width": width, "data": datum}
 
 
@@ -984,7 +984,7 @@ def _parse_new_linear_histogram(histogram, histogram_data):
     if result:
         buckets = result["data"]
         buckets = buckets.split(',')
-        result["data"] = list(map(int, buckets))
+        result["data"] = [int(bucket) for bucket in buckets]
         result["width"] = int(result["width"])
         result["histogram"] = histogram
 
@@ -1267,13 +1267,13 @@ def _collect_cpuinfo(cmd=''):
 
             if len(items) == 2:
                 key = items[1].strip()
-                if key in list(cpu_info.keys()):
+                if key in cpu_info.keys():
                     cpu_info[key] = cpu_info[key] + 1
                 else:
                     cpu_info[key] = 1
         out += "\nvendor_id\tprocessor count"
 
-        for key in list(cpu_info.keys()):
+        for key in cpu_info.keys():
             out += "\n" + key + "\t" + str(cpu_info[key])
 
     return out, None

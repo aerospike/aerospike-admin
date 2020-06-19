@@ -884,7 +884,6 @@ class TestShowStatistics(unittest.TestCase):
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        # print(actual_params)
         self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
 
     @unittest.skip("Will enable only when xdr is configuired")

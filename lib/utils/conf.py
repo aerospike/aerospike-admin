@@ -164,12 +164,12 @@ def _loadfile(fname, logger):
             raise ImportError("No module named toml")
 
         include_files = []
-        if "include" in list(conf_dict.keys()):
-            if "file" in list(conf_dict["include"].keys()):
+        if "include" in conf_dict.keys():
+            if "file" in conf_dict["include"].keys():
                 f = conf_dict["include"]["file"]
                 include_files.append(os.path.expanduser(f))
 
-            if "directory" in list(conf_dict["include"].keys()):
+            if "directory" in conf_dict["include"].keys():
                 d = conf_dict["include"]["directory"]
                 include_files = include_files + sorted([os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(d)) for f in fn])
 
@@ -239,15 +239,15 @@ def _getseeds(conf):
     # Set up default port and tls-name if not specified in
     # host string
     port = 3000
-    if "port" in list(conf.keys()) and conf["port"] is not None:
+    if "port" in conf.keys() and conf["port"] is not None:
         port = conf["port"]
 
     tls_name = None
-    if "tls_name" in list(conf.keys()) and conf["tls_name"] is not None and "tls_enable" in conf and conf["tls_enable"]:
+    if "tls_name" in conf.keys() and conf["tls_name"] is not None and "tls_enable" in conf and conf["tls_enable"]:
         tls_name = conf["tls_name"]
 
 
-    if "host" in list(conf.keys()) and conf["host"] is not None:
+    if "host" in conf.keys() and conf["host"] is not None:
         seeds = []
         hosts = conf["host"].split(",")
 

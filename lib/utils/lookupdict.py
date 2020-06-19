@@ -62,7 +62,7 @@ class LookupDict(object):
             return ""
 
         # Filter these keys
-        keys = list(self._kv.keys())
+        keys = self._kv.keys()
         key = list(key)
         prefix = ""
         while len(keys) > 1:
@@ -96,7 +96,7 @@ class LookupDict(object):
             return ""
 
         # Filter these keys
-        keys = list(self._kv.keys())
+        keys = self._kv.keys()
         key = list(key)
         suffix = ""
         while len(keys) > 1:

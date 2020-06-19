@@ -72,7 +72,7 @@ def shell_command(command):
     except Exception:
         return '', 'error'
     else:
-        return bytes_to_str(out), bytes_to_str(err) # these might need to be converted to bytes
+        return bytes_to_str(out), bytes_to_str(err)
 
 
 def capture_stdout(func, line=''):
@@ -349,7 +349,7 @@ def restructure_sys_data(content, cmd):
         content = first_key_to_upper(content)
     elif cmd == "interrupts":
         try:
-            for n in list(content.keys()):
+            for n in content.keys():
                 try:
                     interrupt_list = content[n]["device_interrupts"]
                 except Exception:
@@ -487,7 +487,7 @@ def mbytes_to_bytes(data):
         return data * 1048576
 
     if isinstance(data, dict):
-        for _k in list(data.keys()):
+        for _k in data.keys():
             data[_k] = copy.deepcopy(mbytes_to_bytes(data[_k]))
         return data
 
