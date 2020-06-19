@@ -586,19 +586,19 @@ def is_str(data):
 
 def bytes_to_str(data):
     if data is None:
-        return False
+        return data
 
-    if data is not is_str(data):
+    if not is_str(data):
         return data.decode("utf-8")
     
-    return False
+    return data
 
 
 def str_to_bytes(data):
     if data is None:
-        return False
+        return data
 
     if is_str(data):
         return str.encode(data, "utf-8")
     
-    return False
+    return data

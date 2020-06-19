@@ -145,6 +145,7 @@ class Loghdlr(object):
 
         for index in indices:
             try:
+                print(index)
                 log = log_names[int(index) - 1]
 
                 if log in self.all_logs:
