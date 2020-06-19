@@ -82,7 +82,7 @@ class Cluster(object):
         self._same_name_nodes = False
 
     def __str__(self):
-        nodes = list(self.nodes.values())
+        nodes = self.nodes.values()
         if len(nodes) == 0:
             return ""
 
@@ -130,7 +130,7 @@ class Cluster(object):
     def get_expected_principal(self):
         try:
             principal = "0"
-            for k in list(self.nodes.keys()):
+            for k in self.nodes.keys():
                 n = self.nodes[k]
                 if n.node_id.zfill(16) > principal.zfill(16):
                     principal = n.node_id
@@ -160,7 +160,7 @@ class Cluster(object):
 
     def get_down_nodes(self):
         cluster_down_nodes = []
-        for k in list(self.nodes.keys()):
+        for k in self.nodes.keys():
             try:
                 node = self.nodes[k]
                 if not node.alive:
@@ -456,7 +456,7 @@ class Cluster(object):
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
         node_map = {}
-        for a in list(self.aliases.keys()):
+        for a in self.aliases.keys():
             try:
                 node_map[a] = self.nodes.get(self.aliases[a]).node_id
             except Exception:
@@ -499,7 +499,7 @@ class Cluster(object):
             raise AttributeError("Cluster has not attribute '%s'" % (name))
 
     def close(self):
-        for node_key in list(self.nodes.keys()):
+        for node_key in self.nodes.keys():
             try:
                 node = self.nodes[node_key]
                 node.close()

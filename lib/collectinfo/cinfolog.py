@@ -177,7 +177,7 @@ class CollectinfoSnapshot(object):
                             data[node] = list(d.keys())
                             continue
 
-                        for ns_name in list(d.keys()):
+                        for ns_name in d.keys():
                             try:
                                 if stanza == "namespace":
                                     data[node][ns_name] = copy.deepcopy(
@@ -343,7 +343,7 @@ class CollectinfoSnapshot(object):
             self.node_lookup[node] = node
 
     def _get_node_count(self):
-        return len(list(self.nodes.keys()))
+        return len(self.nodes.keys())
 
     def _set_node_id(self):
         for node in self.nodes:
@@ -407,7 +407,7 @@ class CollectinfoLog(object):
         parse_info_all(files, self.data, True)
 
         if self.data:
-            for ts in sorted(list(self.data.keys()), reverse=True):
+            for ts in sorted(self.data.keys(), reverse=True):
                 if self.data[ts]:
                     for cl in self.data[ts]:
                         cinfo_data = self.data[ts][cl]

@@ -566,7 +566,7 @@ class SSLContext(object):
         if keyfile_password is None:
             return keyfile_password
 
-        if not is_str(keyfile_password):
+        if not isinstance(keyfile_password, str):
             raise Exception("Bad keyfile_password: not string")
 
         keyfile_password = keyfile_password.strip()

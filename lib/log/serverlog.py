@@ -28,7 +28,7 @@ RETURN_REQUIRED_EVERY_NTH_BLOCK = 5
 TIME_ZONE = "GMT"
 SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \(([^\)]+)\)"
 
-class ServerLog(object):
+class ServerLog():
 
     def __init__(self, display_name, file_name, reader):
         self.display_name = display_name

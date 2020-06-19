@@ -103,7 +103,7 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ign
         if not values or isinstance(values, Exception):
             continue
         for _k in keyname:
-            if _k not in list(values.keys()):
+            if _k not in values.keys():
                 continue
             value_dict[values[_k]] = values
     return value_dict

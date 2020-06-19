@@ -182,7 +182,7 @@ class InfoController(BasicCommandController):
 
         stats = stats.result()
 
-        for node in list(stats.keys()):
+        for node in stats.keys():
 
             if (stats[node]
                     and not isinstance(stats[node], Exception)
@@ -190,7 +190,7 @@ class InfoController(BasicCommandController):
                     and configs[node]
                     and not isinstance(configs[node], Exception)):
 
-                for dc in list(stats[node].keys()):
+                for dc in stats[node].keys():
                     try:
                         stats[node][dc].update(configs[node][dc])
                     except Exception:
@@ -520,8 +520,7 @@ class ShowLatencyController(BasicCommandController):
         namespace_set = set()
         if self.mods['for']:
             namespaces = self.cluster.info_namespaces(nodes=self.nodes)
-            namespaces = list(namespaces.values())
-            for namespace in namespaces:
+            for namespace in namespaces.values():
                 if isinstance(namespace, Exception):
                     continue
                 namespace_set.update(namespace)
@@ -1026,7 +1025,7 @@ class CollectinfoController(BasicCommandController):
         @param namespace_data: should be a form of dict returned by info protocol for namespace.
         """
         namespaces = set()
-        for _value in list(namespace_data.values()):
+        for _value in namespace_data.values():
             for ns in _value.split(';'):
                 namespaces.add(ns)
         return namespaces
@@ -1048,7 +1047,7 @@ class CollectinfoController(BasicCommandController):
 
                 ns = node_data['namespace'][ns_name]
 
-                if 'set' not in list(ns.keys()):
+                if 'set' not in ns.keys():
                     ns['set'] = {}
 
                 ns['set'][setname] = copy.deepcopy(val)
@@ -1073,7 +1072,7 @@ class CollectinfoController(BasicCommandController):
                     continue
 
                 ns = node_data['namespace'][ns_name]
-                if 'sindex' not in list(ns.keys()):
+                if 'sindex' not in ns.keys():
                     ns['sindex'] = {}
                 ns['sindex'][sindex_name] = copy.deepcopy(val)
 

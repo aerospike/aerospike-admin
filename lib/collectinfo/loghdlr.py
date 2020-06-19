@@ -120,17 +120,17 @@ class CollectinfoLoghdlr(object):
 
         version = self.info_meta_data(stanza="asd_build")
 
-        for timestamp, hist_snapshot in list(hist_dict.items()):
+        for timestamp, hist_snapshot in hist_dict.items():
             res_dict[timestamp] = {}
             if not hist_snapshot:
                 continue
 
-            for node, node_snapshot in list(hist_snapshot.items()):
+            for node, node_snapshot in hist_snapshot.items():
                 res_dict[timestamp][node] = {}
                 if not node_snapshot:
                     continue
 
-                for namespace, namespace_snapshot in list(node_snapshot.items()):
+                for namespace, namespace_snapshot in node_snapshot.items():
                     if not namespace_snapshot:
                         continue
 

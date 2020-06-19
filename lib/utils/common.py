@@ -536,9 +536,9 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
     namespace_stats = util.flip_keys(namespace_stats)
     set_stats = util.flip_keys(set_stats)
 
-    summary_dict = _initialize_summary_output(list(namespace_stats.keys()))
+    summary_dict = _initialize_summary_output(namespace_stats.keys())
 
-    total_nodes = len(list(service_stats.keys()))
+    total_nodes = len(service_stats.keys())
 
     cl_nodewise_device_counts = {}
 
@@ -583,7 +583,7 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
         cl_nodewise_device_counts = util.add_dicts(cl_nodewise_device_counts, device_counts)
 
         ns_total_devices = sum(device_counts.values())
-        ns_total_nodes = len(list(ns_stats.keys()))
+        ns_total_nodes = len(ns_stats.keys())
 
         if ns_total_devices:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = ns_total_devices
@@ -943,7 +943,7 @@ def _restructure_new_log_histogram(histogram_data):
                 continue
 
             for k in columns:
-                if k not in list(host_data['values'].keys()):
+                if k not in host_data['values'].keys():
                     host_data['values'][k] = 0
 
         ns_data['columns'] = sorted(columns, key=_string_to_bytes)

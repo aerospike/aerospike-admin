@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import absolute_import
-
 import copy
 from datetime import datetime
 import json
@@ -586,7 +584,7 @@ def _to_roster_map(parsed_map):
 
     list_fields = ["roster", "pending_roster", "observed_nodes"]
 
-    for node, node_data in list(parsed_map.items()):
+    for node, node_data in parsed_map.items():
         if not node_data or isinstance(node_data, Exception) or "roster" not in node_data:
             continue
 

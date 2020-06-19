@@ -108,7 +108,7 @@ class Loghdlr(object):
         else:
             server_list = self.selected_logs
 
-        for server in list(server_list.keys()):
+        for server in server_list.keys():
             log_entries[server] = server_list[server].file_name
 
         return log_entries
@@ -141,7 +141,7 @@ class Loghdlr(object):
         log_names = sorted(self.all_logs.keys())
 
         if indices == 'all' or 'all' in indices:
-            indices = list(range(len(self.all_logs)))
+            indices = range(len(self.all_logs))
 
         for index in indices:
             try:
@@ -168,7 +168,7 @@ class Loghdlr(object):
 
         all_log_keys = sorted(all_list.keys())
         if indices == 'all' or 'all' in indices:
-            indices = list(range(len(all_log_keys)))
+            indices = range(len(all_log_keys))
 
         for index in indices:
             try:
@@ -430,7 +430,7 @@ class Loghdlr(object):
         keys_in_input = []
         result_count = 0
 
-        for key in list(file_streams.keys()):
+        for key in file_streams.keys():
             if not return_strings:
                 merge_result[key] = {}
 
@@ -536,7 +536,7 @@ class Loghdlr(object):
                 if return_strings:
                     continue
 
-                for key in list(file_streams.keys()):
+                for key in file_streams.keys():
                     merge_result[key] = {}
 
         if not latency_end:
@@ -574,7 +574,7 @@ class Loghdlr(object):
             return val
         structure = {}
 
-        for _key in list(data.keys()):
+        for _key in data.keys():
             if not isinstance(data[_key], dict):
                 structure[_key] = val
             else:

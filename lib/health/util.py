@@ -39,7 +39,7 @@ def deep_merge_dicts(dict_to, dict_from):
         # already, so no need to add
         return dict_to
 
-    for _key in list(dict_from.keys()):
+    for _key in dict_from.keys():
         if _key not in dict_to:
             dict_to[_key] = dict_from[_key]
         else:
@@ -120,7 +120,7 @@ def merge_dicts_with_new_tuple_keys(dict_from, main_dict, new_tuple_keys,
     poped_nks, key_level_separator_found = pop_tuple_keys_for_next_level(
         new_tuple_keys)
 
-    for _key in list(dict_from.keys()):
+    for _key in dict_from.keys():
         temp_dict = main_dict
         last_level = False
 

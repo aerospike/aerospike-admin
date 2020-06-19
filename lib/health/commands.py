@@ -87,7 +87,7 @@ def select_keys(data={}, select_keys=[], select_from_keys=[], ignore_keys=[], sa
 
     if (not select_from_keys or (select_from_keys[0] != "ALL"
                                  and not select_from_keys[0].startswith(SNAPSHOT_KEY_PREFIX))):
-        select_from_keys.insert(0, create_snapshot_key(len(list(data.keys())) - 1))
+        select_from_keys.insert(0, create_snapshot_key(len(data.keys()) - 1))
     elif select_from_keys[0].startswith(SNAPSHOT_KEY_PREFIX):
         select_from_keys[0] = create_snapshot_key(int(re.search(SNAPSHOT_KEY_PATTERN, select_from_keys[0]).group(1)))
 

@@ -149,7 +149,7 @@ class InfoController(CollectinfoCommandController):
             old_xdr_stats = {}
             xdr5_stats = {}
 
-            for xdr_node in list(xdr_stats[timestamp].keys()):
+            for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
                 try:
                     node_xdr_build_major_version = int(builds[xdr_node][0])
@@ -413,7 +413,6 @@ class ShowConfigController(CollectinfoCommandController):
                                   title_every_nth=title_every_nth, flip_output=flip_output,
                                   timestamp=timestamp, **self.mods)
 
-    # pre 5.0
     @CommandHelp('Displays datacenter configuration')
     def do_dc(self, line):
 
@@ -539,8 +538,7 @@ class ShowLatencyController(CollectinfoCommandController):
             namespace_set = set()
             _latency = {}
             if timestamp in namespaces:
-                _namespaces = list(namespaces[timestamp].values())
-                for _namespace in _namespaces:
+                for _namespace in namespaces[timestamp].values():
                     if isinstance(_namespace, Exception):
                         continue
                     namespace_set.update(_namespace)
@@ -679,7 +677,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             if not set_stats[timestamp]:
                 continue
             namespace_list = [ns_set.split()[0]
-                              for ns_set in list(set_stats[timestamp].keys())]
+                              for ns_set in set_stats[timestamp].keys()]
 
             try:
                 namespace_list = util.filter_list(namespace_list, self.mods['for'][:1])
@@ -687,7 +685,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 pass
 
             set_list = [ns_set.split()[1]
-                              for ns_set in list(set_stats[timestamp].keys())]
+                              for ns_set in set_stats[timestamp].keys()]
             try:
                 set_list = util.filter_list(set_list, self.mods['for'][1:2])
             except Exception:
@@ -872,14 +870,14 @@ class ShowStatisticsController(CollectinfoCommandController):
                 continue
 
             namespace_list = [ns_set_sindex.split()[0]
-                              for ns_set_sindex in list(sindex_stats[timestamp].keys())]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()]
             try:
                 namespace_list = util.filter_list(namespace_list, self.mods['for'][:1])
             except Exception:
                 pass
 
             sindex_list = [ns_set_sindex.split()[2]
-                              for ns_set_sindex in list(sindex_stats[timestamp].keys())]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()]
             try:
                 sindex_list = util.filter_list(sindex_list, self.mods['for'][1:2])
             except Exception:
