@@ -1344,7 +1344,7 @@ class CliView(object):
                     t.insert_row(row)
 
                 row = {}
-                for key in list(grep_result[file][tps_key].keys()):
+                for key in grep_result[file][tps_key].keys():
                     row[key] = "|"
 
                 row['NODE'] = "|"

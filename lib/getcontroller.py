@@ -191,7 +191,7 @@ class GetConfigController():
 
             namespace_set.update(namespace)
 
-        namespace_list = util.filter_list(list(namespace_set), for_mods)
+        namespace_list = util.filter_list(namespace_set, for_mods)
         ns_configs = {}
 
         for index, namespace in enumerate(namespace_list):
@@ -328,7 +328,7 @@ class GetStatisticsController():
 
             namespace_set.update(namespace)
 
-        namespace_list = util.filter_list(list(namespace_set), for_mods)
+        namespace_list = util.filter_list(namespace_set, for_mods)
         futures = [(namespace, util.Future(
             self.cluster.info_namespace_statistics, namespace, nodes=nodes).start())
                    for namespace in namespace_list]
@@ -390,7 +390,7 @@ class GetStatisticsController():
             if not bin_stat or isinstance(bin_stat, Exception):
                 continue
 
-            namespace_list = util.filter_list(list(bin_stat.keys()), for_mods)
+            namespace_list = util.filter_list(bin_stat.keys(), for_mods)
 
             for namespace, stats in bin_stat.items():
                 if namespace not in namespace_list:

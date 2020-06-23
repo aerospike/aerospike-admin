@@ -21,7 +21,7 @@ from lib.log import utils
 
 from lib.utils.constants import COUNT_RESULT_KEY, TOTAL_ROW_HEADER, END_ROW_KEY, DT_FMT
 from lib.log.latency import LogLatency
-from lib.utils.util import is_str, bytes_to_str
+from lib.utils.util import bytes_to_str
 
 READ_BLOCK_BYTES = 4096
 RETURN_REQUIRED_EVERY_NTH_BLOCK = 5
@@ -154,10 +154,10 @@ class ServerLog():
                   slice_duration="10", every_nth_slice=1, upper_limit_check="", bucket_count=3, every_nth_bucket=1,
                   read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None,
                   show_relative_stats=False):
-        if is_str(search_strs):
+        if isinstance(search_strs, str):
             search_strs = [search_strs]
         self.search_strings = [search_str for search_str in search_strs]
-        if is_str(ignore_strs):
+        if isinstance(ignore_strs, str):
             ignore_strs = [ignore_strs]
         self.ignore_strs = ignore_strs
         self.is_and = is_and

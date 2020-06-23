@@ -274,7 +274,7 @@ class InfoController(BasicCommandController):
             xdr5_stats = temp
 
             if self.mods['for']:
-                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+                matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
 
             futures = [ 
                 util.Future(self.view.info_XDR, xdr5_stats[dc], xdr_builds,
@@ -525,7 +525,7 @@ class ShowLatencyController(BasicCommandController):
                     continue
                 namespace_set.update(namespace)
             namespace_set = set(
-                util.filter_list(list(namespace_set), self.mods['for']))
+                util.filter_list(namespace_set, self.mods['for']))
 
         latency = self.cluster.info_latency(
             nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
@@ -878,7 +878,7 @@ class ShowStatisticsController(BasicCommandController):
             xdr5_stats = temp
 
             if self.mods['for']:
-                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+                matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
 
             futures = [
                     util.Future(self.view.show_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],

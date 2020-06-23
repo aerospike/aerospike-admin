@@ -145,7 +145,7 @@ class Cluster(object):
     def get_visibility_error_nodes(self):
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
-        for k in list(self.nodes.keys()):
+        for k in self.nodes.keys():
             node = self.nodes[k]
             if not node.alive:
                 # in case of using alumni services, we might have offline nodes

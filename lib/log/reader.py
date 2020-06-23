@@ -185,7 +185,7 @@ class LogReader(object):
         return line[0: line.find(" GMT")]
 
     def parse_dt(self, line, dt_len=6):
-        line = bytes_to_str(line) # bytes for py3 compatibility
+        line = bytes_to_str(line)
         prefix = line[0: line.find(" GMT")].split(",")[0]
         # remove milliseconds if available
         prefix = prefix.split(".")[0]
@@ -206,11 +206,11 @@ class LogReader(object):
 
     def set_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
-        self._seek_to(file_stream, b"\n") # marked as bytes for py3 compatibility
+        self._seek_to(file_stream, b"\n")
 
     def read_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
-        self._seek_to(file_stream, b"\n") # marked as bytes for py3 compatibility
+        self._seek_to(file_stream, b"\n")
         ln = self.read_line(file_stream)
         return ln
 

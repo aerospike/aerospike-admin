@@ -103,13 +103,13 @@ class CollectinfoSnapshot(object):
 
                 if 'config' in node_data['as_stat']:
                     if 'namespace' in node_data['as_stat']['config']:
-                        for ns in list(value[node]['as_stat']['config']['namespace'].keys()):
+                        for ns in value[node]['as_stat']['config']['namespace'].keys():
                             if ' ' in ns:
                                 del value[node]['as_stat']['config']['namespace'][ns]
 
                 if 'statistics' in node_data['as_stat']:
                     if 'namespace' in node_data['as_stat']['statistics']:
-                        for ns in list(value[node]['as_stat']['statistics']['namespace'].keys()):
+                        for ns in value[node]['as_stat']['statistics']['namespace'].keys():
                             if ' ' in ns:
                                 del value[node]['as_stat']['statistics']['namespace'][ns]
                                 continue
@@ -137,7 +137,7 @@ class CollectinfoSnapshot(object):
     def get_node_names(self):
         if not self.node_names:
             if self.cinfo_data:
-                node_names = list(self.cinfo_data.keys())
+                node_names = self.cinfo_data.keys()
             else:
                 return {}
 

@@ -979,7 +979,7 @@ class Node(object):
             conf_path = "/etc/aerospike/aerospike.conf"
             self.conf_data = conf_parser.parse_file(conf_path)
             if "namespace" in self.conf_data:
-                for ns in list(self.conf_data["namespace"].keys()):
+                for ns in self.conf_data["namespace"].keys():
                     if "service" in self.conf_data["namespace"][ns]:
                         self.conf_data["namespace"][ns] = self.conf_data["namespace"][ns]["service"]
 

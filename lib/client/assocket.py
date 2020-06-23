@@ -20,13 +20,8 @@ from lib.client.info import authenticate_old, authenticate_new, info, login
 try:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-        try:
-            import cryptography
-            from cryptography import utils
-        except Exception:
-            pass
-
+        import cryptography
+        from cryptography import utils
         from OpenSSL import SSL
     HAVE_PYOPENSSL = True
 except ImportError:

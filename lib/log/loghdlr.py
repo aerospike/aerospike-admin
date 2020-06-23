@@ -464,7 +464,7 @@ class Loghdlr(object):
             need_to_process = False
             try:
                 min_keys = [
-                    k for k, x in list(tm_keys.items()) if not any(y < x for y in list(tm_keys.values()))]
+                    k for k, x in tm_keys.items() if not any(y < x for y in tm_keys.values())]
             except Exception:
                 break
 
@@ -543,7 +543,7 @@ class Loghdlr(object):
         if not latency_end:
             yield merge_result
         else:
-            self._balance_dict(latency_end, list(file_streams.keys()), default_value)
+            self._balance_dict(latency_end, file_streams.keys(), default_value)
             for file_key in latency_end:
                 if file_key not in merge_result or not merge_result[file_key]:
                     merge_result[file_key] = latency_end[file_key]
@@ -567,7 +567,7 @@ class Loghdlr(object):
                                              default_value)
 
         for _key in keys:
-            if not _key in list(data.keys()) or not data[_key]:
+            if not _key in data.keys() or not data[_key]:
                 data[_key] = structure
 
     def _get_dict_structure(self, data, val=[]):

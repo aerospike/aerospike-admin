@@ -172,7 +172,7 @@ class InfoController(CollectinfoCommandController):
                 xdr5_stats = temp
 
                 if self.mods['for']:
-                    matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+                    matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
 
                 for dc in xdr5_stats:
                     if not self.mods['for'] or dc in matches:
@@ -200,7 +200,7 @@ class InfoController(CollectinfoCommandController):
             if not dc_stats[timestamp]:
                 continue
 
-            for dc in list(dc_stats[timestamp].keys()):
+            for dc in dc_stats[timestamp].keys():
                 try:
                     if (dc_stats[timestamp][dc]
                             and not isinstance(dc_stats[timestamp][dc], Exception)
@@ -208,7 +208,7 @@ class InfoController(CollectinfoCommandController):
                             and dc_config[timestamp][dc]
                             and not isinstance(dc_config[timestamp][dc], Exception)):
 
-                        for node in list(dc_stats[timestamp][dc].keys()):
+                        for node in dc_stats[timestamp][dc].keys():
                             if node in dc_config[timestamp][dc]:
                                 dc_stats[timestamp][dc][node].update(dc_config[timestamp][dc][node])
 
@@ -543,7 +543,7 @@ class ShowLatencyController(CollectinfoCommandController):
                         continue
                     namespace_set.update(_namespace)
                 namespace_set = set(
-                    util.filter_list(list(namespace_set), self.mods['for']))
+                    util.filter_list(namespace_set, self.mods['for']))
 
                 for node_id, node_data in latency[timestamp].items():
                     if not node_data or isinstance(node_data, Exception):
@@ -648,7 +648,7 @@ class ShowStatisticsController(CollectinfoCommandController):
 
         for timestamp in sorted(ns_stats.keys()):
             namespace_list = util.filter_list(
-                list(ns_stats[timestamp].keys()), self.mods['for'])
+                ns_stats[timestamp].keys(), self.mods['for'])
             for ns in sorted(namespace_list):
                 stats = ns_stats[timestamp][ns]
                 self.view.show_stats("%s Namespace Statistics" %(ns), stats,
@@ -722,7 +722,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                     or isinstance(new_bin_stats[timestamp], Exception)):
                 continue
 
-            namespace_list = util.filter_list(list(new_bin_stats[timestamp].keys()),
+            namespace_list = util.filter_list(new_bin_stats[timestamp].keys(),
                                               self.mods['for'])
 
             for ns, stats in new_bin_stats[timestamp].items():
@@ -781,7 +781,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 xdr5_stats = temp
 
                 if self.mods['for']:
-                    matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+                    matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
 
                 for dc in xdr5_stats:
                     if not self.mods['for'] or dc in matches:
