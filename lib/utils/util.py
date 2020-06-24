@@ -22,7 +22,7 @@ import sys
 import threading
 
 
-class Future(object):
+class Future():
 
     """
     Very basic implementation of a async future.
