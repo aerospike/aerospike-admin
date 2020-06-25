@@ -19,6 +19,7 @@ from builtins import filter
 from builtins import str
 from future.utils import raise_
 from builtins import object
+from past.builtins import basestring as future_basestring
 
 import copy
 import pipes
@@ -249,7 +250,7 @@ def _cast(value, return_type=None):
 
 
     try:
-        if return_type == bool and isinstance(value, str):
+        if return_type == bool and isinstance(value, future_basestring):
             if value.lower() == "false":
                 return False, True
             if value.lower() == "true":
