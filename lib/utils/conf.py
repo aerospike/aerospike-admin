@@ -186,6 +186,14 @@ def _loadfile(fname, logger):
 
     return conf_dict
 
+def decode(v):
+    if isinstance(v, str):
+        if len(v) == 0:
+            return None
+        return str(v)
+    else:
+        return v
+
 def _flatten(conf_dict, instance=None):
     # _flatten global and asadm specific property
     # change all string key and value into utf-8
@@ -211,9 +219,9 @@ def _flatten(conf_dict, instance=None):
                 # Empty passwords are allowed do not interpret
                 # it as None
                 if k == "password":
-                    asadm_conf[k.replace("-", "_")] = str(v)
+                    asadm_conf[decode(k.replace("-", "_"))] = str(v)
                 else:
-                    asadm_conf[k.replace("-", "_")] = v
+                    asadm_conf[decode(k.replace("-", "_"))] = decode(v)
 
     return asadm_conf
 
