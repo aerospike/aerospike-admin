@@ -2081,13 +2081,14 @@ class CliView(object):
             index += 1
             s = ""
 
-            if "license_data_in_memory" in stats[ns]:
+            if "license_data_in_memory" in stats[ns] and stats[ns]["license_data_in_memory"]:
                 s += "%s in-memory"%(filesize.size(stats[ns]["license_data_in_memory"]))
-
-            if "license_data_on_disk" in stats[ns]:
+            elif "license_data_on_disk" in stats[ns] and stats[ns]["license_data_on_disk"]:
                 if s:
                     s += ", "
-                s += "%s on-disk"%(filesize.size(stats[ns]["license_data_on_disk"]))
+                s += "%s on-device"%(filesize.size(stats[ns]["license_data_on_disk"]))
+            else:
+                s += "None"
             print(CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s)
             index += 1
 
@@ -2135,7 +2136,18 @@ class CliView(object):
             filesize.size(summary["CLUSTER"]["device"]["aval"]).strip()))
         index += 1
 
-        print(CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + "%s in-memory, %s on-disk"%(filesize.size(summary["CLUSTER"]["license_data"]["memory_size"]),filesize.size(summary["CLUSTER"]["license_data"]["device_size"])))
+        data_summary = CliView.get_summary_line_prefix(index, "Usage (Unique Data)")
+        uniq_mem_used = summary["CLUSTER"]["license_data"]["memory_size"]
+        uniq_device_used = summary["CLUSTER"]["license_data"]["device_size"]
+
+        if uniq_mem_used:
+            data_summary += "%s in-memory,"%filesize.size(uniq_mem_used)
+        elif uniq_device_used:
+            data_summary += "%s in-device,"%filesize.size(uniq_device_used)
+        else:
+            data_summary += "None"
+
+        print(data_summary)
         index += 1
 
         print(CliView.get_summary_line_prefix(index, "Active Namespaces") + "%d of %d"%(summary["CLUSTER"]["active_ns"], summary["CLUSTER"]["ns_count"]))

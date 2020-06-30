@@ -364,8 +364,6 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
             devices_in_use = util.get_values_from_dict(host_stats, ("^storage-engine.device$", "^device$", "^storage-engine.file$",
                                                         "^file$", "^dev$", "^storage-engine.device\[[0-9]+\]$", "^storage-engine.file\[[0-9]+\]$")
                                                        , return_type=str)
-            using_data_in_memory = util.get_value_from_dict(host_stats, ("data-in-memory", "storage-engine.data-in-memory", "storage-engine.memory"),
-                                                             default_value=False, return_type=bool)
             total_objects = master_objects + replica_objects
 
             if not devices_in_use:
