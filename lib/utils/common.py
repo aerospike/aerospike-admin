@@ -368,7 +368,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                                                              default_value=False, return_type=bool)
             total_objects = master_objects + replica_objects
 
-            if not devices_in_use or using_data_in_memory:
+            if not devices_in_use:
                 # Data in memory only
                 memory_data_size = util.get_value_from_dict(host_stats, ("memory_used_data_bytes", "data-used-bytes-memory"),
                                                              default_value=0, return_type=int)
@@ -382,7 +382,7 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                     ns_memory_data_size += memory_data_size - memory_record_overhead
 
             else:
-                # Data on disk
+                # Persistent data
                 as_version = ""
                 if as_versions and host_id in as_versions:
                     as_version = as_versions[host_id]

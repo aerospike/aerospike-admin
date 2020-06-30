@@ -1956,12 +1956,37 @@ class CliView(object):
         column_names = ('namespace', ('_devices', 'Devices (Total,Per-Node)'), ('_memory', 'Memory (Total,Used%,Avail%)'),
                         ('_disk', 'Disk (Total,Used%,Avail%)'), ('repl_factor', 'Replication Factor'), ('cache_read_pct','Post-Write-Queue Hit-Rate'),
                         'rack_aware', ('master_objects', 'Master Objects'),
-                        ('license_data_in_memory', 'Usage (Unique-Data) In-Memory'), ('license_data_on_disk', 'Usage (Unique-Data) On-Disk'),
                         'compression_ratio'
                         )
 
+        license_data_in_memory = False
+        license_data_on_disk = False
+
+        for _, ns_stats in stats.items():
+            if ns_stats['license_data_in_memory']:
+                license_data_in_memory = True
+                break
+            elif ns_stats['license_data_on_disk']:
+                license_data_on_disk = True
+                break
+
+        if license_data_in_memory:
+            column_names = column_names + ('Usage (Unique-Data) In-Memory',)
+        elif license_data_on_disk:
+           column_names = column_names + ('Usage (Unique-Data) On-Device',)
 
         t = Table(title, column_names, sort_by=0)
+
+        if license_data_in_memory:
+            t.add_data_source(
+                'Usage (Unique-Data) In-Memory',
+                Extractors.byte_extractor('license_data_in_memory')
+            )
+        elif license_data_on_disk:
+            t.add_data_source(
+                'Usage (Unique-Data) On-Device',
+                Extractors.byte_extractor('license_data_on_disk')
+            )
 
         t.add_cell_alert(
             'namespace',
@@ -1994,16 +2019,6 @@ class CliView(object):
         t.add_data_source(
             'master_objects',
             Extractors.sif_extractor('master_objects')
-        )
-
-        t.add_data_source(
-            'license_data_in_memory',
-            Extractors.byte_extractor('license_data_in_memory')
-        )
-
-        t.add_data_source(
-            'license_data_on_disk',
-            Extractors.byte_extractor('license_data_on_disk')
         )
 
         for ns, ns_stats in stats.items():
