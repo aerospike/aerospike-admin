@@ -1963,12 +1963,15 @@ class CliView(object):
         license_data_on_disk = False
 
         for _, ns_stats in stats.items():
-            if ns_stats['license_data_in_memory']:
-                license_data_in_memory = True
-                break
-            elif ns_stats['license_data_on_disk']:
-                license_data_on_disk = True
-                break
+            try:
+                if ns_stats['license_data_in_memory']:
+                    license_data_in_memory = True
+                    break
+                elif ns_stats['license_data_on_disk']:
+                    license_data_on_disk = True
+                    break
+            except:
+                pass
 
         if license_data_in_memory:
             column_names = column_names + ('Usage (Unique-Data) In-Memory',)
