@@ -65,7 +65,7 @@ def size(bytes, system=byte):
     for factor, suffix in system:
         if bytes >= factor:
             break
-    amount = bytes // factor
+    amount = bytes / factor
     if isinstance(suffix, tuple):
         singular, multiple = suffix
         if amount == 1:
