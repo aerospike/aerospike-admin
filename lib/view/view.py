@@ -2141,9 +2141,9 @@ class CliView(object):
         uniq_device_used = summary["CLUSTER"]["license_data"]["device_size"]
 
         if uniq_mem_used:
-            data_summary += "%s in-memory,"%filesize.size(uniq_mem_used)
+            data_summary += "%s"%filesize.size(uniq_mem_used)
         elif uniq_device_used:
-            data_summary += "%s in-device,"%filesize.size(uniq_device_used)
+            data_summary += "%s"%filesize.size(uniq_device_used)
         else:
             data_summary += "None"
 
