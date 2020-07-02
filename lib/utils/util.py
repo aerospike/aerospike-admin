@@ -236,7 +236,7 @@ def _cast(value, return_type=None):
 
 
     try:
-        if return_type == bool and isinstance(value, str):
+        if return_type == bool and isinstance(value, future_basestring):
             if value.lower() == "false":
                 return False, True
             if value.lower() == "true":
