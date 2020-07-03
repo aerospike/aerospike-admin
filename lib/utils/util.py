@@ -52,7 +52,7 @@ class Future():
 
     def result(self):
         if self.exc:
-            raise_(self.exc)
+            raise(self.exc)
 
         self._worker.join()
         return self._result

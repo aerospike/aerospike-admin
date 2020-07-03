@@ -1094,6 +1094,105 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
+    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):
+        prefixes = cluster.get_node_names()
+        column_names = set()
+        column_names.update(['trace-fraction', 'dcs'])     
+        column_names = sorted(column_names)
+
+        if len(column_names) == 0:
+            return ''
+
+        column_names.insert(0, "NODE")
+
+        table_style = Styles.VERTICAL
+        if flip_output:
+            table_style = Styles.HORIZONTAL
+
+        if show_total:
+            n_last_columns_ignore_sort = 1
+        else:
+            n_last_columns_ignore_sort = 0
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = title + title_suffix
+        t = Table(title, column_names,
+                  title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
+
+        dc_table_column_names = set()
+        dc_table_column_names.update(['dc_config', 'namespace_configs', 'auth-user', 'NODE', 'DC'])
+        dc_table_column_names = sorted(dc_table_column_names)
+        print(dc_table_column_names)
+        dc_table = Table("TEST TABLE", dc_table_column_names,
+                            title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
+
+        row = None
+        if show_total:
+            row_total = {}
+        for node_id, row in service_configs.items():
+            if isinstance(row, Exception):
+                row = {}
+
+            row['NODE'] = prefixes[node_id]
+            t.insert_row(row)
+
+            if show_total:
+                for key, val in row.items():
+                    if (val.isdigit()):
+                        try:
+                            row_total[key] = row_total[key] + int(val)
+                        except Exception:
+                            row_total[key] = int(val)
+        if show_total:
+            row_total['NODE'] = "Total"
+            t.insert_row(row_total)
+
+        namespace_tables = []
+        for node_id, row in service_configs.items():
+            for dc, dc_row in row['dc_configs'].items():
+                if isinstance(dc_row, Exception):
+                    dc_row = {}
+
+                dc_row['dc_config']['NODE'] = prefixes[node_id]
+                dc_row['dc_config']['DC'] = dc
+                dc_table.insert_row(dc_row['dc_config'])
+
+                ns_table_column_names = set()
+                for ns_stats in dc_row['namespace_configs'].values():
+                    ns_table_column_names.update(ns_stats.keys())
+                ns_table_column_names.update('test')
+                ns_table_column_names = sorted(ns_table_column_names)
+
+                ns_table = Table(
+                    "Namespace stats for DC: %s" % dc,
+                    ns_table_column_names,
+                    title_format=TitleFormats.no_change,
+                    style=table_style,
+                    n_last_columns_ignore_sort=n_last_columns_ignore_sort
+                    )
+                
+                for ns_stats in dc_row['namespace_configs'].values():
+                    ns_table.insert_row(ns_stats)
+
+                namespace_tables.append(ns_table)
+
+                if show_total:
+                    for key, val in dc_row.items():
+                        if (val.isdigit()):
+                            try:
+                                row_total[key] = row_total[key] + int(val)
+                            except Exception:
+                                row_total[key] = int(val)
+
+        CliView.print_result(
+            t.__str__(horizontal_title_every_nth=title_every_nth))
+        CliView.print_result(
+            dc_table.__str__(horizontal_title_every_nth=title_every_nth))
+        for table in namespace_tables:
+            CliView.print_result(
+                table.__str__(horizontal_title_every_nth=title_every_nth))
+
+    @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):        
         prefixes = cluster.get_node_names()
         column_names = set()

@@ -637,7 +637,7 @@ class ShowConfigController(BasicCommandController):
 
         xdr_configs = self.getter.get_xdr(nodes=self.nodes)
 
-        return util.Future(self.view.show_config, "XDR Configuration",
+        return util.Future(self.view.show_xdr5_config, "XDR Configuration",
                 xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
                 **self.mods)
 

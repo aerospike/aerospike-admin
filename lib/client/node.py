@@ -952,6 +952,29 @@ class Node(object):
 
         elif stanza == '' or stanza == 'service':
             config = util.info_to_dict(self.info("get-config:"))
+        elif stanza == 'xdr': # TODO version for server <= 4.9
+            import pprint
+            pp = pprint.PrettyPrinter(indent=4)
+            xdr_config = util.info_to_dict(self.info("get-config:context=xdr"))
+            xdr_config['dc_configs'] = {}
+
+            for dc in xdr_config['dcs'].split(','):
+                dc_config = self.info("get-config:context=xdr;dc=%s" % dc)
+
+                xdr_config['dc_configs'][dc] = {}
+                xdr_config['dc_configs'][dc]['dc_config'] = util.info_to_dict(dc_config)
+                xdr_config['dc_configs'][dc]['namespace_configs'] = {}
+
+                start_name_spaces = dc_config.find('namespaces=')+len('namespaces=')
+                end_name_spaces = dc_config.find(';', start_name_spaces)
+                name_spaces = [ns for ns in dc_config[start_name_spaces:end_name_spaces].split(',')]
+
+                for name_space in name_spaces:
+                    name_space_config = self.info("get-config:context=xdr;dc=%s;namespace=%s" % (dc, name_space))
+                    xdr_config['dc_configs'][dc]['namespace_configs'][name_space] = util.info_to_dict(name_space_config)
+
+            #pp.pprint(xdr_config)
+            config = xdr_config
         elif stanza != 'all':
             config = util.info_to_dict(
                 self.info("get-config:context=%s" % stanza))
