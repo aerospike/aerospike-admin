@@ -405,13 +405,41 @@ class ShowConfigController(CollectinfoCommandController):
 
         xdr_configs = self.loghdlr.info_getconfig(stanza=CONFIG_XDR)
 
+        old_xdr_configs = {}
+        xdr5_configs = {}
+
         for timestamp in sorted(xdr_configs.keys()):
-            self.view.show_config("XDR Configuration",
-                                  xdr_configs[timestamp],
-                                  self.loghdlr.get_cinfo_log_at(
-                                      timestamp=timestamp),
-                                  title_every_nth=title_every_nth, flip_output=flip_output,
-                                  timestamp=timestamp, **self.mods)
+
+            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_xdr_build()
+
+            for xdr_node in xdr_configs[timestamp]:
+                try:
+                    node_xdr_build_major_version = int(builds[xdr_node][0])
+                except:
+                    continue
+
+                if node_xdr_build_major_version < 5:
+                    old_xdr_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
+                else:
+                    xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
+
+
+            if xdr5_configs:
+                for node in xdr5_configs:
+                    self.view.show_xdr5_config("XDR Configuration",
+                                            xdr5_configs[node],
+                                            cinfo_log,
+                                            node,
+                                            title_every_nth=title_every_nth, flip_output=flip_output,
+                                            timestamp=timestamp, **self.mods)
+
+            if old_xdr_configs:
+                self.view.show_config("XDR Configuration",
+                                    old_xdr_configs,
+                                    cinfo_log,
+                                    title_every_nth=title_every_nth, flip_output=flip_output,
+                                    timestamp=timestamp, **self.mods)
 
     @CommandHelp('Displays datacenter configuration')
     def do_dc(self, line):

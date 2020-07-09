@@ -929,6 +929,7 @@ class Node(object):
         Returns:
         dict -- stanza --> [namespace] --> param --> value
         """
+        xdr_major_version = int(self.info_XDR_build_version()[0])
         config = {}
         if stanza == 'namespace':
             if namespace != "":
@@ -952,9 +953,7 @@ class Node(object):
 
         elif stanza == '' or stanza == 'service':
             config = util.info_to_dict(self.info("get-config:"))
-        elif stanza == 'xdr': # TODO version for server <= 4.9
-            import pprint
-            pp = pprint.PrettyPrinter(indent=4)
+        elif stanza == 'xdr' and xdr_major_version >= 5:
             xdr_config = util.info_to_dict(self.info("get-config:context=xdr"))
             xdr_config['dc_configs'] = {}
 
@@ -973,7 +972,6 @@ class Node(object):
                     name_space_config = self.info("get-config:context=xdr;dc=%s;namespace=%s" % (dc, name_space))
                     xdr_config['dc_configs'][dc]['namespace_configs'][name_space] = util.info_to_dict(name_space_config)
 
-            #pp.pprint(xdr_config)
             config = xdr_config
         elif stanza != 'all':
             config = util.info_to_dict(
