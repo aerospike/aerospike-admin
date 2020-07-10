@@ -409,9 +409,9 @@ class ShowConfigController(CollectinfoCommandController):
         xdr5_configs = {}
 
         for timestamp in sorted(xdr_configs.keys()):
-
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
+            node_names = cinfo_log.get_node_names()
 
             for xdr_node in xdr_configs[timestamp]:
                 try:
@@ -424,24 +424,49 @@ class ShowConfigController(CollectinfoCommandController):
                 else:
                     xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
 
-
             if xdr5_configs:
                 for node in xdr5_configs:
-                    self.view.show_xdr5_config("XDR Configuration",
-                                            xdr5_configs[node],
+                    self.view.show_config(
+                                            "XDR Configuration",
+                                            {node: xdr5_configs[node]['xdr_configs']},
                                             cinfo_log,
-                                            node,
-                                            title_every_nth=title_every_nth, flip_output=flip_output,
-                                            timestamp=timestamp, **self.mods)
+                                            title_every_nth=title_every_nth,
+                                            flip_output=flip_output,
+                                            timestamp=timestamp,
+                                            **self.mods)
+
+                    self.view.show_config(
+                                            "DC Configuration for %s" % node_names[node],
+                                            xdr5_configs[node]['dc_configs'],
+                                            cinfo_log,
+                                            title_every_nth=title_every_nth,
+                                            flip_output=flip_output,
+                                            col_header='data_center',
+                                            timestamp=timestamp,
+                                            **self.mods)
+
+                    for dc, ns_config in xdr5_configs[node]['ns_configs'].items():
+                        for ns in ns_config:
+                                        self.view.show_config(
+                                            "NS Configuration for %s, %s" % (dc, node_names[node]),
+                                            {ns: ns_config[ns]},
+                                            cinfo_log,
+                                            title_every_nth=title_every_nth,
+                                            flip_output=flip_output,
+                                            col_header='namespace',
+                                            **self.mods)
 
             if old_xdr_configs:
                 self.view.show_config("XDR Configuration",
                                     old_xdr_configs,
                                     cinfo_log,
-                                    title_every_nth=title_every_nth, flip_output=flip_output,
+                                    title_every_nth=title_every_nth,
+                                    flip_output=flip_output,
                                     timestamp=timestamp, **self.mods)
 
-    @CommandHelp('Displays datacenter configuration')
+    # pre 5.0
+    @CommandHelp('Displays datacenter configuration',
+                    'Replaced by "show config xdr" for server >= 5.0.')
     def do_dc(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line, arg="-r",

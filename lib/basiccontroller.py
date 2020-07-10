@@ -638,6 +638,7 @@ class ShowConfigController(BasicCommandController):
                 mods=self.mods)
 
         xdr_configs = self.getter.get_xdr(nodes=self.nodes)
+        node_names = self.cluster.get_node_names()
         xdr_builds = xdr_builds.result()
         old_xdr_configs = {}
         xdr5_configs = {}
@@ -655,10 +656,33 @@ class ShowConfigController(BasicCommandController):
 
         futures = []
         if xdr5_configs:
-            futures = [util.Future(self.view.show_xdr5_config, "XDR Configuration",
-                        xdr5_configs[node], self.cluster, node, title_every_nth=title_every_nth, flip_output=flip_output,
-                        **self.mods) 
-            for node in xdr_configs]
+            for node in xdr5_configs:
+
+                futures.append(util.Future(self.view.show_config,
+                                        "XDR Configuration",
+                                        {node: xdr5_configs[node]['xdr_configs']},
+                                        self.cluster, title_every_nth=title_every_nth,
+                                        flip_output=flip_output,
+                                        **self.mods))
+                
+                futures.append(util.Future(self.view.show_config,
+                                        "DC Configuration for %s" % node_names[node],
+                                        xdr5_configs[node]['dc_configs'],
+                                        self.cluster, title_every_nth=title_every_nth,
+                                        flip_output=flip_output,
+                                        col_header='data_center',
+                                        **self.mods))
+
+                for dc, ns_config in xdr5_configs[node]['ns_configs'].items():
+                    futures.append([util.Future(self.view.show_config,
+                                        "NS Configuration for %s, %s" % (dc, node_names[node]),
+                                        {ns: ns_config[ns]},
+                                        self.cluster,
+                                        title_every_nth=title_every_nth,
+                                        flip_output=flip_output,
+                                        col_header='namespace',
+                                        **self.mods)
+                                        for ns in ns_config])
         
         if old_xdr_configs:
             futures.append(util.Future(self.view.show_config, "XDR Configuration",
@@ -667,7 +691,9 @@ class ShowConfigController(BasicCommandController):
         
         return futures
 
-    @CommandHelp('Displays datacenter configuration')
+    # pre 5.0
+    @CommandHelp('Displays datacenter configuration.',
+                'Replaced by "show config xdr" for server >= 5.0.')
     def do_dc(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,

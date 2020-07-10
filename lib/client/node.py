@@ -954,15 +954,18 @@ class Node(object):
         elif stanza == '' or stanza == 'service':
             config = util.info_to_dict(self.info("get-config:"))
         elif stanza == 'xdr' and xdr_major_version >= 5:
-            xdr_config = util.info_to_dict(self.info("get-config:context=xdr"))
+            tmp_xdr_config = util.info_to_dict(self.info("get-config:context=xdr"))
+            xdr_config = {}
             xdr_config['dc_configs'] = {}
+            xdr_config['ns_configs'] = {}
+            xdr_config['xdr_configs'] = tmp_xdr_config
 
-            for dc in xdr_config['dcs'].split(','):
+            for dc in xdr_config['xdr_configs']['dcs'].split(','):
                 dc_config = self.info("get-config:context=xdr;dc=%s" % dc)
 
                 xdr_config['dc_configs'][dc] = {}
-                xdr_config['dc_configs'][dc]['dc_config'] = util.info_to_dict(dc_config)
-                xdr_config['dc_configs'][dc]['namespace_configs'] = {}
+                xdr_config['ns_configs'][dc] = {}
+                xdr_config['dc_configs'][dc] = util.info_to_dict(dc_config)
 
                 start_name_spaces = dc_config.find('namespaces=')+len('namespaces=')
                 end_name_spaces = dc_config.find(';', start_name_spaces)
@@ -970,7 +973,7 @@ class Node(object):
 
                 for name_space in name_spaces:
                     name_space_config = self.info("get-config:context=xdr;dc=%s;namespace=%s" % (dc, name_space))
-                    xdr_config['dc_configs'][dc]['namespace_configs'][name_space] = util.info_to_dict(name_space_config)
+                    xdr_config['ns_configs'][dc][name_space] = util.info_to_dict(name_space_config)
 
             config = xdr_config
         elif stanza != 'all':
