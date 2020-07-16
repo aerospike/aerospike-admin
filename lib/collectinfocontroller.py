@@ -447,14 +447,15 @@ class ShowConfigController(CollectinfoCommandController):
 
                     for dc, ns_config in xdr5_configs[node]['ns_configs'].items():
                         for ns in ns_config:
-                                        self.view.show_config(
-                                            "NS Configuration for %s, %s" % (dc, node_names[node]),
-                                            {ns: ns_config[ns]},
-                                            cinfo_log,
-                                            title_every_nth=title_every_nth,
-                                            flip_output=flip_output,
-                                            col_header='namespace',
-                                            **self.mods)
+                            self.view.show_config(
+                                                    "NS Configuration for %s, %s" % (dc, node_names[node]),
+                                                    {ns: ns_config[ns]},
+                                                    cinfo_log,
+                                                    title_every_nth=title_every_nth,
+                                                    flip_output=flip_output,
+                                                    col_header='namespace',
+                                                    timestamp=timestamp,
+                                                    **self.mods)
 
             if old_xdr_configs:
                 self.view.show_config("XDR Configuration",
