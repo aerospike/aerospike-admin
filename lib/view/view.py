@@ -1166,7 +1166,6 @@ class CliView(object):
             intersection = set.union(set(set1.items()), set(set2.items()))
             return dict(union - intersection).keys() # differing column names
 
-        
         if diff and service_configs:
 
             config_sets = (set(service_configs[d]['xdr_configs'].items())
@@ -1188,6 +1187,7 @@ class CliView(object):
             dc_union = set.union(*config_unions_per_node)
             dc_config_col_names = dict(dc_union - dc_intersect).keys()
 
+            #ns
             all_ns_config_col_names_per_dc = {}
             ns_config_unions_per_node = {}
             dc_keys = set()
@@ -1201,11 +1201,12 @@ class CliView(object):
                     
                     ns_config_unions_per_dc['ns_keys'] = set.union(*(set(ns) for ns in ns_configs[dc]))
                     
-                    all_ns_keys.update(set.union(*(set(ns) for ns in ns_configs[dc])))
+                    all_ns_keys.update(set.union(set(*([ns] for ns in ns_configs[dc]))))
                     dc_keys.update([dc])
                 
                 ns_config_unions_per_node[node] = ns_config_unions_per_dc
             
+            #final
             all_ns_config_unions_per_dc = {}
             all_ns_config_intersections_per_dc = {}
             for dc in dc_keys:
@@ -1213,76 +1214,39 @@ class CliView(object):
                 all_ns_config_unions_per_dc[dc] = set()
                 all_ns_config_intersections_per_dc[dc] = set()
                 for node, ns_unions_per_dc in ns_config_unions_per_node.items():
+                    service_configs[node]['ns_configs'][dc]['warnings'] = []
+                    warnings = service_configs[node]['ns_configs'][dc]['warnings']
                     if dc not in ns_unions_per_dc:
-                        print("dc: %s missing from node: %s" % (dc, node))
+                        warnings.append("WARN: dc: %s, missing from node: %s" % (dc, node))
                         continue
+                    
+                    for ns in all_ns_keys:
+                        if ns not in service_configs[node]['ns_configs'][dc]:
+                            warnings.append("WARN: ns: %s, missing from dc: %s, on node: %s" % (ns, dc, node))
+                            continue
                     
                     all_ns_config_unions_per_dc[dc].update(ns_unions_per_dc[dc])
                 all_ns_config_intersections_per_dc[dc] = set.intersection(*(x[dc] for x in ns_config_unions_per_node.values() if dc in x))
                 all_ns_config_col_names_per_dc[dc] = dict(all_ns_config_unions_per_dc[dc] - all_ns_config_intersections_per_dc[dc]).keys()
-    
-        # if diff and service_configs:
-        #     config_sets = (set(service_configs[d]['xdr_configs'].items())
-        #                    for d in service_configs if service_configs[d])
-        #     union = set.union(*config_sets)
-        #     # Regenerating generator expression for config_sets.
-        #     config_sets = (set(service_configs[d]['xdr_configs'].items())
-        #                    for d in service_configs if service_configs[d])
-        #     intersection = set.intersection(*config_sets)
-        #     xdr_config_col_names = dict(union - intersection).keys()
-
-        #     config_sets_for_union = []
-        #     config_sets_for_intersection = []
-        #     for node in service_configs:
-        #         dc_configs = service_configs[node]['dc_configs']
-        #         config_sets_for_union += (set(dc_configs[d].items())
-        #                     for d in dc_configs if dc_configs[d])
-        #         #breakpoint()
-
+            
+            ns_config_col_names = all_ns_config_col_names_per_dc
+        else:
+            for node, xdr_config in service_configs.items():
+                if isinstance(xdr_config, Exception):
+                    continue
+                xdr_config_col_names.update(xdr_config['xdr_configs'].keys())
                 
-        #         config_sets_for_intersection += (set(dc_configs[d].items())
-        #                     for d in dc_configs if dc_configs[d])
+                for dc_stats in xdr_config['dc_configs'].values():
+                    dc_config_col_names.update(dc_stats.keys())
 
-        #     union = set.union(*config_sets_for_union)
-
-        #     intersection = set.intersection(*config_sets_for_intersection)
-        #     dc_config_col_names = dict(union - intersection).keys()
-
-        #     config_sets_for_union = []
-        #     config_sets_for_intersection = []
-        #     for node in service_configs:
-        #         ns_configs = service_configs[node]['ns_configs']
-        #         for dc in ns_configs:
-        #             config_sets_for_union += ((set(ns_configs[dc][ns].items()) # split this up?
-        #                         for ns in ns_configs[dc] if ns_configs[dc][ns]))
-        #             config_sets_for_union += [set({ns: 'blank'}.items()) for ns in ns_configs[dc].keys()]
-                    
-        #             config_sets_for_intersection += ((set(ns_configs[dc][ns].items())
-        #                         for ns in ns_configs[dc] if ns_configs[dc][ns]))
-        #             config_sets_for_intersection += [set({ns: 'blank'}.items()) for ns in ns_configs[dc].keys()]
-        #     #breakpoint()
-
-        #     union = set.union(*config_sets_for_union)
-
-        #     intersection = set.intersection(*config_sets_for_intersection)
-
-        #     ns_config_col_names = dict(union - intersection).keys()
-        # else:
-        #     for node, xdr_config in service_configs.items():
-        #         if isinstance(xdr_config, Exception):
-        #             continue
-        #         xdr_config_col_names.update(xdr_config['xdr_configs'].keys())
-                
-        #         for dc_stats in xdr_config['dc_configs'].values():
-        #             dc_config_col_names.update(dc_stats.keys())
-
-        #         for ns_stats in xdr_config['ns_configs'].values():
-        #             for ns in ns_stats.values():
-        #                 ns_config_col_names.update(ns.keys())
+                for ns_stats in xdr_config['ns_configs'].values():
+                    for ns in ns_stats.values():
+                        ns_config_col_names.update(ns.keys())
+            
+            ns_config_col_names = sorted(ns_config_col_names)
 
         xdr_config_col_names = sorted(xdr_config_col_names)
         dc_config_col_names = sorted(dc_config_col_names)
-        ns_config_col_names = all_ns_config_col_names_per_dc
         #ns_config_col_names = sorted(ns_config_col_names)
 
         table_data = []
@@ -1301,8 +1265,8 @@ class CliView(object):
             for dc, ns_config in service_configs[node]['ns_configs'].items():
                 table_data.append(("NS Configuration for %s, %s" % (dc, prefixes[node]),
                                 ns_config,
-                                sorted(ns_config_col_names[dc]),
-                                'namespace')) #duplicating namespace because of static function?
+                                sorted(ns_config_col_names[dc] if diff else ns_config_col_names),
+                                'namespace'))
         
         # import pprint
         # pp = pprint.PrettyPrinter(indent=4)
@@ -1347,19 +1311,24 @@ class CliView(object):
             row = None
             if show_total:
                 row_total = {}
-            for node_id, row in service_configs.items():
+            for col_id, row in service_configs.items():
                 if isinstance(row, Exception):
                     row = {}
 
                 # try:
-                #     row['NODE'] = prefixes[node_id]
+                #     row['NODE'] = prefixes[col_id]
                 # except:
-                #     row[col_header] = node_id
+                #     row[col_header] = col_id
+
+                if col_id == 'warnings':
+                    for warning in row:
+                        print(warning)
+                    continue
 
                 if col_header:
-                    row[col_header] = node_id
+                    row[col_header] = col_id
                 else:
-                    row['NODE'] = prefixes[node_id]
+                    row['NODE'] = prefixes[col_id]
                 t.insert_row(row)
 
                 if show_total:
