@@ -638,7 +638,6 @@ class ShowConfigController(BasicCommandController):
                 mods=self.mods)
         
         xdr_configs = self.getter.get_xdr(nodes=self.nodes)
-        node_names = self.cluster.get_node_names()
         xdr_builds = xdr_builds.result()
         old_xdr_configs = {}
         xdr5_configs = {}
@@ -655,21 +654,30 @@ class ShowConfigController(BasicCommandController):
             else:
                 xdr5_configs[node] = xdr_configs[node]
 
-        # xdr5_configs = {'127.0.0.1:3000': {'dc_configs': {'DC1': {'node-address-port': 'aerospike_b_0:3000', 'namespaces': 'test', 'auth-mode': 'internal', 'auth-password-file': 'null', 'auth-user': 'null', 'connector': 'false', 'tls-name': 'null', 'use-alternate-access-address': 'false'}, 'DC2': {'node-address-port': 'aerospike_a_0:3000', 'namespaces': 'test', 'auth-mode': 'internal', 'auth-password-file': 'null', 'auth-user': 'null', 'connector': 'false', 'tls-name': 'null', 'use-alternate-access-address': 'false'}}, 'ns_configs': {'DC1': {'test': {'enabled': 'true', 'delay-ms': '0', 'enable-compression': 'false', 'forward': 'true', 'hot-key-ms': '100', 'ignored-bins': '', 'ignore-expunges': 'false', 'ignored-sets': '', 'max-throughput': '30000', 'shipped-bins': '', 'ship-nsup-deletes': 'false', 'ship-only-specified-bins': 'false', 'ship-only-specified-sets': 'false', 'shipped-sets': '', 'transaction-queue-limit': '16384'}}, 'DC2': {'test': {'enabled': 'true', 'delay-ms': '0', 'enable-compression': 'false', 'forward': 'true', 'hot-key-ms': '100', 'ignored-bins': '', 'ignore-expunges': 'false', 'ignored-sets': '', 'max-throughput': '30000', 'shipped-bins': '', 'ship-nsup-deletes': 'false', 'ship-only-specified-bins': 'false', 'ship-only-specified-sets': 'false', 'shipped-sets': '', 'transaction-queue-limit': '16384'}}}, 'xdr_configs': {'dcs': 'DC1,DC2', 'trace-fraction': '0'}},
-        #                 '127.0.0.2:3000': {'dc_configs': {'DC1': {'node-address-port': 'aerospike_b_0:3000', 'namespaces': 'test', 'auth-mode': 'internal', 'auth-password-file': 'null', 'auth-user': 'null', 'connector': 'false', 'tls-name': 'null', 'use-alternate-access-address': 'false'}, 'DC2': {'node-address-port': 'aerospike_a_0:3000', 'namespaces': 'test', 'auth-mode': 'internal', 'auth-password-file': 'null', 'auth-user': 'null', 'connector': 'false', 'tls-name': 'null', 'use-alternate-access-address': 'false'}}, 'ns_configs': {'DC2': {'test': {'enabled': 'true', 'delay-ms': '10', 'enable-compression': 'false', 'forward': 'true', 'hot-key-ms': '100', 'ignored-bins': '', 'ignore-expunges': 'false', 'ignored-sets': '', 'max-throughput': '30000', 'shipped-bins': '', 'ship-nsup-deletes': 'false', 'ship-only-specified-bins': 'false', 'ship-only-specified-sets': 'false', 'shipped-sets': '', 'transaction-queue-limit': '16384'}}}, 'xdr_configs': {'dcs': 'DC1,DC2', 'trace-fraction': '0'}}}
-        
-        xdr5_configs = {'127.0.0.1:3000': {'dc_configs': {'DC1': {'node-address-port': 'aerospike_b_0:3000', 'namespaces': 'test', 'auth-mode': 'internal', 'auth-password-file': 'null', 'auth-user': 'null', 'connector': 'false', 'tls-name': 'null', 'use-alternate-access-address': 'false'}, 'DC2': {'node-address-port': 'aerospike_a_0:3000', 'namespaces': 'test', 'auth-mode': 'internal', 'auth-password-file': 'null', 'auth-user': 'null', 'connector': 'false', 'tls-name': 'null', 'use-alternate-access-address': 'false'}}, 'ns_configs': {'DC1': {'bar': {'enabled': 'false', 'delay-ms': '10', 'enable-compression': 'false', 'forward': 'true', 'hot-key-ms': '100', 'ignored-bins': '', 'ignore-expunges': 'false', 'ignored-sets': '', 'max-throughput': '30000', 'shipped-bins': '', 'ship-nsup-deletes': 'false', 'ship-only-specified-bins': 'false', 'ship-only-specified-sets': 'false', 'shipped-sets': '', 'transaction-queue-limit': '16384'}}, 'DC2': {'test': {'enabled': 'false', 'delay-ms': '0', 'enable-compression': 'false', 'forward': 'true', 'hot-key-ms': '100', 'ignored-bins': '', 'ignore-expunges': 'false', 'ignored-sets': '', 'max-throughput': '30000', 'shipped-bins': '', 'ship-nsup-deletes': 'false', 'ship-only-specified-bins': 'false', 'ship-only-specified-sets': 'false', 'shipped-sets': '', 'transaction-queue-limit': '16384'}}}, 'xdr_configs': {'dcs': 'DC1,DC2', 'trace-fraction': '0'}},
-                        '127.0.0.2:3000': {'dc_configs': {'DC1': {'node-address-port': 'aerospike_b_0:3000', 'namespaces': 'test', 'auth-mode': 'internal', 'auth-password-file': 'null', 'auth-user': 'null', 'connector': 'false', 'tls-name': 'null', 'use-alternate-access-address': 'true'}, 'DC2': {'node-address-port': 'aerospike_a_0:3000', 'namespaces': 'test', 'auth-mode': 'internal', 'auth-password-file': '/tmp/pass_file', 'auth-user': 'null', 'connector': 'false', 'tls-name': 'null', 'use-alternate-access-address': 'false'}}, 'ns_configs': {'DC1': {'test': {'enabled': 'true', 'delay-ms': '5', 'enable-compression': 'false', 'forward': 'false', 'hot-key-ms': '100', 'ignored-bins': '', 'ignore-expunges': 'false', 'ignored-sets': '', 'max-throughput': '30000', 'shipped-bins': '', 'ship-nsup-deletes': 'false', 'ship-only-specified-bins': 'false', 'ship-only-specified-sets': 'false', 'shipped-sets': '', 'transaction-queue-limit': '16384'}}, 'DC2': {'test': {'enabled': 'true', 'delay-ms': '0', 'enable-compression': 'false', 'forward': 'true', 'hot-key-ms': '100', 'ignored-bins': '', 'ignore-expunges': 'false', 'ignored-sets': '', 'max-throughput': '30000', 'shipped-bins': '', 'ship-nsup-deletes': 'false', 'ship-only-specified-bins': 'false', 'ship-only-specified-sets': 'false', 'shipped-sets': '', 'transaction-queue-limit': '16384'}}}, 'xdr_configs': {'dcs': 'DC1,DC2', 'trace-fraction': '0'}}}
-        
         futures = []
         if xdr5_configs:
             if self.mods['for']:
                 xdr_dc = self.mods['for'][0]
-                xdr_ns = self.mods['for'][1] if len(self.mods) >= 2 else []
+
                 for node, config in xdr5_configs.items():
-                    xdr5_configs[node] = {'xdr_configs': config['xdr_configs'] if 'xdr_configs' in config else {},
-                                            'dc_configs': {xdr_dc: config['dc_configs'][xdr_dc]} if xdr_dc in config['dc_configs'] else {},
-                                            'ns_configs': {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}} if xdr_ns in config['ns_configs'][xdr_dc] else {}}
+                    xdr5_configs[node]['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
+
+                    if xdr_dc in config['dc_configs']:
+                        xdr5_configs[node]['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
+                    else:
+                        xdr5_configs[node]['dc_configs'] = {}
+                    
+                    if xdr_dc in config['ns_configs']:
+                        xdr5_configs[node]['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
+                    else:
+                        xdr5_configs[node]['ns_configs'] = {}
+
+                    if len(self.mods['for']) >= 2:
+                        xdr_ns = self.mods['for'][1]
+                        if xdr_ns in config['ns_configs'][xdr_dc]:
+                            xdr5_configs[node]['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
+                        else:
+                            xdr5_configs[node]['ns_configs'] = {}
 
             futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
                                         xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,

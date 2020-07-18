@@ -1095,79 +1095,17 @@ class CliView(object):
             CliView.print_result(t)
 
     @staticmethod
-    def xdr5_display_config_table(title, service_configs, cluster, column_names, like=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", col_header="", **ignore):
-        prefixes = cluster.get_node_names()
-        prefixes = {'127.0.0.1:3000': 'test_node_1', '127.0.0.2:3000': 'test_node_2'}
-        
-        if like:
-            likes = compile_likes(like)
-
-            column_names = list(filter(likes.search, column_names))
-
-        if col_header:
-            column_names.insert(0, col_header)
-        else:
-            column_names.insert(0, "NODE")
-
-        table_style = Styles.VERTICAL
-        if flip_output:
-            table_style = Styles.HORIZONTAL
-
-        if show_total:
-            n_last_columns_ignore_sort = 1
-        else:
-            n_last_columns_ignore_sort = 0
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = title + title_suffix
-        t = Table(title, column_names,
-                title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
-
-
-        row = None
-        if show_total:
-            row_total = {}
-        for node_id, row in service_configs.items():
-            if isinstance(row, Exception):
-                row = {}
-
-            try:
-                row['NODE'] = prefixes[node_id]
-            except:
-                row[col_header] = node_id
-            t.insert_row(row)
-
-            if show_total:
-                for key, val in row.items():
-                    if (val.isdigit()):
-                        try:
-                            row_total[key] = row_total[key] + int(val)
-                        except Exception:
-                            row_total[key] = int(val)
-        if show_total:
-            row_total['NODE'] = "Total"
-            t.insert_row(row_total)
-
-        CliView.print_result(
-            t.__str__(horizontal_title_every_nth=title_every_nth))
-
-    @staticmethod
     def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", col_header="", **ignore):        
         prefixes = cluster.get_node_names()
-        prefixes = {'127.0.0.1:3000': 'test_node_1', '127.0.0.2:3000': 'test_node_2'}
         column_names = set()
 
         xdr_config_col_names = set()
         dc_config_col_names = set()
         ns_config_col_names = set()
 
-        def find_differences_in_dict(set1, set2):
-            union = set.union(set(set1.items()), set(set2.items()))
-            intersection = set.union(set(set1.items()), set(set2.items()))
-            return dict(union - intersection).keys() # differing column names
-
         if diff and service_configs:
 
+            # create xdr config names
             config_sets = (set(service_configs[d]['xdr_configs'].items())
                            for d in service_configs if service_configs[d])
             union = set.union(*config_sets)
@@ -1177,6 +1115,7 @@ class CliView(object):
             intersection = set.intersection(*config_sets)
             xdr_config_col_names = dict(union - intersection).keys()
 
+            # create dc xdr config names
             config_unions_per_node = []
             for node in service_configs:
                 dc_configs = service_configs[node]['dc_configs']
@@ -1187,8 +1126,7 @@ class CliView(object):
             dc_union = set.union(*config_unions_per_node)
             dc_config_col_names = dict(dc_union - dc_intersect).keys()
 
-            #ns
-            all_ns_config_col_names_per_dc = {}
+            #create ns xdr config names
             ns_config_unions_per_node = {}
             dc_keys = set()
             all_ns_keys = set()
@@ -1206,28 +1144,27 @@ class CliView(object):
                 
                 ns_config_unions_per_node[node] = ns_config_unions_per_dc
             
-            #final
+            all_ns_config_col_names_per_dc = {}
             all_ns_config_unions_per_dc = {}
-            all_ns_config_intersections_per_dc = {}
             for dc in dc_keys:
-                all_ns_config_col_names_per_dc[dc] = set()
-                all_ns_config_unions_per_dc[dc] = set()
-                all_ns_config_intersections_per_dc[dc] = set()
+                all_ns_config_unions_per_dc = set()
                 for node, ns_unions_per_dc in ns_config_unions_per_node.items():
-                    service_configs[node]['ns_configs'][dc]['warnings'] = []
-                    warnings = service_configs[node]['ns_configs'][dc]['warnings']
+                    warnings = []
+
                     if dc not in ns_unions_per_dc:
                         warnings.append("WARN: dc: %s, missing from node: %s" % (dc, node))
                         continue
-                    
+
                     for ns in all_ns_keys:
                         if ns not in service_configs[node]['ns_configs'][dc]:
                             warnings.append("WARN: ns: %s, missing from dc: %s, on node: %s" % (ns, dc, node))
                             continue
-                    
-                    all_ns_config_unions_per_dc[dc].update(ns_unions_per_dc[dc])
-                all_ns_config_intersections_per_dc[dc] = set.intersection(*(x[dc] for x in ns_config_unions_per_node.values() if dc in x))
-                all_ns_config_col_names_per_dc[dc] = dict(all_ns_config_unions_per_dc[dc] - all_ns_config_intersections_per_dc[dc]).keys()
+
+                    service_configs[node]['ns_configs'][dc]['warnings'] = warnings
+                    all_ns_config_unions_per_dc.update(ns_unions_per_dc[dc])
+
+                all_ns_config_intersections_per_dc = set.intersection(*(x[dc] for x in ns_config_unions_per_node.values() if dc in x))
+                all_ns_config_col_names_per_dc[dc] = dict(all_ns_config_unions_per_dc - all_ns_config_intersections_per_dc).keys()
             
             ns_config_col_names = all_ns_config_col_names_per_dc
         else:
@@ -1247,7 +1184,6 @@ class CliView(object):
 
         xdr_config_col_names = sorted(xdr_config_col_names)
         dc_config_col_names = sorted(dc_config_col_names)
-        #ns_config_col_names = sorted(ns_config_col_names)
 
         table_data = []
         for node in service_configs:
@@ -1267,14 +1203,8 @@ class CliView(object):
                                 ns_config,
                                 sorted(ns_config_col_names[dc] if diff else ns_config_col_names),
                                 'namespace'))
-        
-        # import pprint
-        # pp = pprint.PrettyPrinter(indent=4)
-        # pp.pprint(table_data)
 
         for data in table_data:
-            #CliView.xdr5_display_config_table(data[0], data[1], cluster, data[2], like=like, show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output, timestamp=timestamp, col_header=data[3])
-
             title = data[0]
             service_configs = data[1]
             column_names = copy.deepcopy(data[2])

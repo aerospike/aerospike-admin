@@ -954,8 +954,7 @@ class Node(object):
         elif stanza == '' or stanza == 'service':
             config = util.info_to_dict(self.info("get-config:"))
         elif stanza == 'xdr' and xdr_major_version >= 5:
-            # import pprint
-            # pp = pprint.PrettyPrinter(indent=4)
+
             tmp_xdr_config = util.info_to_dict(self.info("get-config:context=xdr"))
             xdr_config = {}
             xdr_config['dc_configs'] = {}
@@ -978,7 +977,6 @@ class Node(object):
                     xdr_config['ns_configs'][dc][name_space] = util.info_to_dict(name_space_config)
 
             config = xdr_config
-            # pp.pprint(config)
         elif stanza != 'all':
             config = util.info_to_dict(
                 self.info("get-config:context=%s" % stanza))

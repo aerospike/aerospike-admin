@@ -320,7 +320,7 @@ class ShowController(CollectinfoCommandController):
 class ShowConfigController(CollectinfoCommandController):
 
     def __init__(self):
-        self.modifiers = set(['like', 'diff'])
+        self.modifiers = set(['like', 'diff', 'for'])
 
     @CommandHelp('Displays service, network, and namespace configuration',
                  '  Options:',
@@ -411,7 +411,6 @@ class ShowConfigController(CollectinfoCommandController):
         for timestamp in sorted(xdr_configs.keys()):
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
-            node_names = cinfo_log.get_node_names()
 
             for xdr_node in xdr_configs[timestamp]:
                 try:
@@ -425,37 +424,39 @@ class ShowConfigController(CollectinfoCommandController):
                     xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
 
             if xdr5_configs:
+
+                if self.mods['for']:
+                    xdr_dc = self.mods['for'][0]
+
+                    for node, config in xdr5_configs.items():
+                        xdr5_configs[node]['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
+
+                        if xdr_dc in config['dc_configs']:
+                            xdr5_configs[node]['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
+                        else:
+                            xdr5_configs[node]['dc_configs'] = {}
+                        
+                        if xdr_dc in config['ns_configs']:
+                            xdr5_configs[node]['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
+                        else:
+                            xdr5_configs[node]['ns_configs'] = {}
+
+                        if len(self.mods['for']) >= 2:
+                            xdr_ns = self.mods['for'][1]
+                            if xdr_ns in config['ns_configs'][xdr_dc]:
+                                xdr5_configs[node]['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
+                            else:
+                                xdr5_configs[node]['ns_configs'] = {}
+
                 for node in xdr5_configs:
-                    self.view.show_config(
-                                            "XDR Configuration",
-                                            {node: xdr5_configs[node]['xdr_configs']},
+                    self.view.show_xdr5_config("XDR Configuration",
+                                            xdr5_configs,
                                             cinfo_log,
                                             title_every_nth=title_every_nth,
                                             flip_output=flip_output,
                                             timestamp=timestamp,
                                             **self.mods)
 
-                    self.view.show_config(
-                                            "DC Configuration for %s" % node_names[node],
-                                            xdr5_configs[node]['dc_configs'],
-                                            cinfo_log,
-                                            title_every_nth=title_every_nth,
-                                            flip_output=flip_output,
-                                            col_header='data_center',
-                                            timestamp=timestamp,
-                                            **self.mods)
-
-                    for dc, ns_config in xdr5_configs[node]['ns_configs'].items():
-                        for ns in ns_config:
-                            self.view.show_config(
-                                                    "NS Configuration for %s, %s" % (dc, node_names[node]),
-                                                    {ns: ns_config[ns]},
-                                                    cinfo_log,
-                                                    title_every_nth=title_every_nth,
-                                                    flip_output=flip_output,
-                                                    col_header='namespace',
-                                                    timestamp=timestamp,
-                                                    **self.mods)
 
             if old_xdr_configs:
                 self.view.show_config("XDR Configuration",
