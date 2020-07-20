@@ -19,7 +19,6 @@ import time
 import types
 from io import StringIO
 from pydoc import pipepager
-import copy
 
 from lib.health.constants import (AssertLevel, AssertResultKey,
                                   HealthResultCounter, HealthResultType)
@@ -1097,21 +1096,15 @@ class CliView(object):
     @staticmethod
     def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", col_header="", **ignore):        
         prefixes = cluster.get_node_names()
-        column_names = set()
-
         xdr_config_col_names = set()
         dc_config_col_names = set()
         ns_config_col_names = set()
 
         if diff and service_configs:
-
             # create xdr config names
-            config_sets = (set(service_configs[d]['xdr_configs'].items())
-                           for d in service_configs if service_configs[d])
+            config_sets = [set(service_configs[node]['xdr_configs'].items())
+                           for node in service_configs if service_configs[node]]
             union = set.union(*config_sets)
-            # Regenerating generator expression for config_sets.
-            config_sets = (set(service_configs[d]['xdr_configs'].items())
-                           for d in service_configs if service_configs[d])
             intersection = set.intersection(*config_sets)
             xdr_config_col_names = dict(union - intersection).keys()
 
@@ -1119,8 +1112,8 @@ class CliView(object):
             config_unions_per_node = []
             for node in service_configs:
                 dc_configs = service_configs[node]['dc_configs']
-                config_unions_per_node.append(set.union(*(set(dc_configs[d].items())
-                            for d in dc_configs if dc_configs[d])))
+                config_unions_per_node.append(set.union(*(set(dc_configs[dc].items())
+                            for dc in dc_configs if dc_configs[dc])))
             
             dc_intersect = set.intersection(*config_unions_per_node)
             dc_union = set.union(*config_unions_per_node)
@@ -1133,14 +1126,13 @@ class CliView(object):
             for node in service_configs:
                 ns_configs = service_configs[node]['ns_configs']
                 ns_config_unions_per_dc = {}
+                dc_keys.update(ns_configs.keys())
                 for dc in ns_configs:
                     ns_config_unions_per_dc[dc] = (set.union(*(set(ns_configs[dc][ns].items())
                                                     for ns in ns_configs[dc] if ns_configs[dc][ns])))
                     
                     ns_config_unions_per_dc['ns_keys'] = set.union(*(set(ns) for ns in ns_configs[dc]))
-                    
-                    all_ns_keys.update(set.union(set(*([ns] for ns in ns_configs[dc]))))
-                    dc_keys.update([dc])
+                    all_ns_keys.update(ns_configs[dc].keys())
                 
                 ns_config_unions_per_node[node] = ns_config_unions_per_dc
             
@@ -1171,6 +1163,7 @@ class CliView(object):
             for node, xdr_config in service_configs.items():
                 if isinstance(xdr_config, Exception):
                     continue
+
                 xdr_config_col_names.update(xdr_config['xdr_configs'].keys())
                 
                 for dc_stats in xdr_config['dc_configs'].values():
@@ -1184,9 +1177,10 @@ class CliView(object):
 
         xdr_config_col_names = sorted(xdr_config_col_names)
         dc_config_col_names = sorted(dc_config_col_names)
-
         table_data = []
         for node in service_configs:
+            if isinstance(service_configs[node], Exception):
+                continue
 
             table_data.append(("XDR Configuration",
                             {node: service_configs[node]['xdr_configs']},
@@ -1207,7 +1201,7 @@ class CliView(object):
         for data in table_data:
             title = data[0]
             service_configs = data[1]
-            column_names = copy.deepcopy(data[2])
+            column_names = data[2][:]
             col_header = data[3]
 
             if len(column_names) == 0:
@@ -1237,18 +1231,13 @@ class CliView(object):
             t = Table(title, column_names,
                     title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
 
-
             row = None
             if show_total:
                 row_total = {}
+
             for col_id, row in service_configs.items():
                 if isinstance(row, Exception):
                     row = {}
-
-                # try:
-                #     row['NODE'] = prefixes[col_id]
-                # except:
-                #     row[col_header] = col_id
 
                 if col_id == 'warnings':
                     for warning in row:
@@ -1259,8 +1248,8 @@ class CliView(object):
                     row[col_header] = col_id
                 else:
                     row['NODE'] = prefixes[col_id]
-                t.insert_row(row)
 
+                t.insert_row(row)
                 if show_total:
                     for key, val in row.items():
                         if (val.isdigit()):
@@ -1277,7 +1266,7 @@ class CliView(object):
 
 
     @staticmethod
-    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", col_header="", **ignore):        
+    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):        
         prefixes = cluster.get_node_names()
         column_names = set()
 
@@ -1305,10 +1294,7 @@ class CliView(object):
         if len(column_names) == 0:
             return ''
 
-        if col_header:
-            column_names.insert(0, col_header)
-        else:
-            column_names.insert(0, "NODE")
+        column_names.insert(0, "NODE")
 
         table_style = Styles.VERTICAL
         if flip_output:
@@ -1331,10 +1317,7 @@ class CliView(object):
             if isinstance(row, Exception):
                 row = {}
 
-            try:
-                row['NODE'] = prefixes[node_id]
-            except:
-                row[col_header] = node_id
+            row['NODE'] = prefixes[node_id]
             t.insert_row(row)
 
             if show_total:

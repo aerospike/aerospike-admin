@@ -209,6 +209,7 @@ class InfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
+        node_xdr_build_major_version = 4
 
         for node in stats:
             try:
@@ -248,6 +249,7 @@ class InfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         old_xdr_stats = {}
         xdr5_stats = {}
+        node_xdr_build_major_version = 4
 
         for node in stats:
             try:
@@ -660,24 +662,27 @@ class ShowConfigController(BasicCommandController):
                 xdr_dc = self.mods['for'][0]
 
                 for node, config in xdr5_configs.items():
-                    xdr5_configs[node]['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
+                    if isinstance(config, Exception):
+                        continue
+                    
+                    config['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
 
                     if xdr_dc in config['dc_configs']:
-                        xdr5_configs[node]['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
+                        config['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
                     else:
-                        xdr5_configs[node]['dc_configs'] = {}
+                        config['dc_configs'] = {}
                     
                     if xdr_dc in config['ns_configs']:
-                        xdr5_configs[node]['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
+                        config['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
                     else:
-                        xdr5_configs[node]['ns_configs'] = {}
+                        config['ns_configs'] = {}
 
                     if len(self.mods['for']) >= 2:
                         xdr_ns = self.mods['for'][1]
-                        if xdr_ns in config['ns_configs'][xdr_dc]:
-                            xdr5_configs[node]['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
+                        if xdr_dc in config['ns_configs'] and xdr_ns in config['ns_configs'][xdr_dc]:
+                            config['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
                         else:
-                            xdr5_configs[node]['ns_configs'] = {}
+                            config['ns_configs'] = {}
 
             futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
                                         xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
@@ -711,9 +716,9 @@ class ShowConfigController(BasicCommandController):
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
         xdr_builds = xdr_builds.result()
+        node_xdr_build_major_version = 4
 
         for node in xdr_builds.values():
-
             try:
                 node_xdr_build_major_version = int(node[0])
             except:
@@ -725,7 +730,6 @@ class ShowConfigController(BasicCommandController):
                 nodes_running_v49_or_lower = True
 
         futures = []
-
         if nodes_running_v49_or_lower:
             futures = [util.Future(self.view.show_config,
                 "%s DC Configuration" % (dc), configs, self.cluster,
@@ -933,6 +937,7 @@ class ShowStatisticsController(BasicCommandController):
         xdr_stats = xdr_stats.result()
         old_xdr_stats = {}
         xdr5_stats = {}
+        node_xdr_build_major_version = 4
 
         for node in xdr_stats:
             try:
@@ -999,6 +1004,7 @@ class ShowStatisticsController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
+        node_xdr_build_major_version = 4
 
         for dc in dc_stats.values():
 

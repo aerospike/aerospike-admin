@@ -139,6 +139,7 @@ class InfoController(CollectinfoCommandController):
         'Displays Cross Datacenter Replication (XDR) summary information.')
     def do_xdr(self, line):
         xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
+        node_xdr_build_major_version = 4
         for timestamp in sorted(xdr_stats.keys()):
             if not xdr_stats[timestamp]:
                 continue
@@ -196,6 +197,7 @@ class InfoController(CollectinfoCommandController):
             builds = cinfo_log.get_xdr_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
+            node_xdr_build_major_version = 4
 
             if not dc_stats[timestamp]:
                 continue
@@ -404,9 +406,9 @@ class ShowConfigController(CollectinfoCommandController):
                 mods=self.mods)
 
         xdr_configs = self.loghdlr.info_getconfig(stanza=CONFIG_XDR)
-
         old_xdr_configs = {}
         xdr5_configs = {}
+        node_xdr_build_major_version = 4
 
         for timestamp in sorted(xdr_configs.keys()):
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
@@ -424,29 +426,30 @@ class ShowConfigController(CollectinfoCommandController):
                     xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
 
             if xdr5_configs:
-
                 if self.mods['for']:
                     xdr_dc = self.mods['for'][0]
-
                     for node, config in xdr5_configs.items():
-                        xdr5_configs[node]['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
-
+                        if isinstance(config, Exception):
+                            continue
+                        
+                        config['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
+                        
                         if xdr_dc in config['dc_configs']:
-                            xdr5_configs[node]['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
+                            config['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
                         else:
-                            xdr5_configs[node]['dc_configs'] = {}
+                            config['dc_configs'] = {}
                         
                         if xdr_dc in config['ns_configs']:
-                            xdr5_configs[node]['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
+                            config['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
                         else:
-                            xdr5_configs[node]['ns_configs'] = {}
+                            config['ns_configs'] = {}
 
                         if len(self.mods['for']) >= 2:
                             xdr_ns = self.mods['for'][1]
-                            if xdr_ns in config['ns_configs'][xdr_dc]:
-                                xdr5_configs[node]['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
+                            if xdr_dc in config['ns_configs'] and xdr_ns in config['ns_configs'][xdr_dc]:
+                                config['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
                             else:
-                                xdr5_configs[node]['ns_configs'] = {}
+                                config['ns_configs'] = {}
 
                 for node in xdr5_configs:
                     self.view.show_xdr5_config("XDR Configuration",
@@ -480,6 +483,7 @@ class ShowConfigController(CollectinfoCommandController):
                 mods=self.mods)
 
         dc_configs = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
+        node_xdr_build_major_version = 4
 
         for timestamp in sorted(dc_configs.keys()):
             builds = cinfo_log.get_xdr_build()
@@ -829,6 +833,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
         old_xdr_stats = {}
         xdr5_stats = {}
+        node_xdr_build_major_version = 4
 
         for timestamp in sorted(xdr_stats.keys()):
 
@@ -893,6 +898,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 mods=self.mods)
 
         dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
+        node_xdr_build_major_version = 4
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()

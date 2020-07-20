@@ -954,17 +954,13 @@ class Node(object):
         elif stanza == '' or stanza == 'service':
             config = util.info_to_dict(self.info("get-config:"))
         elif stanza == 'xdr' and xdr_major_version >= 5:
-
-            tmp_xdr_config = util.info_to_dict(self.info("get-config:context=xdr"))
             xdr_config = {}
             xdr_config['dc_configs'] = {}
             xdr_config['ns_configs'] = {}
-            xdr_config['xdr_configs'] = tmp_xdr_config
+            xdr_config['xdr_configs'] = util.info_to_dict(self.info("get-config:context=xdr"))
 
             for dc in xdr_config['xdr_configs']['dcs'].split(','):
                 dc_config = self.info("get-config:context=xdr;dc=%s" % dc)
-
-                xdr_config['dc_configs'][dc] = {}
                 xdr_config['ns_configs'][dc] = {}
                 xdr_config['dc_configs'][dc] = util.info_to_dict(dc_config)
 
