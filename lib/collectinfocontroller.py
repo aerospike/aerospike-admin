@@ -482,11 +482,33 @@ class ShowConfigController(CollectinfoCommandController):
         dc_configs = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
 
         for timestamp in sorted(dc_configs.keys()):
-            for dc, configs in dc_configs[timestamp].items():
-                self.view.show_config("%s DC Configuration"%(dc), configs,
-                                      self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                                      title_every_nth=title_every_nth, flip_output=flip_output,
-                                      timestamp=timestamp, **self.mods)
+            builds = cinfo_log.get_xdr_build()
+            nodes_running_v5_or_higher = False
+            nodes_running_v49_or_lower = False
+
+            for version in builds.values():
+                try:
+                    node_xdr_build_major_version = int(version[0])
+                except:
+                    continue
+                
+                if node_xdr_build_major_version >= 5:
+                    nodes_running_v5_or_higher = True
+                else:
+                    nodes_running_v49_or_lower = True
+
+            if nodes_running_v49_or_lower:
+                for dc, configs in dc_configs[timestamp].items():
+                    self.view.show_config("%s DC Configuration"%(dc), configs,
+                                        self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                                        title_every_nth=title_every_nth, flip_output=flip_output,
+                                        timestamp=timestamp, **self.mods)
+            
+            if nodes_running_v5_or_higher:
+                self.view.print_result("WARNING: Detected nodes running " +
+                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
+                 "/path/to/collect_info_file -e \"show config xdr\"'" + 
+                 " for versions 5.0 and up.")
 
     @CommandHelp('Displays cluster configuration')
     def do_cluster(self, line):

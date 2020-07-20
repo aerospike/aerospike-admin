@@ -695,6 +695,9 @@ class ShowConfigController(BasicCommandController):
                 'Replaced by "show config xdr" for server >= 5.0.')
     def do_dc(self, line):
 
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
+
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
                 mods=self.mods)
@@ -705,30 +708,36 @@ class ShowConfigController(BasicCommandController):
 
         dc_configs = self.getter.get_dc(nodes=self.nodes)
 
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
-                nodes=self.nodes).start()
-
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
         xdr_builds = xdr_builds.result()
 
-        for dc in dc_configs.values():
+        for node in xdr_builds.values():
 
-            for node in dc:
-                try:
-                    node_xdr_build_major_version = int(xdr_builds[node][0])
-                except:
-                    continue
+            try:
+                node_xdr_build_major_version = int(node[0])
+            except:
+                continue
 
-                if node_xdr_build_major_version >= 5:
-                    nodes_running_v5_or_higher = True
-                else:
-                    nodes_running_v49_or_lower = True
+            if node_xdr_build_major_version >= 5:
+                nodes_running_v5_or_higher = True
+            else:
+                nodes_running_v49_or_lower = True
 
-        return [util.Future(self.view.show_config,
-            "%s DC Configuration" % (dc), configs, self.cluster,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for dc, configs in dc_configs.items()]
+        futures = []
+
+        if nodes_running_v49_or_lower:
+            futures = [util.Future(self.view.show_config,
+                "%s DC Configuration" % (dc), configs, self.cluster,
+                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
+                for dc, configs in dc_configs.items()]
+        
+        if nodes_running_v5_or_higher:
+            futures.append(util.Future(self.view.print_result, 
+            "WARNING: Detected nodes running aerospike version >= 5.0. " +
+            "Please use 'asadm -e \"show config xdr\"' for versions 5.0 and up."))
+
+        return futures
 
     @CommandHelp('Displays Cluster configuration')
     def do_cluster(self, line):
