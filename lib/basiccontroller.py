@@ -661,7 +661,7 @@ class ShowConfigController(BasicCommandController):
             if self.mods['for']:
                 xdr_dc = self.mods['for'][0]
 
-                for node, config in xdr5_configs.items():
+                for config in xdr5_configs.values():
                     if isinstance(config, Exception):
                         continue
                     
@@ -718,9 +718,9 @@ class ShowConfigController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         node_xdr_build_major_version = 4
 
-        for node in xdr_builds.values():
+        for xdr_build in xdr_builds.values():
             try:
-                node_xdr_build_major_version = int(node[0])
+                node_xdr_build_major_version = int(xdr_build[0])
             except:
                 continue
 
