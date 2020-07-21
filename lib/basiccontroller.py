@@ -209,6 +209,7 @@ class InfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
+        node_xdr_build_major_version = 4
 
         for node in stats:
             try:
@@ -248,6 +249,7 @@ class InfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         old_xdr_stats = {}
         xdr5_stats = {}
+        node_xdr_build_major_version = 4
 
         for node in stats:
             try:
@@ -626,6 +628,8 @@ class ShowConfigController(BasicCommandController):
 
     @CommandHelp('Displays XDR configuration')
     def do_xdr(self, line):
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
@@ -634,15 +638,70 @@ class ShowConfigController(BasicCommandController):
         flip_output = util.check_arg_and_delete_from_mods(line=line,
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
-
+        
         xdr_configs = self.getter.get_xdr(nodes=self.nodes)
+        xdr_builds = xdr_builds.result()
+        old_xdr_configs = {}
+        xdr5_configs = {}
+        node_xdr_build_major_version = 4
 
-        return util.Future(self.view.show_config, "XDR Configuration",
-                xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
-                **self.mods)
+        for node in xdr_configs:
+            try:
+                node_xdr_build_major_version = int(xdr_builds[node][0])
+            except:
+                continue
 
-    @CommandHelp('Displays datacenter configuration')
+            if node_xdr_build_major_version < 5:
+                old_xdr_configs[node] = xdr_configs[node]
+            else:
+                xdr5_configs[node] = xdr_configs[node]
+
+        futures = []
+        if xdr5_configs:
+            if self.mods['for']:
+                xdr_dc = self.mods['for'][0]
+
+                for config in xdr5_configs.values():
+                    if isinstance(config, Exception):
+                        continue
+                    
+                    config['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
+
+                    if xdr_dc in config['dc_configs']:
+                        config['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
+                    else:
+                        config['dc_configs'] = {}
+                    
+                    if xdr_dc in config['ns_configs']:
+                        config['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
+                    else:
+                        config['ns_configs'] = {}
+
+                    if len(self.mods['for']) >= 2:
+                        xdr_ns = self.mods['for'][1]
+                        if xdr_dc in config['ns_configs'] and xdr_ns in config['ns_configs'][xdr_dc]:
+                            config['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
+                        else:
+                            config['ns_configs'] = {}
+
+            futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
+                                        xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
+                                        **self.mods))
+        
+        if old_xdr_configs:
+            futures.append(util.Future(self.view.show_config, "XDR Configuration",
+                                        old_xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
+                                        **self.mods))
+        
+        return futures
+
+    # pre 5.0
+    @CommandHelp('Displays datacenter configuration.',
+                'Replaced by "show config xdr" for server >= 5.0.')
     def do_dc(self, line):
+
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
@@ -654,10 +713,35 @@ class ShowConfigController(BasicCommandController):
 
         dc_configs = self.getter.get_dc(nodes=self.nodes)
 
-        return [util.Future(self.view.show_config,
-            "%s DC Configuration" % (dc), configs, self.cluster,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for dc, configs in dc_configs.items()]
+        nodes_running_v5_or_higher = False
+        nodes_running_v49_or_lower = False
+        xdr_builds = xdr_builds.result()
+        node_xdr_build_major_version = 4
+
+        for xdr_build in xdr_builds.values():
+            try:
+                node_xdr_build_major_version = int(xdr_build[0])
+            except:
+                continue
+
+            if node_xdr_build_major_version >= 5:
+                nodes_running_v5_or_higher = True
+            else:
+                nodes_running_v49_or_lower = True
+
+        futures = []
+        if nodes_running_v49_or_lower:
+            futures = [util.Future(self.view.show_config,
+                "%s DC Configuration" % (dc), configs, self.cluster,
+                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
+                for dc, configs in dc_configs.items()]
+        
+        if nodes_running_v5_or_higher:
+            futures.append(util.Future(self.view.print_result, 
+            "WARNING: Detected nodes running aerospike version >= 5.0. " +
+            "Please use 'asadm -e \"show config xdr\"' for versions 5.0 and up."))
+
+        return futures
 
     @CommandHelp('Displays Cluster configuration')
     def do_cluster(self, line):
@@ -853,6 +937,7 @@ class ShowStatisticsController(BasicCommandController):
         xdr_stats = xdr_stats.result()
         old_xdr_stats = {}
         xdr5_stats = {}
+        node_xdr_build_major_version = 4
 
         for node in xdr_stats:
             try:
@@ -919,6 +1004,7 @@ class ShowStatisticsController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
+        node_xdr_build_major_version = 4
 
         for dc in dc_stats.values():
 

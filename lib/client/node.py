@@ -929,6 +929,7 @@ class Node(object):
         Returns:
         dict -- stanza --> [namespace] --> param --> value
         """
+        xdr_major_version = int(self.info_XDR_build_version()[0])
         config = {}
         if stanza == 'namespace':
             if namespace != "":
@@ -952,6 +953,26 @@ class Node(object):
 
         elif stanza == '' or stanza == 'service':
             config = util.info_to_dict(self.info("get-config:"))
+        elif stanza == 'xdr' and xdr_major_version >= 5:
+            xdr_config = {}
+            xdr_config['dc_configs'] = {}
+            xdr_config['ns_configs'] = {}
+            xdr_config['xdr_configs'] = util.info_to_dict(self.info("get-config:context=xdr"))
+
+            for dc in xdr_config['xdr_configs']['dcs'].split(','):
+                dc_config = self.info("get-config:context=xdr;dc=%s" % dc)
+                xdr_config['ns_configs'][dc] = {}
+                xdr_config['dc_configs'][dc] = util.info_to_dict(dc_config)
+
+                start_namespaces = dc_config.find('namespaces=') + len('namespaces=')
+                end_namespaces = dc_config.find(';', start_namespaces)
+                namespaces = (ns for ns in dc_config[start_namespaces:end_namespaces].split(','))
+
+                for namespace in namespaces:
+                    namespace_config = self.info("get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace))
+                    xdr_config['ns_configs'][dc][namespace] = util.info_to_dict(namespace_config)
+
+            config = xdr_config
         elif stanza != 'all':
             config = util.info_to_dict(
                 self.info("get-config:context=%s" % stanza))
