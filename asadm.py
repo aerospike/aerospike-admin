@@ -125,7 +125,7 @@ MULTILEVEL_COMMANDS = ["show", "info"]
 class AerospikeShell(cmd.Cmd):
     def __init__(self, admin_version, seeds, user=None, password=None, auth_mode=AuthMode.INTERNAL,
                  use_services_alumni=False, use_services_alt=False, log_path="", mode=AdminMode.LIVE_CLUSTER,
-                 ssl_context=None, only_connect_seed=False, execute_only_mode=False, timeout=5, get_pmap=False):
+                 ssl_context=None, only_connect_seed=False, execute_only_mode=False, timeout=5):
 
         # indicates shell created successfully and connected to cluster/collectinfo/logfile
         self.connected  = True
@@ -181,7 +181,7 @@ class AerospikeShell(cmd.Cmd):
                 self.ctrl = BasicRootController(seed_nodes=seeds, user=user, password=password, auth_mode=auth_mode,
                                                 use_services_alumni=use_services_alumni, use_services_alt=use_services_alt,
                                                 ssl_context=ssl_context, asadm_version=admin_version,
-                                                only_connect_seed=only_connect_seed, timeout=timeout, get_pmap=get_pmap)
+                                                only_connect_seed=only_connect_seed, timeout=timeout)
 
                 if not self.ctrl.cluster.get_live_nodes():
                     self.do_exit('')
@@ -567,6 +567,10 @@ def main():
 
     if cli_args.no_color:
         disable_coloring()
+    
+    if cli_args.pmap:
+        from lib.basiccontroller import CollectinfoController 
+        CollectinfoController.get_pmap = True
 
     mode = AdminMode.LIVE_CLUSTER
     if cli_args.collectinfo:
@@ -625,8 +629,7 @@ def main():
                            ssl_context=ssl_context,
                            only_connect_seed=cli_args.single_node,
                            execute_only_mode=execute_only_mode,
-                           timeout=cli_args.timeout,
-                           get_pmap=cli_args.pmap)
+                           timeout=cli_args.timeout)
 
     use_yappi = False
     if cli_args.profile:
