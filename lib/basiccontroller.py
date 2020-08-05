@@ -53,9 +53,9 @@ class BasicRootController(BaseController):
 
     def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], user=None, password=None, auth_mode=constants.AuthMode.INTERNAL,
                  use_services_alumni=False, use_services_alt=False, ssl_context=None,
-                 asadm_version='', only_connect_seed=False, timeout=5):
+                 asadm_version='', only_connect_seed=False, timeout=5, get_pmap=False):
 
-        super(BasicRootController, self).__init__(asadm_version)
+        super(BasicRootController, self).__init__(asadm_version, get_pmap)
 
         # Create static instance of cluster
         BasicRootController.cluster = Cluster(seed_nodes, user, password, auth_mode,
@@ -1288,7 +1288,8 @@ class CollectinfoController(BasicCommandController):
 
         latency_map = self._get_as_latency()
 
-        pmap_map = self._get_as_pmap()
+        if self.get_pmap:
+            pmap_map = self._get_as_pmap()
 
         sys_map = self.cluster.info_system_statistics(default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
                                                       default_ssh_port=default_ssh_port, credential_file=credential_file, nodes=self.nodes,
@@ -1313,7 +1314,7 @@ class CollectinfoController(BasicCommandController):
             if node in latency_map:
                  dump_map[node]['as_stat']['latency'] = latency_map[node]
 
-            if node in pmap_map:
+            if self.get_pmap and node in pmap_map:
                  dump_map[node]['as_stat']['pmap'] = pmap_map[node]
 
         # Get the cluster name and add one more level in map

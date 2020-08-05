@@ -81,12 +81,13 @@ class BaseController(object):
     asadm_version = ''
     logger = None
 
-    def __init__(self, asadm_version=''):
+    def __init__(self, asadm_version='', get_pmap=False):
         # Create static instances of view / health_checker / asadm_version /
         # logger
         BaseController.view = view.CliView()
         BaseController.health_checker = HealthChecker()
         BaseController.asadm_version = asadm_version
+        BaseController.get_pmap = get_pmap
         BaseController.logger = logging.getLogger("asadm")
         # instance vars
         self.modifiers = set()
