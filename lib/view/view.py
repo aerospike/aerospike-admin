@@ -1095,6 +1095,13 @@ class CliView(object):
 
     @staticmethod
     def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", col_header="", **ignore):        
+        if isinstance(service_configs, Exception) or not service_configs:
+            return
+
+        for node in service_configs:
+            if isinstance(service_configs[node], Exception):
+                service_configs[node] = {}
+
         prefixes = cluster.get_node_names()
         xdr_config_col_names = set()
         dc_config_col_names = set()
@@ -1111,30 +1118,34 @@ class CliView(object):
             # create dc xdr config names
             config_unions_per_node = []
             for node in service_configs:
-                dc_configs = service_configs[node]['dc_configs']
-                config_unions_per_node.append(set.union(*(set(dc_configs[dc].items())
-                            for dc in dc_configs if dc_configs[dc])))
+                if 'dc_configs' in service_configs[node] and service_configs[node]['dc_configs']:
+                    dc_configs = service_configs[node]['dc_configs']
+                    config_unions_per_node.append(set.union(*(set(dc_configs[dc].items())
+                                for dc in dc_configs if dc_configs[dc])))
+                else:
+                    config_unions_per_node.append(set())
             
             dc_intersect = set.intersection(*config_unions_per_node)
             dc_union = set.union(*config_unions_per_node)
             dc_config_col_names = dict(dc_union - dc_intersect).keys()
 
-            #create ns xdr config names
+            # create ns xdr config names
             ns_config_unions_per_node = {}
             dc_keys = set()
             all_ns_keys = set()
             for node in service_configs:
-                ns_configs = service_configs[node]['ns_configs']
-                ns_config_unions_per_dc = {}
-                dc_keys.update(ns_configs.keys())
-                for dc in ns_configs:
-                    ns_config_unions_per_dc[dc] = (set.union(*(set(ns_configs[dc][ns].items())
-                                                    for ns in ns_configs[dc] if ns_configs[dc][ns])))
+                if 'ns_configs' in service_configs[node] and service_configs[node]['ns_configs']:
+                    ns_configs = service_configs[node]['ns_configs']
+                    ns_config_unions_per_dc = {}
+                    dc_keys.update(ns_configs.keys())
+                    for dc in ns_configs:
+                        ns_config_unions_per_dc[dc] = (set.union(*(set(ns_configs[dc][ns].items())
+                                                        for ns in ns_configs[dc] if ns_configs[dc][ns])))
+
+                        ns_config_unions_per_dc['ns_keys'] = set.union(*(set(ns) for ns in ns_configs[dc]))
+                        all_ns_keys.update(ns_configs[dc].keys())
                     
-                    ns_config_unions_per_dc['ns_keys'] = set.union(*(set(ns) for ns in ns_configs[dc]))
-                    all_ns_keys.update(ns_configs[dc].keys())
-                
-                ns_config_unions_per_node[node] = ns_config_unions_per_dc
+                    ns_config_unions_per_node[node] = ns_config_unions_per_dc
             
             all_ns_config_col_names_per_dc = {}
             all_ns_config_unions_per_dc = {}
@@ -1144,12 +1155,14 @@ class CliView(object):
                     warnings = []
 
                     if dc not in ns_unions_per_dc:
-                        warnings.append("WARN: dc: %s, missing from node: %s" % (dc, node))
+                        node_name = prefixes[node] if node in prefixes else node
+                        warnings.append("WARN: dc: %s, missing from node: %s" % (dc, node_name))
                         continue
 
                     for ns in all_ns_keys:
                         if ns not in service_configs[node]['ns_configs'][dc]:
-                            warnings.append("WARN: ns: %s, missing from dc: %s, on node: %s" % (ns, dc, node))
+                            node_name = prefixes[node] if node in prefixes else node
+                            warnings.append("WARN: ns: %s, missing from dc: %s, on node: %s" % (ns, dc, node_name))
                             continue
 
                     service_configs[node]['ns_configs'][dc]['warnings'] = warnings
@@ -1182,21 +1195,30 @@ class CliView(object):
             if isinstance(service_configs[node], Exception):
                 continue
 
-            table_data.append(("XDR Configuration",
-                            {node: service_configs[node]['xdr_configs']},
-                            xdr_config_col_names,
-                            ''))
-            
-            table_data.append(("DC Configuration for %s" % prefixes[node],
-                            service_configs[node]['dc_configs'],
-                            dc_config_col_names,
-                            'data_center'))
+            try:
+                table_data.append(("XDR Configuration",
+                                {node: service_configs[node]['xdr_configs']},
+                                xdr_config_col_names,
+                                ''))
+            except:
+                pass
 
-            for dc, ns_config in service_configs[node]['ns_configs'].items():
-                table_data.append(("NS Configuration for %s, %s" % (dc, prefixes[node]),
-                                ns_config,
-                                sorted(ns_config_col_names[dc] if diff else ns_config_col_names),
-                                'namespace'))
+            try:
+                table_data.append(("DC Configuration for %s" % prefixes[node],
+                                service_configs[node]['dc_configs'],
+                                dc_config_col_names,
+                                'data_center'))
+            except:
+                pass
+
+            try:
+                for dc, ns_config in service_configs[node]['ns_configs'].items():
+                    table_data.append(("NS Configuration for %s, %s" % (dc, prefixes[node]),
+                                    ns_config,
+                                    sorted(ns_config_col_names[dc] if diff else ns_config_col_names),
+                                    'namespace'))
+            except:
+                pass
 
         for data in table_data:
             title = data[0]
@@ -1209,7 +1231,6 @@ class CliView(object):
 
             if like:
                 likes = compile_likes(like)
-
                 column_names = list(filter(likes.search, column_names))
 
             if col_header:
@@ -1263,7 +1284,6 @@ class CliView(object):
 
             CliView.print_result(
                 t.__str__(horizontal_title_every_nth=title_every_nth))
-
 
     @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):        
