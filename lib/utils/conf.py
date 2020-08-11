@@ -419,7 +419,7 @@ def print_config_help():
     print (" --single-node        Enable asadm mode to connect only seed node. \n"
            "                      By default asadm connects to all nodes in cluster.")
     print (" --collectinfo        Start asadm to run against offline collectinfo files.")
-    print (" --pmap               Include partition map analysis in collect info file.")
+    print (" --pmap               Include partition map analysis in collectinfo files.")
     print (" --log-analyser       Start asadm in log-analyser mode and analyse data from log files.")
     print (" -f --log-path=path   Path of cluster collectinfo file or directory \n"
            "                      containing collectinfo and system info files.")
