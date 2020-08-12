@@ -80,6 +80,8 @@ _confdefault = {
         "execute": False,
         "log-analyser": False,
         "log-path": "",
+
+        "pmap": False
     },
 }
 
@@ -417,6 +419,7 @@ def print_config_help():
     print (" --single-node        Enable asadm mode to connect only seed node. \n"
            "                      By default asadm connects to all nodes in cluster.")
     print (" --collectinfo        Start asadm to run against offline collectinfo files.")
+    print (" --pmap               Include partition map analysis in collectinfo files.")
     print (" --log-analyser       Start asadm in log-analyser mode and analyse data from log files.")
     print (" -f --log-path=path   Path of cluster collectinfo file or directory \n"
            "                      containing collectinfo and system info files.")
@@ -614,6 +617,11 @@ def get_cli_args():
     add_fn("--tls_cert_blacklist")
     add_fn("--tls_crl_check",  action="store_true")
     add_fn("--tls_crl_check_all", action="store_true")
+
+    ### collectinfo options ###
+    # include pmap analysis in collect info file.
+    # Usage, `asadm collectinfo --pmap`
+    add_fn("--pmap", action="store_true")
 
     if have_argparse:
         return parser.parse_args()

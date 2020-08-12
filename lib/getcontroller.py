@@ -637,11 +637,13 @@ class GetPmapController(object):
         getter = GetStatisticsController(self.cluster)
         node_ids = util.Future(self.cluster.info, 'node', nodes=nodes).start()
         pmap_info = util.Future(self.cluster.info, 'partition-info', nodes=nodes).start()
-        service_stats = getter.get_service(nodes=nodes)
-        namespace_stats = getter.get_namespace(nodes=nodes)
+        service_stats = util.Future(getter.get_service, nodes=nodes).start()
+        namespace_stats = util.Future(getter.get_namespace, nodes=nodes).start()
 
         node_ids = node_ids.result()
         pmap_info = pmap_info.result()
+        service_stats = service_stats.result()
+        namespace_stats = namespace_stats.result()
 
         cluster_keys = {}
         for node in list(service_stats.keys()):

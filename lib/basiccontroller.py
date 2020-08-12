@@ -974,6 +974,8 @@ class ShowPmapController(BasicCommandController):
 
 @CommandHelp('"collectinfo" is used to collect cluster info, aerospike conf file and system stats.')
 class CollectinfoController(BasicCommandController):
+    get_pmap = False
+
     def __init__(self):
         self.modifiers = set(['with'])
         self.aslogfile = ""
@@ -1288,7 +1290,8 @@ class CollectinfoController(BasicCommandController):
 
         latency_map = self._get_as_latency()
 
-        pmap_map = self._get_as_pmap()
+        if CollectinfoController.get_pmap:
+            pmap_map = self._get_as_pmap()
 
         sys_map = self.cluster.info_system_statistics(default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
                                                       default_ssh_port=default_ssh_port, credential_file=credential_file, nodes=self.nodes,
@@ -1313,7 +1316,7 @@ class CollectinfoController(BasicCommandController):
             if node in latency_map:
                  dump_map[node]['as_stat']['latency'] = latency_map[node]
 
-            if node in pmap_map:
+            if CollectinfoController.get_pmap and node in pmap_map:
                  dump_map[node]['as_stat']['pmap'] = pmap_map[node]
 
         # Get the cluster name and add one more level in map
