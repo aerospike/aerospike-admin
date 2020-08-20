@@ -664,25 +664,29 @@ class ShowConfigController(BasicCommandController):
                 for config in xdr5_configs.values():
                     if isinstance(config, Exception):
                         continue
-                    
-                    config['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
 
-                    if xdr_dc in config['dc_configs']:
-                        config['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
-                    else:
-                        config['dc_configs'] = {}
+                    try:
+                        dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
+                    except KeyError:
+                        dc_configs_matches = []
                     
-                    if xdr_dc in config['ns_configs']:
-                        config['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
-                    else:
-                        config['ns_configs'] = {}
+                    try:
+                        ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
+                    except KeyError:
+                        ns_configs_matches = []
+
+                    config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
+                    config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
 
                     if len(self.mods['for']) >= 2:
                         xdr_ns = self.mods['for'][1]
-                        if xdr_dc in config['ns_configs'] and xdr_ns in config['ns_configs'][xdr_dc]:
-                            config['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
-                        else:
-                            config['ns_configs'] = {}
+                        for dc in config['ns_configs']:
+                            try:
+                                ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
+                            except KeyError:
+                                ns_matches = []
+
+                            config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
 
             futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
                                         xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
