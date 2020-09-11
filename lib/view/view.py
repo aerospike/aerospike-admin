@@ -995,7 +995,7 @@ class CliView(object):
         for column in data["columns"]:
             if column[0] == '>':
                 c = int(column[1:-2])
-                all_columns.add((c,(column, "%%>%dMs"%c)))
+                all_columns.add((c,(column, "%%%s"%column)))
 
             elif column[0:2] == "%>":
                 c = int(column[2:-2])
