@@ -1116,6 +1116,24 @@ def is_new_histogram_version(version):
 
 #################################
 
+########## Latencies ##########
+def is_new_latencies_version(version):
+    """
+    Function takes a version to check
+
+    It returns true if the version is supporting the new latencies command else returns false
+    """
+
+    if not version:
+        return False
+
+    if LooseVersion(version) >= LooseVersion(constants.SERVER_NEW_LATENCIES_CMD_FIRST_VERSION):
+        return True
+    
+    return False
+
+#################################
+
 ########## System Collectinfo ##########
 
 
