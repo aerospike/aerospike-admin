@@ -36,6 +36,7 @@ from lib.health.util import (create_health_input_dict, create_snapshot_key,
 from lib.utils import common, constants, util
 from lib.view import terminal
 from lib.view.view import CliView
+from lib.utils.common import is_new_latencies_version
 
 
 class BasicCommandController(CommandController):
@@ -158,7 +159,6 @@ class InfoController(BasicCommandController):
         cluster_names = cluster_names.result()
         builds = builds.result()
         versions = versions.result()
-
         for node in stats:
             try:
                 if not isinstance(cluster_configs[node]["mode"], Exception):
@@ -405,6 +405,7 @@ class ShowController(BasicCommandController):
             'config': ShowConfigController,
             'statistics': ShowStatisticsController,
             'latency': ShowLatencyController,
+            'latencies': ShowLatenciesController,
             'distribution': ShowDistributionController,
             'mapping': ShowMappingController,
             'pmap': ShowPmapController
@@ -495,12 +496,94 @@ class ShowDistributionController(BasicCommandController):
                 histogram, unit, histogram_name, bucket_count,
                 set_bucket_count, self.cluster, like=self.mods['for'])
 
-class ShowLatencyController(BasicCommandController):
+class ShowLatencyBaseController(BasicCommandController):
+    def get_namespace_set(self):
+        namespace_set = set()
+        if self.mods['for']:
+            namespaces = self.cluster.info_namespaces(nodes=self.nodes)
+            namespaces = list(namespaces.values())
+            for namespace in namespaces:
+                if isinstance(namespace, Exception):
+                    continue
+                namespace_set.update(namespace)
+            namespace_set = set(
+                util.filter_list(list(namespace_set), self.mods['for']))
+        return namespace_set
+
+    def get_latencies_and_latency_nodes(self):
+        latencies_nodes = []
+        latency_nodes = []
+        builds = self.cluster.info('build', nodes=self.nodes)
+        for node, build in builds.items():
+            if is_new_latencies_version(build):
+                latencies_nodes.append(node)
+            else:
+                latency_nodes.append(node)
+        return latencies_nodes, latency_nodes
+
+    def merge_latencies_and_latency_tables(self, latencies_table, latency_table):
+        if not latencies_table:
+            return latency_table
+        elif not latency_table:
+            return latencies_table
+
+        # Make and entry in latencies_table for every entry in latency_table
+        for latencies_address in latencies_table:
+            if latencies_table[latencies_address]:
+                for latency_address in latency_table:
+                    # Create entry with same schema as latencies_table
+                    latencies_table[latency_address] = copy.deepcopy(latencies_table[latencies_address])
+                break
+        
+        # Go through latency data and copy appropriate values over
+        for latency_address in latency_table:
+            latencies_entry = latencies_table[latency_address]
+            for histogram_name in latencies_entry:
+                histogram_data = latencies_entry[histogram_name]
+                if 'total' in histogram_data:
+                    total = histogram_data['total']
+                    _copy_latency_data_to_latencies_table(latencies_table, latency_table, [latency_address, histogram_name, 'total'])
+                if 'namespace' in histogram_data:
+                    namespaces = histogram_data['namespace']
+                    for namespace in namespaces:
+                        _copy_latency_data_to_latencies_table(latencies_table, latency_table, [latency_address, histogram_name, 'namespace', namespace])
+
+        return latencies_table
+
+        # Given a list of keys, returns the nested value.
+    def _get_value(self, d, context):
+        ref = d
+        for key in context:
+            if key not in ref:
+                return None
+            ref = ref[key]
+        return ref
+
+    def _copy_latency_data_to_latencies_table(self, latencies_table, latency_table, context):
+        latencies_data = _get_value(latencies_table, context)
+        latency_data = _get_value(latency_table, context)
+        for idx in range(len(latencies_data["values"])):
+            for jdx in range(len(latencies_data['values'][idx])):
+                latencies_data['values'][idx][jdx] = 'N/A'
+
+        if latency_data is None:
+            return
+
+        # See if any columns in latencies_data match latency_data and copy them over.
+        for col_idx, col in enumerate(latencies_data['columns']):
+            if col in latency_data['columns']:
+                val_idx = latency_data['columns'].index(col)
+                for vals_idx in range(len(latencies_data['values'])):
+                    print(vals_idx, col_idx)
+                    latencies_data['values'][vals_idx][col_idx] = latency_data['values'][vals_idx][val_idx]
+
+class ShowLatencyController(ShowLatencyBaseController):
 
     def __init__(self):
         self.modifiers = set(['with', 'like', 'for'])
 
-    @CommandHelp('Displays latency information for Aerospike cluster.',
+    @CommandHelp('WARNING: Deprecated, use \'show latencies\' command',
+                 'Displays latency information for Aerospike cluster.',
                  '  Options:',
                  '    -f <int>     - Number of seconds (before now) to look back to.',
                  '                   default: Minimum to get last slice',
@@ -527,20 +610,40 @@ class ShowLatencyController(BasicCommandController):
                 arg="-m", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
-        namespace_set = set()
-        if self.mods['for']:
-            namespaces = self.cluster.info_namespaces(nodes=self.nodes)
-            namespaces = list(namespaces.values())
-            for namespace in namespaces:
-                if isinstance(namespace, Exception):
-                    continue
-                namespace_set.update(namespace)
-            namespace_set = set(
-                util.filter_list(list(namespace_set), self.mods['for']))
+        namespace_set = self.get_namespace_set()
+        latencies_nodes, latency_nodes = self.get_latencies_and_latency_nodes()
+        latency = None
+        message = None
+        # all nodes support "show latencies"
+        if len(latency_nodes) == 0:
+            latencies = self.cluster.info_latencies(
+                nodes=self.nodes, ns_set=namespace_set)
+            message = [
+                'WARNING: \"show latency\" is deprecated for server versions prior to 5.1',
+                'Running new \"show latencies\" instead.'
+            ]
+        elif len(latencies_nodes) == 0:
+            latency = self.cluster.info_latency(
+            nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
+            ns_set=namespace_set)
+        else:
+            # Some nodes support latencies and some do not
+            latency_nodes = '|'.join(latency_nodes)
+            latencies_nodes = '|'.join(latencies_nodes)
+            latency = self.cluster.info_latency(nodes=latency_nodes, ns_set=namespace_set)
+            latencies = self.cluster.info_latencies(
+                nodes=latencies_nodes, ns_set=namespace_set)
+            latencies = common.merge_latencies_and_latency_tables(latencies, latency)
+            message = [
+                'WARNING: \"show latency\" is not supported on server versions 5.1+',
+                'Running \"show latencies\" instead for nodes running such versions.'
+            ]
 
         latency = self.cluster.info_latency(
             nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
             ns_set=namespace_set)
+
+        print(latency)
 
         hist_latency = {}
         if machine_wise_display:
@@ -557,8 +660,86 @@ class ShowLatencyController(BasicCommandController):
 
         self.view.show_latency(hist_latency, self.cluster,
                 machine_wise_display=machine_wise_display,
-                show_ns_details=True if namespace_set else False, **self.mods)
+                show_ns_details=True if namespace_set else False, message=message, **self.mods)
 
+
+class ShowLatenciesController(ShowLatencyBaseController):
+
+    def __init__(self):
+        self.modifiers = set(['with', 'like', 'for'])
+
+    @CommandHelp('Displays latency information for Aerospike cluster.',
+                 '  Options:',
+                 '    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(2 * i)',
+                 '                   default: 3'
+                 '    -b           - Number of latency buckets to display.',
+                 '                   default: 3'
+                 '    -v           - Set to display verbose output of optionally configured histograms.',
+                 '    -m           - Set to display the output group by machine names.')
+    def _do_default(self, line):
+
+        increment = util.get_arg_and_delete_from_mods(line=line, arg="-e",
+                return_type=int, default=3, modifiers=self.modifiers,
+                mods=self.mods)
+
+        buckets = util.get_arg_and_delete_from_mods(line=line, arg="-b",
+                return_type=int, default=3, modifiers=self.modifiers,
+                mods=self.mods)
+
+        verbose = util.check_arg_and_delete_from_mods(line=line, 
+                arg="-v", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
+        machine_wise_display = util.check_arg_and_delete_from_mods(line=line,
+                arg="-m", default=False, modifiers=self.modifiers,
+                mods=self.mods)
+
+        namespace_set = self.get_namespace_set()
+        latencies_nodes, latency_nodes = self.get_latencies_and_latency_nodes()
+        latencies = None
+        message = None
+        # all nodes support "show latencies"
+        if len(latency_nodes) == 0:
+            latencies = self.cluster.info_latencies(
+                nodes=self.nodes, buckets=buckets, exponent_increment=increment,
+                verbose=verbose, ns_set=namespace_set)
+        elif len(latencies_nodes) == 0:
+            latencies = {}
+            message = [
+                'WARNING: \"show latencies\" is deprecated for server versions 5.1+',
+                'Use \"show latency\" instead.'
+            ]
+        else:
+            # Some nodes support latencies and some do not
+            latency_nodes = '|'.join(latency_nodes)
+            latencies_nodes = '|'.join(latencies_nodes)
+            latency = self.cluster.info_latency(nodes=latency_nodes, ns_set=namespace_set)
+            latencies = self.cluster.info_latencies(
+                nodes=latencies_nodes, buckets=buckets, exponent_increment=increment,
+                verbose=verbose, ns_set=namespace_set)
+            latencies = common.merge_latencies_and_latency_tables(latencies, latency)
+            message = [
+                'WARNING: \"show latencies\" is deprecated for server versions prior to 5.1',
+                'Running \"show latency\" instead for nodes running such versions.'
+            ]
+
+        print(latencies)
+            
+        hist_latency = {}
+        if machine_wise_display:
+            hist_latency = latencies
+        else:
+            for node_id, hist_data in list(latencies.items()):
+                if isinstance(hist_data, Exception):
+                    continue
+                for hist_name, data in list(hist_data.items()):
+                    if hist_name not in hist_latency:
+                        hist_latency[hist_name] = {node_id: data}
+                    else:
+                        hist_latency[hist_name][node_id] = data
+        self.view.show_latency(hist_latency, self.cluster,
+                machine_wise_display=machine_wise_display,
+                show_ns_details=True if namespace_set else False, message=message, **self.mods)
 
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(BasicCommandController):
