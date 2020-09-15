@@ -22,6 +22,7 @@ import copy
 import logging
 import os
 import re
+import math
 import socket
 import threading
 from time import time
@@ -1119,6 +1120,119 @@ class Node(object):
                     data[hist_name][total_key]["values"], row)
                 start_time = end_time
             except Exception:
+                pass
+        return data
+
+    @return_exceptions
+    def info_latencies(self, buckets=3, exponent_increment=3, verbose=False, ns_set=None):
+        """
+        Get latencies metrics from this node. asinfo -v "latencies:" -p 3004
+
+        Returns:
+        dict -- {'host_address:port': {'histogram_name': {'namespace': {'namespace_name': {'columns': ['column1', 'column2', . . .], 'values': [[val1, val2, . . .]]}}, . . .}}}}
+        """
+        # Check argument bounds
+        if exponent_increment > 17:
+            exponent_increment = 17
+        elif exponent_increment < 1:
+            exponent_increment = 1
+
+        buckets_upper_bound = math.ceil(exponent_increment / 17)
+        if buckets_upper_bound > buckets:
+            buckets = buckets_upper_bound
+        elif buckets < 1:
+            buckets = 1
+
+        # If ns_set is set filter through all default latencies with ns_set
+            # If optional_benchmark is set make additional queries for the optional_benchmark
+        cmd_latencies = ['latencies:']
+        data = {}
+        if verbose:
+            namespaces = []
+            if ns_set:
+                namespaces = ns_set
+            else:
+                try:
+                    namespaces = self.info('namespaces').split(';')
+                except Exception:
+                    return data
+            optional_benchmarks = ['proxy', 'benchmark-fabric', 'benchmarks-ops-sub', 
+            'benchmarks-read', 'benchmarks-write', 'benchmarks-udf', 'benchmarks-udf-sub', 
+            'benchmarks-batch-sub']
+            cmd_latencies += ["latencies:hist={%s}-%s" % (ns, optional) for ns in namespaces for optional in optional_benchmarks]
+
+        hist_info = []
+        for cmd in cmd_latencies:
+            try:
+                hist_info.append(self.info(cmd))
+            except Exception:
+                return data
+            if hist_info[-1].startswith('error'):
+                hist_info.pop()
+                continue
+
+        hist_info = ';'.join(hist_info)
+        tdata = hist_info.split(';')
+        hist_name = None
+        ns = None
+        unit_mapping = {
+            'msec': 'ms',
+            'usec': u'\u03bcs'
+        }
+        time_units = None
+        columns = [">1", ">2", ">4", ">8", ">16", ">32",
+        ">64", ">128", ">256", ">512", ">1024", ">2048", ">4096", 
+        ">8192", ">16384", ">32768", ">65536"][::exponent_increment][:buckets]
+        ns_hist_pattern = '{([A-Za-z_\d-]+)}-([A-Za-z_-]+)'
+        total_key = "total"
+
+        for hist in tdata:
+            if not hist:
+                continue
+            hist_name, hist_data = hist.split(':')
+            hist_data = hist_data.split(',')
+            m = re.search(ns_hist_pattern, hist_name)
+            # Remove empty histograms
+            if len(hist_data) <= 2:
+                continue
+            if m:
+                ns = m.group(1)
+                hist_name = m.group(2)
+            # Is batch histogram w/o namespace
+            else:
+                ns = None
+            if ns_set and (not ns or ns not in ns_set):
+                hist_name = None
+                continue
+            if time_units is None:
+                time_units = hist_data.pop(0)
+                columns = ["ops/sec"] + [col + unit_mapping[time_units] for col in list(columns)]
+            else:
+                hist_data.pop(0)
+            latency_data = [float(r) for r in hist_data]
+            # Remove ops/sec and then add it back in after getting correct latency buckets.
+            latency_data = [latency_data[0]] + latency_data[1:][::exponent_increment][:buckets]
+            try:
+                if hist_name not in data:
+                    data[hist_name] = {}
+                if ns:
+                    ns_key = "namespace"
+                    if ns_key not in data[hist_name]:
+                        data[hist_name][ns_key] = {}
+                    if ns not in data[hist_name][ns_key]:
+                        data[hist_name][ns_key][ns] = {}
+                        data[hist_name][ns_key][ns]["columns"] = columns
+                        data[hist_name][ns_key][ns]["values"] = []
+                    data[hist_name][ns_key][ns][
+                        "values"].append(copy.deepcopy(latency_data))
+                if total_key not in data[hist_name]:
+                    data[hist_name][total_key] = {}
+                    data[hist_name][total_key]["columns"] = columns
+                    data[hist_name][total_key]["values"] = []
+
+                data[hist_name][total_key]["values"] = self._update_total_latency(
+                    data[hist_name][total_key]["values"], latency_data, has_time_range_col=False)
+            except:
                 pass
         return data
 
