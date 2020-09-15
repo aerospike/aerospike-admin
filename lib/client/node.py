@@ -1085,7 +1085,7 @@ class Node(object):
                 if ns_set and (not ns or ns not in ns_set):
                     hist_name = None
                     continue
-                columns = row[1:]
+                columns = [col.replace('u', u'\u03bc') for col in row[1:]]
                 start_time = s2
                 start_time = util.remove_suffix(start_time, "-GMT")
                 columns.insert(0, 'Time Span')
