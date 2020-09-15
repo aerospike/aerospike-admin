@@ -1017,7 +1017,11 @@ class CliView(object):
         return rows
 
     @staticmethod
-    def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, timestamp="", **ignore):
+    def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, timestamp="", message=None, **ignore):
+        if message is not None:
+            for line in message:
+                CliView.print_result(str(line))
+                
         prefixes = cluster.get_node_names()
 
         if like:
