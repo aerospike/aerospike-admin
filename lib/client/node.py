@@ -1054,7 +1054,6 @@ class Node(object):
             hist_info = self.info(cmd)
         except Exception:
             return data
-        # tdata = hist_info.split(';')[:-1]
         tdata = hist_info.split(';')
         hist_name = None
         ns = None
