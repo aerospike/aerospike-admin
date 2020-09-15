@@ -997,33 +997,35 @@ class Node(object):
 
         return config
 
-    def _update_total_latency(self, t_rows, row):
+    def _update_total_latency(self, total_rows, row, has_time_range_col=True):
         if not row or not isinstance(row, list):
-            return t_rows
-        if not t_rows:
-            t_rows = []
-            t_rows.append(row)
-            return t_rows
+            return total_rows
+        if not total_rows:
+            total_rows = []
+            total_rows.append(row)
+            return total_rows
 
-        tm_range = row[0]
+        has_time_range_col = int(has_time_range_col)
+        time_range = row[0]
         updated = False
-        for t_row in t_rows:
-            if t_row[0] == tm_range:
-                n_sum = float(row[1])
-                if n_sum > 0:
-                    o_sum = float(t_row[1])
-                    for i, t_p in enumerate(t_row[2:]):
-                        o_t = float((o_sum * t_p) / 100.00)
-                        n_t = float((n_sum * row[i + 2]) / 100.00)
-                        t_row[
-                            i + 2] = round(float(old_div(((o_t + n_t) * 100), (o_sum + n_sum))), 2)
-                    t_row[1] = round(o_sum + n_sum, 2)
+        for total_row in total_rows:
+            if not has_time_range_col or total_row[0] == time_range:
+                new_sum = float(row[has_time_range_col])
+                if new_sum > 0:
+                    old_sum = float(total_row[has_time_range_col])
+                    for i, transaction_percent in enumerate(total_row[1 + has_time_range_col:]):
+                        row_idx = i + 1 + has_time_range_col
+                        old_transactions = float((old_sum * transaction_percent) / 100.00)
+                        new_transactions = float((new_sum * row[row_idx]) / 100.00)
+                        total_row[
+                            row_idx] = round(float(old_div(((old_transactions + new_transactions) * 100), (old_sum + new_sum))), 2)
+                    total_row[has_time_range_col] = round(old_sum + new_sum, 2)
                 updated = True
                 break
 
         if not updated:
-            t_rows.append(copy.deepcopy(row))
-        return t_rows
+            total_rows.append(copy.deepcopy(row))
+        return total_rows
 
     @return_exceptions
     def info_latency(self, back=None, duration=None, slice_tm=None, ns_set=None):
