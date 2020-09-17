@@ -542,11 +542,11 @@ class ShowLatencyBaseController(BasicCommandController):
                 histogram_data = latencies_entry[histogram_name]
                 if 'total' in histogram_data:
                     total = histogram_data['total']
-                    _copy_latency_data_to_latencies_table(latencies_table, latency_table, [latency_address, histogram_name, 'total'])
+                    self._copy_latency_data_to_latencies_table(latencies_table, latency_table, [latency_address, histogram_name, 'total'])
                 if 'namespace' in histogram_data:
                     namespaces = histogram_data['namespace']
                     for namespace in namespaces:
-                        _copy_latency_data_to_latencies_table(latencies_table, latency_table, [latency_address, histogram_name, 'namespace', namespace])
+                        self._copy_latency_data_to_latencies_table(latencies_table, latency_table, [latency_address, histogram_name, 'namespace', namespace])
 
         return latencies_table
 
@@ -560,8 +560,8 @@ class ShowLatencyBaseController(BasicCommandController):
         return ref
 
     def _copy_latency_data_to_latencies_table(self, latencies_table, latency_table, context):
-        latencies_data = _get_value(latencies_table, context)
-        latency_data = _get_value(latency_table, context)
+        latencies_data = self._get_value(latencies_table, context)
+        latency_data = self._get_value(latency_table, context)
         for idx in range(len(latencies_data["values"])):
             for jdx in range(len(latencies_data['values'][idx])):
                 latencies_data['values'][idx][jdx] = 'N/A'
@@ -574,7 +574,6 @@ class ShowLatencyBaseController(BasicCommandController):
             if col in latency_data['columns']:
                 val_idx = latency_data['columns'].index(col)
                 for vals_idx in range(len(latencies_data['values'])):
-                    print(vals_idx, col_idx)
                     latencies_data['values'][vals_idx][col_idx] = latency_data['values'][vals_idx][val_idx]
 
 class ShowLatencyController(ShowLatencyBaseController):
@@ -616,34 +615,27 @@ class ShowLatencyController(ShowLatencyBaseController):
         message = None
         # all nodes support "show latencies"
         if len(latency_nodes) == 0:
-            latencies = self.cluster.info_latencies(
+            latency = self.cluster.info_latencies(
                 nodes=self.nodes, ns_set=namespace_set)
             message = [
                 'WARNING: \"show latency\" is deprecated for server versions prior to 5.1',
                 'Running new \"show latencies\" instead.'
             ]
+        # none of the nodes support "show latencies"
         elif len(latencies_nodes) == 0:
             latency = self.cluster.info_latency(
             nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
             ns_set=namespace_set)
         else:
-            # Some nodes support latencies and some do not
-            latency_nodes = '|'.join(latency_nodes)
-            latencies_nodes = '|'.join(latencies_nodes)
+            # Some nodes support "show latencies" and some do not
             latency = self.cluster.info_latency(nodes=latency_nodes, ns_set=namespace_set)
             latencies = self.cluster.info_latencies(
                 nodes=latencies_nodes, ns_set=namespace_set)
-            latencies = common.merge_latencies_and_latency_tables(latencies, latency)
+            latency = self.merge_latencies_and_latency_tables(latencies, latency)
             message = [
                 'WARNING: \"show latency\" is deprecated on server versions 5.1+',
                 'Running \"show latencies\" instead for nodes running such versions.'
             ]
-
-        latency = self.cluster.info_latency(
-            nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
-            ns_set=namespace_set)
-
-        print(latency)
 
         hist_latency = {}
         if machine_wise_display:
@@ -712,19 +704,15 @@ class ShowLatenciesController(ShowLatencyBaseController):
             ]
         else:
             # Some nodes support latencies and some do not
-            latency_nodes = '|'.join(latency_nodes)
-            latencies_nodes = '|'.join(latencies_nodes)
             latency = self.cluster.info_latency(nodes=latency_nodes, ns_set=namespace_set)
             latencies = self.cluster.info_latencies(
                 nodes=latencies_nodes, buckets=buckets, exponent_increment=increment,
                 verbose=verbose, ns_set=namespace_set)
-            latencies = common.merge_latencies_and_latency_tables(latencies, latency)
+            latencies = self.merge_latencies_and_latency_tables(latencies, latency)
             message = [
                 'WARNING: \"show latencies\" is not supported for server versions prior to 5.1',
                 'Running \"show latency\" instead for nodes running such versions.'
             ]
-
-        print(latencies)
             
         hist_latency = {}
         if machine_wise_display:
