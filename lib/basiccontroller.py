@@ -550,6 +550,18 @@ class ShowLatencyBaseController(BasicCommandController):
 
         return latencies_table
 
+    def sort_data_by_operation(self, latency_data):
+        hist_latency = {}
+        for node_id, hist_data in list(latency_data.items()):
+            if isinstance(hist_data, Exception):
+                continue
+            for hist_name, data in list(hist_data.items()):
+                if hist_name not in hist_latency:
+                    hist_latency[hist_name] = {node_id: data}
+                else:
+                    hist_latency[hist_name][node_id] = data
+        return hist_latency
+
         # Given a list of keys, returns the nested value.
     def _get_value(self, d, context):
         ref = d
@@ -637,20 +649,11 @@ class ShowLatencyController(ShowLatencyBaseController):
                 'Running \"show latencies\" instead for nodes running such versions.'
             ]
 
-        hist_latency = {}
-        if machine_wise_display:
-            hist_latency = latency
-        else:
-            for node_id, hist_data in list(latency.items()):
-                if isinstance(hist_data, Exception):
-                    continue
-                for hist_name, data in list(hist_data.items()):
-                    if hist_name not in hist_latency:
-                        hist_latency[hist_name] = {node_id: data}
-                    else:
-                        hist_latency[hist_name][node_id] = data
+        # Sort data by operation type rather than by node address
+        if not machine_wise_display:
+            latency = self.sort_data_by_operation(latency)
 
-        self.view.show_latency(hist_latency, self.cluster,
+        self.view.show_latency(latency, self.cluster,
                 machine_wise_display=machine_wise_display,
                 show_ns_details=True if namespace_set else False, message=message, **self.mods)
 
@@ -663,7 +666,7 @@ class ShowLatenciesController(ShowLatencyBaseController):
     # It would be nice if the  'show latencies' help section could be completely removed for servers prior to 5.1
     @CommandHelp('Displays latency information for Aerospike cluster.',
                  '  Options:',
-                 '    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(2 * i)',
+                 '    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)',
                  '                   default: 3'
                  '    -b           - Number of latency buckets to display.',
                  '                   default: 3'
@@ -714,19 +717,11 @@ class ShowLatenciesController(ShowLatencyBaseController):
                 'Running \"show latency\" instead for nodes running such versions.'
             ]
             
-        hist_latency = {}
-        if machine_wise_display:
-            hist_latency = latencies
-        else:
-            for node_id, hist_data in list(latencies.items()):
-                if isinstance(hist_data, Exception):
-                    continue
-                for hist_name, data in list(hist_data.items()):
-                    if hist_name not in hist_latency:
-                        hist_latency[hist_name] = {node_id: data}
-                    else:
-                        hist_latency[hist_name][node_id] = data
-        self.view.show_latency(hist_latency, self.cluster,
+        # Sort data by operation type rather than by node address
+        if not machine_wise_display:
+            latencies = self.sort_data_by_operation(latencies)
+
+        self.view.show_latency(latencies, self.cluster,
                 machine_wise_display=machine_wise_display,
                 show_ns_details=True if namespace_set else False, message=message, **self.mods)
 
