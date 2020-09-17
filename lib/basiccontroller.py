@@ -582,8 +582,8 @@ class ShowLatencyController(ShowLatencyBaseController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'for'])
 
-    @CommandHelp('WARNING: Deprecated, use \'show latencies\' command',
-                 'Displays latency information for Aerospike cluster.',
+    # It would be nice if the  'show latency' help section could be completely removed for servers 5.1+
+    @CommandHelp('Displays latency information for Aerospike cluster.',
                  '  Options:',
                  '    -f <int>     - Number of seconds (before now) to look back to.',
                  '                   default: Minimum to get last slice',
@@ -635,7 +635,7 @@ class ShowLatencyController(ShowLatencyBaseController):
                 nodes=latencies_nodes, ns_set=namespace_set)
             latencies = common.merge_latencies_and_latency_tables(latencies, latency)
             message = [
-                'WARNING: \"show latency\" is not supported on server versions 5.1+',
+                'WARNING: \"show latency\" is deprecated on server versions 5.1+',
                 'Running \"show latencies\" instead for nodes running such versions.'
             ]
 
@@ -668,6 +668,7 @@ class ShowLatenciesController(ShowLatencyBaseController):
     def __init__(self):
         self.modifiers = set(['with', 'like', 'for'])
 
+    # It would be nice if the  'show latencies' help section could be completely removed for servers prior to 5.1
     @CommandHelp('Displays latency information for Aerospike cluster.',
                  '  Options:',
                  '    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(2 * i)',
@@ -706,7 +707,7 @@ class ShowLatenciesController(ShowLatencyBaseController):
         elif len(latencies_nodes) == 0:
             latencies = {}
             message = [
-                'WARNING: \"show latencies\" is deprecated for server versions 5.1+',
+                'WARNING: \"show latencies\" is not supported for server versions prior to 5.1',
                 'Use \"show latency\" instead.'
             ]
         else:
@@ -719,7 +720,7 @@ class ShowLatenciesController(ShowLatencyBaseController):
                 verbose=verbose, ns_set=namespace_set)
             latencies = common.merge_latencies_and_latency_tables(latencies, latency)
             message = [
-                'WARNING: \"show latencies\" is deprecated for server versions prior to 5.1',
+                'WARNING: \"show latencies\" is not supported for server versions prior to 5.1',
                 'Running \"show latency\" instead for nodes running such versions.'
             ]
 
