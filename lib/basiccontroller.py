@@ -550,7 +550,7 @@ class ShowLatencyBaseController(BasicCommandController):
 
         return latencies_table
 
-    def sort_data_by_operation(self, latency_data):
+    def sort_data_by_histogram_name(self, latency_data):
         hist_latency = {}
         for node_id, hist_data in list(latency_data.items()):
             if isinstance(hist_data, Exception):
@@ -651,7 +651,7 @@ class ShowLatencyController(ShowLatencyBaseController):
 
         # Sort data by operation type rather than by node address
         if not machine_wise_display:
-            latency = self.sort_data_by_operation(latency)
+            latency = self.sort_data_by_histogram_name(latency)
 
         self.view.show_latency(latency, self.cluster,
                 machine_wise_display=machine_wise_display,
@@ -719,7 +719,7 @@ class ShowLatenciesController(ShowLatencyBaseController):
             
         # Sort data by operation type rather than by node address
         if not machine_wise_display:
-            latencies = self.sort_data_by_operation(latencies)
+            latencies = self.sort_data_by_histogram_name(latencies)
 
         self.view.show_latency(latencies, self.cluster,
                 machine_wise_display=machine_wise_display,
