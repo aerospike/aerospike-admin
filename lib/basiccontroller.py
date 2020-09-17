@@ -631,7 +631,7 @@ class ShowLatencyController(ShowLatencyBaseController):
                 nodes=self.nodes, ns_set=namespace_set)
             message = [
                 'WARNING: \"show latency\" is deprecated for server versions prior to 5.1',
-                'Running new \"show latencies\" instead.'
+                'Running \"show latencies\" instead.'
             ]
         # none of the nodes support "show latencies"
         elif len(latencies_nodes) == 0:
