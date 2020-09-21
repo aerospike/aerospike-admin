@@ -366,7 +366,7 @@ class Node(object):
             return True
 
     def _is_new_histogram_version(self):
-        as_version = self.info("build")
+        as_version = self.info_build_version()
         if isinstance(as_version, Exception):
             return False
 
@@ -918,7 +918,7 @@ class Node(object):
         """
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
-        if int(self.info_XDR_build_version()[0]) < 5:
+        if int(self.info_build_version()[0]) < 5:
             if self.is_feature_present('xdr'):
                 return util.info_to_dict(self.info("statistics/xdr"))
 
@@ -1243,7 +1243,7 @@ class Node(object):
         Returns:
         list -- list of dcs
         """
-        xdr_major_version = int(self.info_XDR_build_version()[0])
+        xdr_major_version = int(self.info_build_version()[0])
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
@@ -1267,7 +1267,7 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        xdr_major_version = int(self.info_XDR_build_version()[0])
+        xdr_major_version = int(self.info_build_version()[0])
 
         # If xdr version is < XDR5.0 return output of old asinfo command.
         if xdr_major_version < 5:
@@ -1473,9 +1473,9 @@ class Node(object):
         return util.info_to_dict(self.info("sindex/%s/%s" % (namespace, indexname)))
 
     @return_exceptions
-    def info_XDR_build_version(self):
+    def info_build_version(self):
         """
-        Get Build Version for XDR
+        Get Build Version
 
         Returns:
         string -- build version

@@ -180,7 +180,7 @@ class InfoController(BasicCommandController):
         stats = util.Future(self.cluster.info_all_dc_statistics,
                             nodes=self.nodes).start()
         
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+        xdr_builds = util.Future(self.cluster.info_build_version,
                 nodes=self.nodes).start()
 
         configs = self.config_getter.get_dc(flip=False, nodes=self.nodes)
@@ -246,7 +246,7 @@ class InfoController(BasicCommandController):
         xdr_enable = util.Future(self.cluster.is_XDR_enabled,
                                  nodes=self.nodes).start()
             
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+        xdr_builds = util.Future(self.cluster.info_build_version,
                 nodes=self.nodes).start()
 
         stats = stats.result()
@@ -513,7 +513,7 @@ class ShowLatencyBaseController(BasicCommandController):
     def get_latencies_and_latency_nodes(self):
         latencies_nodes = []
         latency_nodes = []
-        builds = self.cluster.info('build', nodes=self.nodes)
+        builds = self.cluster.info_build_version(nodes=self.nodes)
         for node, build in builds.items():
             if is_new_latencies_version(build):
                 latencies_nodes.append(node)
@@ -1020,7 +1020,7 @@ class ShowStatisticsController(BasicCommandController):
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
 
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+        xdr_builds = util.Future(self.cluster.info_build_version,
                 nodes=self.nodes).start()
 
         xdr_stats = util.Future(self.getter.get_xdr, nodes=self.nodes).start()
@@ -1088,7 +1088,7 @@ class ShowStatisticsController(BasicCommandController):
 
         dc_stats = util.Future(self.getter.get_dc, nodes=self.nodes).start()
 
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+        xdr_builds = util.Future(self.cluster.info_build_version,
                 nodes=self.nodes).start()
 
         dc_stats = dc_stats.result()
@@ -1357,7 +1357,7 @@ class CollectinfoController(BasicCommandController):
         metamap = {}
         builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
         editions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version, nodes=self.nodes).start()
+        xdr_builds = util.Future(self.cluster.info_build_version, nodes=self.nodes).start()
         node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start()
         ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start()
         endpoints = util.Future(self.cluster.info_service_list, nodes=self.nodes).start()

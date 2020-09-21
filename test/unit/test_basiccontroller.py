@@ -30,7 +30,7 @@ class FakeCluster(unittest.TestCase):
     def __init__(self, versions):
         self.builds = {'10.0.2.15:3000': versions[0], '20.0.2.15:3000': versions[1]}
 
-    def info_XDR_build_version(self, nodes):
+    def info_build_version(self, nodes):
         return self.builds
 
 
