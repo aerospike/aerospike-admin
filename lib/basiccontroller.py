@@ -630,7 +630,7 @@ class ShowLatencyController(ShowLatencyBaseController):
             latency = self.cluster.info_latencies(
                 nodes=self.nodes, ns_set=namespace_set)
             message = [
-                'WARNING: \"show latency\" is deprecated for server versions prior to 5.1',
+                'WARNING: \"show latency\" is deprecated on server versions 5.1+',
                 'Running \"show latencies\" instead.'
             ]
         # none of the nodes support "show latencies"
@@ -702,7 +702,7 @@ class ShowLatenciesController(ShowLatencyBaseController):
         elif len(latencies_nodes) == 0:
             latencies = {}
             message = [
-                'WARNING: \"show latencies\" is not supported for server versions prior to 5.1',
+                'WARNING: \"show latencies\" is not supported on server versions prior to 5.1',
                 'Use \"show latency\" instead.'
             ]
         else:
@@ -713,7 +713,7 @@ class ShowLatenciesController(ShowLatencyBaseController):
                 verbose=verbose, ns_set=namespace_set)
             latencies = self.merge_latencies_and_latency_tables(latencies, latency)
             message = [
-                'WARNING: \"show latencies\" is not supported for server versions prior to 5.1',
+                'WARNING: \"show latencies\" is not supported on server versions prior to 5.1',
                 'Running \"show latency\" instead for nodes running such versions.'
             ]
             
