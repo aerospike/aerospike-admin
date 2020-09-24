@@ -97,6 +97,12 @@ class ControllerTest(unittest.TestCase):
         slc.pre_command([""])
         slc._do_default(["latency"])
 
+    def test_show_latencies_controller(self):
+        slc = ShowLatenciesController()
+
+        slc.pre_command([""])
+        slc._do_default(["latencies"])
+
     def test_ShowStatisticsController(self):
         ssc = ShowStatisticsController()
 

@@ -57,10 +57,18 @@ if ! run_test ${asinfo_cmd} ${output_substring} ; then
 	exit 1
 fi
 
-asinfo_cmd="get-dc-config"
-output_substring1="dc-name"
-output_substring2="DC_Name"
-if ( ! run_test ${asinfo_cmd} ${output_substring1} ) && ( ! run_test ${asinfo_cmd} ${output_substring2} ) ; then
+# Deprecated with server 5.0, replaced with get-config below
+# asinfo_cmd="get-dc-config"
+# output_substring1="dc-name"
+# output_substring2="DC_Name"
+# if ( ! run_test ${asinfo_cmd} ${output_substring1} ) && ( ! run_test ${asinfo_cmd} ${output_substring2} ) ; then
+# 	echo "Error while running asinfo command: ${asinfo_cmd}"
+# 	exit 1
+# fi
+
+asinfo_cmd="get-config:context=xdr"
+output_substring1="dcs"
+if ( ! run_test ${asinfo_cmd} ${output_substring1} ) ; then
 	echo "Error while running asinfo command: ${asinfo_cmd}"
 	exit 1
 fi

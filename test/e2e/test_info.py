@@ -35,7 +35,7 @@ class TestInfo(unittest.TestCase):
         TestInfo.rc = controller.BasicRootController()
         actual_out = util.capture_stdout(TestInfo.rc.execute, ['info'])
         TestInfo.output_list = test_util.get_separate_output(actual_out, 'Information')
-        # TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex']))
+        TestInfo.output_list.append(util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex']))
         for item in TestInfo.output_list:
             if "~~Network Information" in item:
                 TestInfo.network_info = item
@@ -49,8 +49,8 @@ class TestInfo(unittest.TestCase):
                 TestInfo.namespace_object_info = item
         
     @classmethod    
-    def tearDownClass(self):
-        self.rc = None    
+    def tearDownClass(cls):
+        cls.rc = None    
 
     def test_network(self):
         """
@@ -59,24 +59,26 @@ class TestInfo(unittest.TestCase):
         TODO: test for values as well
         """
         exp_heading = "~~Network Information"
-        exp_header = [   'Node',
-                         'Node Id',
-                         'Ip',
-                         'Build',
-                         'Cluster Size',
-                         'Cluster Key',
-                         'Cluster Integrity',
-                         'Principal',
-                         'Client Conns',
-                         'Uptime']
+        exp_header = [   
+            'Node',
+            'Node Id',
+            'Ip',
+            'Build',
+            'Cluster Size',
+            'Cluster Key',
+            'Cluster Integrity',
+            'Principal',
+            'Client Conns',
+            'Uptime'
+        ]
         exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.network_info, horizontal = True)
+        actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestInfo.network_info, horizontal = True)
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(set(exp_header).issubset(actual_header))
         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
-    @unittest.skip("Skipping by default, to make it work please enable in setup_class also")
+    #@unittest.skip("Skipping by default, to make it work please enable in setup_class also")
     def test_sindex(self):
         """
         This test will assert <b> info sindex </b> output for heading, headerline1, headerline2
@@ -84,19 +86,41 @@ class TestInfo(unittest.TestCase):
         TODO: test for values as well
         """
         exp_heading = '~~Secondary Index Information'
-        exp_header = ['Node', 
-                      'Index Name', 
-                      'Namespace', 
-                      'Set', 
-                      'Bins', 
-                      'Num Bins', 
-                      'Bin Type', 
-                      'State', 
-                      'Sync State']
+
+        # Left incase older server versions need testing
+        # exp_header_old = [
+        #     'Node', 
+        #     'Index Name',
+        #     'Namespace', 
+        #     'Set', 
+        #     'Bins', 
+        #     'Num Bins', 
+        #     'Bin Type', 
+        #     'State', 
+        #     'Sync State'
+        # ]
+
+        # Know to be up-to-date with server 5.1
+        exp_header = [
+            'Node', 
+            'Index Name',
+            'Index Type',
+            'Namespace', 
+            'Set', 
+            'Bins', 
+            'Num Bins', 
+            'Bin Type', 
+            'State', 
+            'Keys',
+            'Entries',
+            'Si Accounted',
+            'q',
+            'w',
+            'd',
+            's'
+        ]
         exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
-        
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.sindex_info, horizontal = True)        
-        
+        actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestInfo.sindex_info, horizontal = True)        
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
 
@@ -107,21 +131,22 @@ class TestInfo(unittest.TestCase):
         TODO: test for values as well
         """
         exp_heading = "~~Namespace Usage Information"
-        exp_header = [   'Node',
-                         'Namespace',
-                         'Total Records',
-                         'Expirations,Evictions',
-                         'Stop Writes',
-                         'Disk Used',
-                         'Disk Used%',
-                         'HWM Disk%',
-                         'Mem Used',
-                         'Mem Used%',
-                         'HWM Mem%',
-                         'Stop Writes%',
-                      ]
+        exp_header = [   
+            'Node',
+            'Namespace',
+            'Total Records',
+            'Expirations,Evictions',
+            'Stop Writes',
+            'Disk Used',
+            'Disk Used%',
+            'HWM Disk%',
+            'Mem Used',
+            'Mem Used%',
+            'HWM Mem%',
+            'Stop Writes%',
+        ]
 
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_usage_info, horizontal = True)
+        actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_usage_info, horizontal = True)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
         self.assertTrue(exp_heading in actual_heading)
 
@@ -132,42 +157,57 @@ class TestInfo(unittest.TestCase):
         TODO: test for values as well
         """
         exp_heading = "~~Namespace Object Information"
-        exp_header = [   'Namespace',
-                         'Node',
-                         'Total Records',
-                         'Repl Factor',
-                         'Objects (Master,Prole,Non-Replica)',
-                         'Tombstones (Master,Prole,Non-Replica)',
-                         'Pending Migrates',
-                         ('Rack ID', None)
-                      ]
+        exp_header = [   
+            'Namespace',
+            'Node',
+            'Total Records',
+            'Repl Factor',
+            'Objects (Master,Prole,Non-Replica)',
+            'Tombstones (Master,Prole,Non-Replica)',
+            'Pending Migrates',
+            ('Rack ID', None)
+        ]
 
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_object_info, horizontal = True)
+        actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestInfo.namespace_object_info, horizontal = True)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
         self.assertTrue(exp_heading in actual_heading)
 
-    @unittest.skip("Will enable only when xdr is configured")
+    #@unittest.skip("Will enable only when xdr is configured")
     def test_xdr(self):
         """
-        This test will assert <b> info Namespace </b> output for heading, headerline1, headerline2
+        This test will assert <b> info XDR </b> output for heading, headerline1, headerline2
         and no of row displayed in output
         TODO: test for values as well
         """
         exp_heading = "~~XDR Information"
-        exp_header = ['Node', 
-                      'Build', 
-                      'Data Shipped', 
-                      'Free Dlog%', 
-                      'Lag (sec)', 
-                      'Req Outstanding', 
-                      'Req Relog', 
-                      'Req Shipped', 
-                      'Cur Throughput', 
-                      'Avg Latency', 
-                      'Xdr Uptime']
+
+        # Left incase older server versions need testing
+        # exp_header_old = [
+        #     'Node', 
+        #     'Build', 
+        #     'Data Shipped', 
+        #     'Free Dlog%', 
+        #     'Lag (sec)', 
+        #     'Req Outstanding', 
+        #     'Req Relog', 
+        #     'Req Shipped', 
+        #     'Cur Throughput', 
+        #     'Avg Latency', 
+        #     'Xdr Uptime'
+        # ]
+
+        exp_header = [
+            'Node',
+            'Success',
+            'Retry Connection Reset',
+            'Retry Destination',
+            'Recoveries',
+            'Avg Latency (ms)',
+            'Throughput (rec/s)',
+        ]
         exp_no_of_rows = len(TestInfo.rc.cluster.nodes)
         
-        actual_heading, actual_header, actual_no_of_rows = test_util.parse_output(TestInfo.xdr_info, horizontal = True)        
+        actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestInfo.xdr_info, horizontal = True, header_len=3)
         self.assertEqual(exp_header, actual_header)
         self.assertTrue(exp_heading in actual_heading)
         

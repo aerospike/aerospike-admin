@@ -515,6 +515,8 @@ class ShowLatencyBaseController(BasicCommandController):
         latency_nodes = []
         builds = self.cluster.info_build_version(nodes=self.nodes)
         for node, build in builds.items():
+            if isinstance(build, Exception):
+                continue
             if is_new_latencies_version(build):
                 latencies_nodes.append(node)
             else:
@@ -562,7 +564,7 @@ class ShowLatencyBaseController(BasicCommandController):
                     hist_latency[hist_name][node_id] = data
         return hist_latency
 
-        # Given a list of keys, returns the nested value.
+    # Given a list of keys, returns the nested value.
     def _get_value(self, d, context):
         ref = d
         for key in context:
@@ -673,11 +675,10 @@ class ShowLatenciesController(ShowLatencyBaseController):
                  '    -v           - Set to display verbose output of optionally configured histograms.',
                  '    -m           - Set to display the output group by machine names.')
     def _do_default(self, line):
-        print(line)
         increment = util.get_arg_and_delete_from_mods(line=line, arg="-e",
                 return_type=int, default=3, modifiers=self.modifiers,
                 mods=self.mods)
-        print(increment)
+
         buckets = util.get_arg_and_delete_from_mods(line=line, arg="-b",
                 return_type=int, default=3, modifiers=self.modifiers,
                 mods=self.mods)
