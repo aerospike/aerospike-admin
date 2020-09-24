@@ -283,7 +283,7 @@ class InfoController(BasicCommandController):
 
             futures = [ 
                 util.Future(self.view.info_XDR, xdr5_stats[dc], xdr_builds,
-                            xdr_enable, self.cluster, title="XDR Statistics %s" % dc,
+                            xdr_enable, self.cluster, title="XDR Information %s" % dc,
                             **self.mods)
                 for dc in xdr5_stats if not self.mods['for'] or dc in matches
             ]
@@ -673,11 +673,11 @@ class ShowLatenciesController(ShowLatencyBaseController):
                  '    -v           - Set to display verbose output of optionally configured histograms.',
                  '    -m           - Set to display the output group by machine names.')
     def _do_default(self, line):
-
+        print(line)
         increment = util.get_arg_and_delete_from_mods(line=line, arg="-e",
                 return_type=int, default=3, modifiers=self.modifiers,
                 mods=self.mods)
-
+        print(increment)
         buckets = util.get_arg_and_delete_from_mods(line=line, arg="-b",
                 return_type=int, default=3, modifiers=self.modifiers,
                 mods=self.mods)
