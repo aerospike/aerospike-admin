@@ -1334,7 +1334,6 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
 
         actual_out = util.capture_stdout(TestShowLatenciesWithArguments.rc.execute, ['show', 'latencies','-m'])
         output_list = test_util.get_separate_output(actual_out, 'Latency')
-        # print(output_list)
 
         for output in output_list:
                 actual_heading, actual_header, actual_data, _ = test_util.parse_output(output, horizontal = True, header_len=1)
