@@ -513,7 +513,8 @@ class ShowLatencyBaseController(BasicCommandController):
     def get_latencies_and_latency_nodes(self):
         latencies_nodes = []
         latency_nodes = []
-        builds = self.cluster.info_build_version(nodes=self.nodes)
+        builds = util.Future(self.cluster.info_build_version, nodes=self.nodes).start()
+        builds = builds.result()
         for node, build in builds.items():
             if isinstance(build, Exception):
                 continue
@@ -629,20 +630,24 @@ class ShowLatencyController(ShowLatencyBaseController):
         message = None
         # all nodes support "show latencies"
         if len(latency_nodes) == 0:
-            latency = self.cluster.info_latencies(
-                nodes=self.nodes, ns_set=namespace_set)
+            latency = util.Future(self.cluster.info_latencies,
+                nodes=self.nodes, ns_set=namespace_set).start()
+            latency = latency.result()
             message = [
-                'WARNING: \"show latency\" is deprecated on server versions 5.1+',
-                'Running \"show latencies\" instead.'
+                "WARNING: 'show latency' is deprecated on aerospike versions >= 5.1",
+                "Running 'show latencies' instead."
             ]
         # none of the nodes support "show latencies"
         elif len(latencies_nodes) == 0:
-            latency = self.cluster.info_latency(
+            latency = util.Future(self.cluster.info_latency,
             nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
-            ns_set=namespace_set)
+            ns_set=namespace_set).start()
+            latency = latency.result()
         else:
             # Some nodes support "show latencies" and some do not
-            latency = self.cluster.info_latency(nodes=latency_nodes, ns_set=namespace_set)
+            latency = util.Future(self.cluster.info_latency, nodes=latency_nodes, 
+            ns_set=namespace_set).start()
+            latency = latency.result()
             latencies = self.cluster.info_latencies(
                 nodes=latencies_nodes, ns_set=namespace_set)
             latency = self.merge_latencies_and_latency_tables(latencies, latency)
@@ -697,21 +702,24 @@ class ShowLatenciesController(ShowLatencyBaseController):
         message = None
         # all nodes support "show latencies"
         if len(latency_nodes) == 0:
-            latencies = self.cluster.info_latencies(
+            latencies = util.Future(self.cluster.info_latencies,
                 nodes=self.nodes, buckets=buckets, exponent_increment=increment,
-                verbose=verbose, ns_set=namespace_set)
+                verbose=verbose, ns_set=namespace_set).start()
+            latencies = latencies.result()
         elif len(latencies_nodes) == 0:
             latencies = {}
             message = [
-                'WARNING: \"show latencies\" is not supported on server versions prior to 5.1',
-                'Use \"show latency\" instead.'
+                "WARNING: 'show latencies' is not supported on aerospike versions <= 5.0",
+                "Use 'show latency' instead."
             ]
         else:
             # Some nodes support latencies and some do not
-            latency = self.cluster.info_latency(nodes=latency_nodes, ns_set=namespace_set)
-            latencies = self.cluster.info_latencies(
+            latency = util.Future(self.cluster.info_latency, nodes=latency_nodes, ns_set=namespace_set)
+            latencies = util.Future(self.cluster.info_latencies,
                 nodes=latencies_nodes, buckets=buckets, exponent_increment=increment,
-                verbose=verbose, ns_set=namespace_set)
+                verbose=verbose, ns_set=namespace_set).start()
+            latency = latency.result()
+            latencies = latencies.result()
             latencies = self.merge_latencies_and_latency_tables(latencies, latency)
             message = [
                 'WARNING: \"show latencies\" is not supported on server versions prior to 5.1',
