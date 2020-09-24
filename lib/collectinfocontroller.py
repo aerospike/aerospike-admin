@@ -242,10 +242,9 @@ class InfoController(CollectinfoCommandController):
                                 timestamp=timestamp, **self.mods)
             
             if nodes_running_v5_or_higher:
-                self.view.print_result("WARNING: Detected nodes running " +
-                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
-                 "/path/to/collect_info_file -e \"info xdr\"'" + 
-                 " for versions 5.0 and up.")
+                self.view.print_result("WARNING: 'info dc' is deprecated " + 
+                "on aerospike versions >= 5.0.\n" + 
+                "Use 'info xdr' instead.")
 
     @CommandHelp(
         'Displays secondary index (SIndex) summary information).')
@@ -846,10 +845,9 @@ class ShowStatisticsController(CollectinfoCommandController):
                         timestamp=timestamp, **self.mods)
 
             if nodes_running_v5_or_higher:
-                self.view.print_result("WARNING: Detected nodes running " +
-                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
-                 "/path/to/collect_info_file -e \"show statistics xdr\"'" + 
-                 " for versions 5.0 and up.")
+                self.view.print_result("WARNING: 'show statistics dc' is deprecated on " +
+                 "aerospike versions >= 5.0 \n" +
+                 "Please use 'asadm -cf 'show statistics xdr' instead")
             
 
 

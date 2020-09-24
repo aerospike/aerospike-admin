@@ -233,8 +233,8 @@ class InfoController(BasicCommandController):
 
         if nodes_running_v5_or_higher:
             futures.append(util.Future(self.view.print_result, 
-            "WARNING: Detected nodes running aerospike version >= 5.0. " +
-            "Please use 'asadm -e \"info xdr\"' for versions 5.0 and up."))
+            "WARNING: 'info dc' is deprecated on aerospike versions >= 5.0. " +
+            "Use \'info xdr\' instead."))
 
         return futures
 
@@ -652,8 +652,8 @@ class ShowLatencyController(ShowLatencyBaseController):
                 nodes=latencies_nodes, ns_set=namespace_set)
             latency = self.merge_latencies_and_latency_tables(latencies, latency)
             message = [
-                'WARNING: \"show latency\" is deprecated on server versions 5.1+',
-                'Running \"show latencies\" instead for nodes running such versions.'
+                "WARNING: 'show latency' is deprecated on aerospike versions >= 5.1",
+                "Running 'show latencies' instead for nodes running such versions."
             ]
 
         # Sort data by operation type rather than by node address
@@ -722,8 +722,8 @@ class ShowLatenciesController(ShowLatencyBaseController):
             latencies = latencies.result()
             latencies = self.merge_latencies_and_latency_tables(latencies, latency)
             message = [
-                'WARNING: \"show latencies\" is not supported on server versions prior to 5.1',
-                'Running \"show latency\" instead for nodes running such versions.'
+                "WARNING: 'show latencies' is not supported on aerospike versions <= 5.0",
+                "Running 'show latency' instead for nodes running such versions."
             ]
             
         # Sort data by operation type rather than by node address
@@ -1128,8 +1128,8 @@ class ShowStatisticsController(BasicCommandController):
         
         if nodes_running_v5_or_higher:
             futures.append(util.Future(self.view.print_result, 
-            "WARNING: Detected nodes running aerospike version >= 5.0. " +
-            "Please use 'asadm -e \"show statistics xdr\"' for versions 5.0 and up."))
+            "WARNING: 'show statistics dc' is deprecated on aerospike versions >= 5.0. \n" +
+            "Use 'show statistics xdr' instead."))
 
         return futures
 
@@ -1422,10 +1422,30 @@ class CollectinfoController(BasicCommandController):
         return histogram_map
 
     def _get_as_latency(self):
+        latency_controller = ShowLatencyBaseController(self.cluster)
+        latency_controller.modifiers = []
+        latency_controller.pre_command([""])
+        latencies_nodes, latency_nodes = latency_controller.get_latencies_and_latency_nodes()
         latency_map = {}
-        latency_data = util.Future(self.cluster.info_latency,
-                                  nodes=self.nodes).start()
-        latency_data = latency_data.result()
+
+        if len(latency_nodes) == 0:
+            latency_data = util.Future(self.cluster.info_latencies,
+                                    nodes=latencies_nodes, buckets=17, exponent_increment=1, verbose=True).start()
+            latency_data = latency_data.result()
+        elif len(latencies_nodes) == 0:
+            latency_data = util.Future(self.cluster.info_latency,
+                                    nodes=latency_nodes).start()
+            latency_data = latency_data.result()
+        else:
+            # There are nodes that support show latencies and nodes that do not
+            latencies_data = util.Future(self.cluster.info_latencies,
+                                    nodes=latencies_nodes, buckets=17, exponent_increment=1, verbose=True).start()
+            latency_data = util.Future(self.cluster.info_latency,
+                                    nodes=latency_nodes).start()
+            latencies_data = latencies_data.result()
+            latency_data = latency_data.result()
+            latency_data = latency_controller.merge_latencies_and_latency_tables(latency_data, latencies_data)
+        
 
         for node in latency_data:
             if node not in latency_map:
@@ -1534,8 +1554,6 @@ class CollectinfoController(BasicCommandController):
         except Exception:
             port = 3000
 
-
-
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
 
         dignostic_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
@@ -1543,8 +1561,9 @@ class CollectinfoController(BasicCommandController):
         dignostic_features_params = ['features']
 
         dignostic_show_params = ['config', 'config xdr', 'config dc', 'config cluster', 'distribution',
-                                 'distribution eviction', 'distribution object_size -b', 'latency',
-                                 'statistics', 'statistics xdr', 'statistics dc', 'statistics sindex', 'pmap']
+                                 'distribution eviction', 'distribution object_size -b', 'latency', 
+                                 'latencies -v -e 1 -b 17', 'statistics', 'statistics xdr', 'statistics dc',
+                                 'statistics sindex', 'pmap']
 
         dignostic_aerospike_cluster_params = ['service', 'services', 'peers-clear-std', 'peers-clear-alt',
                                               'peers-tls-std', 'peers-tls-alt', 'alumni-clear-std',
@@ -1722,7 +1741,6 @@ class CollectinfoController(BasicCommandController):
         self.failed_cmds = []
 
         # JSON collectinfo
-
         self._dump_collectinfo_json(timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port, default_ssh_key,
                                     credential_file, enable_ssh, snp_count, wait_time,)
 
