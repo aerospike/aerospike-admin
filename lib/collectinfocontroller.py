@@ -307,6 +307,7 @@ class ShowController(CollectinfoCommandController):
             'config': ShowConfigController,
             'statistics': ShowStatisticsController,
             'latency': ShowLatencyController,
+            'latencies': ShowLatencyController,
             'distribution': ShowDistributionController,
             'pmap': ShowPmapController
         }
