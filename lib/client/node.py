@@ -1128,19 +1128,8 @@ class Node(object):
         Get latencies metrics from this node. asinfo -v "latencies:" -p 3004
 
         Returns:
-        dict -- {'host_address:port': {'histogram_name': {'namespace': {'namespace_name': {'columns': ['column1', 'column2', . . .], 'values': [[val1, val2, . . .]]}}, . . .}}}}
+        dict -- {'host_address:port': {'histogram_name': {'namespace/total': {'namespace_name': {'columns': ['column1', 'column2', . . .], 'values': [[val1, val2, . . .]]}}, . . .}}}}
         """
-        # Check argument bounds
-        if exponent_increment > 17:
-            exponent_increment = 17
-        elif exponent_increment < 1:
-            exponent_increment = 1
-
-        buckets_upper_bound = math.ceil(exponent_increment / 17)
-        if buckets_upper_bound > buckets:
-            buckets = buckets_upper_bound
-        elif buckets < 1:
-            buckets = 1
 
         # If ns_set is set filter through all default latencies with ns_set
             # If optional_benchmark is set make additional queries for the optional_benchmark
@@ -1169,7 +1158,12 @@ class Node(object):
             if hist_info[-1].startswith('error'):
                 hist_info.pop()
                 continue
-
+        
+        # example hist info after join:
+        # batch-index:;{test}-read:msec,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00, /
+        # 0.00,0.00,0.00,0.00,0.00,0.00,0.00;{test}-write:msec,0.0,0.00,0.00,0.00,0.00,0.00,0.00, /
+        # 0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00;{test}-udf:;{test}-query:;{bar}-read:; /
+        # {bar}-write:;{bar}-udf:;{bar}-query: /
         hist_info = ';'.join(hist_info)
         tdata = hist_info.split(';')
         hist_name = None
@@ -1191,7 +1185,7 @@ class Node(object):
             hist_name, hist_data = hist.split(':')
             hist_data = hist_data.split(',')
             m = re.search(ns_hist_pattern, hist_name)
-            # Remove empty histograms
+            # Remove empty histograms, len 2 just to be safe
             if len(hist_data) <= 2:
                 continue
             if m:

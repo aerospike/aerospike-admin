@@ -510,6 +510,8 @@ class ShowLatencyBaseController(BasicCommandController):
                 util.filter_list(list(namespace_set), self.mods['for']))
         return namespace_set
 
+    # Returns a tuple (latencies, latency) of lists that contain nodes that support
+    # latencies cmd and nodes that do not.
     def get_latencies_and_latency_nodes(self):
         latencies_nodes = []
         latency_nodes = []
@@ -524,6 +526,8 @@ class ShowLatencyBaseController(BasicCommandController):
                 latency_nodes.append(node)
         return latencies_nodes, latency_nodes
 
+    # Merges latency tables into latencies table.  This is needed because a 
+    # latencies table can have different columns.
     def merge_latencies_and_latency_tables(self, latencies_table, latency_table):
         if not latencies_table:
             return latency_table
@@ -565,7 +569,7 @@ class ShowLatencyBaseController(BasicCommandController):
                     hist_latency[hist_name][node_id] = data
         return hist_latency
 
-    # Given a list of keys, returns the nested value.
+    # Given a list of keys, returns the nested value in a dict.
     def _get_value(self, d, context):
         ref = d
         for key in context:
@@ -577,6 +581,8 @@ class ShowLatencyBaseController(BasicCommandController):
     def _copy_latency_data_to_latencies_table(self, latencies_table, latency_table, context):
         latencies_data = self._get_value(latencies_table, context)
         latency_data = self._get_value(latency_table, context)
+        
+        # Make every new entry start out with 'N/A' for all values
         for idx in range(len(latencies_data["values"])):
             for jdx in range(len(latencies_data['values'][idx])):
                 latencies_data['values'][idx][jdx] = 'N/A'
@@ -706,6 +712,7 @@ class ShowLatenciesController(ShowLatencyBaseController):
                 nodes=self.nodes, buckets=buckets, exponent_increment=increment,
                 verbose=verbose, ns_set=namespace_set).start()
             latencies = latencies.result()
+        # No nodes support "show latencies"
         elif len(latencies_nodes) == 0:
             latencies = {}
             message = [
