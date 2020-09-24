@@ -469,7 +469,7 @@ class TestShowLatency(unittest.TestCase):
 
     def test_write_latencies(self):
         """
-        Asserts <b> writes_master latency <b> output with heading, header & no of node processed(based on row count).
+        Asserts <b> writes latency <b> output with heading, header & no of node processed(based on row count).
         TODO: test for values as well
         """
         exp_heading = "~~write Latency"
@@ -590,7 +590,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_read_latencies(self):
         """
         Asserts <b> read latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~read Latency"
         exp_header = [
@@ -618,7 +617,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_read_dup_res_latencies(self):
         """
         Asserts <b> read-dup-res latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~read-dup-res Latency"
         exp_header = [
@@ -648,7 +646,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_read_local_latencies(self):
         """
         Asserts <b> read-local latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~read-local Latency"
         exp_header = [
@@ -678,7 +675,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_read_repl_ping_latencies(self):
         """
         Asserts <b> read-repl-ping latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~read-repl-ping Latency"
         exp_header = [
@@ -708,7 +704,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_read_response_latencies(self):
         """
         Asserts <b> read-response latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~read-response Latency"
         exp_header = [
@@ -738,7 +733,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_read_restart_latencies(self):
         """
         Asserts <b> read-restart latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~read-restart Latency"
         exp_header = [
@@ -768,7 +762,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_read_start_latencies(self):
         """
         Asserts <b> read-start latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~~read-start Latency"
         exp_header = [
@@ -798,7 +791,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_write_latencies(self):
         """
         Asserts <b> writes latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~write Latency"
         exp_header = [
@@ -828,7 +820,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_write_dup_res_latencies(self):
         """
         Asserts <b> write-dup-res latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~write-dup-res Latency"
         exp_header = [
@@ -858,7 +849,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_write_master_latencies(self):
         """
         Asserts <b> write-master latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~write-master Latency"
         exp_header = [
@@ -888,7 +878,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_write_repl_write_latencies(self):
         """
         Asserts <b> write-repl-write latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~write-repl-write Latency"
         exp_header = [
@@ -918,7 +907,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_write_response_latencies(self):
         """
         Asserts <b> write-response latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~write-response Latency"
         exp_header = [
@@ -948,7 +936,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_write_restart_latencies(self):
         """
         Asserts <b> write-restart latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~write-restart Latency"
         exp_header = [
@@ -978,7 +965,6 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def test_write_start_latencies(self):
         """
         Asserts <b> write-start latencies <b> output with heading, header & no of node processed(based on row count).
-        TODO: test for values as well
         """
         exp_heading = "~write-start Latency"
         exp_header = [
