@@ -22,7 +22,6 @@ import copy
 import logging
 import os
 import re
-import math
 import socket
 import threading
 from time import time
