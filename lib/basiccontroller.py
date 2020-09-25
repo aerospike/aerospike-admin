@@ -721,7 +721,8 @@ class ShowLatenciesController(ShowLatencyBaseController):
             ]
         else:
             # Some nodes support latencies and some do not
-            latency = util.Future(self.cluster.info_latency, nodes=latency_nodes, ns_set=namespace_set)
+            latency = util.Future(self.cluster.info_latency, nodes=latency_nodes,
+                ns_set=namespace_set).start()
             latencies = util.Future(self.cluster.info_latencies,
                 nodes=latencies_nodes, buckets=buckets, exponent_increment=increment,
                 verbose=verbose, ns_set=namespace_set).start()
