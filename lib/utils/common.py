@@ -20,6 +20,7 @@
 from __future__ import division
 from __future__ import print_function
 from future import standard_library
+
 standard_library.install_aliases()
 from builtins import map
 from builtins import str
@@ -46,12 +47,12 @@ logger = logging.getLogger("asadm")
 ########## Feature ##########
 
 comp_ops = {
-    '>': operator.gt,
-    '<': operator.lt,
-    '>=': operator.ge,
-    '<=': operator.le,
-    '==': operator.eq,
-    '!=': operator.ne,
+    ">": operator.gt,
+    "<": operator.lt,
+    ">=": operator.ge,
+    "<=": operator.le,
+    "==": operator.eq,
+    "!=": operator.ne,
 }
 
 # Dictionary to contain feature and related stats to identify state of that feature
@@ -59,32 +60,78 @@ comp_ops = {
 #                      ((namespace stat1/config1 <, comp_op, value>), (namespace stat2/config2 <, comp_op, value>), ...),
 #            ...}
 FEATURE_KEYS = {
-    "KVS": (('stat_read_reqs', 'stat_write_reqs'),
-            ('client_read_error', 'client_read_success', 'client_write_error', 'client_write_success')),
-    "UDF": (('udf_read_reqs', 'udf_write_reqs'), ('client_udf_complete', 'client_udf_error')),
-    "Batch": (('batch_initiate', 'batch_index_initiate'), None),
-    "Scan": (('tscan_initiate', 'basic_scans_succeeded', 'basic_scans_failed', 'aggr_scans_succeeded',
-              'aggr_scans_failed', 'udf_bg_scans_succeeded', 'udf_bg_scans_failed'),
-             (
-                 'scan_basic_complete', 'scan_basic_error', 'scan_aggr_complete', 'scan_aggr_error',
-                 'scan_udf_bg_complete',
-                 'scan_udf_bg_error')),
-    "SINDEX": (('sindex-used-bytes-memory'), ('memory_used_sindex_bytes')),
-    "Query": (('query_reqs', 'query_success'), ('query_reqs', 'query_success')),
-    "Aggregation": (('query_agg', 'query_agg_success'), ('query_agg', 'query_agg_success')),
-    "LDT": (('sub-records', 'ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes',
-         'sub_objects'),
-        ('ldt-writes', 'ldt-reads', 'ldt-deletes', 'ldt_writes', 'ldt_reads', 'ldt_deletes')),
-    "XDR Source": (('stat_read_reqs_xdr', 'xdr_read_success', 'xdr_read_error'), None),
-    "XDR Destination": (('stat_write_reqs_xdr'), ('xdr_write_success', 'xdr_client_write_success')),
-    "Rack-aware": (('self-group-id'), ('rack-id')),
-    "Security": ((('enable-security', comp_ops["=="], "true"),), None),
-    "TLS (Heartbeat)": (('heartbeat.mesh-seed-address-port'), None),
-    "TLS (Fabric)": (('fabric.tls-port'), None),
-    "TLS (Service)": (('service.tls-port'), None),
-    "SC": (None, (('strong-consistency', comp_ops["=="], "true"),)),
-    "Index-on-device": (None, ('index_flash_used_bytes')),
-    "Index-on-pmem": (None, (('index-type', comp_ops["=="], "pmem"),)),
+    "KVS": (
+        ("stat_read_reqs", "stat_write_reqs"),
+        (
+            "client_read_error",
+            "client_read_success",
+            "client_write_error",
+            "client_write_success",
+        ),
+    ),
+    "UDF": (
+        ("udf_read_reqs", "udf_write_reqs"),
+        ("client_udf_complete", "client_udf_error"),
+    ),
+    "Batch": (("batch_initiate", "batch_index_initiate"), None),
+    "Scan": (
+        (
+            "tscan_initiate",
+            "basic_scans_succeeded",
+            "basic_scans_failed",
+            "aggr_scans_succeeded",
+            "aggr_scans_failed",
+            "udf_bg_scans_succeeded",
+            "udf_bg_scans_failed",
+        ),
+        (
+            "scan_basic_complete",
+            "scan_basic_error",
+            "scan_aggr_complete",
+            "scan_aggr_error",
+            "scan_udf_bg_complete",
+            "scan_udf_bg_error",
+        ),
+    ),
+    "SINDEX": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes")),
+    "Query": (("query_reqs", "query_success"), ("query_reqs", "query_success")),
+    "Aggregation": (
+        ("query_agg", "query_agg_success"),
+        ("query_agg", "query_agg_success"),
+    ),
+    "LDT": (
+        (
+            "sub-records",
+            "ldt-writes",
+            "ldt-reads",
+            "ldt-deletes",
+            "ldt_writes",
+            "ldt_reads",
+            "ldt_deletes",
+            "sub_objects",
+        ),
+        (
+            "ldt-writes",
+            "ldt-reads",
+            "ldt-deletes",
+            "ldt_writes",
+            "ldt_reads",
+            "ldt_deletes",
+        ),
+    ),
+    "XDR Source": (("stat_read_reqs_xdr", "xdr_read_success", "xdr_read_error"), None),
+    "XDR Destination": (
+        ("stat_write_reqs_xdr"),
+        ("xdr_write_success", "xdr_client_write_success"),
+    ),
+    "Rack-aware": (("self-group-id"), ("rack-id")),
+    "Security": ((("enable-security", comp_ops["=="], "true"),), None),
+    "TLS (Heartbeat)": (("heartbeat.mesh-seed-address-port"), None),
+    "TLS (Fabric)": (("fabric.tls-port"), None),
+    "TLS (Service)": (("service.tls-port"), None),
+    "SC": (None, (("strong-consistency", comp_ops["=="], "true"),)),
+    "Index-on-device": (None, ("index_flash_used_bytes")),
+    "Index-on-pmem": (None, (("index-type", comp_ops["=="], "pmem"),)),
 }
 
 
@@ -134,7 +181,9 @@ def _check_value(data={}, keys=()):
     return False
 
 
-def _check_feature_by_keys(service_data=None, service_keys=None, ns_data=None, ns_keys=None):
+def _check_feature_by_keys(
+    service_data=None, service_keys=None, ns_data=None, ns_keys=None
+):
     """
     Function takes dictionary of service data, service keys, dictionary of namespace data and namespace keys.
     Returns boolean to indicate service key in service data or namespace key in namespace data has non-zero value or not.
@@ -184,7 +233,9 @@ def _deep_merge_dicts(dict_to, dict_from):
     return dict_to
 
 
-def _find_features_for_cluster(service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}):
+def _find_features_for_cluster(
+    service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}
+):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
     Returns list of active (used) features identifying by comparing respective keys for non-zero value.
@@ -212,7 +263,9 @@ def _find_features_for_cluster(service_stats, ns_stats, service_configs={}, ns_c
     return features
 
 
-def find_nodewise_features(service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}):
+def find_nodewise_features(
+    service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}
+):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
     Returns map of active (used) features per node identifying by comparing respective keys for non-zero value.
@@ -246,6 +299,7 @@ def find_nodewise_features(service_stats, ns_stats, service_configs={}, ns_confi
 
 ########## Summary ##########
 
+
 def _set_record_overhead(as_version=""):
     overhead = 9
     if not as_version:
@@ -271,16 +325,21 @@ def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
         if not stats or isinstance(stats, Exception) or node not in stats:
             continue
 
-        ns_name = util.get_value_from_dict(stats[node], ("ns", "ns_name"), default_value=None,
-                                                           return_type=str)
+        ns_name = util.get_value_from_dict(
+            stats[node], ("ns", "ns_name"), default_value=None, return_type=str
+        )
         if ns_name != ns:
             continue
 
-        set_name = util.get_value_from_dict(stats[node], ("set", "set_name"), default_value="",
-                                                            return_type=str)
-        objects = util.get_value_from_dict(stats[node], ("objects", "n_objects"), default_value=0,
-                                                               return_type=int)
-        overhead += objects * (_set_record_overhead(as_version=as_version) + len(set_name))
+        set_name = util.get_value_from_dict(
+            stats[node], ("set", "set_name"), default_value="", return_type=str
+        )
+        objects = util.get_value_from_dict(
+            stats[node], ("objects", "n_objects"), default_value=0, return_type=int
+        )
+        overhead += objects * (
+            _set_record_overhead(as_version=as_version) + len(set_name)
+        )
 
     return overhead
 
@@ -295,6 +354,7 @@ def _round_up(value, rounding_factor):
         d += 1
 
     return d * rounding_factor
+
 
 def _compute_tombstone_overhead_for_ns(set_stats, ns, node, as_version=""):
     """
@@ -319,16 +379,21 @@ def _compute_tombstone_overhead_for_ns(set_stats, ns, node, as_version=""):
         if not stats or isinstance(stats, Exception) or node not in stats:
             continue
 
-        ns_name = util.get_value_from_dict(stats[node], ("ns", "ns_name"), default_value=None,
-                                                           return_type=str)
+        ns_name = util.get_value_from_dict(
+            stats[node], ("ns", "ns_name"), default_value=None, return_type=str
+        )
         if ns_name != ns:
             continue
 
-        set_name = util.get_value_from_dict(stats[node], ("set", "set_name"), default_value="",
-                                                            return_type=str)
-        tombstones = util.get_value_from_dict(stats[node], ("tombstones",), default_value=0,
-                                                               return_type=int)
-        overhead += tombstones * _round_up(record_overhead + set_overhead + len(set_name), rounding_factor)
+        set_name = util.get_value_from_dict(
+            stats[node], ("set", "set_name"), default_value="", return_type=str
+        )
+        tombstones = util.get_value_from_dict(
+            stats[node], ("tombstones",), default_value=0, return_type=int
+        )
+        overhead += tombstones * _round_up(
+            record_overhead + set_overhead + len(set_name), rounding_factor
+        )
 
     return overhead
 
@@ -344,7 +409,9 @@ def _device_record_overhead(as_version=""):
     return overhead
 
 
-def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict, as_versions):
+def _compute_license_data_size(
+    namespace_stats, set_stats, cluster_dict, ns_dict, as_versions
+):
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
@@ -367,23 +434,60 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
         device_compression_ratio = 0.0
 
         for host_id, host_stats in list(ns_stats.items()):
-            master_objects = util.get_value_from_dict(host_stats, ("master_objects", "master-objects"), default_value=0,
-                                                     return_type=int)
-            replica_objects = util.get_value_from_dict(host_stats, ("prole_objects", "prole-objects", "replica_objects",
-                                                                    "replica-objects"), default_value=0, return_type=int)
-            devices_in_use = util.get_values_from_dict(host_stats, ("^storage-engine.device$", "^device$", "^storage-engine.file$",
-                                                        "^file$", "^dev$", "^storage-engine.device\[[0-9]+\]$", "^storage-engine.file\[[0-9]+\]$")
-                                                       , return_type=str)
-            using_data_in_memory = util.get_value_from_dict(host_stats, ("data-in-memory", "storage-engine.data-in-memory", "storage-engine.memory"),
-                                                             default_value=False, return_type=bool)
+            master_objects = util.get_value_from_dict(
+                host_stats,
+                ("master_objects", "master-objects"),
+                default_value=0,
+                return_type=int,
+            )
+            replica_objects = util.get_value_from_dict(
+                host_stats,
+                (
+                    "prole_objects",
+                    "prole-objects",
+                    "replica_objects",
+                    "replica-objects",
+                ),
+                default_value=0,
+                return_type=int,
+            )
+            devices_in_use = util.get_values_from_dict(
+                host_stats,
+                (
+                    "^storage-engine.device$",
+                    "^device$",
+                    "^storage-engine.file$",
+                    "^file$",
+                    "^dev$",
+                    "^storage-engine.device\[[0-9]+\]$",
+                    "^storage-engine.file\[[0-9]+\]$",
+                ),
+                return_type=str,
+            )
+            using_data_in_memory = util.get_value_from_dict(
+                host_stats,
+                (
+                    "data-in-memory",
+                    "storage-engine.data-in-memory",
+                    "storage-engine.memory",
+                ),
+                default_value=False,
+                return_type=bool,
+            )
             total_objects = master_objects + replica_objects
 
             if not devices_in_use or using_data_in_memory:
                 # Data in memory only
-                memory_data_size = util.get_value_from_dict(host_stats, ("memory_used_data_bytes", "data-used-bytes-memory"),
-                                                             default_value=0, return_type=int)
+                memory_data_size = util.get_value_from_dict(
+                    host_stats,
+                    ("memory_used_data_bytes", "data-used-bytes-memory"),
+                    default_value=0,
+                    return_type=int,
+                )
                 if total_objects > 0:
-                    memory_data_size = (old_div(memory_data_size, total_objects)) * master_objects
+                    memory_data_size = (
+                        old_div(memory_data_size, total_objects)
+                    ) * master_objects
                 else:
                     memory_data_size = 0
 
@@ -397,36 +501,52 @@ def _compute_license_data_size(namespace_stats, set_stats, cluster_dict, ns_dict
                 if as_versions and host_id in as_versions:
                     as_version = as_versions[host_id]
 
-                device_data_size = util.get_value_from_dict(host_stats, ("device_used_bytes", "used-bytes-disk"),
-                                                             default_value=0, return_type=int)
+                device_data_size = util.get_value_from_dict(
+                    host_stats,
+                    ("device_used_bytes", "used-bytes-disk"),
+                    default_value=0,
+                    return_type=int,
+                )
 
-                device_compression_ratio = util.get_value_from_dict(host_stats, ("device_compression_ratio"), default_value=0.0,
-                                                     return_type=float)
+                device_compression_ratio = util.get_value_from_dict(
+                    host_stats,
+                    ("device_compression_ratio"),
+                    default_value=0.0,
+                    return_type=float,
+                )
 
                 if device_data_size > 0:
 
                     if device_compression_ratio > 0:
                         # compute estimated uncompressed size
-                        device_data_size = device_data_size/device_compression_ratio
+                        device_data_size = device_data_size / device_compression_ratio
 
                 if device_data_size > 0:
                     # remove set overhead
-                    set_overhead = _compute_set_overhead_for_ns(set_stats, ns, host_id, as_version=as_version)
+                    set_overhead = _compute_set_overhead_for_ns(
+                        set_stats, ns, host_id, as_version=as_version
+                    )
                     device_data_size = device_data_size - set_overhead
 
                 if device_data_size > 0:
                     # remove tombstone overhead
-                    tombstone_overhead = _compute_tombstone_overhead_for_ns(set_stats, ns, host_id, as_version=as_version)
+                    tombstone_overhead = _compute_tombstone_overhead_for_ns(
+                        set_stats, ns, host_id, as_version=as_version
+                    )
                     device_data_size = device_data_size - tombstone_overhead
 
                 if total_objects > 0:
-                    device_data_size = (old_div(device_data_size, total_objects)) * master_objects
+                    device_data_size = (
+                        old_div(device_data_size, total_objects)
+                    ) * master_objects
                 else:
                     device_data_size = 0
 
                 if device_data_size > 0:
                     # remove record overhead
-                    device_record_overhead = master_objects * _device_record_overhead(as_version=as_version)
+                    device_record_overhead = master_objects * _device_record_overhead(
+                        as_version=as_version
+                    )
                     device_data_size = device_data_size - device_record_overhead
 
                 if device_data_size > 0:
@@ -458,10 +578,14 @@ def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
-        migrations_in_progress = any(util.get_value_from_second_level_of_dict(ns_stats, (
-            "migrate_tx_partitions_remaining", "migrate-tx-partitions-remaining"),
-                                                                              default_value=0,
-                                                                              return_type=int).values())
+        migrations_in_progress = any(
+            util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("migrate_tx_partitions_remaining", "migrate-tx-partitions-remaining"),
+                default_value=0,
+                return_type=int,
+            ).values()
+        )
         if migrations_in_progress:
             ns_dict[ns]["migrations_in_progress"] = True
             cluster_dict["migrations_in_progress"] = True
@@ -511,7 +635,9 @@ def _initialize_summary_output(ns_list):
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_count_same_across_nodes"] = True
+        summary_dict["FEATURES"]["NAMESPACE"][ns][
+            "devices_count_same_across_nodes"
+        ] = True
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_aval"] = 0
@@ -533,15 +659,27 @@ def _initialize_summary_output(ns_list):
     return summary_dict
 
 
-def create_summary(service_stats, namespace_stats, set_stats, metadata,
-                   service_configs={}, ns_configs={}, cluster_configs={}):
+def create_summary(
+    service_stats,
+    namespace_stats,
+    set_stats,
+    metadata,
+    service_configs={},
+    ns_configs={},
+    cluster_configs={},
+):
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
     Returns dictionary with summary information.
     """
 
-    features = _find_features_for_cluster(service_stats, namespace_stats, service_configs=service_configs,
-                                          ns_configs=ns_configs, cluster_configs=cluster_configs)
+    features = _find_features_for_cluster(
+        service_stats,
+        namespace_stats,
+        service_configs=service_configs,
+        ns_configs=ns_configs,
+        cluster_configs=cluster_configs,
+    )
 
     namespace_stats = util.flip_keys(namespace_stats)
     set_stats = util.flip_keys(set_stats)
@@ -559,69 +697,134 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
     cl_nodewise_device_used = {}
     cl_nodewise_device_aval = {}
 
-    _compute_license_data_size(namespace_stats, set_stats, summary_dict["CLUSTER"],
-                               summary_dict["FEATURES"]["NAMESPACE"], metadata["server_build"])
-    _set_migration_status(namespace_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"])
+    _compute_license_data_size(
+        namespace_stats,
+        set_stats,
+        summary_dict["CLUSTER"],
+        summary_dict["FEATURES"]["NAMESPACE"],
+        metadata["server_build"],
+    )
+    _set_migration_status(
+        namespace_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"]
+    )
 
     summary_dict["CLUSTER"]["active_features"] = features
-    summary_dict["CLUSTER"]["cluster_size"] = list(set(
-        util.get_value_from_second_level_of_dict(service_stats, ("cluster_size",), default_value=0,
-                                                 return_type=int).values()))
+    summary_dict["CLUSTER"]["cluster_size"] = list(
+        set(
+            util.get_value_from_second_level_of_dict(
+                service_stats, ("cluster_size",), default_value=0, return_type=int
+            ).values()
+        )
+    )
 
     if "cluster_name" in metadata and metadata["cluster_name"]:
-        summary_dict["CLUSTER"]["cluster_name"] = list(set(metadata["cluster_name"].values()).difference(set(["null"])))
+        summary_dict["CLUSTER"]["cluster_name"] = list(
+            set(metadata["cluster_name"].values()).difference(set(["null"]))
+        )
 
     if "server_version" in metadata and metadata["server_version"]:
-        summary_dict["CLUSTER"]["server_version"] = list(set(metadata["server_version"].values()))
+        summary_dict["CLUSTER"]["server_version"] = list(
+            set(metadata["server_version"].values())
+        )
 
     if "os_version" in metadata and metadata["os_version"]:
-        summary_dict["CLUSTER"]["os_version"] = list(set(
-            util.get_value_from_second_level_of_dict(metadata["os_version"], ("description",), default_value="",
-                                                     return_type=str).values()))
+        summary_dict["CLUSTER"]["os_version"] = list(
+            set(
+                util.get_value_from_second_level_of_dict(
+                    metadata["os_version"],
+                    ("description",),
+                    default_value="",
+                    return_type=str,
+                ).values()
+            )
+        )
 
     for ns, ns_stats in list(namespace_stats.items()):
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
-        device_name_list = util.get_values_from_second_level_of_dict(ns_stats, ("^storage-engine.device$", "^device$",
-                                                                                 "^storage-engine.file$", "^file$", "^dev$",
-                                                                                 "^storage-engine.device\[[0-9]+\]$",
-                                                                                 "^storage-engine.file\[[0-9]+\]$"),
-                                                                      return_type=str)
+        device_name_list = util.get_values_from_second_level_of_dict(
+            ns_stats,
+            (
+                "^storage-engine.device$",
+                "^device$",
+                "^storage-engine.file$",
+                "^file$",
+                "^dev$",
+                "^storage-engine.device\[[0-9]+\]$",
+                "^storage-engine.file\[[0-9]+\]$",
+            ),
+            return_type=str,
+        )
 
-        device_counts = dict([(k, sum(len(i.split(",")) for i in v) if v else 0) for k, v in list(device_name_list.items())])
-        cl_nodewise_device_counts = util.add_dicts(cl_nodewise_device_counts, device_counts)
+        device_counts = dict(
+            [
+                (k, sum(len(i.split(",")) for i in v) if v else 0)
+                for k, v in list(device_name_list.items())
+            ]
+        )
+        cl_nodewise_device_counts = util.add_dicts(
+            cl_nodewise_device_counts, device_counts
+        )
 
         ns_total_devices = sum(device_counts.values())
         ns_total_nodes = len(list(ns_stats.keys()))
 
         if ns_total_devices:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = ns_total_devices
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "devices_total"
+            ] = ns_total_devices
             summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = int(
-                (float(ns_total_devices) / float(ns_total_nodes)) + 0.5)
+                (float(ns_total_devices) / float(ns_total_nodes)) + 0.5
+            )
             if len(set(device_counts.values())) > 1:
-                summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_count_same_across_nodes"] = False
+                summary_dict["FEATURES"]["NAMESPACE"][ns][
+                    "devices_count_same_across_nodes"
+                ] = False
 
-        mem_size = util.get_value_from_second_level_of_dict(ns_stats, ("memory-size",), default_value=0,
-                                                            return_type=int)
-        mem_aval_pct = util.get_value_from_second_level_of_dict(ns_stats, ("memory_free_pct", "free-pct-memory"),
-                                                                default_value=0, return_type=int)
+        mem_size = util.get_value_from_second_level_of_dict(
+            ns_stats, ("memory-size",), default_value=0, return_type=int
+        )
+        mem_aval_pct = util.get_value_from_second_level_of_dict(
+            ns_stats,
+            ("memory_free_pct", "free-pct-memory"),
+            default_value=0,
+            return_type=int,
+        )
         mem_aval = util.pct_to_value(mem_size, mem_aval_pct)
         cl_nodewise_mem_size = util.add_dicts(cl_nodewise_mem_size, mem_size)
         cl_nodewise_mem_aval = util.add_dicts(cl_nodewise_mem_aval, mem_aval)
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = sum(mem_size.values())
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_aval"] = sum(mem_aval.values())
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = sum(
+            mem_size.values()
+        )
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_aval"] = sum(
+            mem_aval.values()
+        )
         if sum(mem_size.values()) == 0:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = 0
         else:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = (float(sum(mem_aval.values())) / float(sum(mem_size.values()))) * 100.0
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = (
+                float(sum(mem_aval.values())) / float(sum(mem_size.values()))
+            ) * 100.0
 
-        device_size = util.get_value_from_second_level_of_dict(ns_stats, ("device_total_bytes", "total-bytes-disk"),
-                                                               default_value=0, return_type=int)
-        device_used = util.get_value_from_second_level_of_dict(ns_stats, ("device_used_bytes", "used-bytes-disk"),
-                                                               default_value=0, return_type=int)
-        device_aval_pct = util.get_value_from_second_level_of_dict(ns_stats, ("device_available_pct", "available_pct"),
-                                                                   default_value=0, return_type=int)
+        device_size = util.get_value_from_second_level_of_dict(
+            ns_stats,
+            ("device_total_bytes", "total-bytes-disk"),
+            default_value=0,
+            return_type=int,
+        )
+        device_used = util.get_value_from_second_level_of_dict(
+            ns_stats,
+            ("device_used_bytes", "used-bytes-disk"),
+            default_value=0,
+            return_type=int,
+        )
+        device_aval_pct = util.get_value_from_second_level_of_dict(
+            ns_stats,
+            ("device_available_pct", "available_pct"),
+            default_value=0,
+            return_type=int,
+        )
         device_aval = util.pct_to_value(device_size, device_aval_pct)
         cl_nodewise_device_size = util.add_dicts(cl_nodewise_device_size, device_size)
         cl_nodewise_device_used = util.add_dicts(cl_nodewise_device_used, device_used)
@@ -629,41 +832,72 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
         device_size_total = sum(device_size.values())
         if device_size_total > 0:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = device_size_total
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used"] = sum(device_used.values())
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_aval"] = sum(device_aval.values())
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = (float(sum(device_used.values())) / float(
-                device_size_total)) * 100.0
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_available_pct"] = (float(sum(device_aval.values())) / float(
-                device_size_total)) * 100.0
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used"] = sum(
+                device_used.values()
+            )
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_aval"] = sum(
+                device_aval.values()
+            )
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = (
+                float(sum(device_used.values())) / float(device_size_total)
+            ) * 100.0
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_available_pct"] = (
+                float(sum(device_aval.values())) / float(device_size_total)
+            ) * 100.0
 
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = list(set(
-            util.get_value_from_second_level_of_dict(ns_stats, ("repl-factor", "replication-factor"), default_value=0,
-                                                     return_type=int).values()))
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = list(
+            set(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats,
+                    ("repl-factor", "replication-factor"),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
+        )
 
-        data_in_memory = \
-            list(util.get_value_from_second_level_of_dict(ns_stats, ("storage-engine.data-in-memory", "data-in-memory"),
-                                                     default_value=False, return_type=bool).values())[0]
+        data_in_memory = list(
+            util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("storage-engine.data-in-memory", "data-in-memory"),
+                default_value=False,
+                return_type=bool,
+            ).values()
+        )[0]
 
         if data_in_memory:
-            cache_read_pcts = list(util.get_value_from_second_level_of_dict(ns_stats, ("cache_read_pct", "cache-read-pct"),
-                                                                       default_value="N/E", return_type=int).values())
+            cache_read_pcts = list(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats,
+                    ("cache_read_pct", "cache-read-pct"),
+                    default_value="N/E",
+                    return_type=int,
+                ).values()
+            )
             if cache_read_pcts:
                 try:
-                    summary_dict["FEATURES"]["NAMESPACE"][ns]["cache_read_pct"] = old_div(sum(cache_read_pcts), len(
-                        cache_read_pcts))
+                    summary_dict["FEATURES"]["NAMESPACE"][ns][
+                        "cache_read_pct"
+                    ] = old_div(sum(cache_read_pcts), len(cache_read_pcts))
                 except Exception:
                     pass
         master_objects = sum(
-            util.get_value_from_second_level_of_dict(ns_stats, ("master_objects", "master-objects"), default_value=0,
-                                                     return_type=int).values())
+            util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("master_objects", "master-objects"),
+                default_value=0,
+                return_type=int,
+            ).values()
+        )
         summary_dict["CLUSTER"]["ns_count"] += 1
         if master_objects > 0:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["master_objects"] = master_objects
             summary_dict["CLUSTER"]["active_ns"] += 1
 
         try:
-            rack_ids = util.get_value_from_second_level_of_dict(ns_stats, ("rack-id",), default_value=None,
-                                                                return_type=int)
+            rack_ids = util.get_value_from_second_level_of_dict(
+                ns_stats, ("rack-id",), default_value=None, return_type=int
+            )
             rack_ids = list(set(rack_ids.values()))
             if len(rack_ids) > 1 or rack_ids[0] is not None:
                 if any((i is not None and i > 0) for i in rack_ids):
@@ -676,7 +910,9 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
     cl_device_counts = sum(cl_nodewise_device_counts.values())
     if cl_device_counts:
         summary_dict["CLUSTER"]["device"]["count"] = cl_device_counts
-        summary_dict["CLUSTER"]["device"]["count_per_node"] = int((float(cl_device_counts) / float(total_nodes)) + 0.5)
+        summary_dict["CLUSTER"]["device"]["count_per_node"] = int(
+            (float(cl_device_counts) / float(total_nodes)) + 0.5
+        )
         if len(set(cl_nodewise_device_counts.values())) > 1:
             summary_dict["CLUSTER"]["device"]["count_same_across_nodes"] = False
 
@@ -684,18 +920,25 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
     if cl_memory_size_total > 0:
         summary_dict["CLUSTER"]["memory"]["total"] = cl_memory_size_total
         summary_dict["CLUSTER"]["memory"]["aval"] = sum(cl_nodewise_mem_aval.values())
-        summary_dict["CLUSTER"]["memory"]["aval_pct"] = (float(sum(cl_nodewise_mem_aval.values())) / float(
-            cl_memory_size_total)) * 100.0
+        summary_dict["CLUSTER"]["memory"]["aval_pct"] = (
+            float(sum(cl_nodewise_mem_aval.values())) / float(cl_memory_size_total)
+        ) * 100.0
 
     cl_device_size_total = sum(cl_nodewise_device_size.values())
     if cl_device_size_total > 0:
         summary_dict["CLUSTER"]["device"]["total"] = cl_device_size_total
-        summary_dict["CLUSTER"]["device"]["used"] = sum(cl_nodewise_device_used.values())
-        summary_dict["CLUSTER"]["device"]["aval"] = sum(cl_nodewise_device_aval.values())
-        summary_dict["CLUSTER"]["device"]["used_pct"] = (float(sum(cl_nodewise_device_used.values())) / float(
-            cl_device_size_total)) * 100.0
-        summary_dict["CLUSTER"]["device"]["aval_pct"] = (float(sum(cl_nodewise_device_aval.values())) / float(
-            cl_device_size_total)) * 100.0
+        summary_dict["CLUSTER"]["device"]["used"] = sum(
+            cl_nodewise_device_used.values()
+        )
+        summary_dict["CLUSTER"]["device"]["aval"] = sum(
+            cl_nodewise_device_aval.values()
+        )
+        summary_dict["CLUSTER"]["device"]["used_pct"] = (
+            float(sum(cl_nodewise_device_used.values())) / float(cl_device_size_total)
+        ) * 100.0
+        summary_dict["CLUSTER"]["device"]["aval_pct"] = (
+            float(sum(cl_nodewise_device_aval.values())) / float(cl_device_size_total)
+        ) * 100.0
 
     return summary_dict
 
@@ -703,6 +946,7 @@ def create_summary(service_stats, namespace_stats, set_stats, metadata,
 #############################
 
 ########## Histogram ##########
+
 
 def _create_histogram_percentiles_output(histogram_name, histogram_data):
     histogram_data = util.flip_keys(histogram_data)
@@ -715,8 +959,8 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
             if not data or isinstance(data, Exception):
                 continue
 
-            hist = data['data']
-            width = data['width']
+            hist = data["data"]
+            width = data["width"]
 
             cum_total = 0
             total = sum(hist)
@@ -741,9 +985,9 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
                 result = [0] * 10
 
             if histogram_name == "objsz":
-                data['percentiles'] = [(r * width) - 1 if r > 0 else r for r in result]
+                data["percentiles"] = [(r * width) - 1 if r > 0 else r for r in result]
             else:
-                data['percentiles'] = [r * width for r in result]
+                data["percentiles"] = [r * width for r in result]
 
     return histogram_data
 
@@ -760,16 +1004,17 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
 
             try:
                 as_version = builds[host_id]
-                if (LooseVersion(as_version) < LooseVersion("2.7.0")
-                    or (LooseVersion(as_version) >= LooseVersion("3.0.0")
-                        and LooseVersion(as_version) < LooseVersion("3.1.3"))):
+                if LooseVersion(as_version) < LooseVersion("2.7.0") or (
+                    LooseVersion(as_version) >= LooseVersion("3.0.0")
+                    and LooseVersion(as_version) < LooseVersion("3.1.3")
+                ):
                     rblock_size_bytes = 512
 
             except Exception:
                 pass
 
-            hist = data['data']
-            width = data['width']
+            hist = data["data"]
+            width = data["width"]
 
             for i, v in enumerate(hist):
                 if v and v > 0:
@@ -817,7 +1062,9 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             if i == len(start_buckets) - 1:
                 break
 
-            key = _get_bucket_range(bucket, start_buckets[i + 1], width, rblock_size_bytes)
+            key = _get_bucket_range(
+                bucket, start_buckets[i + 1], width, rblock_size_bytes
+            )
             need_to_show[key] = False
             columns.append(key)
 
@@ -828,17 +1075,18 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             try:
                 as_version = builds[host_id]
 
-                if (LooseVersion(as_version) < LooseVersion("2.7.0")
-                    or (LooseVersion(as_version) >= LooseVersion("3.0.0")
-                        and LooseVersion(as_version) < LooseVersion("3.1.3"))):
+                if LooseVersion(as_version) < LooseVersion("2.7.0") or (
+                    LooseVersion(as_version) >= LooseVersion("3.0.0")
+                    and LooseVersion(as_version) < LooseVersion("3.1.3")
+                ):
                     rblock_size_bytes = 512
 
             except Exception:
                 pass
 
-            hist = data['data']
-            width = data['width']
-            data['values'] = {}
+            hist = data["data"]
+            width = data["width"]
+            data["values"] = {}
 
             for i, s in enumerate(start_buckets):
 
@@ -847,7 +1095,9 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
 
                 b_index = s
 
-                key = _get_bucket_range(s, start_buckets[i + 1], width, rblock_size_bytes)
+                key = _get_bucket_range(
+                    s, start_buckets[i + 1], width, rblock_size_bytes
+                )
 
                 if key not in columns:
                     columns.append(key)
@@ -904,17 +1154,17 @@ def _string_to_bytes(k):
     k = k.split(" to ")
     s = k[0]
     b = {
-        'K': 1024 ** 1,
-        'M': 1024 ** 2,
-        'G': 1024 ** 3,
-        'T': 1024 ** 4,
-        'P': 1024 ** 5,
-        'E': 1024 ** 6,
+        "K": 1024 ** 1,
+        "M": 1024 ** 2,
+        "G": 1024 ** 3,
+        "T": 1024 ** 4,
+        "P": 1024 ** 5,
+        "E": 1024 ** 6,
     }
 
     for suffix, val in list(b.items()):
         if s.endswith(suffix):
-            s = s[:-1 * len(suffix)]
+            s = s[: -1 * len(suffix)]
             return int(s) * val
 
     return int(s)
@@ -933,15 +1183,15 @@ def _restructure_new_log_histogram(histogram_data):
             if not host_data or isinstance(host_data, Exception):
                 continue
 
-            hist = host_data['data']
-            host_data['values'] = {}
+            hist = host_data["data"]
+            host_data["values"] = {}
 
             for k, v in list(hist.items()):
                 try:
                     kl = k.split("-")
                     s, e = kl[0], kl[1]
                     key = _create_range_key(s, e)
-                    host_data['values'][key] = v
+                    host_data["values"][key] = v
                     if key not in columns:
                         columns.append(key)
 
@@ -953,25 +1203,25 @@ def _restructure_new_log_histogram(histogram_data):
                 continue
 
             for k in columns:
-                if k not in list(host_data['values'].keys()):
-                    host_data['values'][k] = 0
+                if k not in list(host_data["values"].keys()):
+                    host_data["values"][k] = 0
 
-        ns_data['columns'] = sorted(columns, key=_string_to_bytes)
+        ns_data["columns"] = sorted(columns, key=_string_to_bytes)
 
     return histogram_data
 
 
 def _parse_old_histogram(histogram, histogram_data):
-    datum = histogram_data.split(',')
+    datum = histogram_data.split(",")
     datum.pop(0)  # don't care about ns, hist_name, or length
     width = int(datum.pop(0))
-    datum[-1] = datum[-1].split(';')[0]
+    datum[-1] = datum[-1].split(";")[0]
     datum = list(map(int, datum))
     return {"histogram": histogram, "width": width, "data": datum}
 
 
 def _parse_new_linear_histogram(histogram, histogram_data):
-    datum = histogram_data.split(':')
+    datum = histogram_data.split(":")
     key_map = {"units": "units", "bucket-width": "width", "buckets": "data"}
 
     result = {}
@@ -979,7 +1229,7 @@ def _parse_new_linear_histogram(histogram, histogram_data):
         k = None
         v = None
         try:
-            _d = d.split('=')
+            _d = d.split("=")
             k, v = _d[0], _d[1]
 
         except Exception:
@@ -993,7 +1243,7 @@ def _parse_new_linear_histogram(histogram, histogram_data):
 
     if result:
         buckets = result["data"]
-        buckets = buckets.split(',')
+        buckets = buckets.split(",")
         result["data"] = list(map(int, buckets))
         result["width"] = int(result["width"])
         result["histogram"] = histogram
@@ -1002,10 +1252,10 @@ def _parse_new_linear_histogram(histogram, histogram_data):
 
 
 def _parse_new_log_histogram(histogram, histogram_data):
-    datum = histogram_data.split(':')
+    datum = histogram_data.split(":")
 
     field = datum.pop(0)
-    l = field.split('=')
+    l = field.split("=")
     k, v = l[0], l[1]
 
     if k != "units":
@@ -1021,11 +1271,11 @@ def _parse_new_log_histogram(histogram, histogram_data):
         k = None
         v = None
         try:
-            _d = d.split('=')
+            _d = d.split("=")
             k, v = _d[0], _d[1]
-            if k.endswith(')'):
+            if k.endswith(")"):
                 k = k[:-1]
-            if k.startswith('['):
+            if k.startswith("["):
                 k = k[1:]
 
             result["data"][k] = v
@@ -1052,7 +1302,9 @@ def create_histogram_output(histogram_name, histogram_data, **params):
     if "bucket_count" not in params or "builds" not in params:
         return {}
 
-    return _create_bytewise_histogram_percentiles_output(histogram_data, params["bucket_count"], params["builds"])
+    return _create_bytewise_histogram_percentiles_output(
+        histogram_data, params["bucket_count"], params["builds"]
+    )
 
 
 def get_histogram_units(histogram_data):
@@ -1086,7 +1338,9 @@ def get_histogram_units(histogram_data):
     return units
 
 
-def parse_raw_histogram(histogram, histogram_data, logarithmic=False, new_histogram_version=False):
+def parse_raw_histogram(
+    histogram, histogram_data, logarithmic=False, new_histogram_version=False
+):
     if not histogram_data or isinstance(histogram_data, Exception):
         return {}
 
@@ -1103,25 +1357,51 @@ def is_new_histogram_version(version):
     """
     Function takes version to check
 
-    It returns true if version is supporting new histogram command else returns false
+    It returns true if version is supporting new histogram command else returns
+    false
     """
 
     if not version:
         return False
 
-    if LooseVersion(version) >= LooseVersion(constants.SERVER_NEW_HISTOGRAM_FIRST_VERSION):
+    if LooseVersion(version) >= LooseVersion(
+        constants.SERVER_NEW_HISTOGRAM_FIRST_VERSION
+    ):
         return True
 
     return False
+
+
+#################################
+
+########## Latencies ##########
+def is_new_latencies_version(version):
+    """
+    Function takes a version to check
+
+    It returns true if the version is supporting the new latencies command else
+     returns false
+    """
+
+    if not version:
+        return False
+
+    if LooseVersion(version) >= LooseVersion(
+        constants.SERVER_NEW_LATENCIES_CMD_FIRST_VERSION
+    ):
+        return True
+
+    return False
+
 
 #################################
 
 ########## System Collectinfo ##########
 
 
-def _get_aws_metadata(response_str, prefix='', old_response=''):
-    aws_c = ''
-    aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
+def _get_aws_metadata(response_str, prefix="", old_response=""):
+    aws_c = ""
+    aws_metadata_base_url = "http://169.254.169.254/latest/meta-data"
 
     # set of values which will give same old_response, so no need to go further
     last_values = []
@@ -1130,8 +1410,8 @@ def _get_aws_metadata(response_str, prefix='', old_response=''):
             # ignore credentials
             continue
 
-        if rsp[-1:] == '/':
-            rsp_p = rsp.strip('/')
+        if rsp[-1:] == "/":
+            rsp_p = rsp.strip("/")
             aws_c += _get_aws_metadata(rsp_p, prefix, old_response=old_response)
         else:
             meta_url = aws_metadata_base_url + prefix + rsp
@@ -1145,21 +1425,23 @@ def _get_aws_metadata(response_str, prefix='', old_response=''):
                     last_values.append(rsp.strip())
                     continue
                 try:
-                    aws_c += _get_aws_metadata(response, prefix + rsp + "/", old_response=response)
+                    aws_c += _get_aws_metadata(
+                        response, prefix + rsp + "/", old_response=response
+                    )
                 except Exception:
-                    aws_c += (prefix + rsp).strip('/') + '\n' + response + "\n\n"
+                    aws_c += (prefix + rsp).strip("/") + "\n" + response + "\n\n"
 
     if last_values:
-        aws_c += prefix.strip('/') + '\n' + '\n'.join(last_values) + "\n\n"
+        aws_c += prefix.strip("/") + "\n" + "\n".join(last_values) + "\n\n"
 
     return aws_c
 
 
-def _collect_aws_data(cmd=''):
-    aws_rsp = ''
+def _collect_aws_data(cmd=""):
+    aws_rsp = ""
     aws_timeout = 1
     socket.setdefaulttimeout(aws_timeout)
-    aws_metadata_base_url = 'http://169.254.169.254/latest/meta-data'
+    aws_metadata_base_url = "http://169.254.169.254/latest/meta-data"
     out = "['AWS']"
     try:
         req = urllib.request.Request(aws_metadata_base_url)
@@ -1167,11 +1449,15 @@ def _collect_aws_data(cmd=''):
         # r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
         if r.code == 200:
             rsp = r.read()
-            aws_rsp += _get_aws_metadata(rsp, '/')
-            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(aws_metadata_base_url, aws_rsp)
+            aws_rsp += _get_aws_metadata(rsp, "/")
+            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(
+                aws_metadata_base_url, aws_rsp
+            )
         else:
             aws_rsp = " Not likely in AWS"
-            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(aws_metadata_base_url, aws_rsp)
+            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(
+                aws_metadata_base_url, aws_rsp
+            )
 
     except Exception as e:
         out += "\n" + "Requesting... {0} \t  {1} ".format(aws_metadata_base_url, e)
@@ -1180,9 +1466,11 @@ def _collect_aws_data(cmd=''):
     return out, None
 
 
-def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=''):
-    res_str = ''
-    gce_metadata_base_url = 'http://metadata.google.internal/computeMetadata/v1/instance/'
+def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
+    res_str = ""
+    gce_metadata_base_url = (
+        "http://metadata.google.internal/computeMetadata/v1/instance/"
+    )
 
     for rsp in response_str.split("\n"):
         rsp = rsp.strip()
@@ -1192,14 +1480,18 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=''):
         meta_url = gce_metadata_base_url + prefix + rsp
 
         try:
-            req = urllib.request.Request(meta_url, headers={"Metadata-Flavor" : "Google"})
+            req = urllib.request.Request(
+                meta_url, headers={"Metadata-Flavor": "Google"}
+            )
             r = urllib.request.urlopen(req)
 
             if r.code != 404:
                 response = r.read().strip()
 
-                if rsp[-1:] == '/':
-                    res_str += _get_gce_metadata(response, fields_to_ignore=fields_to_ignore, prefix=prefix+rsp)
+                if rsp[-1:] == "/":
+                    res_str += _get_gce_metadata(
+                        response, fields_to_ignore=fields_to_ignore, prefix=prefix + rsp
+                    )
                 else:
                     res_str += prefix + rsp + "\n" + response + "\n\n"
         except Exception:
@@ -1208,25 +1500,33 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=''):
     return res_str
 
 
-def _collect_gce_data(cmd=''):
+def _collect_gce_data(cmd=""):
     gce_timeout = 1
     socket.setdefaulttimeout(gce_timeout)
-    gce_metadata_base_url = 'http://metadata.google.internal/computeMetadata/v1/instance/'
+    gce_metadata_base_url = (
+        "http://metadata.google.internal/computeMetadata/v1/instance/"
+    )
     out = "['GCE']"
 
-    fields_to_ignore = ['attributes/']
+    fields_to_ignore = ["attributes/"]
 
     try:
-        req = urllib.request.Request(gce_metadata_base_url, headers={"Metadata-Flavor" : "Google"})
+        req = urllib.request.Request(
+            gce_metadata_base_url, headers={"Metadata-Flavor": "Google"}
+        )
         r = urllib.request.urlopen(req)
 
         if r.code == 200:
             rsp = r.read()
             gce_rsp = _get_gce_metadata(rsp, fields_to_ignore=fields_to_ignore)
-            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(gce_metadata_base_url, gce_rsp)
+            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(
+                gce_metadata_base_url, gce_rsp
+            )
         else:
             gce_rsp = " Not likely in GCE"
-            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(gce_metadata_base_url, gce_rsp)
+            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(
+                gce_metadata_base_url, gce_rsp
+            )
 
     except Exception as e:
         out += "\n" + "Requesting... {0} \t  {1} ".format(gce_metadata_base_url, e)
@@ -1235,25 +1535,33 @@ def _collect_gce_data(cmd=''):
     return out, None
 
 
-def _collect_azure_data(cmd=''):
+def _collect_azure_data(cmd=""):
     azure_timeout = 1
     socket.setdefaulttimeout(azure_timeout)
-    azure_metadata_base_url = 'http://169.254.169.254/metadata/instance?api-version=2017-04-02'
+    azure_metadata_base_url = (
+        "http://169.254.169.254/metadata/instance?api-version=2017-04-02"
+    )
     out = "['Azure']"
 
     try:
-        req = urllib.request.Request(azure_metadata_base_url, headers={"Metadata" : "true"})
+        req = urllib.request.Request(
+            azure_metadata_base_url, headers={"Metadata": "true"}
+        )
         r = urllib.request.urlopen(req)
 
         if r.code == 200:
             rsp = r.read()
             rsp = rsp.decode("utf-8")
             jsonObj = json.loads(rsp)
-            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(azure_metadata_base_url,
-                                                                          json.dumps(jsonObj, sort_keys=True, indent=4, separators=(',', ': ')))
+            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(
+                azure_metadata_base_url,
+                json.dumps(jsonObj, sort_keys=True, indent=4, separators=(",", ": ")),
+            )
         else:
             rsp = " Not likely in Azure"
-            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(azure_metadata_base_url, rsp)
+            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(
+                azure_metadata_base_url, rsp
+            )
 
     except Exception as e:
         out += "\n" + "Requesting... {0} \t  {1} ".format(azure_metadata_base_url, e)
@@ -1262,7 +1570,7 @@ def _collect_azure_data(cmd=''):
     return out, None
 
 
-def _collect_cpuinfo(cmd=''):
+def _collect_cpuinfo(cmd=""):
     out = "['cpuinfo']"
 
     cpu_info_cmd = 'cat /proc/cpuinfo | grep "vendor_id"'
@@ -1335,8 +1643,10 @@ def _collect_lsof(verbose=False):
                     if len(t) > type_ljust:
                         type_ljust = len(t)
 
-                    if (t in lsof_file_type_desc
-                        and len(lsof_file_type_desc[t]) > desc_ljust):
+                    if (
+                        t in lsof_file_type_desc
+                        and len(lsof_file_type_desc[t]) > desc_ljust
+                    ):
                         desc_ljust = len(lsof_file_type_desc[t])
 
                     o_dict[t] = 1
@@ -1350,29 +1660,51 @@ def _collect_lsof(verbose=False):
         # sending actual output, no need to compute counts
         return out, None
 
-    out += "\n" + "FileType".ljust(type_ljust) + "Description".ljust(desc_ljust) + "fd count"
+    out += (
+        "\n"
+        + "FileType".ljust(type_ljust)
+        + "Description".ljust(desc_ljust)
+        + "fd count"
+    )
 
     for ftype in sorted(o_dict.keys()):
         desc = "Unknown"
         if ftype in lsof_file_type_desc:
             desc = lsof_file_type_desc[ftype]
 
-        out += "\n" + ftype.ljust(type_ljust) + desc.ljust(desc_ljust) + str(o_dict[ftype])
+        out += (
+            "\n" + ftype.ljust(type_ljust) + desc.ljust(desc_ljust) + str(o_dict[ftype])
+        )
 
     out += "\n\n" + "Unidentified Protocols = " + str(unidentified_protocol_count)
 
     return out, None
 
 
-def _collect_env_variables(cmd=''):
+def _collect_env_variables(cmd=""):
     # collets environment variables
 
     out = "['env_variables']"
 
     variables = [
-        "ENTITLEMENT", "SERVICE_THREADS", "TRANSACTION_QUEUES", "TRANSACTION_THREADS_PER_QUEUE", "LOGFILE",
-        "SERVICE_ADDRESS", "SERVICE_PORT", "HB_ADDRESS", "HB_PORT", "FABRIC_ADDRESS", "FABRIC_PORT", "INFO_ADDRESS",
-        "INFO_PORT", "NAMESPACE", "REPL_FACTOR", "MEM_GB", "DEFAULT_TTL", "STORAGE_GB"
+        "ENTITLEMENT",
+        "SERVICE_THREADS",
+        "TRANSACTION_QUEUES",
+        "TRANSACTION_THREADS_PER_QUEUE",
+        "LOGFILE",
+        "SERVICE_ADDRESS",
+        "SERVICE_PORT",
+        "HB_ADDRESS",
+        "HB_PORT",
+        "FABRIC_ADDRESS",
+        "FABRIC_PORT",
+        "INFO_ADDRESS",
+        "INFO_PORT",
+        "NAMESPACE",
+        "REPL_FACTOR",
+        "MEM_GB",
+        "DEFAULT_TTL",
+        "STORAGE_GB",
     ]
 
     for v in variables:
@@ -1381,10 +1713,10 @@ def _collect_env_variables(cmd=''):
     return out, None
 
 
-def _collect_ip_link_details(cmd=''):
+def _collect_ip_link_details(cmd=""):
     out = "['ip -s link']"
 
-    cmd = 'ip -s link'
+    cmd = "ip -s link"
     loop_count = 3
     sleep_seconds = 5
 
@@ -1398,14 +1730,17 @@ def _collect_ip_link_details(cmd=''):
     return out, None
 
 
-def _collectinfo_content(func, cmd='', alt_cmds=[]):
-    fname = ''
+def _collectinfo_content(func, cmd="", alt_cmds=[]):
+    fname = ""
     try:
         fname = func.__name__
     except Exception:
         pass
 
-    info_line = constants.COLLECTINFO_PROGRESS_MSG % (fname, (" %s" % (str(cmd)) if cmd else ""))
+    info_line = constants.COLLECTINFO_PROGRESS_MSG % (
+        fname,
+        (" %s" % (str(cmd)) if cmd else ""),
+    )
     logger.info(info_line)
 
     o_line = constants.COLLECTINFO_SEPRATOR
@@ -1434,7 +1769,10 @@ def _collectinfo_content(func, cmd='', alt_cmds=[]):
                     continue
 
                 alt_cmd = [alt_cmd]
-                info_line = "Data collection for alternative command %s %s  in progress.." % (fname, str(alt_cmd))
+                info_line = (
+                    "Data collection for alternative command %s %s  in progress.."
+                    % (fname, str(alt_cmd))
+                )
                 logger.info(info_line)
                 o_line += str(alt_cmd) + "\n"
                 o_alt, e_alt = util.shell_command(alt_cmd)
@@ -1468,12 +1806,11 @@ def _zip_files(dir_path, _size=1):
     for root, dirs, files in os.walk(dir_path):
         for _file in files:
             file_path = os.path.join(root, _file)
-            size_mb = (old_div(os.path.getsize(file_path), (1024 * 1024)))
+            size_mb = old_div(os.path.getsize(file_path), (1024 * 1024))
             if size_mb >= _size:
                 os.chdir(root)
                 try:
-                    newzip = zipfile.ZipFile(
-                        _file + ".zip", "w", zipfile.ZIP_DEFLATED)
+                    newzip = zipfile.ZipFile(_file + ".zip", "w", zipfile.ZIP_DEFLATED)
                     newzip.write(_file)
                     newzip.close()
                     os.remove(_file)
@@ -1485,66 +1822,84 @@ def _zip_files(dir_path, _size=1):
 def get_system_commands(port=3000):
     # Unfortunately timestamp can not be printed in Centos with dmesg,
     # storing dmesg logs without timestamp for this particular OS.
-    if 'centos' == (platform.linux_distribution()[0]).lower():
-        cmd_dmesg = 'sudo dmesg'
-        alt_dmesg = ''
+    if "centos" == (platform.linux_distribution()[0]).lower():
+        cmd_dmesg = "sudo dmesg"
+        alt_dmesg = ""
     else:
-        cmd_dmesg = 'sudo dmesg -T'
-        alt_dmesg = 'sudo dmesg'
+        cmd_dmesg = "sudo dmesg -T"
+        alt_dmesg = "sudo dmesg"
 
     # cmd and alternative cmds are stored in list of list instead of dic to
     # maintain proper order for output
 
-
     sys_shell_cmds = [
-        ['hostname -I', 'hostname'],
-        ['top -n3 -b', 'top -l 3'],
-        ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f'],
-        ['cat /proc/meminfo', 'vmstat -s'],
-        ['cat /proc/interrupts'],
-        ['iostat -y -x 5 4'],
+        ["hostname -I", "hostname"],
+        ["top -n3 -b", "top -l 3"],
+        ["lsb_release -a", "ls /etc|grep release|xargs -I f cat /etc/f"],
+        ["cat /proc/meminfo", "vmstat -s"],
+        ["cat /proc/interrupts"],
+        ["iostat -y -x 5 4"],
         [cmd_dmesg, alt_dmesg],
         ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
-        ['lscpu'],
+        ["lscpu"],
         ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"'],
-        ['sudo iptables -L -vn'],
-        ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null'],
-        ['df -h'],
-        ['mount'],
-        ['lsblk'],
-        ['free -m'],
-        ['uname -a'],
-
-	# Only in Pretty Print
-        ['dmidecode -s system-product-name'],
-        ['systemd-detect-virt'],
-        ['cat /sys/class/dmi/id/product_name'],
-        ['cat /sys/class/dmi/id/sys_vendor'],
-        ['cat /sys/kernel/mm/*transparent_hugepage/enabled'],
-        ['cat /sys/kernel/mm/*transparent_hugepage/defrag'],
-        ['cat /sys/kernel/mm/*transparent_hugepage/khugepaged/defrag'],
-        ['sysctl vm.min_free_kbytes'],
-        ['ps -eo rss,vsz,comm |grep asd'],
-        ['cat /proc/partitions', 'fdisk -l'],
-        ['ls /sys/block/{sd*,xvd*,nvme*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"'],
-        ['ls /sys/block/{sd*,xvd*,nvme*}/device/model |xargs -I f sh -c "echo f; cat f;"'],
-        ['ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"'],
+        ["sudo iptables -L -vn"],
+        [
+            'sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null'
+        ],
+        ["df -h"],
+        ["mount"],
+        ["lsblk"],
+        ["free -m"],
+        ["uname -a"],
+        # Only in Pretty Print
+        ["dmidecode -s system-product-name"],
+        ["systemd-detect-virt"],
+        ["cat /sys/class/dmi/id/product_name"],
+        ["cat /sys/class/dmi/id/sys_vendor"],
+        ["cat /sys/kernel/mm/*transparent_hugepage/enabled"],
+        ["cat /sys/kernel/mm/*transparent_hugepage/defrag"],
+        ["cat /sys/kernel/mm/*transparent_hugepage/khugepaged/defrag"],
+        ["sysctl vm.min_free_kbytes"],
+        ["ps -eo rss,vsz,comm |grep asd"],
+        ["cat /proc/partitions", "fdisk -l"],
+        [
+            'ls /sys/block/{sd*,xvd*,nvme*}/queue/rotational |xargs -I f sh -c "echo f; cat f;"'
+        ],
+        [
+            'ls /sys/block/{sd*,xvd*,nvme*}/device/model |xargs -I f sh -c "echo f; cat f;"'
+        ],
+        [
+            'ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"'
+        ],
         ['rpm -qa|grep -E "citrus|aero"', 'dpkg -l|grep -E "citrus|aero"'],
-        ['ip addr'],
-        ['sar -n DEV'],
-        ['sar -n EDEV'],
-        ['mpstat -P ALL 2 3'],
-        ['uptime'],
-        ['ss -ant state time-wait sport = :%d or dport = :%d | wc -l' %
-         (port, port), 'netstat -ant | grep %d | grep TIME_WAIT | wc -l' % (port)],
-        ['ss -ant state close-wait sport = :%d or dport = :%d | wc -l' %
-         (port, port), 'netstat -ant | grep %d | grep CLOSE_WAIT | wc -l' % (port)],
-        ['ss -ant state established sport = :%d or dport = :%d | wc -l' %
-         (port, port), 'netstat -ant | grep %d | grep ESTABLISHED | wc -l' % (port)],
-        ['ss -ant state listen sport = :%d or dport = :%d |  wc -l' %
-         (port, port), 'netstat -ant | grep %d | grep LISTEN | wc -l' % (port)],
+        ["ip addr"],
+        ["sar -n DEV"],
+        ["sar -n EDEV"],
+        ["mpstat -P ALL 2 3"],
+        ["uptime"],
+        [
+            "ss -ant state time-wait sport = :%d or dport = :%d | wc -l" % (port, port),
+            "netstat -ant | grep %d | grep TIME_WAIT | wc -l" % (port),
+        ],
+        [
+            "ss -ant state close-wait sport = :%d or dport = :%d | wc -l"
+            % (port, port),
+            "netstat -ant | grep %d | grep CLOSE_WAIT | wc -l" % (port),
+        ],
+        [
+            "ss -ant state established sport = :%d or dport = :%d | wc -l"
+            % (port, port),
+            "netstat -ant | grep %d | grep ESTABLISHED | wc -l" % (port),
+        ],
+        [
+            "ss -ant state listen sport = :%d or dport = :%d |  wc -l" % (port, port),
+            "netstat -ant | grep %d | grep LISTEN | wc -l" % (port),
+        ],
         ['arp -n|grep ether|tr -s [:blank:] | cut -d" " -f5 |sort|uniq -c'],
-        ['find /proc/sys/net/ipv4/neigh/default/ -name "gc_thresh*" -print -exec cat {} \;']
+        [
+            'find /proc/sys/net/ipv4/neigh/default/ -name "gc_thresh*" -print -exec cat {} \;'
+        ],
     ]
 
     return sys_shell_cmds
@@ -1574,12 +1929,15 @@ def set_collectinfo_path(timestamp, output_prefix=""):
     if output_prefix:
         aslogdir_prefix = "%s%s" % (
             str(output_prefix),
-            "_" if output_prefix and not output_prefix.endswith("-") and not output_prefix.endswith("_")
-            else ""
+            "_"
+            if output_prefix
+            and not output_prefix.endswith("-")
+            and not output_prefix.endswith("_")
+            else "",
         )
 
-    aslogdir = '/tmp/%scollect_info_' % (aslogdir_prefix) + output_time
-    as_logfile_prefix = aslogdir + '/' + output_time + '_'
+    aslogdir = "/tmp/%scollect_info_" % (aslogdir_prefix) + output_time
+    as_logfile_prefix = aslogdir + "/" + output_time + "_"
 
     os.makedirs(aslogdir)
 
@@ -1596,7 +1954,9 @@ def archive_log(logdir):
 
 def print_collecinto_summary(logdir, failed_cmds):
     if failed_cmds:
-        logger.warning("Following commands are either unavailable or giving runtime error...")
+        logger.warning(
+            "Following commands are either unavailable or giving runtime error..."
+        )
         logger.warning(list(set(failed_cmds)))
 
     print("\n")
@@ -1624,8 +1984,11 @@ def collect_sys_info(port=3000, timestamp="", outfile=""):
 
     try:
         for cmds in get_system_commands(port=port):
-            o, f_cmds = _collectinfo_content(func=util.shell_command, cmd=cmds[0:1],
-                                             alt_cmds=cmds[1:] if len(cmds) > 1 else [])
+            o, f_cmds = _collectinfo_content(
+                func=util.shell_command,
+                cmd=cmds[0:1],
+                alt_cmds=cmds[1:] if len(cmds) > 1 else [],
+            )
             failed_cmds += f_cmds
             util.write_to_file(outfile, o)
     except Exception as e:
@@ -1680,5 +2043,6 @@ def collect_sys_info(port=3000, timestamp="", outfile=""):
         print_collecinto_summary(aslogdir, failed_cmds=failed_cmds)
 
     return failed_cmds
+
 
 ########################################

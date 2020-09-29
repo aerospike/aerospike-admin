@@ -995,7 +995,7 @@ class CliView(object):
         for column in data["columns"]:
             if column[0] == '>':
                 c = int(column[1:-2])
-                all_columns.add((c,(column, "%%>%dMs"%c)))
+                all_columns.add((c,(column, "%%%s"%column)))
 
             elif column[0:2] == "%>":
                 c = int(column[2:-2])
@@ -1017,7 +1017,11 @@ class CliView(object):
         return rows
 
     @staticmethod
-    def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, timestamp="", **ignore):
+    def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, timestamp="", message=None, **ignore):
+        if message is not None:
+            for line in message:
+                CliView.print_result(str(line))
+                
         prefixes = cluster.get_node_names()
 
         if like:

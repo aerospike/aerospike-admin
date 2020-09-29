@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from future import standard_library
+
 standard_library.install_aliases()
 
 from mock import patch, Mock
@@ -25,13 +26,15 @@ from lib.view.view import *
 
 real_stdout = sys.stdout
 
+
 def reset_stdout():
     sys.stdout = real_stdout
 
+
 class ControllerTest(unittest.TestCase):
     def setUp(self):
-        self.cluster_patch = patch('lib.client.cluster.Cluster')
-        #self.view_patch = patch('lib.view.CliView')
+        self.cluster_patch = patch("lib.client.cluster.Cluster")
+        # self.view_patch = patch('lib.view.CliView')
 
         real_stdoup = sys.stdout
         sys.stdout = StringIO()
@@ -40,18 +43,19 @@ class ControllerTest(unittest.TestCase):
         self.addCleanup(reset_stdout)
 
         self.MockCluster = self.cluster_patch.start()
-        #self.MockView = self.view_patch.start()
+        # self.MockView = self.view_patch.start()
         Cluster._crawl = classmethod(lambda self: None)
         Cluster.call_node_method = classmethod(
-            lambda self, nodes, method_name, *args, **kwargs:
-            {"test":IOError("test error")})
+            lambda self, nodes, method_name, *args, **kwargs: {
+                "test": IOError("test error")
+            }
+        )
 
         n = Node("172.99.99.99")
-        Cluster.get_node = classmethod(
-            lambda self, key: [n])
+        Cluster.get_node = classmethod(lambda self, key: [n])
 
         pd = LookupDict()
-        pd['test'] = 'test'
+        pd["test"] = "test"
 
         Cluster.get_node_displaynames = classmethod(lambda self: pd)
 
@@ -61,8 +65,8 @@ class ControllerTest(unittest.TestCase):
         ic = InfoController()
 
         ic.pre_command([""])
-    
-        ic.do_network(["network"]) # TODO: view.info_network needs a "real" node
+
+        ic.do_network(["network"])  # TODO: view.info_network needs a "real" node
         ic.do_xdr(["xdr"])
 
     def test_info_namespace_controller(self):
@@ -80,7 +84,7 @@ class ControllerTest(unittest.TestCase):
         sdc.do_time_to_live(["time_to_live"])
         sdc.do_eviction(["evict"])
         sdc.do_object_size(["object_size"])
-        sdc.do_object_size(["object_size","-b"])
+        sdc.do_object_size(["object_size", "-b"])
 
     def test_show_config_controller(self):
         scc = ShowConfigController()
@@ -91,11 +95,17 @@ class ControllerTest(unittest.TestCase):
         scc.do_namespace(["namespace"])
         scc.do_xdr(["xdr"])
 
-    def test_show_latency_controller(self):
-        slc = ShowLatencyController()
+    # def test_show_latency_controller(self):
+    #     slc = ShowLatencyController()
+
+    #     slc.pre_command([""])
+    #     slc._do_default(["latency"])
+
+    def test_show_latencies_controller(self):
+        slc = ShowLatenciesController()
 
         slc.pre_command([""])
-        slc._do_default(["latency"])
+        slc._do_default(["latencies"])
 
     def test_ShowStatisticsController(self):
         ssc = ShowStatisticsController()
@@ -107,14 +117,14 @@ class ControllerTest(unittest.TestCase):
         ssc.do_namespace("namespace")
         ssc.do_xdr("xdr")
 
-class ShowPmapControllerTest(unittest.TestCase):
 
+class ShowPmapControllerTest(unittest.TestCase):
     def mock_info_call(self, cmd, nodes="all"):
         if cmd == "version":
-            return {'10.71.71.169:3000':'3.6.0'}
+            return {"10.71.71.169:3000": "3.6.0"}
 
         if cmd == "node":
-            return {'10.71.71.169:3000':'BB93039BC7AC40C'}
+            return {"10.71.71.169:3000": "BB93039BC7AC40C"}
 
         if cmd == "partition-info":
             return self.partition_info
@@ -122,64 +132,75 @@ class ShowPmapControllerTest(unittest.TestCase):
         return {}
 
     def setUp(self):
-        cluster = Cluster(('10.71.71.169', '3000', None))
+        cluster = Cluster(("10.71.71.169", "3000", None))
         cluster.info_statistics = Mock()
-        cluster.info_statistics.return_value = {'10.71.71.169:3000': {'cluster_key': 'ck'}}
+        cluster.info_statistics.return_value = {
+            "10.71.71.169:3000": {"cluster_key": "ck"}
+        }
         cluster.info_namespaces = Mock()
-        cluster.info_namespaces.return_value = {'10.71.71.169:3000': ['test']}
+        cluster.info_namespaces.return_value = {"10.71.71.169:3000": ["test"]}
         cluster.info_namespace_statistics = Mock()
-        cluster.info_namespace_statistics.return_value = {'10.71.71.169:3000': {'dead_partitions': '2000', 'unavailable_partitions':'0'}}
+        cluster.info_namespace_statistics.return_value = {
+            "10.71.71.169:3000": {
+                "dead_partitions": "2000",
+                "unavailable_partitions": "0",
+            }
+        }
         cluster.info = Mock()
         cluster.info.side_effect = self.mock_info_call
         self.controller = GetPmapController(cluster)
 
-
     def test_get_pmap_data(self):
-        self.partition_info = {'10.71.71.169:3000': 'test:0:A:2:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;'
-                                                    'test:2:A:2:0:0:0:0:0:0:0:0;test:3:S:1:0:0:0:0:207069:3001:0:0;'
-                                                    'test:4:S:0:0:0:0:0:0:0:0:0;test:4094:S:0:0:0:0:0:206724:2996:0:0;'
-                                                    'test:4095:S:0:0:0:0:0:213900:3100:0:0'}
+        self.partition_info = {
+            "10.71.71.169:3000": "test:0:A:2:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;"
+            "test:2:A:2:0:0:0:0:0:0:0:0;test:3:S:1:0:0:0:0:207069:3001:0:0;"
+            "test:4:S:0:0:0:0:0:0:0:0:0;test:4094:S:0:0:0:0:0:206724:2996:0:0;"
+            "test:4095:S:0:0:0:0:0:213900:3100:0:0"
+        }
         expected_output = {}
-        expected_output['10.71.71.169:3000'] = {}
-        expected_output['10.71.71.169:3000']['test'] = {}
-        expected_output['10.71.71.169:3000']['test']['cluster_key'] = 'ck'
-        expected_output['10.71.71.169:3000']['test']['master_partition_count'] = 3
-        expected_output['10.71.71.169:3000']['test']['prole_partition_count'] = 1
-        expected_output['10.71.71.169:3000']['test']['dead_partitions'] = '2000'
-        expected_output['10.71.71.169:3000']['test']['unavailable_partitions'] = '0'
+        expected_output["10.71.71.169:3000"] = {}
+        expected_output["10.71.71.169:3000"]["test"] = {}
+        expected_output["10.71.71.169:3000"]["test"]["cluster_key"] = "ck"
+        expected_output["10.71.71.169:3000"]["test"]["master_partition_count"] = 3
+        expected_output["10.71.71.169:3000"]["test"]["prole_partition_count"] = 1
+        expected_output["10.71.71.169:3000"]["test"]["dead_partitions"] = "2000"
+        expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
         actual_output = self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
 
     def test_get_pmap_data_with_migrations(self):
-        self.partition_info = {'10.71.71.169:3000': 'test:0:D:1:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;'
-                                                    'test:2:D:1:0:BB93039BC7AC40C:0:0:0:0:0:0;'
-                                                    'test:3:S:1:0:0:0:0:207069:3001:0:0;test:4:S:0:0:0:0:0:0:0:0:0;'
-                                                    'test:4094:S:0:BB93039BC7AC40C:0:0:0:206724:2996:0:0;test:4095:S:0:0:0:0:0:213900:3100:0:0'}
+        self.partition_info = {
+            "10.71.71.169:3000": "test:0:D:1:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;"
+            "test:2:D:1:0:BB93039BC7AC40C:0:0:0:0:0:0;"
+            "test:3:S:1:0:0:0:0:207069:3001:0:0;test:4:S:0:0:0:0:0:0:0:0:0;"
+            "test:4094:S:0:BB93039BC7AC40C:0:0:0:206724:2996:0:0;test:4095:S:0:0:0:0:0:213900:3100:0:0"
+        }
         expected_output = {}
-        expected_output['10.71.71.169:3000'] = {}
-        expected_output['10.71.71.169:3000']['test'] = {}
-        expected_output['10.71.71.169:3000']['test']['cluster_key'] = 'ck'
-        expected_output['10.71.71.169:3000']['test']['master_partition_count'] = 3
-        expected_output['10.71.71.169:3000']['test']['prole_partition_count'] = 3
-        expected_output['10.71.71.169:3000']['test']['dead_partitions'] = '2000'
-        expected_output['10.71.71.169:3000']['test']['unavailable_partitions'] = '0'
+        expected_output["10.71.71.169:3000"] = {}
+        expected_output["10.71.71.169:3000"]["test"] = {}
+        expected_output["10.71.71.169:3000"]["test"]["cluster_key"] = "ck"
+        expected_output["10.71.71.169:3000"]["test"]["master_partition_count"] = 3
+        expected_output["10.71.71.169:3000"]["test"]["prole_partition_count"] = 3
+        expected_output["10.71.71.169:3000"]["test"]["dead_partitions"] = "2000"
+        expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
         actual_output = self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
 
     def test_get_pmap_data_with_working_master(self):
-        self.partition_info = {'10.71.71.169:3000': 'namespace:partition:state:replica:n_dupl:working_master:emigrates:immigrates:records:tombstones:version:final_version;'
-                                                    'test:0:D:1:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;'
-                                                    'test:2:D:1:0:BB93039BC7AC40C:0:0:0:0:0:0;'
-                                                    'test:3:S:1:0:0:0:0:207069:3001:0:0;test:4:S:0:0:0:0:0:0:0:0:0;'
-                                                    'test:4094:S:0:BB93039BC7AC40C:0:0:0:206724:2996:0:0;test:4095:S:0:0:0:0:0:213900:3100:0:0'}
+        self.partition_info = {
+            "10.71.71.169:3000": "namespace:partition:state:replica:n_dupl:working_master:emigrates:immigrates:records:tombstones:version:final_version;"
+            "test:0:D:1:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;"
+            "test:2:D:1:0:BB93039BC7AC40C:0:0:0:0:0:0;"
+            "test:3:S:1:0:0:0:0:207069:3001:0:0;test:4:S:0:0:0:0:0:0:0:0:0;"
+            "test:4094:S:0:BB93039BC7AC40C:0:0:0:206724:2996:0:0;test:4095:S:0:0:0:0:0:213900:3100:0:0"
+        }
         expected_output = {}
-        expected_output['10.71.71.169:3000'] = {}
-        expected_output['10.71.71.169:3000']['test'] = {}
-        expected_output['10.71.71.169:3000']['test']['cluster_key'] = 'ck'
-        expected_output['10.71.71.169:3000']['test']['master_partition_count'] = 1
-        expected_output['10.71.71.169:3000']['test']['prole_partition_count'] = 5
-        expected_output['10.71.71.169:3000']['test']['dead_partitions'] = '2000'
-        expected_output['10.71.71.169:3000']['test']['unavailable_partitions'] = '0'
+        expected_output["10.71.71.169:3000"] = {}
+        expected_output["10.71.71.169:3000"]["test"] = {}
+        expected_output["10.71.71.169:3000"]["test"]["cluster_key"] = "ck"
+        expected_output["10.71.71.169:3000"]["test"]["master_partition_count"] = 1
+        expected_output["10.71.71.169:3000"]["test"]["prole_partition_count"] = 5
+        expected_output["10.71.71.169:3000"]["test"]["dead_partitions"] = "2000"
+        expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
         actual_output = self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
-

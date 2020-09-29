@@ -217,7 +217,7 @@ class ClusterTest(unittest.TestCase):
         cl = self.get_cluster_mock(3)
         aliases = cl.aliases
         cl.aliases = {'127.0.0.1:3000': '127.0.0.2:3000', '127.0.0.2:3000':'127.0.0.2:3000', '127.0.0.0:3000':'127.0.0.0:3000'}
-        expected = {'A00000000000002': '127.0.0.1:3000, 127.0.0.2:3000', 'A00000000000000': '127.0.0.0:3000'}
+        expected = {'A00000000000002': '127.0.0.1:3000,127.0.0.2:3000', 'A00000000000000': '127.0.0.0:3000'}
         self.assertEqual(cl.get_node_to_IP_map(), expected, "get_node_to_IP_map did not return the expected result")
         cl.aliases = aliases
 

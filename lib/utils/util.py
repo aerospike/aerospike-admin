@@ -14,6 +14,7 @@
 
 from __future__ import print_function
 from future import standard_library
+
 standard_library.install_aliases()
 from builtins import filter
 from builtins import str
@@ -52,8 +53,7 @@ class Future(object):
                 # Store original stack trace/exception to be re-thrown later.
                 self.exc = e
 
-        self._worker = threading.Thread(target=wrapper,
-                                        args=args, kwargs=kwargs)
+        self._worker = threading.Thread(target=wrapper, args=args, kwargs=kwargs)
 
     def start(self):
         self._worker.start()
@@ -72,19 +72,18 @@ def shell_command(command):
     command is a list of ['cmd','arg1','arg2',...]
     """
     command = pipes.quote(" ".join(command))
-    command = ['bash', '-c', "'%s'" % (command)]
+    command = ["bash", "-c", "'%s'" % (command)]
     try:
-        p = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         out, err = p.communicate()
     except Exception:
-        return '', 'error'
+        return "", "error"
     else:
         return bytes_to_str(out), bytes_to_str(err)
 
 
-def capture_stdout(func, line=''):
+def capture_stdout(func, line=""):
     """
     Redirecting the stdout to use the output elsewhere
     """
@@ -104,10 +103,12 @@ def capture_stdout(func, line=''):
 def compile_likes(likes):
     try:
         # python2.7
-        likes = ["(" + like.translate(None, '\'"') + ")" for like in likes]
+        likes = ["(" + like.translate(None, "'\"") + ")" for like in likes]
     except Exception:
         # python3
-        likes = ["(" + like.translate(str.maketrans('','','\'"')) + ")" for like in likes]
+        likes = [
+            "(" + like.translate(str.maketrans("", "", "'\"")) + ")" for like in likes
+        ]
 
     likes = "|".join(likes)
     likes = re.compile(likes)
@@ -161,7 +162,13 @@ def _fetch_line_clear_dict(line, arg, return_type, default, keys, d):
 def get_arg_and_delete_from_mods(line, arg, return_type, default, modifiers, mods):
     try:
         val = _fetch_line_clear_dict(
-            line=line, arg=arg, return_type=return_type, default=default, keys=modifiers, d=mods)
+            line=line,
+            arg=arg,
+            return_type=return_type,
+            default=default,
+            keys=modifiers,
+            d=mods,
+        )
         line.remove(arg)
         if val:
             line.remove(str(val))
@@ -182,6 +189,7 @@ def check_arg_and_delete_from_mods(line, arg, default, modifiers, mods):
         val = default
     return val
 
+
 CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
 CMD_FILE_MULTI_LINE_COMMENT_START = "/*"
 CMD_FILE_MULTI_LINE_COMMENT_END = "*/"
@@ -192,7 +200,7 @@ def parse_commands(file_or_queries, command_end_char=";", is_file=True):
     try:
         commented = False
         if is_file:
-            lines = open(file_or_queries, 'r').readlines()
+            lines = open(file_or_queries, "r").readlines()
         else:
             lines = file_or_queries.split("\n")
 
@@ -212,9 +220,9 @@ def parse_commands(file_or_queries, command_end_char=";", is_file=True):
                 continue
             try:
                 if line.endswith(command_end_char):
-                    line = line.replace('\n', '')
+                    line = line.replace("\n", "")
                 else:
-                    line = line.replace('\n', ' ')
+                    line = line.replace("\n", " ")
                 commands = commands + line
             except Exception:
                 commands = line
@@ -232,8 +240,13 @@ def parse_queries(file, delimiter=";", is_file=True):
 
 
 def set_value_in_dict(d, key, value):
-    if (d is None or not isinstance(d, dict) or not key or (not value and value != 0 and value != False)
-            or isinstance(value, Exception)):
+    if (
+        d is None
+        or not isinstance(d, dict)
+        or not key
+        or (not value and value != 0 and value != False)
+        or isinstance(value, Exception)
+    ):
         return
 
     d[key] = value
@@ -247,7 +260,6 @@ def _cast(value, return_type=None):
 
     if not return_type or value is None:
         return value, True
-
 
     try:
         if return_type == bool and isinstance(value, future_basestring):
@@ -264,6 +276,7 @@ def _cast(value, return_type=None):
         pass
 
     return None, False
+
 
 def get_value_from_dict(d, keys, default_value=None, return_type=None):
     """
@@ -311,7 +324,7 @@ def get_values_from_dict(d, re_keys, return_type=None):
 
 
 def strip_string(search_str):
-    return search_str.strip().strip("\'\"")
+    return search_str.strip().strip("'\"")
 
 
 def flip_keys(orig_data):
@@ -380,7 +393,8 @@ def restructure_sys_data(content, cmd):
                     if iid not in new_interrrupt_dict[itype]:
                         new_interrrupt_dict[itype][iid] = {}
                     new_interrrupt_dict[itype][iid].update(
-                        copy.deepcopy(new_interrrupt))
+                        copy.deepcopy(new_interrrupt)
+                    )
                 content[n]["device_interrupts"] = new_interrrupt_dict
         except Exception as e:
             print(e)
@@ -421,7 +435,9 @@ def restructure_sys_data(content, cmd):
     return content
 
 
-def get_value_from_second_level_of_dict(data, keys, default_value=None, return_type=None):
+def get_value_from_second_level_of_dict(
+    data, keys, default_value=None, return_type=None
+):
     """
     Function takes dictionary and subkeys to find values inside all keys of dictionary.
     Returns dictionary containing key and value of input keys
@@ -435,9 +451,12 @@ def get_value_from_second_level_of_dict(data, keys, default_value=None, return_t
         if not data[_k] or isinstance(data[_k], Exception):
             continue
 
-        res_dict[_k] = get_value_from_dict(data[_k], keys, default_value=default_value, return_type=return_type)
+        res_dict[_k] = get_value_from_dict(
+            data[_k], keys, default_value=default_value, return_type=return_type
+        )
 
     return res_dict
+
 
 def get_values_from_second_level_of_dict(data, re_keys, return_type=None):
     """
@@ -456,6 +475,25 @@ def get_values_from_second_level_of_dict(data, re_keys, return_type=None):
         res_dict[_k] = get_values_from_dict(data[_k], re_keys, return_type=return_type)
 
     return res_dict
+
+
+# Given a list of keys, returns the nested value in a dict.
+def get_nested_value_from_dict(data, keys, default_value=None, return_type=None):
+    ref = data
+    for key in keys:
+        temp_ref = get_value_from_dict(ref, key)
+
+        if not temp_ref:
+            return default_value
+
+        ref = temp_ref
+
+    val, success = _cast(ref, return_type)
+
+    if success:
+        return val
+
+    return ref
 
 
 def add_dicts(d1, d2):
@@ -488,7 +526,7 @@ def pct_to_value(data, d_pct):
         if _k not in d_pct:
             continue
 
-        out_map[_k] = (float(data[_k])/100.0) * float(d_pct[_k])
+        out_map[_k] = (float(data[_k]) / 100.0) * float(d_pct[_k])
 
     return out_map
 
@@ -511,27 +549,33 @@ def mbytes_to_bytes(data):
 def find_delimiter_in(value):
     """Find a good delimiter to split the value by"""
 
-    for d in [';', ':', ',']:
+    for d in [";", ":", ","]:
         if d in value:
             return d
 
-    return ';'
+    return ";"
 
 
 def convert_edition_to_shortform(edition):
     """Convert edition to shortform Enterprise or Community or N/E"""
 
-    if edition.lower() in ['enterprise', 'true', 'ee'] or 'enterprise' in edition.lower():
+    if (
+        edition.lower() in ["enterprise", "true", "ee"]
+        or "enterprise" in edition.lower()
+    ):
         return "Enterprise"
 
-    if edition.lower() in ['community', 'false', 'ce'] or 'community' in edition.lower():
+    if (
+        edition.lower() in ["community", "false", "ce"]
+        or "community" in edition.lower()
+    ):
         return "Community"
 
     return "N/E"
 
 
 def write_to_file(file, data):
-    f = open(str(file), 'a')
+    f = open(str(file), "a")
     f.write(str(data))
     return f.close()
 
@@ -570,6 +614,7 @@ def is_valid_ip_port(key):
 
     return False
 
+
 def _is_valid_ipv4_address(address):
     try:
         socket.inet_pton(socket.AF_INET, address)
@@ -578,11 +623,12 @@ def _is_valid_ipv4_address(address):
             socket.inet_aton(address)
         except socket.error:
             return False
-        return address.count('.') == 3
+        return address.count(".") == 3
     except socket.error:  # not a valid address
         return False
 
     return True
+
 
 def _is_valid_ipv6_address(address):
     try:
@@ -590,6 +636,7 @@ def _is_valid_ipv6_address(address):
     except socket.error:  # not a valid address
         return False
     return True
+
 
 def is_str(data):
     if data is None:
@@ -611,6 +658,7 @@ def bytes_to_str(data):
 
     # python2.7
     return data
+
 
 def str_to_bytes(data):
     try:
