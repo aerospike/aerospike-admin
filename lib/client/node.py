@@ -42,12 +42,14 @@ NEW_MODULE = 2
 
 try:
     from pexpect import pxssh
+
     PEXPECT_VERSION = NEW_MODULE
 except ImportError:
     try:
         # For old versions of pexpect ( < 3.0)
         import pexpect
         import pxssh
+
         PEXPECT_VERSION = OLD_MODULE
     except ImportError:
         PEXPECT_VERSION = NO_MODULE
@@ -87,9 +89,19 @@ class Node(object):
     dns_cache = {}
     pool_lock = threading.Lock()
 
-    def __init__(self, address, port=3000, tls_name=None, timeout=5,
-                 user=None, password=None, auth_mode=AuthMode.INTERNAL,
-                 ssl_context=None, consider_alumni=False, use_services_alt=False):
+    def __init__(
+        self,
+        address,
+        port=3000,
+        tls_name=None,
+        timeout=5,
+        user=None,
+        password=None,
+        auth_mode=AuthMode.INTERNAL,
+        ssl_context=None,
+        consider_alumni=False,
+        use_services_alt=False,
+    ):
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -103,8 +115,8 @@ class Node(object):
         access port. Can we detect from the socket?
         ALSO NOTE: May be better to just use telnet instead?
         """
-        self.logger = logging.getLogger('asadm')
-        self.remote_system_command_prompt = '[#$] '
+        self.logger = logging.getLogger("asadm")
+        self.remote_system_command_prompt = "[#$] "
         self._update_IP(address, port)
         self.port = port
         self.xdr_port = 3004  # TODO: Find the xdr port
@@ -138,25 +150,50 @@ class Node(object):
         self.sys_default_ssh_key = None
         self.sys_cmds = [
             # format: (command name as in parser, ignore error, command list)
-            ('hostname', False, ['hostname -I', 'hostname']),
-            ('top', False, ['top -n1 -b', 'top -l 1']),
-            ('lsb', False, ['lsb_release -a', 'ls /etc|grep release|xargs -I f cat /etc/f']),
-            ('meminfo', False, ['cat /proc/meminfo', 'vmstat -s']),
-            ('interrupts', False, ['cat /proc/interrupts', '']),
-            ('iostat', False, ['iostat -y -x 5 1', '']),
-            ('dmesg', False, ['dmesg -T', 'dmesg']),
-            ('limits', False, ['sudo  pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', '']),
-            ('lscpu', False, ['lscpu', '']),
-            ('sysctlall', False, ['sudo sysctl vm fs', '']),
-            ('iptables', False, ['sudo iptables -S', '']),
-            ('hdparm', False, ['sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null', '']),
-            ('df', False, ['df -h', '']),
-            ('free-m', False, ['free -m', '']),
-            ('uname', False, ['uname -a', '']),
-            ('scheduler', True, ['ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"', '']),
-
+            ("hostname", False, ["hostname -I", "hostname"]),
+            ("top", False, ["top -n1 -b", "top -l 1"]),
+            (
+                "lsb",
+                False,
+                ["lsb_release -a", "ls /etc|grep release|xargs -I f cat /etc/f"],
+            ),
+            ("meminfo", False, ["cat /proc/meminfo", "vmstat -s"]),
+            ("interrupts", False, ["cat /proc/interrupts", ""]),
+            ("iostat", False, ["iostat -y -x 5 1", ""]),
+            ("dmesg", False, ["dmesg -T", "dmesg"]),
+            (
+                "limits",
+                False,
+                ['sudo  pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', ""],
+            ),
+            ("lscpu", False, ["lscpu", ""]),
+            ("sysctlall", False, ["sudo sysctl vm fs", ""]),
+            ("iptables", False, ["sudo iptables -S", ""]),
+            (
+                "hdparm",
+                False,
+                [
+                    'sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null',
+                    "",
+                ],
+            ),
+            ("df", False, ["df -h", ""]),
+            ("free-m", False, ["free -m", ""]),
+            ("uname", False, ["uname -a", ""]),
+            (
+                "scheduler",
+                True,
+                [
+                    'ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"',
+                    "",
+                ],
+            ),
             # Todo: Add more commands for other cloud platform detection
-            ('environment', False, ['curl -m 1 -s http://169.254.169.254/1.0/', 'uname']),
+            (
+                "environment",
+                False,
+                ["curl -m 1 -s http://169.254.169.254/1.0/", "uname"],
+            ),
         ]
 
         # hack, _key needs to be defines before info calls... but may have
@@ -205,7 +242,7 @@ class Node(object):
                 # Not able to connect this address
                 raise self.node_id
 
-            self.features = self.info('features')
+            self.features = self.info("features")
             self.use_peers_list = self.is_feature_present(feature="peers")
 
             # Original address may not be the service address, the
@@ -219,7 +256,10 @@ class Node(object):
             self.close()
             self._initialize_socket_pool()
             _current_host = (self.ip, self.port, self.tls_name)
-            if not self.service_addresses or _current_host not in self.service_addresses:
+            if (
+                not self.service_addresses
+                or _current_host not in self.service_addresses
+            ):
                 # if asd >= 3.10 and node has only IPv6 address
                 self.service_addresses.append(_current_host)
 
@@ -273,11 +313,21 @@ class Node(object):
         if self.user is None:
             return True
 
-        if not self.perform_login and (self.session_expiration == 0 or self.session_expiration > time()):
+        if not self.perform_login and (
+            self.session_expiration == 0 or self.session_expiration > time()
+        ):
             return True
 
-        sock = ASSocket(self.ip, self.port, self.tls_name, self.user, self.password,
-                        self.auth_mode, self.ssl_context, timeout=self._timeout)
+        sock = ASSocket(
+            self.ip,
+            self.port,
+            self.tls_name,
+            self.user,
+            self.password,
+            self.auth_mode,
+            self.ssl_context,
+            timeout=self._timeout,
+        )
         if not sock.connect():
             sock.close()
             return False
@@ -311,9 +361,11 @@ class Node(object):
     def _update_IP(self, address, port):
         if address not in self.dns_cache:
             self.dns_cache[address] = (
-                socket.getaddrinfo(address, port, socket.AF_UNSPEC,
-                                   socket.SOCK_STREAM)[0][4][0],
-                getfqdn(address))
+                socket.getaddrinfo(address, port, socket.AF_UNSPEC, socket.SOCK_STREAM)[
+                    0
+                ][4][0],
+                getfqdn(address),
+            )
 
         self.ip, self.fqdn = self.dns_cache[address]
 
@@ -329,15 +381,15 @@ class Node(object):
         return self.sock_name()
 
     def is_XDR_enabled(self):
-        config = self.info_get_config('xdr')
+        config = self.info_get_config("xdr")
         if isinstance(config, Exception):
             return False
 
         # 'enable-xdr' was removed in XDR5.0, so check that get-config:context=xdr does not return an error.
         if util.info_valid(config):
             try:
-                xdr_enabled = config['enable-xdr']
-                return xdr_enabled == 'true'
+                xdr_enabled = config["enable-xdr"]
+                return xdr_enabled == "true"
             except Exception:
                 pass
             return True
@@ -348,7 +400,7 @@ class Node(object):
         if not self.features or isinstance(self.features, Exception):
             return False
 
-        return (feature in self.features)
+        return feature in self.features
 
     def has_peers_changed(self):
         try:
@@ -395,8 +447,16 @@ class Node(object):
         if sock:
             return sock
 
-        sock = ASSocket(ip, port, self.tls_name, self.user, self.password, self.auth_mode,
-                        self.ssl_context, timeout=self._timeout)
+        sock = ASSocket(
+            ip,
+            port,
+            self.tls_name,
+            self.user,
+            self.password,
+            self.auth_mode,
+            self.ssl_context,
+            timeout=self._timeout,
+        )
 
         if sock.connect():
             if sock.authenticate(self.session_token):
@@ -618,7 +678,7 @@ class Node(object):
             return []
         default_port = 3000
         # TODO not used generation = gen_port_peers[0]
-        if (gen_port_peers[1]):
+        if gen_port_peers[1]:
             default_port = int(gen_port_peers[1])
 
         peers_list = util.parse_peers_string(gen_port_peers[2])
@@ -659,8 +719,7 @@ class Node(object):
                 if addr.endswith("]"):
                     addr = addr[:-1].strip()
 
-                if (len(addr_port) > 1 and addr_port[1] and
-                        len(addr_port[1]) > 0):
+                if len(addr_port) > 1 and addr_port[1] and len(addr_port[1]) > 0:
                     port = addr_port[1]
                 else:
                     port = default_port
@@ -745,8 +804,18 @@ class Node(object):
     def _info_service_helper(self, service, delimiter=";"):
         if not service or isinstance(service, Exception):
             return []
-        s = [util.parse_peers_string(v, ":") for v in util.info_to_list(service, delimiter=delimiter)]
-        return [(v[0].strip("[]"), int(v[1]) if len(v)>1 and v[1] else int(self.port), self.tls_name) for v in s]
+        s = [
+            util.parse_peers_string(v, ":")
+            for v in util.info_to_list(service, delimiter=delimiter)
+        ]
+        return [
+            (
+                v[0].strip("[]"),
+                int(v[1]) if len(v) > 1 and v[1] else int(self.port),
+                self.tls_name,
+            )
+            for v in s
+        ]
 
     # post 3.10 services
 
@@ -833,7 +902,12 @@ class Node(object):
         # Due to new server feature namespace add/remove with rolling restart,
         # there is possibility that different nodes will have different namespaces.
         # type = unknown means namespace is not available on this node, so just return empty map.
-        if ns_stat and not isinstance(ns_stat, Exception) and "type" in ns_stat and ns_stat["type"] == "unknown":
+        if (
+            ns_stat
+            and not isinstance(ns_stat, Exception)
+            and "type" in ns_stat
+            and ns_stat["type"] == "unknown"
+        ):
             ns_stat = {}
         return ns_stat
 
@@ -861,9 +935,9 @@ class Node(object):
         sets = {}
         for stat in stats:
             ns_name = util.get_value_from_dict(
-                d=stat, keys=('ns_name', 'namespace', 'ns'))
-            set_name = util.get_value_from_dict(
-                d=stat, keys=('set_name', 'set'))
+                d=stat, keys=("ns_name", "namespace", "ns")
+            )
+            set_name = util.get_value_from_dict(d=stat, keys=("set_name", "set"))
 
             key = (ns_name, set_name)
             if key not in sets:
@@ -873,7 +947,7 @@ class Node(object):
             set_dict.update(stat)
 
         return sets
-    
+
     @return_exceptions
     def info_health_outliers(self):
         stats = self.info("health-outliers")
@@ -882,13 +956,12 @@ class Node(object):
             return {}
         stats = [util.info_colon_to_dict(stat) for stat in stats]
         health_dict = {}
-        
-        for i, stat  in enumerate(stats):
+
+        for i, stat in enumerate(stats):
             key = "outlier" + str(i)
             health_dict[key] = stat
 
         return health_dict
-
 
     @return_exceptions
     def info_bin_statistics(self):
@@ -896,12 +969,12 @@ class Node(object):
         if not stats:
             return {}
         stats.pop()
-        stats = [value.split(':') for value in stats]
+        stats = [value.split(":") for value in stats]
         stat_dict = {}
 
         for stat in stats:
-            values = util.info_to_list(stat[1], ',')
-            values = ";".join([v for v in values if '=' in v])
+            values = util.info_to_list(stat[1], ",")
+            values = ";".join([v for v in values if "=" in v])
             values = util.info_to_dict(values)
             stat_dict[stat[0]] = values
 
@@ -918,10 +991,10 @@ class Node(object):
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
         if int(self.info_build_version()[0]) < 5:
-            if self.is_feature_present('xdr'):
+            if self.is_feature_present("xdr"):
                 return util.info_to_dict(self.info("statistics/xdr"))
 
-            return util.info_to_dict(self.xdr_info('statistics'))
+            return util.info_to_dict(self.xdr_info("statistics"))
         else:
             return self.info_all_dc_statistics()
 
@@ -936,10 +1009,13 @@ class Node(object):
         dict -- stanza --> [namespace] --> param --> value
         """
         config = {}
-        if stanza == 'namespace':
+        if stanza == "namespace":
             if namespace != "":
-                config = {namespace: util.info_to_dict(
-                    self.info("get-config:context=namespace;id=%s" % namespace))}
+                config = {
+                    namespace: util.info_to_dict(
+                        self.info("get-config:context=namespace;id=%s" % namespace)
+                    )
+                }
                 if namespace_id == "":
                     namespaces = self.info_namespaces()
                     if namespaces and namespace in namespaces:
@@ -951,19 +1027,19 @@ class Node(object):
                 namespaces = self.info_namespaces()
                 for index, namespace in enumerate(namespaces):
                     namespace_config = self.info_get_config(
-                        'namespace', namespace, namespace_id=index)
+                        "namespace", namespace, namespace_id=index
+                    )
                     namespace_config = namespace_config[namespace]
                     namespace_configs[namespace] = namespace_config
                 config = namespace_configs
 
-        elif stanza == '' or stanza == 'service':
+        elif stanza == "" or stanza == "service":
             config = util.info_to_dict(self.info("get-config:"))
-        elif stanza != 'all':
-            config = util.info_to_dict(
-                self.info("get-config:context=%s" % stanza))
+        elif stanza != "all":
+            config = util.info_to_dict(self.info("get-config:context=%s" % stanza))
         elif stanza == "all":
-            config['namespace'] = self.info_get_config("namespace")
-            config['service'] = self.info_get_config("service")
+            config["namespace"] = self.info_get_config("namespace")
+            config["service"] = self.info_get_config("service")
             # Server lumps this with service
             # config["network"] = self.info_get_config("network")
         return config
@@ -987,7 +1063,9 @@ class Node(object):
             if "namespace" in self.conf_data:
                 for ns in list(self.conf_data["namespace"].keys()):
                     if "service" in self.conf_data["namespace"][ns]:
-                        self.conf_data["namespace"][ns] = self.conf_data["namespace"][ns]["service"]
+                        self.conf_data["namespace"][ns] = self.conf_data["namespace"][
+                            ns
+                        ]["service"]
 
         try:
             config = self.conf_data[stanza]
@@ -998,6 +1076,19 @@ class Node(object):
         return config
 
     def _update_total_latency(self, total_rows, row, has_time_range_col=True):
+        """
+        Takes a latency information for a single histogram and integrated it into
+        the total_rows.  Since most of the values are percentages there is some
+        math evolved.
+
+        row -- a single histograms values. These values coorespond to ops/sec
+        and a specified number of latency buckets, i.e. 1ms, 8ms, 64ms . . .
+
+        total_rows -- The total latency information before the current row is
+        integrated.
+
+        total_rows --
+        """
         if not row or not isinstance(row, list):
             return total_rows
         if not total_rows:
@@ -1013,12 +1104,23 @@ class Node(object):
                 new_sum = float(row[has_time_range_col])
                 if new_sum > 0:
                     old_sum = float(total_row[has_time_range_col])
-                    for i, transaction_percent in enumerate(total_row[1 + has_time_range_col:]):
+                    for i, transaction_percent in enumerate(
+                        total_row[1 + has_time_range_col :]
+                    ):
                         row_idx = i + 1 + has_time_range_col
-                        old_transactions = float((old_sum * transaction_percent) / 100.00)
+                        old_transactions = float(
+                            (old_sum * transaction_percent) / 100.00
+                        )
                         new_transactions = float((new_sum * row[row_idx]) / 100.00)
-                        total_row[
-                            row_idx] = round(float(old_div(((old_transactions + new_transactions) * 100), (old_sum + new_sum))), 2)
+                        total_row[row_idx] = round(
+                            float(
+                                old_div(
+                                    ((old_transactions + new_transactions) * 100),
+                                    (old_sum + new_sum),
+                                )
+                            ),
+                            2,
+                        )
                     total_row[has_time_range_col] = round(old_sum + new_sum, 2)
                 updated = True
                 break
@@ -1029,7 +1131,7 @@ class Node(object):
 
     @return_exceptions
     def info_latency(self, back=None, duration=None, slice_tm=None, ns_set=None):
-        cmd = 'latency:'
+        cmd = "latency:"
         try:
             if back or back == 0:
                 cmd += "back=%d" % (back) + ";"
@@ -1053,12 +1155,12 @@ class Node(object):
             hist_info = self.info(cmd)
         except Exception:
             return data
-        tdata = hist_info.split(';')
+        tdata = hist_info.split(";")
         hist_name = None
         ns = None
         start_time = None
         columns = []
-        ns_hist_pattern = '{([A-Za-z_\d-]+)}-([A-Za-z_-]+)'
+        ns_hist_pattern = "{([A-Za-z_\d-]+)}-([A-Za-z_-]+)"
         total_key = "total"
 
         while tdata != []:
@@ -1071,7 +1173,7 @@ class Node(object):
             if len(row) < 2:
                 continue
 
-            s1, s2 = row[0].split(':', 1)
+            s1, s2 = row[0].split(":", 1)
 
             if not s1.isdigit():
                 m = re.search(ns_hist_pattern, s1)
@@ -1084,10 +1186,10 @@ class Node(object):
                 if ns_set and (not ns or ns not in ns_set):
                     hist_name = None
                     continue
-                columns = [col.replace('u', u'\u03bc') for col in row[1:]]
+                columns = [col.replace("u", u"\u03bc") for col in row[1:]]
                 start_time = s2
                 start_time = util.remove_suffix(start_time, "-GMT")
-                columns.insert(0, 'Time Span')
+                columns.insert(0, "Time Span")
                 continue
 
             if not hist_name or not start_time:
@@ -1107,32 +1209,37 @@ class Node(object):
                         data[hist_name][ns_key][ns] = {}
                         data[hist_name][ns_key][ns]["columns"] = columns
                         data[hist_name][ns_key][ns]["values"] = []
-                    data[hist_name][ns_key][ns][
-                        "values"].append(copy.deepcopy(row))
+                    data[hist_name][ns_key][ns]["values"].append(copy.deepcopy(row))
                 if total_key not in data[hist_name]:
                     data[hist_name][total_key] = {}
                     data[hist_name][total_key]["columns"] = columns
                     data[hist_name][total_key]["values"] = []
 
                 data[hist_name][total_key]["values"] = self._update_total_latency(
-                    data[hist_name][total_key]["values"], row)
+                    data[hist_name][total_key]["values"], row
+                )
                 start_time = end_time
             except Exception:
                 pass
         return data
 
     @return_exceptions
-    def info_latencies(self, buckets=3, exponent_increment=3, verbose=False, ns_set=None):
+    def info_latencies(
+        self, buckets=3, exponent_increment=3, verbose=False, ns_set=None
+    ):
         """
         Get latencies metrics from this node. asinfo -v "latencies:" -p 3004
 
         Returns:
-        dict -- {'host_address:port': {'histogram_name': {'namespace/total': {'namespace_name': {'columns': ['column1', 'column2', . . .], 'values': [[val1, val2, . . .]]}}, . . .}}}}
+        dict -- {'host_address:port': {'histogram_name': {'namespace/total':
+        {'namespace_name': {'columns': ['column1', 'column2', . . .], 'values':
+        [[val1, val2, . . .]]}}, . . .}}}}
         """
 
         # If ns_set is set filter through all default latencies with ns_set
-            # If optional_benchmark is set make additional queries for the optional_benchmark
-        cmd_latencies = ['latencies:']
+        # If optional_benchmark is set make additional queries for the
+        # optional_benchmark
+        cmd_latencies = ["latencies:"]
         data = {}
         if verbose:
             namespaces = []
@@ -1140,13 +1247,24 @@ class Node(object):
                 namespaces = ns_set
             else:
                 try:
-                    namespaces = self.info('namespaces').split(';')
+                    namespaces = self.info("namespaces").split(";")
                 except Exception:
                     return data
-            optional_benchmarks = ['proxy', 'benchmark-fabric', 'benchmarks-ops-sub', 
-            'benchmarks-read', 'benchmarks-write', 'benchmarks-udf', 'benchmarks-udf-sub', 
-            'benchmarks-batch-sub']
-            cmd_latencies += ["latencies:hist={%s}-%s" % (ns, optional) for ns in namespaces for optional in optional_benchmarks]
+            optional_benchmarks = [
+                "proxy",
+                "benchmark-fabric",
+                "benchmarks-ops-sub",
+                "benchmarks-read",
+                "benchmarks-write",
+                "benchmarks-udf",
+                "benchmarks-udf-sub",
+                "benchmarks-batch-sub",
+            ]
+            cmd_latencies += [
+                "latencies:hist={%s}-%s" % (ns, optional)
+                for ns in namespaces
+                for optional in optional_benchmarks
+            ]
 
         hist_info = []
         for cmd in cmd_latencies:
@@ -1154,77 +1272,110 @@ class Node(object):
                 hist_info.append(self.info(cmd))
             except Exception:
                 return data
-            if hist_info[-1].startswith('error'):
+            if hist_info[-1].startswith("error"):
                 hist_info.pop()
                 continue
-        
+
         # example hist info after join:
         # batch-index:;{test}-read:msec,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00, /
         # 0.00,0.00,0.00,0.00,0.00,0.00,0.00;{test}-write:msec,0.0,0.00,0.00,0.00,0.00,0.00,0.00, /
         # 0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00;{test}-udf:;{test}-query:;{bar}-read:; /
         # {bar}-write:;{bar}-udf:;{bar}-query: /
-        hist_info = ';'.join(hist_info)
-        tdata = hist_info.split(';')
+        hist_info = ";".join(hist_info)
+        tdata = hist_info.split(";")
         hist_name = None
         ns = None
-        unit_mapping = {
-            'msec': 'ms',
-            'usec': u'\u03bcs'
-        }
+        unit_mapping = {"msec": "ms", "usec": u"\u03bcs"}
         time_units = None
-        columns = [">1", ">2", ">4", ">8", ">16", ">32",
-        ">64", ">128", ">256", ">512", ">1024", ">2048", ">4096", 
-        ">8192", ">16384", ">32768", ">65536"][::exponent_increment][:buckets]
-        ns_hist_pattern = '{([A-Za-z_\d-]+)}-([A-Za-z_-]+)'
+        columns = [
+            ">1",
+            ">2",
+            ">4",
+            ">8",
+            ">16",
+            ">32",
+            ">64",
+            ">128",
+            ">256",
+            ">512",
+            ">1024",
+            ">2048",
+            ">4096",
+            ">8192",
+            ">16384",
+            ">32768",
+            ">65536",
+        ][::exponent_increment][:buckets]
+        ns_hist_pattern = r"{([A-Za-z_\d-]+)}-([A-Za-z_-]+)"
         total_key = "total"
 
         for hist in tdata:
             if not hist:
                 continue
-            hist_name, hist_data = hist.split(':')
-            hist_data = hist_data.split(',')
+            hist_name, hist_data = hist.split(":")
+            hist_data = hist_data.split(",")
             m = re.search(ns_hist_pattern, hist_name)
+
             # Remove empty histograms, len 2 just to be safe
             if len(hist_data) <= 2:
                 continue
+
             if m:
                 ns = m.group(1)
                 hist_name = m.group(2)
             # Is batch histogram w/o namespace
             else:
                 ns = None
+
             if ns_set and (not ns or ns not in ns_set):
                 hist_name = None
                 continue
+
             if time_units is None:
                 time_units = hist_data.pop(0)
-                columns = ["ops/sec"] + [col + unit_mapping[time_units] for col in list(columns)]
+                columns = ["ops/sec"] + [
+                    col + unit_mapping[time_units] for col in list(columns)
+                ]
             else:
                 hist_data.pop(0)
+
             latency_data = [float(r) for r in hist_data]
             # Remove ops/sec and then add it back in after getting correct latency buckets.
-            latency_data = [latency_data[0]] + latency_data[1:][::exponent_increment][:buckets]
+            latency_data = [latency_data[0]] + latency_data[1:][::exponent_increment][
+                :buckets
+            ]
+
             try:
                 if hist_name not in data:
                     data[hist_name] = {}
+
                 if ns:
                     ns_key = "namespace"
+
                     if ns_key not in data[hist_name]:
                         data[hist_name][ns_key] = {}
+
                     if ns not in data[hist_name][ns_key]:
                         data[hist_name][ns_key][ns] = {}
                         data[hist_name][ns_key][ns]["columns"] = columns
                         data[hist_name][ns_key][ns]["values"] = []
-                    data[hist_name][ns_key][ns][
-                        "values"].append(copy.deepcopy(latency_data))
+
+                    data[hist_name][ns_key][ns]["values"].append(
+                        copy.deepcopy(latency_data)
+                    )
+
                 if total_key not in data[hist_name]:
                     data[hist_name][total_key] = {}
                     data[hist_name][total_key]["columns"] = columns
                     data[hist_name][total_key]["values"] = []
 
                 data[hist_name][total_key]["values"] = self._update_total_latency(
-                    data[hist_name][total_key]["values"], latency_data, has_time_range_col=False)
+                    data[hist_name][total_key]["values"],
+                    latency_data,
+                    has_time_range_col=False,
+                )
             except:
+                # Missing histogram
                 pass
         return data
 
@@ -1240,14 +1391,14 @@ class Node(object):
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
-            if self.is_feature_present('xdr'):
+            if self.is_feature_present("xdr"):
                 return util.dcs_info_to_list(self.info("get-config:context=xdr"))
             else:
                 return util.dcs_info_to_list(self.xdr_info("get-config:context=xdr"))
 
         # for older servers/XDRs
         else:
-            if self.is_feature_present('xdr'):
+            if self.is_feature_present("xdr"):
                 return util.info_to_list(self.info("dcs"))
             else:
                 return util.info_to_list(self.xdr_info("dcs"))
@@ -1265,16 +1416,18 @@ class Node(object):
         # If xdr version is < XDR5.0 return output of old asinfo command.
         if xdr_major_version < 5:
 
-            if self.is_feature_present('xdr'):
+            if self.is_feature_present("xdr"):
                 return util.info_to_dict(self.info("dc/%s" % dc))
             else:
                 return util.info_to_dict(self.xdr_info("dc/%s" % dc))
         else:
 
-            if self.is_feature_present('xdr'):
+            if self.is_feature_present("xdr"):
                 return util.info_to_dict(self.info("get-stats:context=xdr;dc=%s" % dc))
             else:
-                return util.info_to_dict(self.xdr_info("get-stats:context=xdr;dc=%s" % dc))
+                return util.info_to_dict(
+                    self.xdr_info("get-stats:context=xdr;dc=%s" % dc)
+                )
 
     @return_exceptions
     def info_all_dc_statistics(self):
@@ -1300,12 +1453,12 @@ class Node(object):
         Returns:
         dict -- {file_name1:{key_name : key_value, ...}, file_name2:{key_name : key_value, ...}}
         """
-        udf_data = self.info('udf-list')
+        udf_data = self.info("udf-list")
 
         if not udf_data:
             return {}
 
-        return util.info_to_dict_multi_level(udf_data, "filename", delimiter2=',')
+        return util.info_to_dict_multi_level(udf_data, "filename", delimiter2=",")
 
     @return_exceptions
     def info_roster(self):
@@ -1315,7 +1468,7 @@ class Node(object):
         Returns:
         dict -- {ns1:{key_name : key_value, ...}, ns2:{key_name : key_value, ...}}
         """
-        roster_data = self.info('roster:')
+        roster_data = self.info("roster:")
 
         if not roster_data:
             return {}
@@ -1343,7 +1496,7 @@ class Node(object):
         Returns:
         dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
         """
-        rack_data = self.info('racks:')
+        rack_data = self.info("racks:")
 
         if not rack_data:
             return {}
@@ -1378,28 +1531,36 @@ class Node(object):
         dict -- {dc_name1:{config_name : config_value, ...}, dc_name2:{config_name : config_value, ...}}
         """
 
-        if self.is_feature_present('xdr'):
+        if self.is_feature_present("xdr"):
             configs = self.info("get-dc-config")
             if not configs or isinstance(configs, Exception):
                 configs = self.info("get-dc-config:")
             if not configs or isinstance(configs, Exception):
                 return {}
-            return util.info_to_dict_multi_level(configs, ["dc-name", "DC_Name"], ignore_field_without_key_value_delimiter=False)
+            return util.info_to_dict_multi_level(
+                configs,
+                ["dc-name", "DC_Name"],
+                ignore_field_without_key_value_delimiter=False,
+            )
 
         configs = self.xdr_info("get-dc-config")
         if not configs or isinstance(configs, Exception):
             return {}
-        return util.info_to_dict_multi_level(configs, ["dc-name", "DC_Name"], ignore_field_without_key_value_delimiter=False)
+        return util.info_to_dict_multi_level(
+            configs,
+            ["dc-name", "DC_Name"],
+            ignore_field_without_key_value_delimiter=False,
+        )
 
     @return_exceptions
     def info_XDR_get_config(self):
-        xdr_configs = self.info_get_config(stanza='xdr')
+        xdr_configs = self.info_get_config(stanza="xdr")
         # for new aerospike version (>=3.8) with xdr-in-asd config from service
         # port is sufficient
-        if self.is_feature_present('xdr'):
+        if self.is_feature_present("xdr"):
             return xdr_configs
         # required for old aerospike server versions (<3.8)
-        xdr_configs_xdr = self.xdr_info('get-config')
+        xdr_configs_xdr = self.xdr_info("get-config")
         if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
             xdr_configs_xdr = util.info_to_dict(xdr_configs_xdr)
             if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
@@ -1410,7 +1571,9 @@ class Node(object):
 
         return xdr_configs
 
-    def _collect_histogram_data(self, histogram, command, logarithmic=False, raw_output=False):
+    def _collect_histogram_data(
+        self, histogram, command, logarithmic=False, raw_output=False
+    ):
         namespaces = self.info_namespaces()
 
         data = {}
@@ -1424,7 +1587,9 @@ class Node(object):
                     data[namespace] = datum
 
                 else:
-                    d = common.parse_raw_histogram(histogram, datum, logarithmic, self.new_histogram_version)
+                    d = common.parse_raw_histogram(
+                        histogram, datum, logarithmic, self.new_histogram_version
+                    )
                     if d and not isinstance(d, Exception):
                         data[namespace] = d
 
@@ -1436,24 +1601,35 @@ class Node(object):
     @return_exceptions
     def info_histogram(self, histogram, logarithmic=False, raw_output=False):
         if not self.new_histogram_version:
-            return self._collect_histogram_data(histogram, command="hist-dump:ns=%s;hist=%s", raw_output=raw_output)
+            return self._collect_histogram_data(
+                histogram, command="hist-dump:ns=%s;hist=%s", raw_output=raw_output
+            )
 
         command = "histogram:namespace=%s;type=%s"
 
         if logarithmic:
             if histogram == "objsz":
                 histogram = "object-size"
-            return self._collect_histogram_data(histogram, command=command, logarithmic=logarithmic, raw_output=raw_output)
+            return self._collect_histogram_data(
+                histogram,
+                command=command,
+                logarithmic=logarithmic,
+                raw_output=raw_output,
+            )
 
         if histogram == "objsz":
             histogram = "object-size-linear"
 
-        return self._collect_histogram_data(histogram, command=command, logarithmic=logarithmic, raw_output=raw_output)
+        return self._collect_histogram_data(
+            histogram, command=command, logarithmic=logarithmic, raw_output=raw_output
+        )
 
     @return_exceptions
     def info_sindex(self):
-        return [util.info_to_dict(v, ':')
-                for v in util.info_to_list(self.info("sindex"))[:-1]]
+        return [
+            util.info_to_dict(v, ":")
+            for v in util.info_to_list(self.info("sindex"))[:-1]
+        ]
 
     @return_exceptions
     def info_sindex_statistics(self, namespace, indexname):
@@ -1473,10 +1649,16 @@ class Node(object):
         Returns:
         string -- build version
         """
-        return self.info('build')
+        return self.info("build")
 
-    def _set_default_system_credentials(self, default_user=None, default_pwd=None, default_ssh_key=None,
-                                        default_ssh_port=None, credential_file=None):
+    def _set_default_system_credentials(
+        self,
+        default_user=None,
+        default_pwd=None,
+        default_ssh_key=None,
+        default_ssh_port=None,
+        credential_file=None,
+    ):
         if default_user:
             self.sys_default_user_id = default_user
 
@@ -1503,16 +1685,19 @@ class Node(object):
         f = None
         try:
             try:
-                f = open(self.sys_credential_file, 'r')
+                f = open(self.sys_credential_file, "r")
             except IOError as e:
-                self.logger.warning("Ignoring credential file. Can not open credential file. \n%s." %(str(e)))
+                self.logger.warning(
+                    "Ignoring credential file. Can not open credential file. \n%s."
+                    % (str(e))
+                )
                 return result
 
             for line in f.readlines():
                 if not line or not line.strip():
                     continue
                 try:
-                    line = line.strip().replace('\n', ' ').strip().split(",")
+                    line = line.strip().replace("\n", " ").strip().split(",")
                     if len(line) < 2:
                         continue
 
@@ -1557,7 +1742,7 @@ class Node(object):
                 except Exception:
                     pass
         except Exception as e:
-            self.logger.warning("Ignoring credential file.\n%s." %(str(e)))
+            self.logger.warning("Ignoring credential file.\n%s." % (str(e)))
         finally:
             if f:
                 f.close()
@@ -1580,8 +1765,16 @@ class Node(object):
         self.sys_ssh_port = self.sys_default_ssh_port
 
     @return_exceptions
-    def info_system_statistics(self, default_user=None, default_pwd=None, default_ssh_key=None,
-                               default_ssh_port=None, credential_file=None, commands=[], collect_remote_data=False):
+    def info_system_statistics(
+        self,
+        default_user=None,
+        default_pwd=None,
+        default_ssh_key=None,
+        default_ssh_port=None,
+        credential_file=None,
+        commands=[],
+        collect_remote_data=False,
+    ):
         """
         Get statistics for a system.
 
@@ -1597,8 +1790,13 @@ class Node(object):
             return self._get_localhost_system_statistics(cmd_list)
 
         if collect_remote_data:
-            self._set_default_system_credentials(default_user, default_pwd, default_ssh_key,
-                                                 default_ssh_port, credential_file)
+            self._set_default_system_credentials(
+                default_user,
+                default_pwd,
+                default_ssh_key,
+                default_ssh_port,
+                credential_file,
+            )
             return self._get_remote_host_system_statistics(cmd_list)
 
         return {}
@@ -1636,44 +1834,83 @@ class Node(object):
     @return_exceptions
     def _spawn_remote_system(self, ip, user, pwd, ssh_key=None, port=None):
 
-        terminal_prompt_msg = '(?i)terminal type'
-        ssh_newkey_msg = '(?i)are you sure you want to continue connecting'
+        terminal_prompt_msg = "(?i)terminal type"
+        ssh_newkey_msg = "(?i)are you sure you want to continue connecting"
         connection_closed_msg = "(?i)connection closed by remote host"
         permission_denied_msg = "(?i)permission denied"
         pwd_passphrase_msg = "(?i)(?:password)|(?:passphrase for key)"
 
-        terminal_type = 'vt100'
+        terminal_type = "vt100"
 
         ssh_options = "-o 'NumberOfPasswordPrompts=1' "
 
         if port:
-            ssh_options += " -p %s"%(str(port))
+            ssh_options += " -p %s" % (str(port))
 
         if ssh_key is not None:
             try:
                 os.path.isfile(ssh_key)
             except Exception:
-                raise Exception('private ssh key %s does not exist'%(str(ssh_key)))
+                raise Exception("private ssh key %s does not exist" % (str(ssh_key)))
 
-            ssh_options += ' -i %s' % (ssh_key)
+            ssh_options += " -i %s" % (ssh_key)
 
-        s = pexpect.spawn('ssh %s -l %s %s'%(ssh_options, str(user), str(ip)))
-        i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT, connection_closed_msg, pexpect.EOF], timeout=10)
+        s = pexpect.spawn("ssh %s -l %s %s" % (ssh_options, str(user), str(ip)))
+        i = s.expect(
+            [
+                ssh_newkey_msg,
+                self.remote_system_command_prompt,
+                pwd_passphrase_msg,
+                permission_denied_msg,
+                terminal_prompt_msg,
+                pexpect.TIMEOUT,
+                connection_closed_msg,
+                pexpect.EOF,
+            ],
+            timeout=10,
+        )
 
         if i == 0:
             # In this case SSH does not have the public key cached.
             s.sendline("yes")
-            i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT])
+            i = s.expect(
+                [
+                    ssh_newkey_msg,
+                    self.remote_system_command_prompt,
+                    pwd_passphrase_msg,
+                    permission_denied_msg,
+                    terminal_prompt_msg,
+                    pexpect.TIMEOUT,
+                ]
+            )
         if i == 2:
             # password or passphrase
             if pwd is None:
                 raise Exception("Wrong SSH Password None.")
 
             s.sendline(pwd)
-            i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT])
+            i = s.expect(
+                [
+                    ssh_newkey_msg,
+                    self.remote_system_command_prompt,
+                    pwd_passphrase_msg,
+                    permission_denied_msg,
+                    terminal_prompt_msg,
+                    pexpect.TIMEOUT,
+                ]
+            )
         if i == 4:
             s.sendline(terminal_type)
-            i = s.expect([ssh_newkey_msg, self.remote_system_command_prompt, pwd_passphrase_msg, permission_denied_msg, terminal_prompt_msg, pexpect.TIMEOUT])
+            i = s.expect(
+                [
+                    ssh_newkey_msg,
+                    self.remote_system_command_prompt,
+                    pwd_passphrase_msg,
+                    permission_denied_msg,
+                    terminal_prompt_msg,
+                    pexpect.TIMEOUT,
+                ]
+            )
         if i == 7:
             s.close()
             return None
@@ -1721,7 +1958,9 @@ class Node(object):
         if i == 0:
             # csh-style.
             s.sendline("set prompt='[PEXPECT]\$ '")
-            i = s.expect([pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10)
+            i = s.expect(
+                [pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10
+            )
 
             if i == 0:
                 return None
@@ -1759,7 +1998,7 @@ class Node(object):
     def _execute_system_command(self, conn, cmd):
         out = self._execute_remote_system_command(conn, cmd)
         status = self._execute_remote_system_command(conn, "echo $?")
-        status = status.split('\r\n')
+        status = status.split("\r\n")
         status = status[1].strip() if len(status) > 1 else status[0].strip()
         try:
             status = int(status)
@@ -1778,7 +2017,7 @@ class Node(object):
             if conn:
                 conn.close()
         elif PEXPECT_VERSION == OLD_MODULE:
-            conn.sendline('exit')
+            conn.sendline("exit")
             i = conn.expect([pexpect.EOF, "(?i)there are stopped jobs"])
             if i == 1:
                 conn.sendline("exit")
@@ -1786,14 +2025,17 @@ class Node(object):
             if conn:
                 conn.close()
 
-        self.remote_system_command_prompt = '[#$] '
+        self.remote_system_command_prompt = "[#$] "
 
     @return_exceptions
     def _get_remote_host_system_statistics(self, commands):
         sys_stats = {}
 
         if PEXPECT_VERSION == NO_MODULE:
-            self.logger.warning("Ignoring system statistics collection from node %s. No module named pexpect."%(str(self.ip)))
+            self.logger.warning(
+                "Ignoring system statistics collection from node %s. No module named pexpect."
+                % (str(self.ip))
+            )
             return sys_stats
 
         sys_stats_collected = False
@@ -1801,12 +2043,18 @@ class Node(object):
         max_tries = 1
         tries = 0
 
-        while(tries < max_tries and not sys_stats_collected):
+        while tries < max_tries and not sys_stats_collected:
             tries += 1
             s = None
 
             try:
-                s = self._create_ssh_connection(self.ip, self.sys_user_id, self.sys_pwd, self.sys_ssh_key, self.sys_ssh_port)
+                s = self._create_ssh_connection(
+                    self.ip,
+                    self.sys_user_id,
+                    self.sys_pwd,
+                    self.sys_ssh_key,
+                    self.sys_ssh_port,
+                )
                 if not s:
                     raise Exception("Wrong credentials to connect.")
 
@@ -1815,7 +2063,16 @@ class Node(object):
 
             except Exception as e:
                 if tries >= max_tries:
-                    self.logger.warning("Ignoring system statistics collection. Couldn't make SSH login to remote server %s:%s. \n%s" % (str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port), str(e)))
+                    self.logger.warning(
+                        "Ignoring system statistics collection. Couldn't make SSH login to remote server %s:%s. \n%s"
+                        % (
+                            str(self.ip),
+                            "22"
+                            if self.sys_ssh_port is None
+                            else str(self.sys_ssh_port),
+                            str(e),
+                        )
+                    )
 
                 continue
 
@@ -1840,7 +2097,16 @@ class Node(object):
 
             except Exception as e:
                 if tries >= max_tries:
-                    self.logger.error("Ignoring system statistics collection. Couldn't get or parse remote system stats for remote server %s:%s. \n%s" % (str(self.ip), "22" if self.sys_ssh_port is None else str(self.sys_ssh_port), str(e)))
+                    self.logger.error(
+                        "Ignoring system statistics collection. Couldn't get or parse remote system stats for remote server %s:%s. \n%s"
+                        % (
+                            str(self.ip),
+                            "22"
+                            if self.sys_ssh_port is None
+                            else str(self.sys_ssh_port),
+                            str(e),
+                        )
+                    )
 
             finally:
                 if s and not isinstance(s, Exception):

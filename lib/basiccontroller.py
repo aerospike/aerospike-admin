@@ -26,17 +26,25 @@ from distutils.version import LooseVersion
 
 from lib.client.cluster import Cluster
 from lib.collectinfocontroller import CollectinfoRootController
-from lib.controllerlib import (BaseController, CommandController, CommandHelp,
-                               ShellException)
-from lib.getcontroller import (GetConfigController, GetDistributionController,
-                               GetPmapController, GetStatisticsController, GetFeaturesController,
-                               get_sindex_stats)
-from lib.health.util import (create_health_input_dict, create_snapshot_key,
-                             h_eval)
+from lib.controllerlib import (
+    BaseController,
+    CommandController,
+    CommandHelp,
+    ShellException,
+)
+from lib.getcontroller import (
+    GetConfigController,
+    GetDistributionController,
+    GetPmapController,
+    GetStatisticsController,
+    GetFeaturesController,
+    get_sindex_stats,
+    GetLatenciesController,
+)
+from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval
 from lib.utils import common, constants, util
 from lib.view import terminal
 from lib.view.view import CliView
-from lib.utils.common import is_new_latencies_version
 
 
 class BasicCommandController(CommandController):
@@ -46,35 +54,53 @@ class BasicCommandController(CommandController):
         BasicCommandController.cluster = cluster
 
 
-@CommandHelp('Aerospike Admin')
+@CommandHelp("Aerospike Admin")
 class BasicRootController(BaseController):
 
     cluster = None
     command = None
 
-    def __init__(self, seed_nodes=[('127.0.0.1', 3000, None)], user=None, password=None, auth_mode=constants.AuthMode.INTERNAL,
-                 use_services_alumni=False, use_services_alt=False, ssl_context=None,
-                 asadm_version='', only_connect_seed=False, timeout=5):
+    def __init__(
+        self,
+        seed_nodes=[("127.0.0.1", 3000, None)],
+        user=None,
+        password=None,
+        auth_mode=constants.AuthMode.INTERNAL,
+        use_services_alumni=False,
+        use_services_alt=False,
+        ssl_context=None,
+        asadm_version="",
+        only_connect_seed=False,
+        timeout=5,
+    ):
 
         super(BasicRootController, self).__init__(asadm_version)
 
         # Create static instance of cluster
-        BasicRootController.cluster = Cluster(seed_nodes, user, password, auth_mode,
-                                              use_services_alumni, use_services_alt,
-                                              ssl_context, only_connect_seed, timeout=timeout)
+        BasicRootController.cluster = Cluster(
+            seed_nodes,
+            user,
+            password,
+            auth_mode,
+            use_services_alumni,
+            use_services_alt,
+            ssl_context,
+            only_connect_seed,
+            timeout=timeout,
+        )
 
         # Create Basic Command Controller Object
         BasicRootController.command = BasicCommandController(self.cluster)
 
         self.controller_map = {
-            'asinfo': ASInfoController,
-            'collectinfo': CollectinfoController,
-            'show': ShowController,
-            'info': InfoController,
-            'features': FeaturesController,
-            'pager': PagerController,
-            'health': HealthCheckController,
-            'summary': SummaryController,
+            "asinfo": ASInfoController,
+            "collectinfo": CollectinfoController,
+            "show": ShowController,
+            "info": InfoController,
+            "features": FeaturesController,
+            "pager": PagerController,
+            "health": HealthCheckController,
+            "summary": SummaryController,
         }
 
     def close(self):
@@ -84,43 +110,48 @@ class BasicRootController(BaseController):
             pass
 
     # This function is a hack for autocomplete
-    @CommandHelp('Terminate session')
+    @CommandHelp("Terminate session")
     def do_exit(self, line):
         return "EXIT"
 
-    @CommandHelp('Returns documentation related to a command',
-                 'for example, to retrieve documentation for the "info"',
-                 'command use "help info".')
+    @CommandHelp(
+        "Returns documentation related to a command",
+        'for example, to retrieve documentation for the "info"',
+        'command use "help info".',
+    )
     def do_help(self, line):
         self.execute_help(line)
 
-    @CommandHelp('"watch" Runs a command for a specified pause and iterations.',
-                 'Usage: watch [pause] [iterations] [--no-diff] command]',
-                 '   pause:      the duration between executions.',
-                 '               [default: 2 seconds]',
-                 '   iterations: Number of iterations to execute command.',
-                 '               [default: until keyboard interrupt]',
-                 '   --no-diff:  Do not do diff highlighting',
-                 'Example 1: Show "info network" 3 times with 1 second pause',
-                 '           watch 1 3 info network',
-                 'Example 2: Show "info namespace" with 5 seconds pause until',
-                 '           interrupted',
-                 '           watch 5 info namespace')
+    @CommandHelp(
+        '"watch" Runs a command for a specified pause and iterations.',
+        "Usage: watch [pause] [iterations] [--no-diff] command]",
+        "   pause:      the duration between executions.",
+        "               [default: 2 seconds]",
+        "   iterations: Number of iterations to execute command.",
+        "               [default: until keyboard interrupt]",
+        "   --no-diff:  Do not do diff highlighting",
+        'Example 1: Show "info network" 3 times with 1 second pause',
+        "           watch 1 3 info network",
+        'Example 2: Show "info namespace" with 5 seconds pause until',
+        "           interrupted",
+        "           watch 5 info namespace",
+    )
     def do_watch(self, line):
         self.view.watch(self, line)
 
 
-@CommandHelp('The "info" command provides summary tables for various aspects',
-             'of Aerospike functionality.')
+@CommandHelp(
+    'The "info" command provides summary tables for various aspects',
+    "of Aerospike functionality.",
+)
 class InfoController(BasicCommandController):
     def __init__(self):
-        self.modifiers = set(['with', 'for'])
+        self.modifiers = set(["with", "for"])
 
-        self.controller_map = dict(
-            namespace=InfoNamespaceController)
+        self.controller_map = dict(namespace=InfoNamespaceController)
         self.config_getter = GetConfigController(self.cluster)
 
-    @CommandHelp('Displays network, namespace, and XDR summary information.')
+    @CommandHelp("Displays network, namespace, and XDR summary information.")
     def _do_default(self, line):
         actions = [util.Future(self.do_network, line).start()]
         # We are not using line for any of subcommand, but if user enters 'info object' or 'info usage' then it will
@@ -129,10 +160,10 @@ class InfoController(BasicCommandController):
         # 'info namespace object', but since it is not correct command it should print output for partial correct
         # command, in this case it should print data for 'info'. To keep consistent output format, we are passing empty
         # list as line.
-        res = self.controller_map['namespace'](get_futures=True)(line)
+        res = self.controller_map["namespace"](get_futures=True)(line)
         if isinstance(res, dict):
-            if 'futures' in res:
-                actions.extend(res['futures'])
+            if "futures" in res:
+                actions.extend(res["futures"])
         else:
             for action in res:
                 if action:
@@ -141,47 +172,56 @@ class InfoController(BasicCommandController):
 
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays network information for Aerospike.')
+    @CommandHelp("Displays network information for Aerospike.")
     def do_network(self, line):
-        stats = util.Future(self.cluster.info_statistics,
-                            nodes=self.nodes).start()
+        stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
 
         cluster_configs = self.config_getter.get_cluster(nodes=self.nodes)
 
         cluster_names = util.Future(
-            self.cluster.info, 'cluster-name', nodes=self.nodes).start()
-        builds = util.Future(
-            self.cluster.info, 'build', nodes=self.nodes).start()
-        versions = util.Future(
-            self.cluster.info, 'version', nodes=self.nodes).start()
+            self.cluster.info, "cluster-name", nodes=self.nodes
+        ).start()
+        builds = util.Future(self.cluster.info, "build", nodes=self.nodes).start()
+        versions = util.Future(self.cluster.info, "version", nodes=self.nodes).start()
 
         stats = stats.result()
         cluster_names = cluster_names.result()
         builds = builds.result()
         versions = versions.result()
+
         for node in stats:
             try:
                 if not isinstance(cluster_configs[node]["mode"], Exception):
                     stats[node]["rackaware_mode"] = cluster_configs[node]["mode"]
             except Exception:
                 pass
-        return util.Future(self.view.info_network, stats, cluster_names,
-                           versions, builds, self.cluster, **self.mods)
+        return util.Future(
+            self.view.info_network,
+            stats,
+            cluster_names,
+            versions,
+            builds,
+            self.cluster,
+            **self.mods
+        )
 
-    @CommandHelp('Displays summary information for each set.')
+    @CommandHelp("Displays summary information for each set.")
     def do_set(self, line):
         stats = self.cluster.info_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
 
     # pre 5.0
-    @CommandHelp('Displays summary information for each datacenter.',
-                'Replaced by "info xdr" for server >= 5.0.')
+    @CommandHelp(
+        "Displays summary information for each datacenter.",
+        'Replaced by "info xdr" for server >= 5.0.',
+    )
     def do_dc(self, line):
-        stats = util.Future(self.cluster.info_all_dc_statistics,
-                            nodes=self.nodes).start()
-        
-        xdr_builds = util.Future(self.cluster.info_build_version,
-                nodes=self.nodes).start()
+        stats = util.Future(
+            self.cluster.info_all_dc_statistics, nodes=self.nodes
+        ).start()
+        xdr_builds = util.Future(
+            self.cluster.info_build_version, nodes=self.nodes
+        ).start()
 
         configs = self.config_getter.get_dc(flip=False, nodes=self.nodes)
 
@@ -189,11 +229,13 @@ class InfoController(BasicCommandController):
 
         for node in list(stats.keys()):
 
-            if (stats[node]
-                    and not isinstance(stats[node], Exception)
-                    and node in configs
-                    and configs[node]
-                    and not isinstance(configs[node], Exception)):
+            if (
+                stats[node]
+                and not isinstance(stats[node], Exception)
+                and node in configs
+                and configs[node]
+                and not isinstance(configs[node], Exception)
+            ):
 
                 for dc in list(stats[node].keys()):
                     try:
@@ -201,16 +243,17 @@ class InfoController(BasicCommandController):
                     except Exception:
                         pass
 
-            elif ((not stats[node]
-                   or isinstance(stats[node], Exception))
-                    and node in configs
-                    and configs[node]
-                    and not isinstance(configs[node], Exception)):
+            elif (
+                (not stats[node] or isinstance(stats[node], Exception))
+                and node in configs
+                and configs[node]
+                and not isinstance(configs[node], Exception)
+            ):
                 try:
                     stats[node] = configs[node]
                 except Exception:
                     pass
-        
+
         xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
@@ -229,25 +272,30 @@ class InfoController(BasicCommandController):
         futures = []
 
         if nodes_running_v49_or_lower:
-            futures.append(util.Future(self.view.info_dc, stats, self.cluster, **self.mods))
+            futures.append(
+                util.Future(self.view.info_dc, stats, self.cluster, **self.mods)
+            )
 
         if nodes_running_v5_or_higher:
-            futures.append(util.Future(self.view.print_result, 
-            "WARNING: 'info dc' is deprecated on aerospike versions >= 5.0. " +
-            "Use \'info xdr\' instead."))
+            futures.append(
+                util.Future(
+                    self.view.print_result,
+                    "WARNING: 'info dc' is deprecated on aerospike versions >= 5.0. "
+                    + "Use 'info xdr' instead.",
+                )
+            )
 
         return futures
 
-    @CommandHelp('Displays summary information for each datacenter.')
+    @CommandHelp("Displays summary information for each datacenter.")
     def do_xdr(self, line):
-        stats = util.Future(self.cluster.info_XDR_statistics,
-                            nodes=self.nodes).start()
+        stats = util.Future(self.cluster.info_XDR_statistics, nodes=self.nodes).start()
 
-        xdr_enable = util.Future(self.cluster.is_XDR_enabled,
-                                 nodes=self.nodes).start()
-            
-        xdr_builds = util.Future(self.cluster.info_build_version,
-                nodes=self.nodes).start()
+        xdr_enable = util.Future(self.cluster.is_XDR_enabled, nodes=self.nodes).start()
+
+        xdr_builds = util.Future(
+            self.cluster.info_build_version, nodes=self.nodes
+        ).start()
 
         stats = stats.result()
         xdr_builds = xdr_builds.result()
@@ -278,40 +326,60 @@ class InfoController(BasicCommandController):
 
             xdr5_stats = temp
 
-            if self.mods['for']:
-                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+            if self.mods["for"]:
+                matches = util.filter_list(list(xdr5_stats.keys()), self.mods["for"])
 
-            futures = [ 
-                util.Future(self.view.info_XDR, xdr5_stats[dc], xdr_builds,
-                            xdr_enable, self.cluster, title="XDR Information %s" % dc,
-                            **self.mods)
-                for dc in xdr5_stats if not self.mods['for'] or dc in matches
+            futures = [
+                util.Future(
+                    self.view.info_XDR,
+                    xdr5_stats[dc],
+                    xdr_builds,
+                    xdr_enable,
+                    self.cluster,
+                    title="XDR Information %s" % dc,
+                    **self.mods
+                )
+                for dc in xdr5_stats
+                if not self.mods["for"] or dc in matches
             ]
 
         if old_xdr_stats:
-            futures.append(util.Future(self.view.info_old_XDR, old_xdr_stats,
-                        xdr_builds, xdr_enable, self.cluster, **self.mods))
+            futures.append(
+                util.Future(
+                    self.view.info_old_XDR,
+                    old_xdr_stats,
+                    xdr_builds,
+                    xdr_enable,
+                    self.cluster,
+                    **self.mods
+                )
+            )
 
         return futures
 
-    @CommandHelp('Displays summary information for Secondary Indexes (SIndex).')
+    @CommandHelp("Displays summary information for Secondary Indexes (SIndex).")
     def do_sindex(self, line):
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
-        return util.Future(self.view.info_sindex, sindex_stats, self.cluster,
-                           **self.mods)
+        return util.Future(
+            self.view.info_sindex, sindex_stats, self.cluster, **self.mods
+        )
 
 
-@CommandHelp('The "namespace" command provides summary tables for various aspects',
-             'of Aerospike namespaces.')
+@CommandHelp(
+    'The "namespace" command provides summary tables for various aspects',
+    "of Aerospike namespaces.",
+)
 class InfoNamespaceController(BasicCommandController):
     def __init__(self, get_futures=False):
-        self.modifiers = set(['with'])
+        self.modifiers = set(["with"])
         self.get_futures = get_futures
 
-    @CommandHelp('Displays usage and objects information for namespaces')
+    @CommandHelp("Displays usage and objects information for namespaces")
     def _do_default(self, line):
-        actions = [util.Future(self.do_usage, line).start(),
-                   util.Future(self.do_object, line).start()]
+        actions = [
+            util.Future(self.do_usage, line).start(),
+            util.Future(self.do_object, line).start(),
+        ]
 
         if self.get_futures:
             # Wrapped to prevent base class from calling result.
@@ -319,39 +387,40 @@ class InfoNamespaceController(BasicCommandController):
 
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays usage information for each namespace.')
+    @CommandHelp("Displays usage information for each namespace.")
     def do_usage(self, line):
         stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
-        return util.Future(self.view.info_namespace_usage, stats, self.cluster,
-                           **self.mods)
+        return util.Future(
+            self.view.info_namespace_usage, stats, self.cluster, **self.mods
+        )
 
-    @CommandHelp('Displays object information for each namespace.')
+    @CommandHelp("Displays object information for each namespace.")
     def do_object(self, line):
         stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
-        return util.Future(self.view.info_namespace_object, stats, self.cluster,
-                           **self.mods)
+        return util.Future(
+            self.view.info_namespace_object, stats, self.cluster, **self.mods
+        )
 
 
 @CommandHelp(
     '"asinfo" provides raw access to the info protocol.',
-    '  Options:',
-    '    -v <command>   - The command to execute',
-    '    -p <port>      - Port to use in case of XDR info command and XDR is',
-    '                     not in asd',
+    "  Options:",
+    "    -v <command>   - The command to execute",
+    "    -p <port>      - Port to use in case of XDR info command and XDR is",
+    "                     not in asd",
     '    -l             - Replace semicolons ";" with newlines. If output does',
     '                     not contain semicolons "-l" will attempt to use',
     '                     colons ":" followed by commas ",".',
-    '    --no_node_name - Force to display output without printing node names.'
+    "    --no_node_name - Force to display output without printing node names.",
 )
 class ASInfoController(BasicCommandController):
-
     def __init__(self):
-        self.modifiers = set(['with', 'like'])
+        self.modifiers = set(["with", "like"])
 
-    @CommandHelp('Executes an info command.')
+    @CommandHelp("Executes an info command.")
     def _do_default(self, line):
         mods = self.parse_modifiers(line)
-        line = mods['line']
+        line = mods["line"]
         nodes = self.nodes
 
         value = None
@@ -364,27 +433,29 @@ class ASInfoController(BasicCommandController):
         try:
             while tline:
                 word = tline.pop(0)
-                if word == '-v':
+                if word == "-v":
                     value = tline.pop(0)
-                elif word == '-l':
+                elif word == "-l":
                     line_sep = True
-                elif word == '-p':
+                elif word == "-p":
                     port = tline.pop(0)
-                    if port == '3004':  # ugly Hack
+                    if port == "3004":  # ugly Hack
                         xdr = True
-                elif word == '--no_node_name':
+                elif word == "--no_node_name":
                     show_node_name = False
                 else:
                     raise ShellException(
-                        "Do not understand '%s' in '%s'" % (word, " ".join(line)))
+                        "Do not understand '%s' in '%s'" % (word, " ".join(line))
+                    )
         except Exception:
             self.logger.warning(
-                "Do not understand '%s' in '%s'" % (word, " ".join(line)))
+                "Do not understand '%s' in '%s'" % (word, " ".join(line))
+            )
             return
         if value is not None:
             try:
                 # python3
-                value = value.translate(str.maketrans('','',"'\""))
+                value = value.translate(str.maketrans("", "", "'\""))
             except:
                 # python2
                 value = value.translate(None, "'\"")
@@ -393,22 +464,21 @@ class ASInfoController(BasicCommandController):
         else:
             results = self.cluster.info(value, nodes=nodes)
 
-        return util.Future(self.view.asinfo, results, line_sep, show_node_name,
-                           self.cluster, **mods)
+        return util.Future(
+            self.view.asinfo, results, line_sep, show_node_name, self.cluster, **mods
+        )
 
 
 @CommandHelp('"show" is used to display Aerospike Statistics configuration.')
 class ShowController(BasicCommandController):
-
     def __init__(self):
         self.controller_map = {
-            'config': ShowConfigController,
-            'statistics': ShowStatisticsController,
-            'latency': ShowLatencyController,
-            'latencies': ShowLatenciesController,
-            'distribution': ShowDistributionController,
-            'mapping': ShowMappingController,
-            'pmap': ShowPmapController
+            "config": ShowConfigController,
+            "statistics": ShowStatisticsController,
+            "latencies": ShowLatenciesController,
+            "distribution": ShowDistributionController,
+            "mapping": ShowMappingController,
+            "pmap": ShowPmapController,
         }
 
         self.modifiers = set()
@@ -417,55 +487,79 @@ class ShowController(BasicCommandController):
         self.execute_help(line)
 
 
-@CommandHelp('"distribution" is used to show the distribution of object sizes',
-             'and time to live for node and a namespace.')
+@CommandHelp(
+    '"distribution" is used to show the distribution of object sizes',
+    "and time to live for node and a namespace.",
+)
 class ShowDistributionController(BasicCommandController):
-
     def __init__(self):
-        self.modifiers = set(['with', 'for'])
+        self.modifiers = set(["with", "for"])
         self.getter = GetDistributionController(self.cluster)
 
-
-    @CommandHelp('Shows the distributions of Time to Live and Object Size')
+    @CommandHelp("Shows the distributions of Time to Live and Object Size")
     def _do_default(self, line):
-        actions = (util.Future(self.do_time_to_live, line[:]).start(),
-                util.Future(self.do_object_size, line[:]).start())
+        actions = (
+            util.Future(self.do_time_to_live, line[:]).start(),
+            util.Future(self.do_object_size, line[:]).start(),
+        )
 
         return [action.result() for action in actions]
 
-    @CommandHelp('Shows the distribution of TTLs for namespaces')
+    @CommandHelp("Shows the distribution of TTLs for namespaces")
     def do_time_to_live(self, line):
 
-        histogram = self.getter.do_distribution('ttl', nodes=self.nodes)
+        histogram = self.getter.do_distribution("ttl", nodes=self.nodes)
 
-        return util.Future(self.view.show_distribution, 'TTL Distribution',
-                histogram, 'Seconds', 'ttl', self.cluster, like=self.mods['for'])
+        return util.Future(
+            self.view.show_distribution,
+            "TTL Distribution",
+            histogram,
+            "Seconds",
+            "ttl",
+            self.cluster,
+            like=self.mods["for"],
+        )
 
-
-    @CommandHelp('Shows the distribution of namespace Eviction TTLs for server version 3.7.5 and below')
+    @CommandHelp(
+        "Shows the distribution of namespace Eviction TTLs for server version 3.7.5 and below"
+    )
     def do_eviction(self, line):
 
-        histogram = self.getter.do_distribution('evict', nodes=self.nodes)
+        histogram = self.getter.do_distribution("evict", nodes=self.nodes)
 
-        return util.Future(self.view.show_distribution, 'Eviction Distribution',
-                histogram, 'Seconds', 'evict', self.cluster, like=self.mods['for'])
+        return util.Future(
+            self.view.show_distribution,
+            "Eviction Distribution",
+            histogram,
+            "Seconds",
+            "evict",
+            self.cluster,
+            like=self.mods["for"],
+        )
 
-    @CommandHelp('Shows the distribution of Object sizes for namespaces',
-                 '  Options:',
-                 '    -b               - Force to show byte wise distribution of Object Sizes.',
-                 '                       Default is rblock wise distribution in percentage',
-                 '    -k <buckets>     - Maximum number of buckets to show if -b is set.',
-                 '                       It distributes objects in same size k buckets and ',
-                 '                       display only buckets which has objects in it. Default is 5.')
+    @CommandHelp(
+        "Shows the distribution of Object sizes for namespaces",
+        "  Options:",
+        "    -b               - Force to show byte wise distribution of Object Sizes.",
+        "                       Default is rblock wise distribution in percentage",
+        "    -k <buckets>     - Maximum number of buckets to show if -b is set.",
+        "                       It distributes objects in same size k buckets and ",
+        "                       display only buckets which has objects in it. Default is 5.",
+    )
     def do_object_size(self, line):
 
-        byte_distribution = util.check_arg_and_delete_from_mods(line=line,
-                arg="-b", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        byte_distribution = util.check_arg_and_delete_from_mods(
+            line=line, arg="-b", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        bucket_count = util.get_arg_and_delete_from_mods(line=line,
-                arg="-k", return_type=int, default=5, modifiers=self.modifiers,
-                mods=self.mods)
+        bucket_count = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-k",
+            return_type=int,
+            default=5,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         if not byte_distribution:
             histogram = self.getter.do_object_size(nodes=self.nodes)
@@ -475,87 +569,57 @@ class ShowDistributionController(BasicCommandController):
                 units = common.get_histogram_units(histogram)
 
                 if units is None:
-                    units = 'Record Blocks'
+                    units = "Record Blocks"
             except Exception as e:
                 self.logger.error(e)
                 return
 
-            return util.Future(self.view.show_distribution,
-                    'Object Size Distribution', histogram, units,
-                    'objsz', self.cluster, like=self.mods['for'])
+            return util.Future(
+                self.view.show_distribution,
+                "Object Size Distribution",
+                histogram,
+                units,
+                "objsz",
+                self.cluster,
+                like=self.mods["for"],
+            )
 
+        histogram = self.getter.do_object_size(
+            byte_distribution=True, bucket_count=bucket_count, nodes=self.nodes
+        )
 
-        histogram = self.getter.do_object_size(byte_distribution = True, bucket_count=bucket_count, nodes=self.nodes)
-
-        histogram_name = 'objsz'
-        title = 'Object Size Distribution'
-        unit = 'Bytes'
+        histogram_name = "objsz"
+        title = "Object Size Distribution"
+        unit = "Bytes"
         set_bucket_count = True
 
-        return util.Future(self.view.show_object_distribution, title,
-                histogram, unit, histogram_name, bucket_count,
-                set_bucket_count, self.cluster, like=self.mods['for'])
+        return util.Future(
+            self.view.show_object_distribution,
+            title,
+            histogram,
+            unit,
+            histogram_name,
+            bucket_count,
+            set_bucket_count,
+            self.cluster,
+            like=self.mods["for"],
+        )
 
-class ShowLatencyBaseController(BasicCommandController):
+
+@CommandHelp("latencies is used to show server latency histograms")
+class ShowLatenciesController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(["with", "like", "for"])
+        self.latency_getter = GetLatenciesController(self.cluster)
+
     def get_namespace_set(self):
         namespace_set = set()
-        if self.mods['for']:
-            namespaces = self.cluster.info_namespaces(nodes=self.nodes)
-            namespaces = list(namespaces.values())
-            for namespace in namespaces:
-                if isinstance(namespace, Exception):
-                    continue
-                namespace_set.update(namespace)
-            namespace_set = set(
-                util.filter_list(list(namespace_set), self.mods['for']))
+
+        if self.mods["for"]:
+            namespace_set = self.latency_getter.get_namespace_set(self.nodes)
+            namespace_set = set(util.filter_list(list(namespace_set), self.mods["for"]))
+
         return namespace_set
-
-    # Returns a tuple (latencies, latency) of lists that contain nodes that support
-    # latencies cmd and nodes that do not.
-    def get_latencies_and_latency_nodes(self):
-        latencies_nodes = []
-        latency_nodes = []
-        builds = util.Future(self.cluster.info_build_version, nodes=self.nodes).start()
-        builds = builds.result()
-        for node, build in builds.items():
-            if isinstance(build, Exception):
-                continue
-            if is_new_latencies_version(build):
-                latencies_nodes.append(node)
-            else:
-                latency_nodes.append(node)
-        return latencies_nodes, latency_nodes
-
-    # Merges latency tables into latencies table.  This is needed because a 
-    # latencies table can have different columns.
-    def merge_latencies_and_latency_tables(self, latencies_table, latency_table):
-        if not latencies_table:
-            return latency_table
-        elif not latency_table:
-            return latencies_table
-
-        # Make and entry in latencies_table for every entry in latency_table
-        for latencies_address in latencies_table:
-            if latencies_table[latencies_address]:
-                for latency_address in latency_table:
-                    # Create entry with same schema as latencies_table
-                    latencies_table[latency_address] = copy.deepcopy(latencies_table[latencies_address])
-                break
-        
-        # Go through latency data and copy appropriate values over
-        for latency_address in latency_table:
-            latencies_entry = latencies_table[latency_address]
-            for histogram_name in latencies_entry:
-                histogram_data = latencies_entry[histogram_name]
-                if 'total' in histogram_data:
-                    total = histogram_data['total']
-                    self._copy_latency_data_to_latencies_table(latencies_table, latency_table, [latency_address, histogram_name, 'total'])
-                if 'namespace' in histogram_data:
-                    namespaces = histogram_data['namespace']
-                    for namespace in namespaces:
-                        self._copy_latency_data_to_latencies_table(latencies_table, latency_table, [latency_address, histogram_name, 'namespace', namespace])
-
-        return latencies_table
 
     def sort_data_by_histogram_name(self, latency_data):
         hist_latency = {}
@@ -569,476 +633,586 @@ class ShowLatencyBaseController(BasicCommandController):
                     hist_latency[hist_name][node_id] = data
         return hist_latency
 
-    # Given a list of keys, returns the nested value in a dict.
-    def _get_value(self, d, context):
-        ref = d
-        for key in context:
-            if key not in ref:
-                return None
-            ref = ref[key]
-        return ref
-
-    def _copy_latency_data_to_latencies_table(self, latencies_table, latency_table, context):
-        latencies_data = self._get_value(latencies_table, context)
-        latency_data = self._get_value(latency_table, context)
-        
-        # Make every new entry start out with 'N/A' for all values
-        for idx in range(len(latencies_data["values"])):
-            for jdx in range(len(latencies_data['values'][idx])):
-                latencies_data['values'][idx][jdx] = 'N/A'
-
-        if latency_data is None:
-            return
-
-        # See if any columns in latencies_data match latency_data and copy them over.
-        for col_idx, col in enumerate(latencies_data['columns']):
-            if col in latency_data['columns']:
-                val_idx = latency_data['columns'].index(col)
-                for vals_idx in range(len(latencies_data['values'])):
-                    latencies_data['values'][vals_idx][col_idx] = latency_data['values'][vals_idx][val_idx]
-
-class ShowLatencyController(ShowLatencyBaseController):
-
-    def __init__(self):
-        self.modifiers = set(['with', 'like', 'for'])
-
-    # It would be nice if the  'show latency' help section could be completely removed for servers 5.1+
-    @CommandHelp('Displays latency information for Aerospike cluster.',
-                 '  Options:',
-                 '    -f <int>     - Number of seconds (before now) to look back to.',
-                 '                   default: Minimum to get last slice',
-                 '    -d <int>     - Duration, the number of seconds from start to search.',
-                 '                   default: everything to present',
-                 '    -t <int>     - Interval in seconds to analyze.',
-                 '                   default: 0, everything as one slice',
-                 '    -m           - Set to display the output group by machine names.')
-    def _do_default(self, line):
-
-        back = util.get_arg_and_delete_from_mods(line=line, arg="-f",
-                return_type=int, default=None, modifiers=self.modifiers,
-                mods=self.mods)
-
-        duration = util.get_arg_and_delete_from_mods(line=line, arg="-d",
-                return_type=int, default=None, modifiers=self.modifiers,
-                mods=self.mods)
-
-        slice_tm = util.get_arg_and_delete_from_mods(line=line, arg="-t",
-                return_type=int, default=None, modifiers=self.modifiers,
-                mods=self.mods)
-
-        machine_wise_display = util.check_arg_and_delete_from_mods(line=line,
-                arg="-m", default=False, modifiers=self.modifiers,
-                mods=self.mods)
-
-        namespace_set = self.get_namespace_set()
-        latencies_nodes, latency_nodes = self.get_latencies_and_latency_nodes()
-        latency = None
-        message = None
-        # all nodes support "show latencies"
-        if len(latency_nodes) == 0:
-            latency = util.Future(self.cluster.info_latencies,
-                nodes=self.nodes, ns_set=namespace_set).start()
-            latency = latency.result()
-            message = [
-                "WARNING: 'show latency' is deprecated on aerospike versions >= 5.1",
-                "Running 'show latencies' instead."
-            ]
-        # none of the nodes support "show latencies"
-        elif len(latencies_nodes) == 0:
-            latency = util.Future(self.cluster.info_latency,
-            nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
-            ns_set=namespace_set).start()
-            latency = latency.result()
-        else:
-            # Some nodes support "show latencies" and some do not
-            latency = util.Future(self.cluster.info_latency, nodes=latency_nodes, 
-            ns_set=namespace_set).start()
-            latency = latency.result()
-            latencies = self.cluster.info_latencies(
-                nodes=latencies_nodes, ns_set=namespace_set)
-            latency = self.merge_latencies_and_latency_tables(latencies, latency)
-            message = [
-                "WARNING: 'show latency' is deprecated on aerospike versions >= 5.1",
-                "Running 'show latencies' instead for nodes running such versions."
-            ]
-
-        # Sort data by operation type rather than by node address
-        if not machine_wise_display:
-            latency = self.sort_data_by_histogram_name(latency)
-
-        self.view.show_latency(latency, self.cluster,
-                machine_wise_display=machine_wise_display,
-                show_ns_details=True if namespace_set else False, message=message, **self.mods)
-
-
-class ShowLatenciesController(ShowLatencyBaseController):
-
-    def __init__(self):
-        self.modifiers = set(['with', 'like', 'for'])
-
     # It would be nice if the  'show latencies' help section could be completely removed for servers prior to 5.1
-    @CommandHelp('Displays latency information for Aerospike cluster.',
-                 '  Options:',
-                 '    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)',
-                 '                   default: 3'
-                 '    -b           - Number of latency buckets to display.',
-                 '                   default: 3'
-                 '    -v           - Set to display verbose output of optionally configured histograms.',
-                 '    -m           - Set to display the output group by machine names.')
+    @CommandHelp(
+        "Displays latency information for Aerospike cluster.",
+        "  Options:",
+        "    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)",
+        "                   default: 3"
+        "    -b           - Number of latency buckets to display.",
+        "                   default: 3"
+        "    -v           - Set to display verbose output of optionally configured histograms.",
+        "    -m           - Set to display the output group by machine names.",
+    )
     def _do_default(self, line):
-        increment = util.get_arg_and_delete_from_mods(line=line, arg="-e",
-                return_type=int, default=3, modifiers=self.modifiers,
-                mods=self.mods)
+        increment = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-e",
+            return_type=int,
+            default=3,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        buckets = util.get_arg_and_delete_from_mods(line=line, arg="-b",
-                return_type=int, default=3, modifiers=self.modifiers,
-                mods=self.mods)
+        buckets = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-b",
+            return_type=int,
+            default=3,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        verbose = util.check_arg_and_delete_from_mods(line=line, 
-                arg="-v", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        verbose = util.check_arg_and_delete_from_mods(
+            line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        machine_wise_display = util.check_arg_and_delete_from_mods(line=line,
-                arg="-m", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        machine_wise_display = util.check_arg_and_delete_from_mods(
+            line=line, arg="-m", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
         namespace_set = self.get_namespace_set()
-        latencies_nodes, latency_nodes = self.get_latencies_and_latency_nodes()
-        latencies = None
+        (
+            latencies_nodes,
+            latency_nodes,
+        ) = self.latency_getter.get_latencies_and_latency_nodes(self.nodes)
+        latencies = self.latency_getter.get_all(
+            self.nodes, buckets, increment, verbose, namespace_set
+        )
         message = None
-        # all nodes support "show latencies"
-        if len(latency_nodes) == 0:
-            latencies = util.Future(self.cluster.info_latencies,
-                nodes=self.nodes, buckets=buckets, exponent_increment=increment,
-                verbose=verbose, ns_set=namespace_set).start()
-            latencies = latencies.result()
+
         # No nodes support "show latencies"
-        elif len(latencies_nodes) == 0:
-            latencies = {}
+        if len(latencies_nodes) == 0:
             message = [
-                "WARNING: 'show latencies' is not supported on aerospike versions <= 5.0",
-                "Use 'show latency' instead."
+                "WARNING: 'show latencies' is not fully supported on aerospike versions <= 5.0",
             ]
-        else:
-            # Some nodes support latencies and some do not
-            latency = util.Future(self.cluster.info_latency, nodes=latency_nodes,
-                ns_set=namespace_set).start()
-            latencies = util.Future(self.cluster.info_latencies,
-                nodes=latencies_nodes, buckets=buckets, exponent_increment=increment,
-                verbose=verbose, ns_set=namespace_set).start()
-            latency = latency.result()
-            latencies = latencies.result()
-            latencies = self.merge_latencies_and_latency_tables(latencies, latency)
+        # Some nodes support latencies and some do not
+        elif len(latency_nodes) != 0:
             message = [
-                "WARNING: 'show latencies' is not supported on aerospike versions <= 5.0",
-                "Running 'show latency' instead for nodes running such versions."
+                "WARNING: 'show latencies' is not fully supported on aerospike versions <= 5.0",
             ]
-            
+
         # Sort data by operation type rather than by node address
         if not machine_wise_display:
             latencies = self.sort_data_by_histogram_name(latencies)
 
-        self.view.show_latency(latencies, self.cluster,
-                machine_wise_display=machine_wise_display,
-                show_ns_details=True if namespace_set else False, message=message, **self.mods)
+        self.view.show_latency(
+            latencies,
+            self.cluster,
+            machine_wise_display=machine_wise_display,
+            show_ns_details=True if namespace_set else False,
+            message=message,
+            **self.mods
+        )
+
 
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(BasicCommandController):
-
     def __init__(self):
-        self.modifiers = set(['with', 'like', 'diff', 'for'])
+        self.modifiers = set(["with", "like", "diff", "for"])
         self.getter = GetConfigController(self.cluster)
 
-    @CommandHelp('Displays service, network, and namespace configuration',
-                 '  Options:',
-                 '    -r <int>     - Repeating output table title and row header after every r columns.',
-                 '                   default: 0, no repetition.',
-                 '    -flip        - Flip output table to show Nodes on Y axis and config on X axis.')
+    @CommandHelp(
+        "Displays service, network, and namespace configuration",
+        "  Options:",
+        "    -r <int>     - Repeating output table title and row header after every r columns.",
+        "                   default: 0, no repetition.",
+        "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     def _do_default(self, line):
-        actions = (util.Future(self.do_service, line[:]).start(),
-                   util.Future(self.do_network, line[:]).start(),
-                   util.Future(self.do_namespace, line[:]).start())
+        actions = (
+            util.Future(self.do_service, line[:]).start(),
+            util.Future(self.do_network, line[:]).start(),
+            util.Future(self.do_namespace, line[:]).start(),
+        )
 
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays service configuration')
+    @CommandHelp("Displays service configuration")
     def do_service(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(
-            line=line, arg="-r",
+            line=line,
+            arg="-r",
             return_type=int,
             default=0,
             modifiers=self.modifiers,
-            mods=self.mods)
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         service_configs = self.getter.get_service(nodes=self.nodes)
 
-        return util.Future(self.view.show_config, "Service Configuration",
-                           service_configs, self.cluster,
-                           title_every_nth=title_every_nth, flip_output=flip_output,
-                           **self.mods)
+        return util.Future(
+            self.view.show_config,
+            "Service Configuration",
+            service_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods
+        )
 
-    @CommandHelp('Displays network configuration')
+    @CommandHelp("Displays network configuration")
     def do_network(self, line):
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         network_configs = self.getter.get_network(nodes=self.nodes)
 
-        return util.Future(self.view.show_config, "Network Configuration",
-                network_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
-                **self.mods)
+        return util.Future(
+            self.view.show_config,
+            "Network Configuration",
+            network_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods
+        )
 
-    @CommandHelp('Displays namespace configuration')
+    @CommandHelp("Displays namespace configuration")
     def do_namespace(self, line):
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        ns_configs = self.getter.get_namespace(nodes=self.nodes, for_mods=self.mods['for'])
+        ns_configs = self.getter.get_namespace(
+            nodes=self.nodes, for_mods=self.mods["for"]
+        )
 
-        return [util.Future(self.view.show_config,
-            "%s Namespace Configuration" % (ns), configs, self.cluster,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-                for ns, configs in list(ns_configs.items())]
+        return [
+            util.Future(
+                self.view.show_config,
+                "%s Namespace Configuration" % (ns),
+                configs,
+                self.cluster,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                **self.mods
+            )
+            for ns, configs in list(ns_configs.items())
+        ]
 
-    @CommandHelp('Displays XDR configuration')
+    @CommandHelp("Displays XDR configuration")
     def do_xdr(self, line):
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         xdr_configs = self.getter.get_xdr(nodes=self.nodes)
 
-        return util.Future(self.view.show_config, "XDR Configuration",
-                xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
-                **self.mods)
+        return util.Future(
+            self.view.show_config,
+            "XDR Configuration",
+            xdr_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods
+        )
 
-    @CommandHelp('Displays datacenter configuration')
+    @CommandHelp("Displays datacenter configuration")
     def do_dc(self, line):
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         dc_configs = self.getter.get_dc(nodes=self.nodes)
 
-        return [util.Future(self.view.show_config,
-            "%s DC Configuration" % (dc), configs, self.cluster,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for dc, configs in list(dc_configs.items())]
+        return [
+            util.Future(
+                self.view.show_config,
+                "%s DC Configuration" % (dc),
+                configs,
+                self.cluster,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                **self.mods
+            )
+            for dc, configs in list(dc_configs.items())
+        ]
 
-    @CommandHelp('Displays Cluster configuration')
+    @CommandHelp("Displays Cluster configuration")
     def do_cluster(self, line):
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         cl_configs = self.getter.get_cluster(nodes=self.nodes)
 
-        return util.Future(self.view.show_config, "Cluster Configuration",
-                cl_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
-                **self.mods)
+        return util.Future(
+            self.view.show_config,
+            "Cluster Configuration",
+            cl_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods
+        )
 
 
-@CommandHelp('"show mapping" is used to display Aerospike mapping from IP to Node_id and Node_id to IPs')
+@CommandHelp(
+    '"show mapping" is used to display Aerospike mapping from IP to Node_id and Node_id to IPs'
+)
 class ShowMappingController(BasicCommandController):
-
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set(["like"])
 
-    @CommandHelp('Displays mapping IPs to Node_id and Node_id to IPs')
+    @CommandHelp("Displays mapping IPs to Node_id and Node_id to IPs")
     def _do_default(self, line):
-        actions = (util.Future(self.do_ip, line).start(),
-                   util.Future(self.do_node, line).start())
+        actions = (
+            util.Future(self.do_ip, line).start(),
+            util.Future(self.do_node, line).start(),
+        )
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays IP to Node_id mapping')
+    @CommandHelp("Displays IP to Node_id mapping")
     def do_ip(self, line):
         ip_to_node_map = self.cluster.get_IP_to_node_map()
-        return util.Future(self.view.show_mapping, "IP", "NODE-ID",
-                ip_to_node_map, **self.mods)
+        return util.Future(
+            self.view.show_mapping, "IP", "NODE-ID", ip_to_node_map, **self.mods
+        )
 
-    @CommandHelp('Displays Node_id to IPs mapping')
+    @CommandHelp("Displays Node_id to IPs mapping")
     def do_node(self, line):
         node_to_ip_map = self.cluster.get_node_to_IP_map()
-        return util.Future(self.view.show_mapping, "NODE-ID", "IPs",
-                node_to_ip_map, **self.mods)
+        return util.Future(
+            self.view.show_mapping, "NODE-ID", "IPs", node_to_ip_map, **self.mods
+        )
 
 
-@CommandHelp('Displays statistics for Aerospike components.')
+@CommandHelp("Displays statistics for Aerospike components.")
 class ShowStatisticsController(BasicCommandController):
-
     def __init__(self):
-        self.modifiers = set(['with', 'like', 'for'])
+        self.modifiers = set(["with", "like", "for"])
         self.getter = GetStatisticsController(self.cluster)
 
-    @CommandHelp('Displays bin, set, service, and namespace statistics',
-                 '  Options:',
-                 '    -t           - Set to show total column at the end. It contains node wise sum for statistics.',
-                 '    -r <int>     - Repeating output table title and row header after every r columns.',
-                 '                   default: 0, no repetition.',
-                 '    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.')
+    @CommandHelp(
+        "Displays bin, set, service, and namespace statistics",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r <int>     - Repeating output table title and row header after every r columns.",
+        "                   default: 0, no repetition.",
+        "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     def _do_default(self, line):
 
-        actions = (util.Future(self.do_bins, line[:]).start(),
-                   util.Future(self.do_sets, line[:]).start(),
-                   util.Future(self.do_service, line[:]).start(),
-                   util.Future(self.do_namespace, line[:]).start())
+        actions = (
+            util.Future(self.do_bins, line[:]).start(),
+            util.Future(self.do_sets, line[:]).start(),
+            util.Future(self.do_service, line[:]).start(),
+            util.Future(self.do_namespace, line[:]).start(),
+        )
 
         return [action.result() for action in actions]
 
-    @CommandHelp('Displays service statistics')
+    @CommandHelp("Displays service statistics")
     def do_service(self, line):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         service_stats = self.getter.get_service(nodes=self.nodes)
 
-        return util.Future(self.view.show_stats, "Service Statistics",
-                service_stats, self.cluster, show_total=show_total,
-                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
+        return util.Future(
+            self.view.show_stats,
+            "Service Statistics",
+            service_stats,
+            self.cluster,
+            show_total=show_total,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods
+        )
 
-    @CommandHelp('Displays namespace statistics')
+    @CommandHelp("Displays namespace statistics")
     def do_namespace(self, line):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line, arg="-r",
-                return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        ns_stats = self.getter.get_namespace(nodes=self.nodes, for_mods=self.mods['for'])
+        ns_stats = self.getter.get_namespace(
+            nodes=self.nodes, for_mods=self.mods["for"]
+        )
 
-        return [util.Future(self.view.show_stats,
-            "%s Namespace Statistics" % (namespace), ns_stats[namespace],
-            self.cluster, show_total=show_total,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for namespace in sorted(ns_stats.keys())]
+        return [
+            util.Future(
+                self.view.show_stats,
+                "%s Namespace Statistics" % (namespace),
+                ns_stats[namespace],
+                self.cluster,
+                show_total=show_total,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                **self.mods
+            )
+            for namespace in sorted(ns_stats.keys())
+        ]
 
-    @CommandHelp('Displays sindex statistics')
+    @CommandHelp("Displays sindex statistics")
     def do_sindex(self, line):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        sindex_stats = self.getter.get_sindex(nodes=self.nodes, for_mods=self.mods['for'])
+        sindex_stats = self.getter.get_sindex(
+            nodes=self.nodes, for_mods=self.mods["for"]
+        )
 
-        return [util.Future(self.view.show_stats,
-            "%s Sindex Statistics" % (ns_set_sindex),
-            sindex_stats[ns_set_sindex], self.cluster, show_total=show_total,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for ns_set_sindex in sorted(sindex_stats.keys())]
+        return [
+            util.Future(
+                self.view.show_stats,
+                "%s Sindex Statistics" % (ns_set_sindex),
+                sindex_stats[ns_set_sindex],
+                self.cluster,
+                show_total=show_total,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                **self.mods
+            )
+            for ns_set_sindex in sorted(sindex_stats.keys())
+        ]
 
-    @CommandHelp('Displays set statistics')
+    @CommandHelp("Displays set statistics")
     def do_sets(self, line):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        set_stats = self.getter.get_sets(nodes=self.nodes, for_mods=self.mods['for'])
+        set_stats = self.getter.get_sets(nodes=self.nodes, for_mods=self.mods["for"])
 
-        return [util.Future(self.view.show_stats,
-            "%s %s Set Statistics" % (namespace, set_name), stats,
-            self.cluster, show_total=show_total,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for (namespace, set_name), stats in list(set_stats.items())]
+        return [
+            util.Future(
+                self.view.show_stats,
+                "%s %s Set Statistics" % (namespace, set_name),
+                stats,
+                self.cluster,
+                show_total=show_total,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                **self.mods
+            )
+            for (namespace, set_name), stats in list(set_stats.items())
+        ]
 
-    @CommandHelp('Displays bin statistics')
+    @CommandHelp("Displays bin statistics")
     def do_bins(self, line):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        new_bin_stats = self.getter.get_bins(nodes=self.nodes, for_mods=self.mods['for'])
+        new_bin_stats = self.getter.get_bins(
+            nodes=self.nodes, for_mods=self.mods["for"]
+        )
 
-        return [util.Future(self.view.show_stats,
-            "%s Bin Statistics" % (namespace), new_bin_stat, self.cluster,
-            show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for namespace, new_bin_stat in list(new_bin_stats.items())]
+        return [
+            util.Future(
+                self.view.show_stats,
+                "%s Bin Statistics" % (namespace),
+                new_bin_stat,
+                self.cluster,
+                show_total=show_total,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                **self.mods
+            )
+            for namespace, new_bin_stat in list(new_bin_stats.items())
+        ]
 
-    @CommandHelp('Displays XDR statistics')
+    @CommandHelp("Displays XDR statistics")
     def do_xdr(self, line):
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        xdr_builds = util.Future(self.cluster.info_build_version,
-                nodes=self.nodes).start()
+        xdr_builds = util.Future(
+            self.cluster.info_build_version, nodes=self.nodes
+        ).start()
 
         xdr_stats = util.Future(self.getter.get_xdr, nodes=self.nodes).start()
 
@@ -1067,46 +1241,76 @@ class ShowStatisticsController(BasicCommandController):
                     if dc not in temp:
                         temp[dc] = {}
                     temp[dc][node] = xdr5_stats[node][dc]
-            
+
             xdr5_stats = temp
 
-            if self.mods['for']:
-                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+            if self.mods["for"]:
+                matches = util.filter_list(list(xdr5_stats.keys()), self.mods["for"])
 
             futures = [
-                    util.Future(self.view.show_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],
-                                self.cluster, show_total=show_total,
-                                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-                    for dc in xdr5_stats if not self.mods['for'] or dc in matches
-                ]
+                util.Future(
+                    self.view.show_stats,
+                    "XDR Statistics %s" % dc,
+                    xdr5_stats[dc],
+                    self.cluster,
+                    show_total=show_total,
+                    title_every_nth=title_every_nth,
+                    flip_output=flip_output,
+                    **self.mods
+                )
+                for dc in xdr5_stats
+                if not self.mods["for"] or dc in matches
+            ]
 
         if old_xdr_stats:
-            futures.append(util.Future(self.view.show_stats, "XDR Statistics", old_xdr_stats,
-                                        self.cluster, show_total=show_total,
-                                        title_every_nth=title_every_nth, flip_output=flip_output, **self.mods))
+            futures.append(
+                util.Future(
+                    self.view.show_stats,
+                    "XDR Statistics",
+                    old_xdr_stats,
+                    self.cluster,
+                    show_total=show_total,
+                    title_every_nth=title_every_nth,
+                    flip_output=flip_output,
+                    **self.mods
+                )
+            )
 
         return futures
 
     # pre 5.0
-    @CommandHelp('Displays datacenter statistics.',
-                'Replaced by "show statistics xdr" for server >= 5.0.')
+    @CommandHelp(
+        "Displays datacenter statistics.",
+        'Replaced by "show statistics xdr" for server >= 5.0.',
+    )
     def do_dc(self, line):
 
-        show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        title_every_nth = util.get_arg_and_delete_from_mods(line=line,
-                arg="-r", return_type=int, default=0, modifiers=self.modifiers,
-                mods=self.mods)
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        flip_output = util.check_arg_and_delete_from_mods(line=line,
-                arg="-flip", default=False, modifiers=self.modifiers,
-                mods=self.mods)
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         dc_stats = util.Future(self.getter.get_dc, nodes=self.nodes).start()
 
-        xdr_builds = util.Future(self.cluster.info_build_version,
-                nodes=self.nodes).start()
+        xdr_builds = util.Future(
+            self.cluster.info_build_version, nodes=self.nodes
+        ).start()
 
         dc_stats = dc_stats.result()
         xdr_builds = xdr_builds.result()
@@ -1125,24 +1329,37 @@ class ShowStatisticsController(BasicCommandController):
                     nodes_running_v5_or_higher = True
                 else:
                     nodes_running_v49_or_lower = True
-        
+
         futures = []
 
         if nodes_running_v49_or_lower:
-            futures = [util.Future(self.view.show_config, "%s DC Statistics" % (dc),
-                stats, self.cluster, show_total=show_total,
-                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-                for dc, stats in list(dc_stats.items())]
-        
+            futures = [
+                util.Future(
+                    self.view.show_config,
+                    "%s DC Statistics" % (dc),
+                    stats,
+                    self.cluster,
+                    show_total=show_total,
+                    title_every_nth=title_every_nth,
+                    flip_output=flip_output,
+                    **self.mods
+                )
+                for dc, stats in list(dc_stats.items())
+            ]
+
         if nodes_running_v5_or_higher:
-            futures.append(util.Future(self.view.print_result, 
-            "WARNING: 'show statistics dc' is deprecated on aerospike versions >= 5.0. \n" +
-            "Use 'show statistics xdr' instead."))
+            futures.append(
+                util.Future(
+                    self.view.print_result,
+                    "WARNING: 'show statistics dc' is deprecated on aerospike versions >= 5.0. \n"
+                    + "Use 'show statistics xdr' instead.",
+                )
+            )
 
         return futures
 
 
-@CommandHelp('Displays partition map analysis of Aerospike cluster.')
+@CommandHelp("Displays partition map analysis of Aerospike cluster.")
 class ShowPmapController(BasicCommandController):
     def __init__(self):
         self.modifiers = set()
@@ -1154,12 +1371,14 @@ class ShowPmapController(BasicCommandController):
         return util.Future(self.view.show_pmap, pmap_data, self.cluster)
 
 
-@CommandHelp('"collectinfo" is used to collect cluster info, aerospike conf file and system stats.')
+@CommandHelp(
+    '"collectinfo" is used to collect cluster info, aerospike conf file and system stats.'
+)
 class CollectinfoController(BasicCommandController):
     get_pmap = False
 
     def __init__(self):
-        self.modifiers = set(['with'])
+        self.modifiers = set(["with"])
         self.aslogfile = ""
         self.aslogdir = ""
 
@@ -1170,8 +1389,8 @@ class CollectinfoController(BasicCommandController):
         except Exception as e:
             raise e
 
-    def _collectinfo_content(self, func, parm='', alt_parms=''):
-        name = ''
+    def _collectinfo_content(self, func, parm="", alt_parms=""):
+        name = ""
         capture_stdout = util.capture_stdout
         sep = constants.COLLECTINFO_SEPRATOR
 
@@ -1180,19 +1399,22 @@ class CollectinfoController(BasicCommandController):
         except Exception:
             pass
 
-        info_line = constants.COLLECTINFO_PROGRESS_MSG %(name, "%s" % (" %s" % (str(parm)) if parm else ""))
+        info_line = constants.COLLECTINFO_PROGRESS_MSG % (
+            name,
+            "%s" % (" %s" % (str(parm)) if parm else ""),
+        )
         self.logger.info(info_line)
         if parm:
             sep += str(parm) + "\n"
 
-        if func == 'cluster':
+        if func == "cluster":
             o = self.cluster.info(parm)
         else:
             if self.nodes and isinstance(self.nodes, list):
                 parm += ["with"] + self.nodes
             o = capture_stdout(func, parm)
         util.write_to_file(self.aslogfile, sep + str(o))
-        return ''
+        return ""
 
     def _write_version(self, line):
         print("asadm version " + str(self.asadm_version))
@@ -1202,9 +1424,13 @@ class CollectinfoController(BasicCommandController):
         for pid in asd_pids:
             try:
                 journalctl_cmd = [
-                    'journalctl _PID=%s --since "24 hours ago" -q -o cat' % (pid)]
-                self.aslogfile = as_logfile_prefix + 'aerospike_%s.log' % (pid)
-                self.logger.info("Data collection for %s to %s in progress..." % (str(journalctl_cmd), self.aslogfile))
+                    'journalctl _PID=%s --since "24 hours ago" -q -o cat' % (pid)
+                ]
+                self.aslogfile = as_logfile_prefix + "aerospike_%s.log" % (pid)
+                self.logger.info(
+                    "Data collection for %s to %s in progress..."
+                    % (str(journalctl_cmd), self.aslogfile)
+                )
                 o, e = util.shell_command(journalctl_cmd)
                 if e:
                     self.logger.error(str(e))
@@ -1221,7 +1447,7 @@ class CollectinfoController(BasicCommandController):
         """
         namespaces = set()
         for _value in list(namespace_data.values()):
-            for ns in _value.split(';'):
+            for ns in _value.split(";"):
                 namespaces.add(ns)
         return namespaces
 
@@ -1230,24 +1456,24 @@ class CollectinfoController(BasicCommandController):
 
     def _restructure_set_section(self, stats):
         for node, node_data in list(stats.items()):
-            if 'set' not in list(node_data.keys()):
+            if "set" not in list(node_data.keys()):
                 continue
 
-            for key, val in list(node_data['set'].items()):
+            for key, val in list(node_data["set"].items()):
                 ns_name = key[0]
                 setname = key[1]
 
-                if ns_name not in node_data['namespace']:
+                if ns_name not in node_data["namespace"]:
                     continue
 
-                ns = node_data['namespace'][ns_name]
+                ns = node_data["namespace"][ns_name]
 
-                if 'set' not in list(ns.keys()):
-                    ns['set'] = {}
+                if "set" not in list(ns.keys()):
+                    ns["set"] = {}
 
-                ns['set'][setname] = copy.deepcopy(val)
+                ns["set"][setname] = copy.deepcopy(val)
 
-            del node_data['set']
+            del node_data["set"]
 
     def _restructure_sindex_section(self, stats):
         # Due to new server feature namespace add/remove with rolling restart,
@@ -1255,56 +1481,56 @@ class CollectinfoController(BasicCommandController):
         # old sindex info available for node which does not have namespace for that sindex.
 
         for node, node_data in list(stats.items()):
-            if 'sindex' not in list(node_data.keys()):
+            if "sindex" not in list(node_data.keys()):
                 continue
 
-            for key, val in list(node_data['sindex'].items()):
+            for key, val in list(node_data["sindex"].items()):
                 key_list = key.split()
                 ns_name = key_list[0]
                 sindex_name = key_list[2]
 
-                if ns_name not in node_data['namespace']:
+                if ns_name not in node_data["namespace"]:
                     continue
 
-                ns = node_data['namespace'][ns_name]
-                if 'sindex' not in list(ns.keys()):
-                    ns['sindex'] = {}
-                ns['sindex'][sindex_name] = copy.deepcopy(val)
+                ns = node_data["namespace"][ns_name]
+                if "sindex" not in list(ns.keys()):
+                    ns["sindex"] = {}
+                ns["sindex"][sindex_name] = copy.deepcopy(val)
 
-            del node_data['sindex']
+            del node_data["sindex"]
 
     def _restructure_bin_section(self, stats):
         for node, node_data in list(stats.items()):
-            if 'bin' not in list(node_data.keys()):
+            if "bin" not in list(node_data.keys()):
                 continue
-            for ns_name, val in list(node_data['bin'].items()):
-                if ns_name not in node_data['namespace']:
+            for ns_name, val in list(node_data["bin"].items()):
+                if ns_name not in node_data["namespace"]:
                     continue
 
-                ns = node_data['namespace'][ns_name]
-                ns['bin'] = copy.deepcopy(val)
+                ns = node_data["namespace"][ns_name]
+                ns["bin"] = copy.deepcopy(val)
 
-            del node_data['bin']
+            del node_data["bin"]
 
     def _init_stat_ns_subsection(self, data):
         for node, node_data in list(data.items()):
-            if 'namespace' not in list(node_data.keys()):
+            if "namespace" not in list(node_data.keys()):
                 continue
-            ns_map = node_data['namespace']
+            ns_map = node_data["namespace"]
             for ns, data in list(ns_map.items()):
-                ns_map[ns]['set'] = {}
-                ns_map[ns]['bin'] = {}
-                ns_map[ns]['sindex'] = {}
+                ns_map[ns]["set"] = {}
+                ns_map[ns]["bin"] = {}
+                ns_map[ns]["sindex"] = {}
 
     def _restructure_ns_section(self, data):
         for node, node_data in list(data.items()):
-            if 'namespace' not in list(node_data.keys()):
+            if "namespace" not in list(node_data.keys()):
                 continue
-            ns_map = node_data['namespace']
+            ns_map = node_data["namespace"]
             for ns, data in list(ns_map.items()):
                 stat = {}
                 stat[ns] = {}
-                stat[ns]['service'] = data
+                stat[ns]["service"] = data
                 ns_map[ns] = stat[ns]
 
     def _remove_exception_from_section_output(self, data):
@@ -1325,11 +1551,11 @@ class CollectinfoController(BasicCommandController):
         # flip keys to get nodeid in upper level.
         # {'namespace': 'test': {'ip1': {}, 'ip2': {}}} -->
         # {'namespace': {'ip1': {'test': {}}, 'ip2': {'test': {}}}}
-        stats['namespace'] = util.flip_keys(stats['namespace'])
-        stats['set'] = util.flip_keys(stats['set'])
-        stats['bin'] = util.flip_keys(stats['bin'])
-        stats['dc'] = util.flip_keys(stats['dc'])
-        stats['sindex'] = util.flip_keys(stats['sindex'])
+        stats["namespace"] = util.flip_keys(stats["namespace"])
+        stats["set"] = util.flip_keys(stats["set"])
+        stats["bin"] = util.flip_keys(stats["bin"])
+        stats["dc"] = util.flip_keys(stats["dc"])
+        stats["sindex"] = util.flip_keys(stats["sindex"])
 
         self._remove_exception_from_section_output(stats)
         self._remove_exception_from_section_output(config)
@@ -1356,8 +1582,8 @@ class CollectinfoController(BasicCommandController):
 
         # check this 'XDR': {'STATISTICS': {'192.168.112.194:3000':
         # Type_error('expected str
-        as_map['statistics'] = new_stats
-        as_map['config'] = new_config
+        as_map["statistics"] = new_stats
+        as_map["config"] = new_config
 
         new_as_map = util.flip_keys(as_map)
 
@@ -1368,19 +1594,27 @@ class CollectinfoController(BasicCommandController):
             if not isinstance(metasec[nodeid], Exception):
                 metamap[nodeid][sec_name] = metasec[nodeid]
             else:
-                metamap[nodeid][sec_name] = ''
+                metamap[nodeid][sec_name] = ""
 
     def _get_as_metadata(self):
         metamap = {}
-        builds = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
-        editions = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
-        xdr_builds = util.Future(self.cluster.info_build_version, nodes=self.nodes).start()
+        builds = util.Future(self.cluster.info, "build", nodes=self.nodes).start()
+        editions = util.Future(self.cluster.info, "version", nodes=self.nodes).start()
+        xdr_builds = util.Future(
+            self.cluster.info_build_version, nodes=self.nodes
+        ).start()
         node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start()
         ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start()
-        endpoints = util.Future(self.cluster.info_service_list, nodes=self.nodes).start()
-        services = util.Future(self.cluster.info_peers_flat_list, nodes=self.nodes).start()
+        endpoints = util.Future(
+            self.cluster.info_service_list, nodes=self.nodes
+        ).start()
+        services = util.Future(
+            self.cluster.info_peers_flat_list, nodes=self.nodes
+        ).start()
         udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start()
-        health_outliers = util.Future(self.cluster.info_health_outliers, nodes=self.nodes).start()
+        health_outliers = util.Future(
+            self.cluster.info_health_outliers, nodes=self.nodes
+        ).start()
 
         builds = builds.result()
         editions = editions.result()
@@ -1394,26 +1628,35 @@ class CollectinfoController(BasicCommandController):
 
         for nodeid in builds:
             metamap[nodeid] = {}
-            self._get_meta_for_sec(builds, 'asd_build', nodeid, metamap)
-            self._get_meta_for_sec(editions, 'edition', nodeid, metamap)
-            self._get_meta_for_sec(xdr_builds, 'xdr_build', nodeid, metamap)
-            self._get_meta_for_sec(node_ids, 'node_id', nodeid, metamap)
-            self._get_meta_for_sec(ips, 'ip', nodeid, metamap)
-            self._get_meta_for_sec(endpoints, 'endpoints', nodeid, metamap)
-            self._get_meta_for_sec(services, 'services', nodeid, metamap)
-            self._get_meta_for_sec(udf_data, 'udf', nodeid, metamap)
-            self._get_meta_for_sec(health_outliers, 'health', nodeid, metamap)
+            self._get_meta_for_sec(builds, "asd_build", nodeid, metamap)
+            self._get_meta_for_sec(editions, "edition", nodeid, metamap)
+            self._get_meta_for_sec(xdr_builds, "xdr_build", nodeid, metamap)
+            self._get_meta_for_sec(node_ids, "node_id", nodeid, metamap)
+            self._get_meta_for_sec(ips, "ip", nodeid, metamap)
+            self._get_meta_for_sec(endpoints, "endpoints", nodeid, metamap)
+            self._get_meta_for_sec(services, "services", nodeid, metamap)
+            self._get_meta_for_sec(udf_data, "udf", nodeid, metamap)
+            self._get_meta_for_sec(health_outliers, "health", nodeid, metamap)
 
         return metamap
 
     def _get_as_histograms(self):
         histogram_map = {}
-        hist_list = [('ttl', 'ttl', False), ('objsz', 'objsz', False), ('objsz', 'object-size', True)]
-        hist_dumps = [util.Future(self.cluster.info_histogram, hist[0],
-                                  logarithmic = hist[2],
-                                  raw_output=True,
-                                  nodes=self.nodes).start()
-                      for hist in hist_list]
+        hist_list = [
+            ("ttl", "ttl", False),
+            ("objsz", "objsz", False),
+            ("objsz", "object-size", True),
+        ]
+        hist_dumps = [
+            util.Future(
+                self.cluster.info_histogram,
+                hist[0],
+                logarithmic=hist[2],
+                raw_output=True,
+                nodes=self.nodes,
+            ).start()
+            for hist in hist_list
+        ]
 
         for hist, hist_dump in zip(hist_list, hist_dumps):
             hist_dump = hist_dump.result()
@@ -1430,39 +1673,52 @@ class CollectinfoController(BasicCommandController):
         return histogram_map
 
     def _get_as_latency(self):
-        latency_controller = ShowLatencyBaseController(self.cluster)
-        latency_controller.modifiers = []
-        latency_controller.pre_command([""])
-        latencies_nodes, latency_nodes = latency_controller.get_latencies_and_latency_nodes()
+        latency_getter = GetLatenciesController(self.cluster)
+        latencies_data = latency_getter.get_all(
+            self.nodes, buckets=17, exponent_increment=1, verbose=1
+        )
         latency_map = {}
 
-        if len(latency_nodes) == 0:
-            latency_data = util.Future(self.cluster.info_latencies,
-                                    nodes=latencies_nodes, buckets=17, exponent_increment=1, verbose=True).start()
-            latency_data = latency_data.result()
-        elif len(latencies_nodes) == 0:
-            latency_data = util.Future(self.cluster.info_latency,
-                                    nodes=latency_nodes).start()
-            latency_data = latency_data.result()
-        else:
-            # There are nodes that support show latencies and nodes that do not
-            latencies_data = util.Future(self.cluster.info_latencies,
-                                    nodes=latencies_nodes, buckets=17, exponent_increment=1, verbose=True).start()
-            latency_data = util.Future(self.cluster.info_latency,
-                                    nodes=latency_nodes).start()
-            latencies_data = latencies_data.result()
-            latency_data = latency_data.result()
-            latency_data = latency_controller.merge_latencies_and_latency_tables(latency_data, latencies_data)
-        
+        # if len(latency_nodes) == 0:
+        #     latency_data = util.Future(
+        #         self.cluster.info_latencies,
+        #         nodes=latencies_nodes,
+        #         buckets=17,
+        #         exponent_increment=1,
+        #         verbose=True,
+        #     ).start()
+        #     latency_data = latency_data.result()
+        # elif len(latencies_nodes) == 0:
+        #     latency_data = util.Future(
+        #         self.cluster.info_latency, nodes=latency_nodes
+        #     ).start()
+        #     latency_data = latency_data.result()
+        # else:
+        #     # There are nodes that support show latencies and nodes that do not
+        #     latencies_data = util.Future(
+        #         self.cluster.info_latencies,
+        #         nodes=latencies_nodes,
+        #         buckets=17,
+        #         exponent_increment=1,
+        #         verbose=True,
+        #     ).start()
+        #     latency_data = util.Future(
+        #         self.cluster.info_latency, nodes=latency_nodes
+        #     ).start()
+        #     latencies_data = latencies_data.result()
+        #     latency_data = latency_data.result()
+        #     latency_data = latency_controller.merge_latencies_and_latency_tables(
+        #         latency_data, latencies_data
+        #     )
 
-        for node in latency_data:
+        for node in latencies_data:
             if node not in latency_map:
                 latency_map[node] = {}
 
-            if not latency_data[node] or isinstance(latency_data[node], Exception):
+            if not latencies_data[node] or isinstance(latencies_data[node], Exception):
                 continue
 
-            latency_map[node] = latency_data[node]
+            latency_map[node] = latencies_data[node]
 
         return latency_map
 
@@ -1472,17 +1728,24 @@ class CollectinfoController(BasicCommandController):
 
     def _dump_in_json_file(self, as_logfile_prefix, dump):
         self.logger.info("Dumping collectinfo in JSON format.")
-        self.aslogfile = as_logfile_prefix + 'ascinfo.json'
+        self.aslogfile = as_logfile_prefix + "ascinfo.json"
 
         try:
-            json_dump = json.dumps(dump, indent=4, separators=(',', ':'))
+            json_dump = json.dumps(dump, indent=4, separators=(",", ":"))
             with open(self.aslogfile, "w") as f:
                 f.write(json_dump)
         except Exception as e:
             self.logger.error("Failed to write JSON file: " + str(e))
 
-    def _get_collectinfo_data_json(self, default_user, default_pwd, default_ssh_port,
-                                   default_ssh_key, credential_file, enable_ssh):
+    def _get_collectinfo_data_json(
+        self,
+        default_user,
+        default_pwd,
+        default_ssh_port,
+        default_ssh_key,
+        credential_file,
+        enable_ssh,
+    ):
 
         dump_map = {}
 
@@ -1495,39 +1758,46 @@ class CollectinfoController(BasicCommandController):
         if CollectinfoController.get_pmap:
             pmap_map = self._get_as_pmap()
 
-        sys_map = self.cluster.info_system_statistics(default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
-                                                      default_ssh_port=default_ssh_port, credential_file=credential_file, nodes=self.nodes,
-                                                      collect_remote_data=enable_ssh)
+        sys_map = self.cluster.info_system_statistics(
+            default_user=default_user,
+            default_pwd=default_pwd,
+            default_ssh_key=default_ssh_key,
+            default_ssh_port=default_ssh_port,
+            credential_file=credential_file,
+            nodes=self.nodes,
+            collect_remote_data=enable_ssh,
+        )
 
-        cluster_names = util.Future(
-            self.cluster.info, 'cluster-name').start()
+        cluster_names = util.Future(self.cluster.info, "cluster-name").start()
 
         as_map = self._get_as_data_json()
 
         for node in as_map:
             dump_map[node] = {}
-            dump_map[node]['as_stat'] = as_map[node]
+            dump_map[node]["as_stat"] = as_map[node]
             if node in sys_map:
-                dump_map[node]['sys_stat'] = sys_map[node]
+                dump_map[node]["sys_stat"] = sys_map[node]
             if node in meta_map:
-                dump_map[node]['as_stat']['meta_data'] = meta_map[node]
+                dump_map[node]["as_stat"]["meta_data"] = meta_map[node]
 
             if node in histogram_map:
-                 dump_map[node]['as_stat']['histogram'] = histogram_map[node]
+                dump_map[node]["as_stat"]["histogram"] = histogram_map[node]
 
             if node in latency_map:
-                 dump_map[node]['as_stat']['latency'] = latency_map[node]
+                dump_map[node]["as_stat"]["latency"] = latency_map[node]
 
             if CollectinfoController.get_pmap and node in pmap_map:
-                 dump_map[node]['as_stat']['pmap'] = pmap_map[node]
+                dump_map[node]["as_stat"]["pmap"] = pmap_map[node]
 
         # Get the cluster name and add one more level in map
-        cluster_name = 'null'
+        cluster_name = "null"
         cluster_names = cluster_names.result()
 
         # Cluster name.
         for node in cluster_names:
-            if not isinstance(cluster_names[node], Exception) and cluster_names[node] not in ["null"]:
+            if not isinstance(cluster_names[node], Exception) and cluster_names[
+                node
+            ] not in ["null"]:
                 cluster_name = cluster_names[node]
                 break
 
@@ -1535,16 +1805,35 @@ class CollectinfoController(BasicCommandController):
         snp_map[cluster_name] = dump_map
         return snp_map
 
-    def _dump_collectinfo_json(self, timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port,
-                               default_ssh_key, credential_file, enable_ssh, snp_count, wait_time):
+    def _dump_collectinfo_json(
+        self,
+        timestamp,
+        as_logfile_prefix,
+        default_user,
+        default_pwd,
+        default_ssh_port,
+        default_ssh_key,
+        credential_file,
+        enable_ssh,
+        snp_count,
+        wait_time,
+    ):
         snpshots = {}
 
         for i in range(snp_count):
 
             snp_timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-            self.logger.info("Data collection for Snapshot: " + str(i + 1) + " in progress..")
+            self.logger.info(
+                "Data collection for Snapshot: " + str(i + 1) + " in progress.."
+            )
             snpshots[snp_timestamp] = self._get_collectinfo_data_json(
-                default_user, default_pwd, default_ssh_port, default_ssh_key, credential_file, enable_ssh)
+                default_user,
+                default_pwd,
+                default_ssh_port,
+                default_ssh_key,
+                credential_file,
+                enable_ssh,
+            )
 
             time.sleep(wait_time)
 
@@ -1553,7 +1842,9 @@ class CollectinfoController(BasicCommandController):
     ###########################################################################
     # Functions for dumping pretty print files
 
-    def _dump_collectinfo_pretty_print(self, timestamp, as_logfile_prefix, config_path=""):
+    def _dump_collectinfo_pretty_print(
+        self, timestamp, as_logfile_prefix, config_path=""
+    ):
 
         # getting service port to use in ss/netstat command
         port = 3000
@@ -1564,22 +1855,42 @@ class CollectinfoController(BasicCommandController):
 
         collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
 
-        dignostic_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
+        dignostic_info_params = ["network", "namespace", "set", "xdr", "dc", "sindex"]
 
-        dignostic_features_params = ['features']
+        dignostic_features_params = ["features"]
 
-        dignostic_show_params = ['config', 'config xdr', 'config dc', 'config cluster', 'distribution',
-                                 'distribution eviction', 'distribution object_size -b', 'latency', 
-                                 'latencies -v -e 1 -b 17', 'statistics', 'statistics xdr', 'statistics dc',
-                                 'statistics sindex', 'pmap']
+        dignostic_show_params = [
+            "config",
+            "config xdr",
+            "config dc",
+            "config cluster",
+            "distribution",
+            "distribution eviction",
+            "distribution object_size -b",
+            "latencies -v -e 1 -b 17",
+            "statistics",
+            "statistics xdr",
+            "statistics dc",
+            "statistics sindex",
+            "pmap",
+        ]
 
-        dignostic_aerospike_cluster_params = ['service', 'services', 'peers-clear-std', 'peers-clear-alt',
-                                              'peers-tls-std', 'peers-tls-alt', 'alumni-clear-std',
-                                              'alumni-tls-std', 'peers-generation', 'roster:']
+        dignostic_aerospike_cluster_params = [
+            "service",
+            "services",
+            "peers-clear-std",
+            "peers-clear-alt",
+            "peers-tls-std",
+            "peers-tls-alt",
+            "alumni-clear-std",
+            "alumni-tls-std",
+            "peers-generation",
+            "roster:",
+        ]
 
-        summary_params = ['summary']
-        summary_info_params = ['network', 'namespace', 'set', 'xdr', 'dc', 'sindex']
-        health_params = ['health -v']
+        summary_params = ["summary"]
+        summary_info_params = ["network", "namespace", "set", "xdr", "dc", "sindex"]
+        health_params = ["health -v"]
 
         # find version
         as_version = None
@@ -1599,27 +1910,27 @@ class CollectinfoController(BasicCommandController):
 
         # add hist-dump or histogram command to collect list
 
-        hist_list = ['ttl', 'object-size', 'object-size-linear']
+        hist_list = ["ttl", "object-size", "object-size-linear"]
         hist_dump_info_str = "histogram:namespace=%s;type=%s"
 
         try:
             if LooseVersion(as_version) < LooseVersion("4.2.0"):
                 # histogram command introduced in 4.2.0
                 # use hist-dump command for older versions
-                hist_list = ['ttl', 'objsz']
+                hist_list = ["ttl", "objsz"]
                 hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
-        except: # probably failed to get build version, node may be down
+        except:  # probably failed to get build version, node may be down
             pass
 
         for ns in namespaces:
             for hist in hist_list:
                 dignostic_aerospike_cluster_params.append(
-                    hist_dump_info_str % (ns, hist))
-
+                    hist_dump_info_str % (ns, hist)
+                )
 
         ####### Dignostic info ########
 
-        self.aslogfile = as_logfile_prefix + 'ascollectinfo.log'
+        self.aslogfile = as_logfile_prefix + "ascollectinfo.log"
         util.write_to_file(self.aslogfile, collect_output)
 
         try:
@@ -1654,16 +1965,18 @@ class CollectinfoController(BasicCommandController):
 
         try:
             for cmd in dignostic_aerospike_cluster_params:
-                self._collectinfo_content('cluster', cmd)
+                self._collectinfo_content("cluster", cmd)
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         ####### Summary ########
 
-        collectinfo_root_controller = CollectinfoRootController(asadm_version=self.asadm_version, clinfo_path=self.aslogdir)
+        collectinfo_root_controller = CollectinfoRootController(
+            asadm_version=self.asadm_version, clinfo_path=self.aslogdir
+        )
 
-        self.aslogfile = as_logfile_prefix + 'summary.log'
+        self.aslogfile = as_logfile_prefix + "summary.log"
         util.write_to_file(self.aslogfile, collect_output)
         try:
             self._collectinfo_content(self._write_version)
@@ -1673,7 +1986,9 @@ class CollectinfoController(BasicCommandController):
 
         try:
             for summary_param in summary_params:
-                self._collectinfo_content(collectinfo_root_controller.execute, [summary_param])
+                self._collectinfo_content(
+                    collectinfo_root_controller.execute, [summary_param]
+                )
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
@@ -1688,25 +2003,29 @@ class CollectinfoController(BasicCommandController):
 
         ####### Health ########
 
-        self.aslogfile = as_logfile_prefix + 'health.log'
+        self.aslogfile = as_logfile_prefix + "health.log"
         util.write_to_file(self.aslogfile, collect_output)
 
         try:
             for health_param in health_params:
-                self._collectinfo_content(collectinfo_root_controller.execute, health_param.split())
+                self._collectinfo_content(
+                    collectinfo_root_controller.execute, health_param.split()
+                )
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         ####### System info ########
 
-        self.aslogfile = as_logfile_prefix + 'sysinfo.log'
-        self.failed_cmds = common.collect_sys_info(port=port, timestamp=collect_output, outfile=self.aslogfile)
+        self.aslogfile = as_logfile_prefix + "sysinfo.log"
+        self.failed_cmds = common.collect_sys_info(
+            port=port, timestamp=collect_output, outfile=self.aslogfile
+        )
 
         ##### aerospike conf file #####
 
         conf_path = config_path
-        self.aslogfile = as_logfile_prefix + 'aerospike.conf'
+        self.aslogfile = as_logfile_prefix + "aerospike.conf"
 
         if not conf_path:
             conf_path = "/etc/aerospike/aerospike.conf"
@@ -1716,8 +2035,8 @@ class CollectinfoController(BasicCommandController):
             try:
                 if LooseVersion(as_version) <= LooseVersion("3.0.0"):
                     conf_path = "/etc/citrusleaf/citrusleaf.conf"
-                    self.aslogfile = as_logfile_prefix + 'citrusleaf.conf'
-            except: # probably failed to get build version, node may be down
+                    self.aslogfile = as_logfile_prefix + "citrusleaf.conf"
+            except:  # probably failed to get build version, node may be down
                 pass
 
         try:
@@ -1730,9 +2049,19 @@ class CollectinfoController(BasicCommandController):
     ###########################################################################
     # Collectinfo caller functions
 
-    def _run_collectinfo(self, default_user, default_pwd, default_ssh_port, default_ssh_key,
-                          credential_file, snp_count, wait_time, enable_ssh=False,
-                          output_prefix="", config_path=""):
+    def _run_collectinfo(
+        self,
+        default_user,
+        default_pwd,
+        default_ssh_port,
+        default_ssh_key,
+        credential_file,
+        snp_count,
+        wait_time,
+        enable_ssh=False,
+        output_prefix="",
+        config_path="",
+    ):
 
         # JSON collectinfo snapshot count check
         if snp_count < 1:
@@ -1740,7 +2069,9 @@ class CollectinfoController(BasicCommandController):
             return
 
         timestamp = time.gmtime()
-        self.aslogdir, as_logfile_prefix = common.set_collectinfo_path(timestamp, output_prefix=output_prefix)
+        self.aslogdir, as_logfile_prefix = common.set_collectinfo_path(
+            timestamp, output_prefix=output_prefix
+        )
 
         # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
         terminal.enable_color(False)
@@ -1749,11 +2080,23 @@ class CollectinfoController(BasicCommandController):
         self.failed_cmds = []
 
         # JSON collectinfo
-        self._dump_collectinfo_json(timestamp, as_logfile_prefix, default_user, default_pwd, default_ssh_port, default_ssh_key,
-                                    credential_file, enable_ssh, snp_count, wait_time,)
+        self._dump_collectinfo_json(
+            timestamp,
+            as_logfile_prefix,
+            default_user,
+            default_pwd,
+            default_ssh_port,
+            default_ssh_key,
+            credential_file,
+            enable_ssh,
+            snp_count,
+            wait_time,
+        )
 
         # Pretty print collectinfo
-        self._dump_collectinfo_pretty_print(timestamp, as_logfile_prefix, config_path=config_path)
+        self._dump_collectinfo_pretty_print(
+            timestamp, as_logfile_prefix, config_path=config_path
+        )
 
         # Archive collectinfo directory
         common.archive_log(self.aslogdir)
@@ -1763,103 +2106,165 @@ class CollectinfoController(BasicCommandController):
 
     def _collect_info(self, line):
 
-        snp_count = util.get_arg_and_delete_from_mods(line=line, arg="-n",
-                return_type=int, default=1, modifiers=self.modifiers,
-                mods=self.mods)
+        snp_count = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-n",
+            return_type=int,
+            default=1,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        wait_time = util.get_arg_and_delete_from_mods(line=line, arg="-t",
-                return_type=int, default=5, modifiers=self.modifiers,
-                mods=self.mods)
+        wait_time = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-t",
+            return_type=int,
+            default=5,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        enable_ssh = util.check_arg_and_delete_from_mods(line=line, arg="--enable-ssh", default=False, modifiers=self.modifiers, mods=self.mods)
+        enable_ssh = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--enable-ssh",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_user = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-user",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+        default_user = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-user",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-pwd",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+        default_pwd = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-pwd",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-port", return_type=int, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        default_ssh_port = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-port",
+            return_type=int,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-key", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        default_ssh_key = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-key",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-cf", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        credential_file = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-cf",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        output_prefix = util.get_arg_and_delete_from_mods(line=line,
-                arg="--output-prefix", return_type=str, default="",
-                modifiers=self.modifiers, mods=self.mods)
+        output_prefix = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--output-prefix",
+            return_type=str,
+            default="",
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
         output_prefix = util.strip_string(output_prefix)
 
-        config_path = util.get_arg_and_delete_from_mods(line=line,
-                arg="--asconfig-file", return_type=str, default="",
-                modifiers=self.modifiers, mods=self.mods)
+        config_path = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--asconfig-file",
+            return_type=str,
+            default="",
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
         config_path = util.strip_string(config_path)
 
+        self._run_collectinfo(
+            default_user,
+            default_pwd,
+            default_ssh_port,
+            default_ssh_key,
+            credential_file,
+            snp_count,
+            wait_time,
+            enable_ssh=enable_ssh,
+            output_prefix=output_prefix,
+            config_path=config_path,
+        )
 
-        self._run_collectinfo(default_user, default_pwd, default_ssh_port, default_ssh_key,
-                               credential_file, snp_count, wait_time, enable_ssh=enable_ssh,
-                               output_prefix=output_prefix, config_path=config_path)
-
-    @CommandHelp('Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.',
-                 'If credentials are not available then it will collect system stats from local node only.',
-                 '  Options:',
-                 '    -n              <int>        - Number of snapshots. Default: 1',
-                 '    -s              <int>        - Sleep time in seconds between each snapshot. Default: 5 sec',
-                 '    --enable-ssh                 - Enable remote server system statistics collection.',
-                 '    --ssh-user      <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-                 '    --ssh-pwd       <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
-                 '    --ssh-port      <int>        - Default SSH port for remote servers. Default: 22',
-                 '    --ssh-key       <string>     - Default SSH key (file path) for remote servers.',
-                 '    --ssh-cf        <string>     - Remote System Credentials file path.',
-                 '                                   If server credentials are not available in credential file then default credentials will be used ',
-                 '                                   File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
-                 '                                   Example:  1.2.3.4,uid,pwd',
-                 '                                             1.2.3.4:3232,uid,pwd',
-                 '                                             1.2.3.4:3232,uid,,key_path',
-                 '                                             1.2.3.4:3232,uid,passphrase,key_path',
-                 '                                             [2001::1234:10],uid,pwd',
-                 '                                             [2001::1234:10]:3232,uid,,key_path',
-                 '    --output-prefix <string>     - Output directory name prefix.',
-                 '    --asconfig-file <string>     - Aerospike config file path to collect. Default: /etc/aerospike/aerospike.conf',
-                 )
+    @CommandHelp(
+        "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided.",
+        "If credentials are not available then it will collect system stats from local node only.",
+        "  Options:",
+        "    -n              <int>        - Number of snapshots. Default: 1",
+        "    -s              <int>        - Sleep time in seconds between each snapshot. Default: 5 sec",
+        "    --enable-ssh                 - Enable remote server system statistics collection.",
+        "    --ssh-user      <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).",
+        "    --ssh-pwd       <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).",
+        "    --ssh-port      <int>        - Default SSH port for remote servers. Default: 22",
+        "    --ssh-key       <string>     - Default SSH key (file path) for remote servers.",
+        "    --ssh-cf        <string>     - Remote System Credentials file path.",
+        "                                   If server credentials are not available in credential file then default credentials will be used ",
+        "                                   File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>",
+        "                                   Example:  1.2.3.4,uid,pwd",
+        "                                             1.2.3.4:3232,uid,pwd",
+        "                                             1.2.3.4:3232,uid,,key_path",
+        "                                             1.2.3.4:3232,uid,passphrase,key_path",
+        "                                             [2001::1234:10],uid,pwd",
+        "                                             [2001::1234:10]:3232,uid,,key_path",
+        "    --output-prefix <string>     - Output directory name prefix.",
+        "    --asconfig-file <string>     - Aerospike config file path to collect. Default: /etc/aerospike/aerospike.conf",
+    )
     def _do_default(self, line):
         self._collect_info(line=line)
 
-@CommandHelp('Displays features used in running Aerospike cluster.')
-class FeaturesController(BasicCommandController):
 
+@CommandHelp("Displays features used in running Aerospike cluster.")
+class FeaturesController(BasicCommandController):
     def __init__(self):
-        self.modifiers = set(['with', 'like'])
+        self.modifiers = set(["with", "like"])
         self.getter = GetFeaturesController(self.cluster)
 
     def _do_default(self, line):
 
         features = self.getter.get_features(nodes=self.nodes)
 
-        return util.Future(self.view.show_config, "Features", features,
-                self.cluster, **self.mods)
+        return util.Future(
+            self.view.show_config, "Features", features, self.cluster, **self.mods
+        )
 
 
 @CommandHelp("Set pager for output")
 class PagerController(BasicCommandController):
-
     def __init__(self):
         self.modifiers = set()
 
     def _do_default(self, line):
         self.execute_help(line)
 
-    @CommandHelp("Displays output with vertical and horizontal paging for each output table same as linux 'less' command.",
-                 "Use arrow keys to scroll output and 'q' to end page for table.",
-                 "All linux less commands can work in this pager option.")
+    @CommandHelp(
+        "Displays output with vertical and horizontal paging for each output table same as linux 'less' command.",
+        "Use arrow keys to scroll output and 'q' to end page for table.",
+        "All linux less commands can work in this pager option.",
+    )
     def do_on(self, line):
         CliView.pager = CliView.LESS
 
@@ -1872,8 +2277,10 @@ class PagerController(BasicCommandController):
         CliView.pager = CliView.SCROLL
 
 
-@CommandHelp('Checks for common inconsistencies and print if there is any.',
-             'This command is still in beta and its output should not be directly acted upon without further analysis.')
+@CommandHelp(
+    "Checks for common inconsistencies and print if there is any.",
+    "This command is still in beta and its output should not be directly acted upon without further analysis.",
+)
 class HealthCheckController(BasicCommandController):
     last_snapshot_collection_time = 0
     last_snapshot_count = 0
@@ -1895,7 +2302,9 @@ class HealthCheckController(BasicCommandController):
         elif stanza == "dc":
             return self.cluster.info_all_dc_statistics(nodes=self.nodes)
         elif stanza == "sindex":
-            return util.flip_keys(get_sindex_stats(cluster=self.cluster, nodes=self.nodes))
+            return util.flip_keys(
+                get_sindex_stats(cluster=self.cluster, nodes=self.nodes)
+            )
         elif stanza == "udf":
             return self.cluster.info_udf_list(nodes=self.nodes)
         elif stanza == "endpoints":
@@ -1937,91 +2346,154 @@ class HealthCheckController(BasicCommandController):
             return self.cluster.info_health_outliers(nodes=self.nodes)
 
     @CommandHelp(
-        'Displays health summary. If remote server System credentials provided, then it will collect remote system stats',
-        'and analyse that also. If credentials are not available then it will collect only localhost system statistics.',
-        '  Options:',
-        '    -f           <string>     - Query file path. Default: inbuilt health queries.',
-        '    -o           <string>     - Output file path. ',
-        '                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
-        '    -v                        - Enable to display extra details of assert errors.',
-        '    -d                        - Enable to display extra details of exceptions.',
-        '    -n           <int>        - Number of snapshots. Default: 1',
-        '    -s           <int>        - Sleep time in seconds between each snapshot. Default: 1 sec',
-        '    -oc          <string>     - Output filter Category. ',
-        '                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
-        '                                Format : string of dot (.) separated category levels',
-        '    -wl          <string>     - Output filter Warning level. Expected value CRITICAL or WARNING or INFO ',
-        '                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.',
-        '    --enable-ssh              - Enable remote server system statistics collection.',
-        '    --ssh-user   <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-        '    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
-        '    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22',
-        '    --ssh-key    <string>     - Default SSH key (file path) for remote servers.',
-        '    --ssh-cf     <string>     - Remote System Credentials file path.',
-        '                                If server credentials are not available in credential file then default credentials will be used ',
-        '                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
-        '                                Example:  1.2.3.4,uid,pwd',
-        '                                          1.2.3.4:3232,uid,pwd',
-        '                                          1.2.3.4:3232,uid,,key_path',
-        '                                          1.2.3.4:3232,uid,passphrase,key_path',
-        '                                          [2001::1234:10],uid,pwd',
-        '                                          [2001::1234:10]:3232,uid,,key_path',
+        "Displays health summary. If remote server System credentials provided, then it will collect remote system stats",
+        "and analyse that also. If credentials are not available then it will collect only localhost system statistics.",
+        "  Options:",
+        "    -f           <string>     - Query file path. Default: inbuilt health queries.",
+        "    -o           <string>     - Output file path. ",
+        "                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
+        "    -v                        - Enable to display extra details of assert errors.",
+        "    -d                        - Enable to display extra details of exceptions.",
+        "    -n           <int>        - Number of snapshots. Default: 1",
+        "    -s           <int>        - Sleep time in seconds between each snapshot. Default: 1 sec",
+        "    -oc          <string>     - Output filter Category. ",
+        "                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
+        "                                Format : string of dot (.) separated category levels",
+        "    -wl          <string>     - Output filter Warning level. Expected value CRITICAL or WARNING or INFO ",
+        "                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
+        "    --enable-ssh              - Enable remote server system statistics collection.",
+        "    --ssh-user   <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).",
+        "    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).",
+        "    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22",
+        "    --ssh-key    <string>     - Default SSH key (file path) for remote servers.",
+        "    --ssh-cf     <string>     - Remote System Credentials file path.",
+        "                                If server credentials are not available in credential file then default credentials will be used ",
+        "                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>",
+        "                                Example:  1.2.3.4,uid,pwd",
+        "                                          1.2.3.4:3232,uid,pwd",
+        "                                          1.2.3.4:3232,uid,,key_path",
+        "                                          1.2.3.4:3232,uid,passphrase,key_path",
+        "                                          [2001::1234:10],uid,pwd",
+        "                                          [2001::1234:10]:3232,uid,,key_path",
     )
     def _do_default(self, line):
 
-        output_file = util.get_arg_and_delete_from_mods(line=line, arg="-o",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+        output_file = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-o",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        snap_count = util.get_arg_and_delete_from_mods(line=line, arg="-n",
-                return_type=int, default=1, modifiers=self.modifiers,
-                mods=self.mods)
+        snap_count = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-n",
+            return_type=int,
+            default=1,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        sleep_tm = util.get_arg_and_delete_from_mods(line=line, arg="-s",
-                return_type=int, default=1, modifiers=self.modifiers,
-                mods=self.mods)
+        sleep_tm = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-s",
+            return_type=int,
+            default=1,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        verbose = util.check_arg_and_delete_from_mods(line=line, arg="-v",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        verbose = util.check_arg_and_delete_from_mods(
+            line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        debug = util.check_arg_and_delete_from_mods(line=line, arg="-d",
-                default=False, modifiers=self.modifiers, mods=self.mods)
+        debug = util.check_arg_and_delete_from_mods(
+            line=line, arg="-d", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        output_filter_category = util.get_arg_and_delete_from_mods(line=line,
-                arg="-oc", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        output_filter_category = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-oc",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        output_filter_warning_level = util.get_arg_and_delete_from_mods(line,
-                arg="-wl", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        output_filter_warning_level = util.get_arg_and_delete_from_mods(
+            line,
+            arg="-wl",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        enable_ssh = util.check_arg_and_delete_from_mods(line=line, arg="--enable-ssh", default=False, modifiers=self.modifiers, mods=self.mods)
+        enable_ssh = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--enable-ssh",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_user = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-user",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+        default_user = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-user",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-pwd",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+        default_pwd = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-pwd",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-port", return_type=int, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        default_ssh_port = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-port",
+            return_type=int,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-key", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        default_ssh_key = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-key",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-cf", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        credential_file = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-cf",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         # Query file can be specified without -f
         # hence always parsed in the end
-        query_file = util.get_arg_and_delete_from_mods(line=line, arg="-f",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+        query_file = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-f",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         if not query_file and line:
             query_file = line[0]
@@ -2033,138 +2505,469 @@ class HealthCheckController(BasicCommandController):
             output_file = util.strip_string(output_file)
 
         if output_filter_category:
-            output_filter_category = [util.strip_string(c).upper()
-                                      for c in util.strip_string(output_filter_category).split(".")]
+            output_filter_category = [
+                util.strip_string(c).upper()
+                for c in util.strip_string(output_filter_category).split(".")
+            ]
         else:
             output_filter_category = []
 
         if output_filter_warning_level:
             output_filter_warning_level = util.strip_string(
-                output_filter_warning_level).upper()
+                output_filter_warning_level
+            ).upper()
 
-        if (time.time() - HealthCheckController.last_snapshot_collection_time > 60) or HealthCheckController.last_snapshot_count != snap_count:
+        if (
+            time.time() - HealthCheckController.last_snapshot_collection_time > 60
+        ) or HealthCheckController.last_snapshot_count != snap_count:
             # There is possibility of different cluster-names in old
             # heartbeat protocol. As asadm works with single cluster,
             # so we are setting one static cluster-name.
             cluster_name = "C1"
 
             stanza_dict = {
-                "statistics": (self._get_asstat_data, [
-                    ("service", "SERVICE",
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("namespace", "NAMESPACE",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
-                    ("sets", "SET", [("CLUSTER", cluster_name), ("NODE", None), (
-                        None, None), ("NAMESPACE", ("ns_name", "ns",)), ("SET", ("set_name", "set",))]),
-                    ("bins", "BIN", [
-                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
-                    ("xdr", "XDR",
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("dc", "DC",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
-                    ("sindex", "SINDEX", [("CLUSTER", cluster_name), ("NODE", None), (
-                        None, None), ("NAMESPACE", ("ns",)), ("SET", ("set",)), ("SINDEX", ("indexname",))])
-                ]),
-                "config": (self._get_asconfig_data, [
-                    ("service", "SERVICE",
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("xdr", "XDR",
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("network", "NETWORK",
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("dc", "DC",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
-                    ("namespace", "NAMESPACE",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
-                    ("roster", "ROSTER",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)]),
-                    ("racks", "RACKS",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None), (None, None), ("RACKS", None)])
-                ]),
-                "original_config": (self.cluster.info_get_originalconfig, [
-                    ("service", "SERVICE",
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("xdr", "XDR",
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("network", "NETWORK",
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("dc", "DC",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DC", None)]),
-                    ("namespace", "NAMESPACE",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("NAMESPACE", None)])
-                ]),
-                "cluster": (self._get_as_meta_data, [
-                    ("build", "METADATA",
-                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "version")]),
-                    ("edition", "METADATA",
-                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "edition")]),
-                    ("node_id", "METADATA",
-                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "node-id")]),
-                ]),
-                "endpoints": (self._get_asstat_data, [
-                    ("endpoints", "METADATA",
-                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "endpoints")]),
-                ]),
-                "services": (self._get_asstat_data, [
-                    ("services", "METADATA",
-                     [("CLUSTER", cluster_name), ("NODE", None), ("KEY", "services")]),
-                ]),
-                "metadata": (self._get_asstat_data, [
-                    ("udf", "UDF",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILENAME", None)]),
-                ]),
-                "health": (self._get_as_meta_data, [
-                    ("health", "METADATA",
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("OUTLIER", None)]),
-                ]),
+                "statistics": (
+                    self._get_asstat_data,
+                    [
+                        (
+                            "service",
+                            "SERVICE",
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "namespace",
+                            "NAMESPACE",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("NAMESPACE", None),
+                            ],
+                        ),
+                        (
+                            "sets",
+                            "SET",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                (
+                                    "NAMESPACE",
+                                    (
+                                        "ns_name",
+                                        "ns",
+                                    ),
+                                ),
+                                (
+                                    "SET",
+                                    (
+                                        "set_name",
+                                        "set",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        (
+                            "bins",
+                            "BIN",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("NAMESPACE", None),
+                            ],
+                        ),
+                        ("xdr", "XDR", [("CLUSTER", cluster_name), ("NODE", None)]),
+                        (
+                            "dc",
+                            "DC",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("DC", None),
+                            ],
+                        ),
+                        (
+                            "sindex",
+                            "SINDEX",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("NAMESPACE", ("ns",)),
+                                ("SET", ("set",)),
+                                ("SINDEX", ("indexname",)),
+                            ],
+                        ),
+                    ],
+                ),
+                "config": (
+                    self._get_asconfig_data,
+                    [
+                        (
+                            "service",
+                            "SERVICE",
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        ("xdr", "XDR", [("CLUSTER", cluster_name), ("NODE", None)]),
+                        (
+                            "network",
+                            "NETWORK",
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "dc",
+                            "DC",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("DC", None),
+                            ],
+                        ),
+                        (
+                            "namespace",
+                            "NAMESPACE",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("NAMESPACE", None),
+                            ],
+                        ),
+                        (
+                            "roster",
+                            "ROSTER",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("NAMESPACE", None),
+                            ],
+                        ),
+                        (
+                            "racks",
+                            "RACKS",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("NAMESPACE", None),
+                                (None, None),
+                                ("RACKS", None),
+                            ],
+                        ),
+                    ],
+                ),
+                "original_config": (
+                    self.cluster.info_get_originalconfig,
+                    [
+                        (
+                            "service",
+                            "SERVICE",
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        ("xdr", "XDR", [("CLUSTER", cluster_name), ("NODE", None)]),
+                        (
+                            "network",
+                            "NETWORK",
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "dc",
+                            "DC",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("DC", None),
+                            ],
+                        ),
+                        (
+                            "namespace",
+                            "NAMESPACE",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("NAMESPACE", None),
+                            ],
+                        ),
+                    ],
+                ),
+                "cluster": (
+                    self._get_as_meta_data,
+                    [
+                        (
+                            "build",
+                            "METADATA",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("KEY", "version"),
+                            ],
+                        ),
+                        (
+                            "edition",
+                            "METADATA",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("KEY", "edition"),
+                            ],
+                        ),
+                        (
+                            "node_id",
+                            "METADATA",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("KEY", "node-id"),
+                            ],
+                        ),
+                    ],
+                ),
+                "endpoints": (
+                    self._get_asstat_data,
+                    [
+                        (
+                            "endpoints",
+                            "METADATA",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("KEY", "endpoints"),
+                            ],
+                        ),
+                    ],
+                ),
+                "services": (
+                    self._get_asstat_data,
+                    [
+                        (
+                            "services",
+                            "METADATA",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("KEY", "services"),
+                            ],
+                        ),
+                    ],
+                ),
+                "metadata": (
+                    self._get_asstat_data,
+                    [
+                        (
+                            "udf",
+                            "UDF",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("FILENAME", None),
+                            ],
+                        ),
+                    ],
+                ),
+                "health": (
+                    self._get_as_meta_data,
+                    [
+                        (
+                            "health",
+                            "METADATA",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("OUTLIER", None),
+                            ],
+                        ),
+                    ],
+                ),
             }
             sys_cmd_dict = {
-                "sys_stats": (util.restructure_sys_data, [
-                    ("free-m", "SYSTEM", "FREE", True,
-                     [(None, None), ("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("top", "SYSTEM", "TOP", True, [
-                     (None, None), ("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("iostat", "SYSTEM", "IOSTAT", False, [
-                     (None, None), ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DEVICE", None)]),
-                    ("meminfo", "SYSTEM", "MEMINFO", True,
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("dmesg", "SYSTEM", "DMESG", True,
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("lscpu", "SYSTEM", "LSCPU", True,
-                     [("CLUSTER", cluster_name), ("NODE", None), ("LSCPU", None)]),
-                    ("iptables", "SYSTEM", "IPTABLES", True,
-                     [("CLUSTER", cluster_name), ("NODE", None)]),
-                    ("sysctlall", "SYSTEM", "SYSCTLALL", True,
-                     [("CLUSTER", cluster_name), ("NODE", None), ("SYSCTL", None)]),
-                    ("hdparm", "SYSTEM", "HDPARM", True,
-                     [("CLUSTER", cluster_name), ("NODE", None), ("HDPARM", None)]),
-                    ("limits", "SYSTEM", "LIMITS", True,
-                     [("CLUSTER", cluster_name), ("NODE", None), ("LIMITS", None)]),
-                    ("interrupts", "SYSTEM", "INTERRUPTS", False, [(None, None), ("CLUSTER", cluster_name), ("NODE", None), (None, None),
-                                                                   ("INTERRUPT_TYPE", None), (None, None), ("INTERRUPT_ID", None), (None, None), ("INTERRUPT_DEVICE", None)]),
-                    ("df", "SYSTEM", "DF", True, [
-                     ("CLUSTER", cluster_name), ("NODE", None), (None, None), ("FILE_SYSTEM", None)]),
-                    ("lsb", "SYSTEM", "LSB", True,
-                     [("CLUSTER", cluster_name), ("NODE", None), ("LSB", None)]),
-                    ("environment", "SYSTEM", "ENVIRONMENT", True,
-                     [("CLUSTER", cluster_name), ("NODE", None), ("ENVIRONMENT", None)]),
-                    ("scheduler", "SYSTEM", "SCHEDULER", False,
-                     [("CLUSTER", cluster_name), ("NODE", None), (None, None), ("DEVICE", None)]),
-                ]),
+                "sys_stats": (
+                    util.restructure_sys_data,
+                    [
+                        (
+                            "free-m",
+                            "SYSTEM",
+                            "FREE",
+                            True,
+                            [(None, None), ("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "top",
+                            "SYSTEM",
+                            "TOP",
+                            True,
+                            [(None, None), ("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "iostat",
+                            "SYSTEM",
+                            "IOSTAT",
+                            False,
+                            [
+                                (None, None),
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("DEVICE", None),
+                            ],
+                        ),
+                        (
+                            "meminfo",
+                            "SYSTEM",
+                            "MEMINFO",
+                            True,
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "dmesg",
+                            "SYSTEM",
+                            "DMESG",
+                            True,
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "lscpu",
+                            "SYSTEM",
+                            "LSCPU",
+                            True,
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("LSCPU", None),
+                            ],
+                        ),
+                        (
+                            "iptables",
+                            "SYSTEM",
+                            "IPTABLES",
+                            True,
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "sysctlall",
+                            "SYSTEM",
+                            "SYSCTLALL",
+                            True,
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("SYSCTL", None),
+                            ],
+                        ),
+                        (
+                            "hdparm",
+                            "SYSTEM",
+                            "HDPARM",
+                            True,
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("HDPARM", None),
+                            ],
+                        ),
+                        (
+                            "limits",
+                            "SYSTEM",
+                            "LIMITS",
+                            True,
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("LIMITS", None),
+                            ],
+                        ),
+                        (
+                            "interrupts",
+                            "SYSTEM",
+                            "INTERRUPTS",
+                            False,
+                            [
+                                (None, None),
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("INTERRUPT_TYPE", None),
+                                (None, None),
+                                ("INTERRUPT_ID", None),
+                                (None, None),
+                                ("INTERRUPT_DEVICE", None),
+                            ],
+                        ),
+                        (
+                            "df",
+                            "SYSTEM",
+                            "DF",
+                            True,
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("FILE_SYSTEM", None),
+                            ],
+                        ),
+                        (
+                            "lsb",
+                            "SYSTEM",
+                            "LSB",
+                            True,
+                            [("CLUSTER", cluster_name), ("NODE", None), ("LSB", None)],
+                        ),
+                        (
+                            "environment",
+                            "SYSTEM",
+                            "ENVIRONMENT",
+                            True,
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                ("ENVIRONMENT", None),
+                            ],
+                        ),
+                        (
+                            "scheduler",
+                            "SYSTEM",
+                            "SCHEDULER",
+                            False,
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("DEVICE", None),
+                            ],
+                        ),
+                    ],
+                ),
             }
             health_input = {}
 
             sn_ct = 0
             sleep = sleep_tm * 1.0
 
-            self.logger.info("Collecting " + str(snap_count) +
-                             " collectinfo snapshot. Use -n to set number of snapshots.")
+            self.logger.info(
+                "Collecting "
+                + str(snap_count)
+                + " collectinfo snapshot. Use -n to set number of snapshots."
+            )
             while sn_ct < snap_count:
                 fetched_as_val = {}
 
                 # Collecting data
-                sys_stats = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
-                                                                default_ssh_port=default_ssh_port, credential_file=credential_file, collect_remote_data=enable_ssh)
+                sys_stats = self.cluster.info_system_statistics(
+                    nodes=self.nodes,
+                    default_user=default_user,
+                    default_pwd=default_pwd,
+                    default_ssh_key=default_ssh_key,
+                    default_ssh_port=default_ssh_port,
+                    credential_file=credential_file,
+                    collect_remote_data=enable_ssh,
+                )
 
                 for _key, (info_function, stanza_list) in list(stanza_dict.items()):
 
@@ -2191,11 +2994,15 @@ class HealthCheckController(BasicCommandController):
                         except Exception:
                             new_tuple_keys = []
 
-                        new_component_keys = [create_snapshot_key(sn_ct),
-                                              component_name, _key.upper()]
+                        new_component_keys = [
+                            create_snapshot_key(sn_ct),
+                            component_name,
+                            _key.upper(),
+                        ]
 
-                        health_input = create_health_input_dict(d, health_input,
-                                        new_tuple_keys, new_component_keys)
+                        health_input = create_health_input_dict(
+                            d, health_input, new_tuple_keys, new_component_keys
+                        )
 
                 sys_stats = util.flip_keys(sys_stats)
 
@@ -2221,12 +3028,19 @@ class HealthCheckController(BasicCommandController):
                         except:
                             new_tuple_keys = []
 
-                        new_component_keys = [create_snapshot_key(sn_ct),
-                                              component_name, sub_component_name]
+                        new_component_keys = [
+                            create_snapshot_key(sn_ct),
+                            component_name,
+                            sub_component_name,
+                        ]
 
-                        health_input = create_health_input_dict(d, health_input,
-                                new_tuple_keys, new_component_keys,
-                                forced_all_new_keys)
+                        health_input = create_health_input_dict(
+                            d,
+                            health_input,
+                            new_tuple_keys,
+                            new_component_keys,
+                            forced_all_new_keys,
+                        )
 
                 sn_ct += 1
                 self.logger.info("Snapshot " + str(sn_ct))
@@ -2238,84 +3052,157 @@ class HealthCheckController(BasicCommandController):
             HealthCheckController.last_snapshot_count = snap_count
 
         else:
-            self.logger.info("Using previous collected snapshot data since it is not older than 1 minute.")
+            self.logger.info(
+                "Using previous collected snapshot data since it is not older than 1 minute."
+            )
 
         health_summary = self.health_checker.execute(query_file=query_file)
 
         if health_summary:
-            self.view.print_health_output(health_summary, verbose, debug,
-                                          output_file, output_filter_category,
-                                          output_filter_warning_level)
+            self.view.print_health_output(
+                health_summary,
+                verbose,
+                debug,
+                output_file,
+                output_filter_category,
+                output_filter_warning_level,
+            )
             if not verbose:
                 self.logger.info("Please use -v option for more details on failure. \n")
 
 
 @CommandHelp(
-        'Displays summary of Aerospike cluster.',
-        '  Options:',
-        '    -l                        - Enable to display namespace output in List view. Default: Table view',
-        '    --enable-ssh              - Enable remote server system statistics collection.',
-        '    --ssh-user   <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).',
-        '    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).',
-        '    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22',
-        '    --ssh-key    <string>     - Default SSH key (file path) for remote servers.',
-        '    --ssh-cf     <string>     - Remote System Credentials file path.',
-        '                                If server credentials are not available in credential file then default credentials will be used ',
-        '                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>',
-        '                                Example:  1.2.3.4,uid,pwd',
-        '                                          1.2.3.4:3232,uid,pwd',
-        '                                          1.2.3.4:3232,uid,,key_path',
-        '                                          1.2.3.4:3232,uid,passphrase,key_path',
-        '                                          [2001::1234:10],uid,pwd',
-        '                                          [2001::1234:10]:3232,uid,,key_path',
-        )
+    "Displays summary of Aerospike cluster.",
+    "  Options:",
+    "    -l                        - Enable to display namespace output in List view. Default: Table view",
+    "    --enable-ssh              - Enable remote server system statistics collection.",
+    "    --ssh-user   <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).",
+    "    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).",
+    "    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22",
+    "    --ssh-key    <string>     - Default SSH key (file path) for remote servers.",
+    "    --ssh-cf     <string>     - Remote System Credentials file path.",
+    "                                If server credentials are not available in credential file then default credentials will be used ",
+    "                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>",
+    "                                Example:  1.2.3.4,uid,pwd",
+    "                                          1.2.3.4:3232,uid,pwd",
+    "                                          1.2.3.4:3232,uid,,key_path",
+    "                                          1.2.3.4:3232,uid,passphrase,key_path",
+    "                                          [2001::1234:10],uid,pwd",
+    "                                          [2001::1234:10]:3232,uid,,key_path",
+)
 class SummaryController(BasicCommandController):
-
     def __init__(self):
-        self.modifiers = set(['with'])
+        self.modifiers = set(["with"])
 
     def _do_default(self, line):
-        enable_list_view = util.check_arg_and_delete_from_mods(line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods)
+        enable_list_view = util.check_arg_and_delete_from_mods(
+            line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods
+        )
 
-        enable_ssh = util.check_arg_and_delete_from_mods(line=line, arg="--enable-ssh", default=False, modifiers=self.modifiers, mods=self.mods)
+        enable_ssh = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--enable-ssh",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_user = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-user",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+        default_user = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-user",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_pwd = util.get_arg_and_delete_from_mods(line=line, arg="--ssh-pwd",
-                return_type=str, default=None, modifiers=self.modifiers,
-                mods=self.mods)
+        default_pwd = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-pwd",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_ssh_port = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-port", return_type=int, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        default_ssh_port = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-port",
+            return_type=int,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        default_ssh_key = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-key", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        default_ssh_key = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-key",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        credential_file = util.get_arg_and_delete_from_mods(line=line,
-                arg="--ssh-cf", return_type=str, default=None,
-                modifiers=self.modifiers, mods=self.mods)
+        credential_file = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-cf",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        service_stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
-        namespace_stats = util.Future(self.cluster.info_all_namespace_statistics, nodes=self.nodes).start()
-        set_stats = util.Future(self.cluster.info_set_statistics, nodes=self.nodes).start()
+        service_stats = util.Future(
+            self.cluster.info_statistics, nodes=self.nodes
+        ).start()
+        namespace_stats = util.Future(
+            self.cluster.info_all_namespace_statistics, nodes=self.nodes
+        ).start()
+        set_stats = util.Future(
+            self.cluster.info_set_statistics, nodes=self.nodes
+        ).start()
 
-        service_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='service').start()
-        namespace_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='namespace').start()
-        cluster_configs = util.Future(self.cluster.info_get_config, nodes=self.nodes, stanza='cluster').start()
+        service_configs = util.Future(
+            self.cluster.info_get_config, nodes=self.nodes, stanza="service"
+        ).start()
+        namespace_configs = util.Future(
+            self.cluster.info_get_config, nodes=self.nodes, stanza="namespace"
+        ).start()
+        cluster_configs = util.Future(
+            self.cluster.info_get_config, nodes=self.nodes, stanza="cluster"
+        ).start()
 
-        os_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
-                                                         default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["lsb"], collect_remote_data=enable_ssh)
-        kernel_version = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
-                                                         default_ssh_port=default_ssh_port, credential_file=credential_file, commands=["uname"], collect_remote_data=enable_ssh)
-        server_version = util.Future(self.cluster.info, 'build', nodes=self.nodes).start()
+        os_version = self.cluster.info_system_statistics(
+            nodes=self.nodes,
+            default_user=default_user,
+            default_pwd=default_pwd,
+            default_ssh_key=default_ssh_key,
+            default_ssh_port=default_ssh_port,
+            credential_file=credential_file,
+            commands=["lsb"],
+            collect_remote_data=enable_ssh,
+        )
+        kernel_version = self.cluster.info_system_statistics(
+            nodes=self.nodes,
+            default_user=default_user,
+            default_pwd=default_pwd,
+            default_ssh_key=default_ssh_key,
+            default_ssh_port=default_ssh_port,
+            credential_file=credential_file,
+            commands=["uname"],
+            collect_remote_data=enable_ssh,
+        )
+        server_version = util.Future(
+            self.cluster.info, "build", nodes=self.nodes
+        ).start()
 
-        server_edition = util.Future(self.cluster.info, 'version', nodes=self.nodes).start()
+        server_edition = util.Future(
+            self.cluster.info, "version", nodes=self.nodes
+        ).start()
 
-        cluster_name = util.Future(self.cluster.info, 'cluster-name', nodes=self.nodes).start()
+        cluster_name = util.Future(
+            self.cluster.info, "cluster-name", nodes=self.nodes
+        ).start()
 
         service_stats = service_stats.result()
         namespace_stats = namespace_stats.result()
@@ -2338,10 +3225,14 @@ class SummaryController(BasicCommandController):
 
             metadata["server_build"][node] = version
 
-            if node in server_edition and server_edition[node] and not isinstance(server_edition[node], Exception):
-                if 'enterprise' in server_edition[node].lower():
+            if (
+                node in server_edition
+                and server_edition[node]
+                and not isinstance(server_edition[node], Exception)
+            ):
+                if "enterprise" in server_edition[node].lower():
                     metadata["server_version"][node] = "E-%s" % (str(version))
-                elif 'community' in server_edition[node].lower():
+                elif "community" in server_edition[node].lower():
                     metadata["server_version"][node] = "C-%s" % (str(version))
                 else:
                     metadata["server_version"][node] = version
@@ -2349,7 +3240,11 @@ class SummaryController(BasicCommandController):
             else:
                 metadata["server_version"][node] = version
 
-            if node in cluster_name and cluster_name[node] and not isinstance(cluster_name[node], Exception):
+            if (
+                node in cluster_name
+                and cluster_name[node]
+                and not isinstance(cluster_name[node], Exception)
+            ):
                 metadata["cluster_name"][node] = cluster_name[node]
 
         try:
@@ -2365,13 +3260,17 @@ class SummaryController(BasicCommandController):
                     if not version or isinstance(version, Exception):
                         continue
 
-                    if node not in kernel_version or not kernel_version[node] or isinstance(kernel_version[node], Exception):
+                    if (
+                        node not in kernel_version
+                        or not kernel_version[node]
+                        or isinstance(kernel_version[node], Exception)
+                    ):
                         continue
 
                     try:
                         ov = version["description"]
                         kv = kernel_version[node]["kernel_release"]
-                        version["description"] = str(ov) + " (%s)"%str(kv)
+                        version["description"] = str(ov) + " (%s)" % str(kv)
                     except Exception:
                         pass
 
@@ -2380,8 +3279,16 @@ class SummaryController(BasicCommandController):
 
         metadata["os_version"] = os_version
 
-        return util.Future(self.view.print_summary, common.create_summary(service_stats=service_stats, namespace_stats=namespace_stats,
-                                                                          set_stats=set_stats, metadata=metadata,
-                                                                          service_configs=service_configs, ns_configs=namespace_configs,
-                                                                          cluster_configs=cluster_configs),
-                           list_view=enable_list_view)
+        return util.Future(
+            self.view.print_summary,
+            common.create_summary(
+                service_stats=service_stats,
+                namespace_stats=namespace_stats,
+                set_stats=set_stats,
+                metadata=metadata,
+                service_configs=service_configs,
+                ns_configs=namespace_configs,
+                cluster_configs=cluster_configs,
+            ),
+            list_view=enable_list_view,
+        )
