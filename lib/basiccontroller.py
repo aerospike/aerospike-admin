@@ -638,9 +638,9 @@ class ShowLatenciesController(BasicCommandController):
         "Displays latency information for Aerospike cluster.",
         "  Options:",
         "    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)",
-        "                   default: 3"
+        "                   default: 3",
         "    -b           - Number of latency buckets to display.",
-        "                   default: 3"
+        "                   default: 3",
         "    -v           - Set to display verbose output of optionally configured histograms.",
         "    -m           - Set to display the output group by machine names.",
     )
