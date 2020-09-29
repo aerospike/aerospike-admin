@@ -1679,38 +1679,6 @@ class CollectinfoController(BasicCommandController):
         )
         latency_map = {}
 
-        # if len(latency_nodes) == 0:
-        #     latency_data = util.Future(
-        #         self.cluster.info_latencies,
-        #         nodes=latencies_nodes,
-        #         buckets=17,
-        #         exponent_increment=1,
-        #         verbose=True,
-        #     ).start()
-        #     latency_data = latency_data.result()
-        # elif len(latencies_nodes) == 0:
-        #     latency_data = util.Future(
-        #         self.cluster.info_latency, nodes=latency_nodes
-        #     ).start()
-        #     latency_data = latency_data.result()
-        # else:
-        #     # There are nodes that support show latencies and nodes that do not
-        #     latencies_data = util.Future(
-        #         self.cluster.info_latencies,
-        #         nodes=latencies_nodes,
-        #         buckets=17,
-        #         exponent_increment=1,
-        #         verbose=True,
-        #     ).start()
-        #     latency_data = util.Future(
-        #         self.cluster.info_latency, nodes=latency_nodes
-        #     ).start()
-        #     latencies_data = latencies_data.result()
-        #     latency_data = latency_data.result()
-        #     latency_data = latency_controller.merge_latencies_and_latency_tables(
-        #         latency_data, latencies_data
-        #     )
-
         for node in latencies_data:
             if node not in latency_map:
                 latency_map[node] = {}
