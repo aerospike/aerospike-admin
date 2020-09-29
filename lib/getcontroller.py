@@ -327,9 +327,7 @@ class GetConfigController(object):
         return network_configs
 
     def get_namespace(self, flip=True, nodes="all", for_mods=[]):
-        namespaces = (
-            util.Future(self.cluster.info_namespaces, nodes=nodes).start().result()
-        )
+        namespaces = self.cluster.info_namespaces(nodes=nodes)
         namespaces = list(namespaces.values())
         namespace_set = set()
 

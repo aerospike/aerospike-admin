@@ -1077,9 +1077,9 @@ class Node(object):
 
     def _update_total_latency(self, total_rows, row, has_time_range_col=True):
         """
-        Takes a latency information for a single histogram and integrated it into
+        Takes a latency information for a single histogram and integrates it into
         the total_rows.  Since most of the values are percentages there is some
-        math evolved.
+        math involve.
 
         row -- a single histograms values. These values coorespond to ops/sec
         and a specified number of latency buckets, i.e. 1ms, 8ms, 64ms . . .
