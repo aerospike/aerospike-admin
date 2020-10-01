@@ -1566,8 +1566,7 @@ class CliView(object):
 
         if like:
             likes = compile_likes(like)
-            filtered_keys = filter(likes.search, list(mapping.keys()))
-
+            filtered_keys = list(filter(likes.search, mapping.keys()))
         else:
             filtered_keys = mapping.keys()
 
