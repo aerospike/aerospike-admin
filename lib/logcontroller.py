@@ -694,7 +694,7 @@ class _GrepFile(LogCommandController):
         logs = self.loghdlr.get_logs_by_index(sources)
 
         if not logs:
-            self.logger.info("No log files added. Use add command to add log files.")
+            self.logger.info("No log files added. Use 'add /path/to/log' command to add log files.")
 
         latency_results = self.loghdlr.loglatency(logs, hist, start_tm_arg=start_tm, duration_arg=duration,
                                                   slice_duration=slice_tm, bucket_count=bucket_count,
