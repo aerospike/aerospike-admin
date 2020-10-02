@@ -1504,17 +1504,20 @@ class CliView(object):
                 is_first = True
                 sub_columns_per_column = len(grep_result[file].keys())
                 relative_stats_columns = []
+                lis = []
+                
+                # Get keys and remove tps so that they can be sorted
+                grep_result_keys = list(grep_result[file].keys())
+                grep_result_keys.remove(tps_key)
 
-                for key, unit in sorted(list(grep_result[file].keys())[1:], key=lambda tup: int(tup[0])):
-                    if key == tps_key[0]:
-                        continue
-
+                for key, unit in sorted(grep_result_keys, key=lambda tup: int(tup[0])):
                     if not unit:
                         # this is relative stat column
                         relative_stats_columns.append((key, unit))
                         continue
 
                     row = grep_result[file][(key, unit)]
+
                     if is_first:
                         row['NODE'] = file
                         is_first = False
