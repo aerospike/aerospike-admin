@@ -804,17 +804,13 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + "%s" % (title_suffix)
-        column_names = ('node', 'namespaces', ('_lag-secs', 'Lag (sec)'), ('success', 'Success'),
+        column_names = ('node', 'namespaces', ('success', 'Success'),
                         ('retry_conn_reset', 'Retry Connection Reset'), ('retry_dest', 'Retry Destination'),
-                        ('total_recoveries', 'Recoveries'), ('latency_ms', 'Avg Latency (ms)'),
-                        ('throughput', 'Throughput (rec/s)')
+                        ('recoveries_pending', 'Recoveries Pending'), ('_lag-secs', 'Lag (hh:mm:ss)'),
+                        ('latency_ms', 'Avg Latency (ms)'), ('throughput', 'Throughput (rec/s)')
                         )
 
         t = Table(title, column_names, group_by=1, style=Styles.HORIZONTAL)
-
-
-        t.add_data_source(
-            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
 
         t.add_data_source('success', lambda data: get_value_from_dict(
             data, ('success')))
@@ -825,8 +821,11 @@ class CliView(object):
         t.add_data_source('retry_dest', lambda data: get_value_from_dict(
             data, ('retry_dest')))
 
-        t.add_data_source('total_recoveries', lambda data: get_value_from_dict(
-            data, ('total_recoveries')))
+        t.add_data_source('recoveries_pending', lambda data: get_value_from_dict(
+            data, ('recoveries_pending')))
+
+        t.add_data_source(
+            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag', 'lag')))
 
         t.add_data_source('Avg Latency (ms)', lambda data: get_value_from_dict(
             data, ('latency_ms')))
