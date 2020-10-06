@@ -1480,6 +1480,9 @@ class CliView(object):
     def show_log_latency(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
         tps_key = ("ops/sec", None)
+        last_unit = None
+        current_unit = None
+        units_have_changed = False
 
         if grep_result:
             # find column names
@@ -1517,6 +1520,13 @@ class CliView(object):
                         continue
 
                     row = grep_result[file][(key, unit)]
+                    current_unit = unit
+
+                    if last_unit is None:
+                        last_unit = unit
+                    elif last_unit != unit:
+                        units_have_changed = True
+                        break
 
                     if is_first:
                         row['NODE'] = file
@@ -1549,6 +1559,13 @@ class CliView(object):
         t.ignore_sort()
         CliView.print_result(t.__str__(
             horizontal_title_every_nth=title_every_nth * (sub_columns_per_column + 1)))
+
+        if units_have_changed:
+            CliView.print_result('WARNING: asadm stopped early because latency units have changed from %s to %s.' % (last_unit, current_unit))
+            CliView.print_result("Use 'histogram -h <histogram> -f <datetime> to bypass this problem.")
+            return False
+
+        return True
 
     @staticmethod
     def show_stats(*args, **kwargs):

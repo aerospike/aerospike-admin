@@ -705,8 +705,9 @@ class _GrepFile(LogCommandController):
         page_index = 1
         for latency_res in latency_results:
             if latency_res:
-                self.view.show_log_latency(
+                if not self.view.show_log_latency(
                     "%s Latency (Page-%d)" % (ns_hist, page_index),
-                    latency_res, title_every_nth=title_every_nth)
+                    latency_res, title_every_nth=title_every_nth):
+                    break
                 page_index += 1
         latency_results.close()
