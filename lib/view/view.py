@@ -1479,6 +1479,9 @@ class CliView(object):
     def show_log_latency(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
         column_names = set()
         tps_key = ("ops/sec", None)
+        last_unit = None
+        current_unit = None
+        units_have_changed = False
 
         if grep_result:
             # find column names
@@ -1503,17 +1506,26 @@ class CliView(object):
                 is_first = True
                 sub_columns_per_column = len(grep_result[file].keys())
                 relative_stats_columns = []
+                lis = []
+                
+                # Get keys and remove tps so that they can be sorted
+                grep_result_keys = list(grep_result[file].keys())
+                grep_result_keys.remove(tps_key)
 
-                for key, unit in sorted(list(grep_result[file].keys())[1:], key=lambda tup: int(tup[0])):
-                    if key == tps_key[0]:
-                        continue
-
+                for key, unit in sorted(grep_result_keys, key=lambda tup: int(tup[0])):
                     if not unit:
                         # this is relative stat column
                         relative_stats_columns.append((key, unit))
                         continue
 
                     row = grep_result[file][(key, unit)]
+                    current_unit = unit
+
+                    if last_unit is None:
+                        last_unit = unit
+                    elif last_unit != unit:
+                        units_have_changed = True
+
                     if is_first:
                         row['NODE'] = file
                         is_first = False
@@ -1545,6 +1557,13 @@ class CliView(object):
         t.ignore_sort()
         CliView.print_result(t.__str__(
             horizontal_title_every_nth=title_every_nth * (sub_columns_per_column + 1)))
+
+        if units_have_changed:
+            CliView.print_result('WARNING: asadm stopped early because latency units have changed from %s to %s.' % (last_unit, current_unit))
+            CliView.print_result("Use 'histogram -h <histogram> -f <datetime> to bypass this problem.")
+            return False
+
+        return True
 
     @staticmethod
     def show_stats(*args, **kwargs):
