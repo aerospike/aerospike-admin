@@ -1526,7 +1526,6 @@ class CliView(object):
                         last_unit = unit
                     elif last_unit != unit:
                         units_have_changed = True
-                        break
 
                     if is_first:
                         row['NODE'] = file
