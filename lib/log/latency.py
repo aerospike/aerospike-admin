@@ -358,6 +358,8 @@ class LogLatency(object):
 
         if 'usec' in line:
             unit = 'usec'
+        elif 'msec' in line:
+            unit = 'msec'
 
         total, values, line = self._read_bucket_values(line, file_itr)
 
