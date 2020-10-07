@@ -220,9 +220,9 @@ class AddController(LogCommandController):
             n_log_added, error = self.loghdlr.add_log_files_at_path(path)
 
             if n_log_added == 1:
-                print "%d server log added for server analysis." % (n_log_added)
+                print("%d server log added for server analysis." % (n_log_added))
             elif n_log_added > 1:
-                print "%d server logs added for server analysis." % (n_log_added)
+                print("%d server logs added for server analysis." % (n_log_added))
 
             if error:
                 self.logger.error(error)
@@ -236,27 +236,27 @@ class ListController(LogCommandController):
         self.modifiers = set()
 
     def _do_default(self, line):
-        print terminal.bold() + "Added Logs:" + terminal.unbold(),
+        print(terminal.bold() + "Added Logs:" + terminal.unbold(), end=' ')
         index = 1
         all_log_files = self.loghdlr.get_log_files(all_list=True)
         for key in sorted(all_log_files.keys()):
-            print "\n" + str(index) + "  : " + key.ljust(20) + all_log_files[key],
+            print("\n" + str(index) + "  : " + key.ljust(20) + all_log_files[key], end=' ')
             index += 1
         if index == 1:
-            print " None",
-        print "\n"
+            print(" None", end=' ')
+        print("\n")
 
 
-        print "\n" + terminal.bold() + "Selected Logs:" + terminal.unbold(),
+        print("\n" + terminal.bold() + "Selected Logs:" + terminal.unbold(), end=' ')
         index = 1
         selected_log_files = self.loghdlr.get_log_files(all_list=False)
         for key in sorted(selected_log_files.keys()):
-            print "\n" + " ".ljust(5) + key.ljust(20) + selected_log_files[key],
+            print("\n" + " ".ljust(5) + key.ljust(20) + selected_log_files[key], end=' ')
             index += 1
         if index == 1:
-            print " None",
+            print(" None", end=' ')
 
-        print "\n"
+        print("\n")
 
 
 @CommandHelp(
@@ -694,7 +694,7 @@ class _GrepFile(LogCommandController):
         logs = self.loghdlr.get_logs_by_index(sources)
 
         if not logs:
-            self.logger.info("No log files added. Use add command to add log files.")
+            self.logger.info("No log files added. Use 'add /path/to/log' command to add log files.")
 
         latency_results = self.loghdlr.loglatency(logs, hist, start_tm_arg=start_tm, duration_arg=duration,
                                                   slice_duration=slice_tm, bucket_count=bucket_count,
@@ -705,8 +705,9 @@ class _GrepFile(LogCommandController):
         page_index = 1
         for latency_res in latency_results:
             if latency_res:
-                self.view.show_log_latency(
+                if not self.view.show_log_latency(
                     "%s Latency (Page-%d)" % (ns_hist, page_index),
-                    latency_res, title_every_nth=title_every_nth)
+                    latency_res, title_every_nth=title_every_nth):
+                    break
                 page_index += 1
         latency_results.close()

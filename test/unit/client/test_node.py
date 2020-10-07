@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 from mock import patch, Mock
 import socket
-import unittest2 as unittest
+import unittest
 
 import lib
 from lib.client.node import Node
@@ -203,20 +203,20 @@ class NodeTest(unittest.TestCase):
 
         peers_list = n.info_peers_list()
         expected = [("192.168.120.111",3000,None), ("127.0.0.1",3000,None)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(services) did not return the expected result")
 
         n.use_services_alt = True
         peers_list = n.info_peers_list()
         expected = [("192.168.120.112",3000,None), ("127.0.0.2",3000,None)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(services-alt) did not return the expected result")
         n.use_services_alt = False
 
         n.consider_alumni = True
         peers_list = n.info_peers_list()
         expected = [("192.168.120.113",3000,None), ("127.0.0.3",3000,None)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(services-alt) did not return the expected result")
         n.consider_alumni = False
 
@@ -224,24 +224,24 @@ class NodeTest(unittest.TestCase):
 
         peers_list = n.info_peers_list()
         expected = [(("172.17.0.1",3000,None),), (("2001:db8:85a3::8a2e",6666,None),)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(peers) did not return the expected result")
         n.enable_tls = True
         peers_list = n.info_peers_list()
         expected = [(("172.17.0.1",4333,"peers"),), (("2001:db8:85a3::8a2e",4333,"peers"),)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(peers with tls enabled) did not return the expected result")
         n.enable_tls = False
 
         n.use_services_alt = True
         peers_list = n.info_peers_list()
         expected = [(("172.17.0.2",3000,None),)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(peers-alt) did not return the expected result")
         n.enable_tls = True
         peers_list = n.info_peers_list()
         expected = [(("172.17.0.2",4333,"peers-alt"),)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(peers-alt with tls enabled) did not return the expected result")
         n.enable_tls = False
         n.use_services_alt = True
@@ -249,12 +249,12 @@ class NodeTest(unittest.TestCase):
         n.consider_alumni = True
         peers_list = n.info_peers_list()
         expected = [(('172.17.0.3', 3000, None),), (('172.17.0.2', 3000, None),)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(peers-alumni) did not return the expected result")
         n.enable_tls = True
         peers_list = n.info_peers_list()
         expected = [(("172.17.0.3",4333,"peers-alumni"),), (("172.17.0.2",4333,"peers-alt"),)]
-        self.assertEqual(peers_list, expected,
+        self.assertEqual(sorted(peers_list), sorted(expected),
             "info_peers_list(peers-alumni with tls enabled) did not return the expected result")
         n.enable_tls = False
         n.consider_alumni = False
@@ -266,31 +266,31 @@ class NodeTest(unittest.TestCase):
 
         service_list = n.info_service_list()
         expected = [("192.168.120.111",3000,None), ("127.0.0.1",3000,None)]
-        self.assertEqual(service_list, expected,
+        self.assertEqual(sorted(service_list), sorted(expected),
             "info_service_list(service) did not return the expected result")
 
         n.use_peers_list = True
 
         service_list = n.info_service_list()
         expected = [("172.17.0.1",3000,None), ("172.17.1.1",3000,None)]
-        self.assertEqual(service_list, expected,
+        self.assertEqual(sorted(service_list), sorted(expected),
             "info_service_list(service-clear) did not return the expected result")
         n.enable_tls = True
         service_list = n.info_service_list()
         expected = [("172.17.0.1",4333,None), ("172.17.1.1",4333,None)]
-        self.assertEqual(service_list, expected,
+        self.assertEqual(sorted(service_list), sorted(expected),
             "info_service_list(service-tls) did not return the expected result")
         n.enable_tls = False
 
         n.use_services_alt = True
         service_list = n.info_service_list()
         expected = [("172.17.0.2",3000,None), ("172.17.1.2",3000,None)]
-        self.assertEqual(service_list, expected,
+        self.assertEqual(sorted(service_list), sorted(expected),
             "info_service_list(service-clear-alt) did not return the expected result")
         n.enable_tls = True
         service_list = n.info_service_list()
         expected = [("172.17.0.2",4333,None), ("172.17.1.2",4333,None)]
-        self.assertEqual(service_list, expected,
+        self.assertEqual(sorted(service_list), sorted(expected),
             "info_service_list(service-tls-alt) did not return the expected result")
         n.enable_tls = False
         n.use_services_alt = False

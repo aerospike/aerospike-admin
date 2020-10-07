@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -95,7 +95,7 @@ class CollectinfoSnapshot(object):
 
     def ns_name_fault_check(self, value):
         try:
-            for node, node_data in value.iteritems():
+            for node, node_data in value.items():
                 if not node or not node_data:
                     continue
                 if not 'as_stat' in node_data:
@@ -114,7 +114,7 @@ class CollectinfoSnapshot(object):
                                 del value[node]['as_stat']['statistics']['namespace'][ns]
                                 continue
                             if 'set' in value[node]['as_stat']['statistics']['namespace'][ns]:
-                                for sets in value[node]['as_stat']['statistics']['namespace'][ns]['set'].keys():
+                                for sets in list(value[node]['as_stat']['statistics']['namespace'][ns]['set'].keys()):
                                     if ' ' in sets:
                                         del value[node]['as_stat']['statistics']['namespace'][ns]['set'][sets]
 
@@ -153,7 +153,7 @@ class CollectinfoSnapshot(object):
 
         try:
             # return copy.deepcopy(self.cinfo_data[type][stanza])
-            for node, node_data in self.cinfo_data.iteritems():
+            for node, node_data in self.cinfo_data.items():
                 try:
                     if not node or not node_data:
                         continue
@@ -174,7 +174,7 @@ class CollectinfoSnapshot(object):
                         d = d["namespace"]
 
                         if stanza == "namespace_list":
-                            data[node] = d.keys()
+                            data[node] = list(d.keys())
                             continue
 
                         for ns_name in d.keys():
@@ -250,7 +250,7 @@ class CollectinfoSnapshot(object):
             return data
 
         try:
-            for node, node_data in self.cinfo_data.iteritems():
+            for node, node_data in self.cinfo_data.items():
                 try:
                     if not node or not node_data:
                         continue
@@ -289,7 +289,7 @@ class CollectinfoSnapshot(object):
     def get_expected_principal(self):
         try:
             principal = "0"
-            for n in self.nodes.itervalues():
+            for n in self.nodes.values():
                 if n.node_id == 'N/E':
                     if self._get_node_count() == 1:
                         return n.node_id

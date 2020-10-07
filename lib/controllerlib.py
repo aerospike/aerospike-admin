@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,14 +53,14 @@ class CommandHelp(object):
     def display(func, indent=0):
         indent = "  " * indent
         try:
-            print "\n".join(map(lambda l: indent + l, func._command_help))
+            print("\n".join([indent + l for l in func._command_help]))
         except Exception:
             pass
 
     @staticmethod
     def print_text(message, indent=0):
         indent = "  " * indent
-        print "%s%s" % (indent, message)
+        print("%s%s" % (indent, message))
 
 
 class ShellException(Exception):
@@ -88,9 +88,7 @@ class BaseController(object):
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
-        commands = map(lambda v:
-                       command_re.match(v).groups(),
-                       filter(command_re.search, dir(self)))
+        commands = [command_re.match(v).groups() for v in filter(command_re.search, dir(self))]
 
         self.commands = PrefixDict()
 

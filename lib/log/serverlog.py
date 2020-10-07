@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,20 +21,21 @@ from lib.log import utils
 
 from lib.utils.constants import COUNT_RESULT_KEY, TOTAL_ROW_HEADER, END_ROW_KEY, DT_FMT
 from lib.log.latency import LogLatency
+from lib.utils.util import bytes_to_str
 
 READ_BLOCK_BYTES = 4096
 RETURN_REQUIRED_EVERY_NTH_BLOCK = 5
 TIME_ZONE = "GMT"
 SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \(([^\)]+)\)"
 
-class ServerLog(object):
+class ServerLog():
 
     def __init__(self, display_name, file_name, reader):
         self.display_name = display_name
         self.file_name = file_name
         self.reader = reader
         self.indices = self.reader.generate_server_log_indices(self.file_name)
-        self.file_stream = open(self.file_name, "r")
+        self.file_stream = open(self.file_name, "rb") # read in binary mode to enable relative seeks in Python3
         self.file_stream.seek(0, 0)
 
         self.server_start_tm = self.reader.parse_dt(
@@ -191,6 +192,7 @@ class ServerLog(object):
             while(True):
                 self.read_block = []
                 self.read_block = self.file_stream.readlines(READ_BLOCK_BYTES)
+                self.read_block = [bytes_to_str(line) for line in self.read_block] # convert bytes from rb file to string for Python3
                 self.read_block_count += 1
                 if not self.read_block or self.read_all_lines:
                     break
@@ -232,7 +234,7 @@ class ServerLog(object):
                     self.read_prev_line = False
                     if self.prev_line:
                         return self.prev_line
-                line = self.system_grep_itr.next()
+                line = next(self.system_grep_itr)
                 self.prev_line = line
                 # if line:
                 #     line = line + "\n"
@@ -396,7 +398,7 @@ class ServerLog(object):
         if current_line_tm >= old_slice_end:
             d = current_line_tm - old_slice_start
             slice_jump = int(
-                (d.seconds + 86400 * d.days) / slice_duration.seconds)
+                (d.seconds + 86400 * d.days) // slice_duration.seconds)
             slice_start = old_slice_start + slice_duration * slice_jump
             slice_end = slice_start + slice_duration
             return slice_start, slice_end, slice_jump
@@ -519,12 +521,12 @@ class ServerLog(object):
             elif m2:
                 pattern = latency_pattern2 % (grep_str)
                 if not slice_count % self.slice_show_count:
-                    slice_val = map(lambda x: int(x), m2.group(1).split(","))
+                    slice_val = [int(x) for x in m2.group(1).split(",")]
                 pattern_type = 1
             elif m3:
                 pattern = latency_pattern3 % (grep_str)
                 if not slice_count % self.slice_show_count:
-                    slice_val = map(lambda x: int(x), list(m3.groups()))
+                    slice_val = [int(x) for x in list(m3.groups())]
                 pattern_type = 2
             elif m4:
                 pattern = latency_pattern4 % (grep_str)
@@ -590,10 +592,9 @@ class ServerLog(object):
                             different_writer_info = True
 
                         if pattern_type == 2:
-                            current = map(lambda x: int(x), list(m.groups()))
+                            current = [int(x) for x in list(m.groups())]
                         else:
-                            current = map(
-                                lambda x: int(x), m.group(1).split(","))
+                            current = [int(x) for x in m.group(1).split(",")]
                         if slice_val:
                             slice_val = (
                                 [b + a for b, a in zip(current, slice_val)])

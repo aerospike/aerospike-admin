@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import os
 import shutil
 import tarfile
 import zipfile
-
 
 from lib.collectinfo.reader import CollectinfoReader
 from lib.collectinfo.cinfolog import CollectinfoLog
@@ -67,7 +66,7 @@ class CollectinfoLoghdlr(object):
 
         i = 1
         for timestamp in sorted(self.all_cinfo_logs.keys()):
-            nodes = self.all_cinfo_logs[timestamp].get_node_names().keys()
+            nodes = list(self.all_cinfo_logs[timestamp].get_node_names().keys())
             if len(nodes) == 0:
                 continue
 

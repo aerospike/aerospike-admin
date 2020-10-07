@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ import json
 import logging
 import os
 
-from as_section_parser import parse_as_section, get_meta_info, get_cluster_name
-import cinfo_parser
-import conf_parser
-import section_filter_list
-from sys_section_parser import parse_sys_section
+from .as_section_parser import parse_as_section, get_meta_info, get_cluster_name
+from . import cinfo_parser
+from . import conf_parser
+from . import section_filter_list
+from .sys_section_parser import parse_sys_section
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
@@ -64,7 +64,7 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
                 logger.info("File is already pasred_json: " + cinfo_path_name)
                 parsed_map.update(cinfo_map)
                 _missing_version = _find_missing_data_version(cinfo_map)
-                json_parsed_timestamps = cinfo_map.keys()
+                json_parsed_timestamps = list(cinfo_map.keys())
                 break
 
     parsed_conf_map = {}
@@ -121,7 +121,7 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
             parsed_map[timestamp][cluster_name] = copy.deepcopy(parsed_map[timestamp]['null'])
             (parsed_map[timestamp]).pop('null', None)
         elif 'null' not in parsed_map[timestamp] and cluster_name == 'null':
-            cluster_name = parsed_map[timestamp].keys()[0]
+            cluster_name = list(parsed_map[timestamp].keys())[0]
 
     # Insert as_stat
     _merge_nodelevel_map_to_mainmap(parsed_map, as_map, [timestamp], keys_after_node_id=["as_stat"], create_new_node=True)
@@ -142,7 +142,6 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
     node_ip_map = _create_node_ip_map(meta_map)
 
     # Insert sys_stat
-    nodes = nodemap.keys()
     if len(sys_map) == 0 and UNKNOWN_NODE in nodemap \
             and 'sys_stat' in nodemap[UNKNOWN_NODE]:
         sys_map = nodemap[UNKNOWN_NODE]['sys_stat']
@@ -315,27 +314,24 @@ def _create_ip_to_node_map(meta_map):
 
     return ip_to_node
 
-def _stringify(input):
+def _stringify(data):
     """
     Convert unicode to string.
 
     """
 
-    if isinstance(input, dict):
-        data = {}
-        for _k,v in input.iteritems():
-            data[_stringify(_k)] = _stringify(v)
+    if isinstance(data, dict):
+        data_str = {}
+        for _k,v in data.items():
+            data_str[_stringify(_k)] = _stringify(v)
 
-        return data
+        return data_str
 
-    elif isinstance(input, list):
-        return [_stringify(element) for element in input]
-
-    elif isinstance(input, unicode):
-        return str(input.encode('utf-8'))
+    elif isinstance(data, list):
+        return [_stringify(element) for element in data]
 
     else:
-        return input
+        return data
 
 def _merge_samelevel_maps(main_map, from_map):
     '''
@@ -508,13 +504,13 @@ def _add_missing_histogram_data(imap, parsed_map, timestamps, node_ip_mapping, i
 def _convert_parsed_latency_map_to_collectinfo_format(parsed_map):
     latency_map = {}
 
-    for node, node_data in parsed_map.iteritems():
+    for node, node_data in parsed_map.items():
         if not node_data or isinstance(node_data, Exception) or "latency" not in node_data:
             continue
 
         latency_data = node_data["latency"]
 
-        for hist, hist_data in latency_data.iteritems():
+        for hist, hist_data in latency_data.items():
             if not hist_data or isinstance(hist_data, Exception):
                 continue
 
@@ -529,7 +525,7 @@ def _convert_parsed_latency_map_to_collectinfo_format(parsed_map):
                 latency_map[node]["latency"][hist]["total"]["values"] = []
 
             _vl = []
-            for _k, _v in hist_data.iteritems():
+            for _k, _v in hist_data.items():
                 latency_map[node]["latency"][hist]["total"]["columns"].append(_k)
                 _vl.append(_v)
             latency_map[node]["latency"][hist]["total"]["values"].append(_vl)
@@ -588,7 +584,7 @@ def _to_roster_map(parsed_map):
 
     list_fields = ["roster", "pending_roster", "observed_nodes"]
 
-    for node, node_data in parsed_map.iteritems():
+    for node, node_data in parsed_map.items():
         if not node_data or isinstance(node_data, Exception) or "roster" not in node_data:
             continue
 
@@ -607,7 +603,7 @@ def _to_roster_map(parsed_map):
             m = _to_map(ns_data)
             if not m or "ns" not in m:
                 continue
-            for k, v in m.iteritems():
+            for k, v in m.items():
                 if k not in list_fields:
                     continue
                 try:

@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ NOKEY = ""
 operators = {
     "+": operator.add,
     "-": operator.sub,
-    "/": operator.div,
+    "/": operator.truediv,
     "*": operator.mul,
     "%": operator.mod,
     '>': operator.gt,
@@ -405,17 +405,17 @@ class BinaryOperation():
             return None
 
         if not isinstance(arg1, dict) and not isinstance(arg2, dict):
-
             try:
                 raw_arg1 = get_value_from_health_internal_tuple(arg1)
                 raw_arg2 = get_value_from_health_internal_tuple(arg2)
-                if self.op == operator.div and raw_arg2 == 0:
+
+                if self.op == operator.truediv and raw_arg2 == 0:
                     val_to_save = create_value_list_to_save(save_param, value=0, op1=arg1, op2=arg2)
                     return (0, val_to_save)
 
                 # if any of the arg is type float or operation is division
                 # cast all argument to float
-                if self.op == operator.div or isinstance(raw_arg1, float) or isinstance(raw_arg2, float):
+                if self.op == operator.truediv or isinstance(raw_arg1, float) or isinstance(raw_arg2, float):
                     raw_arg1 = float(raw_arg1)
                     raw_arg2 = float(raw_arg2)
 

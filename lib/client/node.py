@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ from lib.collectinfo_parser import conf_parser
 from lib.collectinfo_parser.full_parser import parse_system_live_command
 from lib.utils import common
 from lib.utils.constants import AuthMode
+from lib.utils.util import shell_command
 
 #### Remote Server connection module
 
@@ -166,7 +167,7 @@ class Node(object):
             if address.lower() == "localhost":
                 self.localhost = True
             else:
-                o, e = util.shell_command(["hostname -I"])
+                o, e = shell_command(["hostname -I"])
                 self.localhost = self._is_any_my_ip(o.split())
         except Exception:
             pass
@@ -559,7 +560,7 @@ class Node(object):
             return []
 
         s = map(util.info_to_tuple, util.info_to_list(services))
-        return map(lambda v: (v[0], int(v[1]), self.tls_name), s)
+        return [(v[0], int(v[1]), self.tls_name) for v in s]
 
     # post 3.10 services
 
@@ -738,8 +739,8 @@ class Node(object):
     def _info_service_helper(self, service, delimiter=";"):
         if not service or isinstance(service, Exception):
             return []
-        s = map(lambda v: util.parse_peers_string(v, ":"), util.info_to_list(service, delimiter=delimiter))
-        return map(lambda v: (v[0].strip("[]"), int(v[1]) if len(v)>1 and v[1] else int(self.port), self.tls_name), s)
+        s = [util.parse_peers_string(v, ":") for v in util.info_to_list(service, delimiter=delimiter)]
+        return [(v[0].strip("[]"), int(v[1]) if len(v)>1 and v[1] else int(self.port), self.tls_name) for v in s]
 
     # post 3.10 services
 
@@ -894,7 +895,7 @@ class Node(object):
 
         for stat in stats:
             values = util.info_to_list(stat[1], ',')
-            values = ";".join(filter(lambda v: '=' in v, values))
+            values = ";".join([v for v in values if '=' in v])
             values = util.info_to_dict(values)
             stat_dict[stat[0]] = values
 
@@ -928,6 +929,7 @@ class Node(object):
         Returns:
         dict -- stanza --> [namespace] --> param --> value
         """
+        xdr_major_version = int(self.info_XDR_build_version()[0])
         config = {}
         if stanza == 'namespace':
             if namespace != "":
@@ -951,6 +953,26 @@ class Node(object):
 
         elif stanza == '' or stanza == 'service':
             config = util.info_to_dict(self.info("get-config:"))
+        elif stanza == 'xdr' and xdr_major_version >= 5:
+            xdr_config = {}
+            xdr_config['dc_configs'] = {}
+            xdr_config['ns_configs'] = {}
+            xdr_config['xdr_configs'] = util.info_to_dict(self.info("get-config:context=xdr"))
+
+            for dc in xdr_config['xdr_configs']['dcs'].split(','):
+                dc_config = self.info("get-config:context=xdr;dc=%s" % dc)
+                xdr_config['ns_configs'][dc] = {}
+                xdr_config['dc_configs'][dc] = util.info_to_dict(dc_config)
+
+                start_namespaces = dc_config.find('namespaces=') + len('namespaces=')
+                end_namespaces = dc_config.find(';', start_namespaces)
+                namespaces = (ns for ns in dc_config[start_namespaces:end_namespaces].split(','))
+
+                for namespace in namespaces:
+                    namespace_config = self.info("get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace))
+                    xdr_config['ns_configs'][dc][namespace] = util.info_to_dict(namespace_config)
+
+            config = xdr_config
         elif stanza != 'all':
             config = util.info_to_dict(
                 self.info("get-config:context=%s" % stanza))
@@ -1009,7 +1031,7 @@ class Node(object):
                         o_t = float((o_sum * t_p) / 100.00)
                         n_t = float((n_sum * row[i + 2]) / 100.00)
                         t_row[
-                            i + 2] = round(float(((o_t + n_t) * 100) / (o_sum + n_sum)), 2)
+                            i + 2] = round(float(((o_t + n_t) * 100) // (o_sum + n_sum)), 2)
                     t_row[1] = round(o_sum + n_sum, 2)
                 updated = True
                 break
@@ -1208,8 +1230,8 @@ class Node(object):
         roster_data = util.info_to_dict_multi_level(roster_data, "ns")
         list_fields = ["roster", "pending_roster", "observed_nodes"]
 
-        for ns, ns_roster_data in roster_data.iteritems():
-            for k, v in ns_roster_data.iteritems():
+        for ns, ns_roster_data in roster_data.items():
+            for k, v in ns_roster_data.items():
                 if k not in list_fields:
                     continue
 
@@ -1236,10 +1258,10 @@ class Node(object):
         rack_data = util.info_to_dict_multi_level(rack_data, "ns")
         rack_dict = {}
 
-        for ns, ns_rack_data in rack_data.iteritems():
+        for ns, ns_rack_data in rack_data.items():
             rack_dict[ns] = {}
 
-            for k, v in ns_rack_data.iteritems():
+            for k, v in ns_rack_data.items():
                 if k == "ns":
                     continue
 
@@ -1497,16 +1519,16 @@ class Node(object):
                 continue
 
             for cmd in cmds:
-                o, e = util.shell_command([cmd])
+                o, e = shell_command([cmd])
                 if (e and not ignore_error) or not o:
                     continue
-                else:
-                    try:
-                        parse_system_live_command(_key, o, sys_stats)
-                    except Exception:
-                        pass
 
-                    break
+                try:
+                    parse_system_live_command(_key, o, sys_stats)
+                except Exception:
+                    pass
+
+                break
 
         return sys_stats
 

@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 import re
 import sys
 import logging
-import section_filter_list
+from . import section_filter_list
 # Assumption - Always a valid number is passed to convert to integer/float
 
 logger = logging.getLogger(__name__)

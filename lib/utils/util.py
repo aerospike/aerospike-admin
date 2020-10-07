@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,16 +13,16 @@
 # limitations under the License.
 
 import copy
+import io
 import pipes
 import re
 import socket
-import StringIO
 import subprocess
 import sys
 import threading
 
 
-class Future(object):
+class Future():
 
     """
     Very basic implementation of a async future.
@@ -39,9 +39,9 @@ class Future(object):
             self.exc = None
             try:
                 self._result = func(*args, **kwargs)
-            except Exception:
+            except Exception as e:
                 # Store original stack trace/exception to be re-thrown later.
-                self.exc = sys.exc_info()
+                self.exc = e
 
         self._worker = threading.Thread(target=wrapper,
                                         args=args, kwargs=kwargs)
@@ -52,7 +52,7 @@ class Future(object):
 
     def result(self):
         if self.exc:
-            raise self.exc[0], self.exc[1], self.exc[2]
+            raise(self.exc)
 
         self._worker.join()
         return self._result
@@ -62,7 +62,6 @@ def shell_command(command):
     """
     command is a list of ['cmd','arg1','arg2',...]
     """
-
     command = pipes.quote(" ".join(command))
     command = ['bash', '-c', "'%s'" % (command)]
     try:
@@ -73,9 +72,7 @@ def shell_command(command):
     except Exception:
         return '', 'error'
     else:
-        return out, err
-
-    # Redirecting the stdout to use the output elsewhere
+        return bytes_to_str(out), bytes_to_str(err)
 
 
 def capture_stdout(func, line=''):
@@ -85,7 +82,7 @@ def capture_stdout(func, line=''):
 
     sys.stdout.flush()
     old = sys.stdout
-    capturer = StringIO.StringIO()
+    capturer = io.StringIO()
     sys.stdout = capturer
 
     func(line)
@@ -96,7 +93,8 @@ def capture_stdout(func, line=''):
 
 
 def compile_likes(likes):
-    likes = ["(" + like.translate(None, '\'"') + ")" for like in likes]
+    likes = ["(" + like.translate(str.maketrans('','','\'"')) + ")" for like in likes]
+
     likes = "|".join(likes)
     likes = re.compile(likes)
     return likes
@@ -285,7 +283,7 @@ def get_values_from_dict(d, re_keys, return_type=None):
     if not isinstance(re_keys, tuple):
         re_keys = (re_keys,)
 
-    keys = filter_list(d.keys(), list(re_keys))
+    keys = filter_list(d.keys(), re_keys)
 
     for key in keys:
         val, success = _cast(d[key], return_type=return_type)
@@ -304,10 +302,10 @@ def strip_string(search_str):
 
 def flip_keys(orig_data):
     new_data = {}
-    for key1, data1 in orig_data.iteritems():
+    for key1, data1 in orig_data.items():
         if isinstance(data1, Exception):
             continue
-        for key2, data2 in data1.iteritems():
+        for key2, data2 in data1.items():
             if key2 not in new_data:
                 new_data[key2] = {}
             new_data[key2][key1] = data2
@@ -319,7 +317,7 @@ def first_key_to_upper(data):
     if not data or not isinstance(data, dict):
         return data
     updated_dict = {}
-    for k, v in data.iteritems():
+    for k, v in data.items():
         updated_dict[k.upper()] = v
     return updated_dict
 
@@ -346,7 +344,7 @@ def restructure_sys_data(content, cmd):
                     c["device_stat"] = d_s
                 content[n] = c
         except Exception as e:
-            print e
+            print(e)
         content = flip_keys(content)
         content = first_key_to_upper(content)
     elif cmd == "interrupts":
@@ -371,7 +369,7 @@ def restructure_sys_data(content, cmd):
                         copy.deepcopy(new_interrrupt))
                 content[n]["device_interrupts"] = new_interrrupt_dict
         except Exception as e:
-            print e
+            print(e)
         content = flip_keys(content)
         content = first_key_to_upper(content)
     elif cmd == "df":
@@ -578,3 +576,29 @@ def _is_valid_ipv6_address(address):
     except socket.error:  # not a valid address
         return False
     return True
+
+def is_str(data):
+    if data is None:
+        return False
+
+    return isinstance(data, str)
+
+
+def bytes_to_str(data):
+    if data is None:
+        return data
+
+    if not is_str(data):
+        return data.decode("utf-8")
+    
+    return data
+
+
+def str_to_bytes(data):
+    if data is None:
+        return data
+
+    if is_str(data):
+        return str.encode(data, "utf-8")
+    
+    return data

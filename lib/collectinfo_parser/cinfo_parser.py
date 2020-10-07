@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import os
 import json
 import re
 import logging
-import section_filter_list
+from . import section_filter_list
 
 SECTION_DELIMITER = 'ASCOLLECTINFO'
 MIN_MATCH_COUNT = 2
@@ -40,7 +40,7 @@ def extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception
     """
     logger.info("Creating section json. parse, validate, filter sections.")
 
-    imap_old_keys = imap.keys()
+    imap_old_keys = list(imap.keys())
 
     if 'cinfo_paths' not in imap:
         imap['cinfo_paths'] = []
@@ -325,6 +325,7 @@ def _parse_new_collectinfo_to_imap(cinfo_path, section_list, section_skip_list, 
 
 def get_timestamp_from_file(cinfo_path):
     timestamp = ''
+    fileline = ''
     if not os.path.exists(cinfo_path):
         logger.warning("collectinfo doesn't exist at Path: " + cinfo_path)
         return

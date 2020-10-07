@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
 
 import copy
 import json
-import os
-import platform
 import shutil
 import sys
 import time
@@ -211,6 +209,7 @@ class InfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
+        node_xdr_build_major_version = 4
 
         for node in stats:
             try:
@@ -250,6 +249,7 @@ class InfoController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         old_xdr_stats = {}
         xdr5_stats = {}
+        node_xdr_build_major_version = 4
 
         for node in stats:
             try:
@@ -276,7 +276,7 @@ class InfoController(BasicCommandController):
             xdr5_stats = temp
 
             if self.mods['for']:
-                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+                matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
 
             futures = [ 
                 util.Future(self.view.info_XDR, xdr5_stats[dc], xdr_builds,
@@ -379,7 +379,7 @@ class ASInfoController(BasicCommandController):
                 "Do not understand '%s' in '%s'" % (word, " ".join(line)))
             return
         if value is not None:
-            value = value.translate(None, "'\"")
+            value = value.translate(str.maketrans('','',"'\""))
         if xdr:
             results = self.cluster.xdr_info(value, nodes=nodes)
         else:
@@ -522,13 +522,12 @@ class ShowLatencyController(BasicCommandController):
         namespace_set = set()
         if self.mods['for']:
             namespaces = self.cluster.info_namespaces(nodes=self.nodes)
-            namespaces = namespaces.values()
-            for namespace in namespaces:
+            for namespace in namespaces.values():
                 if isinstance(namespace, Exception):
                     continue
                 namespace_set.update(namespace)
             namespace_set = set(
-                util.filter_list(list(namespace_set), self.mods['for']))
+                util.filter_list(namespace_set, self.mods['for']))
 
         latency = self.cluster.info_latency(
             nodes=self.nodes, back=back, duration=duration, slice_tm=slice_tm,
@@ -538,10 +537,10 @@ class ShowLatencyController(BasicCommandController):
         if machine_wise_display:
             hist_latency = latency
         else:
-            for node_id, hist_data in latency.iteritems():
+            for node_id, hist_data in latency.items():
                 if isinstance(hist_data, Exception):
                     continue
-                for hist_name, data in hist_data.iteritems():
+                for hist_name, data in hist_data.items():
                     if hist_name not in hist_latency:
                         hist_latency[hist_name] = {node_id: data}
                     else:
@@ -625,10 +624,12 @@ class ShowConfigController(BasicCommandController):
         return [util.Future(self.view.show_config,
             "%s Namespace Configuration" % (ns), configs, self.cluster,
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-                for ns, configs in ns_configs.iteritems()]
+                for ns, configs in ns_configs.items()]
 
     @CommandHelp('Displays XDR configuration')
     def do_xdr(self, line):
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
@@ -637,15 +638,74 @@ class ShowConfigController(BasicCommandController):
         flip_output = util.check_arg_and_delete_from_mods(line=line,
                 arg="-flip", default=False, modifiers=self.modifiers,
                 mods=self.mods)
-
+        
         xdr_configs = self.getter.get_xdr(nodes=self.nodes)
+        xdr_builds = xdr_builds.result()
+        old_xdr_configs = {}
+        xdr5_configs = {}
+        node_xdr_build_major_version = 4
 
-        return util.Future(self.view.show_config, "XDR Configuration",
-                xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
-                **self.mods)
+        for node in xdr_configs:
+            try:
+                node_xdr_build_major_version = int(xdr_builds[node][0])
+            except:
+                continue
 
-    @CommandHelp('Displays datacenter configuration')
+            if node_xdr_build_major_version < 5:
+                old_xdr_configs[node] = xdr_configs[node]
+            else:
+                xdr5_configs[node] = xdr_configs[node]
+
+        futures = []
+        if xdr5_configs:
+            if self.mods['for']:
+                xdr_dc = self.mods['for'][0]
+
+                for config in xdr5_configs.values():
+                    if isinstance(config, Exception):
+                        continue
+
+                    try:
+                        dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
+                    except KeyError:
+                        dc_configs_matches = []
+                    
+                    try:
+                        ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
+                    except KeyError:
+                        ns_configs_matches = []
+
+                    config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
+                    config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
+
+                    if len(self.mods['for']) >= 2:
+                        xdr_ns = self.mods['for'][1]
+                        for dc in config['ns_configs']:
+                            try:
+                                ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
+                            except KeyError:
+                                ns_matches = []
+
+                            config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
+
+            futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
+                                        xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
+                                        **self.mods))
+        
+        if old_xdr_configs:
+            futures.append(util.Future(self.view.show_config, "XDR Configuration",
+                                        old_xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
+                                        **self.mods))
+        
+        return futures
+
+    # pre 5.0
+    @CommandHelp('Displays datacenter configuration.',
+                'Replaced by "show config xdr" for server >= 5.0.')
     def do_dc(self, line):
+
+        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+                nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
                 arg="-r", return_type=int, default=0, modifiers=self.modifiers,
@@ -657,10 +717,35 @@ class ShowConfigController(BasicCommandController):
 
         dc_configs = self.getter.get_dc(nodes=self.nodes)
 
-        return [util.Future(self.view.show_config,
-            "%s DC Configuration" % (dc), configs, self.cluster,
-            title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for dc, configs in dc_configs.iteritems()]
+        nodes_running_v5_or_higher = False
+        nodes_running_v49_or_lower = False
+        xdr_builds = xdr_builds.result()
+        node_xdr_build_major_version = 4
+
+        for xdr_build in xdr_builds.values():
+            try:
+                node_xdr_build_major_version = int(xdr_build[0])
+            except:
+                continue
+
+            if node_xdr_build_major_version >= 5:
+                nodes_running_v5_or_higher = True
+            else:
+                nodes_running_v49_or_lower = True
+
+        futures = []
+        if nodes_running_v49_or_lower:
+            futures = [util.Future(self.view.show_config,
+                "%s DC Configuration" % (dc), configs, self.cluster,
+                title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
+                for dc, configs in dc_configs.items()]
+        
+        if nodes_running_v5_or_higher:
+            futures.append(util.Future(self.view.print_result, 
+            "WARNING: Detected nodes running aerospike version >= 5.0. " +
+            "Please use 'asadm -e \"show config xdr\"' for versions 5.0 and up."))
+
+        return futures
 
     @CommandHelp('Displays Cluster configuration')
     def do_cluster(self, line):
@@ -811,7 +896,7 @@ class ShowStatisticsController(BasicCommandController):
             "%s %s Set Statistics" % (namespace, set_name), stats,
             self.cluster, show_total=show_total,
             title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for (namespace, set_name), stats in set_stats.iteritems()]
+            for (namespace, set_name), stats in set_stats.items()]
 
     @CommandHelp('Displays bin statistics')
     def do_bins(self, line):
@@ -832,11 +917,10 @@ class ShowStatisticsController(BasicCommandController):
         return [util.Future(self.view.show_stats,
             "%s Bin Statistics" % (namespace), new_bin_stat, self.cluster,
             show_total=show_total, title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-            for namespace, new_bin_stat in new_bin_stats.iteritems()]
+            for namespace, new_bin_stat in new_bin_stats.items()]
 
     @CommandHelp('Displays XDR statistics')
     def do_xdr(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(line=line, arg="-t",
                 default=False, modifiers=self.modifiers, mods=self.mods)
 
@@ -857,6 +941,7 @@ class ShowStatisticsController(BasicCommandController):
         xdr_stats = xdr_stats.result()
         old_xdr_stats = {}
         xdr5_stats = {}
+        node_xdr_build_major_version = 4
 
         for node in xdr_stats:
             try:
@@ -882,7 +967,7 @@ class ShowStatisticsController(BasicCommandController):
             xdr5_stats = temp
 
             if self.mods['for']:
-                matches = util.filter_list(list(xdr5_stats.keys()), self.mods['for'])
+                matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
 
             futures = [
                     util.Future(self.view.show_stats, "XDR Statistics %s" % dc, xdr5_stats[dc],
@@ -923,6 +1008,7 @@ class ShowStatisticsController(BasicCommandController):
         xdr_builds = xdr_builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
+        node_xdr_build_major_version = 4
 
         for dc in dc_stats.values():
 
@@ -943,7 +1029,7 @@ class ShowStatisticsController(BasicCommandController):
             futures = [util.Future(self.view.show_config, "%s DC Statistics" % (dc),
                 stats, self.cluster, show_total=show_total,
                 title_every_nth=title_every_nth, flip_output=flip_output, **self.mods)
-                for dc, stats in dc_stats.iteritems()]
+                for dc, stats in dc_stats.items()]
         
         if nodes_running_v5_or_higher:
             futures.append(util.Future(self.view.print_result, 
@@ -985,7 +1071,7 @@ class CollectinfoController(BasicCommandController):
         sep = constants.COLLECTINFO_SEPRATOR
 
         try:
-            name = func.func_name
+            name = func.__name__
         except Exception:
             pass
 
@@ -1004,7 +1090,7 @@ class CollectinfoController(BasicCommandController):
         return ''
 
     def _write_version(self, line):
-        print "asadm version " + str(self.asadm_version)
+        print("asadm version " + str(self.asadm_version))
 
     def _collect_logs_from_systemd_journal(self, as_logfile_prefix):
         asd_pids = common.get_asd_pids()
@@ -1038,11 +1124,11 @@ class CollectinfoController(BasicCommandController):
     # Functions for dumping json
 
     def _restructure_set_section(self, stats):
-        for node, node_data in stats.iteritems():
+        for node, node_data in stats.items():
             if 'set' not in node_data.keys():
                 continue
 
-            for key, val in node_data['set'].iteritems():
+            for key, val in node_data['set'].items():
                 ns_name = key[0]
                 setname = key[1]
 
@@ -1063,11 +1149,11 @@ class CollectinfoController(BasicCommandController):
         # there is possibility that different nodes will have different namespaces and
         # old sindex info available for node which does not have namespace for that sindex.
 
-        for node, node_data in stats.iteritems():
+        for node, node_data in stats.items():
             if 'sindex' not in node_data.keys():
                 continue
 
-            for key, val in node_data['sindex'].iteritems():
+            for key, val in node_data['sindex'].items():
                 key_list = key.split()
                 ns_name = key_list[0]
                 sindex_name = key_list[2]
@@ -1083,10 +1169,10 @@ class CollectinfoController(BasicCommandController):
             del node_data['sindex']
 
     def _restructure_bin_section(self, stats):
-        for node, node_data in stats.iteritems():
+        for node, node_data in stats.items():
             if 'bin' not in node_data.keys():
                 continue
-            for ns_name, val in node_data['bin'].iteritems():
+            for ns_name, val in node_data['bin'].items():
                 if ns_name not in node_data['namespace']:
                     continue
 
@@ -1096,21 +1182,21 @@ class CollectinfoController(BasicCommandController):
             del node_data['bin']
 
     def _init_stat_ns_subsection(self, data):
-        for node, node_data in data.iteritems():
+        for node, node_data in data.items():
             if 'namespace' not in node_data.keys():
                 continue
             ns_map = node_data['namespace']
-            for ns, data in ns_map.iteritems():
+            for ns, data in ns_map.items():
                 ns_map[ns]['set'] = {}
                 ns_map[ns]['bin'] = {}
                 ns_map[ns]['sindex'] = {}
 
     def _restructure_ns_section(self, data):
-        for node, node_data in data.iteritems():
+        for node, node_data in data.items():
             if 'namespace' not in node_data.keys():
                 continue
             ns_map = node_data['namespace']
-            for ns, data in ns_map.iteritems():
+            for ns, data in ns_map.items():
                 stat = {}
                 stat[ns] = {}
                 stat[ns]['service'] = data
@@ -1716,7 +1802,7 @@ class HealthCheckController(BasicCommandController):
                 return editions
 
             editions_in_shortform = {}
-            for node, edition in editions.iteritems():
+            for node, edition in editions.items():
                 if not edition or isinstance(edition, Exception):
                     continue
 
@@ -1956,7 +2042,7 @@ class HealthCheckController(BasicCommandController):
                 sys_stats = self.cluster.info_system_statistics(nodes=self.nodes, default_user=default_user, default_pwd=default_pwd, default_ssh_key=default_ssh_key,
                                                                 default_ssh_port=default_ssh_port, credential_file=credential_file, collect_remote_data=enable_ssh)
 
-                for _key, (info_function, stanza_list) in stanza_dict.iteritems():
+                for _key, (info_function, stanza_list) in stanza_dict.items():
 
                     for stanza_item in stanza_list:
 
@@ -1964,7 +2050,7 @@ class HealthCheckController(BasicCommandController):
                         fetched_as_val[(_key, stanza)] = info_function(stanza)
 
                 # Creating health input model
-                for _key, (info_function, stanza_list) in stanza_dict.iteritems():
+                for _key, (info_function, stanza_list) in stanza_dict.items():
 
                     for stanza_item in stanza_list:
 
@@ -1989,7 +2075,7 @@ class HealthCheckController(BasicCommandController):
 
                 sys_stats = util.flip_keys(sys_stats)
 
-                for cmd_key, (sys_function, sys_cmd_list) in sys_cmd_dict.iteritems():
+                for cmd_key, (sys_function, sys_cmd_list) in sys_cmd_dict.items():
 
                     for cmd_item in sys_cmd_list:
 
@@ -2122,7 +2208,7 @@ class SummaryController(BasicCommandController):
         metadata["server_build"] = {}
         metadata["cluster_name"] = {}
 
-        for node, version in server_version.iteritems():
+        for node, version in server_version.items():
             if not version or isinstance(version, Exception):
                 continue
 
@@ -2151,7 +2237,7 @@ class SummaryController(BasicCommandController):
             os_version = util.flip_keys(os_version)["lsb"]
 
             if kernel_version:
-                for node, version in os_version.iteritems():
+                for node, version in os_version.items():
                     if not version or isinstance(version, Exception):
                         continue
 

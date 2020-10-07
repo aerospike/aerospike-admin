@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ from lib.view import terminal
 VERSION_CONSTRAINT_PATTERN = "SET CONSTRAINT VERSION(.+)"
 
 
-class HealthChecker(object):
+class HealthChecker():
 
     def __init__(self):
         try:
@@ -228,14 +228,14 @@ class HealthChecker(object):
     def _remove_node_data(self, data, remove_nodes):
         if not data or not isinstance(data, dict):
             return
-        for _key in data.keys():
+        for _key in list(data.keys()):
             if isinstance(_key, tuple) and _key[1] == "CLUSTER":
                 if _key not in remove_nodes or remove_nodes[_key] == 1:
                     continue
                 if remove_nodes[_key] == 0:
                     data.pop(_key)
                     continue
-                for n in data[_key].keys():
+                for n in list(data[_key].keys()):
                     if n in remove_nodes[_key]:
                         data[_key].pop(n)
                 if not data[_key]:

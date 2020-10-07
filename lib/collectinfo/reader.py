@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 from lib.utils.util import shell_command
 
 
-class CollectinfoReader(object):
+class CollectinfoReader():
     cinfo_log_file_identifier_key = "=ASCOLLECTINFO"
     cinfo_log_file_identifiers = ["Configuration~~~\|Configuration (.*)~", "Statistics~\|Statistics (.*)~"]
     system_log_file_identifier_key = "=ASCOLLECTINFO"

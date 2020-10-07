@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -39,6 +39,12 @@ SCAN_SIZE = 1024 * 1024
 HIST_BUCKET_LINE_SUBSTRING = "hist.c:"
 SIZE_HIST_LIST = ["device-read-size", "device-write-size"]
 COUNT_HIST_LIST = ["query-rec-count"]
+
+# Unit map
+UNITS_MAP = {
+    'msec' : 'ms',
+    'usec' : '\u03bcs'
+}
 
 
 # relative stats to input histogram
@@ -86,12 +92,12 @@ class LogLatency(object):
             self._bucket_labels = ("00", "01", "02", "03", "04", "05", "06", "07", "08", "09",
                                    "10", "11", "12", "13", "14", "15", "16")
             self._all_buckets = len(self._bucket_labels)
-            self._bucket_unit = "ms"
+            # histogram bucket units are set on a per line basis
 
     def _read_line(self, file_itr):
         line = ""
         try:
-            tm, line = file_itr.next()
+            tm, line = next(file_itr)
             if not line:
                 return None
             return line
@@ -103,7 +109,7 @@ class LogLatency(object):
     #
 
     def _parse_total_ops(self, line):
-        return long(line[line.rfind("(") + 1: line.rfind(" total)")])
+        return int(line[line.rfind("(") + 1: line.rfind(" total)")])
 
     #------------------------------------------------
     # Get one set of bucket values.
@@ -127,7 +133,7 @@ class LogLatency(object):
                     r = re.compile(pattern)
                     if r.search(line):
                         found = found + 1
-                        values[b] = long(r.search(line).group(1))
+                        values[b] = int(r.search(line).group(1))
                         b_total = b_total + values[b]
                 if found == 0:
                     break
@@ -216,12 +222,12 @@ class LogLatency(object):
 
         m = re.search(latency_pattern2 % (grep_str), line)
         if m:
-            values = map(lambda x: int(x), m.group(1).split(","))
+            values = [int(x) for x in m.group(1).split(",")]
             return values
 
         m = re.search(latency_pattern3 % (grep_str), line)
         if m:
-            values = map(lambda x: int(x), list(m.groups()))
+            values = [int(x) for x in list(m.groups())]
 
         m = re.search(latency_pattern4 % (grep_str), line)
         if m:
@@ -320,10 +326,11 @@ class LogLatency(object):
         values = 0
         stat_values = []
         dt = ""
+        unit = 'msec'
 
         while True:
             if not line:
-                return total, values, 0, 0, stat_values
+                return total, values, 0, 0, stat_values, unit
 
             dt = self.reader.parse_dt(line)
 
@@ -334,11 +341,11 @@ class LogLatency(object):
 
             if end_dt and dt > end_dt:
                 # found line with timestamp after end_dt
-                return total, values, dt, line, stat_values
+                return total, values, dt, line, stat_values, unit
 
             if before_dt and dt > before_dt:
                 # found line with timestamp after before_dt
-                return total, values, dt, line, stat_values
+                return total, values, dt, line, stat_values, unit
 
             if relative_stat_path and utils.contains_substrings_in_order(line, relative_stat_path):
                 temp_sval = self._read_stat(line, relative_stat_path)
@@ -349,15 +356,21 @@ class LogLatency(object):
 
             line = self._read_line(file_itr)
 
+        if 'usec' in line:
+            unit = 'usec'
+        elif 'msec' in line:
+            unit = 'msec'
+
         total, values, line = self._read_bucket_values(line, file_itr)
+
         if not line:
-            return 0, 0, 0, 0, stat_values
+            return 0, 0, 0, 0, stat_values, unit
 
         if read_all_dumps or relative_stat_path:
             if not before_dt:
                 before_dt = dt + datetime.timedelta(seconds=NS_SLICE_SECONDS)
 
-            r_total, r_values, r_dt, line, r_stat_values = self._read_hist(
+            r_total, r_values, r_dt, line, r_stat_values, _ = self._read_hist(
                 hist_tags, after_dt, file_itr, line, end_dt, before_dt, read_all_dumps=read_all_dumps,
                 relative_stat_path=relative_stat_path)
 
@@ -368,7 +381,7 @@ class LogLatency(object):
             if r_stat_values:
                 stat_values = self._add_stat_values(stat_values, r_stat_values)
 
-        return total, values, dt, line, stat_values
+        return total, values, dt, line, stat_values, unit
 
     #------------------------------------------------
     # Get a timedelta in seconds.
@@ -453,19 +466,13 @@ class LogLatency(object):
                     latency[(idx_name[1], None)] = {}
 
             # Find first histogram:
-            old_total, old_values, old_dt, line, old_stat_values = self._read_hist(
+            old_total, old_values, old_dt, line, old_stat_values, _ = self._read_hist(
                     hist_tags, init_dt, file_itr, end_dt=arg_end_date, read_all_dumps=read_all_dumps,
                     relative_stat_path=relative_stat_path)
-
+            
             if line:
                 end_dt = arg_end_date
-
                 labels = []
-                for i in range(max_bucket):
-                    labels.append(0)
-                    if i % arg_every_nth == 0:
-                        labels[i] = pow(2, i)
-                        latency[(pow(2, i), self._bucket_unit)] = {}
 
                 # Other initialization before processing time slices:
                 which_slice = 0
@@ -480,9 +487,11 @@ class LogLatency(object):
 
                 # Process all the time slices:
                 while end_dt > old_dt:
-                    new_total, new_values, new_dt, line, new_stat_values = self._read_hist(
+                    new_total, new_values, new_dt, line, new_stat_values, new_unit = self._read_hist(
                         hist_tags, after_dt, file_itr, line, end_dt=arg_end_date, read_all_dumps=read_all_dumps,
                         relative_stat_path=relative_stat_path)
+
+                    self._bucket_unit = UNITS_MAP[new_unit]
 
                     if not new_values:
                         # This can happen in either eof or end of input time
@@ -533,6 +542,13 @@ class LogLatency(object):
                     if arg_rounding_time:
                         key_dt = self.ceil_time(key_dt)
 
+                    
+                    for i in range(max_bucket):
+                        labels.append(0)
+                        if i % arg_every_nth == 0:
+                            labels[i] = pow(2, i)
+                            latency[(pow(2, i), self._bucket_unit)] = {}
+
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
@@ -563,11 +579,11 @@ class LogLatency(object):
                 if which_slice > 0:
                     for i in range(max_bucket):
                         if i % arg_every_nth == 0:
-                            avg_overs[i] = avg_overs[i] / which_slice
-                    avg_rate = total_ops / total_seconds
+                            avg_overs[i] = avg_overs[i] // which_slice
+                    avg_rate = total_ops // total_seconds
                     avg_stat_values = []
                     if relative_stat_path:
-                        avg_stat_values = [v/total_seconds for v in total_stat_values]
+                        avg_stat_values = [v // total_seconds for v in total_stat_values]
 
                     for i in range(max_bucket):
                         if i % arg_every_nth:

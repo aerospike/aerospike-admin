@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,22 +20,15 @@ from lib.client.info import authenticate_old, authenticate_new, info, login
 try:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-        try:
-            # for python < 2.7.7 cryptography throws warning
-            import cryptography
-            from cryptography import utils
-            warnings.simplefilter('ignore', cryptography.utils.DeprecatedIn23)
-        except Exception:
-            pass
-
+        import cryptography
+        from cryptography import utils
         from OpenSSL import SSL
     HAVE_PYOPENSSL = True
 except ImportError:
     HAVE_PYOPENSSL = False
 
 
-class ASSocket:
+class ASSocket():
 
     def __init__(self, ip, port, tls_name, user, password, auth_mode, ssl_context, timeout=5):
         self.sock = None
@@ -79,7 +72,7 @@ class ASSocket:
 
                     sock.do_handshake()
                 except Exception as tlse:
-                    print "TLS connection exception: " + str(tlse)
+                    print("TLS connection exception: " + str(tlse))
                     if sock:
                         sock.close()
                         sock = None
@@ -115,7 +108,7 @@ class ASSocket:
         rc, self.session_token, self.session_expiration = login(self.sock, self.user, self.password, self.auth_mode)
 
         if rc != 0:
-            print "Login failed for", self.user, ":", rc
+            print("Login failed for", self.user, ":", rc)
             self.sock.close()
             return False
 
@@ -136,7 +129,7 @@ class ASSocket:
             rc = authenticate_new(self.sock, self.user, session_token)
 
         if rc != 0:
-            print "Authentication failed for", self.user, ":", rc
+            print("Authentication failed for", self.user, ":", rc)
             self.sock.close()
             return False
 

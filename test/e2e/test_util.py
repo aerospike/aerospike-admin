@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -62,8 +62,8 @@ def get_separate_output(in_str = '', mid_str=''):
     return output_list
 
 def get_merged_header(h1, h2):
-    h1 = filter(None, h1.split(' '))
-    h2 = filter(None, h2.split(' '))
+    h1 = [_f for _f in h1.split(' ') if _f]
+    h2 = [_f for _f in h2.split(' ') if _f]
     header = []
     if len(h1) == len(h2):
         for i in range(len(h1)):

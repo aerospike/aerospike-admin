@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest2 as unittest
+import unittest
 import time
 
 from lib.utils import timeout
@@ -115,7 +115,7 @@ class UtilTest(unittest.TestCase):
 
     def test_concurrent_map(self):
         value = range(10)
-        expected = map(lambda v: v*v, value)
+        expected = [v*v for v in value]
         result = util.concurrent_map(lambda v: v*v, value)
         self.assertEqual(result, expected, "concurrent_map did not return the expected result")
 

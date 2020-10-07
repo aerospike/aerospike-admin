@@ -1,4 +1,4 @@
-# Copyright 2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -187,7 +187,7 @@ def _loadfile(fname, logger):
     return conf_dict
 
 def decode(v):
-    if isinstance(v, basestring):
+    if isinstance(v, str):
         if len(v) == 0:
             return None
         return str(v)
@@ -215,7 +215,7 @@ def _flatten(conf_dict, instance=None):
 
     for section in sections:
         if section in conf_dict.keys():
-            for k,v in conf_dict[section].iteritems():
+            for k,v in conf_dict[section].items():
                 # Empty passwords are allowed do not interpret
                 # it as None
                 if k == "password":
@@ -227,7 +227,7 @@ def _flatten(conf_dict, instance=None):
 
 
 def _merge(dct, merge_dct, ignore_false=False):
-    for k, v in merge_dct.iteritems():
+    for k, v in merge_dct.items():
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
             _merge(dct[k], merge_dct[k], ignore_false=ignore_false)
@@ -297,7 +297,7 @@ def _getseeds(conf):
                 seeds.append((str(host), port, tls_name))
 
             except Exception as e:
-                print "host parse error " + str(e) +  " " + str(hosts)
+                print("host parse error " + str(e) +  " " + str(hosts))
 
         return seeds
     else:
@@ -312,7 +312,7 @@ def loadconfig(cli_args, logger):
 
 
     if cli_args.no_config_file and cli_args.only_config_file:
-        print "--no-config-file and only-config-file are mutually exclusive option. Please enable only one."
+        print("--no-config-file and only-config-file are mutually exclusive option. Please enable only one.")
         exit(1)
 
     conf_dict = {}
@@ -508,7 +508,7 @@ def print_config_file_option():
            "                      TLS connection does not support timeout. Default: 5 seconds")
 
 def config_file_help():
-    print "\n\n"
+    print("\n\n")
     print ("Default configuration files are read from the following files in the given order:\n"
           "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
           "The following sections are read: (cluster asadm include)\n"

@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ class LookupDict(object):
             return False
 
     def _filter(self, k, keys):
-        return filter(lambda key: k in key, keys)
+        return [key for key in keys if k in key]
 
     def _get_prefix(self, key, min_prefix_len=1):
         # There should only be one key found
@@ -83,7 +83,7 @@ class LookupDict(object):
 
 
     def _prefix_filter(self, prefix, keys):
-        return filter(lambda key: key.startswith(prefix), keys)
+        return [key for key in keys if key.startswith(prefix)]
 
     def _get_suffix(self, key, min_suffix_len=1):
         # There should only be one key found
@@ -116,10 +116,10 @@ class LookupDict(object):
             return suffix
 
     def _suffix_filter(self, suffix, keys):
-        return filter(lambda key: key.endswith(suffix), keys)
+        return [key for key in keys if key.endswith(suffix)]
 
     def _get_key_by_filter(self, k, f):
-        keys = f(k, self._kv.keys())
+        keys = f(k, self.keys())
         if len(keys) == 0:
             raise KeyError("Unable to find keys with '%s'" % (k))
         return keys
@@ -137,11 +137,11 @@ class LookupDict(object):
         return self._get_key_by_filter(k, self._filter)
 
     def keys(self):
-        return self._kv.keys()
+        return list(self._kv.keys())
 
     def get(self, k):
         keys = self.get_key(k)
-        return map(lambda key: self._kv[key], keys)
+        return [self._kv[key] for key in keys]
 
     def remove(self, k):
         keys = self.get_key(k)

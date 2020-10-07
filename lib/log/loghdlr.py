@@ -1,4 +1,4 @@
-# Copyright 2013-2018 Aerospike, Inc.
+# Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -62,18 +62,14 @@ class Loghdlr(object):
             self.logger.info(err)
 
         fg_color_re = re.compile("^(fg_(.*))$")
-        self.fg_colors = map(
-            lambda v: (
+        self.fg_colors = [(
                 fg_color_re.match(v).groups()[1], getattr(
-                    terminal, fg_color_re.match(v).group(1))), filter(
-                lambda x: fg_color_re.search(x) and "clear" not in x, dir(terminal)))
+                    terminal, fg_color_re.match(v).group(1))) for v in [x for x in dir(terminal) if fg_color_re.search(x) and "clear" not in x]]
 
         bg_color_re = re.compile("^(bg_(.*))$")
-        self.bg_colors = map(
-            lambda v: (
+        self.bg_colors = [(
                 bg_color_re.match(v).groups()[1], getattr(
-                    terminal, bg_color_re.match(v).group(1))), filter(
-                lambda x: bg_color_re.search(x) and "clear" not in x, dir(terminal)))
+                    terminal, bg_color_re.match(v).group(1))) for v in [x for x in dir(terminal) if bg_color_re.search(x) and "clear" not in x]]
 
     def __str__(self):
         return ""
@@ -149,6 +145,7 @@ class Loghdlr(object):
 
         for index in indices:
             try:
+                print(index)
                 log = log_names[int(index) - 1]
 
                 if log in self.all_logs:
@@ -439,7 +436,7 @@ class Loghdlr(object):
                 merge_result[key] = {}
 
             try:
-                tm, res = file_streams[key].next()
+                tm, res = next(file_streams[key])
                 if not tm:
                     continue
 
@@ -455,7 +452,7 @@ class Loghdlr(object):
             tm_keys[key] = {}
             if not return_strings:
                 if not keys_in_input:
-                    keys_in_input = res.keys()
+                    keys_in_input = list(res.keys())
 
             tm_keys[key] = tm
             result[key] = res
@@ -481,12 +478,12 @@ class Loghdlr(object):
                         try:
                             merge_result[SHOW_RESULT_KEY] += "%s  %s%s::" % (
                                     self.bg_colors[colors[(
-                                        file_streams.keys().index(file_key))][0]][1](),
+                                        list(file_streams.keys()).index(file_key))][0]][1](),
                                     terminal.reset(), file_key)
                         except Exception:
                             merge_result[SHOW_RESULT_KEY] = "%s  %s%s::" %(
                                     self.bg_colors[colors[(
-                                        file_streams.keys().index(file_key))][0]][1](),
+                                        list(file_streams.keys()).index(file_key))][0]][1](),
                                     terminal.reset(), file_key)
 
                         merge_result[SHOW_RESULT_KEY] += result[file_key]
@@ -504,7 +501,7 @@ class Loghdlr(object):
                     del tm_keys[file_key]
 
                     try:
-                        tm, res = file_streams[file_key].next()
+                        tm, res = next(file_streams[file_key])
                         if not tm:
                             continue
 
@@ -566,7 +563,7 @@ class Loghdlr(object):
         if not data or not isinstance(data, dict):
             return data
 
-        structure = self._get_dict_structure(data[data.keys()[0]],
+        structure = self._get_dict_structure(data[list(data.keys())[0]],
                                              default_value)
 
         for _key in keys:
