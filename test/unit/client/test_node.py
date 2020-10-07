@@ -21,7 +21,6 @@ from lib.client.node import Node
 
 class NodeTest(unittest.TestCase):
 
-
     def get_info_mock(self, return_value, return_key_value={}):
         def info_cinfo_side_effect(*args):
             cmd = args[0]
@@ -75,37 +74,36 @@ class NodeTest(unittest.TestCase):
         Node._info_cinfo = Mock(side_effect=info_cinfo_side_effect)
         # Node._info_cinfo.return_value = side_effect
 
-        n = Node("127.0.0.1")
+        n = Node("192.1.1.1")
         return n
 
     def setUp(self):
         info_cinfo = patch('lib.client.node.Node._info_cinfo')
+        info_build_version = patch('lib.client.node.Node.info_build_version')
         getfqdn = patch('lib.client.node.getfqdn')
         getaddrinfo = patch('socket.getaddrinfo')
 
         self.addCleanup(patch.stopall)
 
         lib.client.node.Node._info_cinfo = info_cinfo.start()
+        lib.client.node.Node.info_build_version =info_build_version.start()
         lib.client.node.getfqdn = getfqdn.start()
         socket.getaddrinfo = getaddrinfo.start()
-
-        Node._info_cinfo.return_value = ""
+        
+        lib.client.node.Node._info_cinfo.return_value = "A00000000000000"
+        lib.client.node.Node.info_build_version.return_value = "5.0.0.11"
         lib.client.node.getfqdn.return_value = "host.domain.local"
         socket.getaddrinfo.return_value = [(2, 1, 6, '', ('192.1.1.1', 3000))]
 
-    #@unittest.skip("Known Failure")
     def test_init_node(self):
         """
         Ensures that we can instantiate a Node and that the node acquires the
         correct information
         """
-        n = self.get_info_mock("A00000000000000")
+        n = Node('192.1.1.1')
 
         self.assertEqual(n.ip, '192.1.1.1', 'IP address is not correct')
-
-        # FQDN is currently broken
         self.assertEqual(n.fqdn, 'host.domain.local', 'FQDN is not correct')
-
         self.assertEqual(n.port, 3000, 'Port is not correct')
         self.assertEqual(n.node_id, 'A00000000000000', 'Node Id is not correct')
 

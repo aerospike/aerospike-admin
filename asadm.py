@@ -555,6 +555,10 @@ def main():
 
     if cli_args.no_color:
         disable_coloring()
+    
+    if cli_args.pmap:
+        from lib.basiccontroller import CollectinfoController 
+        CollectinfoController.get_pmap = True
 
     mode = AdminMode.LIVE_CLUSTER
     if cli_args.collectinfo:
@@ -612,7 +616,8 @@ def main():
                            mode=mode,
                            ssl_context=ssl_context,
                            only_connect_seed=cli_args.single_node,
-                           execute_only_mode=execute_only_mode, timeout=cli_args.timeout)
+                           execute_only_mode=execute_only_mode,
+                           timeout=cli_args.timeout)
 
     use_yappi = False
     if cli_args.profile:
