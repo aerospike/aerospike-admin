@@ -1002,7 +1002,7 @@ class Node(object):
         Returns:
         dict -- stanza --> [namespace] --> param --> value
         """
-        xdr_major_version = int(self.info_XDR_build_version()[0])
+        xdr_major_version = int(self.info_build_version()[0])
         config = {}
         if stanza == "namespace":
             if namespace != "":

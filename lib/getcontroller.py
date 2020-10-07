@@ -321,7 +321,6 @@ class GetConfigController(object):
 
     def get_namespace(self, flip=True, nodes="all", for_mods=[]):
         namespaces = self.cluster.info_namespaces(nodes=nodes)
-        namespaces = list(namespaces.values())
         namespace_set = set()
 
         for namespace in namespaces.values():

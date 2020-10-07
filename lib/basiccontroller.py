@@ -824,7 +824,7 @@ class ShowConfigController(BasicCommandController):
 
     @CommandHelp("Displays XDR configuration")
     def do_xdr(self, line):
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+        xdr_builds = util.Future(self.cluster.info_build_version,
                 nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -909,7 +909,7 @@ class ShowConfigController(BasicCommandController):
                 'Replaced by "show config xdr" for server >= 5.0.')
     def do_dc(self, line):
 
-        xdr_builds = util.Future(self.cluster.info_XDR_build_version,
+        xdr_builds = util.Future(self.cluster.info_build_version,
                 nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(line=line,
