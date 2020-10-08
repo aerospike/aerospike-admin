@@ -1770,7 +1770,7 @@ def _collectinfo_content(func, cmd="", alt_cmds=[]):
 
                 alt_cmd = [alt_cmd]
                 info_line = (
-                    "Data collection for alternative command %s %s  in progress.."
+                    "Data collection for alternative command %s %s  in progress..."
                     % (fname, str(alt_cmd))
                 )
                 logger.info(info_line)
