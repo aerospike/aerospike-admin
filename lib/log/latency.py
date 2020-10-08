@@ -542,17 +542,17 @@ class LogLatency(object):
                     if arg_rounding_time:
                         key_dt = self.ceil_time(key_dt)
 
-                    
+
                     for i in range(max_bucket):
                         labels.append(0)
                         if i % arg_every_nth == 0:
-                            labels[i] = pow(2, i)
-                            latency[(pow(2, i), self._bucket_unit)] = {}
+                            labels[i] = (2**i, self._bucket_unit)
+                            latency[(2**i, self._bucket_unit)] = {}
 
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
-                        latency[(labels[i], self._bucket_unit)][
+                        latency[labels[i]][
                             key_dt.strftime(DT_FMT)] = "%.2f" % (overs[i])
 
                     latency[tps_key][key_dt.strftime(DT_FMT)] = "%.1f" % (rate)
@@ -588,9 +588,9 @@ class LogLatency(object):
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
-                        latency[(labels[i], self._bucket_unit)][
+                        latency[labels[i]][
                             "avg"] = "%.2f" % (avg_overs[i])
-                        latency[(labels[i], self._bucket_unit)][
+                        latency[labels[i]][
                             "max"] = "%.2f" % (max_overs[i])
 
                     latency[tps_key]["avg"] = "%.1f" % (avg_rate)
