@@ -149,7 +149,7 @@ class InfoController(CollectinfoCommandController):
     @CommandHelp("Displays Cross Datacenter Replication (XDR) summary information.")
     def do_xdr(self, line):
         xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
-        node_xdr_build_major_version = 4
+        node_xdr_build_major_version = 5
         for timestamp in sorted(xdr_stats.keys()):
             if not xdr_stats[timestamp]:
                 continue
@@ -222,7 +222,7 @@ class InfoController(CollectinfoCommandController):
             builds = cinfo_log.get_xdr_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
-            node_xdr_build_major_version = 4
+            node_xdr_build_major_version = 5
 
             if not dc_stats[timestamp]:
                 continue
@@ -497,7 +497,7 @@ class ShowConfigController(CollectinfoCommandController):
         xdr_configs = self.loghdlr.info_getconfig(stanza=CONFIG_XDR)
         old_xdr_configs = {}
         xdr5_configs = {}
-        node_xdr_build_major_version = 4
+        node_xdr_build_major_version = 5
 
         for timestamp in sorted(xdr_configs.keys()):
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
@@ -581,7 +581,7 @@ class ShowConfigController(CollectinfoCommandController):
         )
 
         dc_configs = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
-        node_xdr_build_major_version = 4
+        node_xdr_build_major_version = 5
 
         for timestamp in sorted(dc_configs.keys()):
             builds = cinfo_log.get_xdr_build()
@@ -1049,7 +1049,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
         old_xdr_stats = {}
         xdr5_stats = {}
-        node_xdr_build_major_version = 4
+        node_xdr_build_major_version = 5
 
         for timestamp in sorted(xdr_stats.keys()):
 
@@ -1135,7 +1135,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         )
 
         dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
-        node_xdr_build_major_version = 4
+        node_xdr_build_major_version = 5
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()

@@ -192,7 +192,7 @@ def decode(v):
     if isinstance(v, str):
         if len(v) == 0:
             return None
-        return str(v)
+        return v
     else:
         return v
 
