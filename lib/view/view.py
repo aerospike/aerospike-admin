@@ -1510,7 +1510,6 @@ class CliView(object):
                 is_first = True
                 sub_columns_per_column = len(grep_result[file].keys())
                 relative_stats_columns = []
-                lis = []
                 
                 # Get keys and remove tps so that they can be sorted
                 grep_result_keys = list(grep_result[file].keys())

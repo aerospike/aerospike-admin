@@ -53,8 +53,7 @@ Admin> help
 
 
 ### Mac OSX
-Requires Python 3.4+.
-Requires Python 3.5+ on Catalina.
+Requires Python 3.5+
 Run following command to ensure asadm history works properly:
 ```
 sudo easy_install -a readline

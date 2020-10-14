@@ -64,7 +64,7 @@ def get_sindex_stats(cluster, nodes="all", for_mods=[]):
     return sindex_stats
 
 
-class GetDistributionController(object):
+class GetDistributionController():
     def __init__(self, cluster):
         self.modifiers = set(["with", "for"])
         self.cluster = cluster
@@ -95,7 +95,7 @@ class GetDistributionController(object):
             builds=builds,
         )
 
-class GetLatenciesController(object):
+class GetLatenciesController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -236,7 +236,7 @@ class GetLatenciesController(object):
         return latencies
 
 
-class GetConfigController(object):
+class GetConfigController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -334,15 +334,12 @@ class GetConfigController(object):
 
         for index, namespace in enumerate(namespace_list):
             node_configs = (
-                util.Future(
-                    self.cluster.info_get_config,
+                    self.cluster.info_get_config(
                     stanza="namespace",
                     namespace=namespace,
                     namespace_id=index,
                     nodes=nodes,
                 )
-                .start()
-                .result()
             )
             for node, node_config in list(node_configs.items()):
                 if (
@@ -449,7 +446,7 @@ class GetConfigController(object):
 
         return rack_configs
 
-class GetStatisticsController(object):
+class GetStatisticsController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -595,7 +592,7 @@ class GetStatisticsController(object):
                 return True
         return False
 
-class GetFeaturesController(object):
+class GetFeaturesController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -629,7 +626,7 @@ class GetFeaturesController(object):
         )
 
 
-class GetPmapController(object):
+class GetPmapController():
     def __init__(self, cluster):
         self.cluster = cluster
 

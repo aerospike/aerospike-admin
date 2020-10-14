@@ -1131,10 +1131,8 @@ class Node(object):
                         new_transactions = float((new_sum * row[row_idx]) / 100.00)
                         total_row[row_idx] = round(
                             float(
-                                old_div(
-                                    ((old_transactions + new_transactions) * 100),
-                                    (old_sum + new_sum),
-                                )
+                                    ((old_transactions + new_transactions) * 100) /
+                                    (old_sum + new_sum)
                             ),
                             2,
                         )
