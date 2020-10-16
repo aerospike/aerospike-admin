@@ -1341,6 +1341,10 @@ def is_new_latencies_version(version):
 
 ########## System Collectinfo ##########
 
+def _create_fail_string(cloud_provider):
+    return "\nCould not determine if node is in {0}, check lsb_release, kernel name and dmesg manually".format(
+        cloud_provider
+    )
 
 def _get_aws_metadata(response_str, prefix="", old_response=""):
     aws_c = ""
@@ -1357,13 +1361,12 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
             rsp_p = rsp.strip("/")
             aws_c += _get_aws_metadata(rsp_p, prefix, old_response=old_response)
         else:
-            meta_url = aws_metadata_base_url + prefix + rsp
-
+            urls_to_join = [aws_metadata_base_url, prefix, rsp]
+            meta_url = "/".join(urls_to_join)
             req = urllib.request.Request(meta_url)
             r = urllib.request.urlopen(req)
-            # r = requests.get(meta_url,timeout=aws_timeout)
             if r.code != 404:
-                response = r.read().strip()
+                response = r.read().strip().decode('utf-8')
                 if response == old_response:
                     last_values.append(rsp.strip())
                     continue
@@ -1380,31 +1383,59 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
     return aws_c
 
 
+def _check_cmds_for_str(cmds, strings):
+
+    for cmd in cmds:
+        try:
+            output, _ = util.shell_command([cmd])
+            
+            for string in strings:
+                if string in output:
+                    return True
+
+        except Exception:
+            continue
+
+    return False
+
+
 def _collect_aws_data(cmd=""):
     aws_rsp = ""
     aws_timeout = 1
     socket.setdefaulttimeout(aws_timeout)
     aws_metadata_base_url = "http://169.254.169.254/latest/meta-data"
-    out = "['AWS']"
+    cloud_provider = 'AWS'
+    out = "['" + cloud_provider + "']"
+    grep_for = 'Amazon'
+    extra_cmds_to_check = [
+        'lsb_release -a',
+        'ls /etc|grep release|xargs -I f cat /etc/f'
+    ]
     try:
+        out += '\nRequesting . . . {0}'.format(aws_metadata_base_url)
         req = urllib.request.Request(aws_metadata_base_url)
         r = urllib.request.urlopen(req)
-        # r = requests.get(aws_metadata_base_url,timeout=aws_timeout)
         if r.code == 200:
-            rsp = r.read()
+            rsp = r.read().decode('utf-8')
             aws_rsp += _get_aws_metadata(rsp, "/")
-            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(
-                aws_metadata_base_url, aws_rsp
-            )
+            out += "\nSuccess! Resp: {0}".format(aws_rsp)
         else:
-            aws_rsp = " Not likely in AWS"
-            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(
-                aws_metadata_base_url, aws_rsp
-            )
+            out += '\nFailed! Response Code: {0}'.format(r.code)
+            out += "\nChecking {0} for '{1}'".format(extra_cmds_to_check, grep_for)
+            if _check_cmds_for_str(extra_cmds_to_check, [grep_for]):
+                out += '\nSuccess!'
+            else:
+                out += "\nFailed!"
+                out += _create_fail_string(cloud_provider)
 
     except Exception as e:
-        out += "\n" + "Requesting... {0} \t  {1} ".format(aws_metadata_base_url, e)
-        out += "\n" + "FAILED! Node Is Not likely In AWS"
+        out += "\nFailed! Exception: {0}".format(e)
+        out += '\nChecking [{0}] for {1}'.format(extra_cmds_to_check, grep_for)
+        if _check_cmds_for_str(extra_cmds_to_check, [grep_for]):
+            out += '\nSuccess!'
+        else:
+            out += '\nFailed!'
+            out += _create_fail_string(cloud_provider)
 
     return out, None
 
@@ -1412,7 +1443,7 @@ def _collect_aws_data(cmd=""):
 def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
     res_str = ""
     gce_metadata_base_url = (
-        "http://metadata.google.internal/computeMetadata/v1/instance/"
+        "http://169.254.169.254/computeMetadata/v1/instance"
     )
 
     for rsp in response_str.split("\n"):
@@ -1420,7 +1451,8 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
         if not rsp or rsp in fields_to_ignore:
             continue
 
-        meta_url = gce_metadata_base_url + prefix + rsp
+        urls_to_join = [gce_metadata_base_url, prefix, rsp]
+        meta_url = '/'.join(urls_to_join)
 
         try:
             req = urllib.request.Request(
@@ -1429,7 +1461,7 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
             r = urllib.request.urlopen(req)
 
             if r.code != 404:
-                response = r.read().strip()
+                response = r.read().strip().decode('utf-8')
 
                 if rsp[-1:] == "/":
                     res_str += _get_gce_metadata(
@@ -1447,33 +1479,30 @@ def _collect_gce_data(cmd=""):
     gce_timeout = 1
     socket.setdefaulttimeout(gce_timeout)
     gce_metadata_base_url = (
-        "http://metadata.google.internal/computeMetadata/v1/instance/"
+        "http://169.254.169.254/computeMetadata/v1/instance"
     )
-    out = "['GCE']"
-
+    cloud_provider = 'GCE'
+    out = "['" + cloud_provider + "']"
     fields_to_ignore = ["attributes/"]
 
     try:
+        out += '\nRequesting . . . {0}'.format(gce_metadata_base_url)
         req = urllib.request.Request(
             gce_metadata_base_url, headers={"Metadata-Flavor": "Google"}
         )
         r = urllib.request.urlopen(req)
 
         if r.code == 200:
-            rsp = r.read()
+            rsp = r.read().decode('utf-8')
             gce_rsp = _get_gce_metadata(rsp, fields_to_ignore=fields_to_ignore)
-            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(
-                gce_metadata_base_url, gce_rsp
-            )
+            out += "\nSuccess! Resp: {0}".format(gce_rsp)
         else:
-            gce_rsp = " Not likely in GCE"
-            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(
-                gce_metadata_base_url, gce_rsp
-            )
+            out += '\nFailed! Resp Code: {0}'.format(r.code)
+            out += _create_fail_string(cloud_provider)
 
     except Exception as e:
-        out += "\n" + "Requesting... {0} \t  {1} ".format(gce_metadata_base_url, e)
-        out += "\n" + "FAILED! Node Is Not likely In GCE"
+        out += "\nFailed! Exception: {0}".format(e)
+        out += _create_fail_string(cloud_provider)
 
     return out, None
 
@@ -1484,31 +1513,29 @@ def _collect_azure_data(cmd=""):
     azure_metadata_base_url = (
         "http://169.254.169.254/metadata/instance?api-version=2017-04-02"
     )
-    out = "['Azure']"
+    cloud_provider = 'Azure'
+    out = "['" + cloud_provider + "']"
 
     try:
+        out += '\nRequesting . . . {0}'.format(azure_metadata_base_url)
         req = urllib.request.Request(
             azure_metadata_base_url, headers={"Metadata": "true"}
         )
         r = urllib.request.urlopen(req)
 
         if r.code == 200:
-            rsp = r.read()
-            rsp = rsp.decode("utf-8")
+            rsp = r.read().decode("utf-8")
             jsonObj = json.loads(rsp)
-            out += "\n" + "Requesting... {0} \n{1}  \t Successful".format(
-                azure_metadata_base_url,
-                json.dumps(jsonObj, sort_keys=True, indent=4, separators=(",", ": ")),
+            out += "\nSuccess! Resp: {0}".format(
+                json.dumps(jsonObj, sort_keys=True, indent=4, separators=(",", ": "))
             )
         else:
-            rsp = " Not likely in Azure"
-            out += "\n" + "Requesting... {0} \t FAILED {1} ".format(
-                azure_metadata_base_url, rsp
-            )
+            out += '\nFailed! Response Code: {0}'.format(r.code)
+            out += _create_fail_string(cloud_provider)
 
     except Exception as e:
-        out += "\n" + "Requesting... {0} \t  {1} ".format(azure_metadata_base_url, e)
-        out += "\n" + "FAILED! Node Is Not likely In Azure"
+        out += "\nFailed! Exception: {0}".format(e)
+        out += _create_fail_string(cloud_provider)
 
     return out, None
 
@@ -1779,6 +1806,7 @@ def get_system_commands(port=3000):
         ["hostname -I", "hostname"],
         ["top -n3 -b", "top -l 3"],
         ["lsb_release -a", "ls /etc|grep release|xargs -I f cat /etc/f"],
+        ["sudo lshw -class system"],
         ["cat /proc/meminfo", "vmstat -s"],
         ["cat /proc/interrupts"],
         ["iostat -y -x 5 4"],
