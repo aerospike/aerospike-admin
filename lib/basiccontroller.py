@@ -1856,7 +1856,7 @@ class CollectinfoController(BasicCommandController):
 
             snp_timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
             self.logger.info(
-                "Data collection for Snapshot: " + str(i + 1) + " in progress.."
+                "Data collection for Snapshot: " + str(i + 1) + " in progress..."
             )
             snpshots[snp_timestamp] = self._get_collectinfo_data_json(
                 default_user,

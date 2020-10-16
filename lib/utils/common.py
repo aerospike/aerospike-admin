@@ -1713,7 +1713,7 @@ def _collectinfo_content(func, cmd="", alt_cmds=[]):
 
                 alt_cmd = [alt_cmd]
                 info_line = (
-                    "Data collection for alternative command %s %s  in progress.."
+                    "Data collection for alternative command %s %s  in progress..."
                     % (fname, str(alt_cmd))
                 )
                 logger.info(info_line)
@@ -1890,7 +1890,6 @@ def set_collectinfo_path(timestamp, output_prefix=""):
 def archive_log(logdir):
     _zip_files(logdir)
     util.shell_command(["tar -czvf " + logdir + ".tgz " + logdir])
-    sys.stderr.write("\x1b[2J\x1b[H")
     print("\n\n\n")
     logger.info("Files in " + logdir + " and " + logdir + ".tgz saved.")
 
