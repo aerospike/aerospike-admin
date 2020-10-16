@@ -2183,7 +2183,7 @@ class CliView(object):
                 
                 if license_data_in_memory and license_data_on_disk:
                     break
-            except:
+            except KeyError:
                 pass
 
         if license_data_in_memory:
