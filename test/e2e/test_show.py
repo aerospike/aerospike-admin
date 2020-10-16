@@ -14,7 +14,7 @@
 
 import os
 import sys
-import unittest2 as unittest
+import unittest
 
 import lib.basiccontroller as controller
 import lib.utils.util as util

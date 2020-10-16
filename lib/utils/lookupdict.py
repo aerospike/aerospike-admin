@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import str
-from builtins import object
-
 class LookupDict(object):
 
     LOOKUP_MODE = 0
@@ -65,7 +62,7 @@ class LookupDict(object):
             return ""
 
         # Filter these keys
-        keys = list(self._kv.keys())
+        keys = self._kv.keys()
         key = list(key)
         prefix = ""
         while len(keys) > 1:
@@ -99,7 +96,7 @@ class LookupDict(object):
             return ""
 
         # Filter these keys
-        keys = list(self._kv.keys())
+        keys = self._kv.keys()
         key = list(key)
         suffix = ""
         while len(keys) > 1:
@@ -122,7 +119,7 @@ class LookupDict(object):
         return [key for key in keys if key.endswith(suffix)]
 
     def _get_key_by_filter(self, k, f):
-        keys = f(k, list(self._kv.keys()))
+        keys = f(k, self.keys())
         if len(keys) == 0:
             raise KeyError("Unable to find keys with '%s'" % (k))
         return keys

@@ -12,14 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import str
-from builtins import range
-
 import copy
 
 from lib.health.constants import HEALTH_PARSER_VAR
-from lib.utils.util import get_value_from_dict, is_str
+from lib.utils.util import get_value_from_dict
 
 
 def deep_merge_dicts(dict_to, dict_from):
@@ -43,7 +39,7 @@ def deep_merge_dicts(dict_to, dict_from):
         # already, so no need to add
         return dict_to
 
-    for _key in list(dict_from.keys()):
+    for _key in dict_from.keys():
         if _key not in dict_to:
             dict_to[_key] = dict_from[_key]
         else:
@@ -124,7 +120,7 @@ def merge_dicts_with_new_tuple_keys(dict_from, main_dict, new_tuple_keys,
     poped_nks, key_level_separator_found = pop_tuple_keys_for_next_level(
         new_tuple_keys)
 
-    for _key in list(dict_from.keys()):
+    for _key in dict_from.keys():
         temp_dict = main_dict
         last_level = False
 
@@ -233,8 +229,7 @@ def h_eval(data):
         return res
 
     try:
-
-        if is_str(data):
+        if isinstance(data, str):
             if data.endswith("%"):
                 data = data[:-1]
 

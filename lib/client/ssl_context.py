@@ -1,12 +1,3 @@
-#!/bin/sh
-""":"
-for interp in python python3 python2 ; do
-   command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
-done
-echo >&2 "No Python interpreter found!"
-exit 1
-":"""
-
 # Copyright 2013-2020 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,16 +12,11 @@ exit 1
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import hex
-from builtins import str
-from builtins import range
-from builtins import object
-
 import os
 import warnings
 
 from lib.client.ssl_util import dnsname_match
-from lib.utils.util import is_str, bytes_to_str, str_to_bytes
+from lib.utils.util import bytes_to_str, is_str, str_to_bytes
 from os import listdir
 from os.path import isfile, join
 
@@ -339,8 +325,8 @@ class SSLContext(object):
         try:
             components = []
             for component in cert.get_subject().get_components():
-                component_string = tuple(bytes_to_str(elem) for elem in component)
-                components.append(component_string)
+                component_tuple = tuple(bytes_to_str(elem) for elem in component)
+                components.append(component_tuple)
         except Exception as e:
             raise Exception("Failed to read certificate components: " + str(e))
 

@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from builtins import str
-from builtins import object
 from distutils.version import LooseVersion
 
 import ntpath
@@ -20,7 +18,6 @@ import os
 import shutil
 import tarfile
 import zipfile
-
 
 from lib.collectinfo.reader import CollectinfoReader
 from lib.collectinfo.cinfolog import CollectinfoLog
@@ -123,17 +120,17 @@ class CollectinfoLoghdlr(object):
 
         version = self.info_meta_data(stanza="asd_build")
 
-        for timestamp, hist_snapshot in list(hist_dict.items()):
+        for timestamp, hist_snapshot in hist_dict.items():
             res_dict[timestamp] = {}
             if not hist_snapshot:
                 continue
 
-            for node, node_snapshot in list(hist_snapshot.items()):
+            for node, node_snapshot in hist_snapshot.items():
                 res_dict[timestamp][node] = {}
                 if not node_snapshot:
                     continue
 
-                for namespace, namespace_snapshot in list(node_snapshot.items()):
+                for namespace, namespace_snapshot in node_snapshot.items():
                     if not namespace_snapshot:
                         continue
 

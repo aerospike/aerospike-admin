@@ -1,11 +1,3 @@
-#!/bin/sh
-""":"
-for interp in python python3 python2 ; do
-   command -v > /dev/null "$interp" && exec "$interp" "$0" "$@"
-done
-echo >&2 "No Python interpreter found!"
-exit 1
-":"""
 ####
 #
 # Copyright 2013-2020 Aerospike, Inc.
@@ -27,15 +19,12 @@ exit 1
 #
 #
 
-from __future__ import print_function
-from builtins import str
-
 import sys
 import struct
 from ctypes import create_string_buffer		 # gives us pre-allocated buffers
 from time import time
 
-from lib.utils.util import bytes_to_str, is_str, str_to_bytes
+from lib.utils.util import bytes_to_str, str_to_bytes
 
 try:
     import bcrypt
@@ -125,7 +114,7 @@ def _hashpassword(password):
         password = ""
 
     if len(password) != 60 or password.startswith("$2a$") == False:
-        password = bcrypt.hashpw(password, str_to_bytes("$2a$10$7EqJtq98hPqEX7fNZaFWoO"))
+        password = bcrypt.hashpw(password, b"$2a$10$7EqJtq98hPqEX7fNZaFWoO") # bcrypt needs a byte string
 
     return password
 
@@ -202,13 +191,7 @@ def _parse_session_info(data, field_count):
 
 
 def _buffer_to_string(buf):
-    if sys.version_info < (3, 0):
-        buf_str = ""
-        for s in buf:
-            buf_str += s
-        return buf_str
-    else:
-        return bytes(buf)
+    return bytes(buf)
 
 
 def _authenticate(sock, user, password, password_field_id):
@@ -237,8 +220,8 @@ def authenticate_old(sock, user, password):
     return _authenticate(sock, user, password=_hashpassword(password), password_field_id=_CREDENTIAL_FIELD_ID)
 
 def login(sock, user, password, auth_mode):
-    user = str_to_bytes(user)
-    password = str_to_bytes(password)
+    user = str_to_bytes(user) # bytes for c_struct packing
+    password = str_to_bytes(password) # bytes for c_struct packing
     credential = _hashpassword(password)
 
     if auth_mode == AuthMode.INTERNAL:
@@ -339,7 +322,7 @@ def info(sock, names=None):
         else:
             buf = struct.pack(proto_header_fmt, q)
 
-    elif is_str(names):
+    elif isinstance(names, str):
         q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48) | (len(names) + 1)
         fmt_str = "! Q %ds B" % len(names)
         names_bytes = str_to_bytes(names)
@@ -365,7 +348,7 @@ def info(sock, names=None):
         return -1
 
     # if the original request was a single string, return a single string
-    if is_str(names):
+    if isinstance(names, str):
         lines = rsp_data.split("\n")
         name, sep, value = g_partition(lines[0], "\t")
 

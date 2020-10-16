@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import range
-from builtins import object
-
 import copy
 from lib.utils import common, util
 from lib.utils.common import is_new_latencies_version
@@ -26,7 +22,7 @@ def get_sindex_stats(cluster, nodes="all", for_mods=[]):
 
     sindex_stats = {}
     if stats:
-        for host, stat_list in list(stats.items()):
+        for host, stat_list in stats.items():
             if not stat_list or isinstance(stat_list, Exception):
                 continue
 
@@ -58,19 +54,17 @@ def get_sindex_stats(cluster, nodes="all", for_mods=[]):
                 if sindex_key not in sindex_stats:
                     sindex_stats[sindex_key] = {}
                 sindex_stats[sindex_key] = cluster.info_sindex_statistics(
-                    ns, indexname, nodes=nodes
-                )
-                for node in list(sindex_stats[sindex_key].keys()):
-                    if not sindex_stats[sindex_key][node] or isinstance(
-                        sindex_stats[sindex_key][node], Exception
-                    ):
+                    ns, indexname, nodes=nodes)
+                for node in sindex_stats[sindex_key].keys():
+                    if (not sindex_stats[sindex_key][node]
+                            or isinstance(sindex_stats[sindex_key][node], Exception)):
                         continue
-                    for key, value in list(stat.items()):
+                    for key, value in stat.items():
                         sindex_stats[sindex_key][node][key] = value
     return sindex_stats
 
 
-class GetDistributionController(object):
+class GetDistributionController():
     def __init__(self, cluster):
         self.modifiers = set(["with", "for"])
         self.cluster = cluster
@@ -101,8 +95,7 @@ class GetDistributionController(object):
             builds=builds,
         )
 
-
-class GetLatenciesController(object):
+class GetLatenciesController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -243,7 +236,7 @@ class GetLatenciesController(object):
         return latencies
 
 
-class GetConfigController(object):
+class GetConfigController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -328,29 +321,25 @@ class GetConfigController(object):
 
     def get_namespace(self, flip=True, nodes="all", for_mods=[]):
         namespaces = self.cluster.info_namespaces(nodes=nodes)
-        namespaces = list(namespaces.values())
         namespace_set = set()
 
-        for namespace in namespaces:
+        for namespace in namespaces.values():
             if isinstance(namespace, Exception):
                 continue
 
             namespace_set.update(namespace)
 
-        namespace_list = util.filter_list(list(namespace_set), for_mods)
+        namespace_list = util.filter_list(namespace_set, for_mods)
         ns_configs = {}
 
         for index, namespace in enumerate(namespace_list):
             node_configs = (
-                util.Future(
-                    self.cluster.info_get_config,
+                    self.cluster.info_get_config(
                     stanza="namespace",
                     namespace=namespace,
                     namespace_id=index,
                     nodes=nodes,
                 )
-                .start()
-                .result()
             )
             for node, node_config in list(node_configs.items()):
                 if (
@@ -376,7 +365,7 @@ class GetConfigController(object):
         xdr_configs = {}
 
         if configs:
-            for node, config in list(configs.items()):
+            for node, config in configs.items():
                 if isinstance(config, Exception):
                     continue
 
@@ -392,7 +381,7 @@ class GetConfigController(object):
 
         dc_configs = {}
         if configs:
-            for node, node_config in list(configs.items()):
+            for node, node_config in configs.items():
                 if not node_config or isinstance(node_config, Exception):
                     continue
 
@@ -412,7 +401,7 @@ class GetConfigController(object):
         configs = configs.result()
         cl_configs = {}
         if configs:
-            for node, config in list(configs.items()):
+            for node, config in configs.items():
                 if not config or isinstance(config, Exception):
                     continue
 
@@ -427,7 +416,7 @@ class GetConfigController(object):
         configs = configs.result()
         roster_configs = {}
         if configs:
-            for node, config in list(configs.items()):
+            for node, config in configs.items():
                 if not config or isinstance(config, Exception):
                     continue
 
@@ -446,7 +435,7 @@ class GetConfigController(object):
         rack_configs = {}
 
         if configs:
-            for node, config in list(configs.items()):
+            for node, config in configs.items():
                 if not config or isinstance(config, Exception):
                     continue
 
@@ -457,8 +446,7 @@ class GetConfigController(object):
 
         return rack_configs
 
-
-class GetStatisticsController(object):
+class GetStatisticsController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -482,25 +470,18 @@ class GetStatisticsController(object):
 
     def get_namespace(self, nodes="all", for_mods=[]):
         namespaces = self.cluster.info_namespaces(nodes=nodes)
-        namespaces = list(namespaces.values())
         namespace_set = set()
 
-        for namespace in namespaces:
+        for namespace in namespaces.values():
             if isinstance(namespace, Exception):
                 continue
 
             namespace_set.update(namespace)
 
-        namespace_list = util.filter_list(list(namespace_set), for_mods)
-        futures = [
-            (
-                namespace,
-                util.Future(
-                    self.cluster.info_namespace_statistics, namespace, nodes=nodes
-                ).start(),
-            )
-            for namespace in namespace_list
-        ]
+        namespace_list = util.filter_list(namespace_set, for_mods)
+        futures = [(namespace, util.Future(
+            self.cluster.info_namespace_statistics, namespace, nodes=nodes).start())
+                   for namespace in namespace_list]
         ns_stats = {}
 
         for namespace, stat_future in futures:
@@ -520,23 +501,23 @@ class GetStatisticsController(object):
         sets = self.cluster.info_set_statistics(nodes=nodes)
 
         set_stats = {}
-        for host_id, key_values in list(sets.items()):
+        for host_id, key_values in sets.items():
             if isinstance(key_values, Exception) or not key_values:
                 continue
 
-            namespace_list = [ns_set[0] for ns_set in list(key_values.keys())]
+            namespace_list = [ns_set[0] for ns_set in key_values.keys()]
             try:
                 namespace_list = util.filter_list(namespace_list, for_mods[:1])
             except Exception:
                 pass
 
-            set_list = [ns_set[1] for ns_set in list(key_values.keys())]
+            set_list = [ns_set[1] for ns_set in key_values.keys()]
             try:
                 set_list = util.filter_list(set_list, for_mods[1:2])
             except Exception:
                 pass
 
-            for key, values in list(key_values.items()):
+            for key, values in key_values.items():
                 if key[0] not in namespace_list or key[1] not in set_list:
                     continue
 
@@ -555,13 +536,13 @@ class GetStatisticsController(object):
         bin_stats = self.cluster.info_bin_statistics(nodes=nodes)
         new_bin_stats = {}
 
-        for node_id, bin_stat in list(bin_stats.items()):
+        for node_id, bin_stat in bin_stats.items():
             if not bin_stat or isinstance(bin_stat, Exception):
                 continue
 
-            namespace_list = util.filter_list(list(bin_stat.keys()), for_mods)
+            namespace_list = util.filter_list(bin_stat.keys(), for_mods)
 
-            for namespace, stats in list(bin_stat.items()):
+            for namespace, stats in bin_stat.items():
                 if namespace not in namespace_list:
                     continue
                 if namespace not in new_bin_stats:
@@ -583,10 +564,10 @@ class GetStatisticsController(object):
     def get_dc(self, nodes="all"):
         all_dc_stats = self.cluster.info_all_dc_statistics(nodes=nodes)
         dc_stats = {}
-        for host, stats in list(all_dc_stats.items()):
+        for host, stats in all_dc_stats.items():
             if not stats or isinstance(stats, Exception):
                 continue
-            for dc, stat in list(stats.items()):
+            for dc, stat in stats.items():
                 if dc not in dc_stats:
                     dc_stats[dc] = {}
 
@@ -611,8 +592,7 @@ class GetStatisticsController(object):
                 return True
         return False
 
-
-class GetFeaturesController(object):
+class GetFeaturesController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -646,7 +626,7 @@ class GetFeaturesController(object):
         )
 
 
-class GetPmapController(object):
+class GetPmapController():
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -656,9 +636,9 @@ class GetPmapController(object):
         # stats to fetch
         stats = ["dead_partitions", "unavailable_partitions"]
 
-        for ns, nodes in list(namespace_stats.items()):
+        for ns, nodes in namespace_stats.items():
 
-            for node, params in list(nodes.items()):
+            for node, params in nodes.items():
                 if isinstance(params, Exception):
                     continue
 
@@ -703,7 +683,7 @@ class GetPmapController(object):
         # fields present in version >= 3.15.0
         optional_new_fields = [("working_master_index", "working_master", None)]
 
-        for _node, partitions in list(pmap_info.items()):
+        for _node, partitions in pmap_info.items():
             node_pmap = dict()
             ck = cluster_keys[_node]
             node_id = node_ids[_node]
@@ -762,12 +742,8 @@ class GetPmapController(object):
                     )
                     working_master = None
 
-                if pid not in list(range(pid_range)):
-                    print(
-                        "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(
-                            ns, pid
-                        )
-                    )
+                if pid not in range(pid_range):
+                    print("For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid))
                     continue
 
                 if ns not in node_pmap:
@@ -812,10 +788,11 @@ class GetPmapController(object):
 
             pmap_data[_node] = node_pmap
 
-        for _node, _ns_data in list(pmap_data.items()):
+        for _node, _ns_data in pmap_data.items():
             ck = cluster_keys[_node]
-            for ns, params in list(_ns_data.items()):
-                params["cluster_key"] = ck
+            
+            for ns, params in _ns_data.items():
+                params['cluster_key'] = ck
 
                 try:
                     params.update(ns_info[ck][ns][_node])
@@ -840,7 +817,7 @@ class GetPmapController(object):
         namespace_stats = namespace_stats.result()
 
         cluster_keys = {}
-        for node in list(service_stats.keys()):
+        for node in service_stats.keys():
             if not service_stats[node] or isinstance(service_stats[node], Exception):
                 cluster_keys[node] = "N/E"
             else:

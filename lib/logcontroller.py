@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import str
-from builtins import range
-
 import logging
 
 from lib.controllerlib import BaseController, CommandController, CommandHelp, ShellException
@@ -698,7 +694,7 @@ class _GrepFile(LogCommandController):
         logs = self.loghdlr.get_logs_by_index(sources)
 
         if not logs:
-            self.logger.info("No log files added. Use add command to add log files.")
+            self.logger.info("No log files added. Use 'add /path/to/log' command to add log files.")
 
         latency_results = self.loghdlr.loglatency(logs, hist, start_tm_arg=start_tm, duration_arg=duration,
                                                   slice_duration=slice_tm, bucket_count=bucket_count,
@@ -709,8 +705,9 @@ class _GrepFile(LogCommandController):
         page_index = 1
         for latency_res in latency_results:
             if latency_res:
-                self.view.show_log_latency(
+                if not self.view.show_log_latency(
                     "%s Latency (Page-%d)" % (ns_hist, page_index),
-                    latency_res, title_every_nth=title_every_nth)
+                    latency_res, title_every_nth=title_every_nth):
+                    break
                 page_index += 1
         latency_results.close()

@@ -12,12 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import map
-from builtins import str
-from builtins import object
-from past.utils import old_div
-
 import copy
 import logging
 import os
@@ -625,7 +619,7 @@ class Node(object):
         if not services or isinstance(services, Exception):
             return []
 
-        s = list(map(util.info_to_tuple, util.info_to_list(services)))
+        s = map(util.info_to_tuple, util.info_to_list(services))
         return [(v[0], int(v[1]), self.tls_name) for v in s]
 
     # post 3.10 services
@@ -1008,6 +1002,7 @@ class Node(object):
         Returns:
         dict -- stanza --> [namespace] --> param --> value
         """
+        xdr_major_version = int(self.info_build_version()[0])
         config = {}
         if stanza == "namespace":
             if namespace != "":
@@ -1035,8 +1030,29 @@ class Node(object):
 
         elif stanza == "" or stanza == "service":
             config = util.info_to_dict(self.info("get-config:"))
-        elif stanza != "all":
-            config = util.info_to_dict(self.info("get-config:context=%s" % stanza))
+        elif stanza == 'xdr' and xdr_major_version >= 5:
+            xdr_config = {}
+            xdr_config['dc_configs'] = {}
+            xdr_config['ns_configs'] = {}
+            xdr_config['xdr_configs'] = util.info_to_dict(self.info("get-config:context=xdr"))
+
+            for dc in xdr_config['xdr_configs']['dcs'].split(','):
+                dc_config = self.info("get-config:context=xdr;dc=%s" % dc)
+                xdr_config['ns_configs'][dc] = {}
+                xdr_config['dc_configs'][dc] = util.info_to_dict(dc_config)
+
+                start_namespaces = dc_config.find('namespaces=') + len('namespaces=')
+                end_namespaces = dc_config.find(';', start_namespaces)
+                namespaces = (ns for ns in dc_config[start_namespaces:end_namespaces].split(','))
+
+                for namespace in namespaces:
+                    namespace_config = self.info("get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace))
+                    xdr_config['ns_configs'][dc][namespace] = util.info_to_dict(namespace_config)
+
+            config = xdr_config
+        elif stanza != 'all':
+            config = util.info_to_dict(
+                self.info("get-config:context=%s" % stanza))
         elif stanza == "all":
             config["namespace"] = self.info_get_config("namespace")
             config["service"] = self.info_get_config("service")
@@ -1061,7 +1077,7 @@ class Node(object):
             conf_path = "/etc/aerospike/aerospike.conf"
             self.conf_data = conf_parser.parse_file(conf_path)
             if "namespace" in self.conf_data:
-                for ns in list(self.conf_data["namespace"].keys()):
+                for ns in self.conf_data["namespace"].keys():
                     if "service" in self.conf_data["namespace"][ns]:
                         self.conf_data["namespace"][ns] = self.conf_data["namespace"][
                             ns
@@ -1099,6 +1115,7 @@ class Node(object):
         has_time_range_col = int(has_time_range_col)
         time_range = row[0]
         updated = False
+        
         for total_row in total_rows:
             if not has_time_range_col or total_row[0] == time_range:
                 new_sum = float(row[has_time_range_col])
@@ -1114,14 +1131,13 @@ class Node(object):
                         new_transactions = float((new_sum * row[row_idx]) / 100.00)
                         total_row[row_idx] = round(
                             float(
-                                old_div(
-                                    ((old_transactions + new_transactions) * 100),
-                                    (old_sum + new_sum),
-                                )
+                                    ((old_transactions + new_transactions) * 100) /
+                                    (old_sum + new_sum)
                             ),
                             2,
                         )
                     total_row[has_time_range_col] = round(old_sum + new_sum, 2)
+
                 updated = True
                 break
 
@@ -1476,8 +1492,8 @@ class Node(object):
         roster_data = util.info_to_dict_multi_level(roster_data, "ns")
         list_fields = ["roster", "pending_roster", "observed_nodes"]
 
-        for ns, ns_roster_data in list(roster_data.items()):
-            for k, v in list(ns_roster_data.items()):
+        for ns, ns_roster_data in roster_data.items():
+            for k, v in ns_roster_data.items():
                 if k not in list_fields:
                     continue
 
@@ -1504,10 +1520,10 @@ class Node(object):
         rack_data = util.info_to_dict_multi_level(rack_data, "ns")
         rack_dict = {}
 
-        for ns, ns_rack_data in list(rack_data.items()):
+        for ns, ns_rack_data in rack_data.items():
             rack_dict[ns] = {}
 
-            for k, v in list(ns_rack_data.items()):
+            for k, v in ns_rack_data.items():
                 if k == "ns":
                     continue
 

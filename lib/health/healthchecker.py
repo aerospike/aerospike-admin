@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import str
-from builtins import object
-
 import copy
 from distutils.version import LooseVersion
 import re
@@ -24,13 +21,13 @@ from lib.health.exceptions import SyntaxException, HealthException
 from lib.health.parser import HealthParser
 from lib.health.query import QUERIES
 from lib.health.util import is_health_parser_variable
-from lib.utils.util import is_str, parse_queries
+from lib.utils.util import parse_queries
 from lib.view import terminal
 
 VERSION_CONSTRAINT_PATTERN = "SET CONSTRAINT VERSION(.+)"
 
 
-class HealthChecker(object):
+class HealthChecker():
 
     def __init__(self):
         try:
@@ -183,14 +180,14 @@ class HealthChecker(object):
         sn_node_dict = {}
         sn_total_clusters = 0
 
-        for cl in list(data["METADATA"]["CLUSTER"].keys()):
+        for cl in data["METADATA"]["CLUSTER"].keys():
             sn_total_clusters += 1
             try:
                 cl_one_count = 0
                 cl_zero_count = 0
                 cl_node_list = []
                 cl_total_nodes = 0
-                for n in list(data["METADATA"]["CLUSTER"][cl].keys()):
+                for n in data["METADATA"]["CLUSTER"][cl].keys():
                     cl_total_nodes += 1
                     try:
                         if not self.version_checker_fn(data["METADATA"]["CLUSTER"][cl][n][("version", "KEY")]):
@@ -250,7 +247,7 @@ class HealthChecker(object):
 
     def _filter_health_input_data(self):
         data = copy.deepcopy(self.health_input_data)
-        for sn in list(data.keys()):
+        for sn in data.keys():
             # SNAPSHOT level
             remove_nodes = self._filter_nodes_to_remove(data[sn])
             if remove_nodes == 1:
@@ -305,7 +302,7 @@ class HealthChecker(object):
         if not query_source:
             raise Exception("No Input Query Source.")
 
-        if not is_str(query_source):
+        if not isinstance(query_source, str):
             raise Exception("Query input source is not valid")
 
         queries = parse_queries(query_source, is_file=is_source_file)

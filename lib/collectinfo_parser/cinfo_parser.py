@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import absolute_import
-from builtins import str
-
 import os
 import json
 import re
@@ -182,7 +179,7 @@ def _parse_old_collectinfo_to_imap(cinfo_path, section_list, imap, ignore_except
 
                 section = section_list[section_id]
 
-                if "regex_old" not in list(section.keys()):
+                if "regex_old" not in section.keys():
                     continue
 
                 if re.search(section["regex_old"], fileline):
@@ -290,7 +287,7 @@ def _parse_new_collectinfo_to_imap(cinfo_path, section_list, section_skip_list, 
 
                         # Check if this filter doesn't have regex of same
                         # version as collectinfo.
-                        if regex not in list(section.keys()):
+                        if regex not in section.keys():
                             continue
 
                         if re.search(section[regex], section_line):
@@ -409,7 +406,7 @@ def _get_collectinfo_num_sections(cinfo_path, delimiter):
 
 def _update_imap_for_old_cinfo(imap, key, value, ignore_exception):
     vallist = []
-    if key in list(imap.keys()):
+    if key in imap.keys():
         preval = imap[key]
 
         # Report in case of collision
@@ -428,7 +425,7 @@ def _update_imap_for_new_cinfo(imap, key, value, section_skip_list, ignore_excep
 
     same_section = False
 
-    if key in list(imap.keys()):
+    if key in imap.keys():
         preval = imap[key]
 
         # TODO - MOVE comment to souce of skip
@@ -511,7 +508,7 @@ def _validate_collectinfo_section(imap_file_path, section_name, match_strings, m
         if len(imap) < MIN_LINES_IN_SECTION_JSON:
             return True
 
-        if 'cinfo_paths' not in list(imap.keys()) or len(imap['cinfo_paths']) == 0:
+        if 'cinfo_paths' not in imap.keys() or len(imap['cinfo_paths']) == 0:
             logger.warning("cinfo doesn't have cinfo_paths.")
             return False
 
@@ -542,7 +539,7 @@ def _validate_collectinfo_section(imap_file_path, section_name, match_strings, m
                 break
 
         if exist:
-            if section_name not in list(imap.keys()):
+            if section_name not in imap.keys():
                 return False
             else:
                 return True

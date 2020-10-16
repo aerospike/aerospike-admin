@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import zip
-from builtins import str
-from builtins import object
-
 import copy
 import re
 import threading
@@ -87,7 +82,7 @@ class Cluster(object):
         self._same_name_nodes = False
 
     def __str__(self):
-        nodes = list(self.nodes.values())
+        nodes = self.nodes.values()
         if len(nodes) == 0:
             return ""
 
@@ -104,7 +99,7 @@ class Cluster(object):
 
     def get_node_displaynames(self):
         node_names = {}
-        for node_key, node in list(self.nodes.items()):
+        for node_key, node in self.nodes.items():
             k = node.sock_name(use_fqdn=True)
             if commonutil.is_valid_ip_port(k):
                 node_names[node_key] = k
@@ -117,7 +112,7 @@ class Cluster(object):
         node_names = {}
 
         if not self._same_name_nodes:
-            for node_key, node in list(self.nodes.items()):
+            for node_key, node in self.nodes.items():
                 name = node.sock_name(use_fqdn=True)
                 if name in list(node_names.values()):
                     # found same name for multiple nodes
@@ -127,7 +122,7 @@ class Cluster(object):
                 node_names[node_key] = name
 
         if not node_names:
-            for node_key, node in list(self.nodes.items()):
+            for node_key, node in self.nodes.items():
                 node_names[node_key] = node.sock_name(use_fqdn=False)
 
         return node_names
@@ -135,7 +130,7 @@ class Cluster(object):
     def get_expected_principal(self):
         try:
             principal = "0"
-            for k in list(self.nodes.keys()):
+            for k in self.nodes.keys():
                 n = self.nodes[k]
                 if n.node_id.zfill(16) > principal.zfill(16):
                     principal = n.node_id
@@ -150,7 +145,7 @@ class Cluster(object):
     def get_visibility_error_nodes(self):
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
-        for k in list(self.nodes.keys()):
+        for k in self.nodes.keys():
             node = self.nodes[k]
             if not node.alive:
                 # in case of using alumni services, we might have offline nodes
@@ -165,7 +160,7 @@ class Cluster(object):
 
     def get_down_nodes(self):
         cluster_down_nodes = []
-        for k in list(self.nodes.keys()):
+        for k in self.nodes.keys():
             try:
                 node = self.nodes[k]
                 if not node.alive:
@@ -288,7 +283,7 @@ class Cluster(object):
                 self.nodes.pop(n)
 
     def _refresh_node_liveliness(self):
-        live_nodes = [node for node in list(self.nodes.values()) if node.alive]
+        live_nodes = [node for node in self.nodes.values() if node.alive]
         self._live_nodes.clear()
         self._live_nodes.update(
             ((node.ip, node.port, node.tls_name) for node in live_nodes))
@@ -461,7 +456,7 @@ class Cluster(object):
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
         node_map = {}
-        for a in list(self.aliases.keys()):
+        for a in self.aliases.keys():
             try:
                 node_map[a] = self.nodes.get(self.aliases[a]).node_id
             except Exception:
@@ -472,7 +467,7 @@ class Cluster(object):
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
         ip_map = {}
-        for addr in list(self.aliases.keys()):
+        for addr in self.aliases.keys():
             try:
                 id = self.nodes.get(self.aliases[addr]).node_id
                 if id in ip_map:
@@ -504,7 +499,7 @@ class Cluster(object):
             raise AttributeError("Cluster has not attribute '%s'" % (name))
 
     def close(self):
-        for node_key in list(self.nodes.keys()):
+        for node_key in self.nodes.keys():
             try:
                 node = self.nodes[node_key]
                 node.close()

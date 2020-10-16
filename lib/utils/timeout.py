@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from future import standard_library
-standard_library.install_aliases()
-from builtins import object
-
 import signal
 import subprocess
 
@@ -28,7 +24,7 @@ class TimeoutException(Exception):
     pass
 
 
-class call_with_timeout(object):
+class call_with_timeout():
 
     def __init__(self, function, timeout=DEFAULT_TIMEOUT):
         self.timeout = timeout

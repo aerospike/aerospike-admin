@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import object
 import copy
 from distutils.version import LooseVersion
 
@@ -96,7 +95,7 @@ class CollectinfoSnapshot(object):
 
     def ns_name_fault_check(self, value):
         try:
-            for node, node_data in list(value.items()):
+            for node, node_data in value.items():
                 if not node or not node_data:
                     continue
                 if not 'as_stat' in node_data:
@@ -104,13 +103,13 @@ class CollectinfoSnapshot(object):
 
                 if 'config' in node_data['as_stat']:
                     if 'namespace' in node_data['as_stat']['config']:
-                        for ns in list(value[node]['as_stat']['config']['namespace'].keys()):
+                        for ns in value[node]['as_stat']['config']['namespace'].keys():
                             if ' ' in ns:
                                 del value[node]['as_stat']['config']['namespace'][ns]
 
                 if 'statistics' in node_data['as_stat']:
                     if 'namespace' in node_data['as_stat']['statistics']:
-                        for ns in list(value[node]['as_stat']['statistics']['namespace'].keys()):
+                        for ns in value[node]['as_stat']['statistics']['namespace'].keys():
                             if ' ' in ns:
                                 del value[node]['as_stat']['statistics']['namespace'][ns]
                                 continue
@@ -138,7 +137,7 @@ class CollectinfoSnapshot(object):
     def get_node_names(self):
         if not self.node_names:
             if self.cinfo_data:
-                node_names = list(self.cinfo_data.keys())
+                node_names = self.cinfo_data.keys()
             else:
                 return {}
 
@@ -154,7 +153,7 @@ class CollectinfoSnapshot(object):
 
         try:
             # return copy.deepcopy(self.cinfo_data[type][stanza])
-            for node, node_data in list(self.cinfo_data.items()):
+            for node, node_data in self.cinfo_data.items():
                 try:
                     if not node or not node_data:
                         continue
@@ -178,7 +177,7 @@ class CollectinfoSnapshot(object):
                             data[node] = list(d.keys())
                             continue
 
-                        for ns_name in list(d.keys()):
+                        for ns_name in d.keys():
                             try:
                                 if stanza == "namespace":
                                     data[node][ns_name] = copy.deepcopy(
@@ -251,7 +250,7 @@ class CollectinfoSnapshot(object):
             return data
 
         try:
-            for node, node_data in list(self.cinfo_data.items()):
+            for node, node_data in self.cinfo_data.items():
                 try:
                     if not node or not node_data:
                         continue
@@ -290,7 +289,7 @@ class CollectinfoSnapshot(object):
     def get_expected_principal(self):
         try:
             principal = "0"
-            for n in list(self.nodes.values()):
+            for n in self.nodes.values():
                 if n.node_id == 'N/E':
                     if self._get_node_count() == 1:
                         return n.node_id
@@ -344,7 +343,7 @@ class CollectinfoSnapshot(object):
             self.node_lookup[node] = node
 
     def _get_node_count(self):
-        return len(list(self.nodes.keys()))
+        return len(self.nodes.keys())
 
     def _set_node_id(self):
         for node in self.nodes:
@@ -408,7 +407,7 @@ class CollectinfoLog(object):
         parse_info_all(files, self.data, True)
 
         if self.data:
-            for ts in sorted(list(self.data.keys()), reverse=True):
+            for ts in sorted(self.data.keys(), reverse=True):
                 if self.data[ts]:
                     for cl in self.data[ts]:
                         cinfo_data = self.data[ts][cl]

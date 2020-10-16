@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import division
-from builtins import str
-from builtins import object
-from past.utils import old_div
-
 import datetime
 import re
 import time
@@ -125,7 +120,7 @@ class LogReader(object):
                     matched_count += 1
             except Exception:
                 pass
-        if matched_count > (old_div(len(lines),2)):
+        if matched_count > (len(lines) // 2):
             return True
         return False
 
@@ -190,7 +185,7 @@ class LogReader(object):
         return line[0: line.find(" GMT")]
 
     def parse_dt(self, line, dt_len=6):
-        line = bytes_to_str(line) # bytes for py3 compatibility
+        line = bytes_to_str(line)
         prefix = line[0: line.find(" GMT")].split(",")[0]
         # remove milliseconds if available
         prefix = prefix.split(".")[0]
@@ -211,11 +206,11 @@ class LogReader(object):
 
     def set_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
-        self._seek_to(file_stream, b"\n") # marked as bytes for py3 compatibility
+        self._seek_to(file_stream, b"\n")
 
     def read_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
-        self._seek_to(file_stream, b"\n") # marked as bytes for py3 compatibility
+        self._seek_to(file_stream, b"\n")
         ln = self.read_line(file_stream)
         return ln
 
@@ -241,7 +236,7 @@ class LogReader(object):
             else:
                 return None, None
 
-        jump = old_div((max - min), 2)
+        jump = (max - min) // 2
         f.seek(int(jump) + min, 0)
         self._seek_to(f, '\n')
         last_read = f.tell()
@@ -307,6 +302,8 @@ class LogReader(object):
             try:
                 # checking for valid line with timestamp
                 ln = f.readline()
+                if isinstance(ln, bytes): # need this check for serverlog.py's reading in binary mode
+                    ln = bytes_to_str(ln)
                 tm = self.parse_dt(ln)
                 break
             except Exception:

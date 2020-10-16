@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import str
-from builtins import filter
-from builtins import object
-
 import inspect
 import re
 import logging
@@ -93,14 +88,14 @@ class BaseController(object):
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
-        commands = [command_re.match(v).groups() for v in list(filter(command_re.search, dir(self)))]
+        commands = [command_re.match(v).groups() for v in filter(command_re.search, dir(self))]
 
         self.commands = PrefixDict()
 
         for command in commands:
             self.commands.add(command[1], getattr(self, command[0]))
 
-        for command, controller in list(self.controller_map.items()):
+        for command, controller in self.controller_map.items():
             try:
                 controller = controller()
             except Exception:

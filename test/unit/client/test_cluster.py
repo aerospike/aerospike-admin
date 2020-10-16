@@ -12,12 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import str
-from builtins import range
-
 from mock import patch, Mock
 import socket
-import unittest2 as unittest
+import unittest
 
 import lib
 from lib.client.cluster import Cluster

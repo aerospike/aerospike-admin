@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import absolute_import
-from builtins import str
-from builtins import range
-
 import re
 import copy
 import logging
@@ -1143,7 +1139,7 @@ def _parse_hist_dump(section):
     if not parsed_section:
         return namespace, parsed_section
 
-    for node, hist_dump in list(parsed_section.items()):
+    for node, hist_dump in listparsed_section.items():
         if not node or not hist_dump or isinstance(hist_dump, Exception) or ":" not in hist_dump:
             continue
 
@@ -1166,7 +1162,7 @@ def _parse_hist_dump_section(sec_id, nodes, imap, parsed_map):
         if not namespace:
             continue
 
-        for node, hist_dump in list(hist_dump_section.items()):
+        for node, hist_dump in hist_dump_section.items():
             map_ptr = None
             if node not in parsed_map:
                 parsed_map[node] = {}
@@ -1199,7 +1195,7 @@ def _parse_asinfo_node_value_section(sec_id, imap, parsed_map):
 
     for raw_dump in imap[raw_section_name]:
         try:
-            for node, val in list(eval(raw_dump[0]).items()):
+            for node, val in eval(raw_dump[0]).items():
                 map_ptr = None
                 if node not in parsed_map:
                     parsed_map[node] = {}

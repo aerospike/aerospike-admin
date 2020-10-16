@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from builtins import str
 import copy
 
 from lib.controllerlib import BaseController, CommandHelp, CommandController
@@ -151,6 +149,7 @@ class InfoController(CollectinfoCommandController):
     @CommandHelp("Displays Cross Datacenter Replication (XDR) summary information.")
     def do_xdr(self, line):
         xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
+        node_xdr_build_major_version = 5
         for timestamp in sorted(xdr_stats.keys()):
             if not xdr_stats[timestamp]:
                 continue
@@ -161,7 +160,7 @@ class InfoController(CollectinfoCommandController):
             old_xdr_stats = {}
             xdr5_stats = {}
 
-            for xdr_node in list(xdr_stats[timestamp].keys()):
+            for xdr_node in xdr_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
                 try:
                     node_xdr_build_major_version = int(builds[xdr_node][0])
@@ -223,11 +222,12 @@ class InfoController(CollectinfoCommandController):
             builds = cinfo_log.get_xdr_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
+            node_xdr_build_major_version = 5
 
             if not dc_stats[timestamp]:
                 continue
 
-            for dc in list(dc_stats[timestamp].keys()):
+            for dc in dc_stats[timestamp].keys():
                 try:
                     if (
                         dc_stats[timestamp][dc]
@@ -237,7 +237,7 @@ class InfoController(CollectinfoCommandController):
                         and not isinstance(dc_config[timestamp][dc], Exception)
                     ):
 
-                        for node in list(dc_stats[timestamp][dc].keys()):
+                        for node in dc_stats[timestamp][dc].keys():
                             if node in dc_config[timestamp][dc]:
                                 dc_stats[timestamp][dc][node].update(
                                     dc_config[timestamp][dc][node]
@@ -362,7 +362,7 @@ class ShowController(CollectinfoCommandController):
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(["like", "diff"])
+        self.modifiers = set(['like', 'diff', 'for'])
 
     @CommandHelp(
         "Displays service, network, and namespace configuration",
@@ -495,20 +495,72 @@ class ShowConfigController(CollectinfoCommandController):
         )
 
         xdr_configs = self.loghdlr.info_getconfig(stanza=CONFIG_XDR)
+        old_xdr_configs = {}
+        xdr5_configs = {}
+        node_xdr_build_major_version = 5
 
         for timestamp in sorted(xdr_configs.keys()):
-            self.view.show_config(
-                "XDR Configuration",
-                xdr_configs[timestamp],
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                title_every_nth=title_every_nth,
-                flip_output=flip_output,
-                timestamp=timestamp,
-                **self.mods
-            )
+            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_xdr_build()
+
+            for xdr_node in xdr_configs[timestamp]:
+                try:
+                    node_xdr_build_major_version = int(builds[xdr_node][0])
+                except:
+                    continue
+
+                if node_xdr_build_major_version < 5:
+                    old_xdr_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
+                else:
+                    xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
+
+            if xdr5_configs:
+                if self.mods['for']:
+                    xdr_dc = self.mods['for'][0]
+                    for node, config in xdr5_configs.items():
+                        if isinstance(config, Exception):
+                            continue
+                        
+                        config['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
+                        
+                        if xdr_dc in config['dc_configs']:
+                            config['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
+                        else:
+                            config['dc_configs'] = {}
+                        
+                        if xdr_dc in config['ns_configs']:
+                            config['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
+                        else:
+                            config['ns_configs'] = {}
+
+                        if len(self.mods['for']) >= 2:
+                            xdr_ns = self.mods['for'][1]
+                            if xdr_dc in config['ns_configs'] and xdr_ns in config['ns_configs'][xdr_dc]:
+                                config['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
+                            else:
+                                config['ns_configs'] = {}
+
+                for node in xdr5_configs:
+                    self.view.show_xdr5_config("XDR Configuration",
+                                            xdr5_configs,
+                                            cinfo_log,
+                                            title_every_nth=title_every_nth,
+                                            flip_output=flip_output,
+                                            timestamp=timestamp,
+                                            **self.mods)
+
+
+            if old_xdr_configs:
+                self.view.show_config("XDR Configuration",
+                                    old_xdr_configs,
+                                    cinfo_log,
+                                    title_every_nth=title_every_nth,
+                                    flip_output=flip_output,
+                                    timestamp=timestamp, **self.mods)
 
     # pre 5.0
-    @CommandHelp("Displays datacenter configuration")
+    @CommandHelp('Displays datacenter configuration',
+                    'Replaced by "show config xdr" for server >= 5.0.')
     def do_dc(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -529,18 +581,36 @@ class ShowConfigController(CollectinfoCommandController):
         )
 
         dc_configs = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
+        node_xdr_build_major_version = 5
 
         for timestamp in sorted(dc_configs.keys()):
-            for dc, configs in dc_configs[timestamp].items():
-                self.view.show_config(
-                    "%s DC Configuration" % (dc),
-                    configs,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    timestamp=timestamp,
-                    **self.mods
-                )
+            builds = cinfo_log.get_xdr_build()
+            nodes_running_v5_or_higher = False
+            nodes_running_v49_or_lower = False
+
+            for version in builds.values():
+                try:
+                    node_xdr_build_major_version = int(version[0])
+                except:
+                    continue
+                
+                if node_xdr_build_major_version >= 5:
+                    nodes_running_v5_or_higher = True
+                else:
+                    nodes_running_v49_or_lower = True
+
+            if nodes_running_v49_or_lower:
+                for dc, configs in dc_configs[timestamp].items():
+                    self.view.show_config("%s DC Configuration"%(dc), configs,
+                                        self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                                        title_every_nth=title_every_nth, flip_output=flip_output,
+                                        timestamp=timestamp, **self.mods)
+            
+            if nodes_running_v5_or_higher:
+                self.view.print_result("WARNING: Detected nodes running " +
+                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
+                 "/path/to/collect_info_file -e \"show config xdr\"'" + 
+                 " for versions 5.0 and up.")
 
     @CommandHelp("Displays cluster configuration")
     def do_cluster(self, line):
@@ -688,14 +758,12 @@ class ShowLatenciesController(CollectinfoCommandController):
             namespace_set = set()
             _latency = {}
             if timestamp in namespaces:
-                _namespaces = list(namespaces[timestamp].values())
-                for _namespace in _namespaces:
+                for _namespace in namespaces[timestamp].values():
                     if isinstance(_namespace, Exception):
                         continue
                     namespace_set.update(_namespace)
                 namespace_set = set(
-                    util.filter_list(list(namespace_set), self.mods["for"])
-                )
+                    util.filter_list(namespace_set, self.mods['for']))
 
                 for node_id, node_data in latency[timestamp].items():
                     if not node_data or isinstance(node_data, Exception):
@@ -830,8 +898,7 @@ class ShowStatisticsController(CollectinfoCommandController):
 
         for timestamp in sorted(ns_stats.keys()):
             namespace_list = util.filter_list(
-                list(ns_stats[timestamp].keys()), self.mods["for"]
-            )
+                ns_stats[timestamp].keys(), self.mods['for'])
             for ns in sorted(namespace_list):
                 stats = ns_stats[timestamp][ns]
                 self.view.show_stats(
@@ -874,18 +941,16 @@ class ShowStatisticsController(CollectinfoCommandController):
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
                 continue
-            namespace_list = [
-                ns_set.split()[0] for ns_set in list(set_stats[timestamp].keys())
-            ]
+            namespace_list = [ns_set.split()[0]
+                              for ns_set in set_stats[timestamp].keys()]
 
             try:
                 namespace_list = util.filter_list(namespace_list, self.mods["for"][:1])
             except Exception:
                 pass
 
-            set_list = [
-                ns_set.split()[1] for ns_set in list(set_stats[timestamp].keys())
-            ]
+            set_list = [ns_set.split()[1]
+                              for ns_set in set_stats[timestamp].keys()]
             try:
                 set_list = util.filter_list(set_list, self.mods["for"][1:2])
             except Exception:
@@ -939,9 +1004,8 @@ class ShowStatisticsController(CollectinfoCommandController):
             ):
                 continue
 
-            namespace_list = util.filter_list(
-                list(new_bin_stats[timestamp].keys()), self.mods["for"]
-            )
+            namespace_list = util.filter_list(new_bin_stats[timestamp].keys(),
+                                              self.mods['for'])
 
             for ns, stats in new_bin_stats[timestamp].items():
                 if ns not in namespace_list:
@@ -985,6 +1049,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
         old_xdr_stats = {}
         xdr5_stats = {}
+        node_xdr_build_major_version = 5
 
         for timestamp in sorted(xdr_stats.keys()):
 
@@ -1013,10 +1078,8 @@ class ShowStatisticsController(CollectinfoCommandController):
 
                 xdr5_stats = temp
 
-                if self.mods["for"]:
-                    matches = util.filter_list(
-                        list(xdr5_stats.keys()), self.mods["for"]
-                    )
+                if self.mods['for']:
+                    matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
 
                 for dc in xdr5_stats:
                     if not self.mods["for"] or dc in matches:
@@ -1072,6 +1135,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         )
 
         dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
+        node_xdr_build_major_version = 5
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
@@ -1141,19 +1205,15 @@ class ShowStatisticsController(CollectinfoCommandController):
             ):
                 continue
 
-            namespace_list = [
-                ns_set_sindex.split()[0]
-                for ns_set_sindex in list(sindex_stats[timestamp].keys())
-            ]
+            namespace_list = [ns_set_sindex.split()[0]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()]
             try:
                 namespace_list = util.filter_list(namespace_list, self.mods["for"][:1])
             except Exception:
                 pass
 
-            sindex_list = [
-                ns_set_sindex.split()[2]
-                for ns_set_sindex in list(sindex_stats[timestamp].keys())
-            ]
+            sindex_list = [ns_set_sindex.split()[2]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()]
             try:
                 sindex_list = util.filter_list(sindex_list, self.mods["for"][1:2])
             except Exception:
@@ -1893,15 +1953,8 @@ class ListController(CollectinfoCommandController):
     @CommandHelp("Displays list of all added collectinfos files.")
     def do_all(self, line):
         cinfo_logs = self.loghdlr.all_cinfo_logs
-        for timestamp, snapshot in list(cinfo_logs.items()):
-            print(
-                terminal.bold()
-                + str(timestamp)
-                + terminal.unbold()
-                + ": "
-                + str(snapshot.cinfo_file)
-            )
-
+        for timestamp, snapshot in cinfo_logs.items():
+            print(terminal.bold() + str(timestamp) + terminal.unbold() + ": " + str(snapshot.cinfo_file))
 
 @CommandHelp("Set pager for output")
 class PagerController(CollectinfoCommandController):
