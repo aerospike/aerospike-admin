@@ -2176,18 +2176,19 @@ class CliView(object):
 
         for _, ns_stats in stats.items():
             try:
-                if ns_stats['license_data_in_memory']:
+                if not license_data_in_memory and ns_stats['license_data_in_memory']:
                     license_data_in_memory = True
-                    break
-                elif ns_stats['license_data_on_disk']:
+                elif not license_data_on_disk and ns_stats['license_data_on_disk']:
                     license_data_on_disk = True
+                
+                if license_data_in_memory and license_data_on_disk:
                     break
             except:
                 pass
 
         if license_data_in_memory:
             column_names = column_names + ('Usage (Unique-Data) In-Memory',)
-        elif license_data_on_disk:
+        if license_data_on_disk:
            column_names = column_names + ('Usage (Unique-Data) On-Device',)
 
         t = Table(title, column_names, sort_by=0)
@@ -2197,7 +2198,7 @@ class CliView(object):
                 'Usage (Unique-Data) In-Memory',
                 Extractors.byte_extractor('license_data_in_memory')
             )
-        elif license_data_on_disk:
+        if license_data_on_disk:
             t.add_data_source(
                 'Usage (Unique-Data) On-Device',
                 Extractors.byte_extractor('license_data_on_disk')
@@ -2351,11 +2352,18 @@ class CliView(object):
         data_summary = CliView.get_summary_line_prefix(index, "Usage (Unique Data)")
         uniq_mem_used = summary["CLUSTER"]["license_data"]["memory_size"]
         uniq_device_used = summary["CLUSTER"]["license_data"]["device_size"]
+        
+        # Sum all "Usage" data whether on disk or in memory.
+        if uniq_mem_used or uniq_device_used:
+            total = 0
 
-        if uniq_mem_used:
-            data_summary += "%s"%filesize.size(uniq_mem_used)
-        elif uniq_device_used:
-            data_summary += "%s"%filesize.size(uniq_device_used)
+            if uniq_mem_used:
+                total += uniq_mem_used
+            if uniq_device_used:
+                total += uniq_device_used
+
+            data_summary += "%s"%filesize.size(total)
+
         else:
             data_summary += "None"
 
