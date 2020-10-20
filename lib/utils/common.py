@@ -20,7 +20,7 @@ import json
 import logging
 import operator
 import os
-import platform
+import distro
 import socket
 import sys
 import time
@@ -1792,7 +1792,7 @@ def _zip_files(dir_path, _size=1):
 def get_system_commands(port=3000):
     # Unfortunately timestamp can not be printed in Centos with dmesg,
     # storing dmesg logs without timestamp for this particular OS.
-    if "centos" == (platform.linux_distribution()[0]).lower():
+    if "centos" == (distro.linux_distribution()[0]).lower():
         cmd_dmesg = "sudo dmesg"
         alt_dmesg = ""
     else:
