@@ -26,6 +26,7 @@ else
 			find "$PACKAGE" -type f -name "*.so" -print0 | xargs -0 codesign --force --options runtime --sign "Developer ID Application: Aerospike, Inc." ; \
 			wheel pack "$PACKAGE"
 			rm -rf "$PACKAGE"
+            rename s/cffi-1.14.3/cffi-1.14.3-2/ cffi-*.whl
 			mv "$PACKAGE_WHEEL" "$BUILD_ROOT"tmp/wheels/
 		done
         ls -lat "$BUILD_ROOT"tmp/wheels
