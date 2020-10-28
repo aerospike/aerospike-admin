@@ -21,8 +21,10 @@
 
 import sys
 import struct
-from ctypes import create_string_buffer		 # gives us pre-allocated buffers
+from ctypes import create_string_buffer		 # gives us pre-allocated bufs
 from time import time
+from enum import IntEnum, unique
+from socket import error as SocketError
 
 from lib.utils.util import bytes_to_str, str_to_bytes
 
@@ -36,63 +38,21 @@ except:
 
 from lib.utils.constants import AuthMode
 
-#
-# COMPATIBILITY COMPATIBILITY COMPATIBILITY
-#
-# So the 'struct' class went through lots of (good) improvements in
-# 2.5, but we want to support old use as well as new. Write a few
-# functions similar to the 2.5 ones, and either use builtin or
-# pure based on what's available
-#
 
+_STRUCT_PROTOCOL_HEADER = struct.Struct('! B B 3h')
+_STRUCT_UINT8 = struct.Struct('! B')
+_STRUCT_UINT16 = struct.Struct('! H')
+_STRUCT_UINT32 = struct.Struct('! I')
+_STRUCT_UINT64 = struct.Struct('! Q')
+_STRUCT_INT64 = struct.Struct('! q')
+_STRUCT_DOUBLE = struct.Struct('! d')
+_STRUCT_FIELD = struct.Struct("! I B")
+_STRUCT_STRING_FMT = "! %ds"
+_STRUCT_ADMIN_HEADER = struct.Struct('! B B B B 12x')
 
-def my_unpack_from(fmt_str, buf, offset):
-    sz = struct.calcsize(fmt_str)
-    return struct.unpack(fmt_str, buf[offset:offset + sz])
+_PROTOCOL_HEADER_SIZE = _STRUCT_PROTOCOL_HEADER.size
 
-
-def my_pack_into(fmt_str, buf, offset, *args):
-    tmp_array = struct.pack(fmt_str, *args)
-    buf[offset:offset + len(tmp_array)] = tmp_array
-
-# 2.5+ has this nice partition call
-
-
-def partition_25(s, sep):
-    return(s.partition(sep))
-
-# 2.4- doesn't
-
-
-def partition_old(s, sep):
-    idx = s.find(sep)
-    if idx == -1:
-        return(s, "", "")
-    return(s[:idx], sep, s[idx + 1:])
-
-admin_header_fmt = '! Q B B B B 12x'
-proto_header_fmt = '! Q'
-
-g_proto_header = None
-g_partition = None
-g_struct_admin_header_in = None
-g_struct_admin_header_out = None
-
-# 2.5, this will succeed
-try:
-    g_proto_header = struct.Struct(proto_header_fmt)
-    g_struct_admin_header_in = struct.Struct(admin_header_fmt)
-    g_struct_admin_header_out = struct.Struct(admin_header_fmt)
-    g_partition = partition_25
-
-# pre 2.5, if there's no Struct submember, so use my workaround pack/unpack
-except:
-    struct.unpack_from = my_unpack_from
-    struct.pack_into = my_pack_into
-    g_partition = partition_old
-
-
-def _receivedata(sock, sz):
+def _receive_data(sock, sz):
     pos = 0
     while pos < sz:
         chunk = sock.recv(sz - pos)
@@ -105,7 +65,7 @@ def _receivedata(sock, sz):
 
 ####### Password hashing ######
 
-def _hashpassword(password):
+def _hash_password(password):
     if hasbcrypt == False:
         print("Authentication failed: bcrypt not installed.")
         sys.exit(1)
@@ -114,7 +74,7 @@ def _hashpassword(password):
         password = ""
 
     if len(password) != 60 or password.startswith("$2a$") == False:
-        password = bcrypt.hashpw(password, b"$2a$10$7EqJtq98hPqEX7fNZaFWoO") # bcrypt needs a byte string
+        password = bcrypt.hashpw(password, _ADMIN_SALT)
 
     return password
 
@@ -123,47 +83,275 @@ def _hashpassword(password):
 
 ########### Security ##########
 
-_OK = 0
-_INVALID_COMMAND = 54
-
+_ADMIN_SALT = b"$2a$10$7EqJtq98hPqEX7fNZaFWoO"
 _ADMIN_MSG_VERSION = 0
 _ADMIN_MSG_TYPE = 2
 
-_AUTHENTICATE = 0
-_LOGIN = 20
+_ADMIN_HEADER_SIZE = _STRUCT_ADMIN_HEADER.size
+_TOTAL_HEADER_SIZE = _PROTOCOL_HEADER_SIZE + _ADMIN_HEADER_SIZE
 
-_USER_FIELD_ID = 0
-_CREDENTIAL_FIELD_ID = 3
-_CLEAR_PASSWORD_FIELD_ID = 4
-_SESSION_TOKEN_FIELD_ID = 5
-_SESSION_TTL_FIELD_ID = 6
+@unique
+class ASCommand(IntEnum):
+    AUTHENTICATE = 0
+    CREATE_USER = 1
+    DROP_USER = 2
+    SET_PASSWORD = 3
+    CHANGE_PASSWORD = 4
+    GRANT_ROLES = 5
+    REVOKE_ROLES = 6
+    QUERY_USERS = 9
+    CREATE_ROLE = 10
+    DELETE_ROLE = 11
+    ADD_PRIVLEGES = 12
+    DELETE_PRIVLEGES = 13
+    SET_WHITELIST = 14
+    QUERY_ROLES = 16
+    LOGIN = 20
 
-_HEADER_SIZE = 24
-_HEADER_REMAINING = 16
+@unique
+class ASField(IntEnum):
+    USER = 0
+    PASSWORD = 1
+    OLD_PASSWORD = 2
+    CREDENTIAL = 3
+    CLEAR_PASSWORD = 4
+    SESSION_TOKEN = 5
+    SESSION_TTL = 6
+    ROLES = 10
+    ROLE = 11
+    PRIVILEGES = 12
+    WHITELIST = 13
 
+@unique
+class ASPrivilege(IntEnum):
+    USER_ADMIN = 0
+    SYS_ADMIN = 1
+    DATA_ADMIN = 2
+    READ = 10
+    READ_WRITE = 11
+    READ_WRITE_UDF = 12
+    WRITE = 13
 
-def _admin_write_header(sz, command, field_count):
-    send_buf = create_string_buffer(sz)      # from ctypes
-    sz = (_ADMIN_MSG_VERSION << 56) | (_ADMIN_MSG_TYPE << 48) | (sz - 8)
+    @classmethod
+    def str_to_enum(cls, privilege_str):
+        privilege_str = privilege_str.lower()
+        privilege_str = privilege_str.replace('_', '-')
 
-    if g_struct_admin_header_out != None:
-        g_struct_admin_header_out.pack_into(
-            send_buf, 0, sz, 0, 0, command, field_count)
+        if privilege_str == 'user-admin':
+            return cls.USER_ADMIN
+        elif privilege_str == 'sys-admin':
+            return cls.SYS_ADMIN
+        elif privilege_str == 'data-admin':
+            return cls.DATA_ADMIN
+        elif privilege_str == 'read':
+            return cls.READ
+        elif privilege_str == 'read-write':
+            return cls.READ_WRITE
+        elif privilege_str == 'read-write-udf':
+            return cls.READ_WRITE_UDF
+        elif privilege_str == 'write':
+            return cls.WRITE
+        else:
+            raise TypeError("Privilege: Not a valid privilege name: {}".format(privilege_str))
+
+@unique
+class ASResponse(IntEnum):
+    OK = 0
+    INVALID_COMMAND = 54
+
+def _pack_uint8(buf, offset, val):
+    _STRUCT_UINT8.pack(buf, offset, val)
+    offset += _STRUCT_UINT8.size
+    return offset
+
+def _unpack_uint8(buf, offset):
+    val = _STRUCT_UINT8.unpack_from(buf, offset)
+    offset += _STRUCT_UINT8.size
+    return val, offset
+
+def _pack_uint32(buf, offset, val):
+    _STRUCT_UINT32.pack_into(buf, offset, val)
+    offset += _STRUCT_UINT32.size
+    return offset
+
+def _pack_string(buf, offset, string):
+    bytes_field = str_to_bytes(string)
+    buf[offset:offset + len(bytes_field)] = bytes_field
+    return offset + len(bytes_field)
+
+def _unpack_string(buf, offset, sz):
+    val = buf[offset: offset + sz]
+    offset += sz
+    return val, offset
+
+def _pack_info_field(buf, offset, field):
+    field += '\n'
+    return _pack_string(buf, offset, field)
+
+def _pack_protocol_header(buf, offset, protocol_version, protocol_type, sz):
+    proto = (protocol_version << 56) | (protocol_type << 48) | sz
+    _STRUCT_PROTOCOL_HEADER.pack_into(buf, offset, protocol_version, protocol_type, (sz >> 32) & 0xFFFF, (sz >> 16) & 0xFFFF, sz & 0xFFFF)
+    return offset + _PROTOCOL_HEADER_SIZE
+
+def _unpack_protocol_header(buf, offset=0):
+    protocol_header = _STRUCT_PROTOCOL_HEADER.unpack_from(buf, offset=offset)
+    protocol_version = protocol_header[0]
+    protocol_type = protocol_header[1]
+    data_size = (protocol_header[2] << 32) | (protocol_header[3] << 16) | protocol_header[4]
+    offset = _PROTOCOL_HEADER_SIZE
+    return protocol_version, protocol_type, data_size, offset
+
+def _pack_admin_header(buf, offset, scheme, result, command, n_fields):
+    _STRUCT_ADMIN_HEADER.pack_into(
+        buf, offset, scheme, result, command.value, n_fields)
+    offset += _ADMIN_HEADER_SIZE
+    return offset
+
+def _unpack_admin_header(buf, offset=_PROTOCOL_HEADER_SIZE):
+    admin_header = _STRUCT_ADMIN_HEADER.unpack_from(buf, offset)
+    scheme = admin_header[0]
+    result_code = admin_header[1]
+    command = admin_header[2]
+    fields_count = admin_header[3]
+    offset += _ADMIN_HEADER_SIZE
+    return scheme, result_code, command, fields_count, offset
+
+def _create_admin_header(sz, command, field_count):
+    # 4B = field size, 1B = filed type
+    protocol_data_size = sz + _ADMIN_HEADER_SIZE + (5 * field_count)
+    buffer_size = protocol_data_size + _PROTOCOL_HEADER_SIZE
+    buf = create_string_buffer(buffer_size)
+    offset = _pack_protocol_header(buf, 0, _ADMIN_MSG_VERSION, _ADMIN_MSG_TYPE, protocol_data_size)
+    offset = _pack_admin_header(buf, offset, _ADMIN_MSG_VERSION, 0, command, field_count)
+    return buf, offset
+
+# The first 5 bytes in front of every admin field
+def _pack_admin_field_header(buf, offset, field_len, field_type):
+    _STRUCT_FIELD.pack_into(buf, offset, field_len, field_type.value)
+    offset += _STRUCT_FIELD.size
+    return offset
+
+def _unpack_admin_field_header(buf, offset):
+    field_len, field_type = _STRUCT_FIELD.unpack_from(buf, offset)
+    offset += _STRUCT_FIELD.size
+    return field_len, field_type, offset
+
+def _pack_admin_field(buf, offset, as_field, field):
+    field_len = len(field) + 1
+
+    # _pack_string() will convert str to bytes, no need to handle here.
+    if isinstance(field, str) or isinstance(field, bytes):
+        offset = _pack_admin_field_header(buf, offset, field_len, as_field)
+        offset = _pack_string(buf, offset, field)
+    elif isinstance(field, list):
+        if as_field == ASField.ROLES:
+            offset = _pack_admin_roles(buf, offset, field)
+        elif as_field == ASField.PRIVILEGES:
+            offset = _pack_admin_privileges(buf, offset, field)
+        else:
+            raise TypeError("_pack_admin_field: Field ID does not accept lists: {}".format(as_field))
     else:
-        struct.pack_into(
-            admin_header_fmt, send_buf, 0, sz, 0, 0, command, field_count)
+        raise TypeError("_pack_admin_field: Unhandled field type: {}".format(type(field)))
+    return offset
 
-    return send_buf
+def _len_roles(roles):
+    # 1B = role_count
+    field_len = 1
+    for role in roles:
+        # 1B = role_name_size
+        field_len += len(role) + 1
+
+    return field_len
 
 
-def _admin_parse_header(data):
-    if g_struct_admin_header_in != None:
-        rv = g_struct_admin_header_in.unpack(data)
-    else:
-        rv = struct.unpack(admin_header_fmt, data)
+def _pack_admin_roles(buf, offset, roles):
+    field_len = _len_roles(roles)
+    role_count = len(roles)
+    
+    offset = _pack_admin_field_header(buf, offset, field_len, ASField.ROLES)
+    offset = _pack_uint8(buf, offset, role_count)
 
-    return rv
+    for role in roles:
+        role_len = len(role)
+        offset = _pack_uint8(buf, offset, role_len)
+        offset = _pack_string(buf, offset, role)
 
+def _unpack_admin_roles(buf, offset):
+    num_roles, offset = _unpack_uint8(buf, offset)
+    roles = []
+
+    for _ in range(num_roles):
+        role_size, offset = _unpack_uint8(buf, offset)
+        role_name, offset = _unpack_string(buf, offset, role_size)
+        roles.extend(role_name)
+
+    return roles, offset
+
+def _parse_privilege(privilege):
+    """ 
+    Parses string of the form 'sys-admin.test.testset'
+    """
+    split_privilege = privilege.split('.')
+    permission = ASPrivilege.str_to_enum(split_privilege[0])
+    namespace = ''
+    set_ = ''
+
+    if len(split_privilege) >= 2:
+        namespace = split_privilege[1]
+
+    if len(split_privilege) >= 3:
+        set_ = split_privilege[2]
+
+    return permission, namespace, set_
+
+
+def _len_privileges(privileges):
+    # 1B = component count
+    field_len = 1
+
+    for privilege in privileges:
+        # 1B = permission code ID
+        field_len += 1
+        permission, namespace, set_ = _parse_privilege(privilege)
+
+        if permission in { 
+            ASPrivilege.READ,
+            ASPrivilege.READ_WRITE, 
+            ASPrivilege.READ_WRITE_UDF,
+            ASPrivilege.WRITE
+        }:
+
+            # 1B = namespace name len
+            field_len += 1
+            field_len += len(namespace)
+            # 1B = set name len
+            field_len += 1
+            field_len += len(set_)
+
+    return field_len
+
+def _pack_admin_privileges(buf, offset, privileges):
+    privilege_count = len(privileges)
+    field_len = _len_privileges(privileges)
+
+    offset = _pack_admin_field_header(buf, offset, field_len, ASField.PRIVILEGES)
+    offset = _pack_uint8(buf, offset, privilege_count)
+
+    for privilege in privileges:
+        
+        permission, namespace, set_ = _parse_privilege(privilege)
+        offset = _pack_uint8(buf, offset, permission.value)
+
+        if permission in { 
+            ASPrivilege.READ,
+            ASPrivilege.READ_WRITE, 
+            ASPrivilege.READ_WRITE_UDF,
+            ASPrivilege.WRITE
+        }:
+            offset = _pack_uint8(buf, offset, len(namespace))
+            offset = _pack_string(buf, offset, namespace)
+            offset = _pack_uint8(buf, offset, len(set_))
+            offset = _pack_string(buf, offset, set_)
 
 def _parse_session_info(data, field_count):
     i = 0
@@ -171,15 +359,15 @@ def _parse_session_info(data, field_count):
     session_token = None
     session_ttl = None
     while i < field_count:
-        field_len, field_id = struct.unpack_from("! I B", data, offset)
+        field_len, field_id = _STRUCT_FIELD.unpack_from(data, offset)
         field_len -= 1
-        offset += 5
+        offset += _STRUCT_FIELD.size
 
-        if field_id == _SESSION_TOKEN_FIELD_ID:
+        if field_id == ASField.SESSION_TOKEN:
             fmt_str = "%ds" % field_len
             session_token = struct.unpack_from(fmt_str, data, offset)[0]
 
-        elif field_id == _SESSION_TTL_FIELD_ID:
+        elif field_id == ASField.SESSION_TTL:
             fmt_str = ">I"
             session_ttl = struct.unpack_from(fmt_str, data, offset)[0]
 
@@ -188,85 +376,455 @@ def _parse_session_info(data, field_count):
 
     return session_token, session_ttl
 
-
-
-def _buffer_to_string(buf):
+def _c_str_to_bytes(buf):
     return bytes(buf)
 
+def _send_and_get_admin_header(sock, send_buf):
+    # OpenSSL wrapper doesn't support ctypes
+    send_buf = _c_str_to_bytes(send_buf)
+
+    try:
+        sock.sendall(send_buf)
+        recv_buf = _receive_data(sock, _TOTAL_HEADER_SIZE)
+        rsp_header = _unpack_admin_header(recv_buf, _PROTOCOL_HEADER_SIZE)
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
+
+    return rsp_header
 
 def _authenticate(sock, user, password, password_field_id):
+    field_count = 2
     user = str_to_bytes(user)
     password = str_to_bytes(password)
-    sz = len(user) + len(password) + 34 # 2 * 5 + 24
-    send_buf = _admin_write_header(sz, _AUTHENTICATE, 2)
-    fmt_str = "! I B %ds I B %ds" % (len(user), len(password))
-    struct.pack_into(fmt_str, send_buf, _HEADER_SIZE,
-                     len(user) + 1, _USER_FIELD_ID, user,
-                     len(password) + 1, password_field_id, password)
+    admin_data_size = len(user) + len(password)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.AUTHENTICATE, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+    offset = _pack_admin_field(send_buf, offset, password_field_id, password)
+
     try:
         # OpenSSL wrapper doesn't support ctypes
-        send_buf = _buffer_to_string(send_buf)
-        sock.sendall(send_buf)
-        recv_buff = _receivedata(sock, _HEADER_SIZE)
-        rv = _admin_parse_header(recv_buff)
-        return rv[2]
-    except Exception as ex:
-        raise IOError("Error: %s" % str(ex))
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise IOError("Error: %s" % str(e))
 
 def authenticate_new(sock, user, session_token):
-    return _authenticate(sock, user, password=session_token, password_field_id=_SESSION_TOKEN_FIELD_ID)
+    return _authenticate(sock, user, password=session_token, password_field_id=ASField.SESSION_TOKEN)
 
 def authenticate_old(sock, user, password):
-    return _authenticate(sock, user, password=_hashpassword(password), password_field_id=_CREDENTIAL_FIELD_ID)
+    return _authenticate(sock, user, password=_hash_password(password), password_field_id=ASField.CREDENTIAL)
+
+# roles is a list of strings representing role names.
+def create_user(sock, user, password, roles):
+    """Attempts to create a user in AS.
+    user: string,
+    password: string (un-hashed),
+    roles: list[string],
+    Returns: ASResponse
+    """
+    field_count = 3
+    roles_len = _len_roles(roles)
+    hashed_password = _hash_password(password)
+    admin_data_size = len(user) + len(hashed_password) + roles_len
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.CREATE_USER, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+    offset = _pack_admin_field(send_buf, offset, ASField.PASSWORD, hashed_password)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, roles)
+
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except Exception as e:
+        raise IOError("Error: %s" % str(e))
+
+def drop_user(sock, user):
+    """Attempts to delete a user in AS.
+    user: string,
+    Returns: ASResponse
+    """
+    field_count = 1
+    admin_data_size = len(user)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.DROP_USER, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except Exception as e:
+        raise IOError("Error: %s" % str(e))
+
+def set_password(sock, user, password):
+    """Attempts to set a user password in AS.
+    user: string,
+    password: string (un-hashed),
+    Returns: ASResponse
+    """
+    field_count = 2
+    hashed_password = _hash_password(password)
+    admin_data_size = len(user) + len(hashed_password)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.SET_PASSWORD, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+    offset = _pack_admin_field(send_buf, offset, ASField.PASSWORD, hashed_password)
+
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except Exception as e:
+        raise IOError("Error: %s" % str(e))
+
+def change_password(sock, user, old_password, new_password):
+    """Attempts to change a users passowrd in AS.
+    user: string,
+    old_password: string (un-hashed),
+    new_password: string (un-hashed),
+    Returns: ASResponse
+    """
+    field_count = 3
+    hashed_old_password = _hash_password(old_password)
+    hashed_new_password = _hash_password(new_password)
+    admin_data_size = len(user) + len(hashed_old_password) + len(hashed_old_password)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.CHANGE_PASSWORD, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+    offset = _pack_admin_field(send_buf, offset, ASField.OLD_PASSWORD, hashed_old_password)
+    offset = _pack_admin_field(send_buf, offset, ASField.PASSWORD, hashed_new_password)
+
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except Exception as e:
+        raise IOError("Error: %s" % str(e))
+
+# roles is a list of strings representing role names.
+def grant_roles(sock, user, roles):
+    """Attempts to grant roles to user in AS.
+    user: string,
+    roles: list[string],
+    Returns: ASResponse
+    """
+    field_count = 2
+    admin_data_size = len(user) + _len_roles(roles)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.GRANT_ROLES, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, roles)
+
+    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+    return return_code
+
+# roles is a list of strings representing role names.
+def revoke_roles(sock, user, roles):
+    """Attempts to remove roles from a user in AS.
+    user: string,
+    roles: list[string],
+    Returns: ASResponse
+    """
+    field_count = 2
+    admin_data_size = len(user) + _len_roles(roles)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.REVOKE_ROLES, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, roles)
+
+    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+
+    return return_code
+
+def _query_users(sock, user=None):
+    """Attempts to query users and respective roles from AS.
+    user: string or None, If none queries all users.
+    Returns: ASResponse
+    """
+    users_dict = {}
+    field_count = 0
+    admin_data_size = 0
+
+    if user is not None:
+        field_count += 1
+        admin_data_size = len(user)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.QUERY_USERS, field_count)
+
+    if user is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+
+        # OpenSSL wrapper doesn't support ctypes
+        send_buf = _c_str_to_bytes(send_buf)
+
+    try:
+        sock.sendall(send_buf)
+        rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
+        _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
+        rsp_buf = _receive_data(sock, data_size)
+
+        offset = 0
+
+        while offset < data_size:
+            _, result_code, _, field_count, offset = _unpack_admin_header(rsp_buf, offset)
+
+            if result_code != ASResponse.OK:
+                return result_code, users_dict
+
+            user_name = None
+            user_roles = []
+
+            for _ in range(field_count):
+                field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
+
+                if field_type == ASField.USER:
+                    user_name, offset = _unpack_string(rsp_buf, offset, field_len)
+
+                    if user_name not in users_dict:
+                        users_dict[user_name] = users_dict
+                elif field_type == ASField.ROLES:
+                    roles, offset = _unpack_admin_roles(rsp_buf, offset)
+                    user_roles.extend(roles)
+                else:
+                    offset += field_len
+
+            if user_name is None:
+                continue
+
+            user_dict[user_name] = roles
+
+        return ASResponse.OK, users_dict
+
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
+
+def query_users(sock):
+    return _query_users(sock)
+
+def query_user(sock, user):
+    return _query_users(sock, user)
+
+def create_role(sock, role, privileges, whitelist=None):
+    """Attempts to create a role in AS with certain privleges and whitelist.
+    role: string,
+    privileges: list[string]
+    whitelist: string (comma seperated list)
+    Returns: ASResponse
+    """
+    field_count = 1
+    admin_data_size = len(role)
+
+    if privileges is not None:
+        field_count += 1
+        admin_data_size +=  _len_privileges(privileges)
+
+    if whitelist is not None:
+        field_count += 1
+        admin_data_size += len(whitelist)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.CREATE_ROLE, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
+
+    if privileges is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
+
+    if whitelist is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.WHITELIST, whitelist)
+
+    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+
+    return return_code
+
+def delete_role(sock, role):
+    """Attempts to delete a role in AS.
+    role: string,
+    Returns: ASResponse
+    """
+    field_count = 1
+    admin_data_size = len(role)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.DELETE_ROLE, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
+
+    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+
+    return return_code
+
+def add_privileges(sock, role, privileges):
+    """Attempts to add privleges to a role in AS.
+    role: string,
+    privileges: list[string]
+    Returns: ASResponse
+    """
+    field_count = 2
+    admin_data_size = len(role) + _len_privileges(privileges)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.ADD_PRIVLEGES, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, role)
+    offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
+
+    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+    return return_code
+
+def delete_privileges(sock, role, privileges):
+    """Attempts to remove privleges to a role in AS.
+    role: string,
+    privileges: list[string]
+    Returns: ASResponse
+    """
+    field_count = 2
+    admin_data_size = len(role) + _len_privileges(privileges)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.DELETE_PRIVLEGES, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, role)
+    offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
+
+    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+    return return_code
+
+def _set_whitelist(sock, role, whitelist=None):
+    """Attempts to add a whitelist to a role in AS.
+    role: string,
+    privileges: string (comma seperated list)
+    Returns: ASResponse
+    """
+    field_count = 1
+    admin_data_size = len(role)
+
+    if whitelist is not None:
+        field_count += 1
+        admin_data_size += len(whitelist)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.SET_WHITELIST, field_count)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, role)
+
+    if whitelist is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, whitelist)
+
+    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+    
+    return return_code
+
+def set_whitelist(sock, role, whitelist):
+    return _set_whitelist(sock, role, whitelist)
+
+def delete_whitelist(sock, role):
+    return _set_whitelist(sock, role)
+
+def _query_role(sock, role=None):
+    """Attempts to query roles and respective privileges from Afield_count: string or None, If none queries all users.
+    Returns: ASResponse, {role_name: [privleges: ASPrivilege]}
+    """
+    role_dict = {}
+    field_count = 0
+    admin_data_size = 0
+
+    if role is not None:
+        field_count += 1
+        admin_data_size = len(role)
+
+    send_buf, offset = _create_admin_header(admin_data_size, ASCommand.QUERY_ROLES, field_count)
+
+    if role is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
+
+        # OpenSSL wrapper doesn't support ctypes
+        send_buf = _c_str_to_bytes(send_buf)
+
+    try:
+        sock.sendall(send_buf)
+        rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
+        _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
+        rsp_buf = _receive_data(sock, data_size)
+
+        offset = 0
+
+        while offset < data_size:
+            _, result_code, _, field_count, offset = _unpack_admin_header(rsp_buf, offset)
+
+            if result_code != ASResponse.OK:
+                return result_code, role_dict
+
+            role_name = None
+            privileges = []
+
+            for _ in range(field_count):
+                field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
+
+                if field_type == ASField.USER:
+                    role_name, offset = _unpack_string(rsp_buf, offset, field_len)
+
+                    if role_name not in role_dict:
+                        role_dict[role_name] = role_name
+
+                elif field_type == ASField.ROLES:
+                    roles, offset = _unpack_admin_roles(rsp_buf, offset)
+                    privileges.extend(roles)
+                else:
+                    offset += field_len
+
+            if role_name is None:
+                continue
+
+            role_dict[role_name] = privileges
+
+        return ASResponse.OK, role_dict
+
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
+
+def query_roles(sock):
+    return _query_role(sock)
+
+def query_role(sock, role):
+    return _query_role(sock, role)
 
 def login(sock, user, password, auth_mode):
     user = str_to_bytes(user) # bytes for c_struct packing
     password = str_to_bytes(password) # bytes for c_struct packing
-    credential = _hashpassword(password)
+    credential = _hash_password(password)
 
     if auth_mode == AuthMode.INTERNAL:
-        sz = len(user) + len(credential) + 34 # 2 * 5 + 24
-        send_buf = _admin_write_header(sz, _LOGIN, 2)
-        fmt_str = "! I B %ds I B %ds" % (len(user), len(credential))
-        struct.pack_into(fmt_str, send_buf, _HEADER_SIZE,
-                         len(user) + 1, _USER_FIELD_ID, user,
-                         len(credential) + 1, _CREDENTIAL_FIELD_ID, credential)
-
+        field_count = 2
+        # 4B = field size, 1B = filed type
+        admin_data_size = len(user) + len(credential)
+        send_buf, offset = _create_admin_header(admin_data_size, ASCommand.LOGIN, field_count)
+        offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+        offset = _pack_admin_field(send_buf, offset, ASField.CREDENTIAL, credential)
     else:
-        sz = len(user) + len(credential) + len(password) + 39  # 3 * 5 + 24
-        send_buf = _admin_write_header(sz, _LOGIN, 3)
-        fmt_str = "! I B %ds I B %ds I B %ds" % (len(user), len(credential), len(password))
-        struct.pack_into(fmt_str, send_buf, _HEADER_SIZE,
-                         len(user) + 1, _USER_FIELD_ID, user,
-                         len(credential) + 1, _CREDENTIAL_FIELD_ID, credential,
-                         len(password) + 1, _CLEAR_PASSWORD_FIELD_ID, password)
+        field_count = 3
+        # 4B = field size, 1B = filed type
+        admin_data_size = len(user) + len(credential) + len(password)
+        send_buf, offset = _create_admin_header(admin_data_size, ASCommand.LOGIN, field_count)
+        offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+        offset = _pack_admin_field(send_buf, offset, ASField.CREDENTIAL, credential)
+        offset = _pack_admin_field(send_buf, offset, ASField.CLEAR_PASSWORD, password)
 
     try:
         # OpenSSL wrapper doesn't support ctypes
-        send_buf = _buffer_to_string(send_buf)
-        sock.sendall(send_buf)
-        recv_buff = _receivedata(sock, _HEADER_SIZE)
-        rv = _admin_parse_header(recv_buff)
+        send_buf = _c_str_to_bytes(send_buf)
 
-        result = rv[2]
-        if result != _OK:
+        sock.sendall(send_buf)
+        recv_buff = _receive_data(sock, _PROTOCOL_HEADER_SIZE + _ADMIN_HEADER_SIZE)
+        _, _, data_size, offset = _unpack_protocol_header(recv_buff)
+        _, return_code, _, field_count, _ = _unpack_admin_header(recv_buff)
+        data_size -= _ADMIN_HEADER_SIZE
+
+        if return_code != ASResponse.OK:
             # login failed
 
-            if result == _INVALID_COMMAND:
+            if return_code == ASResponse.INVALID_COMMAND:
                 # login is invalid command, so cluster does not support ldap
                 return authenticate_old(sock, user, password), None, 0
 
             # login failed
-            return result, None, 0
+            return return_code, None, 0
 
-        sz = int(rv[0] & 0xFFFFFFFFFFFF) - _HEADER_REMAINING
-        field_count = rv[4]
-        if sz < 0 or field_count < 1:
+        if data_size < 0 or field_count < 1:
             raise IOError("Login failed to retrieve session token")
-
-        recv_buff = _receivedata(sock, sz)
+        recv_buff = _receive_data(sock, data_size)
         session_token, session_ttl = _parse_session_info(recv_buff, field_count)
-        session_token = _buffer_to_string(session_token)
+        session_token = _c_str_to_bytes(session_token)
 
         if session_ttl is None:
             session_expiration = 0
@@ -276,10 +834,8 @@ def login(sock, user, password, auth_mode):
 
         return 0, session_token, session_expiration
 
-    except Exception as ex:
-        raise IOError("Error: %s" % str(ex))
-
-
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
 
 
 ###############################
@@ -296,15 +852,16 @@ def _info_request(sock, buf):
         sock.send(buf)
         # get response
         rsp_hdr = sock.recv(8)
-        q = struct.unpack_from(proto_header_fmt, rsp_hdr, 0)
-        sz = q[0] & 0xFFFFFFFFFFFF
-        if sz > 0:
-            rsp_data = _receivedata(sock, sz)
+        _, _, data_size, _ = _unpack_protocol_header(rsp_hdr)
+
+        if data_size > 0:
+            rsp_data = _receive_data(sock, data_size)
+
     except Exception as ex:
         raise IOError("Error: %s" % str(ex))
 
     # parse out responses
-    if sz == 0:
+    if data_size == 0:
         return None
 
     return(rsp_data)
@@ -313,33 +870,27 @@ def _info_request(sock, buf):
 def info(sock, names=None):
     if not sock:
         raise IOError("Error: Could not connect to node")
-
-    # Passed a set of names: created output buffer
+    buf = None
+    # Passed a set of names: created output buf
     if names is None:
-        q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48)
-        if g_proto_header != None:
-            buf = g_proto_header.pack(q)
-        else:
-            buf = struct.pack(proto_header_fmt, q)
+        buf = create_string_buffer(_PROTOCOL_HEADER_SIZE)
+        _pack_protocol_header(buf, 0, _INFO_MSG_VERSION, _INFO_MSG_TYPE, 0)
 
     elif isinstance(names, str):
-        q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48) | (len(names) + 1)
-        fmt_str = "! Q %ds B" % len(names)
-        names_bytes = str_to_bytes(names)
-        buf = struct.pack(fmt_str, q, names_bytes, 10)
+        buf_size = _PROTOCOL_HEADER_SIZE + len(names) + 1 # for \n
+        buf = create_string_buffer(buf_size)
+        offset = 0
 
-    else:  # better be iterable of strings
-        # annoyingly, join won't post-pend a seperator. So make a new list
-        # with all the seps in
-        names_l = []
-        for name in names:
-            names_l.append(name)
-            names_l.append("\n")
-        namestr = "".join(names_l)
-        q = (_INFO_MSG_VERSION << 56) | (_INFO_MSG_TYPE << 48) | (len(namestr))
-        fmt_str = "! Q %ds" % len(namestr)
-        names_bytes = str_to_bytes(namestr)
-        buf = struct.pack(fmt_str, q, names_bytes)
+        offset = _pack_protocol_header(buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, len(names) + 1)
+        offset = _pack_info_field(buf, offset, names)
+    else:
+        namestr = "\n".join(names)
+        buf_size = _PROTOCOL_HEADER_SIZE + len(namestr) + 1 # for \n
+        buf = create_string_buffer(buf_size)
+        offset = 0
+
+        offset = _pack_protocol_header(buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, len(namestr) + 1)
+        offset = _pack_info_field(buf, offset, namestr)
 
     rsp_data = _info_request(sock, buf)
     rsp_data = bytes_to_str(rsp_data)
@@ -350,7 +901,7 @@ def info(sock, names=None):
     # if the original request was a single string, return a single string
     if isinstance(names, str):
         lines = rsp_data.split("\n")
-        name, sep, value = g_partition(lines[0], "\t")
+        name, sep, value = lines[0].partition("\t")
 
         if name != names:
             print(" problem: requested name ", names, " got name ", name)
@@ -363,8 +914,9 @@ def info(sock, names=None):
             if len(line) < 1:
                 # this accounts for the trailing '\n' - cheaper than chomp
                 continue
-            name, sep, value = g_partition(line, "\t")
+            name, sep, value = lines.partition("\t")
             rdict[name] = value
         return rdict
 
 ###############################
+      
