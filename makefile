@@ -56,6 +56,11 @@ ifneq ($(PYTHONS),)
 else
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
 	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)tmp/wheels -r $(REQUIREMENT_FILE)
+ifneq ($(CODESIGNMAC),)
+	ls -lat $(BUILD_ROOT)tmp/wheels
+	./codesign.sh
+	ls -lat $(BUILD_ROOT)tmp/wheels
+endif
 	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)tmp/wheels
 	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)tmp/wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
 endif
