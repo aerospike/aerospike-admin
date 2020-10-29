@@ -15,9 +15,6 @@
 # limitations under the License.
 #
 ####
-# Aerospike python library
-#
-#
 
 import sys
 import struct
@@ -27,6 +24,7 @@ from enum import IntEnum, unique
 from socket import error as SocketError
 
 from lib.utils.util import bytes_to_str, str_to_bytes
+from lib.utils.constants import AuthMode
 
 try:
     import bcrypt
@@ -36,21 +34,76 @@ except:
     # fatal when authentication is required.
     hasbcrypt = False
 
-from lib.utils.constants import AuthMode
 
+# There are three different headers referenced here in the code. I am adding
+# this description in the hopes that it will clear up confusion about the number
+# of variable with the name "header" in them.
+# 1. Protocol Header 
+# That is 8 bytes that come before every info/security
+# response.  You can find a description of this header here:
+# https://aerospike.atlassian.net/wiki/spaces/DEV/pages/857899427/Wire+Protocol
+# under "Aerospike Protocol Header".
+# 2. Admin Header
+# That is 16 bytes that follow the the protocol header. 12 of these bytes are
+# not used. You can find a description of this header here:
+# https://aerospike.atlassian.net/wiki/spaces/AER/pages/44171287/Security+Wire+Protocol
+# 3. Field Header
+# That is 5 bytes that come before every field no matter the type.
+#
+# |1|1|  6  |1|1|1|1|    12    | 4 |1| field data . . .| next field . . .|
 
 _STRUCT_PROTOCOL_HEADER = struct.Struct('! B B 3h')
 _STRUCT_UINT8 = struct.Struct('! B')
-_STRUCT_UINT16 = struct.Struct('! H')
 _STRUCT_UINT32 = struct.Struct('! I')
-_STRUCT_UINT64 = struct.Struct('! Q')
-_STRUCT_INT64 = struct.Struct('! q')
-_STRUCT_DOUBLE = struct.Struct('! d')
-_STRUCT_FIELD = struct.Struct("! I B")
-_STRUCT_STRING_FMT = "! %ds"
+_STRUCT_FIELD_HEADER = struct.Struct("! I B")
 _STRUCT_ADMIN_HEADER = struct.Struct('! B B B B 12x')
 
 _PROTOCOL_HEADER_SIZE = _STRUCT_PROTOCOL_HEADER.size
+
+def _pack_uint8(buf, offset, val):
+    _STRUCT_UINT8.pack(buf, offset, val)
+    offset += _STRUCT_UINT8.size
+    return offset
+
+def _unpack_uint8(buf, offset):
+    val = _STRUCT_UINT8.unpack_from(buf, offset)
+    offset += _STRUCT_UINT8.size
+    return val, offset
+
+def _pack_uint32(buf, offset, val):
+    _STRUCT_UINT32.pack_into(buf, offset, val)
+    offset += _STRUCT_UINT32.size
+    return offset
+
+def _pack_string(buf, offset, string):
+    bytes_field = str_to_bytes(string)
+    buf[offset:offset + len(bytes_field)] = bytes_field
+    return offset + len(bytes_field)
+
+def _unpack_string(buf, offset, sz):
+    val = buf[offset: offset + sz]
+    offset += sz
+    return val, offset
+
+def _pack_protocol_header(buf, offset, protocol_version, protocol_type, sz):
+    proto = (protocol_version << 56) | (protocol_type << 48) | sz
+    _STRUCT_PROTOCOL_HEADER.pack_into(
+        buf, offset,
+        protocol_version, 
+        protocol_type, 
+        (sz >> 32) & 0xFFFF, 
+        (sz >> 16) & 0xFFFF, 
+        sz & 0xFFFF
+    )
+    return offset + _PROTOCOL_HEADER_SIZE
+
+def _unpack_protocol_header(buf, offset=0):
+    protocol_header = _STRUCT_PROTOCOL_HEADER.unpack_from(buf, offset=offset)
+    protocol_version = protocol_header[0]
+    protocol_type = protocol_header[1]
+    data_size = (protocol_header[2] << 32) | (protocol_header[3] << 16) | protocol_header[4]
+    offset = _PROTOCOL_HEADER_SIZE
+    return protocol_version, protocol_type, data_size, offset
 
 def _receive_data(sock, sz):
     pos = 0
@@ -89,6 +142,8 @@ _ADMIN_MSG_TYPE = 2
 
 _ADMIN_HEADER_SIZE = _STRUCT_ADMIN_HEADER.size
 _TOTAL_HEADER_SIZE = _PROTOCOL_HEADER_SIZE + _ADMIN_HEADER_SIZE
+
+
 
 @unique
 class ASCommand(IntEnum):
@@ -159,48 +214,6 @@ class ASResponse(IntEnum):
     OK = 0
     INVALID_COMMAND = 54
 
-def _pack_uint8(buf, offset, val):
-    _STRUCT_UINT8.pack(buf, offset, val)
-    offset += _STRUCT_UINT8.size
-    return offset
-
-def _unpack_uint8(buf, offset):
-    val = _STRUCT_UINT8.unpack_from(buf, offset)
-    offset += _STRUCT_UINT8.size
-    return val, offset
-
-def _pack_uint32(buf, offset, val):
-    _STRUCT_UINT32.pack_into(buf, offset, val)
-    offset += _STRUCT_UINT32.size
-    return offset
-
-def _pack_string(buf, offset, string):
-    bytes_field = str_to_bytes(string)
-    buf[offset:offset + len(bytes_field)] = bytes_field
-    return offset + len(bytes_field)
-
-def _unpack_string(buf, offset, sz):
-    val = buf[offset: offset + sz]
-    offset += sz
-    return val, offset
-
-def _pack_info_field(buf, offset, field):
-    field += '\n'
-    return _pack_string(buf, offset, field)
-
-def _pack_protocol_header(buf, offset, protocol_version, protocol_type, sz):
-    proto = (protocol_version << 56) | (protocol_type << 48) | sz
-    _STRUCT_PROTOCOL_HEADER.pack_into(buf, offset, protocol_version, protocol_type, (sz >> 32) & 0xFFFF, (sz >> 16) & 0xFFFF, sz & 0xFFFF)
-    return offset + _PROTOCOL_HEADER_SIZE
-
-def _unpack_protocol_header(buf, offset=0):
-    protocol_header = _STRUCT_PROTOCOL_HEADER.unpack_from(buf, offset=offset)
-    protocol_version = protocol_header[0]
-    protocol_type = protocol_header[1]
-    data_size = (protocol_header[2] << 32) | (protocol_header[3] << 16) | protocol_header[4]
-    offset = _PROTOCOL_HEADER_SIZE
-    return protocol_version, protocol_type, data_size, offset
-
 def _pack_admin_header(buf, offset, scheme, result, command, n_fields):
     _STRUCT_ADMIN_HEADER.pack_into(
         buf, offset, scheme, result, command.value, n_fields)
@@ -227,13 +240,13 @@ def _create_admin_header(sz, command, field_count):
 
 # The first 5 bytes in front of every admin field
 def _pack_admin_field_header(buf, offset, field_len, field_type):
-    _STRUCT_FIELD.pack_into(buf, offset, field_len, field_type.value)
-    offset += _STRUCT_FIELD.size
+    _STRUCT_FIELD_HEADER.pack_into(buf, offset, field_len, field_type.value)
+    offset += _STRUCT_FIELD_HEADER.size
     return offset
 
 def _unpack_admin_field_header(buf, offset):
-    field_len, field_type = _STRUCT_FIELD.unpack_from(buf, offset)
-    offset += _STRUCT_FIELD.size
+    field_len, field_type = _STRUCT_FIELD_HEADER.unpack_from(buf, offset)
+    offset += _STRUCT_FIELD_HEADER.size
     return field_len, field_type, offset
 
 def _pack_admin_field(buf, offset, as_field, field):
@@ -262,7 +275,6 @@ def _len_roles(roles):
         field_len += len(role) + 1
 
     return field_len
-
 
 def _pack_admin_roles(buf, offset, roles):
     field_len = _len_roles(roles)
@@ -352,29 +364,6 @@ def _pack_admin_privileges(buf, offset, privileges):
             offset = _pack_string(buf, offset, namespace)
             offset = _pack_uint8(buf, offset, len(set_))
             offset = _pack_string(buf, offset, set_)
-
-def _parse_session_info(data, field_count):
-    i = 0
-    offset = 0
-    session_token = None
-    session_ttl = None
-    while i < field_count:
-        field_len, field_id = _STRUCT_FIELD.unpack_from(data, offset)
-        field_len -= 1
-        offset += _STRUCT_FIELD.size
-
-        if field_id == ASField.SESSION_TOKEN:
-            fmt_str = "%ds" % field_len
-            session_token = struct.unpack_from(fmt_str, data, offset)[0]
-
-        elif field_id == ASField.SESSION_TTL:
-            fmt_str = ">I"
-            session_ttl = struct.unpack_from(fmt_str, data, offset)[0]
-
-        offset += field_len
-        i += 1
-
-    return session_token, session_ttl
 
 def _c_str_to_bytes(buf):
     return bytes(buf)
@@ -779,6 +768,29 @@ def query_roles(sock):
 def query_role(sock, role):
     return _query_role(sock, role)
 
+def _parse_session_info(data, field_count):
+    i = 0
+    offset = 0
+    session_token = None
+    session_ttl = None
+    while i < field_count:
+        field_len, field_id = _STRUCT_FIELD_HEADER.unpack_from(data, offset)
+        field_len -= 1
+        offset += _STRUCT_FIELD_HEADER.size
+
+        if field_id == ASField.SESSION_TOKEN:
+            fmt_str = "%ds" % field_len
+            session_token = struct.unpack_from(fmt_str, data, offset)[0]
+
+        elif field_id == ASField.SESSION_TTL:
+            fmt_str = ">I"
+            session_ttl = struct.unpack_from(fmt_str, data, offset)[0]
+
+        offset += field_len
+        i += 1
+
+    return session_token, session_ttl
+
 def login(sock, user, password, auth_mode):
     user = str_to_bytes(user) # bytes for c_struct packing
     password = str_to_bytes(password) # bytes for c_struct packing
@@ -844,6 +856,10 @@ def login(sock, user, password, auth_mode):
 
 _INFO_MSG_VERSION = 2
 _INFO_MSG_TYPE = 1
+
+def _pack_info_field(buf, offset, field):
+    field += '\n'
+    return _pack_string(buf, offset, field)
 
 def _info_request(sock, buf):
 
