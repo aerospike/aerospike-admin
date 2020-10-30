@@ -23,6 +23,8 @@ from os.path import isfile, join
 try:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", message="Python 3.5 support will be \
+        dropped in the next release of cryptography. Please upgrade your Python.")
 
         try:
             # for python < 2.7.7 cryptography throws warning
