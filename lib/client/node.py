@@ -477,6 +477,12 @@ class Node(object):
             pass
         self.socket_pool = None
 
+    ############################################################################
+    #
+    #                           Info Protocol API
+    #
+    ############################################################################
+
     # Need to provide ip to _info_cinfo as to maintain
     # unique key for cache. When we run cluster on VM and asadm on Host then
     # services returns all endpoints of server but some of them might not
@@ -1667,6 +1673,220 @@ class Node(object):
         """
         return self.info("build")
 
+
+    ############################################################################
+    #
+    #                      Admin (Security Protocol) API
+    #
+    ############################################################################
+
+    @return_exceptions
+    # @util.cached
+    def _admin_cadmin(self, admin_func, args, ip, port=None):
+        if port is None:
+            port = self.port
+
+        result = None
+        sock = self._get_connection(ip, port)
+
+        if not sock:
+            raise IOError("Error: Could not connect to node %s" % ip)
+
+        try:
+            result = admin_func(sock, *args)
+
+            # Either restore the socket in the pool or close it if it is full.
+            if len(self.socket_pool[port]) < self.socket_pool_max_size:
+                sock.settimeout(None)
+                self.socket_pool[port].add(sock)
+            else:
+                sock.close()
+
+        except Exception as e:
+            if sock:
+                sock.close()
+            
+            # Re-raise the last exception
+            raise 
+
+        return result
+
+    @return_exceptions
+    def admin_create_user(self, user, password, roles):
+        """
+        Create user.
+        user: string
+        password: string (un-hashed)
+        roles: list[string]
+
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.create_user, (user, password, roles), self.ip)
+
+    @return_exceptions
+    def admin_drop_user(self, user):
+        """
+        Delete user.
+        user: string
+
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.drop_user, (user), self.ip)
+
+    @return_exceptions
+    def admin_set_password(self, user, password):
+        """
+        Set user password.
+        user: string
+        password: string (un-hashed)
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.set_password, (user, password), self.ip)
+
+    @return_exceptions
+    def admin_change_password(self, user, old_password, new_password):
+        """
+        Change user password.
+        user: string
+        old_password: string (un-hashed)
+        new_password: string (un-hashed)
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.change_password, (user, old_password, new_password), self.ip)
+
+    @return_exceptions
+    def admin_grant_roles(self, user, roles):
+        """
+        Grant roles to user.
+        user: string
+        roles: list[string]
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.grant_roles, (user, roles), self.ip)
+
+    @return_exceptions
+    def admin_revoke_roles(self, user, roles):
+        """
+        Remove roles from user.
+        user: string
+        roles: list[string]
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.revoke_roles, (user, roles), self.ip)
+
+    @return_exceptions
+    def admin_query_users(self):
+        """
+        Query users.
+        Returns: {username1: [role1, role2, . . .], username2: [. . .],  . . .},
+        ASProtocolError on fail
+        """
+        return self._admin_cadmin(ASSocket.query_users, (), self.ip)
+
+    @return_exceptions
+    def admin_query_user(self, user):
+        """
+        Query a user.
+        user: string
+        Returns: {username: [role1, role2, . . .]},
+        ASProtocolError on fail
+        """
+        return self._admin_cadmin(ASSocket.query_user, (user), self.ip)
+
+    @return_exceptions
+    def admin_create_role(self, role, privileges, whitelist=None):
+        """
+        Create role with privileges and whitelist.
+        role: string
+        privileges: list[string]
+        whitelist: list[string] (optional)
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.create_role, (role, privileges, whitelist), self.ip)
+
+    @return_exceptions
+    def admin_delete_role(self, role):
+        """
+        Delete role.
+        role: string
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.delete_role, (role), self.ip)
+
+    @return_exceptions
+    def admin_add_privileges(self, role, privileges):
+        """
+        Add privileges to role.
+        role: string
+        privileges: list[string]
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.add_privileges, (role, privileges), self.ip)
+
+    @return_exceptions
+    def admin_delete_privileges(self, role, privileges):
+        """
+        Delete privileges from role.
+        role: string
+        privileges: list[string]
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.delete_privileges, (role, privileges), self.ip)
+
+    @return_exceptions
+    def admin_set_whitelist(self, role, whitelist):
+        """
+        Set whitelist for a role.
+        role: string
+        whitelist: list[string]
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.set_whitelist, (role, whitelist), self.ip)
+
+    @return_exceptions
+    def admin_delete_whitelist(self, role):
+        """
+        Delete whitelist for a role.
+        role: string
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(ASSocket.delete_whitelist, (role), self.ip)
+
+    @return_exceptions
+    def admin_query_roles(self):
+        """
+        Query all roles.
+        Returns: { role1:
+                    'privileges': [privilege1, ...],
+                    'whitelist': [addr1, addr2, ...]
+                   role2:
+                    'privileges': . . .,
+                    'whitelist': . . .
+                 },
+        ASProtocolError on fail
+        """
+        return self._admin_cadmin(ASSocket.query_roles, (), self.ip)
+
+    @return_exceptions
+    def admin_query_role(self, role):
+        """
+        Query a role.
+        role: string
+        Returns: {role:
+                    'privileges': [privilege1, ...],
+                    'whitelist': [addr1, addr2, ...]
+                 },
+        ASProtocolError on fail
+        """
+        return self._admin_cadmin(ASSocket.query_role, (role), self.ip)
+
+
+    ############################################################################
+    #
+    #                           System Commands
+    #
+    ############################################################################
+
     def _set_default_system_credentials(
         self,
         default_user=None,
@@ -1779,43 +1999,6 @@ class Node(object):
         self.sys_pwd = self.sys_default_pwd
         self.sys_ssh_key = self.sys_default_ssh_key
         self.sys_ssh_port = self.sys_default_ssh_port
-
-    @return_exceptions
-    def info_system_statistics(
-        self,
-        default_user=None,
-        default_pwd=None,
-        default_ssh_key=None,
-        default_ssh_port=None,
-        credential_file=None,
-        commands=[],
-        collect_remote_data=False,
-    ):
-        """
-        Get statistics for a system.
-
-        Returns:
-        dict -- {stat_name : stat_value, ...}
-        """
-        if commands:
-            cmd_list = copy.deepcopy(commands)
-        else:
-            cmd_list = [_key for _key, _, _ in self.sys_cmds]
-
-        if self.localhost:
-            return self._get_localhost_system_statistics(cmd_list)
-
-        if collect_remote_data:
-            self._set_default_system_credentials(
-                default_user,
-                default_pwd,
-                default_ssh_key,
-                default_ssh_port,
-                credential_file,
-            )
-            return self._get_remote_host_system_statistics(cmd_list)
-
-        return {}
 
     @return_exceptions
     def _get_localhost_system_statistics(self, commands):
@@ -2129,3 +2312,40 @@ class Node(object):
                     s.close()
 
         return sys_stats
+
+    @return_exceptions
+    def info_system_statistics(
+        self,
+        default_user=None,
+        default_pwd=None,
+        default_ssh_key=None,
+        default_ssh_port=None,
+        credential_file=None,
+        commands=[],
+        collect_remote_data=False,
+    ):
+        """
+        Get statistics for a system.
+
+        Returns:
+        dict -- {stat_name : stat_value, ...}
+        """
+        if commands:
+            cmd_list = copy.deepcopy(commands)
+        else:
+            cmd_list = [_key for _key, _, _ in self.sys_cmds]
+
+        if self.localhost:
+            return self._get_localhost_system_statistics(cmd_list)
+
+        if collect_remote_data:
+            self._set_default_system_credentials(
+                default_user,
+                default_pwd,
+                default_ssh_key,
+                default_ssh_port,
+                credential_file,
+            )
+            return self._get_remote_host_system_statistics(cmd_list)
+
+        return {}

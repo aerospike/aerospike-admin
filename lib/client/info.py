@@ -61,7 +61,7 @@ _STRUCT_ADMIN_HEADER = struct.Struct('! B B B B 12x')
 _PROTOCOL_HEADER_SIZE = _STRUCT_PROTOCOL_HEADER.size
 
 def _pack_uint8(buf, offset, val):
-    _STRUCT_UINT8.pack(buf, offset, val)
+    _STRUCT_UINT8.pack_into(buf, offset, val)
     offset += _STRUCT_UINT8.size
     return offset
 
@@ -136,13 +136,18 @@ def _hash_password(password):
 
 ########### Security ##########
 
+class ASProtocolError(Exception):
+    def __init__(self, as_response, message):
+        self.message = message + " : " + str(ASResponse(as_response))
+        super().__init__(self.message)
+
+
 _ADMIN_SALT = b"$2a$10$7EqJtq98hPqEX7fNZaFWoO"
 _ADMIN_MSG_VERSION = 0
 _ADMIN_MSG_TYPE = 2
 
 _ADMIN_HEADER_SIZE = _STRUCT_ADMIN_HEADER.size
 _TOTAL_HEADER_SIZE = _PROTOCOL_HEADER_SIZE + _ADMIN_HEADER_SIZE
-
 
 
 @unique
@@ -212,7 +217,27 @@ class ASPrivilege(IntEnum):
 @unique
 class ASResponse(IntEnum):
     OK = 0
+    UNKNOWN_SERVER_ERROR = 1
+    SECURITY_NOT_SUPPORTED = 51
+    SECURITY_NOT_ENABLED = 52
     INVALID_COMMAND = 54
+    UNRECOGNIZED_FIELD_ID = 55
+    NO_USER_OR_UNRECOGNIZED_USER = 60
+    USER_ALREADY_EXISTS = 61
+    NO_PASSWORD_OR_BAD_PASSORD = 62
+    NO_CREDENTIAL_OR_BAD_CREDENTIAL = 65
+    NO_ROLES_OR_UNRECOGNIZED_ROLES = 70
+    ROLE_ALREADY_EXISTS = 71
+    NO_PRIVLEGES_OR_UNRECOGNIZED_PRIVILEGES = 72
+    BAD_WHITELIST = 73
+    NOT_AUTHENTICATED = 80
+    ROLE_OR_PRIVILEGE_VIOLATION = 81
+    NOT_WHITELISTED = 82
+
+    def __str__(self):
+        lower = self.name.lower().split('_')
+        lower = [word[0].upper() + word[1:] for word in lower]
+        return ' '.join(lower)
 
 def _pack_admin_header(buf, offset, scheme, result, command, n_fields):
     _STRUCT_ADMIN_HEADER.pack_into(
@@ -250,10 +275,11 @@ def _unpack_admin_field_header(buf, offset):
     return field_len, field_type, offset
 
 def _pack_admin_field(buf, offset, as_field, field):
-    field_len = len(field) + 1
+    # 1B = field type?
 
     # _pack_string() will convert str to bytes, no need to handle here.
     if isinstance(field, str) or isinstance(field, bytes):
+        field_len = len(field) + 1
         offset = _pack_admin_field_header(buf, offset, field_len, as_field)
         offset = _pack_string(buf, offset, field)
     elif isinstance(field, list):
@@ -277,9 +303,9 @@ def _len_roles(roles):
     return field_len
 
 def _pack_admin_roles(buf, offset, roles):
-    field_len = _len_roles(roles)
+    field_len = _len_roles(roles) + 1
     role_count = len(roles)
-    
+
     offset = _pack_admin_field_header(buf, offset, field_len, ASField.ROLES)
     offset = _pack_uint8(buf, offset, role_count)
 
@@ -295,7 +321,7 @@ def _unpack_admin_roles(buf, offset):
     for _ in range(num_roles):
         role_size, offset = _unpack_uint8(buf, offset)
         role_name, offset = _unpack_string(buf, offset, role_size)
-        roles.extend(role_name)
+        roles.append(role_name)
 
     return roles, offset
 
@@ -416,9 +442,8 @@ def create_user(sock, user, password, roles):
     """
     field_count = 3
     roles_len = _len_roles(roles)
-    hashed_password = _hash_password(password)
+    hashed_password = _hash_password(password.encode('utf-8'))
     admin_data_size = len(user) + len(hashed_password) + roles_len
-
     send_buf, offset = _create_admin_header(admin_data_size, ASCommand.CREATE_USER, field_count)
     offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
     offset = _pack_admin_field(send_buf, offset, ASField.PASSWORD, hashed_password)
@@ -573,7 +598,7 @@ def _query_users(sock, user=None):
                         users_dict[user_name] = users_dict
                 elif field_type == ASField.ROLES:
                     roles, offset = _unpack_admin_roles(rsp_buf, offset)
-                    user_roles.extend(roles)
+                    user_roles.append(roles)
                 else:
                     offset += field_len
 
@@ -736,6 +761,7 @@ def _query_role(sock, role=None):
 
             role_name = None
             privileges = []
+            whitelist = []
 
             for _ in range(field_count):
                 field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
@@ -748,14 +774,18 @@ def _query_role(sock, role=None):
 
                 elif field_type == ASField.ROLES:
                     roles, offset = _unpack_admin_roles(rsp_buf, offset)
-                    privileges.extend(roles)
+                    privileges.append(roles)
+                elif field_type == ASField.WHITELIST:
+                    white, offset = _unpack_string(rsp_buf, offset, field_len)
+                    whitelist = white.decode('utf-8').split(',')
                 else:
                     offset += field_len
 
             if role_name is None:
                 continue
 
-            role_dict[role_name] = privileges
+            role_dict[role_name]['privileges'] = privileges
+            role_dict[role_name]['whitelist'] = whitelist
 
         return ASResponse.OK, role_dict
 

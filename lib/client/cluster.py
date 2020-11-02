@@ -483,7 +483,7 @@ class Cluster(object):
         return ip_map
 
     def __getattr__(self, name):
-        regex = re.compile("^info.*$|^xdr.*$")
+        regex = re.compile("^info.*$|^xdr.*$|^admin.*$")
         if regex.match(name):
             def info_func(*args, **kwargs):
                 if 'nodes' not in kwargs:
