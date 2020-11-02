@@ -503,7 +503,7 @@ class Node(object):
 
         try:
             if sock:
-                result = sock.execute(command)
+                result = sock.info(command)
                 try:
                     if len(self.socket_pool[port]) < self.socket_pool_max_size:
                         sock.settimeout(None)

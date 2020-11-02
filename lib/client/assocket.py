@@ -150,8 +150,8 @@ class ASSocket():
             return False
 
         try:
-            result = self.execute("node")
-
+            result = self.info("node")
+            
             if result is None or result == -1:
                 return False
 
@@ -175,7 +175,7 @@ class ASSocket():
     def settimeout(self, timeout):
         self.sock.settimeout(timeout)
 
-    def execute(self, command):
+    def info(self, command):
         return info(self.sock, command)
 
     def get_session_info(self):
