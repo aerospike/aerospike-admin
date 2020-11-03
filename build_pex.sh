@@ -12,6 +12,26 @@ for i in "${ADDR[@]}"; do
         "$i"/pip wheel --no-cache-dir --wheel-dir="$BUILD_ROOT"tmp/wheels -r $REQUIREMENT_FILE
         PEX_PYTHONS="$PEX_PYTHONS --python=$i/python "
 done
+
+if [[ -z "${CODESIGNMAC}" ]]; then
+        echo "codesign environment variable not set.  Skipping codesign of .so in wheels"
+else
+        echo "codesign environment variable is set.  Running codesign of .so in wheels"
+        ls -lat "$BUILD_ROOT"tmp/wheels
+		for WHEEL_PATH in "$BUILD_ROOT"tmp/wheels/* ; do
+			wheel unpack "$WHEEL_PATH"
+			PACKAGE_WHEEL=$(basename "$WHEEL_PATH")
+			PACKAGE=$(echo $PACKAGE_WHEEL| cut -d'-' -f 1,2)
+			find "$PACKAGE" -type f -name "*.so" -print0 | xargs -0 echo
+			find "$PACKAGE" -type f -name "*.so" -print0 | xargs -0 codesign --force --options runtime --sign "Developer ID Application: Aerospike, Inc." ; \
+			wheel pack "$PACKAGE"
+			rm -rf "$PACKAGE"
+			rename s/cffi-1.14.3/cffi-1.14.3-2/ cffi-*.whl
+			mv "$PACKAGE_WHEEL" "$BUILD_ROOT"tmp/wheels/
+		done
+        ls -lat "$BUILD_ROOT"tmp/wheels
+fi
+
 cp "$BUILD_ROOT"tmp/asadm/*.whl "$BUILD_ROOT"tmp/wheels
 
 if [ -x "$(command -v auditwheel)" ]; then
