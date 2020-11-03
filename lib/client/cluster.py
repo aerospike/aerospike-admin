@@ -15,6 +15,7 @@
 import copy
 import re
 import threading
+import logging
 from time import time
 
 from lib.client import util
@@ -35,6 +36,7 @@ class Cluster(object):
     use_services_alumni = False
     use_services_alt = False
     crawl_lock = threading.Lock()
+    logger = logging.getLogger("asadm")
 
     def __init__(self, seed_nodes, user=None, password=None, auth_mode=AuthMode.INTERNAL,
                  use_services_alumni=False, use_services_alt=False,
@@ -43,7 +45,6 @@ class Cluster(object):
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port,tls) address can be fqdn or ip.
         """
-
         self.__dict__ = self.cluster_state
         if self.cluster_state != {}:
             return
@@ -419,6 +420,16 @@ class Cluster(object):
         nodes is a list of nodes to to run the command against.
         if nodes is None then we run on all nodes.
         """
+        self.logger.debug(
+            ('call_node_method nodes={} method_name={} args={} kwargs={}')
+            .format(
+                str(nodes), 
+                method_name,
+                str(args), 
+                str(kwargs)
+            ), 
+            stackinfo=True
+        )
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
 

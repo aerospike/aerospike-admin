@@ -2004,11 +2004,28 @@ class Node(object):
     def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
 
+        self.logger.debug(
+            ("{}._get_localhost_system_statistics cmds={}")
+            .format(
+                self.ip,
+                commands,
+            ), 
+            stackinfo=True
+        )
+        
         for _key, ignore_error, cmds in self.sys_cmds:
             if _key not in commands:
                 continue
 
             for cmd in cmds:
+                self.logger.debug(
+                    ("{}._get_localhost_system_statistics running cmd={}")
+                    .format(
+                        self.ip,
+                        cmd,
+                    ), 
+                    stackinfo=True
+                )
                 o, e = shell_command([cmd])
                 if (e and not ignore_error) or not o:
                     continue
@@ -2330,6 +2347,23 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
+        self.logger.debug(
+            ("{}.info_system_statistics default_user={} default_pws={}"
+            "default_ssh_key={} default_ssh_port={} credential_file={}"
+            "commands={} collect_remote_data={}")
+            .format(
+                self.ip,
+                default_user,
+                default_pwd, 
+                default_ssh_key, 
+                default_ssh_port, 
+                credential_file, 
+                commands,
+                collect_remote_data
+            ), 
+            stackinfo=True
+        )
+        
         if commands:
             cmd_list = copy.deepcopy(commands)
         else:

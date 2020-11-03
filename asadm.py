@@ -89,7 +89,7 @@ logging.setLoggerClass(BaseLogger)
 logging.basicConfig(level=logging.WARNING)
 
 logger = logging.getLogger('asadm')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 from lib.controllerlib import ShellException
 from lib.basiccontroller import BasicRootController
