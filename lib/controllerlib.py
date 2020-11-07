@@ -325,3 +325,10 @@ class CommandController(BaseController):
                     self.nodes = self.default_nodes
             except Exception:
                 self.nodes = 'all'  # default not set use all
+
+
+class BasicCommandController(CommandController):
+    cluster = None
+
+    def __init__(self, cluster):
+        BasicCommandController.cluster = cluster

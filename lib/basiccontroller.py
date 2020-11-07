@@ -36,18 +36,12 @@ from lib.getcontroller import (
     get_sindex_stats,
     GetLatenciesController,
 )
+
+from lib.managecontroller import ManageController
 from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval
 from lib.utils import common, constants, util
 from lib.view import terminal
 from lib.view.view import CliView
-
-
-class BasicCommandController(CommandController):
-    cluster = None
-
-    def __init__(self, cluster):
-        BasicCommandController.cluster = cluster
-
 
 @CommandHelp("Aerospike Admin")
 class BasicRootController(BaseController):
@@ -96,6 +90,7 @@ class BasicRootController(BaseController):
             "pager": PagerController,
             "health": HealthCheckController,
             "summary": SummaryController,
+            "manage": ManageController
         }
 
     def close(self):
