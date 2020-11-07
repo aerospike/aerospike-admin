@@ -16,6 +16,7 @@ import copy
 import logging
 import os
 import re
+from re import DEBUG
 import socket
 import threading
 from time import time
@@ -26,7 +27,7 @@ from lib.collectinfo_parser import conf_parser
 from lib.collectinfo_parser.full_parser import parse_system_live_command
 from lib.utils import common
 from lib.utils.constants import AuthMode
-from lib.utils.util import shell_command
+from lib.utils.util import shell_command, logthis
 
 #### Remote Server connection module
 
@@ -1680,8 +1681,8 @@ class Node(object):
     #
     ############################################################################
 
-    @return_exceptions
     # @util.cached
+    @logthis('asadm', DEBUG)
     def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port
@@ -1693,6 +1694,7 @@ class Node(object):
             raise IOError("Error: Could not connect to node %s" % ip)
 
         try:
+            print(*args)
             result = admin_func(sock, *args)
 
             # Either restore the socket in the pool or close it if it is full.
@@ -1731,7 +1733,7 @@ class Node(object):
 
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.drop_user, (user), self.ip)
+        self._admin_cadmin(ASSocket.drop_user, [user], self.ip)
 
     @return_exceptions
     def admin_set_password(self, user, password):
@@ -1791,7 +1793,7 @@ class Node(object):
         Returns: {username: [role1, role2, . . .]},
         ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.query_user, (user), self.ip)
+        return self._admin_cadmin(ASSocket.query_user, [user], self.ip)
 
     @return_exceptions
     def admin_create_role(self, role, privileges, whitelist=None):
@@ -1805,13 +1807,13 @@ class Node(object):
         self._admin_cadmin(ASSocket.create_role, (role, privileges, whitelist), self.ip)
 
     @return_exceptions
-    def admin_delete_role(self, role):
+    def admin_drop_role(self, role):
         """
         Delete role.
         role: string
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.delete_role, (role), self.ip)
+        self._admin_cadmin(ASSocket.drop_role, [role], self.ip)
 
     @return_exceptions
     def admin_add_privileges(self, role, privileges):
@@ -1850,7 +1852,7 @@ class Node(object):
         role: string
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.delete_whitelist, (role), self.ip)
+        self._admin_cadmin(ASSocket.delete_whitelist, [role], self.ip)
 
     @return_exceptions
     def admin_query_roles(self):
@@ -1878,7 +1880,7 @@ class Node(object):
                  },
         ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.query_role, (role), self.ip)
+        return self._admin_cadmin(ASSocket.query_role, [role], self.ip)
 
 
     ############################################################################

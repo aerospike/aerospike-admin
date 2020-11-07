@@ -420,16 +420,6 @@ class Cluster(object):
         nodes is a list of nodes to to run the command against.
         if nodes is None then we run on all nodes.
         """
-        self.logger.debug(
-            ('call_node_method nodes={} method_name={} args={} kwargs={}')
-            .format(
-                str(nodes), 
-                method_name,
-                str(args), 
-                str(kwargs)
-            ), 
-            stackinfo=True
-        )
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
 

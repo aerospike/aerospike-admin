@@ -20,7 +20,18 @@ import socket
 import subprocess
 import sys
 import threading
+import logging
 
+def logthis(log, level):
+    logger = logging.getLogger(log)
+    def _decorator(func):
+        def _decorated(*arg,**kwargs):
+            logger.log(level, "calling '%s'(%r,%r)", func.__name__, arg, kwargs)
+            ret=func(*arg,**kwargs)
+            logger.log(level, "called '%s'(%r,%r) got return value: %r", func.__name__, arg, kwargs, ret)
+            return ret
+        return _decorated
+    return _decorator
 
 class Future():
 

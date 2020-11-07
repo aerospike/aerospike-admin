@@ -241,7 +241,7 @@ class ASSocket():
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, 'Failed to create role')
 
-    def delete_role(self, role):
+    def drop_role(self, role):
         rsp_code = delete_role(self.sock, role)
 
         if rsp_code != ASResponse.OK:
