@@ -22,8 +22,7 @@ from distutils.version import LooseVersion
 from lib.client.cluster import Cluster
 from lib.collectinfocontroller import CollectinfoRootController
 from lib.controllerlib import (
-    BaseController,
-    CommandController,
+    BaseController, BasicCommandController,
     CommandHelp,
     ShellException,
 )
@@ -270,8 +269,8 @@ class InfoController(BasicCommandController):
         if nodes_running_v5_or_higher:
             futures.append(
                 util.Future(
-                    self.view.print_result,
-                    "WARNING: 'info dc' is deprecated on aerospike versions >= 5.0. "
+                    self.logger.warning,
+                    "'info dc' is deprecated on aerospike versions >= 5.0. "
                     + "Use 'info xdr' instead.",
                 )
             )
@@ -667,18 +666,13 @@ class ShowLatenciesController(BasicCommandController):
         latencies = self.latency_getter.get_all(
             self.nodes, buckets, increment, verbose, namespace_set
         )
-        message = None
 
         # No nodes support "show latencies"
         if len(latencies_nodes) == 0:
-            message = [
-                "WARNING: 'show latencies' is not fully supported on aerospike versions <= 5.0",
-            ]
+            self.logger.warning("'show latencies' is not fully supported on aerospike versions <= 5.0")
         # Some nodes support latencies and some do not
         elif len(latency_nodes) != 0:
-            message = [
-                "WARNING: 'show latencies' is not fully supported on aerospike versions <= 5.0",
-            ]
+            self.logger.warning("'show latencies' is not fully supported on aerospike versions <= 5.0")
 
         # Sort data by operation type rather than by node address
         if not machine_wise_display:
@@ -689,7 +683,6 @@ class ShowLatenciesController(BasicCommandController):
             self.cluster,
             machine_wise_display=machine_wise_display,
             show_ns_details=True if namespace_set else False,
-            message=message,
             **self.mods
         )
 
@@ -944,8 +937,8 @@ class ShowConfigController(BasicCommandController):
                 for dc, configs in dc_configs.items()]
         
         if nodes_running_v5_or_higher:
-            futures.append(util.Future(self.view.print_result, 
-            "WARNING: Detected nodes running aerospike version >= 5.0. " +
+            futures.append(util.Future(self.logger.warning, 
+            "Detected nodes running aerospike version >= 5.0. " +
             "Please use 'asadm -e \"show config xdr\"' for versions 5.0 and up."))
 
         return futures
@@ -1406,8 +1399,8 @@ class ShowStatisticsController(BasicCommandController):
         if nodes_running_v5_or_higher:
             futures.append(
                 util.Future(
-                    self.view.print_result,
-                    "WARNING: 'show statistics dc' is deprecated on aerospike versions >= 5.0. \n"
+                    self.logger.warning,
+                    "'show statistics dc' is deprecated on aerospike versions >= 5.0. \n"
                     + "Use 'show statistics xdr' instead.",
                 )
             )
