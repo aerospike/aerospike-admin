@@ -76,6 +76,10 @@ class BaseController(object):
     asadm_version = ''
     logger = None
 
+    # Here so each command controller does not need to define them
+    modifiers = set()
+    required_modifiers = set()
+
     def __init__(self, asadm_version=''):
         # Create static instances of view / health_checker / asadm_version /
         # logger
@@ -83,8 +87,7 @@ class BaseController(object):
         BaseController.health_checker = HealthChecker()
         BaseController.asadm_version = asadm_version
         BaseController.logger = logging.getLogger("asadm")
-        # instance vars
-        self.modifiers = set()
+
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
@@ -226,6 +229,11 @@ class BaseController(object):
 
                 if method_name == DEFAULT:  # Print controller help
                     CommandHelp.display(self, indent=indent)
+                    if self.required_modifiers:
+                        CommandHelp.print_text(
+                            "%sRequired%s: %s" % (terminal.underline(),
+                                                    terminal.reset(), ", ".join(
+                                sorted(self.required_modifiers))), indent=indent)
                     if self.modifiers:
                         CommandHelp.print_text(
                             "%sModifiers%s: %s" % (terminal.underline(),
@@ -273,12 +281,8 @@ class BaseController(object):
 
 class CommandController(BaseController):
 
-    def __init__(self):
-        # Root controller configs class vars
-        self.modifiers = set()
-
     def parse_modifiers(self, line, duplicates_in_line_allowed=False):
-        mods = self.modifiers
+        mods = self.modifiers | self.required_modifiers
 
         groups = {}
 
@@ -303,6 +307,11 @@ class CommandController(BaseController):
         if 'with' in mods and 'all' in groups['with']:
             groups['with'] = 'all'
 
+        for mod in self.required_modifiers:
+            if not len(groups[mod]):
+                self.execute_help(line)
+                raise IOError('{} is required'.format(mod))
+
         return groups
 
     def pre_command(self, line):
@@ -325,7 +334,6 @@ class CommandController(BaseController):
                     self.nodes = self.default_nodes
             except Exception:
                 self.nodes = 'all'  # default not set use all
-
 
 class BasicCommandController(CommandController):
     cluster = None
