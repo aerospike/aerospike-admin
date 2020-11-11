@@ -62,7 +62,7 @@ class BasicRootController(BaseController):
         timeout=5,
     ):
 
-        super(BasicRootController, self).__init__(asadm_version)
+        super().__init__(asadm_version)
 
         # Create static instance of cluster
         BasicRootController.cluster = Cluster(
@@ -1441,7 +1441,7 @@ class CollectinfoController(BasicCommandController):
     def _collectinfo_content(self, func, parm="", alt_parms=""):
         name = ""
         capture_stdout = util.capture_stdout
-        sep = constants.COLLECTINFO_SEPRATOR
+        sep = constants.COLLECTINFO_SEPERATOR
 
         try:
             name = func.__name__

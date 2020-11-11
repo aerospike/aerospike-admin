@@ -1713,7 +1713,7 @@ def _collectinfo_content(func, cmd="", alt_cmds=[]):
     )
     logger.info(info_line)
 
-    o_line = constants.COLLECTINFO_SEPRATOR
+    o_line = constants.COLLECTINFO_SEPERATOR
 
     o, e = None, None
 
