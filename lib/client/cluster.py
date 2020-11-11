@@ -137,7 +137,7 @@ class Cluster(object):
                     principal = n.node_id
             return principal
         except Exception as e:
-            print(e)
+            self.logger.error(e)
             return ''
 
     def get_live_nodes(self):
