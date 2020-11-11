@@ -377,7 +377,6 @@ def _len_privileges(privileges):
 
     return field_len
 
-@logthis('asadm', DEBUG)
 def _pack_admin_privileges(buf, offset, privileges):
     privilege_count = len(privileges)
     field_len = _len_privileges(privileges) + 1 # 1B for field type
@@ -388,7 +387,6 @@ def _pack_admin_privileges(buf, offset, privileges):
     for privilege in privileges:
         
         permission, namespace, set_ = _parse_privilege(privilege)
-        print(permission, namespace, set_)
         offset = _pack_uint8(buf, offset, permission.value)
 
         if permission in { 
@@ -401,6 +399,8 @@ def _pack_admin_privileges(buf, offset, privileges):
             offset = _pack_string(buf, offset, namespace)
             offset = _pack_uint8(buf, offset, len(set_))
             offset = _pack_string(buf, offset, set_)
+    
+    return offset
 
 def _c_str_to_bytes(buf):
     return bytes(buf)
