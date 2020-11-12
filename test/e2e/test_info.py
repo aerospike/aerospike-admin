@@ -201,7 +201,8 @@ class TestInfo(unittest.TestCase):
             'Success',
             'Retry Connection Reset',
             'Retry Destination',
-            'Recoveries',
+            'Recoveries Pending',
+            'Lag (hh:mm:ss)',
             'Avg Latency (ms)',
             'Throughput (rec/s)',
         ]
