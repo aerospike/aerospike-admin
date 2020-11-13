@@ -16,7 +16,6 @@ import copy
 import logging
 import os
 import re
-from re import DEBUG
 import socket
 import threading
 from time import time
@@ -1681,8 +1680,7 @@ class Node(object):
     #
     ############################################################################
 
-    # @util.cached
-    @logthis('asadm', DEBUG)
+    @logthis('asadm', logging.DEBUG)
     def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port
@@ -1726,14 +1724,14 @@ class Node(object):
         self._admin_cadmin(ASSocket.create_user, (user, password, roles), self.ip)
 
     @return_exceptions
-    def admin_drop_user(self, user):
+    def admin_delete_user(self, user):
         """
         Delete user.
         user: string
 
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.drop_user, [user], self.ip)
+        self._admin_cadmin(ASSocket.delete_user, [user], self.ip)
 
     @return_exceptions
     def admin_set_password(self, user, password):
@@ -1807,13 +1805,13 @@ class Node(object):
         self._admin_cadmin(ASSocket.create_role, (role, privileges, whitelist), self.ip)
 
     @return_exceptions
-    def admin_drop_role(self, role):
+    def admin_delete_role(self, role):
         """
         Delete role.
         role: string
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.drop_role, [role], self.ip)
+        self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
 
     @return_exceptions
     def admin_add_privileges(self, role, privileges):

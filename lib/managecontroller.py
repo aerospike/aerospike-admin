@@ -41,7 +41,7 @@ class ManageUsersController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
             'create': ManageUsersCreateController,
-            'drop': ManageUsersDropController,
+            'delete': ManageUsersDropController,
             'set-password': ManageUsersSetPasswordController,
             'change-password': ManageUsersChangePasswordController,
             'grant': ManageUsersGrantController,
@@ -99,7 +99,7 @@ class ManageUsersCreateController(BasicCommandController):
         self.view.print_result("Successfully created user {}".format(username))
 
 @CommandHelp(
-    "drop <username>",
+    "delete <username>",
     "  username           - User to delete.",
 )
 class ManageUsersDropController(BasicCommandController):
@@ -127,7 +127,7 @@ class ManageUsersDropController(BasicCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully dropped user {}".format(username))
+        self.view.print_result("Successfully deleted user {}".format(username))
 
 @CommandHelp(
     "set-password <username> [password <password>]",
@@ -295,7 +295,7 @@ class ManageRolesController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
             'create': ManageRolesCreateController,
-            'drop': ManageRolesDropController,
+            'delete': ManageRolesDropController,
             'grant': ManageRolesGrantController,
             'revoke': ManageRolesRevokeController,
             'allowlist': ManageRolesAllowListController
@@ -371,7 +371,12 @@ class ManageRolesCreateController(BasicCommandController):
         privilege = [] if privilege is None else [privilege]
 
         principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_create_role(role_name, privileges=privilege, whitelist=allowlist, nodes=[principle_node])
+        result = self.cluster.admin_create_role(
+            role_name, 
+            privileges=privilege, 
+            whitelist=allowlist, 
+            nodes=[principle_node]
+        )
         result = result[list(result.keys())[0]]
 
         if isinstance(result, ASProtocolError):
@@ -383,14 +388,12 @@ class ManageRolesCreateController(BasicCommandController):
         self.view.print_result('Successfully created role {}'.format(role_name))
 
 @CommandHelp(
-    "drop <role-name>",
-    "  role-name     - Name of role to drop.",
+    "delete <role-name>",
+    "  role-name     - Name of role to delete.",
 )
 class ManageRolesDropController(BasicCommandController):
 
     def __init__(self):
-        self.modifiers = set([])
-        self.required_modifiers = set(['roles'])
         self.controller_map = {}
 
     def _do_default(self, line):
@@ -403,7 +406,7 @@ class ManageRolesDropController(BasicCommandController):
         role_name = line.pop(0)
 
         principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_drop_role(role_name, nodes=principle_node)
+        result = self.cluster.admin__role(role_name, nodes=[principle_node])
         result = result[list(result.keys())[0]]
 
         if isinstance(result, ASProtocolError):
@@ -412,7 +415,7 @@ class ManageRolesDropController(BasicCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully dropped role {}".format(role_name))
+        self.view.print_result("Successfully deleted role {}".format(role_name))
 
 @CommandHelp(
     "grant <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
@@ -504,7 +507,7 @@ class ManageRolesRevokeController(BasicCommandController):
 
         
         principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_delete_privileges(role_name, [privilege], nodes=principle_node)
+        result = self.cluster.admin_delete_privileges(role_name, [privilege], nodes=[principle_node])
         result = result[list(result.keys())[0]]
 
         if isinstance(result, ASProtocolError):
