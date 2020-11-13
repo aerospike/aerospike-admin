@@ -28,7 +28,7 @@ from lib.utils.constants import COUNT_RESULT_KEY, DT_FMT
 from lib.utils.util import (compile_likes, find_delimiter_in,
                             get_value_from_dict, set_value_in_dict)
 from lib.view import terminal
-from lib.view.table import Extractors, Styles, Table, TitleFormats
+from lib.view.table import ColumnNameAlign, Extractors, Orientation, Table, TitleFormats
 
 H1_offset = 13
 H2_offset = 15
@@ -810,7 +810,7 @@ class CliView(object):
                         ('latency_ms', 'Avg Latency (ms)'), ('throughput', 'Throughput (rec/s)')
                         )
 
-        t = Table(title, column_names, group_by=1, style=Styles.HORIZONTAL)
+        t = Table(title, column_names, group_by=1, orientation=Orientation.HORIZONTAL)
 
         t.add_data_source('success', lambda data: get_value_from_dict(
             data, ('success')))
@@ -1237,9 +1237,9 @@ class CliView(object):
             else:
                 column_names.insert(0, "NODE")
 
-            table_style = Styles.VERTICAL
+            table_style = Orientation.VERTICAL
             if flip_output:
-                table_style = Styles.HORIZONTAL
+                table_style = Orientation.HORIZONTAL
 
             if show_total:
                 n_last_columns_ignore_sort = 1
@@ -1249,7 +1249,7 @@ class CliView(object):
             title_suffix = CliView._get_timestamp_suffix(timestamp)
             title = title + title_suffix
             t = Table(title, column_names,
-                    title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
+                    title_format=TitleFormats.no_change, orientation=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
 
             row = None
             if show_total:
@@ -1315,9 +1315,9 @@ class CliView(object):
 
         column_names.insert(0, "NODE")
 
-        table_style = Styles.VERTICAL
+        table_style = Orientation.VERTICAL
         if flip_output:
-            table_style = Styles.HORIZONTAL
+            table_style = Orientation.HORIZONTAL
 
         if show_total:
             n_last_columns_ignore_sort = 1
@@ -1327,7 +1327,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
         t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
+                  title_format=TitleFormats.no_change, orientation=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
 
         row = None
         if show_total:
@@ -1367,7 +1367,7 @@ class CliView(object):
         column_names.insert(0, "NODE")
 
         t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
+                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
 
         for file in sorted(grep_result.keys()):
             if isinstance(grep_result[file], Exception):
@@ -1416,7 +1416,7 @@ class CliView(object):
         column_names.insert(0, "NODE")
 
         t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
+                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
 
         for file in sorted(grep_result.keys()):
             if isinstance(grep_result[file], Exception):
@@ -1495,7 +1495,7 @@ class CliView(object):
         column_names.insert(0, "NODE")
 
         t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
+                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
 
         row = None
         sub_columns_per_column = 0
@@ -1579,7 +1579,7 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         t = Table("%s to %s Mapping%s" % (col1, col2, title_suffix), column_names,
-                  title_format=TitleFormats.no_change, style=Styles.HORIZONTAL)
+                  title_format=TitleFormats.no_change, orientation=Orientation.HORIZONTAL)
 
         if like:
             likes = compile_likes(like)
@@ -1600,6 +1600,78 @@ class CliView(object):
     @staticmethod
     def show_health(*args, **kwargs):
         CliView.show_config(*args, **kwargs)
+
+    @staticmethod
+    def show_users(users_data, like, **ignore):
+        if not users_data:
+            return 
+
+        # Added a "." as a hack to add some type of seperator.  
+        # All of this will be redone when we integrate sheets.  So don't take 
+        # this too seriously.
+        column_names = ['users .', 'roles']
+        filtered_users = None
+
+        t = Table("User Permissions", column_names, 
+            title_format=TitleFormats.var_to_title , 
+            orientation=Orientation.HORIZONTAL, column_align=ColumnNameAlign.LEFT)
+
+        if like:
+            likes = compile_likes(like)
+            filtered_users = list(filter(likes.search, users_data.keys()))
+        else:
+            filtered_users = users_data.keys()
+
+        for user, roles in users_data.items():
+            if user not in filtered_users:
+                continue
+
+            row = {}
+            row['users .'] = user
+            row['roles'] = "\"" + ', '.join(roles) + "\""
+            t.insert_row(row)
+
+        t.ignore_sort()
+        CliView.print_result(t)
+
+    @staticmethod
+    def show_roles(roles_data, like, **ignore):
+        if not roles_data:
+            return 
+
+        # Added a "." as a hack to add some type of seperator.  
+        # All of this will be redone when we integrate sheets.  So don't take 
+        # this too seriously.
+        column_names = ['roles .', 'privileges', 'allowlist']
+        filtered_users = None
+
+        t = Table("Role Permissions", column_names, 
+            title_format=TitleFormats.var_to_title , 
+            orientation=Orientation.HORIZONTAL, column_align=ColumnNameAlign.LEFT)
+
+        if like:
+            likes = compile_likes(like)
+            filtered_users = list(filter(likes.search, roles_data.keys()))
+        else:
+            filtered_users = roles_data.keys()
+        
+
+        for role_key in roles_data:
+            if role_key not in filtered_users:
+                continue
+            
+            privileges = roles_data[role_key]['privileges']
+            allowlist = roles_data[role_key]['whitelist']
+
+            row = {}
+            row['roles .'] = role_key
+            row['privileges'] = "\"" + ', '.join(privileges) + "\""
+            row['allowlist'] = "\"" + ', '.join(allowlist) + "\""
+            t.insert_row(row)
+
+        t.ignore_sort()
+        CliView.print_result(t)
+
 
     @staticmethod
     def asinfo(results, line_sep, show_node_name, cluster, **kwargs):
@@ -2407,3 +2479,4 @@ class CliView(object):
                 t.insert_row(row)
 
         CliView.print_result(t)
+
