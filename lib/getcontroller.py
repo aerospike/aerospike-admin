@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import copy
+import logging
+from re import DEBUG
+from lib.utils.util import logthis
 from lib.utils import common, util
 from lib.utils.common import is_new_latencies_version
 
@@ -830,3 +833,32 @@ class GetPmapController():
         pmap_data = self._get_pmap_data(pmap_info, ns_info, cluster_keys, node_ids)
 
         return pmap_data
+
+class GetUsersController():
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_users(self):
+        principle_node = self.cluster.get_expected_principal()
+        users_data = self.cluster.admin_query_users(nodes=[principle_node]).values()
+        return list(users_data)[0]
+
+    def get_user(self, username):
+        principle_node = self.cluster.get_expected_principal()
+        user_data = self.cluster.admin_query_user(username, nodes=[principle_node]).values()
+        return list(user_data)[0]
+
+class GetRolesController():
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    @logthis('asadm', logging.DEBUG)
+    def get_roles(self):
+        principle_node = self.cluster.get_expected_principal()
+        roles_data = self.cluster.admin_query_roles(nodes=[principle_node]).values()
+        return list(roles_data)[0]
+
+    def get_role(self, role_name):
+        principle_node = self.cluster.get_expected_principal()
+        role_data = self.cluster.admin_query_role(role_name, nodes=[principle_node]).values()
+        return list(role_data)[0]

@@ -295,7 +295,7 @@ class CommandController(BaseController):
 
         while line:
             word = line.pop(0)
-            if word in self.modifiers:
+            if word in mods:
                 mod = word
                 # Special case for handling diff modifier of show config
                 if mod == 'diff':

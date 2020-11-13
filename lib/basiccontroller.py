@@ -14,6 +14,7 @@
 
 import copy
 import json
+from lib.client.info import ASProtocolError
 import shutil
 import sys
 import time
@@ -29,9 +30,11 @@ from lib.controllerlib import (
 from lib.getcontroller import (
     GetConfigController,
     GetDistributionController,
-    GetPmapController,
+    GetPmapController, 
+    GetRolesController,
     GetStatisticsController,
-    GetFeaturesController,
+    GetFeaturesController, 
+    GetUsersController,
     get_sindex_stats,
     GetLatenciesController,
 )
@@ -466,6 +469,12 @@ class ShowController(BasicCommandController):
             "distribution": ShowDistributionController,
             "mapping": ShowMappingController,
             "pmap": ShowPmapController,
+            'users': ShowUsersController,
+            'roles': ShowRolesController,
+            # 'udfs': ShowUdfsController,
+            # 'rosters': ShowRosterController,
+            # 'racks': ShowRacksController,
+            # 'jobs': ShowJobsController,
         }
 
         self.modifiers = set()
@@ -1419,6 +1428,38 @@ class ShowPmapController(BasicCommandController):
 
         return util.Future(self.view.show_pmap, pmap_data, self.cluster)
 
+
+@CommandHelp("Displays users and their assigned roles for Aerospike cluster.")
+class ShowUsersController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+        self.getter = GetUsersController(self.cluster)
+
+    def _do_default(self, line):
+        users_data = self.getter.get_users()
+
+        if isinstance(users_data, ASProtocolError):
+            self.logger.error(users_data)
+        elif isinstance(users_data, Exception):
+            raise users_data
+
+        return util.Future(self.view.show_users, users_data, **self.mods)
+
+@CommandHelp("Displays users and their assigned roles for Aerospike cluster.")
+class ShowRolesController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+        self.getter = GetRolesController(self.cluster)
+
+    def _do_default(self, line):
+        roles_data = self.getter.get_roles()
+
+        if isinstance(roles_data, ASProtocolError):
+            self.logger.error(roles_data)
+        elif isinstance(roles_data, Exception):
+            raise roles_data
+
+        return util.Future(self.view.show_roles, roles_data, **self.mods)
 
 @CommandHelp(
     '"collectinfo" is used to collect cluster info, aerospike conf file and system stats.'
