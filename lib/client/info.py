@@ -218,6 +218,19 @@ class ASPrivilege(IntEnum):
             return cls.WRITE
         else:
             raise TypeError("Privilege: Not a valid privilege name: {}".format(privilege_str))
+    
+    def is_global_only_scope(self):
+        return (
+            self == ASPrivilege.DATA_ADMIN or
+            self == ASPrivilege.SYS_ADMIN or
+            self == ASPrivilege.USER_ADMIN
+        )
+
+    def __str__(self):
+        name = self.name.lower()
+        name = name.replace('_', '-')
+        return name
+        
 
 @unique
 class ASResponse(IntEnum):
@@ -271,7 +284,8 @@ def _create_admin_header(sz, command, field_count):
 
 def _pack_admin_field_header(buf, offset, field_len, field_type):
     ''' Packs the first 5 bytes in front of every admin field.
-    field_len = the number of bytes to follow the 4B Field Length.
+    field_len = is the size of the "Value" field. Does not include "Type" or
+    "Length".
     '''
     _STRUCT_FIELD_HEADER.pack_into(buf, offset, field_len + 1, field_type.value)
     offset += _STRUCT_FIELD_HEADER.size
@@ -360,13 +374,7 @@ def _len_privileges(privileges):
         field_len += 1
         permission, namespace, set_ = _parse_privilege(privilege)
 
-        if permission in { 
-            ASPrivilege.READ,
-            ASPrivilege.READ_WRITE, 
-            ASPrivilege.READ_WRITE_UDF,
-            ASPrivilege.WRITE
-        }:
-
+        if not ASPrivilege(permission).is_global_only_scope():
             # 1B = namespace name len
             field_len += 1
             field_len += len(namespace)
@@ -388,18 +396,39 @@ def _pack_admin_privileges(buf, offset, privileges):
         permission, namespace, set_ = _parse_privilege(privilege)
         offset = _pack_uint8(buf, offset, permission.value)
 
-        if permission in { 
-            ASPrivilege.READ,
-            ASPrivilege.READ_WRITE, 
-            ASPrivilege.READ_WRITE_UDF,
-            ASPrivilege.WRITE
-        }:
+        if not ASPrivilege(permission).is_global_only_scope():
             offset = _pack_uint8(buf, offset, len(namespace))
             offset = _pack_string(buf, offset, namespace)
             offset = _pack_uint8(buf, offset, len(set_))
             offset = _pack_string(buf, offset, set_)
     
     return offset
+
+def _unpack_admin_privileges(buf, offset):
+    num_privileges, offset = _unpack_uint8(buf, offset)
+    privileges = []
+
+    for _ in range(num_privileges):
+        permission_code, offset = _unpack_uint8(buf, offset)
+        privilege = ASPrivilege(permission_code)
+        privilege_str = [str(privilege)]
+
+        if not privilege.is_global_only_scope():
+            namespace_len, offset = _unpack_uint8(buf, offset)
+            namespace, offset = _unpack_string(buf, offset, namespace_len)
+            set_len, offset = _unpack_uint8(buf, offset)
+            set_, offset = _unpack_string(buf, offset, set_len)
+
+            if namespace:
+                privilege_str.append(namespace)
+
+                if set_:
+                    privilege_str.append(set_)
+
+        privilege_str = '.'.join(privilege_str)
+        privileges.append(privilege_str)
+
+    return privileges, offset
 
 def _c_str_to_bytes(buf):
     return bytes(buf)
@@ -795,25 +824,27 @@ def _query_role(sock, role=None):
 
             for _ in range(field_count):
                 field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
+                field_len -= 1
 
-                if field_type == ASField.USER:
+                if field_type == ASField.ROLE:
                     role_name, offset = _unpack_string(rsp_buf, offset, field_len)
 
                     if role_name not in role_dict:
                         role_dict[role_name] = role_name
 
-                elif field_type == ASField.ROLES:
-                    roles, offset = _unpack_admin_roles(rsp_buf, offset)
-                    privileges.append(roles)
+                elif field_type == ASField.PRIVILEGES:
+                    roles, offset = _unpack_admin_privileges(rsp_buf, offset)
+                    privileges.extend(roles)
                 elif field_type == ASField.WHITELIST:
                     white, offset = _unpack_string(rsp_buf, offset, field_len)
-                    whitelist = white.decode('utf-8').split(',')
+                    whitelist = white.split(',')
                 else:
                     offset += field_len
 
             if role_name is None:
                 continue
-
+            
+            role_dict[role_name] = {}
             role_dict[role_name]['privileges'] = privileges
             role_dict[role_name]['whitelist'] = whitelist
 
