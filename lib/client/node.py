@@ -26,7 +26,7 @@ from lib.collectinfo_parser import conf_parser
 from lib.collectinfo_parser.full_parser import parse_system_live_command
 from lib.utils import common
 from lib.utils.constants import AuthMode
-from lib.utils.util import shell_command
+from lib.utils.util import shell_command, logthis
 
 #### Remote Server connection module
 
@@ -1680,8 +1680,7 @@ class Node(object):
     #
     ############################################################################
 
-    @return_exceptions
-    # @util.cached
+    @logthis('asadm', logging.DEBUG)
     def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port
@@ -1693,6 +1692,7 @@ class Node(object):
             raise IOError("Error: Could not connect to node %s" % ip)
 
         try:
+            print(*args)
             result = admin_func(sock, *args)
 
             # Either restore the socket in the pool or close it if it is full.
@@ -1724,14 +1724,14 @@ class Node(object):
         self._admin_cadmin(ASSocket.create_user, (user, password, roles), self.ip)
 
     @return_exceptions
-    def admin_drop_user(self, user):
+    def admin_delete_user(self, user):
         """
         Delete user.
         user: string
 
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.drop_user, (user), self.ip)
+        self._admin_cadmin(ASSocket.delete_user, [user], self.ip)
 
     @return_exceptions
     def admin_set_password(self, user, password):
@@ -1791,7 +1791,7 @@ class Node(object):
         Returns: {username: [role1, role2, . . .]},
         ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.query_user, (user), self.ip)
+        return self._admin_cadmin(ASSocket.query_user, [user], self.ip)
 
     @return_exceptions
     def admin_create_role(self, role, privileges, whitelist=None):
@@ -1811,7 +1811,7 @@ class Node(object):
         role: string
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.delete_role, (role), self.ip)
+        self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
 
     @return_exceptions
     def admin_add_privileges(self, role, privileges):
@@ -1850,7 +1850,7 @@ class Node(object):
         role: string
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.delete_whitelist, (role), self.ip)
+        self._admin_cadmin(ASSocket.delete_whitelist, [role], self.ip)
 
     @return_exceptions
     def admin_query_roles(self):
@@ -1878,7 +1878,7 @@ class Node(object):
                  },
         ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.query_role, (role), self.ip)
+        return self._admin_cadmin(ASSocket.query_role, [role], self.ip)
 
 
     ############################################################################
@@ -2004,11 +2004,28 @@ class Node(object):
     def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
 
+        self.logger.debug(
+            ("{}._get_localhost_system_statistics cmds={}")
+            .format(
+                self.ip,
+                commands,
+            ), 
+            stackinfo=True
+        )
+        
         for _key, ignore_error, cmds in self.sys_cmds:
             if _key not in commands:
                 continue
 
             for cmd in cmds:
+                self.logger.debug(
+                    ("{}._get_localhost_system_statistics running cmd={}")
+                    .format(
+                        self.ip,
+                        cmd,
+                    ), 
+                    stackinfo=True
+                )
                 o, e = shell_command([cmd])
                 if (e and not ignore_error) or not o:
                     continue
@@ -2330,6 +2347,23 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
+        self.logger.debug(
+            ("{}.info_system_statistics default_user={} default_pws={}"
+            "default_ssh_key={} default_ssh_port={} credential_file={}"
+            "commands={} collect_remote_data={}")
+            .format(
+                self.ip,
+                default_user,
+                default_pwd, 
+                default_ssh_key, 
+                default_ssh_port, 
+                credential_file, 
+                commands,
+                collect_remote_data
+            ), 
+            stackinfo=True
+        )
+        
         if commands:
             cmd_list = copy.deepcopy(commands)
         else:

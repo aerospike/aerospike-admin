@@ -189,7 +189,7 @@ class ASSocket():
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, 'Failed to create user')
 
-    def drop_user(self, user):
+    def delete_user(self, user):
         rsp_code = drop_user(self.sock, user)
 
         if rsp_code != ASResponse.OK:

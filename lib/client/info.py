@@ -23,8 +23,9 @@ from time import time
 from enum import IntEnum, unique
 from socket import error as SocketError
 
-from lib.utils.util import bytes_to_str, str_to_bytes
+from lib.utils.util import bytes_to_str, str_to_bytes, logthis
 from lib.utils.constants import AuthMode
+from logging import DEBUG
 
 try:
     import bcrypt
@@ -68,7 +69,7 @@ def _pack_uint8(buf, offset, val):
 def _unpack_uint8(buf, offset):
     val = _STRUCT_UINT8.unpack_from(buf, offset)
     offset += _STRUCT_UINT8.size
-    return val, offset
+    return val[0], offset
 
 def _pack_uint32(buf, offset, val):
     _STRUCT_UINT32.pack_into(buf, offset, val)
@@ -83,7 +84,7 @@ def _pack_string(buf, offset, string):
 def _unpack_string(buf, offset, sz):
     val = buf[offset: offset + sz]
     offset += sz
-    return val, offset
+    return val.decode('utf-8'), offset
 
 def _pack_protocol_header(buf, offset, protocol_version, protocol_type, sz):
     proto = (protocol_version << 56) | (protocol_type << 48) | sz
@@ -107,6 +108,7 @@ def _unpack_protocol_header(buf, offset=0):
 
 def _receive_data(sock, sz):
     pos = 0
+    data = None
     while pos < sz:
         chunk = sock.recv(sz - pos)
         if pos == 0:
@@ -119,6 +121,9 @@ def _receive_data(sock, sz):
 ####### Password hashing ######
 
 def _hash_password(password):
+    if isinstance(password, str):
+        password = password.encode('utf-8')
+
     if hasbcrypt == False:
         print("Authentication failed: bcrypt not installed.")
         sys.exit(1)
@@ -213,6 +218,19 @@ class ASPrivilege(IntEnum):
             return cls.WRITE
         else:
             raise TypeError("Privilege: Not a valid privilege name: {}".format(privilege_str))
+    
+    def is_global_only_scope(self):
+        return (
+            self == ASPrivilege.DATA_ADMIN or
+            self == ASPrivilege.SYS_ADMIN or
+            self == ASPrivilege.USER_ADMIN
+        )
+
+    def __str__(self):
+        name = self.name.lower()
+        name = name.replace('_', '-')
+        return name
+        
 
 @unique
 class ASResponse(IntEnum):
@@ -226,7 +244,7 @@ class ASResponse(IntEnum):
     USER_ALREADY_EXISTS = 61
     NO_PASSWORD_OR_BAD_PASSORD = 62
     NO_CREDENTIAL_OR_BAD_CREDENTIAL = 65
-    NO_ROLES_OR_UNRECOGNIZED_ROLES = 70
+    NO_ROLE_OR_INVALID_ROLE = 70
     ROLE_ALREADY_EXISTS = 71
     NO_PRIVLEGES_OR_UNRECOGNIZED_PRIVILEGES = 72
     BAD_WHITELIST = 73
@@ -236,8 +254,9 @@ class ASResponse(IntEnum):
 
     def __str__(self):
         lower = self.name.lower().split('_')
-        lower = [word[0].upper() + word[1:] for word in lower]
-        return ' '.join(lower)
+        lower = ' '.join(lower)
+        lower = lower[0].upper() + lower[1:]
+        return lower
 
 def _pack_admin_header(buf, offset, scheme, result, command, n_fields):
     _STRUCT_ADMIN_HEADER.pack_into(
@@ -263,9 +282,12 @@ def _create_admin_header(sz, command, field_count):
     offset = _pack_admin_header(buf, offset, _ADMIN_MSG_VERSION, 0, command, field_count)
     return buf, offset
 
-# The first 5 bytes in front of every admin field
 def _pack_admin_field_header(buf, offset, field_len, field_type):
-    _STRUCT_FIELD_HEADER.pack_into(buf, offset, field_len, field_type.value)
+    ''' Packs the first 5 bytes in front of every admin field.
+    field_len = is the size of the "Value" field. Does not include "Type" or
+    "Length".
+    '''
+    _STRUCT_FIELD_HEADER.pack_into(buf, offset, field_len + 1, field_type.value)
     offset += _STRUCT_FIELD_HEADER.size
     return offset
 
@@ -275,11 +297,10 @@ def _unpack_admin_field_header(buf, offset):
     return field_len, field_type, offset
 
 def _pack_admin_field(buf, offset, as_field, field):
-    # 1B = field type?
 
     # _pack_string() will convert str to bytes, no need to handle here.
     if isinstance(field, str) or isinstance(field, bytes):
-        field_len = len(field) + 1
+        field_len = len(field)
         offset = _pack_admin_field_header(buf, offset, field_len, as_field)
         offset = _pack_string(buf, offset, field)
     elif isinstance(field, list):
@@ -291,6 +312,7 @@ def _pack_admin_field(buf, offset, as_field, field):
             raise TypeError("_pack_admin_field: Field ID does not accept lists: {}".format(as_field))
     else:
         raise TypeError("_pack_admin_field: Unhandled field type: {}".format(type(field)))
+
     return offset
 
 def _len_roles(roles):
@@ -303,7 +325,7 @@ def _len_roles(roles):
     return field_len
 
 def _pack_admin_roles(buf, offset, roles):
-    field_len = _len_roles(roles) + 1
+    field_len = _len_roles(roles)
     role_count = len(roles)
 
     offset = _pack_admin_field_header(buf, offset, field_len, ASField.ROLES)
@@ -352,13 +374,7 @@ def _len_privileges(privileges):
         field_len += 1
         permission, namespace, set_ = _parse_privilege(privilege)
 
-        if permission in { 
-            ASPrivilege.READ,
-            ASPrivilege.READ_WRITE, 
-            ASPrivilege.READ_WRITE_UDF,
-            ASPrivilege.WRITE
-        }:
-
+        if not ASPrivilege(permission).is_global_only_scope():
             # 1B = namespace name len
             field_len += 1
             field_len += len(namespace)
@@ -380,16 +396,39 @@ def _pack_admin_privileges(buf, offset, privileges):
         permission, namespace, set_ = _parse_privilege(privilege)
         offset = _pack_uint8(buf, offset, permission.value)
 
-        if permission in { 
-            ASPrivilege.READ,
-            ASPrivilege.READ_WRITE, 
-            ASPrivilege.READ_WRITE_UDF,
-            ASPrivilege.WRITE
-        }:
+        if not ASPrivilege(permission).is_global_only_scope():
             offset = _pack_uint8(buf, offset, len(namespace))
             offset = _pack_string(buf, offset, namespace)
             offset = _pack_uint8(buf, offset, len(set_))
             offset = _pack_string(buf, offset, set_)
+    
+    return offset
+
+def _unpack_admin_privileges(buf, offset):
+    num_privileges, offset = _unpack_uint8(buf, offset)
+    privileges = []
+
+    for _ in range(num_privileges):
+        permission_code, offset = _unpack_uint8(buf, offset)
+        privilege = ASPrivilege(permission_code)
+        privilege_str = [str(privilege)]
+
+        if not privilege.is_global_only_scope():
+            namespace_len, offset = _unpack_uint8(buf, offset)
+            namespace, offset = _unpack_string(buf, offset, namespace_len)
+            set_len, offset = _unpack_uint8(buf, offset)
+            set_, offset = _unpack_string(buf, offset, set_len)
+
+            if namespace:
+                privilege_str.append(namespace)
+
+                if set_:
+                    privilege_str.append(set_)
+
+        privilege_str = '.'.join(privilege_str)
+        privileges.append(privilege_str)
+
+    return privileges, offset
 
 def _c_str_to_bytes(buf):
     return bytes(buf)
@@ -433,6 +472,7 @@ def authenticate_old(sock, user, password):
     return _authenticate(sock, user, password=_hash_password(password), password_field_id=ASField.CREDENTIAL)
 
 # roles is a list of strings representing role names.
+@logthis('asadm', DEBUG)
 def create_user(sock, user, password, roles):
     """Attempts to create a user in AS.
     user: string,
@@ -442,7 +482,7 @@ def create_user(sock, user, password, roles):
     """
     field_count = 3
     roles_len = _len_roles(roles)
-    hashed_password = _hash_password(password.encode('utf-8'))
+    hashed_password = _hash_password(password)
     admin_data_size = len(user) + len(hashed_password) + roles_len
     send_buf, offset = _create_admin_header(admin_data_size, ASCommand.CREATE_USER, field_count)
     offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
@@ -455,6 +495,7 @@ def create_user(sock, user, password, roles):
     except Exception as e:
         raise IOError("Error: %s" % str(e))
 
+@logthis('asadm', DEBUG)
 def drop_user(sock, user):
     """Attempts to delete a user in AS.
     user: string,
@@ -472,6 +513,7 @@ def drop_user(sock, user):
     except Exception as e:
         raise IOError("Error: %s" % str(e))
 
+@logthis('asadm', DEBUG)
 def set_password(sock, user, password):
     """Attempts to set a user password in AS.
     user: string,
@@ -492,6 +534,7 @@ def set_password(sock, user, password):
     except Exception as e:
         raise IOError("Error: %s" % str(e))
 
+@logthis('asadm', DEBUG)
 def change_password(sock, user, old_password, new_password):
     """Attempts to change a users passowrd in AS.
     user: string,
@@ -516,6 +559,7 @@ def change_password(sock, user, old_password, new_password):
         raise IOError("Error: %s" % str(e))
 
 # roles is a list of strings representing role names.
+@logthis('asadm', DEBUG)
 def grant_roles(sock, user, roles):
     """Attempts to grant roles to user in AS.
     user: string,
@@ -533,6 +577,7 @@ def grant_roles(sock, user, roles):
     return return_code
 
 # roles is a list of strings representing role names.
+@logthis('asadm', DEBUG)
 def revoke_roles(sock, user, roles):
     """Attempts to remove roles from a user in AS.
     user: string,
@@ -576,9 +621,9 @@ def _query_users(sock, user=None):
         rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
         _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
         rsp_buf = _receive_data(sock, data_size)
-
         offset = 0
 
+        # Each loop will process a user:role pair.
         while offset < data_size:
             _, result_code, _, field_count, offset = _unpack_admin_header(rsp_buf, offset)
 
@@ -590,65 +635,74 @@ def _query_users(sock, user=None):
 
             for _ in range(field_count):
                 field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
+                field_len -= 1
 
                 if field_type == ASField.USER:
                     user_name, offset = _unpack_string(rsp_buf, offset, field_len)
 
                     if user_name not in users_dict:
                         users_dict[user_name] = users_dict
+
                 elif field_type == ASField.ROLES:
                     roles, offset = _unpack_admin_roles(rsp_buf, offset)
-                    user_roles.append(roles)
+                    user_roles.extend(roles)
                 else:
                     offset += field_len
 
             if user_name is None:
                 continue
 
-            user_dict[user_name] = roles
+            users_dict[user_name] = user_roles
 
         return ASResponse.OK, users_dict
 
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
+@logthis('asadm', DEBUG)
 def query_users(sock):
     return _query_users(sock)
 
+@logthis('asadm', DEBUG)
 def query_user(sock, user):
     return _query_users(sock, user)
 
-def create_role(sock, role, privileges, whitelist=None):
+@logthis('asadm', DEBUG)
+def create_role(sock, role, privileges=None, whitelist=None):
     """Attempts to create a role in AS with certain privleges and whitelist.
     role: string,
     privileges: list[string]
-    whitelist: string (comma seperated list)
+    whitelist: list[string] of addresses
     Returns: ASResponse
     """
     field_count = 1
     admin_data_size = len(role)
+    pack_privileges = privileges is not None and len(privileges)
+    pack_whitelist = whitelist is not None and len(whitelist)
 
-    if privileges is not None:
+    if pack_privileges:
         field_count += 1
         admin_data_size +=  _len_privileges(privileges)
 
-    if whitelist is not None:
+    if pack_whitelist:
+        whitelist = ','.join(whitelist)
         field_count += 1
         admin_data_size += len(whitelist)
 
     send_buf, offset = _create_admin_header(admin_data_size, ASCommand.CREATE_ROLE, field_count)
     offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
 
-    if privileges is not None:
+    if pack_privileges:
         offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
 
-    if whitelist is not None:
+    if pack_whitelist:
         offset = _pack_admin_field(send_buf, offset, ASField.WHITELIST, whitelist)
 
     _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
 
     return return_code
 
+@logthis('asadm', DEBUG)
 def delete_role(sock, role):
     """Attempts to delete a role in AS.
     role: string,
@@ -664,6 +718,7 @@ def delete_role(sock, role):
 
     return return_code
 
+@logthis('asadm', DEBUG)
 def add_privileges(sock, role, privileges):
     """Attempts to add privleges to a role in AS.
     role: string,
@@ -674,12 +729,13 @@ def add_privileges(sock, role, privileges):
     admin_data_size = len(role) + _len_privileges(privileges)
 
     send_buf, offset = _create_admin_header(admin_data_size, ASCommand.ADD_PRIVLEGES, field_count)
-    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, role)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
     offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
 
     _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
     return return_code
 
+@logthis('asadm', DEBUG)
 def delete_privileges(sock, role, privileges):
     """Attempts to remove privleges to a role in AS.
     role: string,
@@ -690,7 +746,7 @@ def delete_privileges(sock, role, privileges):
     admin_data_size = len(role) + _len_privileges(privileges)
 
     send_buf, offset = _create_admin_header(admin_data_size, ASCommand.DELETE_PRIVLEGES, field_count)
-    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, role)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
     offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
 
     _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
@@ -699,29 +755,32 @@ def delete_privileges(sock, role, privileges):
 def _set_whitelist(sock, role, whitelist=None):
     """Attempts to add a whitelist to a role in AS.
     role: string,
-    privileges: string (comma seperated list)
+    privileges: list[string] of addresses
     Returns: ASResponse
     """
     field_count = 1
     admin_data_size = len(role)
 
     if whitelist is not None:
+        whitelist = ','.join(whitelist)
         field_count += 1
         admin_data_size += len(whitelist)
 
     send_buf, offset = _create_admin_header(admin_data_size, ASCommand.SET_WHITELIST, field_count)
-    offset = _pack_admin_field(send_buf, offset, ASField.ROLES, role)
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
 
     if whitelist is not None:
-        offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, whitelist)
+        offset = _pack_admin_field(send_buf, offset, ASField.WHITELIST, whitelist)
 
     _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
     
     return return_code
 
+@logthis('asadm', DEBUG)
 def set_whitelist(sock, role, whitelist):
     return _set_whitelist(sock, role, whitelist)
 
+@logthis('asadm', DEBUG)
 def delete_whitelist(sock, role):
     return _set_whitelist(sock, role)
 
@@ -765,25 +824,27 @@ def _query_role(sock, role=None):
 
             for _ in range(field_count):
                 field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
+                field_len -= 1
 
-                if field_type == ASField.USER:
+                if field_type == ASField.ROLE:
                     role_name, offset = _unpack_string(rsp_buf, offset, field_len)
 
                     if role_name not in role_dict:
                         role_dict[role_name] = role_name
 
-                elif field_type == ASField.ROLES:
-                    roles, offset = _unpack_admin_roles(rsp_buf, offset)
-                    privileges.append(roles)
+                elif field_type == ASField.PRIVILEGES:
+                    roles, offset = _unpack_admin_privileges(rsp_buf, offset)
+                    privileges.extend(roles)
                 elif field_type == ASField.WHITELIST:
                     white, offset = _unpack_string(rsp_buf, offset, field_len)
-                    whitelist = white.decode('utf-8').split(',')
+                    whitelist = white.split(',')
                 else:
                     offset += field_len
 
             if role_name is None:
                 continue
-
+            
+            role_dict[role_name] = {}
             role_dict[role_name]['privileges'] = privileges
             role_dict[role_name]['whitelist'] = whitelist
 
@@ -792,9 +853,11 @@ def _query_role(sock, role=None):
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
+@logthis('asadm', DEBUG)
 def query_roles(sock):
     return _query_role(sock)
 
+@logthis('asadm', DEBUG)
 def query_role(sock, role):
     return _query_role(sock, role)
 
@@ -892,7 +955,7 @@ def _pack_info_field(buf, offset, field):
     return _pack_string(buf, offset, field)
 
 def _info_request(sock, buf):
-
+    rsp_data = None
     # request over TCP
     try:
         sock.send(buf)
@@ -960,7 +1023,7 @@ def info(sock, names=None):
             if len(line) < 1:
                 # this accounts for the trailing '\n' - cheaper than chomp
                 continue
-            name, sep, value = lines.partition("\t")
+            name, sep, value = line.partition("\t")
             rdict[name] = value
         return rdict
 
