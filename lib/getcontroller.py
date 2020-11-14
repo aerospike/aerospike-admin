@@ -683,7 +683,7 @@ class GetPmapController():
         # fields present in version >= 3.15.0
         optional_new_fields = [("working_master_index", "working_master", None)]
 
-        for _node, partitions in pmap_info.items():
+        for _node, partitions in pmap_info.iteritems():
             node_pmap = dict()
             ck = cluster_keys[_node]
             node_id = node_ids[_node]
@@ -705,7 +705,6 @@ class GetPmapController():
 
                 if not index_set:
                     # pmap format contains headers from server 3.8.4 onwards
-
                     index_set = True
 
                     if all(i[1] in fields for i in required_fields):
@@ -713,12 +712,9 @@ class GetPmapController():
                             f_indices[t[0]] = fields.index(t[1])
 
                         if all(i[1] in fields for i in optional_old_fields):
-
                             for t in optional_old_fields:
                                 f_indices[t[0]] = fields.index(t[1])
-
                         elif all(i[1] in fields for i in optional_new_fields):
-
                             for t in optional_new_fields:
                                 f_indices[t[0]] = fields.index(t[1])
 
@@ -733,8 +729,7 @@ class GetPmapController():
 
                 if f_indices["working_master_index"]:
                     working_master = fields[f_indices["working_master_index"]]
-                    origin, target = None, None
-
+                    origin = target = None
                 else:
                     origin, target = (
                         fields[f_indices["origin_index"]],
@@ -788,7 +783,7 @@ class GetPmapController():
 
             pmap_data[_node] = node_pmap
 
-        for _node, _ns_data in pmap_data.items():
+        for _node, _ns_data in pmap_data.iteritems():
             ck = cluster_keys[_node]
             
             for ns, params in _ns_data.items():
@@ -796,8 +791,7 @@ class GetPmapController():
 
                 try:
                     params.update(ns_info[ck][ns][_node])
-
-                except Exception as e:
+                except Exception:
                     pass
 
         return pmap_data
@@ -825,7 +819,10 @@ class GetPmapController():
                     service_stats[node], ("cluster_key"), default_value="N/E"
                 )
 
+        namespace_stats = namespace_stats.result()
         ns_info = self._get_namespace_data(namespace_stats, cluster_keys)
+        node_ids = node_ids.result()
+        pmap_info = pmap_info.result()
 
         pmap_data = self._get_pmap_data(pmap_info, ns_info, cluster_keys, node_ids)
 

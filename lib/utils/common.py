@@ -26,6 +26,7 @@ import sys
 import time
 import urllib.request, urllib.error, urllib.parse
 import zipfile
+from collections import OrderedDict
 from distutils.version import LooseVersion
 
 from lib.utils import constants, filesize, util
@@ -1207,7 +1208,7 @@ def _parse_new_log_histogram(histogram, histogram_data):
 
     result = {}
     result[k] = v
-    result["data"] = {}
+    result["data"] = OrderedDict()
     result["histogram"] = histogram
 
     for d in datum:

@@ -180,20 +180,40 @@ def fg_red():
     return _add_it(fgred)
 
 
+def fg_not_red():
+    return _remove_it(fgred)
+
+
 def fg_green():
     return _add_it(fggreen)
+
+
+def fg_not_green():
+    return _remove_it(fggreen)
 
 
 def fg_yellow():
     return _add_it(fgyellow)
 
 
+def fg_not_yellow():
+    return _remove_it(fgyellow)
+
+
 def fg_blue():
     return _add_it(fgblue)
 
 
+def fg_not_blue():
+    return _remove_it(fgblue)
+
+
 def fg_magenta():
     return _add_it(fgmagenta)
+
+
+def fg_not_magenta():
+    return _remove_it(fgmagenta)
 
 
 def fg_cyan():

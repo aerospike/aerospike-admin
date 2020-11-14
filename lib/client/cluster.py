@@ -108,7 +108,24 @@ class Cluster(object):
 
         return node_names
 
-    def get_node_names(self):
+    def get_node_names(self, nodes=None):
+        selected_nodes = nodes
+        nodes = self.nodes.items()
+
+        if selected_nodes:
+            with_nodes = set()
+
+            for w in selected_nodes:
+                with_nodes.update(self.get_node(w))
+
+            new_nodes = []
+
+            for node_key, node in nodes:
+                if node in with_nodes:
+                    new_nodes.append((node_key, node))
+
+            nodes = new_nodes
+
         node_names = {}
 
         if not self._same_name_nodes:
