@@ -516,12 +516,35 @@ def numeric_sum_aggregator_selector(key, is_numeric):
 
 config_sheet = Sheet(
     (TitleField('Node', Projectors.String('prefixes', None)),
-     DynamicFields('data', aggregator_selector=numeric_sum_aggregator_selector,
-                   required=True)),
+     DynamicFields('data',
+                   required=True, order=DynamicFieldOrder.source)),
     from_source=('prefixes', 'data'),
     order_by='Node',
     default_style=SheetStyle.rows
 )
+
+config_xdr_ns_sheet = Sheet(
+    (TitleField('Node', Projectors.String('prefixes', None)),
+     Field('Namespace', Projectors.String('data', None, for_each_key=True)),
+     DynamicFields('data', required=True, order=DynamicFieldOrder.source)),
+    from_source=('prefixes', 'data'),
+    order_by=['Namespace', 'Node'],
+    default_style=SheetStyle.rows,
+    for_each=['data']
+)
+
+# latency_sheet = Sheet(
+#     (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
+#      Field('Histogram', Projectors.String('histogram', 1, for_each_key=True)),
+#      TitleField('Node', Projectors.String('prefixes', None)),
+#      DynamicFields('histogram', required=True,
+#                    order=DynamicFieldOrder.source,
+#                    aggregator_selector=latency_aggregator_selector)),
+#     from_source=('prefixes', 'histogram'),
+#     for_each='histogram',
+#     group_by=('Namespace', 'Histogram'),
+#     order_by='Node',
+# )
 
 mapping_to_ip_sheet = Sheet(
     (Field('Node ID', Projectors.String('mapping', 0)),
@@ -553,14 +576,14 @@ def latency_aggregator_selector(key, is_numeric):
 
 latency_sheet = Sheet(
     (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
-     Field('Hist', Projectors.String('histogram', 1, for_each_key=True)),
+     Field('Histogram', Projectors.String('histogram', 1, for_each_key=True)),
      TitleField('Node', Projectors.String('prefixes', None)),
      DynamicFields('histogram', required=True,
                    order=DynamicFieldOrder.source,
                    aggregator_selector=latency_aggregator_selector)),
     from_source=('prefixes', 'histogram'),
     for_each='histogram',
-    group_by=('Namespace', 'Hist'),
+    group_by=('Namespace', 'Histogram'),
     order_by='Node',
 )
 

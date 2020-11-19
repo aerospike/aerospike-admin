@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import copy
+from distutils.version import LooseVersion
+from lib.utils.util import filter_list
+from lib.utils import constants
 from lib.utils import common, util
 from lib.utils.common import is_new_latencies_version
 
@@ -359,7 +362,124 @@ class GetConfigController():
 
         return ns_configs
 
-    def get_xdr(self, flip=True, nodes="all"):
+    def get_xdr5_nodes(self, nodes="all"):
+        xdr5_nodes = []
+        builds = self.cluster.info_build_version(nodes=nodes)
+
+        for node, build in builds.items():
+            if isinstance(build, Exception):
+                continue
+            if (LooseVersion(constants.SERVER_NEW_XDR5_VERSION) <= 
+                LooseVersion(build)):
+                xdr5_nodes.append(node)
+
+        return xdr5_nodes
+
+    def get_old_xdr_nodes(self, nodes="all"):
+        old_xdr_nodes = []
+        builds = self.cluster.info_build_version(nodes=nodes)
+
+        for node, build in builds.items():
+            if isinstance(build, Exception):
+                continue
+            if (LooseVersion(constants.SERVER_NEW_XDR5_VERSION) > 
+                LooseVersion(build)):
+                old_xdr_nodes.append(node)
+
+        return old_xdr_nodes
+
+    # XDR configs >= AS Server 5.0
+    def get_xdr5(self, flip=True, nodes="all", for_mods=[]):
+        # get xdr5 nodes and remote port
+        xdr5_nodes = self.get_xdr5_nodes()
+        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
+
+        if nodes != "all":
+            print(set(xdr5_nodes), set(nodes))
+            xdr5_nodes = list(filter_list(xdr5_nodes, nodes))
+            print(xdr5_nodes)
+
+        configs = self.cluster.info_XDR_get_config(nodes=xdr5_nodes)
+
+        xdr_configs = {}
+
+        if configs:
+            for node, config in configs.items():
+                if isinstance(config, Exception):
+                    continue
+
+                xdr_configs[node] = config
+
+        # Filter configs for data-center
+        if for_mods:
+            xdr_dc = for_mods[0]
+
+            for config in xdr_configs.values():
+                
+                # There is only one dc config per dc
+                try:
+                    dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
+                except KeyError:
+                    dc_configs_matches = []
+                
+                try:
+                    ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
+                except KeyError:
+                    ns_configs_matches = []
+
+                config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
+                config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
+
+                # There can be multiple namespace configs per dc
+                if len(for_mods) >= 2:
+                    xdr_ns = self.mods['for'][1]
+                    for dc in config['ns_configs']:
+                        try:
+                            ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
+                        except KeyError:
+                            ns_matches = []
+
+                        config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
+
+
+        formatted_xdr_configs = {}
+
+        for node in xdr_configs:
+            formatted_xdr_configs[node] = xdr_configs[node].get('xdr_configs', {})
+
+        formatted_dc_configs = {}
+
+        for node in xdr_configs:
+            for dc in xdr_configs[node]['dc_configs']:
+                if dc not in formatted_dc_configs:
+                    formatted_dc_configs[dc] = {}
+
+                formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
+
+        formatted_ns_configs = {}
+
+        for node in xdr_configs:
+            for dc in xdr_configs[node]['ns_configs']:
+
+                if dc not in formatted_ns_configs:
+                    formatted_ns_configs[dc] = {}
+
+                if node not in formatted_ns_configs[dc]:
+                    formatted_ns_configs[dc][node] = {}
+
+                for ns in xdr_configs[node]['ns_configs'][dc]:
+                    formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
+
+        formatted_configs = {
+            'xdr_configs': formatted_xdr_configs,
+            'dc_configs': formatted_dc_configs,
+            'ns_configs': formatted_ns_configs,
+        }
+
+        return formatted_configs
+
+    # XDR configs < AS Server 5.0
+    def get_old_xdr(self, flip=True, nodes="all"):
         configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
         xdr_configs = {}
@@ -683,7 +803,7 @@ class GetPmapController():
         # fields present in version >= 3.15.0
         optional_new_fields = [("working_master_index", "working_master", None)]
 
-        for _node, partitions in pmap_info.iteritems():
+        for _node, partitions in pmap_info.items():
             node_pmap = dict()
             ck = cluster_keys[_node]
             node_id = node_ids[_node]
@@ -783,7 +903,7 @@ class GetPmapController():
 
             pmap_data[_node] = node_pmap
 
-        for _node, _ns_data in pmap_data.iteritems():
+        for _node, _ns_data in pmap_data.items():
             ck = cluster_keys[_node]
             
             for ns, params in _ns_data.items():
@@ -805,10 +925,7 @@ class GetPmapController():
         service_stats = util.Future(getter.get_service, nodes=nodes).start()
         namespace_stats = util.Future(getter.get_namespace, nodes=nodes).start()
 
-        node_ids = node_ids.result()
-        pmap_info = pmap_info.result()
         service_stats = service_stats.result()
-        namespace_stats = namespace_stats.result()
 
         cluster_keys = {}
         for node in service_stats.keys():

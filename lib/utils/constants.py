@@ -103,3 +103,4 @@ AdminMode = Enumeration([
 # server versions with critical changes
 SERVER_NEW_HISTOGRAM_FIRST_VERSION = "4.2"
 SERVER_NEW_LATENCIES_CMD_FIRST_VERSION = "5.1"
+SERVER_NEW_XDR5_VERSION = "5.0"
