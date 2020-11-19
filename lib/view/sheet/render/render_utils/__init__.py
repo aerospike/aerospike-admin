@@ -43,7 +43,17 @@ class ErrorEntry(object):
 
 
 class NoEntry(object):
-    pass
+    def __lt__(self,other):
+        return (False)
+
+    def __le__(self,other):
+        return(True)
+
+    def __gt__(self,other):
+        return(True)
+
+    def __ge__(self,other):
+        return(False)
 
 
 ErrorEntry = ErrorEntry()

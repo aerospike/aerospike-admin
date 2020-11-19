@@ -39,7 +39,7 @@ class RowRSheet(BaseRSheetCLI):
         row_aggr_width = max(rfield.aggregate_widths[0] + 1
                              for rfield in rfields)
         column_widths = [max(rfield.widths[i] for rfield in rfields)
-                         for i in xrange(n_records)]
+                         for i in range(n_records)]
         has_aggregate = any(rfield.has_aggregate() for rfield in rfields)
         title_indicies = set([0])
 
@@ -103,7 +103,7 @@ class RowRSheet(BaseRSheetCLI):
         for rfield in rfields:
             row = []
 
-            for i in xrange(n_records):
+            for i in range(n_records):
                 if i in title_indicies:
                     row.append(rfield.get_title(row_title_width))
 
@@ -149,14 +149,14 @@ class RFieldRow(BaseRField):
         self.widths = []
 
         for group_converted in self.groups_converted:
-            self.widths.extend(map(len, group_converted))
+            self.widths.extend(list(map(len, group_converted)))
 
     def _do_prepare_find_aggregate_width(self):
         if not self.has_aggregate:
             self.aggregate_widths = [0]
             return
 
-        self.aggregate_widths = map(len, self.aggregates_converted)
+        self.aggregate_widths = list(map(len, self.aggregates_converted))
 
     def get_title(self, width):
         line = self.decl.title
@@ -189,7 +189,7 @@ class RFieldRow(BaseRField):
         elif self.decl.align is None:
             return converted.ljust(width)
         else:
-            raise
+            raise TypeError("Unhandled FieldAlignment value: {}".format(self.decl.align))
 
     def aggregate_cell(self, group_ix):
         cell = self._entry_cell_align(

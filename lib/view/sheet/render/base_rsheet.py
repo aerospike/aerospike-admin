@@ -124,7 +124,7 @@ class BaseRSheet(object):
         # TODO - This assertion can fire when a node is leaving/joining and
         #        some commands on a subset of the nodes. Should this event be
         #        logged?
-        # n_source_records = map(len, sources.itervalues())
+        # n_source_records = map(len, list(sources.values()))
 
         # assert len(set(n_source_records)) == 1, \
         #     "sources contain different numbers of records {}".format(
@@ -133,8 +133,8 @@ class BaseRSheet(object):
         # Change sources from: {'source':{'row_key':value}}
         #                  to: [{'source':value}]
 
-        source_keys = set(keys for d in sources.itervalues()
-                          for keys in d.iterkeys())
+        source_keys = set(keys for d in sources.values()
+                          for keys in d.keys())
         converted_sources = []
 
         for row_key in source_keys:
@@ -311,7 +311,7 @@ class BaseRSheet(object):
         if self.decl.where:
             where_fn = self.decl.where
 
-            for record_ix in xrange(len(projections) - 1, -1, -1):
+            for record_ix in range(len(projections) - 1, -1, -1):
                 if not where_fn(projections[record_ix]):
                     del projections[record_ix]
 
@@ -377,7 +377,7 @@ class BaseRSheet(object):
         if group_bys is None:
             return OrderedDict(grouping)
 
-        if isinstance(group_bys, types.StringType):
+        if isinstance(group_bys, str):
             group_bys = (group_bys,)
 
         for group_by in group_bys:
@@ -406,7 +406,7 @@ class BaseRSheet(object):
         if order_bys is None:
             return projections_groups
 
-        for projections_group in projections_groups.itervalues():
+        for projections_group in projections_groups.values():
             for order_by in order_bys[::-1]:
                 projections_group.sort(key=itemgetter(order_by))
 
@@ -543,10 +543,10 @@ class BaseRField(object):
         field_key = self.decl.key
 
         if self.parent_key:
-            self.groups = [map(lambda g: g[self.parent_key][field_key], raw_group)
+            self.groups = [list(map(lambda g: g[self.parent_key][field_key], raw_group))
                            for raw_group in raw_groups]
         else:
-            self.groups = [map(itemgetter(field_key), raw_group)
+            self.groups = [list(map(itemgetter(field_key), raw_group))
                            for raw_group in raw_groups]
 
         # Determine if hidden.

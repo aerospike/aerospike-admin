@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import types
 from collections import Counter
 
 from lib.utils import filesize
@@ -76,11 +75,11 @@ class Sheet(object):
     def _arg_as_tuple(self, arg):
         if arg is None:
             return tuple()
-        elif isinstance(arg, types.TupleType):
+        elif isinstance(arg, tuple):
             return arg
-        elif isinstance(arg, types.ListType):
+        elif isinstance(arg, list):
             return tuple(arg)
-        elif isinstance(arg, types.StringType):
+        elif isinstance(arg, str):
             return (arg,)
 
         raise ValueError('Expected tuple, list or string - instead {}'.format(
@@ -97,7 +96,7 @@ class Sheet(object):
             field_keys = ','.join(
                 ('{} appears {} times'.format((key, count))
                  for count, key in Counter(
-                         field.key for field in static_fields).iteritems()
+                         field.key for field in static_fields).items()
                  if count > 1))
 
             assert False, 'Field keys are not unique: {}'.format(field_keys)
@@ -364,7 +363,7 @@ class BaseProjector(object):
             # Setting 'self.keys' to None indicates that the field needs the
             # entire value contained in the source.
             return row
-        elif isinstance(self.keys[0], types.IntType):
+        elif isinstance(self.keys[0], int):
             # Setting 'self.keys' to an integer indicate that the field needs
             # to access contents of row by index.
             return row[self.keys[0]]
@@ -406,7 +405,7 @@ class Projectors(object):
             """
             value = super(Projectors.Boolean, self).do_project(sheet, sources)
 
-            if isinstance(value, types.StringType):
+            if isinstance(value, str):
                 return value.lower().strip() != 'false'
 
             return True if value else False

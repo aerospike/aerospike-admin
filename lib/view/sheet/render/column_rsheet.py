@@ -78,21 +78,21 @@ class ColumnRSheet(BaseRSheetCLI):
         title_lines = [
             self.decl.formatted_separator.join(rfield.get_title_line(line_num)
                                                for rfield in rfields)
-            for line_num in xrange(n_title_lines)]
+            for line_num in range(n_title_lines)]
         n_groups = 0 if not rfields else rfields[0].n_groups
         has_aggregates = any(rfield.has_aggregate() for rfield in rfields)
         terminal_height = self.terminal_size.lines
-        repeate_every = max([24, terminal_height - len(title_lines) - 1])
+        repeats_every = max([24, terminal_height - len(title_lines) - 1])
         n_lines = 0
 
         render.extend(title_lines)
 
-        for group_ix in xrange(n_groups):
+        for group_ix in range(n_groups):
             n_entries = rfields[0].n_entries_in_group(group_ix)
 
-            for entry_ix in xrange(n_entries):
+            for entry_ix in range(n_entries):
                 if self.title_repeat and n_lines != 0 and \
-                   n_lines % repeate_every == 0:
+                   n_lines % repeats_every == 0:
                     render.extend(title_lines)
 
                 n_lines += 1
@@ -101,7 +101,7 @@ class ColumnRSheet(BaseRSheetCLI):
                 render.append(self.decl.formatted_separator.join(row))
 
             if has_aggregates:
-                if self.title_repeat and n_lines % repeate_every == 0:
+                if self.title_repeat and n_lines % repeats_every == 0:
                     render.extend(title_lines)
 
                 n_lines += 1
@@ -320,7 +320,7 @@ class RFieldColumn(BaseRField):
         elif align is FieldAlignment.center:
             return converted.center(self.width)
         else:
-            raise
+            raise TypeError("Unhandled FieldAlignment value: {}".format(align))
 
     def aggregate_cell(self, group_ix):
         cell = self._entry_cell_align(self.aggregates_converted[group_ix])

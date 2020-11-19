@@ -12,5 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from get_terminal_size import get_terminal_size
-from terminal import *
+from .get_terminal_size import get_terminal_size
+from .terminal import *

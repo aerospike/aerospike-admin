@@ -76,8 +76,8 @@ def render(sheet, title, data_source, style=None, common=None,
             dyn_diff=dyn_diff).render()
     except Exception as e:
         # FIXME - Temporary debugging - should be removed before release.
-        print e
-        print "title:", title, "field_style:", style, "description:", \
-            description
+        print(e)
+        print("title:", title, "field_style:", style, "description:", \
+            description)
         traceback.print_exc()
         raise e

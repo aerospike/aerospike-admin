@@ -14,6 +14,41 @@
 
 import sys
 
+_add_it = None 
+_remove_it = None 
+_reset = None
+
+sclear = None 
+sbold = None 
+sdim = None 
+snormal = None 
+sunderline = None
+sinverse = None 
+siclear = None
+
+fgblack = None 
+fgred = None 
+fggreen = None 
+fgyellow = None 
+fgblue = None 
+fgmagenta = None 
+fgcyan = None 
+fgwhite = None
+
+bgblack = None 
+bgred = None 
+bggreen = None 
+bgyellow = None 
+bgblue = None 
+bgmagenta = None 
+bgcyan = None 
+bgwhite = None
+
+esc = None
+term = None
+
+sclear_code = None 
+cur_format = None
 
 def enable_color(is_enable):
     global _add_it, _remove_it, _reset
