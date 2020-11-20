@@ -414,10 +414,10 @@ class CliView(object):
     #             disable_aggregations=disable_aggregations, dyn_diff=diff))
 
     @staticmethod
-    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", col_header="", **ignore):
+    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", col_header="", **mods):
         # print_dict(service_configs)
-        prefixes = cluster.get_node_names()
-        # print(prefixes)
+        prefixes = cluster.get_node_names(mods.get('with', []))
+
         title = 'XDR Configuration'
         sources = dict(prefixes=prefixes, data=service_configs['xdr_configs'])
         CliView.print_result(
@@ -699,7 +699,6 @@ class CliView(object):
                 templates.config_sheet, title, sources, style=style,
                 selectors=like, title_repeat=title_every_nth != 0,
                 disable_aggregations=disable_aggregations, dyn_diff=diff))
-        # print(cluster.get_node_names(mods.get('with', [])))
         # print_dict(service_configs)
 
         # t = Table(title, column_names,

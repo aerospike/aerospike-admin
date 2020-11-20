@@ -391,13 +391,8 @@ class GetConfigController():
     # XDR configs >= AS Server 5.0
     def get_xdr5(self, flip=True, nodes="all", for_mods=[]):
         # get xdr5 nodes and remote port
-        xdr5_nodes = self.get_xdr5_nodes()
+        xdr5_nodes = self.get_xdr5_nodes(nodes)
         xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
-
-        if nodes != "all":
-            print(set(xdr5_nodes), set(nodes))
-            xdr5_nodes = list(filter_list(xdr5_nodes, nodes))
-            print(xdr5_nodes)
 
         configs = self.cluster.info_XDR_get_config(nodes=xdr5_nodes)
 

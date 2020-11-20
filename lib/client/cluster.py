@@ -129,7 +129,7 @@ class Cluster(object):
         node_names = {}
 
         if not self._same_name_nodes:
-            for node_key, node in self.nodes.items():
+            for node_key, node in nodes:
                 name = node.sock_name(use_fqdn=True)
                 if name in list(node_names.values()):
                     # found same name for multiple nodes
