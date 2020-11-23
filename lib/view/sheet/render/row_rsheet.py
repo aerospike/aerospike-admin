@@ -29,19 +29,19 @@ class RowRSheet(BaseRSheetCLI):
         return RFieldRow(self, field, groups, parent_key=parent_key)
 
     def do_render(self):
-        rfields = self.visible_rfields
+        render_fields = self.visible_rfields
 
-        if not rfields:
+        if not render_fields:
             return None
 
         n_records = self.n_records
-        row_title_width = max(rfield.title_width for rfield in rfields)
+        row_title_width = max(rfield.title_width for rfield in render_fields)
         row_aggr_width = max(rfield.aggregate_widths[0] + 1
-                             for rfield in rfields)
-        column_widths = [max(rfield.widths[i] for rfield in rfields)
+                             for rfield in render_fields)
+        column_widths = [max(rfield.widths[i] for rfield in render_fields)
                          for i in range(n_records)]
-        has_aggregate = any(rfield.has_aggregate() for rfield in rfields)
-        title_indicies = set([0])
+        has_aggregate = any(rfield.has_aggregate() for rfield in render_fields)
+        title_indices = set([0])
 
         if self.title_repeat:
             terminal_width = self.terminal_size.columns
@@ -55,13 +55,13 @@ class RowRSheet(BaseRSheetCLI):
                     cur_pos += column_width
                     need_column = False
                 else:
-                    title_indicies.add(i)
+                    title_indices.add(i)
                     cur_pos = title_incr + column_width
                     n_repeats += 1
 
             if has_aggregate:
                 if cur_pos + row_aggr_width >= terminal_width:
-                    title_indicies.add('aggr')
+                    title_indices.add('aggr')
                     n_repeats += 1
 
             total_row_title_width = n_repeats * title_incr
@@ -76,51 +76,50 @@ class RowRSheet(BaseRSheetCLI):
         self._do_render_description(render, title_width, title_width - 10)
 
         # Render fields.
-        n_groups = 0 if not rfields else rfields[0].n_groups
-
-        # XXX - Add handling for more than one group.
-        assert n_groups == 1
+        n_groups = 0 if not render_fields else render_fields[0].n_groups
 
         # XXX - Add handling for Subgroups?
+        terminal_height = self.terminal_size.lines
+        title_field_keys = self.decl.title_field_keys
+        title_lines = [rfield for rfield in render_fields
+                             if rfield.decl.key in title_field_keys]
 
         if self.title_repeat:
             title_field_keys = self.decl.title_field_keys
-            title_rfields = [rfield for rfield in rfields
+            title_lines = [rfield for rfield in render_fields
                              if rfield.decl.key in title_field_keys]
-            terminal_height = self.terminal_size.lines
             repeated_rfields = []
 
             for i, rfield in enumerate(
-                    rfield for rfield in rfields
+                    rfield for rfield in render_fields
                     if rfield.decl.key not in title_field_keys):
                 if i % (terminal_height - 2) == 0:
-                    repeated_rfields.extend(title_rfields)
+                    repeated_rfields.extend(title_lines)
 
                 repeated_rfields.append(rfield)
 
-            rfields = repeated_rfields
+            render_fields = repeated_rfields
 
-        for rfield in rfields:
-            row = []
+        num_groups = 0 if not render_fields else render_fields[0].n_groups
+        has_aggregates = any(rfield.has_aggregate() for rfield in render_fields)
 
-            for i in range(n_records):
-                if i in title_indicies:
-                    row.append(rfield.get_title(row_title_width))
+        for group_ix in range(num_groups):
+            num_entries = render_fields[0].n_entries_in_group(group_ix)
+            
+            for render_field in render_fields:
+                row = []
+                for entry_ix in range(num_entries):
+                    if entry_ix in title_indices:
+                        row.append(render_field.get_title(row_title_width))
 
-                row.append(rfield.entry_cell(0, i, column_widths[i]))
+                    row.append(render_field.entry_cell(group_ix, entry_ix, column_widths[entry_ix]))
 
-            if has_aggregate:
-                if 'aggr' in title_indicies:
-                    row.append(rfield.get_title(row_title_width))
+                if has_aggregates:
+                    row.append(render_field.aggregate_cell(group_ix))
+                # print("row", row)
+                render.append(self.decl.formatted_separator.join(row))
 
-                if rfield.has_aggregate():
-                    row.append(rfield.aggregate_cell(0))
-                else:
-                    row.append("")
-
-            render.append(self.decl.formatted_separator.join(row))
-
-        self._do_render_n_rows(render, len(rfields))
+        self._do_render_n_rows(render, len(render_fields))
 
         return "\n".join(render) + "\n"
 

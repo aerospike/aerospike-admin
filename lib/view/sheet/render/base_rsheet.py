@@ -29,7 +29,7 @@ from .render_utils import Aggregator, ErrorEntry, NoEntry
 class BaseRSheet(object):
     def __init__(self, sheet, title, sources, common, description=None,
                  selectors=None, title_repeat=False,
-                 disable_aggregations=False, dyn_diff=False):
+                 disable_aggregations=False, dynamic_diff=False):
         """
         Arguments:
         sheet       -- The decl.sheet to render.
@@ -47,7 +47,7 @@ class BaseRSheet(object):
         title_repeat -- Repeat title/row headers every screen width.
                         Doesn't affect SheetStyle.json.
         disable_aggregations -- Disable sheet aggregations.
-        dyn_diff     -- Only show dynamic fields that aren't uniform.
+        dynamic_diff     -- Only show dynamic fields that aren't uniform.
         """
         self.decl = sheet
         self.title = title
@@ -60,7 +60,7 @@ class BaseRSheet(object):
         self.selector = compile_likes(selectors if selectors else [])
         self.title_repeat = title_repeat
         self.disable_aggregations = disable_aggregations
-        self.dyn_diff = dyn_diff
+        self.dynamic_diff = dynamic_diff
         self.terminal_size = get_terminal_size()
 
         self.dfields = self.get_dfields()
@@ -342,7 +342,7 @@ class BaseRSheet(object):
         return False
 
     def diff(self, projections):
-        if not self.dyn_diff:
+        if not self.dynamic_diff:
             return projections
 
         dyn_dfields = (dfield for dfield in self.dfields

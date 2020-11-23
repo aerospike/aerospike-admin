@@ -515,19 +515,22 @@ def numeric_sum_aggregator_selector(key, is_numeric):
 
 
 config_sheet = Sheet(
-    (TitleField('Node', Projectors.String('prefixes', None)),
+    (node_field,
      DynamicFields('data',
-                   required=True, order=DynamicFieldOrder.source)),
+                   required=True, order=DynamicFieldOrder.source, 
+                   aggregator_selector=numeric_sum_aggregator_selector)
+    ),
     from_source=('prefixes', 'data'),
     order_by='Node',
-    default_style=SheetStyle.rows
+    default_style=SheetStyle.rows,
 )
 
 config_xdr_ns_sheet = Sheet(
-    (TitleField('Node', Projectors.String('prefixes', None)),
+    (node_field,
      Field('Namespace', Projectors.String('data', None, for_each_key=True)),
      DynamicFields('data', required=True, order=DynamicFieldOrder.source)),
     from_source=('prefixes', 'data'),
+    group_by=['Namespace'],
     order_by=['Namespace', 'Node'],
     default_style=SheetStyle.rows,
     for_each=['data']
@@ -557,7 +560,9 @@ mapping_to_id_sheet = Sheet(
     (Field('IP', Projectors.String('mapping', 0)),
      Field('Node ID', Projectors.String('mapping', 1))),
     from_source='mapping',
-    order_by='IP'
+    order_by='IP',
+    # group_by='Node ID',
+    default_style=SheetStyle.rows
 )
 
 object_size_sheet = Sheet(

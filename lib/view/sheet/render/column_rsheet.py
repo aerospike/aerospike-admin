@@ -79,32 +79,32 @@ class ColumnRSheet(BaseRSheetCLI):
             self.decl.formatted_separator.join(rfield.get_title_line(line_num)
                                                for rfield in rfields)
             for line_num in range(n_title_lines)]
-        n_groups = 0 if not rfields else rfields[0].n_groups
+        num_groups = 0 if not rfields else rfields[0].n_groups
         has_aggregates = any(rfield.has_aggregate() for rfield in rfields)
         terminal_height = self.terminal_size.lines
         repeats_every = max([24, terminal_height - len(title_lines) - 1])
-        n_lines = 0
+        num_lines = 0
 
         render.extend(title_lines)
 
-        for group_ix in range(n_groups):
-            n_entries = rfields[0].n_entries_in_group(group_ix)
+        for group_ix in range(num_groups):
+            num_entries = rfields[0].n_entries_in_group(group_ix)
 
-            for entry_ix in range(n_entries):
-                if self.title_repeat and n_lines != 0 and \
-                   n_lines % repeats_every == 0:
+            for entry_ix in range(num_entries):
+                if self.title_repeat and num_lines != 0 and \
+                   num_lines % repeats_every == 0:
                     render.extend(title_lines)
 
-                n_lines += 1
+                num_lines += 1
                 row = [rfield.entry_cell(group_ix, entry_ix)
                        for rfield in rfields]
                 render.append(self.decl.formatted_separator.join(row))
 
             if has_aggregates:
-                if self.title_repeat and n_lines % repeats_every == 0:
+                if self.title_repeat and num_lines % repeats_every == 0:
                     render.extend(title_lines)
 
-                n_lines += 1
+                num_lines += 1
                 row = [rfield.aggregate_cell(group_ix) for rfield in rfields]
                 render.append(self.decl.formatted_separator.join(row))
 
