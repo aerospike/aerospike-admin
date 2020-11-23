@@ -318,7 +318,7 @@ class CliView(object):
 
                 try:
                     total_res[ns]["index_used_bytes"] += get_value_from_dict(
-                        ns_stats, ('index_flash_used_bytes', 'index_pmem_used_bytes'), default_value=0, return_type=int)
+                        ns_stats, ('index_flash_used_bytes', 'index_pmem_used_bytes', 'memory_used_index_bytes'), default_value=0, return_type=int)
                 except Exception:
                     pass
 
