@@ -318,7 +318,7 @@ class CliView(object):
 
                 try:
                     total_res[ns]["index_used_bytes"] += get_value_from_dict(
-                        ns_stats, ('index_flash_used_bytes', 'index_pmem_used_bytes'), default_value=0, return_type=int)
+                        ns_stats, ('index_flash_used_bytes', 'index_pmem_used_bytes', 'memory_used_index_bytes'), default_value=0, return_type=int)
                 except Exception:
                     pass
 
@@ -574,12 +574,15 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Set Information%s" % (title_suffix)
-        column_names = ('set', 'namespace', 'node', ('_set-delete', 'Set Delete'), ('_n-bytes-memory', 'Mem Used'), ('_n_objects', 'Objects'), 'stop-writes-count', 'disable-eviction', 'set-enable-xdr'
+        column_names = ('set', 'namespace', 'node', ('_set-delete', 'Set Delete'), ('_n-bytes-memory', 'Mem Used'), ('_n-bytes-device', 'Disk Used'), 
+                        ('_n_objects', 'Objects'), 'stop-writes-count', 'disable-eviction', 'set-enable-xdr'
                         )
 
         t = Table(title, column_names, sort_by=1, group_by=0)
         t.add_data_source(
             '_n-bytes-memory', Extractors.byte_extractor(('n-bytes-memory', 'memory_data_bytes')))
+        t.add_data_source(
+            '_n-bytes-device', Extractors.byte_extractor(('n-bytes-device', 'device_data_bytes')))
         t.add_data_source(
             '_n_objects', Extractors.sif_extractor(('n_objects', 'objects')))
 
@@ -595,6 +598,8 @@ class CliView(object):
             'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
             '_n-bytes-memory', lambda data: data['node'] == " ", color=terminal.fg_blue)
+        t.add_cell_alert(
+            '_n-bytes-device', lambda data: data['node'] == " ", color=terminal.fg_blue)
         t.add_cell_alert(
             '_n_objects', lambda data: data['node'] == " ", color=terminal.fg_blue)
 
@@ -625,6 +630,7 @@ class CliView(object):
                 if (ns, set) not in total_res:
                     total_res[(ns, set)] = {}
                     total_res[(ns, set)]["n-bytes-memory"] = 0
+                    total_res[(ns, set)]["n-bytes-device"] = 0
                     total_res[(ns, set)]["n_objects"] = 0
                 try:
                     total_res[(ns, set)]["n-bytes-memory"] += get_value_from_dict(
@@ -632,8 +638,13 @@ class CliView(object):
                 except Exception:
                     pass
                 try:
-                    total_res[(ns, set)][
-                        "n_objects"] += get_value_from_dict(set_stats, ('n_objects', 'objects'), 0, int)
+                    total_res[(ns, set)]["n-bytes-device"] += get_value_from_dict(
+                        set_stats, ('n-bytes-device', 'device_data_bytes'), 0, int)
+                except Exception:
+                    pass
+                try:
+                    total_res[(ns, set)]["n_objects"] += get_value_from_dict(
+                        set_stats, ('n_objects', 'objects'), 0, int)
                 except Exception:
                     pass
 
@@ -654,6 +665,7 @@ class CliView(object):
             row['set-enable-xdr'] = " "
 
             row['n-bytes-memory'] = str(total_res[(ns, set)]["n-bytes-memory"])
+            row['n-bytes-device'] = str(total_res[(ns, set)]["n-bytes-device"])
             row["n_objects"] = str(total_res[(ns, set)]["n_objects"])
 
             t.insert_row(row)
