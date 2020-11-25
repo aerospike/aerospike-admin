@@ -45,7 +45,7 @@ class RowRSheet(BaseRSheetCLI):
 
         if self.title_repeat:
             terminal_width = self.terminal_size.columns
-            title_incr = row_title_width + len(self.decl.separator)
+            title_incr = row_title_width + len(self.decleration.vertical_separator)
             cur_pos = title_incr
             n_repeats = 1
             need_column = True
@@ -66,23 +66,23 @@ class RowRSheet(BaseRSheetCLI):
 
             total_row_title_width = n_repeats * title_incr
         else:
-            total_row_title_width = row_title_width + len(self.decl.separator)
+            total_row_title_width = row_title_width + len(self.decleration.vertical_separator)
 
-        title_width = total_row_title_width + sum(column_widths) + \
-            (n_records - 1) * len(self.decl.separator) + row_aggr_width
+        num_groups = 0 if not render_fields else render_fields[0].n_groups
+        title_width = total_row_title_width + (sum(column_widths) // num_groups) + \
+            ((n_records - 1) // num_groups) * len(self.decleration.vertical_separator) + row_aggr_width
         render = []
 
         self._do_render_title(render, title_width)
         self._do_render_description(render, title_width, title_width - 10)
 
         # Render fields.
-        n_groups = 0 if not render_fields else render_fields[0].n_groups
 
         # XXX - Add handling for Subgroups?
         terminal_height = self.terminal_size.lines
-        title_field_keys = self.decl.title_field_keys
+        title_field_keys = self.decleration.title_field_keys
         title_lines = [rfield for rfield in render_fields
-                             if rfield.decl.key in title_field_keys]
+                             if rfield.decleration.key in title_field_keys]
 
         if self.title_repeat:
             title_field_keys = self.decl.title_field_keys
@@ -99,14 +99,20 @@ class RowRSheet(BaseRSheetCLI):
                 repeated_rfields.append(rfield)
 
             render_fields = repeated_rfields
-
+        
         num_groups = 0 if not render_fields else render_fields[0].n_groups
         has_aggregates = any(rfield.has_aggregate() for rfield in render_fields)
+        hidden_count = 0
 
         for group_ix in range(num_groups):
             num_entries = render_fields[0].n_entries_in_group(group_ix)
             
             for render_field in render_fields:
+
+                if render_field.decleration in self.group_hidden_fields[group_ix]:
+                    hidden_count += 1
+                    continue
+
                 row = []
                 for entry_ix in range(num_entries):
                     if entry_ix in title_indices:
@@ -116,10 +122,14 @@ class RowRSheet(BaseRSheetCLI):
 
                 if has_aggregates:
                     row.append(render_field.aggregate_cell(group_ix))
-                # print("row", row)
-                render.append(self.decl.formatted_separator.join(row))
 
-        self._do_render_n_rows(render, len(render_fields))
+                render.append(self.decleration.formatted_vertical_separator.join(row))
+
+            if num_groups > 1 and group_ix < num_groups - 1:
+                render.append(self.decleration.formatted_horizontal_seperator * title_width)
+
+        num_rows = len(render_fields) * num_groups - hidden_count
+        self._do_render_n_rows(render, num_rows)
 
         return "\n".join(render) + "\n"
 
@@ -143,7 +153,7 @@ class RFieldRow(BaseRField):
     # Other methods.
 
     def _do_prepare_find_widths(self):
-        self.title_width = len(self.decl.title)
+        self.title_width = len(self.decleration.title)
         self._do_prepare_find_aggregate_width()
         self.widths = []
 
@@ -158,7 +168,7 @@ class RFieldRow(BaseRField):
         self.aggregate_widths = list(map(len, self.aggregates_converted))
 
     def get_title(self, width):
-        line = self.decl.title
+        line = self.decleration.title
 
         if self.is_ordered_by:
             orig_width = len(line)
@@ -179,16 +189,16 @@ class RFieldRow(BaseRField):
         return cell
 
     def _entry_cell_align(self, converted, width):
-        if self.decl.align is FieldAlignment.right:
+        if self.decleration.align is FieldAlignment.right:
             return converted.rjust(width)
-        elif self.decl.align is FieldAlignment.left:
+        elif self.decleration.align is FieldAlignment.left:
             return converted.ljust(width)
-        elif self.decl.align is FieldAlignment.center:
+        elif self.decleration.align is FieldAlignment.center:
             return converted.center(width)
-        elif self.decl.align is None:
+        elif self.decleration.align is None:
             return converted.ljust(width)
         else:
-            raise TypeError("Unhandled FieldAlignment value: {}".format(self.decl.align))
+            raise TypeError("Unhandled FieldAlignment value: {}".format(self.decleration.align))
 
     def aggregate_cell(self, group_ix):
         cell = self._entry_cell_align(

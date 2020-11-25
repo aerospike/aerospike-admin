@@ -39,15 +39,15 @@ class ColumnRSheet(BaseRSheetCLI):
 
         # Render field titles.
         if self.title_repeat:
-            title_field_keys = self.decl.title_field_keys
+            title_field_keys = self.decleration.title_field_keys
             title_rfields = [rfield for rfield in rfields
-                             if rfield.decl.key in title_field_keys]
+                             if rfield.decleration.key in title_field_keys]
             other_rfields = (rfield for rfield in rfields
-                             if rfield.decl.key not in title_field_keys)
+                             if rfield.decleration.key not in title_field_keys)
             terminal_width = self.terminal_size.columns
             repeated_rfields = []
             title_incr = sum(rfield.width for rfield in title_rfields) + \
-                (len(title_rfields) - 1 * len(self.decl.separator))
+                (len(title_rfields) - 1 * len(self.decleration.vertical_separator))
             cur_pos = title_incr
             need_column = True
             repeated_rfields = []
@@ -55,7 +55,7 @@ class ColumnRSheet(BaseRSheetCLI):
             repeated_rfields.extend(title_rfields)
 
             for rfield in other_rfields:
-                column_width = rfield.width + len(self.decl.separator)
+                column_width = rfield.width + len(self.decleration.vertical_separator)
 
                 if need_column or cur_pos + column_width < terminal_width:
                     repeated_rfields.append(rfield)
@@ -68,7 +68,7 @@ class ColumnRSheet(BaseRSheetCLI):
             rfields = repeated_rfields
 
         title_width = sum(rfield.width for rfield in rfields) + (
-            len(rfields) - 1) * len(self.decl.separator)
+            len(rfields) - 1) * len(self.decleration.vertical_separator)
         render = []
 
         self._do_render_title(render, title_width)
@@ -76,7 +76,7 @@ class ColumnRSheet(BaseRSheetCLI):
 
         # Render fields.
         title_lines = [
-            self.decl.formatted_separator.join(rfield.get_title_line(line_num)
+            self.decleration.formatted_vertical_separator.join(rfield.get_title_line(line_num)
                                                for rfield in rfields)
             for line_num in range(n_title_lines)]
         num_groups = 0 if not rfields else rfields[0].n_groups
@@ -98,7 +98,7 @@ class ColumnRSheet(BaseRSheetCLI):
                 num_lines += 1
                 row = [rfield.entry_cell(group_ix, entry_ix)
                        for rfield in rfields]
-                render.append(self.decl.formatted_separator.join(row))
+                render.append(self.decleration.formatted_vertical_separator.join(row))
 
             if has_aggregates:
                 if self.title_repeat and num_lines % repeats_every == 0:
@@ -106,7 +106,7 @@ class ColumnRSheet(BaseRSheetCLI):
 
                 num_lines += 1
                 row = [rfield.aggregate_cell(group_ix) for rfield in rfields]
-                render.append(self.decl.formatted_separator.join(row))
+                render.append(self.decleration.formatted_vertical_separator.join(row))
 
         self._do_render_n_rows(render, self.n_records)
 
@@ -131,9 +131,9 @@ class RSubgroupColumn(BaseRSubgroup):
 
     def _do_prepare_find_width(self):
         sub_fields_width = sum(sub.width for sub in self.visible)
-        separators_width = len(self.rsheet.decl.separator) * (
+        separators_width = len(self.rsheet.decleration.vertical_separator) * (
             len(self.visible) - 1)
-        min_width = max(map(len, self.decl.title.split(' ')))
+        min_width = max(map(len, self.decleration.title.split(' ')))
 
         self.width = max((
             # Visible subfield width with separators.
@@ -171,12 +171,12 @@ class RSubgroupColumn(BaseRSubgroup):
 
     def _do_prepare_title(self):
         # NOTE - Same as RFieldColumn.
-        if len(self.decl.title) <= self.width:
-            self.title_lines = [self.decl.title]
+        if len(self.decleration.title) <= self.width:
+            self.title_lines = [self.decleration.title]
             self.n_title_lines = 1
             return
 
-        words = self.decl.title.split(' ')
+        words = self.decleration.title.split(' ')
         lines = []
         line = [words[0]]
         cur_len = len(line[0])
@@ -204,20 +204,20 @@ class RSubgroupColumn(BaseRSubgroup):
             line = self.title_lines[line_num]
         except IndexError:
             sub_line = line_num - len(self.title_lines)
-            line = self.rsheet.decl.formatted_separator.join(
+            line = self.rsheet.decleration.formatted_vertical_separator.join(
                 sub.get_title_line(sub_line) for sub in self.visible)
 
             return line
 
-        line = line.center(self.width, self.rsheet.decl.subtitle_fill)
+        line = line.center(self.width, self.rsheet.decleration.subtitle_fill)
         return terminal.bold() + line + terminal.unbold()
 
     def entry_cell(self, group_ix, entry_ix):
-        return self.rsheet.decl.formatted_separator.join(
+        return self.rsheet.decleration.formatted_vertical_separator.join(
             sub.entry_cell(group_ix, entry_ix) for sub in self.visible)
 
     def aggregate_cell(self, group_ix):
-        return self.rsheet.decl.formatted_separator.join(
+        return self.rsheet.decleration.formatted_vertical_separator.join(
             sub.aggregate_cell(group_ix) for sub in self.visible)
 
 
@@ -243,7 +243,7 @@ class RFieldColumn(BaseRField):
                 for group_converted in self.groups_converted),
             # maximum aggregate width.
             max(map(len, self.aggregates_converted)),
-            self.decl.min_title_width))
+            self.decleration.min_title_width))
 
     def ready(self):
         """ready is called after prepare or after a parent has prepared all
@@ -252,12 +252,12 @@ class RFieldColumn(BaseRField):
 
     def _ready_title(self):
         # NOTE - Same as RSubgroupColumn.
-        if len(self.decl.title) <= self.width:
-            self.title_lines = [self.decl.title]
+        if len(self.decleration.title) <= self.width:
+            self.title_lines = [self.decleration.title]
             self.n_title_lines = 1
             return
 
-        words = self.decl.title_words
+        words = self.decleration.title_words
         lines = []
         line = [words[0]]
         cur_len = len(line[0])
@@ -288,7 +288,7 @@ class RFieldColumn(BaseRField):
                 extra_width = len(line) - orig_width
                 width += extra_width
         except IndexError:
-            line = self.rsheet.decl.subtitle_empty_line
+            line = self.rsheet.decleration.subtitle_empty_line
             width = self.width
 
         return terminal.bold() + line.rjust(width) + terminal.unbold()
@@ -305,10 +305,10 @@ class RFieldColumn(BaseRField):
         return cell
 
     def _entry_cell_align(self, converted):
-        align = self.decl.align
+        align = self.decleration.align
 
         if align is None:
-            if self.decl.projector.field_type == FieldType.number:
+            if self.decleration.projector.field_type == FieldType.number:
                 align = FieldAlignment.right
             else:
                 align = FieldAlignment.left

@@ -52,7 +52,7 @@ class JSONRSheet(BaseRSheet):
                 records.append(record)
 
                 for rfield in rfields:
-                    field_key = rfield.decl.key
+                    field_key = rfield.decleration.key
 
                     if rfield.is_tuple_field:
                         tuple_field = {}
@@ -66,7 +66,7 @@ class JSONRSheet(BaseRSheet):
                             rfield, group_ix, entry_ix, record)
 
             for rfield in rfields:
-                field_key = rfield.decl.key
+                field_key = rfield.decleration.key
 
                 if rfield.is_tuple_field:
                     tuple_agg = {}
@@ -94,7 +94,7 @@ class JSONRSheet(BaseRSheet):
         elif value is NoEntry:
             value = 'null'
 
-        key = rfield.decl.key  # use key, instead of title, for uniqueness
+        key = rfield.decleration.key  # use key, instead of title, for uniqueness
         record[key] = dict(raw=value, converted=converted_value)
         format_name, _ = rfield.entry_format(group_ix, entry_ix)
 
@@ -110,7 +110,7 @@ class JSONRSheet(BaseRSheet):
         elif aggregate is NoEntry:
             aggregate = 'null'
 
-        key = rfield.decl.key  # use key, instead of title, for uniqueness
+        key = rfield.decleration.key  # use key, instead of title, for uniqueness
 
         if aggregate is not None:
             aggregates[key] = dict(

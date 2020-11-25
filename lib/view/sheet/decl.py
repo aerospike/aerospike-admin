@@ -25,8 +25,8 @@ class Sheet(object):
     def __init__(self, fields, from_source=None, for_each=None, where=None,
                  group_by=None, order_by=None,
                  default_style=SheetStyle.columns, title_fill='~',
-                 subtitle_fill='~', subtitle_empty_line='', separator='|',
-                 no_entry='--', error_entry='~~'):
+                 subtitle_fill='~', subtitle_empty_line='', vertical_separator='|',
+                 horizontal_seperator='-', no_entry='--', error_entry='~~'):
         """ Instantiates a sheet definition.
         Arguments:
         fields -- Sequence of fields to present.
@@ -59,8 +59,10 @@ class Sheet(object):
         self.order_bys = self._arg_as_tuple(order_by)
         self.default_style = default_style
 
-        self.separator = separator
-        self.formatted_separator = terminal.dim() + separator + terminal.undim()
+        self.vertical_separator = vertical_separator
+        self.horizontal_seperator = horizontal_seperator
+        self.formatted_vertical_separator = terminal.dim() + vertical_separator + terminal.undim()
+        self.formatted_horizontal_seperator = terminal.dim() + horizontal_seperator + terminal.undim()
         self.title_fill = title_fill
         self.subtitle_fill = subtitle_fill
         self.subtitle_empty_line = subtitle_empty_line
@@ -463,7 +465,7 @@ class Projectors(object):
         def do_project(self, sheet, sources):
             """
             Arguments:
-            sheet -- The decl.Sheet this field belongs to, needed for
+            sheet -- The decleration.Sheet this field belongs to, needed for
                      determining if this field's source was iterated by
                      'for_each'.
             source -- A set of sources to project a number from.

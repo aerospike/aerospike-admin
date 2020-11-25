@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.health.util import print_dict
 import types
 from collections import OrderedDict
 from itertools import groupby
@@ -49,7 +50,7 @@ class BaseRSheet(object):
         disable_aggregations -- Disable sheet aggregations.
         dynamic_diff     -- Only show dynamic fields that aren't uniform.
         """
-        self.decl = sheet
+        self.decleration = sheet
         self.title = title
 
         self._debug_sources = sources
@@ -62,7 +63,7 @@ class BaseRSheet(object):
         self.disable_aggregations = disable_aggregations
         self.dynamic_diff = dynamic_diff
         self.terminal_size = get_terminal_size()
-
+        
         self.dfields = self.get_dfields()
 
         if not self.dfields:
@@ -73,8 +74,9 @@ class BaseRSheet(object):
         projections = self.where(projections)
 
         if self.has_all_required_fields(projections):
-            projections = self.diff(projections)
             projections_groups = self.group_by_fields(projections)
+            self.group_hidden_fields = [[]] * len(projections_groups)
+            projections_groups = self.diff(projections_groups)
             projections_groups = self.order_by_fields(projections_groups)
             self.rfields = self.create_rfields(projections_groups)
             self.visible_rfields = [rfield for rfield in self.rfields
@@ -132,9 +134,13 @@ class BaseRSheet(object):
 
         # Change sources from: {'source':{'row_key':value}}
         #                  to: [{'source':value}]
-
-        source_keys = set(keys for d in sources.values()
-                          for keys in d.keys())
+        
+        # Using a dict as a set to maintain order and exclusivity
+        source_keys = {}
+        for d in sources.values():
+            for keys in d.keys():
+                source_keys[keys] = None
+                
         converted_sources = []
 
         for row_key in source_keys:
@@ -147,13 +153,13 @@ class BaseRSheet(object):
 
         # Expand for_each
         expanded_sources = []
-
+        
         for source in converted_sources:
-            if not self.decl.for_each:
+            if not self.decleration.for_each:
                 expanded_sources.append(source)
                 continue
 
-            for for_each in self.decl.for_each:
+            for for_each in self.decleration.for_each:
                 sub_source = source[for_each]
 
                 try:
@@ -181,13 +187,13 @@ class BaseRSheet(object):
     def get_dfields(self):
         dfields = []
 
-        for dfield in self.decl.fields:
+        for dfield in self.decleration.fields:
             if isinstance(dfield, decl.DynamicFields):
                 keys = OrderedDict()
 
                 for sources in self.sources:
                     try:
-                        if dfield.source in self.decl.for_each and \
+                        if dfield.source in self.decleration.for_each and \
                            isinstance(sources[dfield.source], tuple):
                             keys.update(
                                 ((k, None)
@@ -299,7 +305,7 @@ class BaseRSheet(object):
             return
 
         try:
-            entry = dfield.projector(self.decl, sources)
+            entry = dfield.projector(self.decleration, sources)
         except decl.NoEntryException:
             entry = NoEntry
         except decl.ErrorEntryException:
@@ -308,8 +314,8 @@ class BaseRSheet(object):
         projection[dfield.key] = entry
 
     def where(self, projections):
-        if self.decl.where:
-            where_fn = self.decl.where
+        if self.decleration.where:
+            where_fn = self.decleration.where
 
             for record_ix in range(len(projections) - 1, -1, -1):
                 if not where_fn(projections[record_ix]):
@@ -320,7 +326,7 @@ class BaseRSheet(object):
     def has_all_required_fields(self, projections):
         required_dfields = set()
 
-        for dfield in self.decl.fields:
+        for dfield in self.decleration.fields:
             if not isinstance(dfield, decl.DynamicFields):
                 continue
 
@@ -341,29 +347,57 @@ class BaseRSheet(object):
 
         return False
 
-    def diff(self, projections):
+    def diff(self, projection_groups):
         if not self.dynamic_diff:
-            return projections
+            return projection_groups
 
-        dyn_dfields = (dfield for dfield in self.dfields
+        dynamic_dfields = [dfield for dfield in self.dfields
                        if isinstance(dfield.dynamic_field_decl,
-                                     decl.DynamicFields))
-        drop_dfields = []
+                                     decl.DynamicFields)]
+        drop_dfields_groups = []
 
-        for dfield in dyn_dfields:
-            entries = [projection[dfield.key] for projection in projections
-                       if not projection[dfield.key] in (NoEntry, ErrorEntry)]
+        for group_idx in range(len(projection_groups)):
+            drop_dfields = []
 
-            if all(entries[0] == entry for entry in entries):
-                drop_dfields.append(dfield)
+            for dfield in dynamic_dfields:
+                entries = [projection[dfield.key] for projection in list(projection_groups.values())[group_idx]
+                        if not projection[dfield.key] in (NoEntry, ErrorEntry)]
 
-        for dfield in drop_dfields:
-            for projection in projections:
-                del projection[dfield.key]
+                if all(entries[0] == entry for entry in entries):
+                    drop_dfields.append(dfield)
 
-            self.dfields.remove(dfield)
+            drop_dfields_groups.append(drop_dfields)
 
-        return projections
+        # dfields in intersection can be dropped from all projections.
+        # If it is not in interestion but needs to be "dropped" (not displayed) 
+        # from a specific group we will use hidden_fields
+        drop_intersection = set(drop_dfields_groups[0])
+        for drop_dfields in drop_dfields_groups:
+            drop_intersection = drop_intersection.intersection(set(drop_dfields))
+
+        self.group_hidden_fields = []
+
+        for group_idx in range(len(projection_groups)):
+            hidden_fields = []
+            for dfield in drop_dfields_groups[group_idx]:
+                for projection in list(projection_groups.values())[group_idx]:
+                    if dfield.key in projection:
+                        # If a field is in drop_intersection is it being dropped
+                        # from all groups.
+                        if dfield in drop_intersection:
+                            if dfield in self.dfields:
+                                self.dfields.remove(dfield)
+                            del projection[dfield.key]
+                        # Some groups need to drop the value and others do not.
+                        # Using hidden_fields[group_idx] to indicate when a
+                        # group should not display the field.
+                        else:
+                            projection[dfield.key] = None
+                            hidden_fields.append(dfield)
+            
+            self.group_hidden_fields.append(hidden_fields)
+
+        return projection_groups
 
     def group_by_fields(self, projections):
         """
@@ -372,7 +406,7 @@ class BaseRSheet(object):
         # XXX - Allow 'group by' on a field within a Subgroup.
 
         grouping = (((), projections),)
-        group_bys = self.decl.group_bys
+        group_bys = self.decleration.group_bys
 
         if group_bys is None:
             return OrderedDict(grouping)
@@ -401,7 +435,7 @@ class BaseRSheet(object):
         # XXX - Allow 'order by' on a field within a Subgroup.
         # XXX - Allow desc order.
 
-        order_bys = self.decl.order_bys
+        order_bys = self.decleration.order_bys
 
         if order_bys is None:
             return projections_groups
@@ -432,10 +466,10 @@ class BaseRSubgroup(object):
         rsheet -- BaseRSheet being rendered.
         field  -- decl.Subgroup.
         groups -- Sequence of sub-sequences where each sub-sequence is a group
-                  determined by 'rsheet.decl.group_bys'.
+                  determined by 'rsheet.decleration.group_bys'.
         """
         self.rsheet = rsheet
-        self.decl = field
+        self.decleration = field
         self.parent_key = None
         self.n_groups = len(groups)
 
@@ -458,8 +492,8 @@ class BaseRSubgroup(object):
         self.is_tuple_field = True
         self.subfields = [
             self.rsheet.do_create_field(
-                subdecl, groups, parent_key=self.decl.key)
-            for subdecl in self.decl.fields]
+                subdecl, groups, parent_key=self.decleration.key)
+            for subdecl in self.decleration.fields]
         self.visible = [subfield for subfield in self.subfields if not subfield.hidden]
         self.hidden = not self.visible
 
@@ -476,7 +510,7 @@ class BaseRSubgroup(object):
         return any(sub.has_aggregate() for sub in self.visible)
 
     def get_kv(self, group_ix, entry_ix):
-        return self.decl.key, dict(
+        return self.decleration.key, dict(
             sub.get_kv(group_ix, entry_ix) for sub in self.visible)
 
     def n_entries_in_group(self, group_ix):
@@ -490,23 +524,24 @@ class BaseRField(object):
         rsheet -- BaseRSheet being rendered.
         field  -- 'decl.Subgroup'.
         groups -- Sequence of sub-sequences where each sub-sequence is a group
-                  determined by 'rsheet.decl.group_bys'.
+                  determined by 'rsheet.decleration.group_bys'.
 
         Keyword Argument:
         parent_key -- Not None: the decl.key value for the parent 'Subgroup'.
         """
         self.rsheet = rsheet
-        self.decl = field
+        self.decleration = field
         self.parent_key = parent_key
+
         self.n_groups = len(groups)
 
-        if self.rsheet.decl.group_bys:
-            self.is_grouped_by = (self.decl.key in self.rsheet.decl.group_bys)
+        if self.rsheet.decleration.group_bys:
+            self.is_grouped_by = (self.decleration.key in self.rsheet.decleration.group_bys)
         else:
             self.is_grouped_by = False
 
-        if self.rsheet.decl.order_bys:
-            self.is_ordered_by = (self.decl.key in self.rsheet.decl.order_bys)
+        if self.rsheet.decleration.order_bys:
+            self.is_ordered_by = (self.decleration.key in self.rsheet.decleration.order_bys)
         else:
             self.is_ordered_by = False
 
@@ -540,7 +575,7 @@ class BaseRField(object):
             self._init_aggregate_group(group)
 
     def _init_load_groups(self, raw_groups):
-        field_key = self.decl.key
+        field_key = self.decleration.key
 
         if self.parent_key:
             self.groups = [list(map(lambda g: g[self.parent_key][field_key], raw_group))
@@ -550,11 +585,11 @@ class BaseRField(object):
                            for raw_group in raw_groups]
 
         # Determine if hidden.
-        if self.decl.hidden is None:
+        if self.decleration.hidden is None:
             self.hidden = not any(
                 v is not NoEntry for group in self.groups for v in group)
         else:
-            self.hidden = self.decl.hidden
+            self.hidden = self.decleration.hidden
 
     def _init_aggregate_group(self, group):
         if self.hidden:
@@ -563,16 +598,16 @@ class BaseRField(object):
             self.aggregates_converted.append('')
             return
 
-        if self.rsheet.disable_aggregations or self.decl.aggregator is None:
-            if self.is_grouped_by and self.rsheet.decl.has_aggregates:
+        if self.rsheet.disable_aggregations or self.decleration.aggregator is None:
+            if self.is_grouped_by and self.rsheet.decleration.has_aggregates:
                 # If a grouped field doesn't have an aggregator then the grouped
                 # value will appear in the aggregates line.
                 self.aggregates.append(group[0])
 
                 if group[0] is ErrorEntry:
-                    self.aggregates_converted.append(self.rsheet.decl.error_entry)
+                    self.aggregates_converted.append(self.rsheet.decleration.error_entry)
                 elif group[0] is NoEntry:
-                    self.aggregates_converted.append(self.rsheet.decl.no_entry)
+                    self.aggregates_converted.append(self.rsheet.decleration.no_entry)
                 else:
                     self.aggregates_converted.append(str(group[0]))
             else:
@@ -585,7 +620,7 @@ class BaseRField(object):
         else:
             group_entries = [e for e in group if e is not NoEntry]
             aggregate_value = Aggregator(
-                self.decl.aggregator, group_entries).result
+                self.decleration.aggregator, group_entries).result
 
             if aggregate_value is None:
                 aggregate_value = NoEntry
@@ -634,30 +669,30 @@ class BaseRField(object):
             for edata in fgroup:
                 if edata.value is None:
                     if edata.is_error:
-                        group_converted.append(self.rsheet.decl.error_entry)
+                        group_converted.append(self.rsheet.decleration.error_entry)
                     else:
-                        group_converted.append(self.rsheet.decl.no_entry)
+                        group_converted.append(self.rsheet.decleration.no_entry)
                 else:
-                    group_converted.append(str(self.decl.converter(edata)))
+                    group_converted.append(str(self.decleration.converter(edata)))
 
     def _prepare_convert_aggregates(self):
-        if self.decl.aggregator is None:
+        if self.decleration.aggregator is None:
             return
 
         self.aggregates_converted = []
 
-        if self.decl.aggregator.converter is None:
-            converter = self.decl.converter
+        if self.decleration.aggregator.converter is None:
+            converter = self.decleration.converter
         else:
-            converter = self.decl.aggregator.converter
+            converter = self.decleration.aggregator.converter
 
         for aggr_ix, aggregate in enumerate(self.aggregates):
             if aggregate is None:
                 self.aggregates_converted.append('')
             elif aggregate is NoEntry:
-                self.aggregates_converted.append(self.rsheet.decl.no_entry)
+                self.aggregates_converted.append(self.rsheet.decleration.no_entry)
             elif aggregate is ErrorEntry:
-                self.aggregates_converted.append(self.rsheet.decl.error_entry)
+                self.aggregates_converted.append(self.rsheet.decleration.error_entry)
             else:
                 self.aggregates_converted.append(
                     converter(decl.EntryData(value=aggregate)))
@@ -670,10 +705,10 @@ class BaseRField(object):
 
     def get_kv(self, group_ix, entry_ix):
         entry = self.groups[group_ix][entry_ix]
-        return self.decl.key, self.entry_value(entry)
+        return self.decleration.key, self.entry_value(entry)
 
     def has_aggregate(self):
-        return self.decl.aggregator is not None
+        return self.decleration.aggregator is not None
 
     def n_entries_in_group(self, group_ix):
         return len(self.groups[group_ix])
@@ -694,7 +729,7 @@ class BaseRField(object):
         if edata.is_error:
             return None, lambda v: terminal.fg_magenta() + v + terminal.fg_not_magenta()
 
-        for name, formatter in self.decl.formatters:
+        for name, formatter in self.decleration.formatters:
             format_fn = formatter(edata)
 
             if format_fn is not None:
@@ -706,7 +741,7 @@ class BaseRField(object):
 class BaseRSheetCLI(BaseRSheet):
     def _do_render_title(self, render, width):
         # XXX - Same as column.
-        filler = self.decl.title_fill
+        filler = self.decleration.title_fill
         columns = self.terminal_size.columns
         min_columns = len(self.title) + 6
 

@@ -15,7 +15,7 @@
 
 class Aggregator(object):
     def __init__(self, aggregator, values):
-        self.decl = aggregator
+        self.decleration = aggregator
         self.initialized = False
         self.result = None
 
@@ -29,13 +29,13 @@ class Aggregator(object):
         if not self.initialized:
             self.initialized = True
 
-            if self.decl.initializer is None:
+            if self.decleration.initializer is None:
                 self.result = value
                 return
 
-            self.result = self.decl.initializer
+            self.result = self.decleration.initializer
 
-        self.result = self.decl.func(self.result, value)
+        self.result = self.decleration.func(self.result, value)
 
 
 class ErrorEntry(object):
