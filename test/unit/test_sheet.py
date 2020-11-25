@@ -31,7 +31,7 @@ def do_render(*args, **kwargs):
     res = sheet.render(*args, **kwargs)
 
     if res is not None:
-        print res
+        print(res)
 
     if do_row:
         # Make sure column style renders without Exceptions.
@@ -40,7 +40,7 @@ def do_render(*args, **kwargs):
         res = sheet.render(*args, **kwargs)
 
         if res is not None:
-            print res
+            print(res)
 
     # Return the json render for testing.
     kwargs['style'] = SheetStyle.json
@@ -661,7 +661,7 @@ class SheetTest(unittest.TestCase):
             n0=Exception("error"), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
         render = do_render(test_sheet, 'test', sources)
         records = render['groups'][0]['records']
-
+        print(records)
         self.assertEqual(len(records), 3)
         self.assertEqual(records[0]['g']['raw'], 'error')
 
@@ -721,7 +721,7 @@ class SheetTest(unittest.TestCase):
 
         for record in records:
             self.assertEqual(len(record), 1)
-            self.assertEqual(record.keys()[0], 'f')
+            self.assertEqual(list(record.keys())[0], 'f')
 
     def numeric_sum_selector(self, key, is_numeric):
         if is_numeric:
@@ -778,7 +778,7 @@ class SheetTest(unittest.TestCase):
         sources = dict(d=dict(
             n0=dict(f=2, g=1), n2=dict(f=1, g=1), n3=dict(meh=1),
             n4=Exception()))
-        render = do_render(test_sheet, 'test', sources, dyn_diff=True)
+        render = do_render(test_sheet, 'test', sources, dynamic_diff=True)
         records = render['groups'][0]['records']
 
         for record in records:
