@@ -534,22 +534,24 @@ def numeric_sum_aggregator_selector(key, is_numeric):
         return Aggregators.sum()
 
 
-config_sheet = Sheet(
+show_config_sheet = Sheet(
     (node_field,
+     hidden_node_id_field,
      DynamicFields('data',
                    required=True, order=DynamicFieldOrder.source, 
                    aggregator_selector=numeric_sum_aggregator_selector)
     ),
-    from_source=('prefixes', 'data'),
+    from_source=('prefixes', 'data', 'node_ids'),
     order_by='Node',
     default_style=SheetStyle.rows,
 )
 
-config_xdr_ns_sheet = Sheet(
+show_config_xdr_ns_sheet = Sheet(
     (node_field,
+     hidden_node_id_field,
      Field('Namespace', Projectors.String('data', None, for_each_key=True)),
      DynamicFields('data', required=True, order=DynamicFieldOrder.source)),
-    from_source=('prefixes', 'data'),
+    from_source=('prefixes', 'data', 'node_ids'),
     group_by=['Namespace'],
     order_by=['Namespace', 'Node'],
     default_style=SheetStyle.rows,

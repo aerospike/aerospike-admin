@@ -390,17 +390,23 @@ class CliView(object):
                     timestamp="", **mods):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
+        prefixes = cluster.get_node_names(mods.get('with', []))
+        node_ids = dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys()))
         sources = dict(
-            prefixes=cluster.get_node_names(mods.get('with', [])),
-            data=service_configs)
+            prefixes=prefixes,
+            data=service_configs,
+            node_ids=node_ids)
         disable_aggregations = not show_total
         style = SheetStyle.columns if flip_output else None
+        common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
             sheet.render(
-                templates.config_sheet, title, sources, style=style,
+                templates.show_config_sheet, title, sources, style=style,
                 selectors=like, title_repeat=title_every_nth != 0,
-                disable_aggregations=disable_aggregations, dynamic_diff=diff))
+                disable_aggregations=disable_aggregations, dynamic_diff=diff,
+                common=common))
 
     @staticmethod
     def show_stats(*args, **kwargs):
@@ -412,30 +418,67 @@ class CliView(object):
 
     @staticmethod
     def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=True, title_every_nth=0, flip_output=False, timestamp="", col_header="", **mods):
-        # print_dict(service_configs)
         prefixes = cluster.get_node_names(mods.get('with', []))
+        node_ids = dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys()))
+        common = dict(principal=cluster.get_expected_principal())
 
-        title = 'XDR Configuration'
-        sources = dict(prefixes=prefixes, data=service_configs['xdr_configs'])
+        sources = dict(
+            prefixes=prefixes,
+            node_ids=node_ids,
+            data=service_configs['xdr_configs'],
+        )
+
         CliView.print_result(
             sheet.render(
-                templates.config_sheet, title, sources, dynamic_diff=diff))
+                templates.show_config_sheet,
+                title, 
+                sources, 
+                dynamic_diff=diff, 
+                disable_aggregations=True,
+                common=common
+            )
+        )
 
-        # service_configs['dc_configs']['aerospike_b']["174.22.0.3:3000"]['auth-mode'] = 'external'
-        # service_configs['ns_configs']['aerospike_b']["174.22.0.3:3000"]['test']['enabled'] = 'false'
+        # service_configs['dc_configs']['aerospike_b']["174.22.0.1:3000"]['auth-mode'] = 'external'
         for dc in service_configs['dc_configs']:
             title = 'DC Configuration for {}'.format(dc)
-            sources = dict(prefixes=prefixes, data=service_configs['dc_configs'][dc])
+            sources = dict(
+                prefixes=prefixes, 
+                node_ids=node_ids,
+                data=service_configs['dc_configs'][dc]
+            )
             CliView.print_result(
                 sheet.render(
-                    templates.config_sheet, title, sources, dynamic_diff=diff))
+                    templates.show_config_sheet,
+                    title, 
+                    sources, 
+                    dynamic_diff=diff, 
+                    disable_aggregations=True,
+                    common=common
+                )
+            )
+
+        # service_configs['ns_configs']['aerospike_b']["174.22.0.1:3000"]['bar']['enabled'] = 'false'
+        # service_configs['ns_configs']['aerospike_b']["174.22.0.1:3000"]['test']['enabled'] = 'false'
+        # service_configs['ns_configs']['aerospike_b']["174.22.0.1:3000"]['bar']['bin-policy'] = 'some'
 
         for dc in service_configs['ns_configs']:
             title = 'Namespace Configuration for {}'.format(dc)
-            sources = dict(prefixes=prefixes, data=service_configs['ns_configs'][dc])
+            sources = dict(
+                prefixes=prefixes, 
+                node_ids=node_ids,
+                data=service_configs['ns_configs'][dc]
+            )
             CliView.print_result(
                 sheet.render(
-                    templates.config_xdr_ns_sheet, title, sources, disable_aggregations=False, dynamic_diff=diff))
+                    templates.show_config_xdr_ns_sheet, 
+                    title, 
+                    sources, 
+                    dynamic_diff=diff,
+                    common=common
+                )
+            )
 
     @staticmethod
     def show_grep(title, summary):
