@@ -71,7 +71,7 @@ namespace_field = Field('Namespace',
 # Templates.
 #
 
-network_sheet = Sheet(
+info_network_sheet = Sheet(
     (cluster_field,
      node_field,
      Field('Node ID', Projectors.String('node_ids', None),
@@ -90,7 +90,7 @@ network_sheet = Sheet(
                Projectors.String('versions', None))),
      Field('Migrations',
            Projectors.Number('stats', 'migrate_partitions_remaining'),
-           converter=Converters.sif),
+           converter=Converters.scientific_units),
      Subgroup(
          'Cluster',
          (Field('Size', Projectors.Number('stats', 'cluster_size')),
@@ -110,7 +110,7 @@ network_sheet = Sheet(
     order_by='Node'
 )
 
-namespace_usage_sheet = Sheet(
+info_namespace_usage_sheet = Sheet(
     (cluster_field,
      namespace_field,
      node_field,
@@ -123,15 +123,15 @@ namespace_usage_sheet = Sheet(
                Projectors.Number('ns_stats', 'prole_objects', 'prole-objects'),
                Projectors.Number('ns_stats', 'non_replica_objects'),
                Projectors.Number('ns_stats', 'non_replica_tombstones')),
-           converter=Converters.sif,
+           converter=Converters.scientific_units,
            aggregator=Aggregators.sum()),
      Field('Expirations',
            Projectors.Number('ns_stats', 'expired_objects', 'expired-objects'),
-           converter=Converters.sif,
+           converter=Converters.scientific_units,
            aggregator=Aggregators.sum()),
      Field('Evictions',
            Projectors.Number('ns_stats', 'evicted_objects', 'evicted-objects'),
-           converter=Converters.sif,
+           converter=Converters.scientific_units,
            aggregator=Aggregators.sum()),
      Field('Stop Writes',
            Projectors.Boolean('ns_stats', 'stop_writes', 'stop-writes'),
@@ -194,7 +194,7 @@ namespace_usage_sheet = Sheet(
     order_by='Node'
 )
 
-namespace_object_sheet = Sheet(
+info_namespace_object_sheet = Sheet(
     (cluster_field,
      namespace_field,
      node_field,
@@ -214,30 +214,30 @@ namespace_object_sheet = Sheet(
                Projectors.Number('ns_stats', 'prole_tombstones'),
                Projectors.Number('ns_stats', 'non_replica_objects'),
                Projectors.Number('ns_stats', 'non_replica_tombstones')),
-           converter=Converters.sif,
+           converter=Converters.scientific_units,
            aggregator=Aggregators.sum()),
      Subgroup(
          'Objects',
          (Field('Master',
                 Projectors.Number(
                     'ns_stats', 'master_objects', 'master-objects'),
-                converter=Converters.sif, aggregator=Aggregators.sum()),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()),
           Field('Prole',
                 Projectors.Number('ns_stats', 'prole_objects', 'prole-objects'),
-                converter=Converters.sif, aggregator=Aggregators.sum()),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()),
           Field('Non-Replica',
                 Projectors.Number('ns_stats', 'non_replica_objects'),
-                converter=Converters.sif, aggregator=Aggregators.sum()))),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()))),
      Subgroup(
          'Tombstones',
          (Field('Master',
                 Projectors.Number('ns_stats', 'master_tombstones'),
-                converter=Converters.sif, aggregator=Aggregators.sum()),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()),
           Field('Prole', Projectors.Number('ns_stats', 'prole_tombstones'),
-                converter=Converters.sif, aggregator=Aggregators.sum()),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()),
           Field('Non-Replica',
                 Projectors.Number('ns_stats', 'non_replica_tombstones'),
-                converter=Converters.sif, aggregator=Aggregators.sum()))),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()))),
      Subgroup(
          'Pending Migrates',
          (Field('Tx',
@@ -245,20 +245,20 @@ namespace_object_sheet = Sheet(
                     'ns_stats',
                     'migrate_tx_partitions_remaining',
                     'migrate-tx-partitions-remaining'),
-                converter=Converters.sif, aggregator=Aggregators.sum()),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()),
           Field('Rx',
                 Projectors.Number(
                     'ns_stats',
                     'migrate_rx_partitions_remaining',
                     'migrate-rx-partitions-remaining'),
-                converter=Converters.sif, aggregator=Aggregators.sum())))),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum())))),
     from_source=('cluster_names', 'node_ids', 'prefixes', 'ns_stats'),
     for_each='ns_stats',
     group_by=('cluster_name', 'Namespace'),
     order_by='Node'
 )
 
-set_sheet = Sheet(
+info_set_sheet = Sheet(
     (cluster_field,
      Field('Namespace', Projectors.String('set_stats', 0, for_each_key=True)),
      Field('Set', Projectors.String('set_stats', 1, for_each_key=True)),
@@ -272,7 +272,7 @@ set_sheet = Sheet(
            converter=Converters.byte,
            aggregator=Aggregators.sum()),
      Field('Objects', Projectors.Number('set_stats', 'objects', 'n_objects'),
-           converter=Converters.sif,
+           converter=Converters.scientific_units,
            aggregator=Aggregators.sum()),
      Field('Stop Writes Count',
            Projectors.Number('set_stats', 'stop-writes-count')),
@@ -285,7 +285,7 @@ set_sheet = Sheet(
     order_by='Node'
 )
 
-xdr_sheet = Sheet(
+info_old_xdr_sheet = Sheet(
     (Field('XDR Enabled', Projectors.Boolean('xdr_enable', None), hidden=True),
      node_field,
      hidden_node_id_field,
@@ -316,7 +316,7 @@ xdr_sheet = Sheet(
                 Projectors.Number('xdr_stats',
                                   'xdr_ship_outstanding_objects',
                                   'stat_recs_outstanding'),
-                converter=Converters.sif, aggregator=Aggregators.sum()),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()),
           Field('Shipped Success',
                 Projectors.Func(
                     FieldType.number,
@@ -357,7 +357,7 @@ xdr_sheet = Sheet(
     order_by='Node'
 )
 
-xdr_dc_sheet = Sheet(
+info_dc_sheet = Sheet(
     (node_field,
      hidden_node_id_field,
      Field('DC', Projectors.String('dc_stats', 'dc-name', 'DC_Name')),
@@ -419,34 +419,34 @@ info_sindex_sheet = Sheet(
      Field('Sync State', Projectors.String('sindex_stats', 'sync_state')),
      Field('Keys', Projectors.Number('sindex_stats', 'keys')),
      Field('Entries', Projectors.Number('sindex_stats', 'entries', 'objects'),
-           converter=Converters.sif, aggregator=Aggregators.sum()),
+           converter=Converters.scientific_units, aggregator=Aggregators.sum()),
      Field('Memory Used',
            Projectors.Number('sindex_stats', 'si_accounted_memory'),
            converter=Converters.byte, aggregator=Aggregators.sum()),
      Subgroup(
          'Queries',
          (Field('Requests', Projectors.Number('sindex_stats', 'query_reqs'),
-                converter=Converters.sif, aggregator=Aggregators.sum()),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()),
           Field('Avg Num Recs',
                 Projectors.Number('sindex_stats', 'query_avg_rec_count'),
-                converter=Converters.sif, aggregator=Aggregators.sum()))),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()))),
      Subgroup(
          'Updates',
          (Field('Writes',
                 Projectors.Number(
                     'sindex_stats', 'write_success', 'stat_write_success'),
-                converter=Converters.sif, aggregator=Aggregators.sum()),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum()),
           Field('Deletes',
                 Projectors.Number(
                     'sindex_stats', 'delete_success', 'stat_delete_success'),
-                converter=Converters.sif, aggregator=Aggregators.sum())))),
+                converter=Converters.scientific_units, aggregator=Aggregators.sum())))),
     from_source=('node_ids', 'prefixes', 'sindex_stats'),
     for_each='sindex_stats',
     group_by=('Namespace', 'Set'),
     order_by=('Index Name', 'Node')
 )
 
-distribution_sheet = Sheet(
+show_distribution_sheet = Sheet(
     tuple(itertools.chain(
         [TitleField('Node', Projectors.String('prefixes', None))],
         [Field('{}%'.format(pct), Projectors.Number('histogram', i))
@@ -490,7 +490,7 @@ summary_namespace_sheet = Sheet(
            align=FieldAlignment.right),
      Field('Cache Read%', Projectors.Percent('ns_stats', 'cache_read_pct')),
      Field('Master Objects', Projectors.Number('ns_stats', 'master_objects'),
-           Converters.sif),
+           Converters.scientific_units),
      Subgroup(
          'Usage (Unique-Data)',
          (Field('In-Memory',
@@ -507,7 +507,7 @@ summary_namespace_sheet = Sheet(
     order_by='Namespace'
 )
 
-pmap_sheet = Sheet(
+show_pmap_sheet = Sheet(
     (Field('Namespace', Projectors.String('pmap', None, for_each_key=True)),
      node_field,
      hidden_node_id_field,
@@ -558,36 +558,21 @@ show_config_xdr_ns_sheet = Sheet(
     for_each=['data']
 )
 
-# latency_sheet = Sheet(
-#     (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
-#      Field('Histogram', Projectors.String('histogram', 1, for_each_key=True)),
-#      TitleField('Node', Projectors.String('prefixes', None)),
-#      DynamicFields('histogram', required=True,
-#                    order=DynamicFieldOrder.source,
-#                    aggregator_selector=latency_aggregator_selector)),
-#     from_source=('prefixes', 'histogram'),
-#     for_each='histogram',
-#     group_by=('Namespace', 'Histogram'),
-#     order_by='Node',
-# )
-
-mapping_to_ip_sheet = Sheet(
+show_mapping_to_ip_sheet = Sheet(
     (Field('Node ID', Projectors.String('mapping', 0)),
      Field('IP', Projectors.String('mapping', 1))),
     from_source='mapping',
-    order_by='Node ID'
+    order_by='Node ID',
 )
 
-mapping_to_id_sheet = Sheet(
+show_mapping_to_id_sheet = Sheet(
     (Field('IP', Projectors.String('mapping', 0)),
      Field('Node ID', Projectors.String('mapping', 1))),
     from_source='mapping',
     order_by='IP',
-    # group_by='Node ID',
-    default_style=SheetStyle.rows
 )
 
-object_size_sheet = Sheet(
+show_object_distribution_sheet = Sheet(
     (TitleField('Node', Projectors.String('prefixes', None)),
      DynamicFields('histogram', required=True,
                    order=DynamicFieldOrder.source)),
@@ -601,7 +586,7 @@ def latency_aggregator_selector(key, is_numeric):
         return Aggregators.max()
 
 
-latency_sheet = Sheet(
+show_latency_sheet = Sheet(
     (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
      Field('Histogram', Projectors.String('histogram', 1, for_each_key=True)),
      TitleField('Node', Projectors.String('prefixes', None)),
@@ -617,7 +602,7 @@ latency_sheet = Sheet(
 # Only difference between this and latency_sheet is the group_by contains
 # 'Node'. TODO - allowing render to override group_by would eliminate this
 # template.
-latency_machine_wise_sheet = Sheet(
+show_latency_machine_wise_sheet = Sheet(
     (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
      Field('Hist', Projectors.String('histogram', 1, for_each_key=True)),
      TitleField('Node', Projectors.String('prefixes', None)),

@@ -92,9 +92,8 @@ class CliView(object):
             versions=versions,
             stats=stats)
         common = dict(principal=cluster.get_expected_principal())
-
         CliView.print_result(
-            sheet.render(templates.network_sheet, title, sources,
+            sheet.render(templates.info_network_sheet, title, sources,
                          common=common))
 
     @staticmethod
@@ -112,7 +111,7 @@ class CliView(object):
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.namespace_usage_sheet, title, sources,
+            sheet.render(templates.info_namespace_usage_sheet, title, sources,
                          common=common))
 
     @staticmethod
@@ -130,7 +129,7 @@ class CliView(object):
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.namespace_object_sheet, title, sources,
+            sheet.render(templates.info_namespace_object_sheet, title, sources,
                          common=common))
 
     @staticmethod
@@ -148,7 +147,7 @@ class CliView(object):
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.set_sheet, title, sources, common=common))
+            sheet.render(templates.info_set_sheet, title, sources, common=common))
 
     # pre 5.0
     @staticmethod
@@ -165,7 +164,7 @@ class CliView(object):
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.xdr_dc_sheet, title, sources,
+            sheet.render(templates.info_dc_sheet, title, sources,
                          common=common))
 
     # pre 5.0
@@ -188,7 +187,7 @@ class CliView(object):
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.xdr_sheet, title, sources, common=common))
+            sheet.render(templates.info_old_xdr_sheet, title, sources, common=common))
 
     @staticmethod
     def info_XDR(stats, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore):
@@ -232,7 +231,7 @@ class CliView(object):
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.sindex_sheet, title, sources,
+            sheet.render(templates.info_sindex_sheet, title, sources,
                          common=common))
 
     @staticmethod
@@ -258,7 +257,7 @@ class CliView(object):
             )
 
             CliView.print_result(
-                sheet.render(templates.distribution_sheet, this_title, sources,
+                sheet.render(templates.show_distribution_sheet, this_title, sources,
                              description=description))
 
     @staticmethod
@@ -285,37 +284,8 @@ class CliView(object):
                            if h != 'columns'})
 
             CliView.print_result(sheet.render(
-                templates.object_size_sheet, ns_title, sources,
+                templates.show_object_distribution_sheet, ns_title, sources,
                 description=description))
-
-    @staticmethod
-    def _update_latency_column_list(data, all_columns):
-        if not data or "columns" not in data or not data["columns"]:
-            return
-
-        for column in data["columns"]:
-            if column[0] == '>':
-                c = int(column[1:-2])
-                all_columns.add((c, (column, "%%>%dMs" % c)))
-            elif column[0:2] == "%>":
-                c = int(column[2:-2])
-                all_columns.add((c, column))
-
-    @staticmethod
-    def _create_latency_row(data, ns=" "):
-        if not data or "columns" not in data or not data["columns"] or \
-           "values" not in data or not data["values"]:
-            return
-
-        rows = []
-        columns = data.pop("columns", None)
-
-        for _values in data["values"]:
-            row = dict(zip(columns, _values))
-            row['namespace'] = ns
-            rows.append(row)
-
-        return rows
 
     @staticmethod
     def format_latency(orig_latency):
@@ -353,7 +323,7 @@ class CliView(object):
         sources = dict(prefixes=prefixes, histogram=latency)
 
         CliView.print_result(sheet.render(
-            templates.latency_sheet, title, sources))
+            templates.show_latency_sheet, title, sources))
 
 
     def format_latency_machine_wise(orig_latency):
@@ -382,7 +352,7 @@ class CliView(object):
         sources = dict(prefixes=prefixes, histogram=latency)
 
         CliView.print_result(sheet.render(
-            templates.latency_machine_wise_sheet, title, sources))
+            templates.show_latency_machine_wise_sheet, title, sources))
 
     @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=False,
@@ -706,9 +676,9 @@ class CliView(object):
                       if k in filtered_keys)))
 
         if col2 == 'IPs':
-            map_sheet = templates.mapping_to_ip_sheet
+            map_sheet = templates.show_mapping_to_ip_sheet
         else:
-            map_sheet = templates.mapping_to_id_sheet
+            map_sheet = templates.show_mapping_to_id_sheet
 
         CliView.print_result(sheet.render(map_sheet, title, sources))
 
@@ -725,7 +695,7 @@ class CliView(object):
         )
         common = dict(principal=cluster.get_expected_principal())
 
-        CliView.print_result(sheet.render(templates.pmap_sheet, title, sources,
+        CliView.print_result(sheet.render(templates.show_pmap_sheet, title, sources,
                                           common=common))
 
     @staticmethod
@@ -1444,14 +1414,14 @@ class CliView(object):
             index += 1
 
             if "cache_read_pct" in stats[ns]:
-                print(CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.sif)))
+                print(CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.si_float)))
                 index += 1
 
             if "rack_aware" in stats[ns]:
                 print(CliView.get_summary_line_prefix(index, "Rack-aware") + "%s"%(str(stats[ns]["rack_aware"])))
                 index += 1
 
-            print(CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.sif)))
+            print(CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.si_float)))
             index += 1
             s = ""
 

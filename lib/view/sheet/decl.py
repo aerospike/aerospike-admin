@@ -559,13 +559,13 @@ class Converters(object):
         return Converters._filesize(edata.value, filesize.byte)
 
     @staticmethod
-    def sif(edata):
+    def scientific_units(edata):
         """
         Arguments:
         edata -- Take an 'EntryData' and returns the value as floating pint
                  International System Units.
         """
-        return Converters._filesize(edata.value, filesize.sif)
+        return Converters._filesize(edata.value, filesize.si_float)
 
     @staticmethod
     def time(edata):
@@ -575,8 +575,8 @@ class Converters(object):
                  HH:MM:SS.
         """
         time_stamp = int(edata.value)
-        hours = time_stamp / 3600
-        minutes = (time_stamp % 3600) / 60
+        hours = time_stamp // 3600
+        minutes = (time_stamp % 3600) // 60
         seconds = time_stamp % 60
 
         return '{:02}:{:02}:{:02}'.format(hours, minutes, seconds)
