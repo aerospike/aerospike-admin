@@ -191,61 +191,21 @@ class CliView(object):
             sheet.render(templates.xdr_sheet, title, sources, common=common))
 
     @staticmethod
-    def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore):
-        if not max(xdr_enable.values()):
-            return
-
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
-
+    def info_XDR(stats, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = title + "%s" % (title_suffix)
-        column_names = ('node', 'namespaces', ('success', 'Success'),
-                        ('retry_conn_reset', 'Retry Connection Reset'), ('retry_dest', 'Retry Destination'),
-                        ('recoveries_pending', 'Recoveries Pending'), ('_lag-secs', 'Lag (hh:mm:ss)'),
-                        ('latency_ms', 'Avg Latency (ms)'), ('throughput', 'Throughput (rec/s)')
-                        )
+        title = title + title_suffix
+        prefixes = cluster.get_node_names()
+        node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                        for k in prefixes.keys()))
+        sources = dict(
+            xdr_enable=xdr_enable,
+            node_ids=node_ids,
+            prefixes=prefixes,
+            xdr_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, group_by=1, style=Styles.HORIZONTAL)
-
-        t.add_data_source('success', lambda data: get_value_from_dict(
-            data, ('success')))
-        
-        t.add_data_source('retry_conn_reset', lambda data: get_value_from_dict(
-            data, ('retry_conn_reset')))
-
-        t.add_data_source('retry_dest', lambda data: get_value_from_dict(
-            data, ('retry_dest')))
-
-        t.add_data_source('recoveries_pending', lambda data: get_value_from_dict(
-            data, ('recoveries_pending')))
-
-        t.add_data_source(
-            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag', 'lag')))
-
-        t.add_data_source('Avg Latency (ms)', lambda data: get_value_from_dict(
-            data, ('latency_ms')))
-
-        t.add_data_source('Throughput (records per second)', lambda data: get_value_from_dict(
-            data, ('throughput')))
-
-        t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
-            data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        row = None
-        for node_key, row in stats.items():
-            if isinstance(row, Exception):
-                row = {}
-            node = cluster.get_node(node_key)[0]
-            row['real_node_id'] = node.node_id
-            row['node'] = prefixes[node_key]
-            row['total_recoveries'] = int(row['recoveries']) + int(row['recoveries_pending'])
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(templates.info_xdr_sheet, title, sources, common=common))
 
     @staticmethod
     def info_sindex(stats, cluster, timestamp='', **mods):

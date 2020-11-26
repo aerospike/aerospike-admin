@@ -386,7 +386,27 @@ xdr_dc_sheet = Sheet(
     order_by='Node'
 )
 
-sindex_sheet = Sheet(
+info_xdr_sheet = Sheet(
+    (Field('XDR Enabled', Projectors.Boolean('xdr_enable', None), hidden=True),
+     node_field,
+     hidden_node_id_field,
+     Field('Success', Projectors.Number('xdr_stats', 'success')),
+     Subgroup('Retry',
+        (Field('Connection Reset', Projectors.Number('xdr_stats', 'retry_conn_reset')),
+        Field('Destination', Projectors.Number('xdr_stats', 'retry_dest')))),
+
+     Field('Recoveries Pending', Projectors.Number('xdr_stats', 'recoveries_pending'), 
+            aggregator=Aggregators.sum()),
+     Field('Lag (hh:mm:ss)', Projectors.Number('xdr_stats', 'lag')),
+     Field('Avg Latency (ms)', Projectors.Number('xdr_stats', 'latency_ms'), 
+            aggregator=Aggregators.max()),
+     Field('Throughput (rec/s)', Projectors.Number('xdr_stats', 'throughput'))),
+    from_source=('xdr_enable', 'node_ids', 'prefixes', 'xdr_stats'),
+    where=lambda record: record['XDR Enabled'],
+    order_by='Node'
+)
+
+info_sindex_sheet = Sheet(
     (Field('Index Name', Projectors.String('sindex_stats', 'indexname')),
      Field('Namespace', Projectors.String('sindex_stats', 'ns')),
      Field('Set', Projectors.String('sindex_stats', 'set')),

@@ -330,7 +330,6 @@ class InfoController(BasicCommandController):
                 util.Future(
                     self.view.info_XDR,
                     xdr5_stats[dc],
-                    xdr_builds,
                     xdr_enable,
                     self.cluster,
                     title="XDR Information %s" % dc,
