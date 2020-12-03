@@ -391,12 +391,16 @@ class GetConfigController():
     # XDR configs >= AS Server 5.0
     def get_xdr5(self, flip=True, nodes="all", for_mods=[]):
         # get xdr5 nodes and remote port
+        xdr_configs = {}
         xdr5_nodes = self.get_xdr5_nodes(nodes)
-        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
 
+        if not xdr5_nodes:
+            return xdr_configs
+
+        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
         configs = self.cluster.info_XDR_get_config(nodes=xdr5_nodes)
 
-        xdr_configs = {}
+
 
         if configs:
             for node, config in configs.items():
@@ -475,9 +479,14 @@ class GetConfigController():
 
     # XDR configs < AS Server 5.0
     def get_old_xdr(self, flip=True, nodes="all"):
+        xdr_configs = {}
+        nodes = self.get_old_xdr_nodes(nodes)
+
+        if not nodes:
+            return xdr_configs
+
         configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
-        xdr_configs = {}
 
         if configs:
             for node, config in configs.items():
