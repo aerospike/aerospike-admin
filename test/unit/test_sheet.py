@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from lib.health.util import print_dict
 
 import unittest2 as unittest
 
@@ -30,8 +31,8 @@ def do_render(*args, **kwargs):
 
     res = sheet.render(*args, **kwargs)
 
-    if res is not None:
-        print(res)
+    # if res is not None:
+    #     print(res)
 
     if do_row:
         # Make sure column style renders without Exceptions.
@@ -39,8 +40,8 @@ def do_render(*args, **kwargs):
 
         res = sheet.render(*args, **kwargs)
 
-        if res is not None:
-            print(res)
+        # if res is not None:
+        #     print(res)
 
     # Return the json render for testing.
     kwargs['style'] = SheetStyle.json
@@ -659,9 +660,10 @@ class SheetTest(unittest.TestCase):
             from_source='d')
         sources = dict(d=dict(
             n0=Exception("error"), n2=dict(f=1, g=1), n3=dict(f=1, g=1)))
+
         render = do_render(test_sheet, 'test', sources)
+
         records = render['groups'][0]['records']
-        print(records)
         self.assertEqual(len(records), 3)
         self.assertEqual(records[0]['g']['raw'], 'error')
 
@@ -782,8 +784,65 @@ class SheetTest(unittest.TestCase):
         records = render['groups'][0]['records']
 
         for record in records:
-            assert 'g' not in record
-            assert 'f' in record
+            self.assertTrue('g' not in record)
+            self.assertTrue('f' in record)
+
+    def test_sheet_dynamic_field_diff_and_group_by(self):
+        test_sheet = Sheet(
+            (   Field('group', Projectors.String('group', None)),
+                DynamicFields('d'),),
+            from_source=('d', 'group'),
+            group_by='group')
+        sources = dict(d=dict(
+            n0=dict(f=1, g=2), n1=dict(f=1, g=2), n2=dict(f=3, g=4), n3=dict(f=4, g=3), n4=dict(f=5, g=6), n5=dict(f=5, g=7), n6=dict(f=8, g=9)), 
+            group=dict(n0='group0', n1='group0', n2='group1', n3='group1', n4='group2', n5='group2', n6='group3'))
+
+        render = do_render(test_sheet, 'test', sources, dynamic_diff=True)
+
+        groups = render['groups']
+        self.assertEqual(len(groups), 4)
+
+        group0 = groups[0]
+        
+        for record in group0['records']:
+            self.assertTrue('group' in record)
+            self.assertTrue('group0' in record['group']['raw'])
+            self.assertEqual(record['f']['raw'], None)
+            self.assertEqual(record['g']['raw'], None)
+
+        group1 = groups[1]
+        group1record0 = group1['records'][0]
+        group1record1 = group1['records'][1]
+
+        for record in group1['records']:
+            self.assertTrue('group' in record)
+            self.assertTrue('group1' in record['group']['raw'])
+
+        self.assertEqual(group1record0['f']['raw'], 3)
+        self.assertEqual(group1record0['g']['raw'], 4)
+        self.assertEqual(group1record1['f']['raw'], 4)
+        self.assertEqual(group1record1['g']['raw'], 3)
+
+        group2 = groups[2]
+        group2record0 = group2['records'][0]
+        group2record1 = group2['records'][1]
+
+        for record in group2['records']:
+            self.assertTrue('group' in record)
+            self.assertTrue('group2' in record['group']['raw'])
+
+        self.assertEqual(group2record0['f']['raw'], None)
+        self.assertEqual(group2record0['g']['raw'], 6)
+        self.assertEqual(group2record1['f']['raw'], None)
+        self.assertEqual(group2record1['g']['raw'], 7)
+
+        group3record0 = groups[3]['records'][0]
+
+        self.assertTrue('group' in group3record0)
+        self.assertTrue('group3' in group3record0['group']['raw'])
+        self.assertEqual(group3record0['f']['raw'], None)
+        self.assertEqual(group3record0['g']['raw'], None)
+       
 
     # def test_sheet_dynamic_field_every_nth_row(self):
     #     pass
