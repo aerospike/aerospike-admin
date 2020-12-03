@@ -538,7 +538,7 @@ show_config_sheet = Sheet(
     (node_field,
      hidden_node_id_field,
      DynamicFields('data',
-                   required=True, order=DynamicFieldOrder.source, 
+                   required=True, order=DynamicFieldOrder.ascending , 
                    aggregator_selector=numeric_sum_aggregator_selector)
     ),
     from_source=('prefixes', 'data', 'node_ids'),
@@ -604,14 +604,14 @@ show_latency_sheet = Sheet(
 # template.
 show_latency_machine_wise_sheet = Sheet(
     (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
-     Field('Hist', Projectors.String('histogram', 1, for_each_key=True)),
+     Field('Histogram', Projectors.String('histogram', 1, for_each_key=True)),
      TitleField('Node', Projectors.String('prefixes', None)),
      DynamicFields('histogram', required=True,
                    order=DynamicFieldOrder.source,
                    aggregator_selector=latency_aggregator_selector)),
     from_source=('prefixes', 'histogram'),
     for_each='histogram',
-    group_by=('Node', 'Namespace', 'Hist'),
+    group_by=('Node', 'Namespace', 'Histogram'),
     order_by='Node',
 )
 
