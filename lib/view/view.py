@@ -410,7 +410,6 @@ class CliView(object):
             )
         )
 
-        # service_configs['dc_configs']['aerospike_b']["174.22.0.1:3000"]['auth-mode'] = 'external'
         for dc in service_configs['dc_configs']:
             title = 'DC Configuration for {}'.format(dc)
             sources = dict(
@@ -429,9 +428,6 @@ class CliView(object):
                 )
             )
 
-        # service_configs['ns_configs']['aerospike_b']["174.22.0.1:3000"]['bar']['enabled'] = 'false'
-        # service_configs['ns_configs']['aerospike_b']["174.22.0.1:3000"]['test']['enabled'] = 'false'
-        # service_configs['ns_configs']['aerospike_b']["174.22.0.1:3000"]['bar']['bin-policy'] = 'some'
 
         for dc in service_configs['ns_configs']:
             title = 'Namespace Configuration for {}'.format(dc)
