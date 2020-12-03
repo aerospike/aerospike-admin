@@ -271,6 +271,11 @@ info_set_sheet = Sheet(
                'set_stats', 'memory_data_bytes', 'n-bytes-memory'),
            converter=Converters.byte,
            aggregator=Aggregators.sum()),
+    Field('Disk Used',
+           Projectors.Number(
+               'set_stats', 'device_data_bytes'),
+           converter=Converters.byte,
+           aggregator=Aggregators.sum()),
      Field('Objects', Projectors.Number('set_stats', 'objects', 'n_objects'),
            converter=Converters.scientific_units,
            aggregator=Aggregators.sum()),

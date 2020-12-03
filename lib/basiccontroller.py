@@ -1909,8 +1909,10 @@ class CollectinfoController(BasicCommandController):
             "statistics xdr",
             "statistics dc",
             "statistics sindex",
-            "pmap",
         ]
+
+        if CollectinfoController.get_pmap:
+            dignostic_show_params.append("pmap")
 
         dignostic_aerospike_cluster_params = [
             "service",
