@@ -85,14 +85,14 @@ class RowRSheet(BaseRSheetCLI):
                              if rfield.decleration.key in title_field_keys]
 
         if self.title_repeat:
-            title_field_keys = self.decl.title_field_keys
+            title_field_keys = self.decleration.title_field_keys
             title_lines = [rfield for rfield in render_fields
-                             if rfield.decl.key in title_field_keys]
+                             if rfield.decleration.key in title_field_keys]
             repeated_rfields = []
 
             for i, rfield in enumerate(
                     rfield for rfield in render_fields
-                    if rfield.decl.key not in title_field_keys):
+                    if rfield.decleration.key not in title_field_keys):
                 if i % (terminal_height - 2) == 0:
                     repeated_rfields.extend(title_lines)
 

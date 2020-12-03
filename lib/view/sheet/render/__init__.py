@@ -40,7 +40,7 @@ def render(sheet, title, data_source, style=None, common=None,
            disable_aggregations=False, dynamic_diff=False):
     """
     Arguments:
-    sheet       -- The decl.sheet to render.
+    sheet       -- The decleration.sheet to render.
     title       -- Title for this render.
     data_source -- Dictionary of data_sources to project fields from.
 

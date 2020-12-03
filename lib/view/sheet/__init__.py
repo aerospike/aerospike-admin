@@ -13,5 +13,5 @@
 # limitations under the License.
 
 from .const import DynamicFieldOrder, FieldAlignment, FieldType, SheetStyle
-from .decl import *
+from .decleration import *
 from .render import render, set_style_json

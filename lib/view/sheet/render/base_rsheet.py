@@ -21,7 +21,7 @@ from operator import itemgetter
 from lib.utils.util import compile_likes
 from lib.view.terminal import get_terminal_size, terminal
 
-from .. import decl
+from .. import decleration
 from ..const import DynamicFieldOrder
 from ..source import source_hierarchy, source_lookup, source_root
 from .render_utils import Aggregator, ErrorEntry, NoEntry
@@ -33,7 +33,7 @@ class BaseRSheet(object):
                  disable_aggregations=False, dynamic_diff=False):
         """
         Arguments:
-        sheet       -- The decl.sheet to render.
+        sheet       -- The decleration.sheet to render.
         title       -- Title for this render.
         data_source -- Dictionary of data-sources to project fields from.
 
@@ -101,7 +101,7 @@ class BaseRSheet(object):
         Each RSheet may define custom versions of RSubgroup.
 
         Arguments:
-        field  -- The decl.Subgroup describing this tuple field.
+        field  -- The decleration.Subgroup describing this tuple field.
         groups -- The data sources having already been processed into groups.
         """
         raise NotImplementedError('override')
@@ -110,7 +110,7 @@ class BaseRSheet(object):
         """
         Each RSheet may define custom version of RFields.
         Arguments:
-        field  -- The decl.Field describing this field.
+        field  -- The decleration.Field describing this field.
         groups -- The data sources having already been processed into groups.
 
         Keyword Arguments:
@@ -188,7 +188,7 @@ class BaseRSheet(object):
         dfields = []
 
         for dfield in self.decleration.fields:
-            if isinstance(dfield, decl.DynamicFields):
+            if isinstance(dfield, decleration.DynamicFields):
                 keys = OrderedDict()
 
                 for sources in self.sources:
@@ -226,7 +226,7 @@ class BaseRSheet(object):
                     else:
                         aggr = None
 
-                    dfields.append(decl.Field(key, proj, aggregator=aggr,
+                    dfields.append(decleration.Field(key, proj, aggregator=aggr,
                                               dynamic_field_decl=dfield))
             else:
                 dfields.append(dfield)
@@ -234,14 +234,14 @@ class BaseRSheet(object):
         return dfields
 
     def _is_projector_numeric(self, projector):
-        return isinstance(projector, decl.Projectors.Float) or \
-            isinstance(projector, decl.Projectors.Number)
+        return isinstance(projector, decleration.Projectors.Float) or \
+            isinstance(projector, decleration.Projectors.Number)
 
     def _infer_projector(self, dfield, key):
         proj_args = (dfield.source, key)
 
         if not dfield.infer_projectors:
-            return decl.Projectors.String(*proj_args)
+            return decleration.Projectors.String(*proj_args)
 
         entries = []
 
@@ -274,13 +274,13 @@ class BaseRSheet(object):
             has_string = True
 
         if has_string:
-            return decl.Projectors.String(*proj_args)
+            return decleration.Projectors.String(*proj_args)
         elif has_float:
-            return decl.Projectors.Float(*proj_args)
+            return decleration.Projectors.Float(*proj_args)
         elif has_int:
-            return decl.Projectors.Number(*proj_args)
+            return decleration.Projectors.Number(*proj_args)
         else:  # no entries
-            return decl.Projectors.String(*proj_args)
+            return decleration.Projectors.String(*proj_args)
 
     def project_fields(self):
         projections = []
@@ -295,7 +295,7 @@ class BaseRSheet(object):
         return projections
 
     def _project_field(self, dfield, sources, projection):
-        if isinstance(dfield, decl.Subgroup):
+        if isinstance(dfield, decleration.Subgroup):
             child_projections = OrderedDict()
             projection[dfield.key] = child_projections
 
@@ -306,9 +306,9 @@ class BaseRSheet(object):
 
         try:
             entry = dfield.projector(self.decleration, sources)
-        except decl.NoEntryException:
+        except decleration.NoEntryException:
             entry = NoEntry
-        except decl.ErrorEntryException:
+        except decleration.ErrorEntryException:
             entry = ErrorEntry
 
         projection[dfield.key] = entry
@@ -327,7 +327,7 @@ class BaseRSheet(object):
         required_dfields = set()
 
         for dfield in self.decleration.fields:
-            if not isinstance(dfield, decl.DynamicFields):
+            if not isinstance(dfield, decleration.DynamicFields):
                 continue
 
             if dfield.required:
@@ -353,7 +353,7 @@ class BaseRSheet(object):
 
         dynamic_dfields = [dfield for dfield in self.dfields
                        if isinstance(dfield.dynamic_field_decl,
-                                     decl.DynamicFields)]
+                                     decleration.DynamicFields)]
         drop_dfields_groups = []
 
         for group_idx in range(len(projection_groups)):
@@ -453,7 +453,7 @@ class BaseRSheet(object):
                 for field in self.dfields]
 
     def create_rfield(self, field, groups, parent_key=None):
-        if isinstance(field, decl.Subgroup):
+        if isinstance(field, decleration.Subgroup):
             return self.do_create_tuple_field(field, groups)
 
         return self.do_create_field(field, groups, parent_key=parent_key)
@@ -464,7 +464,7 @@ class BaseRSubgroup(object):
         """
         Arguments:
         rsheet -- BaseRSheet being rendered.
-        field  -- decl.Subgroup.
+        field  -- decleration.Subgroup.
         groups -- Sequence of sub-sequences where each sub-sequence is a group
                   determined by 'rsheet.decleration.group_bys'.
         """
@@ -522,12 +522,12 @@ class BaseRField(object):
         """
         Arguments:
         rsheet -- BaseRSheet being rendered.
-        field  -- 'decl.Subgroup'.
+        field  -- 'decleration.Subgroup'.
         groups -- Sequence of sub-sequences where each sub-sequence is a group
                   determined by 'rsheet.decleration.group_bys'.
 
         Keyword Argument:
-        parent_key -- Not None: the decl.key value for the parent 'Subgroup'.
+        parent_key -- Not None: the decleration.key value for the parent 'Subgroup'.
         """
         self.rsheet = rsheet
         self.decleration = field
@@ -648,7 +648,7 @@ class BaseRField(object):
                                for rfield in self.rsheet.rfields))
 
                 entry_edata.append(
-                    decl.EntryData(
+                    decleration.EntryData(
                         value=entry,
                         values=entries,
                         record=record,
@@ -695,7 +695,7 @@ class BaseRField(object):
                 self.aggregates_converted.append(self.rsheet.decleration.error_entry)
             else:
                 self.aggregates_converted.append(
-                    converter(decl.EntryData(value=aggregate)))
+                    converter(decleration.EntryData(value=aggregate)))
 
     def entry_value(self, entry):
         if entry is ErrorEntry or entry is NoEntry:
