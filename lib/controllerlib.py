@@ -244,7 +244,7 @@ class BaseController(object):
                         CommandHelp.display(method, indent=indent)
 
                     indent += 2
-                    for command in sorted(self.commands.keys()):
+                    for command in self.commands.keys():
                         if command != "health":
                             CommandHelp.print_text(
                                 "- %s%s%s:" % (terminal.bold(), command,
