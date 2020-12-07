@@ -18,16 +18,17 @@ import sys
 import time
 import types
 from io import StringIO
+from collections import OrderedDict
 from pydoc import pipepager
 
 from lib.health.constants import (AssertLevel, AssertResultKey,
                                   HealthResultCounter, HealthResultType)
 from lib.health.util import print_dict
 from lib.utils import filesize
-from lib.utils.constants import COUNT_RESULT_KEY, DT_FMT
-from lib.utils.util import (compile_likes, find_delimiter_in,
-                            get_value_from_dict, set_value_in_dict)
-from lib.view import terminal
+from lib.utils.constants import DT_FMT
+from lib.utils.util import compile_likes, find_delimiter_in, get_value_from_dict
+from lib.view import sheet, terminal, templates
+from lib.view.sheet import SheetStyle
 from lib.view.table import Extractors, Styles, Table, TitleFormats
 
 H1_offset = 13
@@ -41,6 +42,9 @@ class CliView(object):
 
     @staticmethod
     def print_result(out):
+        if out is None or out == "":
+            return
+
         if type(out) is not str:
             out = str(out)
         if CliView.pager == CliView.LESS:
@@ -68,1332 +72,402 @@ class CliView(object):
         if not timestamp:
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
 
-        return " (%s)"%(str(timestamp))
+        return ' (' + str(timestamp) + ')'
 
     @staticmethod
-    def info_network(stats, cluster_names, versions, builds, cluster, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
+    def info_network(stats, cluster_names, versions, builds, cluster,
+                     timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         hosts = cluster.nodes
-
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Network Information%s" % (title_suffix)
-        column_names = (
-            ('cluster-name', 'Cluster Name'), 'node', 'node_id', 'ip', 'build',
-            'cluster_size', ('_migrations', 'Migrations'), 'cluster_key',
-            '_cluster_integrity', ('_paxos_principal', 'Principal'),
-            'rackaware_mode', ('client_connections', 'Client Conns'), '_uptime'
-        )
-
-        t = Table(title, column_names, group_by=0, sort_by=1)
-
-        t.add_data_source('Enterprise', lambda data: 'N/E' if data['version'] == 'N/E' else(
-            True if "Enterprise" in data['version'] else False))
-        t.add_data_source('_cluster_integrity', lambda data:
-                          True if row['cluster_integrity'] == 'true' else False)
-        t.add_data_source('_migrations',
-                          Extractors.sif_extractor('migrate_partitions_remaining'))
-        t.add_data_source('_uptime', Extractors.time_extractor('uptime'))
-
-        t.add_cell_alert('node_id', lambda data: data[
-                         'real_node_id'] == principal, color=terminal.fg_green)
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-        t.add_cell_alert(
-            '_cluster_integrity', lambda data: data['cluster_integrity'] != 'true')
-
-        for node_key, n_stats in stats.items():
-            if isinstance(n_stats, Exception):
-                n_stats = {}
-
-            node = cluster.get_node(node_key)[0]
-            row = n_stats
-            row['real_node_id'] = node.node_id
-            row['node'] = prefixes[node_key]
-            row['ip'] = hosts[node_key].sock_name(use_fqdn=False)
-            row['node_id'] = node.node_id if node.node_id != principal else "*%s" % (
-                node.node_id)
-
-            try:
-                paxos_node = cluster.get_node(row['paxos_principal'])[0]
-                row['_paxos_principal'] = paxos_node.node_id
-            except KeyError:
-                # The principal is a node we currently do not know about
-                # So return the principal ID
-                try:
-                    row['_paxos_principal'] = row['paxos_principal']
-                except KeyError:
-                    pass
-            try:
-                build = builds[node_key]
-                if not isinstance(build, Exception):
-                    try:
-                        version = versions[node_key]
-                        if not isinstance(version, Exception):
-                            if 'enterprise' in version.lower():
-                                row['build'] = "E-%s" % (str(build))
-                            elif 'community' in version.lower():
-                                row['build'] = "C-%s" % (str(build))
-                            else:
-                                row['build'] = build
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            try:
-                cluster_name = cluster_names[node_key]
-                if not isinstance(cluster_name, Exception) and cluster_name not in ["null"]:
-                    row["cluster-name"] = cluster_name
-            except Exception:
-                pass
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        title = 'Network Information' + title_suffix
+        sources = dict(
+            cluster_names=cluster_names,
+            prefixes=prefixes,
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys())),
+            hosts=dict(((k, h.sock_name(use_fqdn=False))
+                        for k, h in hosts.items())),
+            builds=builds,
+            versions=versions,
+            stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
+        CliView.print_result(
+            sheet.render(templates.info_network_sheet, title, sources,
+                         common=common))
 
     @staticmethod
-    def info_namespace_usage(stats, cluster, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
-
+    def info_namespace_usage(stats, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Namespace Usage Information%s" % (title_suffix)
-        column_names = (
-            'namespace', 'node',
-            ('_total_records', 'Total Records'),
-            ('_expired_and_evicted', 'Expirations,Evictions'), 'stop_writes',
-            ('_used_bytes_disk', 'Disk Used'), ('_used_disk_pct', 'Disk Used%'),
-            ('high-water-disk-pct', 'HWM Disk%'), ('available_pct', 'Avail%'),
-            ('_used_bytes_memory', 'Mem Used'), ('_used_mem_pct', 'Mem Used%'),
-            ('high-water-memory-pct', 'HWM Mem%'),
-            ('stop-writes-pct', 'Stop Writes%'),
-            ('_index_type', 'PI Type'),
-            ('_index_used_bytes', 'PI Used'),
-            ('index_used_pct', 'PI Used%'), ('index-type.mounts-high-water-pct', 'PI HWM%'),
-        )
+        title = 'Namespace Usage Information' + title_suffix
+        sources = dict(
+            # TODO - collect cluster-name.
+            cluster_names=dict([(k, None) for k in stats.keys()]),
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys())),
+            prefixes=prefixes,
+            ns_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, sort_by=0)
-
-        t.add_data_source('_total_records', Extractors.sif_extractor(
-            ('_total_records')))
-        t.add_data_source_tuple(
-            '_expired_and_evicted',
-            Extractors.sif_extractor(('expired-objects', 'expired_objects')),
-            Extractors.sif_extractor(('evicted-objects', 'evicted_objects')))
-        t.add_data_source('_used_bytes_disk', Extractors.byte_extractor(
-            ('used-bytes-disk', 'device_used_bytes')))
-        t.add_data_source('_used_bytes_memory', Extractors.byte_extractor(
-            ('used-bytes-memory', 'memory_used_bytes')))
-
-        t.add_data_source('_index_type',
-            lambda data: get_value_from_dict( data, ('index-type'), default_value="shmem"))
-        t.add_data_source('_index_used_bytes',
-            Extractors.byte_extractor(('index_used_bytes')))
-
-        t.add_data_source('_used_disk_pct', lambda data: 100 -
-                          int(data['free_pct_disk']) if data['free_pct_disk'] != " " else " ")
-
-        t.add_data_source('_used_mem_pct', lambda data: 100 - int(
-            data['free_pct_memory']) if data['free_pct_memory'] != " " else " ")
-
-        t.add_cell_alert('available_pct', lambda data: data['available_pct'] != " " and int(data['available_pct']) <= 10)
-
-        t.add_cell_alert('stop_writes', lambda data: data['stop_writes'] != " " and data['stop_writes'] != 'false')
-
-        t.add_cell_alert('_used_mem_pct', lambda data: data['free_pct_memory'] != " " and (100 - int(data['free_pct_memory'])) >= int(data['high-water-memory-pct']))
-
-        t.add_cell_alert('_used_disk_pct', lambda data: data['free_pct_disk'] != " " and (100 - int(data['free_pct_disk'])) >= int(data['high-water-disk-pct']))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        t.add_cell_alert(
-            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_total_records', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_used_bytes_memory', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_used_bytes_disk', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_expired_and_evicted', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert('_index_used_bytes', lambda data: data['node'] == " ", color=terminal.fg_blue)
-
-        total_res = {}
-
-        # Need to maintain Node column ascending order per namespace.
-        # If set sort_by in table, it will affect total rows. TODO: implement group_by
-        # So we need to add rows as Nodes ascending order. So need to sort
-        # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
-        node_column_list = [prefixes[key] for key in node_key_list]
-        sorted_node_list = [x for (y, x) in sorted(
-            zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
-
-        for node_key in sorted_node_list:
-            n_stats = stats[node_key]
-            node = cluster.get_node(node_key)[0]
-            if isinstance(n_stats, Exception):
-                t.insert_row(
-                    {'real_node_id': node.node_id, 'node': prefixes[node_key]})
-                continue
-
-            for ns, ns_stats in n_stats.items():
-
-                if isinstance(ns_stats, Exception):
-                    row = {}
-                else:
-                    row = ns_stats
-
-                _total_records = 0
-
-                if ns not in total_res:
-                    total_res[ns] = {}
-                    total_res[ns]["_total_records"] = 0
-                    total_res[ns]["used-bytes-memory"] = 0
-                    total_res[ns]["used-bytes-disk"] = 0
-                    total_res[ns]["evicted_objects"] = 0
-                    total_res[ns]["expired_objects"] = 0
-                    total_res[ns]["index_used_bytes"] = 0
-
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('master-objects', 'master_objects'),
-                        default_value=0, return_type=int)
-                except Exception:
-                    pass
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('master_tombstones'), default_value=0, return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('prole-objects', 'prole_objects'), default_value=0,
-                        return_type=int)
-                except Exception:
-                    pass
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('prole_tombstones'), default_value=0, return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('non-replica-objects', 'non_replica_objects'),
-                        default_value=0, return_type=int)
-                except Exception:
-                    pass
-                try:
-                    _total_records += get_value_from_dict(
-                        ns_stats, ('non_replica_tombstones'), default_value=0, return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["used-bytes-memory"] += get_value_from_dict(
-                        ns_stats, ('used-bytes-memory', 'memory_used_bytes'), return_type=int)
-                except Exception:
-                    pass
-                try:
-                    total_res[ns]["used-bytes-disk"] += get_value_from_dict(
-                        ns_stats, ('used-bytes-disk', 'device_used_bytes'), return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["evicted_objects"] += get_value_from_dict(
-                        ns_stats, ('evicted-objects', 'evicted_objects'), return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["expired_objects"] += get_value_from_dict(
-                        ns_stats, ('expired-objects', 'expired_objects'), return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["index_used_bytes"] += get_value_from_dict(
-                        ns_stats, ('index_flash_used_bytes', 'index_pmem_used_bytes'), default_value=0, return_type=int)
-                except Exception:
-                    pass
-
-                row['namespace'] = ns
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                set_value_in_dict(row, "available_pct", get_value_from_dict(row, ('available_pct', 'device_available_pct')))
-                set_value_in_dict(row, "free_pct_disk", get_value_from_dict(row, ('free-pct-disk', 'device_free_pct')))
-                set_value_in_dict(row, "free_pct_memory", get_value_from_dict(row, ('free-pct-memory', 'memory_free_pct')))
-                set_value_in_dict(row, "stop_writes", get_value_from_dict(row, ('stop-writes', 'stop_writes')))
-                set_value_in_dict(row, "_total_records", _total_records)
-
-                total_res[ns]["_total_records"] += _total_records
-
-                set_value_in_dict(row, "index-type", get_value_from_dict(row, ('index-type'), default_value="shmem"))
-                set_value_in_dict(row, "index_used_bytes", get_value_from_dict(row, ('index_flash_used_bytes', 'index_pmem_used_bytes', 'memory_used_index_bytes'), default_value=0))
-
-                if row['index-type'] != "shmem":
-                    set_value_in_dict(row, "index_used_pct", get_value_from_dict(row, ('index_flash_used_pct', 'index_pmem_used_pct'), default_value=0))
-
-                t.insert_row(row)
-
-        for ns in total_res:
-            row = {}
-            row['node'] = " "
-            row['available_pct'] = " "
-            row["stop_writes"] = " "
-            row["high-water-disk-pct"] = " "
-            row["free_pct_disk"] = " "
-            row["free_pct_memory"] = " "
-            row["high-water-memory-pct"] = " "
-            row["stop-writes-pct"] = " "
-            row["index-type"] = " "
-            row["index_used_pct"] = " "
-            row["index-type.mounts-high-water-pct"] = " "
-
-            row['namespace'] = ns
-            row["_total_records"] = str(total_res[ns]["_total_records"])
-            row["used-bytes-memory"] = str(total_res[ns]["used-bytes-memory"])
-            row["used-bytes-disk"] = str(total_res[ns]["used-bytes-disk"])
-            row["evicted_objects"] = str(total_res[ns]["evicted_objects"])
-            row["expired_objects"] = str(total_res[ns]["expired_objects"])
-            row["index_used_bytes"] = str(total_res[ns]["index_used_bytes"])
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(templates.info_namespace_usage_sheet, title, sources,
+                         common=common))
 
     @staticmethod
-    def info_namespace_object(stats, cluster, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
-
+    def info_namespace_object(stats, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Namespace Object Information%s" % (title_suffix)
-        column_names = (
-            'namespace', 'node',
-            ('_total_records', 'Total Records'),
-            ('_repl_factor', "Repl Factor"),
-            ('_objects', 'Objects (Master,Prole,Non-Replica)'),
-            ('_tombstones', 'Tombstones (Master,Prole,Non-Replica)'),
-            ('_migrates', 'Pending Migrates (tx,rx)'), ('rack-id', 'Rack ID')
-        )
+        title = 'Namespace Object Information' + title_suffix
+        sources = dict(
+            # TODO - collect cluster-name.
+            cluster_names=dict([(k, None) for k in stats.keys()]),
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys())),
+            prefixes=prefixes,
+            ns_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, sort_by=0)
-
-        t.add_data_source(
-            '_total_records',
-            Extractors.sif_extractor('_total_records'))
-
-        t.add_data_source(
-            '_repl_factor',
-            lambda data: get_value_from_dict(
-                data, ('effective_replication_factor',  # introduced post 3.15.0.1
-                       'repl-factor',
-                       'replication-factor')
-            ))
-
-        t.add_data_source_tuple(
-            '_objects',
-            Extractors.sif_extractor(('master-objects', 'master_objects')),
-            Extractors.sif_extractor(('prole-objects', 'prole_objects')),
-            Extractors.sif_extractor(('non_replica_objects'))
-        )
-
-        t.add_data_source_tuple(
-            '_tombstones',
-            Extractors.sif_extractor(('master_tombstones')),
-            Extractors.sif_extractor(('prole_tombstones')),
-            Extractors.sif_extractor(('non_replica_tombstones'))
-        )
-
-        t.add_data_source_tuple(
-            '_migrates',
-            Extractors.sif_extractor(('migrate_tx_partitions_remaining',
-                                      'migrate-tx-partitions-remaining')),
-            Extractors.sif_extractor(('migrate_rx_partitions_remaining',
-                                      'migrate-rx-partitions-remaining')))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        t.add_cell_alert(
-            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_total_records', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_objects', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_tombstones', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_migrates', lambda data: data['node'] == " ", color=terminal.fg_blue)
-
-        total_res = {}
-
-        # Need to maintain Node column ascending order per namespace.
-        # If set sort_by in table, it will affect total rows.
-        # So we need to add rows as Nodes ascending order. So need to sort
-        # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
-        node_column_list = [prefixes[key] for key in node_key_list]
-        sorted_node_list = [x for (y, x) in sorted(
-            zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
-
-        rack_id_available = False
-
-        for node_key in sorted_node_list:
-            n_stats = stats[node_key]
-            node = cluster.get_node(node_key)[0]
-            if isinstance(n_stats, Exception):
-                t.insert_row(
-                    {'real_node_id': node.node_id, 'node': prefixes[node_key]})
-                continue
-
-            for ns, ns_stats in n_stats.items():
-                if isinstance(ns_stats, Exception):
-                    row = {}
-                else:
-                    row = ns_stats
-                    ns_stats['_total_records'] = 0
-
-                if ns not in total_res:
-                    total_res[ns] = {}
-                    total_res[ns]["_total_records"] = 0
-                    total_res[ns]["master_objects"] = 0
-                    total_res[ns]["master_tombstones"] = 0
-                    total_res[ns]["prole_objects"] = 0
-                    total_res[ns]["prole_tombstones"] = 0
-                    total_res[ns]["non_replica_objects"] = 0
-                    total_res[ns]["non_replica_tombstones"] = 0
-                    total_res[ns]["migrate_tx_partitions_remaining"] = 0
-                    total_res[ns]["migrate_rx_partitions_remaining"] = 0
-
-                if "rack-id" in row:
-                    rack_id_available = True
-
-                try:
-                    value = get_value_from_dict(
-                        ns_stats, ('master-objects', 'master_objects'), return_type=int)
-                    total_res[ns]["master_objects"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(ns_stats, ('master_tombstones'), return_type=int)
-                    total_res[ns]["master_tombstones"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(
-                        ns_stats, ('prole-objects', 'prole_objects'), return_type=int)
-                    total_res[ns]["prole_objects"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(ns_stats, ('prole_tombstones'), return_type=int)
-                    total_res[ns]["prole_tombstones"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(
-                        ns_stats, ('non_replica_objects'), return_type=int)
-                    total_res[ns]["non_replica_objects"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    value = get_value_from_dict(ns_stats, ('non_replica_tombstones'), return_type=int)
-                    total_res[ns]["non_replica_tombstones"] += value
-                    ns_stats['_total_records'] += value
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["migrate_tx_partitions_remaining"] += get_value_from_dict(
-                        ns_stats, ('migrate-tx-partitions-remaining',
-                                   'migrate_tx_partitions_remaining'), return_type=int)
-                except Exception:
-                    pass
-
-                try:
-                    total_res[ns]["migrate_rx_partitions_remaining"] += get_value_from_dict(
-                        ns_stats, ('migrate-rx-partitions-remaining',
-                                   'migrate_rx_partitions_remaining'), return_type=int)
-                except Exception:
-                    pass
-
-                if not isinstance(ns_stats, Exception):
-                    total_res[ns]['_total_records'] += ns_stats['_total_records']
-
-                row['namespace'] = ns
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                t.insert_row(row)
-
-        for ns in total_res:
-            row = {}
-            row['node'] = " "
-
-            row['namespace'] = ns
-            row["_total_records"] = str(total_res[ns]["_total_records"])
-            row["repl-factor"] = " "
-            row["master_objects"] = str(total_res[ns]["master_objects"])
-            row["master_tombstones"] = str(total_res[ns]["master_tombstones"])
-            row["prole_objects"] = str(total_res[ns]["prole_objects"])
-            row["prole_tombstones"] = str(total_res[ns]["prole_tombstones"])
-            row["non_replica_objects"] = str(total_res[ns]["non_replica_objects"])
-            row["non_replica_tombstones"] = str(total_res[ns]["non_replica_tombstones"])
-            row["migrate_tx_partitions_remaining"] = str(
-                total_res[ns]["migrate_tx_partitions_remaining"])
-            row["migrate_rx_partitions_remaining"] = str(
-                total_res[ns]["migrate_rx_partitions_remaining"])
-
-            if rack_id_available:
-                row["rack-id"] = " "
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(templates.info_namespace_object_sheet, title, sources,
+                         common=common))
 
     @staticmethod
-    def info_set(stats, cluster, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
-
+    def info_set(stats, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Set Information%s" % (title_suffix)
-        column_names = ('set', 'namespace', 'node', ('_set-delete', 'Set Delete'), ('_n-bytes-memory', 'Mem Used'), ('_n_objects', 'Objects'), 'stop-writes-count', 'disable-eviction', 'set-enable-xdr'
-                        )
+        title = 'Set Information%s' + title_suffix
+        sources = dict(
+            # TODO - collect cluster-name.
+            cluster_names=dict([(k, None) for k in stats.keys()]),
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys())),
+            prefixes=prefixes,
+            set_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, sort_by=1, group_by=0)
-        t.add_data_source(
-            '_n-bytes-memory', Extractors.byte_extractor(('n-bytes-memory', 'memory_data_bytes')))
-        t.add_data_source(
-            '_n_objects', Extractors.sif_extractor(('n_objects', 'objects')))
-
-        t.add_data_source(
-            '_set-delete', lambda data: get_value_from_dict(data, ('set-delete', 'deleting')))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        t.add_cell_alert(
-            'set', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            'namespace', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_n-bytes-memory', lambda data: data['node'] == " ", color=terminal.fg_blue)
-        t.add_cell_alert(
-            '_n_objects', lambda data: data['node'] == " ", color=terminal.fg_blue)
-
-        total_res = {}
-
-        # Need to maintain Node column ascending order per <set,namespace>. If set sort_by in table, it will affect total rows.
-        # So we need to add rows as Nodes ascending order. So need to sort
-        # stats.keys as per respective Node value (prefixes[node_key]).
-        node_key_list = stats.keys()
-        node_column_list = [prefixes[key] for key in node_key_list]
-        sorted_node_list = [x for (y, x) in sorted(
-            zip(node_column_list, node_key_list), key=lambda pair: pair[0])]
-
-        for node_key in sorted_node_list:
-            s_stats = stats[node_key]
-            node = cluster.get_node(node_key)[0]
-            if isinstance(s_stats, Exception):
-                t.insert_row(
-                    {'real_node_id': node.node_id, 'node': prefixes[node_key]})
-                continue
-
-            for (ns, set), set_stats in s_stats.items():
-                if isinstance(set_stats, Exception):
-                    row = {}
-                else:
-                    row = set_stats
-
-                if (ns, set) not in total_res:
-                    total_res[(ns, set)] = {}
-                    total_res[(ns, set)]["n-bytes-memory"] = 0
-                    total_res[(ns, set)]["n_objects"] = 0
-                try:
-                    total_res[(ns, set)]["n-bytes-memory"] += get_value_from_dict(
-                        set_stats, ('n-bytes-memory', 'memory_data_bytes'), 0, int)
-                except Exception:
-                    pass
-                try:
-                    total_res[(ns, set)][
-                        "n_objects"] += get_value_from_dict(set_stats, ('n_objects', 'objects'), 0, int)
-                except Exception:
-                    pass
-
-                row['set'] = set
-                row['namespace'] = ns
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                t.insert_row(row)
-
-        for (ns, set) in total_res:
-            row = {}
-            row['set'] = set
-            row['namespace'] = ns
-            row['node'] = " "
-            row['set-delete'] = " "
-            row['stop-writes-count'] = " "
-            row['disable-eviction'] = " "
-            row['set-enable-xdr'] = " "
-
-            row['n-bytes-memory'] = str(total_res[(ns, set)]["n-bytes-memory"])
-            row["n_objects"] = str(total_res[(ns, set)]["n_objects"])
-
-            t.insert_row(row)
-
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(templates.info_set_sheet, title, sources, common=common))
 
     # pre 5.0
     @staticmethod
-    def info_dc(stats, cluster, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
+    def info_dc(stats, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "DC Information%s" % (title_suffix)
-        column_names = ('node', ('_dc-name', 'DC'), ('dc-type', 'DC type'), ('_xdr_dc_size', 'DC size'),
-                        'namespaces',('_lag-secs', 'Lag (sec)'), ('_xdr_dc_remote_ship_ok', 'Records Shipped'),
-                        ('_latency_avg_ship_ema', 'Avg Latency (ms)'), ('_xdr-dc-state', 'Status')
-                        )
+        title = 'DC Information%s' % (title_suffix)
+        sources = dict(
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys())),
+            prefixes=prefixes,
+            dc_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, group_by=1)
-
-        t.add_data_source(
-            '_dc-name', lambda data: get_value_from_dict(data, ('dc-name', 'DC_Name')))
-
-        t.add_data_source('_xdr_dc_size', lambda data: get_value_from_dict(
-            data, ('xdr_dc_size', 'dc_size', 'dc_as_size', 'dc_http_good_locations')))
-
-        t.add_data_source(
-            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag')))
-
-        t.add_data_source('_xdr_dc_remote_ship_ok', lambda data: get_value_from_dict(
-            data, ('xdr_dc_remote_ship_ok', 'dc_remote_ship_ok', 'dc_recs_shipped_ok', 'dc_ship_success')))
-
-        t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
-            data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
-
-        t.add_data_source('_xdr-dc-state', lambda data:
-                          get_value_from_dict(data, ('xdr_dc_state', 'xdr-dc-state', 'dc_state')))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        row = None
-        for node_key, dc_stats in stats.items():
-            if isinstance(dc_stats, Exception):
-                dc_stats = {}
-            node = cluster.get_node(node_key)[0]
-            for dc, row in dc_stats.items():
-                if isinstance(row, Exception):
-                    row = {}
-                if row:
-                    row['real_node_id'] = node.node_id
-                    row['node'] = prefixes[node_key]
-                    t.insert_row(row)
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(templates.info_dc_sheet, title, sources,
+                         common=common))
 
     # pre 5.0
     @staticmethod
-    def info_old_XDR(stats, builds, xdr_enable, cluster, timestamp="", **ignore):
+    def info_old_XDR(stats, builds, xdr_enable, cluster, timestamp="", **mods):
         if not max(xdr_enable.values()):
             return
 
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
+        prefixes = cluster.get_node_names(mods.get('with', []))
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "XDR Information%s" % (title_suffix)
-        column_names = ('node', 'build', ('_bytes-shipped', 'Data Shipped'), '_free-dlog-pct', ('_lag-secs', 'Lag (sec)'), '_req-outstanding',
-                        '_req-shipped-success', '_req-shipped-errors', ('_cur_throughput', 'Cur Throughput'), ('_latency_avg_ship', 'Avg Latency (ms)'), '_xdr-uptime')
+        title = 'XDR Information' + title_suffix
+        sources = dict(
+            xdr_enable=xdr_enable,
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys())),
+            prefixes=prefixes,
+            builds=builds,
+            xdr_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t = Table(title, column_names, group_by=1)
+        CliView.print_result(
+            sheet.render(templates.info_old_xdr_sheet, title, sources, common=common))
 
-        t.add_data_source('_xdr-uptime', Extractors.time_extractor(
-            ('xdr-uptime', 'xdr_uptime')))
+    @staticmethod
+    def info_XDR(stats, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore):
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = title + title_suffix
+        prefixes = cluster.get_node_names()
+        node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                        for k in prefixes.keys()))
+        sources = dict(
+            xdr_enable=xdr_enable,
+            node_ids=node_ids,
+            prefixes=prefixes,
+            xdr_stats=stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t.add_data_source('_bytes-shipped',
-                          Extractors.byte_extractor(
-                              ('esmt-bytes-shipped', 'esmt_bytes_shipped', 'xdr_ship_bytes')))
+        CliView.print_result(
+            sheet.render(templates.info_xdr_sheet, title, sources, common=common))
 
-        t.add_data_source('_lag-secs',
-                          Extractors.time_extractor('xdr_timelag'))
+    @staticmethod
+    def info_sindex(stats, cluster, timestamp='', **mods):
+        # return if sindex stats are empty.
+        if not stats:
+            return
 
-        t.add_data_source('_req-outstanding',
-                          Extractors.sif_extractor(('stat_recs_outstanding', 'xdr_ship_outstanding_objects')))
+        # stats comes in {index:{node:{k:v}}}, needs to be {node:{index:{k:v}}}
+        sindex_stats = {}
 
-        t.add_data_source('_req-shipped-errors',
-                          Extractors.sif_extractor('stat_recs_ship_errors'))
+        for iname, nodes in stats.items():
+            for node, values in nodes.items():
+                sindex_stats[node] = node_stats = sindex_stats.get(node, {})
+                node_stats[iname] = values
 
-        t.add_data_source('_req-shipped-success',
-                          Extractors.sif_extractor(('stat_recs_shipped_ok', 'xdr_ship_success')))
+        prefixes = cluster.get_node_names(mods.get('with', []))
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = 'Secondary Index Information' + title_suffix
+        sources = dict(
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys())),
+            prefixes=prefixes,
+            sindex_stats=sindex_stats)
+        common = dict(principal=cluster.get_expected_principal())
 
-        t.add_data_source('_cur_throughput',
-                          lambda data: get_value_from_dict(data, ('cur_throughput', 'xdr_throughput')))
+        CliView.print_result(
+            sheet.render(templates.info_sindex_sheet, title, sources,
+                         common=common))
 
-        t.add_data_source('_latency_avg_ship',
-                          lambda data: get_value_from_dict(data, ('latency_avg_ship', 'xdr_ship_latency_avg')))
+    @staticmethod
+    def show_distribution(title, histogram, unit, hist, cluster, like=None,
+                          timestamp="", **mods):
+        likes = compile_likes(like)
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        description = 'Percentage of records having {} less than or '.format(
+            hist) + 'equal to value measured in {}'.format(unit)
+        namespaces = set(filter(likes.search, histogram.keys()))
 
-        # Highlight red if lag is more than 30 seconds
-        t.add_cell_alert(
-            '_lag-secs', lambda data: int(data['xdr_timelag']) >= 300)
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        row = None
-        for node_key, row in stats.items():
-            if isinstance(row, Exception):
-                row = {}
-
-            node = cluster.get_node(node_key)[0]
-            if xdr_enable[node_key]:
-                if row:
-                    row['build'] = builds[node_key]
-                    set_value_in_dict(
-                        row, '_free-dlog-pct', get_value_from_dict(row, ('free_dlog_pct', 'free-dlog-pct', 'dlog_free_pct')))
-                    if row['_free-dlog-pct'].endswith("%"):
-                        row['_free-dlog-pct'] = row['_free-dlog-pct'][:-1]
-
-                    set_value_in_dict(row, 'xdr_timelag', get_value_from_dict(
-                        row, ('xdr_timelag', 'timediff_lastship_cur_secs')))
-                    if not get_value_from_dict(row, ('stat_recs_shipped_ok', 'xdr_ship_success')):
-                        set_value_in_dict(row, 'stat_recs_shipped_ok', str(int(get_value_from_dict(row, ('stat_recs_shipped', 'stat-recs-shipped'), 0))
-                                                                           -
-                                                                           int(get_value_from_dict(
-                                                                               row, ('err_ship_client', 'err-ship-client'), 0))
-                                                                           - int(get_value_from_dict(row, ('err_ship_server', 'err-ship-server'), 0))))
-                    set_value_in_dict(row, 'stat_recs_ship_errors', str(int(get_value_from_dict(row, ('err_ship_client', 'err-ship-client', 'xdr_ship_source_error'), 0))
-                                                                        + int(get_value_from_dict(row, ('err_ship_server', 'err-ship-server', 'xdr_ship_destination_error'), 0))))
-                else:
-                    row = {}
-                    row['node-id'] = node.node_id
-                row['real_node_id'] = node.node_id
-            else:
+        for namespace, node_data in histogram.items():
+            if namespace not in namespaces or not node_data or \
+               isinstance(node_data, Exception):
                 continue
 
-            row['node'] = prefixes[node_key]
+            this_title = '{} - {} in {}{}'.format(
+                namespace, title, unit, title_suffix)
+            sources = dict(
+                prefixes=cluster.get_node_names(mods.get('with', [])),
+                histogram=dict((k, d['percentiles'])
+                               for k, d in node_data.items())
+            )
 
-            t.insert_row(row)
-        CliView.print_result(t)
-
-    @staticmethod
-    def info_XDR(stats, builds, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore):
-        if not max(xdr_enable.values()):
-            return
-
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = title + "%s" % (title_suffix)
-        column_names = ('node', 'namespaces', ('success', 'Success'),
-                        ('retry_conn_reset', 'Retry Connection Reset'), ('retry_dest', 'Retry Destination'),
-                        ('recoveries_pending', 'Recoveries Pending'), ('_lag-secs', 'Lag (hh:mm:ss)'),
-                        ('latency_ms', 'Avg Latency (ms)'), ('throughput', 'Throughput (rec/s)')
-                        )
-
-        t = Table(title, column_names, group_by=1, style=Styles.HORIZONTAL)
-
-        t.add_data_source('success', lambda data: get_value_from_dict(
-            data, ('success')))
-        
-        t.add_data_source('retry_conn_reset', lambda data: get_value_from_dict(
-            data, ('retry_conn_reset')))
-
-        t.add_data_source('retry_dest', lambda data: get_value_from_dict(
-            data, ('retry_dest')))
-
-        t.add_data_source('recoveries_pending', lambda data: get_value_from_dict(
-            data, ('recoveries_pending')))
-
-        t.add_data_source(
-            '_lag-secs', Extractors.time_extractor(('xdr-dc-timelag', 'xdr_dc_timelag', 'dc_timelag', 'lag')))
-
-        t.add_data_source('Avg Latency (ms)', lambda data: get_value_from_dict(
-            data, ('latency_ms')))
-
-        t.add_data_source('Throughput (records per second)', lambda data: get_value_from_dict(
-            data, ('throughput')))
-
-        t.add_data_source('_latency_avg_ship_ema', lambda data: get_value_from_dict(
-            data, ('latency_avg_ship_ema', 'dc_latency_avg_ship', 'dc_latency_avg_ship_ema', 'dc_ship_latency_avg')))
-
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-
-        row = None
-        for node_key, row in stats.items():
-            if isinstance(row, Exception):
-                row = {}
-            node = cluster.get_node(node_key)[0]
-            row['real_node_id'] = node.node_id
-            row['node'] = prefixes[node_key]
-            row['total_recoveries'] = int(row['recoveries']) + int(row['recoveries_pending'])
-            t.insert_row(row)
-
-        CliView.print_result(t)
+            CliView.print_result(
+                sheet.render(templates.show_distribution_sheet, this_title, sources,
+                             description=description))
 
     @staticmethod
-    def info_sindex(stats, cluster, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-        principal = cluster.get_expected_principal()
-
+    def show_object_distribution(
+            title, histogram, unit, hist, bucket_count, set_bucket_count,
+            cluster, like=None, timestamp="", loganalyser_mode=False, **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
+        likes = compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Secondary Index Information%s" % (title_suffix)
-        column_names = ('node', ('indexname', 'Index Name'), ('indextype', 'Index Type'), ('ns', 'Namespace'), 'set', ('_bins', 'Bins'), ('_num_bins', 'Num Bins'), ('type', 'Bin Type'),
-                        'state', 'sync_state', 'keys', 'entries', 'si_accounted_memory', ('_query_reqs', 'q'), ('_stat_write_success', 'w'), ('_stat_delete_success', 'd'), ('_query_avg_rec_count', 's'))
+        description = "Number of records having {} in the range ".format(
+            hist) + "measured in {}".format(unit)
+        namespaces = set(filter(likes.search, histogram.keys()))
 
-        t = Table(title, column_names, group_by=1, sort_by=2)
-        t.add_data_source(
-            '_bins', lambda data: get_value_from_dict(data, ('bins', 'bin')))
-        t.add_data_source('_num_bins', lambda data: get_value_from_dict(
-            data, ('num_bins'), default_value=1))
-        t.add_data_source(
-            'entries', Extractors.sif_extractor(('entries', 'objects')))
-        t.add_data_source(
-            '_query_reqs', Extractors.sif_extractor(('query_reqs')))
-        t.add_data_source('_stat_write_success', Extractors.sif_extractor(
-            ('stat_write_success', 'write_success')))
-        t.add_data_source('_stat_delete_success', Extractors.sif_extractor(
-            ('stat_delete_success', 'delete_success')))
-        t.add_data_source(
-            '_query_avg_rec_count', Extractors.sif_extractor(('query_avg_rec_count')))
-        t.add_cell_alert(
-            'node', lambda data: data['real_node_id'] == principal, color=terminal.fg_green)
-        for stat in stats.values():
-            for node_key, n_stats in stat.items():
-                node = cluster.get_node(node_key)[0]
-                if isinstance(n_stats, Exception):
-                    row = {}
-                else:
-                    row = n_stats
-                row['real_node_id'] = node.node_id
-                row['node'] = prefixes[node_key]
-                t.insert_row(row)
+        for namespace, node_data in histogram.items():
+            if namespace not in namespaces:
+                continue
 
-        CliView.print_result(t)
+            ns_title = "{} - {} in {}{}".format(
+                namespace, title, unit, title_suffix)
+            sources = dict(
+                prefixes=prefixes,
+                histogram={h: d.get('data', {})
+                           for h, d in node_data.items()
+                           if h != 'columns'})
+
+            CliView.print_result(sheet.render(
+                templates.show_object_distribution_sheet, ns_title, sources,
+                description=description))
+
+    @staticmethod
+    def format_latency(orig_latency):
+        # XXX - eventually, node.py could return this format. Changing here
+        #       because loganalyser also sends this format.
+        latency = {}
+
+        for hist, nodes_data in orig_latency.items():
+            for node, node_data in nodes_data.items():
+                node_latency = latency[node] = latency.get(node, OrderedDict())
+
+                for ns, ns_data in node_data['namespace'].items():
+                    for slice_id, values in enumerate(ns_data['values']):
+                        node_latency[(ns, hist, slice_id)] = OrderedDict(zip(
+                            ns_data['columns'], values))
+
+        return latency
+
+    @staticmethod
+    def show_latency(latency, cluster, machine_wise_display=False,
+                     like=None, timestamp="", **mods):
+        if machine_wise_display:
+            return CliView.show_latency_machine_wise(
+                latency, cluster, like=like, timestamp=timestamp, **mods)
+
+        # TODO - May not need to converter now that dicts can be nested.
+
+        prefixes = cluster.get_node_names(mods.get('with', []))
+        likes = compile_likes(like)
+        title = 'Latency ' + CliView._get_timestamp_suffix(timestamp)
+        keys = set(filter(likes.search, latency.keys()))
+        latency = {k: v for k, v in latency.items() if k in keys}
+        latency = CliView.format_latency(latency)
+
+        sources = dict(prefixes=prefixes, histogram=latency)
+
+        CliView.print_result(sheet.render(
+            templates.show_latency_sheet, title, sources))
+
+
+    def format_latency_machine_wise(orig_latency):
+        latency = {}
+
+        for node, node_data in orig_latency.items():
+            for hist, hist_data in node_data.items():
+                node_latency = latency[node] = latency.get(node, OrderedDict())
+                for ns, ns_data in hist_data['namespace'].items():
+                    for slice_id, values in enumerate(ns_data['values']):
+                        node_latency[(ns, hist, slice_id)] = OrderedDict(zip(
+                            ns_data['columns'], values))
+
+        return latency
+
+    @staticmethod
+    def show_latency_machine_wise(latency, cluster, like=None, timestamp="",
+                                  **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
+        likes = compile_likes(like)
+        title = 'Latency ' + CliView._get_timestamp_suffix(timestamp)
+        keys = set(filter(likes.search, latency.keys()))
+        latency = {k: v for k, v in latency.items() if k in keys}
+        latency = CliView.format_latency_machine_wise(latency)
+
+        sources = dict(prefixes=prefixes, histogram=latency)
+
+        CliView.print_result(sheet.render(
+            templates.show_latency_machine_wise_sheet, title, sources))
+
+    @staticmethod
+    def show_config(title, service_configs, cluster, like=None, diff=False,
+                    show_total=False, title_every_nth=0, flip_output=False,
+                    timestamp="", **mods):
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = title + title_suffix
+        prefixes = cluster.get_node_names(mods.get('with', []))
+        node_ids = dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys()))
+        sources = dict(
+            prefixes=prefixes,
+            data=service_configs,
+            node_ids=node_ids)
+        disable_aggregations = not show_total
+        style = SheetStyle.columns if flip_output else None
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(
+                templates.show_config_sheet, title, sources, style=style,
+                selectors=like, title_repeat=title_every_nth != 0,
+                disable_aggregations=disable_aggregations, dynamic_diff=diff,
+                common=common))
+
+    @staticmethod
+    def show_stats(*args, **kwargs):
+        CliView.show_config(*args, **kwargs)
+
+    @staticmethod
+    def show_health(*args, **kwargs):
+        CliView.show_config(*args, **kwargs)
+
+    @staticmethod
+    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=True, title_every_nth=0, flip_output=False, timestamp="", col_header="", **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
+        node_ids = dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys()))
+        common = dict(principal=cluster.get_expected_principal())
+
+        sources = dict(
+            prefixes=prefixes,
+            node_ids=node_ids,
+            data=service_configs['xdr_configs'],
+        )
+
+        CliView.print_result(
+            sheet.render(
+                templates.show_config_sheet,
+                title, 
+                sources, 
+                dynamic_diff=diff, 
+                disable_aggregations=True,
+                common=common
+            )
+        )
+
+        for dc in service_configs['dc_configs']:
+            title = 'DC Configuration for {}'.format(dc)
+            sources = dict(
+                prefixes=prefixes, 
+                node_ids=node_ids,
+                data=service_configs['dc_configs'][dc]
+            )
+            CliView.print_result(
+                sheet.render(
+                    templates.show_config_sheet,
+                    title, 
+                    sources, 
+                    dynamic_diff=diff, 
+                    disable_aggregations=True,
+                    common=common
+                )
+            )
+
+
+        for dc in service_configs['ns_configs']:
+            title = 'Namespace Configuration for {}'.format(dc)
+            sources = dict(
+                prefixes=prefixes, 
+                node_ids=node_ids,
+                data=service_configs['ns_configs'][dc]
+            )
+            CliView.print_result(
+                sheet.render(
+                    templates.show_config_xdr_ns_sheet, 
+                    title, 
+                    sources, 
+                    dynamic_diff=diff,
+                    common=common
+                )
+            )
 
     @staticmethod
     def show_grep(title, summary):
         if not summary or len(summary.strip()) == 0:
             return
         if title:
-            print("************************** %s **************************" % (title))
+            print("************************** %s **************************") % (title)
         CliView.print_result(summary)
 
     @staticmethod
-    def show_distribution(title, histogram, unit, hist, cluster, like=None, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-
-        likes = compile_likes(like)
-
-        columns = ["%s%%" % (n) for n in range(10, 110, 10)]
-        percentages = columns[:]
-        columns.insert(0, 'node')
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        description = "Percentage of records having %s less than or " % (hist) + \
-                      "equal to value measured in %s" % (unit)
-
-        namespaces = set(filter(likes.search, histogram.keys()))
-
-        for namespace, node_data in histogram.items():
-            if namespace not in namespaces or not node_data or isinstance(node_data, Exception):
-                continue
-
-            t = Table("%s - %s in %s%s" % (namespace, title, unit,
-                                           title_suffix), columns, description=description)
-            for node_id, data in node_data.items():
-                if not data or isinstance(data, Exception):
-                    continue
-
-                percentiles = data['percentiles']
-                row = {}
-                row['node'] = prefixes[node_id]
-                for percent in percentages:
-                    row[percent] = percentiles.pop(0)
-
-                t.insert_row(row)
-
-            CliView.print_result(t)
-
-    @staticmethod
-    def show_object_distribution(title, histogram, unit, hist, bucket_count, set_bucket_count, cluster, like=None, timestamp="", loganalyser_mode=False, **ignore):
-        prefixes = cluster.get_node_names()
-
-        likes = compile_likes(like)
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        description = "Number of records having %s in the range " % (hist) + \
-                      "measured in %s" % (unit)
-
-        namespaces = set(filter(likes.search, histogram.keys()))
-
-        for namespace, node_data in histogram.items():
-            if namespace not in namespaces:
-                continue
-            columns = []
-            for column in node_data["columns"]:
-                # Tuple is required to give specific column display name,
-                # otherwise it will print same column name but in title_format
-                # (ex. KB -> Kb)
-                columns.append((column, column))
-            columns.insert(0, 'node')
-            t = Table("%s - %s in %s%s" % (namespace, title, unit,
-                                           title_suffix), columns, description=description)
-            if not loganalyser_mode:
-                for column in columns:
-                    if column != 'node':
-                        t.add_data_source(
-                            column, Extractors.sif_extractor(column))
-
-            for node_id, data in node_data.items():
-                if node_id == "columns":
-                    continue
-
-                row = data['values']
-                row['node'] = prefixes[node_id]
-                t.insert_row(row)
-
-            CliView.print_result(t)
-            if set_bucket_count and (len(columns) - 1) < bucket_count:
-                print("%sShowing only %s bucket%s as remaining buckets have zero objects%s\n" % (terminal.fg_green(), (len(columns) - 1), "s" if (len(columns) - 1) > 1 else "", terminal.fg_clear()))
-
-    @staticmethod
-    def _update_latency_column_list(data, all_columns):
-        if not data or "columns" not in data or not data["columns"]:
-            return
-
-        for column in data["columns"]:
-            if column[0] == '>':
-                c = int(column[1:-2])
-                all_columns.add((c,(column, "%%%s"%column)))
-
-            elif column[0:2] == "%>":
-                c = int(column[2:-2])
-                all_columns.add((c, column))
-
-    @staticmethod
-    def _create_latency_row(data, ns=" "):
-        if not data or "columns" not in data or not data["columns"] or "values" not in data or not data["values"]:
-            return
-
-        rows = []
-
-        columns = data.pop("columns", None)
-        for _values in data["values"]:
-            row = dict(zip(columns, _values))
-            row['namespace'] = ns
-            rows.append(row)
-
-        return rows
-
-    @staticmethod
-    def show_latency(latency, cluster, machine_wise_display=False, show_ns_details=False, like=None, timestamp="", message=None, **ignore):
-        if message is not None:
-            for line in message:
-                CliView.print_result(str(line))
-                
-        prefixes = cluster.get_node_names()
-
-        if like:
-            likes = compile_likes(like)
-
-        if not machine_wise_display:
-            if like:
-                histograms = set(filter(likes.search, latency.keys()))
-            else:
-                histograms = set(latency.keys())
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-
-        for hist_or_node, data in sorted(latency.items()):
-            if not machine_wise_display and hist_or_node not in histograms:
-                continue
-            title = "%s Latency%s" % (hist_or_node, title_suffix)
-
-            if machine_wise_display:
-                if like:
-                    histograms = set(filter(likes.search, data.keys()))
-                else:
-                    histograms = set(data.keys())
-            all_columns = set()
-            for node_or_hist_id, _data in data.items():
-                if machine_wise_display and node_or_hist_id not in histograms:
-                    continue
-
-                for _type, _type_data in _data.items():
-                    if _type == "namespace" and not show_ns_details:
-                        continue
-
-                    if _type == "total":
-                        CliView._update_latency_column_list(_type_data, all_columns=all_columns)
-
-                    else:
-                        for ns, ns_data in _type_data.items():
-                            CliView._update_latency_column_list(ns_data, all_columns=all_columns)
-
-            all_columns = [c[1] for c in sorted(all_columns, key=lambda c:c[0])]
-            all_columns.insert(0, 'ops/sec')
-            all_columns.insert(0, 'Time Span')
-            if show_ns_details:
-                all_columns.insert(0, 'namespace')
-            if machine_wise_display:
-                all_columns.insert(0, 'histogram')
-            else:
-                all_columns.insert(0, 'node')
-
-            t = Table(title, all_columns)
-            if show_ns_details:
-                for c in all_columns:
-                    t.add_cell_alert(
-                        c, lambda data: data['namespace'] == " ", color=terminal.fg_blue)
-            for node_or_hist_id, _data in data.items():
-                if machine_wise_display and node_or_hist_id not in histograms:
-                    continue
-
-                for _type in sorted(_data.keys()):
-                    if _type == "namespace" and not show_ns_details:
-                        continue
-
-                    _type_data = _data[_type]
-                    rows = []
-
-                    if _type == "total":
-                        rows = CliView._create_latency_row(_type_data)
-
-                    else:
-                        for _ns, _ns_data in _type_data.items():
-                            rows += CliView._create_latency_row(_ns_data, ns=_ns)
-
-                    for row in rows:
-                        if not row or isinstance(row, Exception):
-                            continue
-
-                        if machine_wise_display:
-                            row['histogram'] = node_or_hist_id
-                        else:
-                            row['node'] = prefixes[node_or_hist_id]
-                        t.insert_row(row)
-
-            CliView.print_result(t)
-
-    @staticmethod
-    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", col_header="", **ignore):        
-        if isinstance(service_configs, Exception) or not service_configs:
-            return
-
-        for node in service_configs:
-            if isinstance(service_configs[node], Exception):
-                service_configs[node] = {}
-
-        prefixes = cluster.get_node_names()
-        xdr_config_col_names = set()
-        dc_config_col_names = set()
-        ns_config_col_names = set()
-
-        if diff and service_configs:
-            # create xdr config names
-            config_sets = [set(service_configs[node]['xdr_configs'].items())
-                           for node in service_configs if service_configs[node]]
-            union = set.union(*config_sets)
-            intersection = set.intersection(*config_sets)
-            xdr_config_col_names = dict(union - intersection).keys()
-
-            # create dc xdr config names
-            config_unions_per_node = []
-            for node in service_configs:
-                if 'dc_configs' in service_configs[node] and service_configs[node]['dc_configs']:
-                    dc_configs = service_configs[node]['dc_configs']
-                    config_unions_per_node.append(set.union(*(set(dc_configs[dc].items())
-                                for dc in dc_configs if dc_configs[dc])))
-                else:
-                    config_unions_per_node.append(set())
-            
-            dc_intersect = set.intersection(*config_unions_per_node)
-            dc_union = set.union(*config_unions_per_node)
-            dc_config_col_names = dict(dc_union - dc_intersect).keys()
-
-            # create ns xdr config names
-            ns_config_unions_per_node = {}
-            dc_keys = set()
-            all_ns_keys = set()
-            for node in service_configs:
-                if 'ns_configs' in service_configs[node] and service_configs[node]['ns_configs']:
-                    ns_configs = service_configs[node]['ns_configs']
-                    ns_config_unions_per_dc = {}
-                    dc_keys.update(ns_configs.keys())
-                    for dc in ns_configs:
-                        ns_config_unions_per_dc[dc] = (set.union(*(set(ns_configs[dc][ns].items())
-                                                        for ns in ns_configs[dc] if ns_configs[dc][ns])))
-
-                        ns_config_unions_per_dc['ns_keys'] = set.union(*(set(ns) for ns in ns_configs[dc]))
-                        all_ns_keys.update(ns_configs[dc].keys())
-                    
-                    ns_config_unions_per_node[node] = ns_config_unions_per_dc
-            
-            all_ns_config_col_names_per_dc = {}
-            all_ns_config_unions_per_dc = {}
-            for dc in dc_keys:
-                all_ns_config_unions_per_dc = set()
-                for node, ns_unions_per_dc in ns_config_unions_per_node.items():
-                    warnings = []
-
-                    if dc not in ns_unions_per_dc:
-                        node_name = prefixes[node] if node in prefixes else node
-                        warnings.append("WARN: dc: %s, missing from node: %s" % (dc, node_name))
-                        continue
-
-                    for ns in all_ns_keys:
-                        if ns not in service_configs[node]['ns_configs'][dc]:
-                            node_name = prefixes[node] if node in prefixes else node
-                            warnings.append("WARN: ns: %s, missing from dc: %s, on node: %s" % (ns, dc, node_name))
-                            continue
-
-                    service_configs[node]['ns_configs'][dc]['warnings'] = warnings
-                    all_ns_config_unions_per_dc.update(ns_unions_per_dc[dc])
-
-                all_ns_config_intersections_per_dc = set.intersection(*(x[dc] for x in ns_config_unions_per_node.values() if dc in x))
-                all_ns_config_col_names_per_dc[dc] = dict(all_ns_config_unions_per_dc - all_ns_config_intersections_per_dc).keys()
-            
-            ns_config_col_names = all_ns_config_col_names_per_dc
-        else:
-            for node, xdr_config in service_configs.items():
-                if isinstance(xdr_config, Exception):
-                    continue
-
-                xdr_config_col_names.update(xdr_config['xdr_configs'].keys())
-                
-                for dc_stats in xdr_config['dc_configs'].values():
-                    dc_config_col_names.update(dc_stats.keys())
-
-                for ns_stats in xdr_config['ns_configs'].values():
-                    for ns in ns_stats.values():
-                        ns_config_col_names.update(ns.keys())
-            
-            ns_config_col_names = sorted(ns_config_col_names)
-
-        xdr_config_col_names = sorted(xdr_config_col_names)
-        dc_config_col_names = sorted(dc_config_col_names)
-        table_data = []
-        for node in service_configs:
-            if isinstance(service_configs[node], Exception):
-                continue
-
-            try:
-                table_data.append(("XDR Configuration",
-                                {node: service_configs[node]['xdr_configs']},
-                                xdr_config_col_names,
-                                ''))
-            except:
-                pass
-
-            try:
-                table_data.append(("DC Configuration for %s" % prefixes[node],
-                                service_configs[node]['dc_configs'],
-                                dc_config_col_names,
-                                'data_center'))
-            except:
-                pass
-
-            try:
-                for dc, ns_config in service_configs[node]['ns_configs'].items():
-                    table_data.append(("NS Configuration for %s, %s" % (dc, prefixes[node]),
-                                    ns_config,
-                                    sorted(ns_config_col_names[dc] if diff else ns_config_col_names),
-                                    'namespace'))
-            except:
-                pass
-
-        for data in table_data:
-            title = data[0]
-            service_configs = data[1]
-            column_names = data[2][:]
-            col_header = data[3]
-
-            if len(column_names) == 0:
-                continue
-
-            if like:
-                likes = compile_likes(like)
-                column_names = list(filter(likes.search, column_names))
-
-            if col_header:
-                column_names.insert(0, col_header)
-            else:
-                column_names.insert(0, "NODE")
-
-            table_style = Styles.VERTICAL
-            if flip_output:
-                table_style = Styles.HORIZONTAL
-
-            if show_total:
-                n_last_columns_ignore_sort = 1
-            else:
-                n_last_columns_ignore_sort = 0
-
-            title_suffix = CliView._get_timestamp_suffix(timestamp)
-            title = title + title_suffix
-            t = Table(title, column_names,
-                    title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
-
-            row = None
-            if show_total:
-                row_total = {}
-
-            for col_id, row in service_configs.items():
-                if isinstance(row, Exception):
-                    row = {}
-
-                if col_id == 'warnings':
-                    for warning in row:
-                        print(warning)
-                    continue
-
-                if col_header:
-                    row[col_header] = col_id
-                else:
-                    row['NODE'] = prefixes[col_id]
-
-                t.insert_row(row)
-                if show_total:
-                    for key, val in row.items():
-                        if (val.isdigit()):
-                            try:
-                                row_total[key] = row_total[key] + int(val)
-                            except Exception:
-                                row_total[key] = int(val)
-            if show_total:
-                row_total['NODE'] = "Total"
-                t.insert_row(row_total)
-
-            CliView.print_result(
-                t.__str__(horizontal_title_every_nth=title_every_nth))
-
-    @staticmethod
-    def show_config(title, service_configs, cluster, like=None, diff=None, show_total=False, title_every_nth=0, flip_output=False, timestamp="", **ignore):        
-        prefixes = cluster.get_node_names()
-        column_names = set()
-
-        if diff and service_configs:
-            config_sets = (set(service_configs[d].items())
-                           for d in service_configs if service_configs[d])
-            union = set.union(*config_sets)
-            # Regenerating generator expression for config_sets.
-            config_sets = (set(service_configs[d].items())
-                           for d in service_configs if service_configs[d])
-            intersection = set.intersection(*config_sets)
-            column_names = dict(union - intersection).keys()
-        else:
-            for config in service_configs.values():
-                if isinstance(config, Exception):
-                    continue
-                column_names.update(config.keys())
-
-        column_names = sorted(column_names)
-        if like:
-            likes = compile_likes(like)
-
-            column_names = list(filter(likes.search, column_names))
-
-        if len(column_names) == 0:
-            return ''
-
-        column_names.insert(0, "NODE")
-
-        table_style = Styles.VERTICAL
-        if flip_output:
-            table_style = Styles.HORIZONTAL
-
-        if show_total:
-            n_last_columns_ignore_sort = 1
-        else:
-            n_last_columns_ignore_sort = 0
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = title + title_suffix
-        t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=table_style, n_last_columns_ignore_sort=n_last_columns_ignore_sort)
-
-        row = None
-        if show_total:
-            row_total = {}
-        for node_id, row in service_configs.items():
-            if isinstance(row, Exception):
-                row = {}
-
-            row['NODE'] = prefixes[node_id]
-            t.insert_row(row)
-
-            if show_total:
-                for key, val in row.items():
-                    if (val.isdigit()):
-                        try:
-                            row_total[key] = row_total[key] + int(val)
-                        except Exception:
-                            row_total[key] = int(val)
-        if show_total:
-            row_total['NODE'] = "Total"
-            t.insert_row(row_total)
+    def show_grep_count(title, grep_result, title_every_nth=0, **ignore):
+        # TODO - get rid of total row in grep_result and add column aggregations to sheets.
+        node_ids = {}
+
+        for node, res in grep_result.items():
+            # TODO - sheet should be able to use the key in data.
+            node_ids[node] = dict(node=node)
 
         CliView.print_result(
-            t.__str__(horizontal_title_every_nth=title_every_nth))
-
-    @staticmethod
-    def show_grep_count(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
-        column_names = set()
-        if grep_result:
-            if grep_result[list(grep_result.keys())[0]]:
-                column_names = CliView._sort_list_with_string_and_datetime(
-                    list(grep_result[list(grep_result.keys())[0]][COUNT_RESULT_KEY].keys()))
-
-        if len(column_names) == 0:
-            return ''
-
-        column_names.insert(0, "NODE")
-
-        t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
-
-        for file in sorted(grep_result.keys()):
-            if isinstance(grep_result[file], Exception):
-                row1 = {}
-                row2 = {}
-            else:
-                row1 = grep_result[file]["count_result"]
-                row2 = {}
-                for key in grep_result[file]["count_result"].keys():
-                    row2[key] = "|"
-
-            row1['NODE'] = file
-
-            row2['NODE'] = "|"
-
-            t.insert_row(row1)
-            t.insert_row(row2)
-
-        t.ignore_sort()
-
-        CliView.print_result(
-            t.__str__(horizontal_title_every_nth=2 * title_every_nth))
+            sheet.render(
+                templates.grep_count_sheet, title,
+                dict(data=grep_result, node_ids=node_ids),
+                title_repeat=title_every_nth != 0))
 
     @staticmethod
     def show_grep_diff(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
@@ -1431,6 +505,7 @@ class CliView(object):
                 row1 = grep_result[file]["value"]
                 row2 = grep_result[file]["diff"]
                 row3 = {}
+
                 for key in grep_result[file]["value"].keys():
                     row3[key] = "|"
 
@@ -1451,6 +526,7 @@ class CliView(object):
 
         CliView.print_result(
             t.__str__(horizontal_title_every_nth=title_every_nth * 3))
+
         if different_writer_info:
             print("\n" + terminal.fg_red() + "Input Key is not uniq, multiple writer instance (server_file:line_no) found." + terminal.fg_clear())
 
@@ -1458,24 +534,32 @@ class CliView(object):
     def _sort_list_with_string_and_datetime(keys):
         if not keys:
             return keys
+
         dt_list = []
         remove_list = []
+
         for key in keys:
             try:
                 dt_list.append(datetime.datetime.strptime(key, DT_FMT))
                 remove_list.append(key)
             except Exception:
                 pass
+
         for rm_key in remove_list:
             keys.remove(rm_key)
+
         if keys:
             keys = sorted(keys)
+
         if dt_list:
             dt_list = [k.strftime(DT_FMT) for k in sorted(dt_list)]
+
         if keys and not dt_list:
             return keys
+
         if dt_list and not keys:
             return dt_list
+
         dt_list.extend(keys)
         return dt_list
 
@@ -1495,6 +579,7 @@ class CliView(object):
 
         if len(column_names) == 0:
             return ''
+
         column_names.insert(0, ".")
         column_names.insert(0, "NODE")
 
@@ -1550,6 +635,7 @@ class CliView(object):
                     t.insert_row(row)
 
                 row = {}
+
                 for key in grep_result[file][tps_key].keys():
                     row[key] = "|"
 
@@ -1569,52 +655,55 @@ class CliView(object):
         return True
 
     @staticmethod
-    def show_stats(*args, **kwargs):
-        CliView.show_config(*args, **kwargs)
-
-    @staticmethod
     def show_mapping(col1, col2, mapping, like=None, timestamp="", **ignore):
         if not mapping:
             return
 
-        column_names = []
-        column_names.insert(0, col2)
-        column_names.insert(0, col1)
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        t = Table("%s to %s Mapping%s" % (col1, col2, title_suffix), column_names,
-                  title_format=TitleFormats.no_change, style=Styles.HORIZONTAL)
-
         if like:
             likes = compile_likes(like)
-            filtered_keys = list(filter(likes.search, mapping.keys()))
+            filtered_keys = set(filter(likes.search, mapping.keys()))
         else:
-            filtered_keys = mapping.keys()
+            filtered_keys = set(mapping.keys())
 
-        for col1_val, col2_val in mapping.items():
-            if col1_val not in filtered_keys:
-                continue
-            row = {}
-            if not isinstance(col2_val, Exception):
-                row[col1] = col1_val
-                row[col2] = col2_val
-            t.insert_row(row)
-        CliView.print_result(t)
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "{} to {} Mappings{}".format(col1, col2, title_suffix)
+        sources = dict(mapping=dict(
+            enumerate((k, v) for k, v in mapping.items()
+                      if k in filtered_keys)))
+
+        if col2 == 'IPs':
+            map_sheet = templates.show_mapping_to_ip_sheet
+        else:
+            map_sheet = templates.show_mapping_to_id_sheet
+
+        CliView.print_result(sheet.render(map_sheet, title, sources))
 
     @staticmethod
-    def show_health(*args, **kwargs):
-        CliView.show_config(*args, **kwargs)
+    def show_pmap(pmap_data, cluster, timestamp='', **mods):
+        prefixes = cluster.get_node_names(mods.get('with', []))
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = 'Partition Map Analysis' + title_suffix
+        sources = dict(
+            prefixes=prefixes,
+            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
+                           for k in prefixes.keys())),
+            pmap=pmap_data
+        )
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(sheet.render(templates.show_pmap_sheet, title, sources,
+                                          common=common))
 
     @staticmethod
-    def asinfo(results, line_sep, show_node_name, cluster, **kwargs):
+    def asinfo(results, line_sep, show_node_name, cluster, **mods):
         like = set([])
-        if 'like' in kwargs:
-            like = set(kwargs['like'])
+
+        if 'like' in mods:
+            like = set(mods['like'])
 
         for node_id, value in results.items():
-
             if show_node_name:
-                prefix = cluster.get_node_names()[node_id]
+                prefix = cluster.get_node_names(mods.get('with', []))[node_id]
                 node = cluster.get_node(node_id)[0]
                 print("%s%s (%s) returned%s:" % (terminal.bold(), prefix, node.ip, terminal.reset()))
 
@@ -1636,6 +725,7 @@ class CliView(object):
                         value = delimiter.join(value)
 
                     print(value)
+                    
                     if show_node_name:
                         print()
                 else:
@@ -1644,27 +734,32 @@ class CliView(object):
                         print(i, ": ", name)
                         print("    ", val)
                         i += 1
+
                     if show_node_name:
                         print()
 
     @staticmethod
     def group_output(output):
         i = 0
+
         while i < len(output):
             group = output[i]
 
             if group == '\033':
                 i += 1
+
                 while i < len(output):
                     group = group + output[i]
                     if output[i] == 'm':
                         i += 1
                         break
                     i += 1
+
                 yield group
                 continue
             else:
                 yield group
+
                 i += 1
 
     @staticmethod
@@ -1672,6 +767,7 @@ class CliView(object):
         for val in remaining:
             while peeked:
                 yield peeked.pop(0)
+
             yield val
 
     @staticmethod
@@ -1704,6 +800,7 @@ class CliView(object):
             sys.stdout = mystdout = StringIO()
             previous = None
             count = 1
+
             while True:
                 highlight = False
                 ctrl.execute(line[:])
@@ -1796,9 +893,9 @@ class CliView(object):
             sys.stdout = real_stdout
             print('')
 
-###########################
-### Health Print functions
-###########################
+# ##########################
+# ## Health Print functions
+# ##########################
 
     @staticmethod
     def _print_data(d):
@@ -1853,7 +950,8 @@ class CliView(object):
             for e in ho[HealthResultType.EXCEPTIONS]:
                 try:
                     CliView._print_counter_list(
-                        data=ho[HealthResultType.EXCEPTIONS][e], header="%s Exceptions" % (e.upper()))
+                        data=ho[HealthResultType.EXCEPTIONS][e],
+                        header="%s Exceptions" % (e.upper()))
                 except Exception:
                     pass
         except Exception:
@@ -1868,11 +966,14 @@ class CliView(object):
     def _get_msg(msg, level=None):
         if level is not None:
             if level == AssertLevel.WARNING:
-                return terminal.fg_blue() + ("\n" + " ".rjust(H2_offset)).join(msg) + terminal.fg_clear()
+                return terminal.fg_blue() + ("\n" + " ".rjust(
+                    H2_offset)).join(msg) + terminal.fg_clear()
             elif level == AssertLevel.INFO:
-                return terminal.fg_green() + ("\n" + " ".rjust(H2_offset)).join(msg) + terminal.fg_clear()
+                return terminal.fg_green() + ("\n" + " ".rjust(
+                    H2_offset)).join(msg) + terminal.fg_clear()
             else:
-                return terminal.fg_red() + ("\n" + " ".rjust(H2_offset)).join(msg) + terminal.fg_clear()
+                return terminal.fg_red() + ("\n" + " ".rjust(
+                    H2_offset)).join(msg) + terminal.fg_clear()
         else:
             return ("\n" + " ".rjust(H2_offset)).join(msg)
 
@@ -1885,7 +986,6 @@ class CliView(object):
             try:
                 # For python 2.7
                 return str(format(val, ',d'))
-
             except Exception:
                 try:
                     # For python 2.6
@@ -1894,32 +994,30 @@ class CliView(object):
 
                 except Exception:
                     pass
-
         elif isinstance(val, float):
             return_val = None
+
             try:
                 # For python 2.7
                 return_val = format(val, ',f')
-
             except Exception:
                 try:
                     # For python 2.6
                     locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
                     return_val = locale.format('%f', val, True)
-
                 except Exception:
                     pass
 
             if return_val is not None:
                 return_val = str(return_val)
+
                 if '.' in return_val:
                     return_val = return_val.rstrip('0')
                     return_val = return_val.rstrip('.')
-                return return_val
 
+                return return_val
         elif isinstance(val, str) and val.isdigit():
             return CliView._format_value(int(val))
-
         elif isinstance(val, str):
             try:
                 val = float(val)
@@ -1935,23 +1033,31 @@ class CliView(object):
             return []
 
         res_str = []
+
         for kv in kv_list:
             if not isinstance(kv, tuple):
                 res_str.append(str(kv))
                 continue
 
             tmp_res_str = str(kv[0])
+
             if kv[1] and isinstance(kv[1], list):
                 _str = None
                 for _kv in kv[1]:
                     if _kv:
                         try:
-                            _str += ", " + ("%s:"%(str(_kv[0])) if len(str(_kv[0]).strip())>0 else "") + "%s"%(CliView._format_value(_kv[1], _kv[2]))
+                            _str += ", " + ("%s:" % (str(
+                                _kv[0])) if len(str(
+                                    _kv[0]).strip()) > 0 else "") + \
+                                "%s" % (CliView._format_value(_kv[1], _kv[2]))
                         except Exception:
-                            _str = ("%s:"%(str(_kv[0])) if len(str(_kv[0]).strip())>0 else "") + "%s"%(CliView._format_value(_kv[1], _kv[2]))
+                            _str = ("%s:" % (str(
+                                _kv[0])) if len(str(
+                                    _kv[0]).strip()) > 0 else "") + \
+                                "%s" % (CliView._format_value(_kv[1], _kv[2]))
 
                 if _str:
-                    tmp_res_str += " {%s}"%(_str)
+                    tmp_res_str += " {%s}" % (_str)
 
             if tmp_res_str:
                 res_str.append(tmp_res_str)
@@ -1962,6 +1068,7 @@ class CliView(object):
     def _get_error_string(data, verbose=False, level=AssertLevel.CRITICAL):
         if not data:
             return "", 0
+
         f_msg_str = ""
         f_msg_cnt = 0
         s_msg_str = ""
@@ -1975,9 +1082,11 @@ class CliView(object):
                 if d[AssertResultKey.SUCCESS]:
                     if d[AssertResultKey.SUCCESS_MSG]:
 
-                        s_msg_str += CliView._get_header(d[AssertResultKey.CATEGORY][0]) + \
+                        s_msg_str += CliView._get_header(
+                            d[AssertResultKey.CATEGORY][0]) + \
                             CliView._get_msg([d[AssertResultKey.SUCCESS_MSG]])
                         s_msg_cnt += 1
+
                     continue
 
                 s += CliView._get_header(d[AssertResultKey.CATEGORY][0]) + \
@@ -1988,12 +1097,14 @@ class CliView(object):
 
                     s += "\n"
                     s += CliView._get_header("Description:")
-                    s += CliView._get_msg(textwrap.wrap(str(d[AssertResultKey.DESCRIPTION]), H_width - H2_offset,
-                                                       break_long_words=False, break_on_hyphens=False))
-
+                    s += CliView._get_msg(textwrap.wrap(
+                        str(d[AssertResultKey.DESCRIPTION]),
+                        H_width - H2_offset,
+                        break_long_words=False, break_on_hyphens=False))
                     s += "\n"
                     s += CliView._get_header("Keys:")
-                    s += CliView._get_msg(CliView._get_kv_msg_list(d[AssertResultKey.KEYS]))
+                    s += CliView._get_msg(CliView._get_kv_msg_list(
+                        d[AssertResultKey.KEYS]))
 
                     # Extra new line in case verbose output is printed
                     s += "\n"
@@ -2002,22 +1113,21 @@ class CliView(object):
                 f_msg_cnt += 1
 
         res_fail_msg_str = ""
+
         if f_msg_cnt > 0:
             res_fail_msg_str += f_msg_str
 
         res_success_msg_str = ""
 
         if s_msg_cnt > 0:
-            # res_success_msg_str = "\n\n"
-            # res_success_msg_str += (".".join(data[0]
-            #                         [AssertResultKey.CATEGORY]) + ":").ljust(25) + ""
             res_success_msg_str += s_msg_str
 
         return res_fail_msg_str, f_msg_cnt, res_success_msg_str, s_msg_cnt
 
     @staticmethod
-    def _get_assert_output_string(assert_out, verbose=False, output_filter_category=[], level=AssertLevel.CRITICAL):
-
+    def _get_assert_output_string(assert_out, verbose=False,
+                                  output_filter_category=[],
+                                  level=AssertLevel.CRITICAL):
         if not assert_out:
             return ""
 
@@ -2051,10 +1161,12 @@ class CliView(object):
         return res_fail_msg_str, total_fail_msg_cnt, res_success_msg_str, total_success_msg_cnt
 
     @staticmethod
-    def _print_assert_summary(assert_out, verbose=False, output_filter_category=[], output_filter_warning_level=None):
-
+    def _print_assert_summary(assert_out, verbose=False,
+                              output_filter_category=[],
+                              output_filter_warning_level=None):
         if not output_filter_warning_level:
-            search_levels = [AssertLevel.INFO, AssertLevel.WARNING, AssertLevel.CRITICAL]
+            search_levels = [AssertLevel.INFO, AssertLevel.WARNING,
+                             AssertLevel.CRITICAL]
         elif output_filter_warning_level == "CRITICAL":
             search_levels = [AssertLevel.CRITICAL]
         elif output_filter_warning_level == "WARNING":
@@ -2062,7 +1174,8 @@ class CliView(object):
         elif output_filter_warning_level == "INFO":
             search_levels = [AssertLevel.INFO]
         else:
-            search_levels = [AssertLevel.INFO, AssertLevel.WARNING, AssertLevel.CRITICAL]
+            search_levels = [AssertLevel.INFO, AssertLevel.WARNING,
+                             AssertLevel.CRITICAL]
 
         all_success_str = ""
         all_fail_str = ""
@@ -2078,7 +1191,9 @@ class CliView(object):
             for _k in sorted(assert_out.keys()):
                 if not assert_out[_k]:
                     continue
+
                 category = []
+
                 if output_filter_category:
                     if _k == output_filter_category[0]:
                         category = output_filter_category[1:] if len(
@@ -2086,8 +1201,10 @@ class CliView(object):
                     else:
                         category = output_filter_category
 
-                f_msg_str, f_msg_cnt, s_msg_str, s_msg_cnt = CliView._get_assert_output_string(
-                    assert_out[_k], verbose, category, level=level)
+                f_msg_str, f_msg_cnt, s_msg_str, s_msg_cnt = \
+                    CliView._get_assert_output_string(
+                        assert_out[_k], verbose, category, level=level)
+
                 if f_msg_str:
                     total_fail_msg_cnt += f_msg_cnt
                     res_fail_msg_str += f_msg_str
@@ -2098,15 +1215,19 @@ class CliView(object):
 
             if total_fail_msg_cnt > 0:
                 summary_str = ""
+
                 if level == AssertLevel.CRITICAL:
-                    summary_str = terminal.bold() + terminal.fg_red() + str("%s" %
-                                                          ("CRITICAL")).center(H_width, " ") + terminal.fg_clear() + terminal.unbold()
+                    summary_str = terminal.bold() + terminal.fg_red() + \
+                        "CRITICAL".center(H_width, " ") + \
+                        terminal.fg_clear() + terminal.unbold()
                 elif level == AssertLevel.WARNING:
-                    summary_str = terminal.bold() + terminal.fg_blue() + str("%s" %
-                                                           ("WARNING")).center(H_width, " ") + terminal.fg_clear() + terminal.unbold()
+                    summary_str = terminal.bold() + terminal.fg_blue() + \
+                        "WARNING".center(H_width, " ") + \
+                        terminal.fg_clear() + terminal.unbold()
                 elif level == AssertLevel.INFO:
-                    summary_str = terminal.bold() + terminal.fg_green() + str("%s" %
-                                                            ("INFO")).center(H_width, " ") + terminal.fg_clear() + terminal.unbold()
+                    summary_str = terminal.bold() + terminal.fg_green() + \
+                        "INFO".center(H_width, " ") + \
+                        terminal.fg_clear() + terminal.unbold()
 
                 all_fail_str += "\n" + summary_str + "\n" + res_fail_msg_str + "\n"
                 all_fail_cnt += total_fail_msg_cnt
@@ -2126,7 +1247,9 @@ class CliView(object):
         print("_" * H_width + "\n")
 
     @staticmethod
-    def print_health_output(ho, verbose=False, debug=False, output_file=None, output_filter_category=[], output_filter_warning_level=None):
+    def print_health_output(ho, verbose=False, debug=False, output_file=None,
+                            output_filter_category=[],
+                            output_filter_warning_level=None):
         if not ho:
             return
         o_s = None
@@ -2144,8 +1267,10 @@ class CliView(object):
 
         CliView._print_status(
             ho[HealthResultType.STATUS_COUNTERS], verbose=verbose)
-        CliView._print_assert_summary(ho[HealthResultType.ASSERT], verbose=verbose,
-                                     output_filter_category=output_filter_category, output_filter_warning_level=output_filter_warning_level)
+        CliView._print_assert_summary(
+            ho[HealthResultType.ASSERT], verbose=verbose,
+            output_filter_category=output_filter_category,
+            output_filter_warning_level=output_filter_warning_level)
 
         if o_s:
             o_s.close()
@@ -2165,90 +1290,92 @@ class CliView(object):
     @staticmethod
     def _summary_namespace_table_view(stats, **ignore):
         title = "Namespaces"
-        column_names = ('namespace', ('_devices', 'Devices (Total,Per-Node)'), ('_memory', 'Memory (Total,Used%,Avail%)'),
-                        ('_disk', 'Disk (Total,Used%,Avail%)'), ('repl_factor', 'Replication Factor'), ('cache_read_pct','Post-Write-Queue Hit-Rate'),
-                        'rack_aware', ('master_objects', 'Master Objects'),
-                        'compression_ratio'
-                        )
+        # column_names = ('namespace', ('_devices', 'Devices (Total,Per-Node)'), ('_memory', 'Memory (Total,Used%,Avail%)'),
+        #                 ('_disk', 'Disk (Total,Used%,Avail%)'), ('repl_factor', 'Replication Factor'), ('cache_read_pct','Post-Write-Queue Hit-Rate'),
+        #                 'rack_aware', ('master_objects', 'Master Objects'),
+        #                 'compression_ratio'
+        #                 )
 
-        license_data_in_memory = False
-        license_data_on_disk = False
+        # license_data_in_memory = False
+        # license_data_on_disk = False
 
-        for _, ns_stats in stats.items():
-            try:
-                if not license_data_in_memory and ns_stats['license_data_in_memory']:
-                    license_data_in_memory = True
-                elif not license_data_on_disk and ns_stats['license_data_on_disk']:
-                    license_data_on_disk = True
+        # for _, ns_stats in stats.items():
+        #     try:
+        #         if not license_data_in_memory and ns_stats['license_data_in_memory']:
+        #             license_data_in_memory = True
+        #         elif not license_data_on_disk and ns_stats['license_data_on_disk']:
+        #             license_data_on_disk = True
                 
-                if license_data_in_memory and license_data_on_disk:
-                    break
-            except KeyError:
-                pass
+        #         if license_data_in_memory and license_data_on_disk:
+        #             break
+        #     except KeyError:
+        #         pass
 
-        if license_data_in_memory:
-            column_names = column_names + ('Usage (Unique-Data) In-Memory',)
-        if license_data_on_disk:
-           column_names = column_names + ('Usage (Unique-Data) On-Device',)
+        # if license_data_in_memory:
+        #     column_names = column_names + ('Usage (Unique-Data) In-Memory',)
+        # if license_data_on_disk:
+        #    column_names = column_names + ('Usage (Unique-Data) On-Device',)
 
-        t = Table(title, column_names, sort_by=0)
+        # t = Table(title, column_names, sort_by=0)
 
-        if license_data_in_memory:
-            t.add_data_source(
-                'Usage (Unique-Data) In-Memory',
-                Extractors.byte_extractor('license_data_in_memory')
-            )
-        if license_data_on_disk:
-            t.add_data_source(
-                'Usage (Unique-Data) On-Device',
-                Extractors.byte_extractor('license_data_on_disk')
-            )
+        # if license_data_in_memory:
+        #     t.add_data_source(
+        #         'Usage (Unique-Data) In-Memory',
+        #         Extractors.byte_extractor('license_data_in_memory')
+        #     )
+        # if license_data_on_disk:
+        #     t.add_data_source(
+        #         'Usage (Unique-Data) On-Device',
+        #         Extractors.byte_extractor('license_data_on_disk')
+        #     )
 
-        t.add_cell_alert(
-            'namespace',
-            lambda data: data['migrations_in_progress'],
-            color=terminal.fg_red
-        )
+        # t.add_cell_alert(
+        #     'namespace',
+        #     lambda data: data['migrations_in_progress'],
+        #     color=terminal.fg_red
+        # )
 
-        t.add_data_source_tuple(
-            '_devices',
-            lambda data:str(data['devices_total']),
-            lambda data:str(data['devices_per_node']))
+        # t.add_data_source_tuple(
+        #     '_devices',
+        #     lambda data:str(data['devices_total']),
+        #     lambda data:str(data['devices_per_node']))
 
-        t.add_data_source_tuple(
-            '_memory',
-            Extractors.byte_extractor('memory_total'),
-            lambda data:"%.2f"%data["memory_used_pct"],
-            lambda data:"%.2f"%data["memory_available_pct"])
+        # t.add_data_source_tuple(
+        #     '_memory',
+        #     Extractors.byte_extractor('memory_total'),
+        #     lambda data:"%.2f"%data["memory_used_pct"],
+        #     lambda data:"%.2f"%data["memory_available_pct"])
 
-        t.add_data_source_tuple(
-            '_disk',
-            Extractors.byte_extractor('disk_total'),
-            lambda data:"%.2f"%data["disk_used_pct"],
-            lambda data:"%.2f"%data["disk_available_pct"])
+        # t.add_data_source_tuple(
+        #     '_disk',
+        #     Extractors.byte_extractor('disk_total'),
+        #     lambda data:"%.2f"%data["disk_used_pct"],
+        #     lambda data:"%.2f"%data["disk_available_pct"])
 
-        t.add_data_source(
-            'repl_factor',
-            lambda data:",".join([str(rf) for rf in data["repl_factor"]])
-        )
+        # t.add_data_source(
+        #     'repl_factor',
+        #     lambda data:",".join([str(rf) for rf in data["repl_factor"]])
+        # )
 
-        t.add_data_source(
-            'master_objects',
-            Extractors.sif_extractor('master_objects')
-        )
+        # t.add_data_source(
+        #     'master_objects',
+        #     Extractors.sif_extractor('master_objects')
+        # )
 
-        for ns, ns_stats in stats.items():
-            if isinstance(ns_stats, Exception):
-                row = {}
-            else:
-                row = ns_stats
+        # for ns, ns_stats in stats.items():
+        #     if isinstance(ns_stats, Exception):
+        #         row = {}
+        #     else:
+        #         row = ns_stats
 
-            row['namespace'] = ns
-            row['memory_used_pct'] = 100.00 - row['memory_available_pct']
+        #     row['namespace'] = ns
+        #     row['memory_used_pct'] = 100.00 - row['memory_available_pct']
 
-            t.insert_row(row)
+        new_stats = dict(node_hack=stats)  # XXX - hack
+        sources = dict(ns_stats=new_stats)
 
-        CliView.print_result(t)
+        CliView.print_result(
+            sheet.render(templates.summary_namespace_sheet, title, sources))
 
     @staticmethod
     def _summary_namespace_list_view(stats, **ignore):
@@ -2283,14 +1410,14 @@ class CliView(object):
             index += 1
 
             if "cache_read_pct" in stats[ns]:
-                print(CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.sif)))
+                print(CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.si_float)))
                 index += 1
 
             if "rack_aware" in stats[ns]:
                 print(CliView.get_summary_line_prefix(index, "Rack-aware") + "%s"%(str(stats[ns]["rack_aware"])))
                 index += 1
 
-            print(CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.sif)))
+            print(CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.si_float)))
             index += 1
             s = ""
 
@@ -2312,7 +1439,6 @@ class CliView(object):
 
     @staticmethod
     def print_summary(summary, list_view=True):
-
         index = 1
         print("Cluster" + ("  (%s)"%(terminal.fg_red() + "Migrations in Progress" + terminal.fg_clear())
                            if summary["CLUSTER"]["migrations_in_progress"] else ""))
@@ -2378,36 +1504,8 @@ class CliView(object):
         print("\n")
 
         if list_view:
-            CliView._summary_namespace_list_view(summary["FEATURES"]["NAMESPACE"])
-
+            CliView._summary_namespace_list_view(
+                summary["FEATURES"]["NAMESPACE"])
         else:
             CliView._summary_namespace_table_view(summary["FEATURES"]["NAMESPACE"])
 
-    @staticmethod
-    def show_pmap(pmap_data, cluster, timestamp="", **ignore):
-        prefixes = cluster.get_node_names()
-
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Partition Map Analysis%s"%(title_suffix)
-        column_names = (('cluster_key', 'Cluster Key'),
-                        'namespace',
-                        'node',
-                        ('_primary_partitions', 'Primary Partitions'),
-                        ('_secondary_partitions', 'Secondary Partitions'),
-                        ('dead_partitions', 'Dead Partitions'),
-                        ('unavailable_partitions', 'Unavailable Partitions'),
-                        )
-        t = Table(title, column_names, group_by=0, sort_by=1)
-
-        for node_key, n_stats in pmap_data.items():
-
-            for ns, ns_stats in n_stats.items():
-                row = ns_stats
-                row['node'] = prefixes[node_key]
-                row['namespace'] = ns
-                row['_primary_partitions'] = ns_stats['master_partition_count']
-                row['_secondary_partitions'] = ns_stats['prole_partition_count']
-
-                t.insert_row(row)
-
-        CliView.print_result(t)

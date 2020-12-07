@@ -12,9 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import re
 
-def parse_output(actual_out = "", horizontal = False, header_len = 2, merge_header = True):
+def parse_record(parent_field, record):
+    field_names = []
+    field_values = []
+    for name in record:
+        if isinstance(record[name], dict):
+            new_parent_field = parent_field.copy()
+            new_parent_field.append(name)
+            names = ' '.join(new_parent_field)
+            if 'converted' in record[name]:
+                field_names.append(names)
+                field_values.append(record[name]['converted'])
+            elif 'raw' in record[name]:
+                field_names.append(names)
+                field_values.append(record[name]['raw'])
+            else:
+                # Must have subgroups:
+                sub_names, sub_values = parse_record(new_parent_field, record[name])
+                field_names.extend(sub_names)
+                field_values.extend(sub_values)
+        else:
+            raise Exception('Unhandled parsing')
+
+    return field_names, field_values
+
+
+def parse_output(actual_out = {}, horizontal = False, header_len = 2, merge_header = True):
     """
         commmon parser for all show commands will return tuple of following
         @param heading : first line of output
@@ -22,58 +48,43 @@ def parse_output(actual_out = "", horizontal = False, header_len = 2, merge_head
         @param params: list of parameters 
     
     """
-    data =  actual_out.split('\n')
-    if horizontal:
-        # TODO: Make two seperate parsing functions instead of 1 with
-        # variable number of results.
-        if not data:
-            return None, None, None, None
-        heading = data.pop(0)
-        if not data:
-            return None, None, None, None
-        header_lines = []
-        idx = 0
-        while idx < header_len:
-            header_lines.append(data.pop(0))
-            idx += 1
-        data.pop()
-        data.pop()
-        rows = data[-1]
-        data.pop()
-        while not rows:
-            rows = data[-1]
-            data.pop()
-        no_of_rows = rows.split(':')[1]
-        actual_data = []
-        for row_data in data:
-            row_data = remove_escape_sequence(row_data)
-            actual_data.append(row_data.split())
-        if merge_header:
-            return(heading, get_merged_header(*header_lines), actual_data, no_of_rows)
-        else:
-            return(heading, "".join(header_lines), no_of_rows)
-    else:
-        # TODO: Make two seperate parsing functions instead of 1 with
-        # variable number of results.
-        if not data:
-            return None, None, None
-        heading = data.pop(0)
-        if not data:
-            return None, None, None
-        header = data.pop(0)
-        params = [item.split(':')[0].strip() for item in  data if item.split(':')[0].strip()]
-        
-        for i, item in enumerate(params):
-            params[i] = remove_escape_sequence(item)
-        return(heading, header, params)
+    title = actual_out['title']
+    description = actual_out.get("description", "")
+    data_names = {}
+    data_values = []
+    num_records = 0
 
-def get_separate_output(in_str = '', mid_str=''):
-    _regex = re.compile("~.+" + mid_str + ".+\(.+\)~.+")
-    out_pattern, outstr = re.findall(_regex,in_str), re.split(_regex, in_str)
-    output_list =[]
-    for i, item in enumerate(out_pattern):
-        output_list.append((item + outstr[i + 1]))
-    return output_list
+    for group in actual_out['groups']:
+        for record in group['records']:
+            temp_names, temp_values = parse_record([], record)
+
+            # We assume every record has the same set of names
+            if len(data_names) == 0:
+                data_names = temp_names
+
+            data_values.append(temp_values)
+            num_records += 1
+
+    return title, description, data_names, data_values, num_records
+
+        
+
+def get_separate_output(in_str = ''):
+    _regex = re.compile(r"((?<=^{).*?(?=^}))", re.MULTILINE | re.DOTALL)
+    out = re.findall(_regex, in_str)
+    ls = []
+    for item in out:
+        item = remove_escape_sequence(item)
+        item = '{' + item + '}'
+        try:
+            ls.append(json.loads(item))
+        except Exception:
+            print(out)
+            print(item)
+            # print(item[52:54])
+
+
+    return ls
 
 def get_merged_header(*lines):
     h = [[_f for _f in _h.split(' ') if _f] for _h in lines]
@@ -105,11 +116,11 @@ def check_for_subset(actual_list, expected_sub_list):
                     found=True
                     break
             if not found:
-                #print(i)
+                print(i, actual_list)
                 return False
         else:
             if i not in actual_list:
-                #print (i)
+                print (i)
                 return False
     return True
 

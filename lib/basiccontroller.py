@@ -36,7 +36,7 @@ from lib.getcontroller import (
     get_sindex_stats,
     GetLatenciesController,
 )
-from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval
+from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval, print_dict
 from lib.utils import common, constants, util
 from lib.view import terminal
 from lib.view.view import CliView
@@ -330,7 +330,6 @@ class InfoController(BasicCommandController):
                 util.Future(
                     self.view.info_XDR,
                     xdr5_stats[dc],
-                    xdr_builds,
                     xdr_enable,
                     self.cluster,
                     title="XDR Information %s" % dc,
@@ -824,8 +823,8 @@ class ShowConfigController(BasicCommandController):
 
     @CommandHelp("Displays XDR configuration")
     def do_xdr(self, line):
-        xdr_builds = util.Future(self.cluster.info_build_version,
-                nodes=self.nodes).start()
+        # xdr_builds = util.Future(self.cluster.info_build_version,
+        #         nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
@@ -843,60 +842,16 @@ class ShowConfigController(BasicCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
-
-        xdr_configs = self.getter.get_xdr(nodes=self.nodes)
-        xdr_builds = xdr_builds.result()
-        old_xdr_configs = {}
-        xdr5_configs = {}
-        node_xdr_build_major_version = 4
-
-        for node in xdr_configs:
-            try:
-                node_xdr_build_major_version = int(xdr_builds[node][0])
-            except:
-                continue
-
-            if node_xdr_build_major_version < 5:
-                old_xdr_configs[node] = xdr_configs[node]
-            else:
-                xdr5_configs[node] = xdr_configs[node]
+        
+        xdr5_configs = self.getter.get_xdr5(nodes=self.nodes)
+        old_xdr_configs = self.getter.get_old_xdr(nodes=self.nodes)
 
         futures = []
+        
         if xdr5_configs:
-            if self.mods['for']:
-                xdr_dc = self.mods['for'][0]
-
-                for config in xdr5_configs.values():
-                    if isinstance(config, Exception):
-                        continue
-
-                    try:
-                        dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
-                    except KeyError:
-                        dc_configs_matches = []
-                    
-                    try:
-                        ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
-                    except KeyError:
-                        ns_configs_matches = []
-
-                    config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
-                    config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
-
-                    if len(self.mods['for']) >= 2:
-                        xdr_ns = self.mods['for'][1]
-                        for dc in config['ns_configs']:
-                            try:
-                                ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
-                            except KeyError:
-                                ns_matches = []
-
-                            config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
-
             futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
                                         xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
                                         **self.mods))
-        
         if old_xdr_configs:
             futures.append(util.Future(self.view.show_config, "XDR Configuration",
                                         old_xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
@@ -1904,8 +1859,10 @@ class CollectinfoController(BasicCommandController):
             "statistics xdr",
             "statistics dc",
             "statistics sindex",
-            "pmap",
         ]
+
+        if CollectinfoController.get_pmap:
+            dignostic_show_params.append("pmap")
 
         dignostic_aerospike_cluster_params = [
             "service",
