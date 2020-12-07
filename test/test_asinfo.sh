@@ -84,7 +84,7 @@ if ! run_test ${asinfo_cmd} ${output_substring} ; then
 	fi
 fi
 
-asinfo_cmd="latency:"
+asinfo_cmd="latencies:"
 output_substring="test"
 if ! run_test ${asinfo_cmd} ${output_substring} ; then
 	echo "Error while running asinfo command: ${asinfo_cmd}"
