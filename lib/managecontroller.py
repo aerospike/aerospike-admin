@@ -1,3 +1,4 @@
+import os
 from lib.utils import util
 from lib.controllerlib import CommandHelp, BasicCommandController
 from lib.client.info import ASProtocolError
@@ -9,9 +10,9 @@ from logging import DEBUG
 class ManageController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
-            # "sindex": ManageSIndexController,
             "acl": ManageACLController,
-            # "udfs": ManageUdfsController,
+            "udfs": ManageUdfsController,
+            # "sindex": ManageSIndexController,
             # "config": ManageConfigController,
             # "truncate": ManageTruncateController,
         }
@@ -33,8 +34,6 @@ class ManageACLController(BasicCommandController):
             "change-password": ManageACLChangePasswordUserController,
             "allowlist": ManageACLAllowListRoleController
         }
-
-        self.modifiers = set()
 
     def _do_default(self, line):
         self.execute_help(line)
@@ -104,7 +103,7 @@ class ManageACLCreateUserController(BasicCommandController):
             password = getpass('Enter password for new user {}:'.format(username))
 
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
-
+        print("Test", self.cluster)
         principle_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_create_user(username, password, roles, nodes=[principle_node])
         result = result[list(result.keys())[0]]
@@ -506,3 +505,79 @@ class ManageACLAllowListRoleController(BasicCommandController):
             self.view.print_result("Successfully cleared allowlist from role {}".format(role_name))
         else:
             self.view.print_result("Successfully added allowlist to role {}".format(role_name))
+@CommandHelp('"manage udfs" is used to add and remove user defined functions.')
+class ManageUdfsController(BasicCommandController):
+    def __init__(self):
+        self.controller_map = {
+            'add': ManageUdfsAddController,
+            'remove': ManageUdfsRemoveController,
+        }
+
+    # @util.logthis('asadm', DEBUG)
+    def _do_default(self, line):
+        self.execute_help(line)
+
+
+class ManageUdfsAddController(BasicCommandController):
+    def __init__(self):
+        self.required_modifiers = set(['line', 'path'])
+
+    def _do_default(self, line):
+        udf_name = line.pop(0)
+        udf_path = self.mods['path'][0]
+
+        if not os.path.isfile(udf_path):
+            udf_path = os.path.join(os.getcwd(), udf_path)
+
+        if not os.path.isfile(udf_path):
+            self.logger.error('UDF path does not exist.')
+            return
+
+        with open(udf_path) as udf_file:
+            udf_str = udf_file.read()
+
+        principle_node = self.cluster.get_expected_principal()
+
+        resp = self.cluster.info_udf_put(udf_name, udf_str, nodes=[principle_node])
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+        
+        if resp != 'ok':
+            self.logger.error('Failed to add UDF: {}'.format(resp))
+            return
+
+        self.view.print_result("Successfully added UDF {}".format(udf_name))
+
+
+@CommandHelp("dsfs")
+class ManageUdfsRemoveController(BasicCommandController):
+    def __init__(self):
+        self.required_modifiers = set(['line'])
+
+    def _do_default(self, line):
+        udf_name = line.pop(0)
+        principal_node = self.cluster.get_expected_principal()
+
+        # Get names of existing udfs
+        existing_udfs = self.cluster.info_udf_list(nodes=[principal_node])
+        existing_udfs = list(existing_udfs.values())[0]
+        existing_names = existing_udfs.keys()
+
+        if udf_name not in existing_names:
+            self.logger.error('Failed to remove UDF {}: UDF does not exist'.format(udf_name))
+            return
+
+        resp = self.cluster.info_udf_remove(udf_name, nodes=[principal_node])
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        if resp != 'ok':
+            self.logger.error('Failed to remove UDF: {}'.format(resp))
+            return
+
+        self.view.print_result("Successfully removed UDF {}".format(udf_name))
+        

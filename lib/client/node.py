@@ -19,6 +19,7 @@ import re
 import socket
 import threading
 from time import time
+import base64
 
 from lib.client import util
 from lib.client.assocket import ASSocket
@@ -1672,6 +1673,43 @@ class Node(object):
         string -- build version
         """
         return self.info("build")
+
+    @return_exceptions
+    def info_udf_list(self):
+        """
+        Get list of UDFs stored on the node.
+
+        Returns:
+        dict -- {<file-name>: {"filename": <file-name>, "hash": <hash>, "type": 'LUA'}, . . .}
+        """
+        return util.info_to_dict_multi_level(self.info("udf-list"), keyname='filename', delimiter1=';', delimiter2=',')
+
+    @return_exceptions
+    def info_udf_put(self, udf_file_name, udf_str, udf_type = 'LUA'):
+        content = base64.b64encode(udf_str.encode('ascii'))
+        content = content.decode('ascii')
+        content_len = len(content)
+
+        command = ('udf-put:filename=' + udf_file_name + ';udf-type=' + udf_type
+                  + ';content-len=' + str(content_len) + ';content=' + str(content))
+        resp = self.info(command)
+
+        if 'error' in resp:
+            message = resp.split('=')[1]
+            return message
+
+        return 'ok'
+
+    @return_exceptions
+    def info_udf_remove(self, udf_file_name):
+        command = ('udf-remove:filename=' + udf_file_name + ';')
+        resp = self.info(command)
+
+        if 'error' in resp:
+            message = resp.split('=')[1]
+            return message
+
+        return 'ok'
 
 
     ############################################################################
