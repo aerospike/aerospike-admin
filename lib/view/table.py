@@ -54,7 +54,7 @@ class Extractors():
 
     @staticmethod
     def sif_extractor(columns):
-        return Extractors._num_extractor(columns, filesize.sif)
+        return Extractors._num_extractor(columns, filesize.si_float)
 
     @staticmethod
     def si_extractor(columns):

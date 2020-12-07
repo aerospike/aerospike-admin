@@ -22,6 +22,13 @@ from test.e2e import test_util
 
 sys.path.insert(1, os.getcwd())
 
+from lib.view.sheet import set_style_json
+
+set_style_json()
+
+def print_header(actual_header):
+    for item in actual_header:
+        print("\"" + item + "\",")
 
 class TestShowConfig(unittest.TestCase):
     output_list = list()
@@ -35,25 +42,27 @@ class TestShowConfig(unittest.TestCase):
     def setUpClass(cls):
         TestShowConfig.rc = controller.BasicRootController()
         actual_out = util.capture_stdout(TestShowConfig.rc.execute, ["show", "config"])
-        TestShowConfig.output_list = test_util.get_separate_output(
-            actual_out, "Configuration"
-        )
-        TestShowConfig.output_list.append(
+        actual_out += (
             util.capture_stdout(TestShowConfig.rc.execute, ["show", "config", "xdr"])
+        )
+        TestShowConfig.output_list = test_util.get_separate_output(
+            actual_out
         )
         TestShowConfig.is_bar_present = False
 
         for item in TestShowConfig.output_list:
-            if "~Service Configuration" in item:
+            title = item['title']
+
+            if "Service Configuration" in title:
                 TestShowConfig.service_config = item
-            elif "~Network Configuration" in item:
+            elif "Network Configuration" in title:
                 TestShowConfig.network_config = item
-            elif "~test Namespace Configuration" in item:
+            elif "test Namespace Configuration" in title:
                 TestShowConfig.test_namespace_config = item
-            elif "~bar Namespace Configuration" in item:
+            elif "bar Namespace Configuration" in title:
                 TestShowConfig.bar_namespace_config = item
                 TestShowConfig.is_bar_present = True
-            elif "~XDR Configuration" in item:
+            elif "XDR Configuration" in title:
                 TestShowConfig.xdr_config = item
 
     @classmethod
@@ -66,32 +75,52 @@ class TestShowConfig(unittest.TestCase):
         TODO: test for values as well
         """
 
-        exp_heading = "~Network Configuration"
-        exp_header = "NODE"
-        exp_params = [
-            ("fabric-keepalive-enabled", "fabric.keepalive-enabled"),
-            ("fabric-keepalive-intvl", "fabric.keepalive-intvl"),
-            ("fabric-keepalive-probes", "fabric.keepalive-probes"),
-            ("fabric-keepalive-time", "fabric.keepalive-time"),
-            ("fabric-port", "fabric.port"),
-            ("heartbeat-address", "heartbeat.address", "heartbeat.addresses", None),
-            ("heartbeat-interval", "heartbeat.interval"),
-            ("heartbeat-mode", "heartbeat.mode"),
-            ("heartbeat-port", "heartbeat.port", None),
-            ("heartbeat-protocol", "heartbeat.protocol"),
-            ("heartbeat-timeout", "heartbeat.timeout"),
-            ("network-info-port", "info.port"),
-            ("reuse-address", "service.reuse-address", None),
-            ("service-address", "service.address"),
-            ("service-port", "service.port"),
+        exp_heading = "Network Configuration"
+        exp_header = [
+            "Node",
+            "fabric.channel-bulk-fds",
+            "fabric.channel-bulk-recv-threads",
+            "fabric.channel-ctrl-fds",
+            "fabric.channel-ctrl-recv-threads",
+            "fabric.channel-meta-fds",
+            "fabric.channel-meta-recv-threads",
+            "fabric.channel-rw-fds",
+            "fabric.channel-rw-recv-pools",
+            "fabric.channel-rw-recv-threads",
+            "fabric.keepalive-enabled",
+            "fabric.keepalive-intvl",
+            "fabric.keepalive-probes",
+            "fabric.keepalive-time",
+            "fabric.latency-max-ms",
+            "fabric.port",
+            "fabric.recv-rearm-threshold",
+            "fabric.send-threads",
+            "fabric.tls-name",
+            "fabric.tls-port",
+            "heartbeat.interval",
+            "heartbeat.mode",
+            "heartbeat.mtu",
+            "heartbeat.multicast-group",
+            "heartbeat.port",
+            "heartbeat.protocol",
+            "heartbeat.timeout",
+            "info.port",
+            "service.access-port",
+            "service.address",
+            "service.alternate-access-port",
+            "service.port",
+            "service.tls-access-port",
+            "service.tls-alternate-access-port",
+            "service.tls-name",
+            "service.tls-port",
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowConfig.network_config
         )
+
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
+        self.assertListEqual(exp_header,actual_header)
 
     def test_service(self):
         """
@@ -99,107 +128,214 @@ class TestShowConfig(unittest.TestCase):
         TODO: test for values as well
         """
 
-        exp_heading = "~Service Configuration"
-        exp_header = "NODE"
-        exp_params = [
-            ("allow-inline-transactions", None),
-            "batch-max-requests",
-            ("batch-priority", None),
-            ("batch-threads", None),
-            ("fabric-workers", None),
-            "info-threads",
-            ("ldt-benchmarks", None),
-            ("max-msgs-per-type", None),
-            ("memory-accounting", None),
-            ("microbenchmarks", None),
-            "migrate-max-num-incoming",
-            ("migrate-rx-lifetime-ms", None),
-            "migrate-threads",
-            ("nsup-startup-evict", None),
-            ("paxos-max-cluster-size", None),
-            ("paxos-protocol", None),
-            ("paxos-retransmit-period", None),
+        exp_heading = "Service Configuration"
+        exp_header = [
+            "Node",
             "paxos-single-replica-limit",
-            "proto-fd-idle-ms",
+            "pidfile",
             "proto-fd-max",
+            "advertise-ipv6",
+            "auto-pin",
+            "batch-index-threads",
+            "batch-max-buffers-per-queue",
+            "batch-max-requests",
+            "batch-max-unused-buffers",
+            "batch-without-digests",
+            "cluster-name",
+            "disable-udf-execution",
+            "enable-benchmarks-fabric",
+            "enable-health-check",
+            "enable-hist-info",
+            "feature-key-file",
+            "info-threads",
+            "keep-caps-ssd-health",
+            "log-local-time",
+            "log-millis",
+            "microsecond-histograms",
+            "migrate-fill-delay",
+            "migrate-max-num-incoming",
+            "migrate-threads",
+            "min-cluster-size",
+            "node-id",
+            "node-id-interface",
+            "proto-fd-idle-ms",
             "proto-slow-netio-sleep-ms",
             "query-batch-size",
+            "query-buf-size",
             "query-bufpool-size",
             "query-in-transaction-thread",
             "query-long-q-max-size",
+            "query-microbenchmark",
+            "query-pre-reserve-partitions",
             "query-priority",
+            "query-priority-sleep-us",
             "query-rec-count-bound",
             "query-req-in-query-thread",
             "query-req-max-inflight",
             "query-short-q-max-size",
             "query-threads",
             "query-threshold",
+            "query-untracked-time-ms",
             "query-worker-threads",
-            ("replication-fire-and-forget", None),
-            ("respond-client-on-master-completion", None),
+            "run-as-daemon",
+            "scan-max-done",
+            "scan-threads-limit",
             "service-threads",
-            ("sindex-data-max-memory", None),
-            ("snub-nodes", None),
-            ("storage-benchmarks", None),
+            "sindex-builder-threads",
+            "sindex-gc-max-rate",
+            "sindex-gc-period",
+            "stay-quiesced",
             "ticker-interval",
             "transaction-max-ms",
-            ("transaction-pending-limit", None),
-            ("transaction-queues", None),
-            ("transaction-repeatable-read", None),
             "transaction-retry-ms",
-            ("transaction-threads-per-queue", None),
-            ("udf-runtime-gmax-memory", None),
-            ("udf-runtime-max-memory", None),
-            ("use-queue-per-device", None),
-            ("write-duplicate-resolution-disable", None),
+            "vault-ca",
+            "vault-path",
+            "vault-token-file",
+            "vault-url",
+            "work-directory",
+            "debug-allocations",
+            "indent-allocations",
+            "service.port",
+            "service.address",
+            "service.access-port",
+            "service.alternate-access-port",
+            "service.tls-port",
+            "service.tls-access-port",
+            "service.tls-alternate-access-port",
+            "service.tls-name",
+            "heartbeat.mode",
+            "heartbeat.multicast-group",
+            "heartbeat.port",
+            "heartbeat.interval",
+            "heartbeat.timeout",
+            "heartbeat.mtu",
+            "heartbeat.protocol",
+            "fabric.port",
+            "fabric.tls-port",
+            "fabric.tls-name",
+            "fabric.channel-bulk-fds",
+            "fabric.channel-bulk-recv-threads",
+            "fabric.channel-ctrl-fds",
+            "fabric.channel-ctrl-recv-threads",
+            "fabric.channel-meta-fds",
+            "fabric.channel-meta-recv-threads",
+            "fabric.channel-rw-fds",
+            "fabric.channel-rw-recv-pools",
+            "fabric.channel-rw-recv-threads",
+            "fabric.keepalive-enabled",
+            "fabric.keepalive-intvl",
+            "fabric.keepalive-probes",
+            "fabric.keepalive-time",
+            "fabric.latency-max-ms",
+            "fabric.recv-rearm-threshold",
+            "fabric.send-threads",
+            "info.port",
+            "enable-ldap",
+            "enable-security",
+            "ldap-login-threads",
+            "privilege-refresh-period",
+            "ldap.disable-tls",
+            "ldap.polling-period",
+            "ldap.query-base-dn",
+            "ldap.query-user-dn",
+            "ldap.query-user-password-file",
+            "ldap.role-query-base-dn",
+            "ldap.role-query-search-ou",
+            "ldap.server",
+            "ldap.session-ttl",
+            "ldap.tls-ca-file",
+            "ldap.token-hash-method",
+            "ldap.user-dn-pattern",
+            "ldap.user-query-pattern",
+            "report-authentication-sinks",
+            "report-data-op-sinks",
+            "report-sys-admin-sinks",
+            "report-user-admin-sinks",
+            "report-violation-sinks",
+            "syslog-local",
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowConfig.service_config
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
+        self.assertTrue(actual_header, exp_header)
 
     def test_test_namespace(self):
         """
         Asserts namespace config output with heading, header & parameters.
         TODO: test for values as well
         """
-
-        exp_heading = "~test Namespace Configuration"
-        exp_header = "NODE"
-        exp_params_test = [
-            ("allow-nonxdr-writes", "reject-non-xdr-writes"),
-            ("allow-xdr-writes", "reject-xdr-writes"),
+        exp_heading = "test Namespace Configuration"
+        exp_header_test = [
+            "Node",
+            "allow-ttl-without-nsup",
+            "background-scan-max-rps",
             "conflict-resolution-policy",
+            "data-in-index",
             "default-ttl",
+            "disable-cold-start-eviction",
+            "disable-write-dup-res",
             "disallow-null-setname",
-            ("enable-xdr", None),
+            "enable-benchmarks-batch-sub",
+            "enable-benchmarks-ops-sub",
+            "enable-benchmarks-read",
+            "enable-benchmarks-udf",
+            "enable-benchmarks-udf-sub",
+            "enable-benchmarks-write",
+            "enable-hist-proxy",
+            "evict-hist-buckets",
             "evict-tenths-pct",
+            "geo2dsphere-within.earth-radius-meters",
+            "geo2dsphere-within.level-mod",
+            "geo2dsphere-within.max-cells",
+            "geo2dsphere-within.max-level",
+            "geo2dsphere-within.min-level",
+            "geo2dsphere-within.strict",
             "high-water-disk-pct",
             "high-water-memory-pct",
-            ("ldt-enabled", None),
-            ("ldt-page-size", None),
+            "ignore-migrate-fill-delay",
+            "index-stage-size",
+            "index-type",
             "memory-size",
-            ("ns-forward-xdr-writes", None),
+            "migrate-order",
+            "migrate-retransmit-ms",
+            "migrate-sleep",
+            "nsid",
+            "nsup-hist-period",
+            "nsup-period",
+            "nsup-threads",
+            "partition-tree-sprigs",
+            "prefer-uniform-balance",
+            "rack-id",
             "read-consistency-level-override",
-            ("repl-factor", "replication-factor"),
-            ("sets-enable-xdr", None),
+            "reject-non-xdr-writes",
+            "reject-xdr-writes",
+            "replication-factor",
             "single-bin",
+            "single-scan-threads",
             "stop-writes-pct",
-            ("total-bytes-memory", None),
+            "strong-consistency",
+            "strong-consistency-allow-expunge",
+            "tomb-raider-eligible-age",
+            "tomb-raider-period",
+            "transaction-pending-limit",
+            "truncate-threads",
             "write-commit-level-override",
+            "xdr-bin-tombstone-ttl",
+            "xdr-tomb-raider-period",
+            "xdr-tomb-raider-threads",
+            "storage-engine",
+            "sindex.num-partitions",
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowConfig.test_namespace_config
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params_test))
+        self.assertTrue(test_util.check_for_subset(actual_header, exp_header_test))
 
     def test_bar_namespace(self):
         """
@@ -209,38 +345,74 @@ class TestShowConfig(unittest.TestCase):
         if not TestShowConfig.is_bar_present:
             return
 
-        exp_heading = "~bar Namespace Configuration"
-        exp_header = "NODE"
-        exp_params_bar = [
-            ("allow-nonxdr-writes", "reject-non-xdr-writes"),
-            ("allow-xdr-writes", "reject-xdr-writes"),
+        exp_heading = "bar Namespace Configuration"
+        exp_header_bar = [
+            "Node",
+            "allow-ttl-without-nsup",
+            "background-scan-max-rps",
             "conflict-resolution-policy",
+            "data-in-index",
             "default-ttl",
+            "disable-cold-start-eviction",
+            "disable-write-dup-res",
             "disallow-null-setname",
-            ("enable-xdr", None),
+            "enable-benchmarks-batch-sub",
+            "enable-benchmarks-ops-sub",
+            "enable-benchmarks-read",
+            "enable-benchmarks-udf",
+            "enable-benchmarks-udf-sub",
+            "enable-benchmarks-write",
+            "enable-hist-proxy",
+            "evict-hist-buckets",
             "evict-tenths-pct",
+            "geo2dsphere-within.earth-radius-meters",
+            "geo2dsphere-within.level-mod",
+            "geo2dsphere-within.max-cells",
+            "geo2dsphere-within.max-level",
+            "geo2dsphere-within.min-level",
+            "geo2dsphere-within.strict",
             "high-water-disk-pct",
             "high-water-memory-pct",
-            ("ldt-enabled", None),
-            ("ldt-page-size", None),
+            "ignore-migrate-fill-delay",
+            "index-stage-size",
+            "index-type",
             "memory-size",
-            ("ns-forward-xdr-writes", None),
+            "migrate-order",
+            "migrate-retransmit-ms",
+            "migrate-sleep",
+            "nsid",
+            "nsup-hist-period",
+            "nsup-period",
+            "nsup-threads",
+            "partition-tree-sprigs",
+            "prefer-uniform-balance",
+            "rack-id",
             "read-consistency-level-override",
-            ("repl-factor", "replication-factor"),
-            ("sets-enable-xdr", None),
+            "reject-non-xdr-writes",
+            "reject-xdr-writes",
+            "replication-factor",
+            "sindex.num-partitions",
             "single-bin",
+            "single-scan-threads",
             "stop-writes-pct",
-            ("total-bytes-memory", None),
+            "storage-engine",
+            "strong-consistency",
+            "strong-consistency-allow-expunge",
+            "tomb-raider-eligible-age",
+            "tomb-raider-period",
+            "transaction-pending-limit",
+            "truncate-threads",
             "write-commit-level-override",
+            "xdr-bin-tombstone-ttl",
+            "xdr-tomb-raider-period",
+            "xdr-tomb-raider-threads",
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowConfig.bar_namespace_config
         )
-
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params_bar))
+        self.assertListEqual(exp_header_bar, actual_header)
 
     # Needs updating after XDR config parsing has been fixed.
     # Tracked here: https://aerospike.atlassian.net/browse/TOOLS-1521
@@ -275,246 +447,12 @@ class TestShowConfig(unittest.TestCase):
             "xdr-write-batch-size",
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data = test_util.parse_output(
             TestShowConfig.xdr_config
         )
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
-        self.assertTrue(set(exp_params).issubset(set(actual_params)))
-
-
-# class TestShowLatency(unittest.TestCase):
-#     output_list = list()
-#     proxy_latency = ''
-#     query_latency = ''
-#     reads_latency = ''
-#     udf_latency = ''
-#     writes_master_latency = ''
-#     writes_reply_latency = ''
-#     write_latency = ''
-
-#     @classmethod
-#     def setUpClass(cls):
-#         TestShowLatency.rc = controller.BasicRootController()
-#         actual_out = util.capture_stdout(TestShowLatency.rc.execute, ['show', 'latency'])
-#         TestShowLatency.output_list = test_util.get_separate_output(actual_out, 'Latency')
-
-#         for item in TestShowLatency.output_list:
-#             if "~~~proxy Latency" in item:
-#                 TestShowLatency.proxy_latency = item
-#             elif "~~query Latency" in item:
-#                 TestShowLatency.query_latency = item
-#             elif "~~reads Latency" in item or "~~read Latency" in item:
-#                 TestShowLatency.reads_latency = item
-#             elif "~~udf Latency" in item:
-#                 TestShowLatency.udf_latency = item
-#             elif "~~writes_master Latency" in item:
-#                 TestShowLatency.writes_master_latency = item
-#             elif "~~writes_reply Latency" in item:
-#                 TestShowLatency.writes_reply_latency = item
-#             elif "~~write Latency" in item:
-#                 TestShowLatency.write_latency = item
-#             else:
-#                 raise Exception('A latency table is unaccounted for in test setUp')
-
-#     @classmethod
-#     def tearDownClass(cls):
-#         cls.rc = None
-
-#     def test_proxy_latency(self):
-#         """
-#         Asserts <b> proxy latency <b> output with heading, header & no of node processed(based on row count).
-#         TODO: test for values as well
-#         """
-#         exp_heading = "~proxy Latency"
-
-#         # Kept in case a server pre 5.1 needs to be tested
-#         # exp_header_old = [
-#         #     'Node',
-#         #     'Time Span',
-#         #     'Ops/Sec',
-#         #     '%>1ms',
-#         #     '%>8ms',
-#         #     '%>64ms'
-#         # ]
-
-#         exp_header= [
-#             'Node',
-#             'Time Span',
-#             'Ops/Sec',
-#             '%>1ms',
-#             '%>8ms',
-#             '%>64ms'
-#         ]
-#         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
-
-#         actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestShowLatency.proxy_latency, horizontal = True)
-
-#         if actual_heading:
-#             self.assertTrue(exp_heading in actual_heading)
-
-#         if actual_header:
-#             self.assertEqual(exp_header, actual_header)
-
-#         if actual_no_of_rows:
-#             self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-#     def test_query_latency(self):
-#         """
-#         Asserts <b> query latency <b> output with heading, header & no of node processed(based on row count).
-#         TODO: test for values as well
-#         """
-#         exp_heading = "~query Latency~~"
-
-#         # Kept in case a server pre 5.1 needs to be tested
-#         # exp_header_old = [
-#         #     'Node',
-#         #     'Time Span',
-#         #     'Ops/Sec',
-#         #     '%>1Ms',
-#         #     '%>8Ms',
-#         #     '%>64Ms'
-#         # ]
-
-#         exp_header= [
-#             'Node',
-#             'Time Span',
-#             'Ops/Sec',
-#             '%>1ms',
-#             '%>8ms',
-#             '%>64ms'
-#         ]
-
-#         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
-
-#         actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestShowLatency.query_latency, horizontal = True)
-
-#         if actual_heading:
-#             self.assertTrue(exp_heading in actual_heading)
-
-#         if actual_header:
-#             self.assertEqual(exp_header, actual_header)
-
-#         if actual_no_of_rows:
-#             self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-#     def test_reads_latency(self):
-#         """
-#         Asserts <b> reads latency <b> output with heading, header & no of node processed(based on row count).
-#         TODO: test for values as well
-#         """
-#         exp_heading = [("~~reads Latency", "~~read Latency")]
-
-#         # Kept in case a server pre 5.1 needs to be tested
-#         # exp_header= [
-#         #     'Node',
-#         #     'Time Span',
-#         #     'Ops/Sec',
-#         #     '%>1Ms',
-#         #     '%>8Ms',
-#         #     '%>64Ms'
-#         # ]
-
-#         exp_header = [
-#             'Node',
-#             'Ops/Sec',
-#             '%>1ms',
-#             '%>8ms',
-#             '%>64ms'
-#         ]
-
-#         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
-
-#         actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestShowLatency.reads_latency, horizontal = True, header_len=1)
-
-#         self.assertTrue(test_util.check_for_subset(actual_heading, exp_heading))
-#         self.assertEqual(exp_header, actual_header)
-#         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-#     def test_udf_latency(self):
-#         """
-#         Asserts <b> udf latency <b> output with heading, header & no of node processed(based on row count).
-#         TODO: test for values as well
-#         """
-#         exp_heading = "~udf Latency~~"
-#         exp_header= ['Node',
-#                      'Time Span',
-#                      'Ops/Sec',
-#                      '%>1Ms',
-#                      '%>8Ms',
-#                      '%>64Ms']
-
-#         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
-
-#         actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestShowLatency.udf_latency, horizontal = True)
-
-#         if actual_heading:
-#             self.assertTrue(exp_heading in actual_heading)
-
-#         if actual_header:
-#             self.assertEqual(exp_header, actual_header)
-
-#         if actual_no_of_rows:
-#             self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-#     def test_writes_master_latency(self):
-#         """
-#         Asserts <b> writes_master latency <b> output with heading, header & no of node processed(based on row count).
-#         TODO: test for values as well
-#         """
-#         exp_heading = "~writes_master Latency~~"
-#         exp_header= ['Node',
-#                      'Time Span',
-#                      'Ops/Sec',
-#                      '%>1Ms',
-#                      '%>8Ms',
-#                      '%>64Ms']
-
-#         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
-
-#         actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestShowLatency.writes_master_latency, horizontal = True)
-
-#         if actual_heading:
-#             self.assertTrue(exp_heading in actual_heading)
-
-#         if actual_header:
-#             self.assertEqual(exp_header, actual_header)
-
-#         if actual_no_of_rows:
-#             self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-#     def test_write_latencies(self):
-#         """
-#         Asserts <b> writes latency <b> output with heading, header & no of node processed(based on row count).
-#         TODO: test for values as well
-#         """
-#         exp_heading = "~write Latency"
-
-#         # Kept incase a server version pre 5.1 needs testing
-#         # exp_header_old = [
-#         #     'Node',
-#         #     'Time Span',
-#         #     'Ops/Sec',
-#         #     '%>1Ms',
-#         #     '%>8Ms',
-#         #     '%>64Ms'
-#         # ]
-
-#         exp_header = [
-#             'Node',
-#             'Ops/Sec',
-#             '%>1ms',
-#             '%>8ms',
-#             '%>64ms'
-#         ]
-
-#         exp_no_of_rows = len(TestShowLatency.rc.cluster._live_nodes)
-
-#         actual_heading, actual_header, actual_data, actual_no_of_rows = test_util.parse_output(TestShowLatency.write_latency, horizontal = True, header_len=1)
-
-#         self.assertTrue(exp_heading in actual_heading)
-#         self.assertEqual(exp_header, actual_header)
-#         self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
+        self.assertTrue(set(exp_params).issubset(set(actual_data)))
 
 
 class TestShowLatenciesDefault(unittest.TestCase):
@@ -546,63 +484,8 @@ class TestShowLatenciesDefault(unittest.TestCase):
             TestShowLatenciesDefault.rc.execute, ["show", "latencies", "-v"]
         )
         TestShowLatenciesDefault.output_list = test_util.get_separate_output(
-            actual_out, "Latency"
+            actual_out
         )
-        for item in TestShowLatenciesDefault.output_list:
-            if "~batch-index Latency" in item:
-                TestShowLatenciesDefault.batch_index_latencies = item
-            elif "~query Latency" in item:
-                TestShowLatenciesDefault.query_latencies = item
-            elif "~query-rec-count Latency" in item:
-                TestShowLatenciesDefault.query_rec_count_latencies = item
-            elif "~re-repl Latency" in item:
-                TestShowLatenciesDefault.re_repl_latencies = item
-            elif "~read Latency" in item:
-                TestShowLatenciesDefault.read_latencies = item
-            elif "~read-dup-res Latency" in item:
-                TestShowLatenciesDefault.read_dup_res_latencies = item
-            elif "~read-local Latency" in item:
-                TestShowLatenciesDefault.read_local_latencies = item
-            elif "~read-repl-ping Latency" in item:
-                TestShowLatenciesDefault.read_repl_ping_latencies = item
-            elif "~read-response Latency" in item:
-                TestShowLatenciesDefault.read_response_latencies = item
-            elif "~read-restart Latency" in item:
-                TestShowLatenciesDefault.read_restart_latencies = item
-            elif "~read-start Latency" in item:
-                TestShowLatenciesDefault.read_start_latencies = item
-            elif "~udf Latency" in item:
-                TestShowLatenciesDefault.udf_latencies = item
-            elif "~write Latency" in item:
-                TestShowLatenciesDefault.write_latencies = item
-            elif "~write-dup-res Latency" in item:
-                TestShowLatenciesDefault.write_dup_res_latencies = item
-            elif "~write-master Latency" in item:
-                TestShowLatenciesDefault.write_master_latencies = item
-            elif "~write-repl-write Latency" in item:
-                TestShowLatenciesDefault.write_repl_write_latencies = item
-            elif "~write-response Latency" in item:
-                TestShowLatenciesDefault.write_response_latencies = item
-            elif "~write-restart Latency" in item:
-                TestShowLatenciesDefault.write_restart_latencies = item
-            elif "~write-start Latency" in item:
-                TestShowLatenciesDefault.write_start_latencies = item
-            else:
-                raise Exception("A latencies table is unaccounted for in test setUp")
-
-            # TODO:These will be used when tests for ops-sub-are created
-            # elif "~ops-sub-start Latency" in item:
-            #     TestShowLatenciesDefault.ops_sub_start = item
-            # elif "~ops-sub-restart Latency" in item:
-            #     TestShowLatenciesDefault.ops_sub_restart = item
-            # elif "~ops-sub-dup-res Latency" in item:
-            #     TestShowLatenciesDefault.ops_sub_dup_res = item
-            # elif "~ops-sub-master Latency" in item:
-            #     TestShowLatenciesDefault.ops_sub_master = item
-            # elif "~ops-sub-repl-write Latency" in item:
-            #     TestShowLatenciesDefault.ops_sub_repl_write = item
-            # elif "~ops-sub-response Latency" in item:
-            #     TestShowLatenciesDefault.ops_sub_response = item
 
     @classmethod
     def tearDownClass(cls):
@@ -612,18 +495,37 @@ class TestShowLatenciesDefault(unittest.TestCase):
         """
         Asserts <b> read latencies <b> output with heading, header & no of node processed(based on row count).
         """
-        exp_heading = "~read Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
+        exp_heading = "Latency"
+        exp_header = ["Namespace", "Histogram", "Node", "ops/sec", ">1ms", ">8ms", ">64ms"]
+        exp_data = [
+            ('bar', 'test'),
+            (
+                'read',
+                'read-dup-res', 
+                "read-local", 
+                "read-repl-ping", 
+                "read-response", 
+                "read-restart", 
+                "read-start",
+                'write',
+                'write-dup-res',
+                'write-master',
+                'write-repl-write',
+                'write-response',
+                'write-restart',
+                'write-start'
+            ),
+        ]
+        exp_data_types = [str, str, str, float, float, float, float]
 
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
         (
-            actual_heading,
+            actual_heading, 
+            actual_description,
             actual_header,
             actual_data,
             actual_no_of_rows,
         ) = test_util.parse_output(
-            TestShowLatenciesDefault.read_latencies, horizontal=True, header_len=1
+            TestShowLatenciesDefault.output_list[0], horizontal=True, header_len=1
         )
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
@@ -631,378 +533,11 @@ class TestShowLatenciesDefault(unittest.TestCase):
             test_util.check_for_types(actual_data, exp_data_types),
             "%s returned the wrong data types" % exp_heading,
         )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
-    def test_read_dup_res_latencies(self):
-        """
-        Asserts <b> read-dup-res latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~read-dup-res Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.read_dup_res_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_read_local_latencies(self):
-        """
-        Asserts <b> read-local latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~read-local Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.read_local_latencies, horizontal=True, header_len=1
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_read_repl_ping_latencies(self):
-        """
-        Asserts <b> read-repl-ping latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~read-repl-ping Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.read_repl_ping_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_read_response_latencies(self):
-        """
-        Asserts <b> read-response latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~read-response Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.read_response_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_read_restart_latencies(self):
-        """
-        Asserts <b> read-restart latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~read-restart Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.read_restart_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_read_start_latencies(self):
-        """
-        Asserts <b> read-start latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~read-start Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.read_start_latencies, horizontal=True, header_len=1
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_write_latencies(self):
-        """
-        Asserts <b> writes latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~write Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.write_latencies, horizontal=True, header_len=1
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_write_dup_res_latencies(self):
-        """
-        Asserts <b> write-dup-res latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~write-dup-res Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.write_dup_res_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_write_master_latencies(self):
-        """
-        Asserts <b> write-master latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~write-master Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.write_master_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_write_repl_write_latencies(self):
-        """
-        Asserts <b> write-repl-write latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~write-repl-write Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.write_repl_write_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_write_response_latencies(self):
-        """
-        Asserts <b> write-response latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~write-response Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.write_response_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_write_restart_latencies(self):
-        """
-        Asserts <b> write-restart latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~write-restart Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.write_restart_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
-    def test_write_start_latencies(self):
-        """
-        Asserts <b> write-start latencies <b> output with heading, header & no of node processed(based on row count).
-        """
-        exp_heading = "~write-start Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
-
-        exp_no_of_rows = len(TestShowLatenciesDefault.rc.cluster._live_nodes)
-        (
-            actual_heading,
-            actual_header,
-            actual_data,
-            actual_no_of_rows,
-        ) = test_util.parse_output(
-            TestShowLatenciesDefault.write_start_latencies,
-            horizontal=True,
-            header_len=1,
-        )
-
-        self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_data_types),
-            "%s returned the wrong data types" % exp_heading,
-        )
-        self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
-
+        for data in actual_data:
+            self.assertTrue(
+                test_util.check_for_subset(data, exp_data)
+            )
 
 class TestShowLatenciesWithArguments(unittest.TestCase):
     @classmethod
@@ -1017,27 +552,31 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
 
         # exp_heading = "~read Latency"
         exp_header = [
+            "Namespace",
+            "Histogram",
             "Node",
-            "Ops/Sec",
-            "%>1ms",
-            "%>2ms",
-            "%>4ms",
-            "%>8ms",
-            "%>16ms",
-            "%>32ms",
-            "%>64ms",
-            "%>128ms",
-            "%>256ms",
-            "%>512ms",
-            "%>1024ms",
-            "%>2048ms",
-            "%>4096ms",
-            "%>8192ms",
-            "%>16384ms",
-            "%>32768ms",
-            "%>65536ms",
+            "ops/sec",
+            ">1ms",
+            ">2ms",
+            ">4ms",
+            ">8ms",
+            ">16ms",
+            ">32ms",
+            ">64ms",
+            ">128ms",
+            ">256ms",
+            ">512ms",
+            ">1024ms",
+            ">2048ms",
+            ">4096ms",
+            ">8192ms",
+            ">16384ms",
+            ">32768ms",
+            ">65536ms",
         ]
         exp_data_types = [
+            str,
+            str,
             str,
             float,
             float,
@@ -1059,16 +598,16 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
             float,
         ]
 
-        exp_no_of_rows = len(TestShowLatenciesWithArguments.rc.cluster._live_nodes)
         actual_out = util.capture_stdout(
             TestShowLatenciesWithArguments.rc.execute,
             ["show", "latencies", "-e", "1", "-b", "17"],
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
             (
                 actual_heading,
+                actual_description,
                 actual_header,
                 actual_data,
                 actual_no_of_rows,
@@ -1078,7 +617,6 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
                 test_util.check_for_types(actual_data, exp_data_types),
                 "returned the wrong data types",
             )
-            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_latencies_e_1_b_18(self):
         """
@@ -1088,27 +626,31 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
 
         # exp_heading = "~read Latency"
         exp_header = [
+            "Namespace",
+            "Histogram",
             "Node",
-            "Ops/Sec",
-            "%>1ms",
-            "%>2ms",
-            "%>4ms",
-            "%>8ms",
-            "%>16ms",
-            "%>32ms",
-            "%>64ms",
-            "%>128ms",
-            "%>256ms",
-            "%>512ms",
-            "%>1024ms",
-            "%>2048ms",
-            "%>4096ms",
-            "%>8192ms",
-            "%>16384ms",
-            "%>32768ms",
-            "%>65536ms",
+            "ops/sec",
+            ">1ms",
+            ">2ms",
+            ">4ms",
+            ">8ms",
+            ">16ms",
+            ">32ms",
+            ">64ms",
+            ">128ms",
+            ">256ms",
+            ">512ms",
+            ">1024ms",
+            ">2048ms",
+            ">4096ms",
+            ">8192ms",
+            ">16384ms",
+            ">32768ms",
+            ">65536ms",
         ]
         exp_data_types = [
+            str,
+            str,
             str,
             float,
             float,
@@ -1130,16 +672,16 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
             float,
         ]
 
-        exp_no_of_rows = len(TestShowLatenciesWithArguments.rc.cluster._live_nodes)
         actual_out = util.capture_stdout(
             TestShowLatenciesWithArguments.rc.execute,
             ["show", "latencies", "-e", "1", "-b", "18"],
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
             (
                 actual_heading,
+                actual_description,
                 actual_header,
                 actual_data,
                 actual_no_of_rows,
@@ -1149,7 +691,6 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
                 test_util.check_for_types(actual_data, exp_data_types),
                 "returned the wrong data types",
             )
-            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_latencies_e_0_b_17(self):
         """
@@ -1159,25 +700,27 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
 
         # exp_heading = "~read Latency"
         exp_header = [
+            "Namespace",
+            "Histogram",
             "Node",
-            "Ops/Sec",
-            "%>1ms",
-            "%>2ms",
-            "%>4ms",
-            "%>8ms",
-            "%>16ms",
-            "%>32ms",
-            "%>64ms",
-            "%>128ms",
-            "%>256ms",
-            "%>512ms",
-            "%>1024ms",
-            "%>2048ms",
-            "%>4096ms",
-            "%>8192ms",
-            "%>16384ms",
-            "%>32768ms",
-            "%>65536ms",
+            "ops/sec",
+            ">1ms",
+            ">2ms",
+            ">4ms",
+            ">8ms",
+            ">16ms",
+            ">32ms",
+            ">64ms",
+            ">128ms",
+            ">256ms",
+            ">512ms",
+            ">1024ms",
+            ">2048ms",
+            ">4096ms",
+            ">8192ms",
+            ">16384ms",
+            ">32768ms",
+            ">65536ms",
         ]
         exp_data_types = [
             str,
@@ -1206,11 +749,12 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
             TestShowLatenciesWithArguments.rc.execute,
             ["show", "latencies", "-e", "0", "-b", "17"],
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
             (
                 actual_heading,
+                actual_description,
                 actual_header,
                 actual_data,
                 actual_no_of_rows,
@@ -1229,19 +773,23 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         """
 
         # exp_heading = "~read Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms"]
-        exp_data_types = [str, float, float]
+        exp_header = ["Namespace",
+            "Histogram",
+            "Node",
+            "ops/sec", 
+            ">1ms"]
+        exp_data_types = [str, str, str, float, float]
 
-        exp_no_of_rows = len(TestShowLatenciesWithArguments.rc.cluster._live_nodes)
         actual_out = util.capture_stdout(
             TestShowLatenciesWithArguments.rc.execute,
             ["show", "latencies", "-e", "17", "-b", "1"],
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
             (
                 actual_heading,
+                actual_description,
                 actual_header,
                 actual_data,
                 actual_no_of_rows,
@@ -1251,7 +799,6 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
                 test_util.check_for_types(actual_data, exp_data_types),
                 "returned the wrong data types",
             )
-            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_latencies_e_100_b_200(self):
         """
@@ -1260,23 +807,25 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         """
 
         # exp_heading = "~read Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms"]
+        exp_header = ["Namespace", "Histogram", "Node", "ops/sec", ">1ms"]
         exp_data_types = [
+            str,
+            str,
             str,
             float,
             float,
         ]
 
-        exp_no_of_rows = len(TestShowLatenciesWithArguments.rc.cluster._live_nodes)
         actual_out = util.capture_stdout(
             TestShowLatenciesWithArguments.rc.execute,
             ["show", "latencies", "-e", "100", "-b", "200"],
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
             (
                 actual_heading,
+                actual_description,
                 actual_header,
                 actual_data,
                 actual_no_of_rows,
@@ -1286,7 +835,6 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
                 test_util.check_for_types(actual_data, exp_data_types),
                 "returned the wrong data types",
             )
-            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_latencies_e_16_b_2(self):
         """
@@ -1295,19 +843,19 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         """
 
         # exp_heading = "~read Latency"
-        exp_header = ["Node", "Ops/Sec", "%>1ms", "%>65536ms"]
-        exp_data_types = [str, float, float, float]
+        exp_header = ["Namespace", "Histogram", "Node", "ops/sec", ">1ms", ">65536ms"]
+        exp_data_types = [str, str, str, float, float, float]
 
-        exp_no_of_rows = len(TestShowLatenciesWithArguments.rc.cluster._live_nodes)
         actual_out = util.capture_stdout(
             TestShowLatenciesWithArguments.rc.execute,
             ["show", "latencies", "-e", "16", "-b", "2"],
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
             (
                 actual_heading,
+                actual_description,
                 actual_header,
                 actual_data,
                 actual_no_of_rows,
@@ -1317,7 +865,6 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
                 test_util.check_for_types(actual_data, exp_data_types),
                 "returned the wrong data types",
             )
-            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_latencies_e_4_b_7(self):
         """
@@ -1327,52 +874,53 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
 
         # exp_heading = "~read Latency"
         exp_header = [
+            "Namespace",
+            "Histogram",
             "Node",
-            "Ops/Sec",
-            "%>1ms",
-            "%>16ms",
-            "%>256ms",
-            "%>4096ms",
-            "%>65536ms",
+            "ops/sec",
+            ">1ms",
+            ">16ms",
+            ">256ms",
+            ">4096ms",
+            ">65536ms",
         ]
-        exp_data_types = [str, float, float, float, float, float, float]
+        exp_data_types = [str, str, str, float, float, float, float, float, float]
 
-        exp_no_of_rows = len(TestShowLatenciesWithArguments.rc.cluster._live_nodes)
         actual_out = util.capture_stdout(
             TestShowLatenciesWithArguments.rc.execute,
             ["show", "latencies", "-e", "4", "-b", "7"],
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
             (
                 actual_heading,
+                actual_description,
                 actual_header,
                 actual_data,
                 actual_no_of_rows,
             ) = test_util.parse_output(output, horizontal=True, header_len=1)
-            self.assertEqual(exp_header, actual_header)
+            self.assertListEqual(exp_header, actual_header)
             self.assertTrue(
                 test_util.check_for_types(actual_data, exp_data_types),
                 "returned the wrong data types",
             )
-            self.assertEqual(exp_no_of_rows, int(actual_no_of_rows.strip()))
 
     def test_latencies_group_by_machine_name(self):
         """
         Asserts <b> show latencies <b> with a -m argument which groups tables by machine name
         """
-        exp_header = ["Histogram", "Ops/Sec", "%>1ms", "%>8ms", "%>64ms"]
-        exp_data_types = [str, float, float, float, float]
+        exp_header = ["Namespace", "Histogram", "Node", "ops/sec", ">1ms", ">8ms", ">64ms"]
+        exp_data_types = [str, str, str, float, float, float, float]
 
         actual_out = util.capture_stdout(
             TestShowLatenciesWithArguments.rc.execute, ["show", "latencies", "-m"]
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
-            actual_heading, actual_header, actual_data, _ = test_util.parse_output(
-                output, horizontal=True, header_len=1
+            actual_heading,  actual_description, actual_header, actual_data, _ = test_util.parse_output(
+                output
             )
             self.assertEqual(exp_header, actual_header)
             self.assertTrue(
@@ -1385,18 +933,22 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         Asserts <b> show latencies <b> with a -m argument which groups tables by machine name
         """
         exp_header = [
+            "Namespace",
             "Histogram",
-            "Ops/Sec",
-            "%>1ms",
-            "%>4ms",
-            "%>16ms",
-            "%>64ms",
-            "%>256ms",
-            "%>1024ms",
-            "%>4096ms",
-            "%>16384ms",
+            "Node",
+            "ops/sec",
+            ">1ms",
+            ">4ms",
+            ">16ms",
+            ">64ms",
+            ">256ms",
+            ">1024ms",
+            ">4096ms",
+            ">16384ms",
         ]
         exp_data_types = [
+            str,
+            str,
             str,
             float,
             float,
@@ -1413,10 +965,10 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
             TestShowLatenciesWithArguments.rc.execute,
             ["show", "latencies", "-m", "-e", "2", "-b", "8"],
         )
-        output_list = test_util.get_separate_output(actual_out, "Latency")
+        output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
-            actual_heading, actual_header, actual_data, _ = test_util.parse_output(
+            actual_heading, actual_description, actual_header, actual_data, _ = test_util.parse_output(
                 output, horizontal=True, header_len=1
             )
             self.assertEqual(exp_header, actual_header)
@@ -1438,14 +990,14 @@ class TestShowDistribution(unittest.TestCase):
         # use regex in get_separate_output(~.+Distribution.*~.+)
         # if you are changing below Distribution keyword
         TestShowDistribution.output_list = test_util.get_separate_output(
-            actual_out, "Distribution in Seconds"
+            actual_out
         )
         TestShowDistribution.is_bar_present = False
-
         for item in TestShowDistribution.output_list:
-            if "~~test - TTL Distribution in Seconds" in item:
+            title = item['title']
+            if "test - TTL Distribution in Seconds" in title:
                 TestShowDistribution.test_ttl_distri = item
-            elif "~~bar - TTL Distribution in Seconds" in item:
+            elif "bar - TTL Distribution in Seconds" in title:
                 TestShowDistribution.bar_ttl_distri = item
                 TestShowDistribution.is_bar_present = True
             elif "~~~~" in item:
@@ -1460,23 +1012,30 @@ class TestShowDistribution(unittest.TestCase):
         Asserts TTL Distribution in Seconds for test namespace with heading, header & parameters.
         TODO: test for values as well
         """
-        exp_heading = "~test - TTL Distribution in Seconds"
-        exp_header = """Percentage of records having ttl less than or equal
-                        to value measured in Seconds
-                        Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
+        exp_heading = "test - TTL Distribution in Seconds"
+        exp_description = """Percentage of records having ttl less than or equal to value measured in Seconds"""
+        
+        exp_header = [
+            "Node",
+            "10%",   
+            "20%",   
+            "30%",   
+            "40%",   
+            "50%",   
+            "60%",   
+            "70%",   
+            "80%",   
+            "90%",   
+            "100%"
+        ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowDistribution.test_ttl_distri, horizontal=True, merge_header=False
-        )
-        if "Node" not in actual_header:
-            actual_header += " " + TestShowDistribution.test_ttl_distri.split("\n")[3]
-        exp_header = " ".join(exp_header.split())
-        actual_header = " ".join(
-            [item for item in actual_header.split() if not item.startswith("\x1b")]
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header.strip(), actual_header.strip())
+        self.assertEqual(exp_description, actual_description)
+        self.assertListEqual(exp_header, actual_header)
 
     def test_bar_ttl(self):
         """
@@ -1485,23 +1044,45 @@ class TestShowDistribution(unittest.TestCase):
         """
         if not TestShowDistribution.is_bar_present:
             return
-        exp_heading = "~bar - TTL Distribution in Seconds"
-        exp_header = """Percentage of records having ttl less than or equal
-                        to value measured in Seconds
-                        Node   10%   20%   30%   40%   50%   60%   70%   80%   90%   100%"""
+        exp_heading = "bar - TTL Distribution in Seconds"
+        exp_description = """Percentage of records having ttl less than or equal to value measured in Seconds"""
+        exp_header = [
+            "Node",
+            "10%",   
+            "20%",   
+            "30%",   
+            "40%",   
+            "50%",   
+            "60%",   
+            "70%",   
+            "80%",   
+            "90%",   
+            "100%"
+        ]
+        exp_types = [
+            str,
+            int,
+            int,
+            int,
+            int,
+            int,
+            int,
+            int,
+            int,
+            int,
+            int
+        ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
-            TestShowDistribution.bar_ttl_distri, horizontal=True, mearge_header=False
-        )
-        if "Node" not in actual_header:
-            actual_header += " " + TestShowDistribution.bar_ttl_distri.split("\n")[3]
-        exp_header = " ".join(exp_header.split())
-        actual_header = " ".join(
-            [item for item in actual_header.split() if not item.startswith("\x1b")]
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
+            TestShowDistribution.bar_ttl_distri, horizontal=True, merge_header=False
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertEqual(exp_header.strip(), actual_header.strip())
+        self.assertEqual(exp_description, actual_description)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertTrue(
+            test_util.check_for_types(actual_data, exp_types)
+        )
 
 
 class TestShowStatistics(unittest.TestCase):
@@ -1517,27 +1098,27 @@ class TestShowStatistics(unittest.TestCase):
     def setUpClass(cls):
         rc = controller.BasicRootController()
         actual_out = util.capture_stdout(rc.execute, ["show", "statistics"])
+        actual_out += util.capture_stdout(rc.execute, ["show", "statistics", "xdr"])
         TestShowStatistics.output_list = test_util.get_separate_output(
-            actual_out, "Statistics"
-        )
-        TestShowStatistics.output_list.append(
-            util.capture_stdout(rc.execute, ["show", "statistics", "xdr"])
+            actual_out
         )
         TestShowStatistics.is_bar_present = False
+
         for item in TestShowStatistics.output_list:
-            if "~test Bin Statistics" in item:
+            title = item['title']
+            if "test Bin Statistics" in title:
                 TestShowStatistics.test_bin_stats = item
-            elif "~bar Bin Statistics" in item:
+            elif "bar Bin Statistics" in title:
                 TestShowStatistics.bar_bin_stats = item
                 TestShowStatistics.is_bar_present = True
-            elif "~Service Statistics" in item:
+            elif "Service Statistics" in title:
                 TestShowStatistics.service_stats = item
-            elif "~bar Namespace Statistics" in item:
+            elif "bar Namespace Statistics" in title:
                 TestShowStatistics.bar_namespace_stats = item
                 TestShowStatistics.is_bar_present = True
-            elif "~test Namespace Statistics" in item:
+            elif "test Namespace Statistics" in title:
                 TestShowStatistics.test_namespace_stats = item
-            elif "~XDR Statistics" in item:
+            elif "XDR Statistics" in title:
                 TestShowStatistics.xdr_stats = item
             # TODO: Add missing tests
             # else:
@@ -1552,20 +1133,19 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> test Bin Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
-        exp_heading = "~test Bin Statistics"
-        exp_header = "NODE"
-        exp_params = [
+        exp_heading = "test Bin Statistics"
+        exp_header = [
+            ('Node'),
             ("bin-names-quota", "bin_names_quota"),
             ("num-bin-names", "bin_names"),
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowStatistics.test_bin_stats
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
+        self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
     def test_bar_bin(self):
         """
@@ -1574,190 +1154,31 @@ class TestShowStatistics(unittest.TestCase):
         """
         if not TestShowStatistics.is_bar_present:
             return
-        exp_heading = "~bar Bin Statistics"
-        exp_header = "NODE"
-        exp_params = [
+        exp_heading = "bar Bin Statistics"
+        exp_header = [
+            ("Node"),
             ("bin-names-quota", "bin_names_quota"),
             ("num-bin-names", "bin_names"),
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowStatistics.bar_bin_stats
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
+        self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
     def test_service(self):
         """
         This test will assert <b> Service Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
-        exp_heading = "~Service Statistics"
-        exp_header = "NODE"
+        exp_heading = "Service Statistics"
 
-        # Kept in case an older server needs to be tested
-        # exp_params = [
-        #     ('batch_errors', 'batch_error', None),
-        #     ('batch_initiate', None),
-        #     ('batch_queue', None),
-        #     ('batch_timeout', None),
-        #     ('batch_tree_count', None),
-        #     'client_connections',
-        #     'cluster_integrity',
-        #     'cluster_key',
-        #     'cluster_size',
-        #     ('data-used-bytes-memory', None),
-        #     ('err_duplicate_proxy_request', None),
-        #     ('err_out_of_space', None),
-        #     ('err_replica_non_null_node', None),
-        #     ('err_replica_null_node', None),
-        #     ('err_rw_cant_put_unique', None),
-        #     ('err_rw_pending_limit', None),
-        #     ('err_rw_request_not_found', None),
-        #     ('err_storage_queue_full', None),
-        #     ('err_sync_copy_null_master', None),
-        #     ('err_tsvc_requests', None),
-        #     ('err_write_fail_bin_exists', None),
-        #     ('err_write_fail_bin_name', None),
-        #     ('err_write_fail_bin_not_found', None),
-        #     ('err_write_fail_forbidden', None),
-        #     ('err_write_fail_generation', None),
-        #     ('err_write_fail_incompatible_type', None),
-        #     ('err_write_fail_key_exists', None),
-        #     ('err_write_fail_key_mismatch', None),
-        #     ('err_write_fail_not_found', None),
-        #     ('err_write_fail_parameter', None),
-        #     ('err_write_fail_prole_delete', None),
-        #     ('err_write_fail_prole_generation', None),
-        #     ('err_write_fail_prole_unknown', None),
-        #     ('err_write_fail_record_too_big', None),
-        #     ('err_write_fail_unknown', None),
-        #     ('fabric_msgs_rcvd', None),
-        #     ('fabric_msgs_sent', None),
-        #     ('free-pct-disk', None),
-        #     ('free-pct-memory', None),
-        #     'heartbeat_received_foreign',
-        #     'heartbeat_received_self',
-        #     ('index-used-bytes-memory', None),
-        #     'info_queue',
-        #     'objects',
-        #     ('ongoing_write_reqs', None),
-        #     ('partition_absent', None),
-        #     ('partition_actual', None),
-        #     ('partition_desync', None),
-        #     ('partition_object_count', None),
-        #     ('partition_ref_count', None),
-        #     ('partition_replica', None),
-        #     'paxos_principal',
-        #     ('proxy_action', None),
-        #     'proxy_in_progress',
-        #     ('proxy_initiate', None),
-        #     ('proxy_retry', None),
-        #     ('proxy_retry_new_dest', None),
-        #     ('proxy_retry_q_full', None),
-        #     ('proxy_retry_same_dest', None),
-        #     ('proxy_unproxy', None),
-        #     ('query_abort', None),
-        #     ('query_agg', None),
-        #     ('query_agg_abort', None),
-        #     ('query_agg_avg_rec_count', None),
-        #     ('query_agg_err', None),
-        #     ('query_agg_success', None),
-        #     ('query_avg_rec_count', None),
-        #     ('query_fail', None),
-        #     ('query_long_queue_full', None),
-        #     'query_long_running',
-        #     ('query_lookup_abort', None),
-        #     ('query_lookup_avg_rec_count', None),
-        #     ('query_lookup_err', None),
-        #     ('query_lookup_success', None),
-        #     ('query_lookups', None),
-        #     ('query_reqs', None),
-        #     ('query_short_queue_full', None),
-        #     'query_short_running',
-        #     ('query_success', None),
-        #     ('queue', 'tsvc_queue', None),
-        #     ('read_dup_prole', None),
-        #     'reaped_fds',
-        #     ('record_locks', None),
-        #     ('record_refs', None),
-        #     ('rw_err_ack_badnode', None),
-        #     ('rw_err_ack_internal', None),
-        #     ('rw_err_ack_nomatch', None),
-        #     ('rw_err_dup_cluster_key', None),
-        #     ('rw_err_dup_internal', None),
-        #     ('rw_err_dup_send', None),
-        #     ('rw_err_write_cluster_key', None),
-        #     ('rw_err_write_internal', None),
-        #     ('rw_err_write_send', None),
-        #     ('sindex-used-bytes-memory', None),
-        #     ('sindex_gc_activity_dur', None),
-        #     'sindex_gc_garbage_cleaned',
-        #     'sindex_gc_garbage_found',
-        #     ('sindex_gc_inactivity_dur', None),
-        #     'sindex_gc_list_creation_time',
-        #     'sindex_gc_list_deletion_time',
-        #     'sindex_gc_objects_validated',
-        #     'sindex_ucgarbage_found',
-        #     ('stat_cluster_key_err_ack_dup_trans_reenqueue', None),
-        #     ('stat_delete_success', None),
-        #     ('stat_deleted_set_objects', None),
-        #     ('stat_duplicate_operation', None),
-        #     ('stat_evicted_objects', None),
-        #     ('stat_evicted_objects_time', None),
-        #     ('stat_expired_objects', None),
-        #     ('stat_ldt_proxy', None),
-        #     ('stat_nsup_deletes_not_shipped', None),
-        #     ('stat_proxy_errs', None),
-        #     ('stat_proxy_reqs', None),
-        #     ('stat_proxy_reqs_xdr', None),
-        #     ('stat_proxy_success', None),
-        #     ('stat_read_errs_notfound', None),
-        #     ('stat_read_errs_other', None),
-        #     ('stat_read_reqs', None),
-        #     ('stat_read_reqs_xdr', None),
-        #     ('stat_read_success', None),
-        #     ('stat_rw_timeout', None),
-        #     ('stat_write_errs', None),
-        #     ('stat_write_errs_notfound', None),
-        #     ('stat_write_errs_other', None),
-        #     ('stat_write_reqs', None),
-        #     ('stat_write_reqs_xdr', None),
-        #     ('stat_write_success', None),
-        #     ('stat_zero_bin_records', None),
-        #     ('storage_defrag_corrupt_record', None),
-        #     ('sub-records', 'sub_objects', None),
-        #     'system_free_mem_pct',
-        #     ('system_swapping', None),
-        #     ('total-bytes-disk', None),
-        #     ('total-bytes-memory', None),
-        #     ('transactions', None),
-        #     ('tree_count', None),
-        #     ('udf_delete_err_others', None),
-        #     ('udf_delete_reqs', None),
-        #     ('udf_delete_success', None),
-        #     ('udf_lua_errs', None),
-        #     ('udf_query_rec_reqs', None),
-        #     ('udf_read_errs_other', None),
-        #     ('udf_read_reqs', None),
-        #     ('udf_read_success', None),
-        #     ('udf_replica_writes', None),
-        #     ('udf_scan_rec_reqs', None),
-        #     ('udf_write_err_others', None),
-        #     ('udf_write_reqs', None),
-        #     ('udf_write_success', None),
-        #     'uptime',
-        #     ('used-bytes-disk', None),
-        #     ('used-bytes-memory', None),
-        #     ('waiting_transactions', None),
-        #     ('write_master', None),
-        #     ('write_prole', None)
-        # ]
 
         # TODO: Add possibly missing params.  This is only verified as a subset
-        exp_params = [
+        exp_header = [
+            "Node",
             "client_connections",
             "cluster_integrity",
             "cluster_key",
@@ -1780,12 +1201,11 @@ class TestShowStatistics(unittest.TestCase):
             "uptime",
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowStatistics.service_stats
         )
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
+        self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
     def test_bar_namespace(self):
         """
@@ -1794,63 +1214,11 @@ class TestShowStatistics(unittest.TestCase):
         """
         if not TestShowStatistics.is_bar_present:
             return
-        exp_heading = "~bar Namespace Statistics"
-        exp_header = "NODE"
-
-        # Kept in case an older version of the server needs testing
-        # exp_params = [
-        #     ('allow-nonxdr-writes', 'reject-non-xdr-writes'),
-        #     ('allow-xdr-writes', 'reject-xdr-writes'),
-        #     ('available-bin-names','available_bin_names'),
-        #     'conflict-resolution-policy',
-        #     ('current-time','current_time'),
-        #     ('data-used-bytes-memory','memory_used_data_bytes'),
-        #     'default-ttl',
-        #     'disallow-null-setname',
-        #     ('enable-xdr', None),
-        #     'evict-tenths-pct',
-        #     ('evicted-objects','evicted_objects'),
-        #     ('expired-objects','expired_objects'),
-        #     ('free-pct-memory','memory_free_pct'),
-        #     'high-water-disk-pct',
-        #     'high-water-memory-pct',
-        #     ('hwm-breached','hwm_breached'),
-        #     ('index-used-bytes-memory','memory_used_index_bytes'),
-        #     ('ldt-enabled', None),
-        #     ('ldt-page-size', None),
-        #     ('master-objects','master_objects'),
-        #     ('master-sub-objects','master_sub_objects', None),
-        #     ('max-void-time','max_void_time', None),
-        #     'memory-size',
-        #     ('migrate-rx-partitions-initial','migrate_rx_partitions_initial', None),
-        #     ('migrate-rx-partitions-remaining','migrate_rx_partitions_remaining', None),
-        #     ('migrate-tx-partitions-imbalance','migrate_tx_partitions_imbalance', None),
-        #     ('migrate-tx-partitions-initial','migrate_tx_partitions_initial', None),
-        #     ('migrate-tx-partitions-remaining','migrate_tx_partitions_remaining', None),
-        #     ('non-expirable-objects','non_expirable_objects'),
-        #     ('ns-forward-xdr-writes', None),
-        #     ('nsup-cycle-duration','nsup_cycle_duration'),
-        #     ('nsup-cycle-sleep-pct','nsup_cycle_sleep_pct', None),
-        #     'objects',
-        #     ('prole-objects','prole_objects'),
-        #     ('prole-sub-objects','prole_sub_objects', None),
-        #     'read-consistency-level-override',
-        #     ('repl-factor', 'replication-factor'),
-        #     ('set-deleted-objects','set_deleted_objects', None),
-        #     'sets-enable-xdr',
-        #     ('sindex-used-bytes-memory','memory_used_sindex_bytes'),
-        #     'single-bin',
-        #     ('stop-writes','stop_writes'),
-        #     'stop-writes-pct',
-        #     ('sub-objects','sub_objects', None),
-        #     ('total-bytes-memory',None),
-        #     ('type',None),
-        #     ('used-bytes-memory','memory_used_bytes'),
-        #     'write-commit-level-override',
-        # ]
+        exp_heading = "bar Namespace Statistics"
 
         # TODO: Add possibly missing params.  This is only verified as a subset
-        exp_params = [
+        exp_header = [
+            "Node",
             "reject-non-xdr-writes",
             "reject-xdr-writes",
             "available_bin_names",
@@ -1883,97 +1251,311 @@ class TestShowStatistics(unittest.TestCase):
             "write-commit-level-override",
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowStatistics.bar_namespace_stats
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
+        self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
     def test_test_namespace(self):
         """
         This test will assert <b> test Namespace Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
-        exp_heading = "~test Namespace Statistics"
-        exp_header = "NODE"
-
-        # Kept in case an older version of the server needs testing
-        # exp_params = [
-        #     'allow-nonxdr-writes',
-        #     'allow-xdr-writes',
-        #     ('available-bin-names', 'available_bin_names'),
-        #     'conflict-resolution-policy',
-        #     'current_time',
-        #     'memory_used_data_bytes',
-        #     'default-ttl',
-        #     'disallow-null-setname',
-        #     'evict-tenths-pct',
-        #     'evicted_objects',
-        #     'expired_objects',
-        #     'memory_free_pct',
-        #     'high-water-disk-pct',
-        #     'high-water-memory-pct',
-        #     'hwm_breached',
-        #     'memory_used_index_bytes',
-        #     'master_objects',
-        #     'memory-size',
-        #     'non_expirable_objects',
-        #     'nsup_cycle_duration',
-        #     'objects',
-        #     'prole_objects',
-        #     'read-consistency-level-override',
-        #     'replication-factor',
-        #     'memory_used_sindex_bytes',
-        #     'single-bin',
-        #     'stop_writes',
-        #     'stop-writes-pct',
-        #     'memory_used_bytes',
-        #     'write-commit-level-override',
-        # ]
+        exp_heading = "test Namespace Statistics"
 
         # TODO: Add possibly missing params.  This is only verified as a subset
-        exp_params = [
-            "reject-non-xdr-writes",
-            "reject-xdr-writes",
+        exp_header = [
+            'Node',
+            "allow-ttl-without-nsup",
+            "appeals_records_exonerated",
+            "appeals_rx_active",
+            "appeals_tx_active",
+            "appeals_tx_remaining",
             "available_bin_names",
+            "background-scan-max-rps",
+            "batch_sub_proxy_complete",
+            "batch_sub_proxy_error",
+            "batch_sub_proxy_timeout",
+            "batch_sub_read_error",
+            "batch_sub_read_filtered_out",
+            "batch_sub_read_not_found",
+            "batch_sub_read_success",
+            "batch_sub_read_timeout",
+            "batch_sub_tsvc_error",
+            "batch_sub_tsvc_timeout",
+            "cache_read_pct",
+            "client_delete_error",
+            "client_delete_filtered_out",
+            "client_delete_not_found",
+            "client_delete_success",
+            "client_delete_timeout",
+            "client_lang_delete_success",
+            "client_lang_error",
+            "client_lang_read_success",
+            "client_lang_write_success",
+            "client_proxy_complete",
+            "client_proxy_error",
+            "client_proxy_timeout",
+            "client_read_error",
+            "client_read_filtered_out",
+            "client_read_not_found",
+            "client_read_success",
+            "client_read_timeout",
+            "client_tsvc_error",
+            "client_tsvc_timeout",
+            "client_udf_complete",
+            "client_udf_error",
+            "client_udf_filtered_out",
+            "client_udf_timeout",
+            "client_write_error",
+            "client_write_filtered_out",
+            "client_write_success",
+            "client_write_timeout",
+            "clock_skew_stop_writes",
             "conflict-resolution-policy",
             "current_time",
-            "memory_used_data_bytes",
+            "data-in-index",
+            "dead_partitions",
             "default-ttl",
+            "deleted_last_bin",
+            "device_available_pct",
+            "device_compression_ratio",
+            "device_free_pct",
+            "device_total_bytes",
+            "device_used_bytes",
+            "disable-cold-start-eviction",
+            "disable-write-dup-res",
             "disallow-null-setname",
+            "effective_is_quiesced",
+            "effective_prefer_uniform_balance",
+            "effective_replication_factor",
+            "enable-benchmarks-batch-sub",
+            "enable-benchmarks-ops-sub",
+            "enable-benchmarks-read",
+            "enable-benchmarks-udf",
+            "enable-benchmarks-udf-sub",
+            "enable-benchmarks-write",
+            "enable-hist-proxy",
+            "evict-hist-buckets",
             "evict-tenths-pct",
+            "evict_ttl",
+            "evict_void_time",
             "evicted_objects",
             "expired_objects",
-            "memory_free_pct",
+            "fail_generation",
+            "fail_key_busy",
+            "fail_record_too_big",
+            "fail_xdr_forbidden",
+            "from_proxy_batch_sub_read_error",
+            "from_proxy_batch_sub_read_filtered_out",
+            "from_proxy_batch_sub_read_not_found",
+            "from_proxy_batch_sub_read_success",
+            "from_proxy_batch_sub_read_timeout",
+            "from_proxy_batch_sub_tsvc_error",
+            "from_proxy_batch_sub_tsvc_timeout",
+            "from_proxy_delete_error",
+            "from_proxy_delete_filtered_out",
+            "from_proxy_delete_not_found",
+            "from_proxy_delete_success",
+            "from_proxy_delete_timeout",
+            "from_proxy_lang_delete_success",
+            "from_proxy_lang_error",
+            "from_proxy_lang_read_success",
+            "from_proxy_lang_write_success",
+            "from_proxy_read_error",
+            "from_proxy_read_filtered_out",
+            "from_proxy_read_not_found",
+            "from_proxy_read_success",
+            "from_proxy_read_timeout",
+            "from_proxy_tsvc_error",
+            "from_proxy_tsvc_timeout",
+            "from_proxy_udf_complete",
+            "from_proxy_udf_error",
+            "from_proxy_udf_filtered_out",
+            "from_proxy_udf_timeout",
+            "from_proxy_write_error",
+            "from_proxy_write_filtered_out",
+            "from_proxy_write_success",
+            "from_proxy_write_timeout",
+            "geo2dsphere-within.earth-radius-meters",
+            "geo2dsphere-within.level-mod",
+            "geo2dsphere-within.max-cells",
+            "geo2dsphere-within.max-level",
+            "geo2dsphere-within.min-level",
+            "geo2dsphere-within.strict",
+            "geo_region_query_cells",
+            "geo_region_query_falsepos",
+            "geo_region_query_points",
+            "geo_region_query_reqs",
             "high-water-disk-pct",
             "high-water-memory-pct",
             "hwm_breached",
-            "memory_used_index_bytes",
+            "ignore-migrate-fill-delay",
+            "index-stage-size",
+            "index-type",
             "master_objects",
+            "master_tombstones",
             "memory-size",
+            "memory_free_pct",
+            "memory_used_bytes",
+            "memory_used_data_bytes",
+            "memory_used_index_bytes",
+            "memory_used_sindex_bytes",
+            "migrate-order",
+            "migrate-retransmit-ms",
+            "migrate-sleep",
+            "migrate_record_receives",
+            "migrate_record_retransmits",
+            "migrate_records_skipped",
+            "migrate_records_transmitted",
+            "migrate_rx_instances",
+            "migrate_rx_partitions_active",
+            "migrate_rx_partitions_initial",
+            "migrate_rx_partitions_remaining",
+            "migrate_signals_active",
+            "migrate_signals_remaining",
+            "migrate_tx_instances",
+            "migrate_tx_partitions_active",
+            "migrate_tx_partitions_imbalance",
+            "migrate_tx_partitions_initial",
+            "migrate_tx_partitions_lead_remaining",
+            "migrate_tx_partitions_remaining",
+            "nodes_quiesced",
             "non_expirable_objects",
+            "non_replica_objects",
+            "non_replica_tombstones",
+            "ns_cluster_size",
+            "nsup-hist-period",
+            "nsup-period",
+            "nsup-threads",
             "nsup_cycle_duration",
             "objects",
+            "ops_sub_tsvc_error",
+            "ops_sub_tsvc_timeout",
+            "ops_sub_write_error",
+            "ops_sub_write_filtered_out",
+            "ops_sub_write_success",
+            "ops_sub_write_timeout",
+            "partition-tree-sprigs",
+            "pending_quiesce",
+            "prefer-uniform-balance",
             "prole_objects",
+            "prole_tombstones",
+            "query_agg",
+            "query_agg_abort",
+            "query_agg_avg_rec_count",
+            "query_agg_error",
+            "query_agg_success",
+            "query_fail",
+            "query_long_queue_full",
+            "query_long_reqs",
+            "query_lookup_abort",
+            "query_lookup_avg_rec_count",
+            "query_lookup_error",
+            "query_lookup_success",
+            "query_lookups",
+            "query_ops_bg_failure",
+            "query_ops_bg_success",
+            "query_proto_compression_ratio",
+            "query_proto_uncompressed_pct",
+            "query_reqs",
+            "query_short_queue_full",
+            "query_short_reqs",
+            "query_udf_bg_failure",
+            "query_udf_bg_success",
+            "rack-id",
+            "re_repl_error",
+            "re_repl_success",
+            "re_repl_timeout",
             "read-consistency-level-override",
+            "record_proto_compression_ratio",
+            "record_proto_uncompressed_pct",
+            "reject-non-xdr-writes",
+            "reject-xdr-writes",
             "replication-factor",
-            "memory_used_sindex_bytes",
+            "retransmit_all_batch_sub_dup_res",
+            "retransmit_all_delete_dup_res",
+            "retransmit_all_delete_repl_write",
+            "retransmit_all_read_dup_res",
+            "retransmit_all_udf_dup_res",
+            "retransmit_all_udf_repl_write",
+            "retransmit_all_write_dup_res",
+            "retransmit_all_write_repl_write",
+            "retransmit_ops_sub_dup_res",
+            "retransmit_ops_sub_repl_write",
+            "retransmit_udf_sub_dup_res",
+            "retransmit_udf_sub_repl_write",
+            "scan_aggr_abort",
+            "scan_aggr_complete",
+            "scan_aggr_error",
+            "scan_basic_abort",
+            "scan_basic_complete",
+            "scan_basic_error",
+            "scan_ops_bg_abort",
+            "scan_ops_bg_complete",
+            "scan_ops_bg_error",
+            "scan_proto_compression_ratio",
+            "scan_proto_uncompressed_pct",
+            "scan_udf_bg_abort",
+            "scan_udf_bg_complete",
+            "scan_udf_bg_error",
+            "sindex.num-partitions",
             "single-bin",
-            "stop_writes",
+            "single-scan-threads",
+            "smd_evict_void_time",
             "stop-writes-pct",
-            "memory_used_bytes",
+            "stop_writes",
+            "storage-engine",
+            "strong-consistency",
+            "strong-consistency-allow-expunge",
+            "tomb-raider-eligible-age",
+            "tomb-raider-period",
+            "tombstones",
+            "transaction-pending-limit",
+            "truncate-threads",
+            "truncate_lut",
+            "truncated_records",
+            "udf_sub_lang_delete_success",
+            "udf_sub_lang_error",
+            "udf_sub_lang_read_success",
+            "udf_sub_lang_write_success",
+            "udf_sub_tsvc_error",
+            "udf_sub_tsvc_timeout",
+            "udf_sub_udf_complete",
+            "udf_sub_udf_error",
+            "udf_sub_udf_filtered_out",
+            "udf_sub_udf_timeout",
+            "unavailable_partitions",
             "write-commit-level-override",
+            "xdr-bin-tombstone-ttl",
+            "xdr-tomb-raider-period",
+            "xdr-tomb-raider-threads",
+            "xdr_client_delete_error",
+            "xdr_client_delete_not_found",
+            "xdr_client_delete_success",
+            "xdr_client_delete_timeout",
+            "xdr_client_write_error",
+            "xdr_client_write_success",
+            "xdr_client_write_timeout",
+            "xdr_from_proxy_delete_error",
+            "xdr_from_proxy_delete_not_found",
+            "xdr_from_proxy_delete_success",
+            "xdr_from_proxy_delete_timeout",
+            "xdr_from_proxy_write_error",
+            "xdr_from_proxy_write_success",
+            "xdr_from_proxy_write_timeout",
+            "xdr_tombstones",
+            "xmem_id",
         ]
 
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowStatistics.test_namespace_stats
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
+        self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
     # @unittest.skip("Will enable only when xdr is configuired")
     def test_xdr(self):
@@ -1981,57 +1563,11 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> xdr Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
-        exp_heading = "~XDR Statistics"
-        exp_header = "NODE"
-
-        # Left in case an older server version needs to be tested
-        # exp_params_old = [
-        #     'cur_throughput',
-        #     'err_ship_client',
-        #     'err_ship_conflicts',
-        #     'err_ship_server',
-        #     'esmt-bytes-shipped',
-        #     'esmt-bytes-shipped-compression',
-        #     'esmt-ship-compression',
-        #     'free-dlog-pct',
-        #     'latency_avg_dlogread',
-        #     'latency_avg_dlogwrite',
-        #     'latency_avg_ship',
-        #     'local_recs_fetch_avg_latency',
-        #     'local_recs_fetched',
-        #     'local_recs_migration_retry',
-        #     'local_recs_notfound',
-        #     'noship_recs_dup_intrabatch',
-        #     'noship_recs_expired',
-        #     'noship_recs_genmismatch',
-        #     'noship_recs_notmaster',
-        #     'noship_recs_unknown_namespace',
-        #     'perdc_timediff_lastship_cur_secs',
-        #     'stat_dlog_fread',
-        #     'stat_dlog_fseek',
-        #     'stat_dlog_fwrite',
-        #     'stat_dlog_read',
-        #     'stat_dlog_write',
-        #     'stat_pipe_reads_diginfo',
-        #     'stat_recs_dropped',
-        #     'stat_recs_localprocessed',
-        #     'stat_recs_logged',
-        #     'stat_recs_outstanding',
-        #     'stat_recs_relogged',
-        #     'stat_recs_replprocessed',
-        #     'stat_recs_shipped',
-        #     'stat_recs_shipping',
-        #     'timediff_lastship_cur_secs',
-        #     'total-recs-dlog',
-        #     'used-recs-dlog',
-        #     'xdr-uptime',
-        #     'xdr_deletes_canceled',
-        #     'xdr_deletes_relogged',
-        #     'xdr_deletes_shipped',
-        # ]
+        exp_heading = "XDR Statistics"
 
         # 5.0+
-        exp_params = [
+        exp_header = [
+            "Node",
             "abandoned",
             "compression_ratio",
             "filtered_out",
@@ -2051,17 +1587,14 @@ class TestShowStatistics(unittest.TestCase):
             "throughput",
             "uncompressed_pct",
         ]
-        actual_heading, actual_header, actual_params = test_util.parse_output(
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
             TestShowStatistics.xdr_stats
         )
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertTrue(exp_header in actual_header)
-        self.assertTrue(test_util.check_for_subset(actual_params, exp_params))
+        self.assertListEqual(exp_header, actual_header)
+        # self.assertTrue(test_util.check_for_subset(actual_data, exp_header))
 
 
 if __name__ == "__main__":
-    # import sys;sys.argv = ['', 'Test.testName']
-    #     suite = unittest.TestLoader().loadTestsFromTestCase(TestShowConfig)
-    #     unittest.TextTestRunner(verbosity=2).run(suite)
     unittest.main()
