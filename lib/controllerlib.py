@@ -219,7 +219,6 @@ class BaseController(object):
         self._init()
 
         method = self._find_method(line)
-
         if method:
             try:
                 try:
@@ -229,11 +228,12 @@ class BaseController(object):
 
                 if method_name == DEFAULT:  # Print controller help
                     CommandHelp.display(self, indent=indent)
-                    if self.required_modifiers:
+                    required_mods = list(filter(lambda mod: mod != 'line', self.required_modifiers))
+                    if required_mods:
                         CommandHelp.print_text(
                             "%sRequired%s: %s" % (terminal.underline(),
                                                     terminal.reset(), ", ".join(
-                                sorted(self.required_modifiers))), indent=indent)
+                                sorted(required_mods))), indent=indent)
                     if self.modifiers:
                         CommandHelp.print_text(
                             "%sModifiers%s: %s" % (terminal.underline(),
@@ -244,7 +244,7 @@ class BaseController(object):
                         CommandHelp.display(method, indent=indent)
 
                     indent += 2
-                    for command in sorted(self.commands.keys()):
+                    for command in self.commands.keys():
                         if command != "health":
                             CommandHelp.print_text(
                                 "- %s%s%s:" % (terminal.bold(), command,
@@ -310,6 +310,9 @@ class CommandController(BaseController):
         for mod in self.required_modifiers:
             if not len(groups[mod]):
                 self.execute_help(line)
+                if mod == 'line':
+                    raise IOError('Missing required argument'.format(mod))
+
                 raise IOError('{} is required'.format(mod))
 
         return groups

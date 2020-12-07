@@ -25,8 +25,13 @@ class ManageController(BasicCommandController):
 class ManageACLController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
-            "users": ManageUsersController,
-            "roles": ManageRolesController,
+            "create": ManageACLCreateController,
+            "delete": ManageACLDeleteController,
+            "grant": ManageACLGrantController,
+            "revoke": ManageACLRevokeController,
+            "set-password": ManageACLSetPasswordUserController,
+            "change-password": ManageACLChangePasswordUserController,
+            "allowlist": ManageACLAllowListRoleController
         }
 
         self.modifiers = set()
@@ -34,10 +39,17 @@ class ManageACLController(BasicCommandController):
     def _do_default(self, line):
         self.execute_help(line)
 
+class ManageACLCreateController(BasicCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "user": ManageACLCreateUserController,
+            "role": ManageACLCreateRoleController,
+        }
 
-@CommandHelp('"manage acl users" is used manage users and their roles.')
-class ManageUsersController(BasicCommandController):
+    def _do_default(self, line):
+        self.execute_help(line)
 
+class ManageACLDeleteController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
             'create': ManageUsersCreateController,
@@ -47,32 +59,45 @@ class ManageUsersController(BasicCommandController):
             'grant': ManageUsersGrantController,
             'revoke': ManageUsersRevokeController,
         }
-        self.modifiers = set()
 
     def _do_default(self, line):
         self.execute_help(line)
 
+class ManageACLGrantController(BasicCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "user": ManageACLGrantUserController,
+            "role": ManageACLGrantRoleController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+class ManageACLRevokeController(BasicCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "user": ManageACLRevokeUserController,
+            "role": ManageACLRevokeRoleController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
 
 @CommandHelp(
-    "create <username> [password <password>] [roles <role1> <role2> ...]",
+    "create user <username> [password <password>] [roles <role1> <role2> ...]",
     "   username        - Name of new user.",
     "   password        - Password for the new user.  User will be prompted if no",
     "                     password is provided.",
     "   roles           - Roles to be granted to the user. Default: None"
 )
-class ManageUsersCreateController(BasicCommandController):
+class ManageACLCreateUserController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['password', 'roles'])
+        self.required_modifiers = set(['line'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if len(line) == 0:
-            self.execute_help(line)
-            self.logger.error("Username is required")
-            return  
-
         username = line.pop(0)
         password = None
         roles = None
@@ -83,8 +108,6 @@ class ManageUsersCreateController(BasicCommandController):
             password = getpass('Enter password for new user {}:'.format(username))
 
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
-
-        print(username, password, roles)
 
         principle_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_create_user(username, password, roles, nodes=[principle_node])
@@ -99,25 +122,19 @@ class ManageUsersCreateController(BasicCommandController):
         self.view.print_result("Successfully created user {}".format(username))
 
 @CommandHelp(
-    "delete <username>",
+    "delete user <username>",
     "  username           - User to delete.",
 )
-class ManageUsersDropController(BasicCommandController):
+class ManageACLDeleteUserController(BasicCommandController):
 
     def __init__(self):
-        self.modifiers = set()
+        self.required_modifiers = set(['line'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if len(line) == 0:
-            self.execute_help(line)
-            self.logger.error("Username is required")
-            return  
-
         username = line.pop(0)
-
         principle_node = self.cluster.get_expected_principal()
+
         result = self.cluster.admin_delete_user(username, nodes=[principle_node])
         result = result[list(result.keys())[0]]
 
@@ -130,24 +147,19 @@ class ManageUsersDropController(BasicCommandController):
         self.view.print_result("Successfully deleted user {}".format(username))
 
 @CommandHelp(
-    "set-password <username> [password <password>]",
+    "set-password user <username> [password <password>]",
     "  username           - User with no password set.",
     "  password           - Password for the new user.  User will be prompted if no",
     "                       password is provided.",
 )
-class ManageUsersSetPasswordController(BasicCommandController):
+class ManageACLSetPasswordUserController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['password'])
+        self.required_modifiers = set(['line'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if len(line) == 0:
-            self.execute_help(line)
-            self.logger.error("Username is required")
-            return
-
         username = line.pop(0)
         password = None
 
@@ -169,26 +181,21 @@ class ManageUsersSetPasswordController(BasicCommandController):
         self.view.print_result("Successfully set password for user {}".format(username))
 
 @CommandHelp(
-    "change-password <username> [old <old-password>] [new <new-password>]",
+    "change-password user <username> [old <old-password>] [new <new-password>]",
     "  username           - User that needs a new password.",
     "  old                - Current password for user.  User will be",
     "                       prompted if no password is provided.",
-    "  new                - New password for user.  User will be prompted "
+    "  new                - New password for user.  User will be prompted ",
     "                       if no password is provided.",
 )
-class ManageUsersChangePasswordController(BasicCommandController):
+class ManageACLChangePasswordUserController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['old', 'new'])
+        self.required_modifiers = set(['line'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if len(line) == 0:
-            self.execute_help(line)
-            self.logger.error("Username is required")
-            return
-
         username = line.pop(0)
         old_password = None
         new_password = None
@@ -221,24 +228,17 @@ class ManageUsersChangePasswordController(BasicCommandController):
         self.view.print_result("Successfully changed password for user {}".format(username))
 
 @CommandHelp(
-    "grant <username> roles <role1> [<role2> [...]]",
+    "grant user <username> roles <role1> [<role2> [...]]",
     "  username        - User to have roles added.",
     "  roles           - Roles to be add to user.",
 )
-class ManageUsersGrantController(BasicCommandController):
+class ManageACLGrantUserController(BasicCommandController):
 
     def __init__(self):
-        self.modifiers = set([])
-        self.required_modifiers = set(['roles'])
+        self.required_modifiers = set(['line', 'roles'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if len(line) == 0:
-            self.execute_help(line)
-            self.logger.error("Username is required")
-            return  
-
         username = line.pop(0)
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
         principle_node = self.cluster.get_expected_principal()
@@ -255,24 +255,17 @@ class ManageUsersGrantController(BasicCommandController):
         self.view.print_result("Successfully granted roles to user {}".format(username))
 
 @CommandHelp(
-    "revoke <username> roles <role1> [<role2> [...]]",
+    "revoke user <username> roles <role1> [<role2> [...]]",
     "  username        - User to have roles deleted.",
     "  roles           - Roles to delete from user.",
 )
-class ManageUsersRevokeController(BasicCommandController):
+class ManageACLRevokeUserController(BasicCommandController):
 
     def __init__(self):
-        self.modifiers = set([])
-        self.required_modifiers = set(['roles'])
+        self.required_modifiers = set(['line', 'roles'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if len(line) == 0:
-            self.execute_help(line)
-            self.logger.error("Username is required")
-            return  
-
         username = line.pop(0)
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
 
@@ -289,38 +282,13 @@ class ManageUsersRevokeController(BasicCommandController):
         self.view.print_result("Successfully revoked roles from user {}".format(username))
 
 
-@CommandHelp('"manage acl roles" is used manage roles and their privileges or allowlist.')
-class ManageRolesController(BasicCommandController):
-
-    def __init__(self):
-        self.controller_map = {
-            'create': ManageRolesCreateController,
-            'delete': ManageRolesDropController,
-            'grant': ManageRolesGrantController,
-            'revoke': ManageRolesRevokeController,
-            'allowlist': ManageRolesAllowListController
-        }
-        self.modifiers = set()
-
-        self.default_roles = [
-            "data-admin",
-            "read",
-            "read-write",
-            "read-write-udf",
-            "sys-admin",
-            "user-admin",
-            "write"
-        ]
-
-    def _do_default(self, line):
-        self.execute_help(line)
-
 @CommandHelp(
-    "create <role-name> priv <privilege> [ns <namespace> [set <set>]]> allow <addr1> [<addr2> [...]]",
+    "create role <role-name> priv <privilege> [ns <namespace> [set <set>]]> allow <addr1> [<addr2> [...]]",
     "  role-name     - Name of new role.",
-    "  priv          - Privilege for the new role. Some privileges are not limited to a global scope",
-    "                  Scopes are either global, per namespace, or per namespace and set.",
-    "                  For more information: ",
+    "  priv          - Privilege for the new role. Some privileges are not", 
+    "                  limited to a global scope. Scopes are either global, per", 
+    "                  namespace, or per namespace and set. For more ",
+    "                  information: ",
     "                  https://www.aerospike.com/docs/operations/configure/security/access-control/#privileges-permissions-and-scopes",
     "                  default: None",
     "  ns            - Namespace scope of privilege.",
@@ -331,19 +299,14 @@ class ManageRolesController(BasicCommandController):
     "                  to.",
     "                  default: None"
 )
-class ManageRolesCreateController(BasicCommandController):
+class ManageACLCreateRoleController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['priv', 'ns', 'set', 'allow'])
+        self.required_modifiers = set(['line'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if len(line) == 0:
-            self.execute_help(line)
-            self.logger.error("Role name is required")
-            return  
-
         role_name = line.pop(0)
         privilege = None
         allowlist = list(filter(lambda x: x != ',', self.mods['allow']))
@@ -388,25 +351,20 @@ class ManageRolesCreateController(BasicCommandController):
         self.view.print_result('Successfully created role {}'.format(role_name))
 
 @CommandHelp(
-    "delete <role-name>",
+    "delete role <role-name>",
     "  role-name     - Name of role to delete.",
 )
-class ManageRolesDropController(BasicCommandController):
+class ManageACLDeleteRoleController(BasicCommandController):
 
     def __init__(self):
+        self.required_modifiers = set(['line'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if len(line) == 0:
-            self.execute_help(line)
-            self.logger.error("Role name is required")
-            return
-
         role_name = line.pop(0)
-
         principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin__role(role_name, nodes=[principle_node])
+
+        result = self.cluster.admin_delete_role(role_name, nodes=[principle_node])
         result = result[list(result.keys())[0]]
 
         if isinstance(result, ASProtocolError):
@@ -418,7 +376,7 @@ class ManageRolesDropController(BasicCommandController):
         self.view.print_result("Successfully deleted role {}".format(role_name))
 
 @CommandHelp(
-    "grant <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
+    "grant role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
     "  role-name     - Role to have privilege added.",
     "  priv          - Privilege to be added to role.",
     "  ns            - Namespace scope of privilege.",
@@ -426,22 +384,15 @@ class ManageRolesDropController(BasicCommandController):
     "  set           - Set scope of privilege. Namespace scope is required.",
     "                  defualt: None",
 )
-class ManageRolesGrantController(BasicCommandController):
+class ManageACLGrantRoleController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['ns', 'set'])
-        self.required_modifiers = set(['priv'])
+        self.required_modifiers = set(['line', 'priv'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if not len(line):
-            self.execute_help(line)
-            self.logger.error("Role name is required")
-            return  
-
         role_name = line.pop(0)
-
         privilege = self.mods['priv'][0]
 
         if len(self.mods['set']) and not len(self.mods['ns']):
@@ -468,7 +419,7 @@ class ManageRolesGrantController(BasicCommandController):
         self.view.print_result("Successfully granted privilege to role {}".format(role_name))
 
 @CommandHelp(
-    "revoke <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
+    "revoke role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
     "  role-name     - Role to have privilege deleted.",
     "  priv          - Privilege to delete from role.",
     "  ns            - Namespace scope of privilege",
@@ -476,22 +427,15 @@ class ManageRolesGrantController(BasicCommandController):
     "  set           - Set scope of privilege. Namespace scope is required.",
     "                  defualt: None",
 )
-class ManageRolesRevokeController(BasicCommandController):
+class ManageACLRevokeRoleController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['ns', 'set'])
-        self.required_modifiers = set(['priv'])
+        self.required_modifiers = set(['line', 'priv'])
         self.controller_map = {}
 
     def _do_default(self, line):
-
-        if not len(line):
-            self.execute_help(line)
-            self.logger.error("Role name is required")
-            return  
-
         role_name = line.pop(0)
-
         privilege = self.mods['priv'][0]
 
         if len(self.mods['set']) and not len(self.mods['ns']):
@@ -519,27 +463,21 @@ class ManageRolesRevokeController(BasicCommandController):
         self.view.print_result("Successfully revoked privilege from role {}".format(role_name))
 
 @CommandHelp(
-    "allowlist <role-name> allow <addr1> [<addr2> [...]]",
+    "allowlist role <role-name> allow <addr1> [<addr2> [...]]",
     "  role-name     - Role that will have new allowlist.",
     "  allow         - Addresses of nodes that a role will be allowed to connect",
     "                  to. This command erases and re-assigns the allowlist",
     "  clear         - Clears allowlist from role. Either 'allow' or 'clear' is",
     "                  required.",
 )
-class ManageRolesAllowListController(BasicCommandController):
+class ManageACLAllowListRoleController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['clear', 'allow'])
+        self.required_modifiers = set(['line'])
         self.controller_map = {}
 
-    @util.logthis('asadm', DEBUG)
     def _do_default(self, line):
-
-        if not len(line):
-            self.execute_help(line)
-            self.logger.error("Role name is required")
-            return  
-
         role_name = line.pop(0)
 
         clear = util.check_arg_and_delete_from_mods(
