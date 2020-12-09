@@ -620,6 +620,34 @@ show_latency_machine_wise_sheet = Sheet(
     order_by='Node',
 )
 
+def no_entry_or_join_list(ls):
+    if not ls:
+        return None
+    
+    return ', '.join(ls)
+        
+
+show_users = Sheet(
+    (
+        Field('User', Projectors.String('data', None, for_each_key=True)),
+        Field('Roles', Projectors.Func(FieldType.string, no_entry_or_join_list, Projectors.Identity('data', None)), align=FieldAlignment.right)
+    ),
+    from_source="data",
+    for_each='data',
+    order_by='User'
+)
+
+show_roles = Sheet(
+    (
+        Field('Role', Projectors.String('data', None, for_each_key=True)),
+        Field('Privileges', Projectors.Func(FieldType.string, no_entry_or_join_list, Projectors.Identity('data', 'privileges')), align=FieldAlignment.right),
+        Field('Allowlist', Projectors.Func(FieldType.string, no_entry_or_join_list, Projectors.Identity('data', 'whitelist')), align=FieldAlignment.right)
+    ),
+    from_source="data",
+    for_each='data',
+    order_by='Role'
+)
+
 grep_count_sheet = Sheet(
     (TitleField('Node', Projectors.String('node_ids', 'node')),
      DynamicFields('data', required=True, order=DynamicFieldOrder.source)),

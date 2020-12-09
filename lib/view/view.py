@@ -29,7 +29,7 @@ from lib.utils.constants import DT_FMT
 from lib.utils.util import compile_likes, find_delimiter_in, get_value_from_dict
 from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
-from lib.view.table import ColumnNameAlign, Extractors, Orientation, Styles, Table, TitleFormats
+from lib.view.table import ColumnNameAlign, Orientation, Table, TitleFormats
 
 H1_offset = 13
 H2_offset = 15
@@ -307,6 +307,7 @@ class CliView(object):
     @staticmethod
     def show_latency(latency, cluster, machine_wise_display=False,
                      like=None, timestamp="", **mods):
+
         if machine_wise_display:
             return CliView.show_latency_machine_wise(
                 latency, cluster, like=like, timestamp=timestamp, **mods)
@@ -427,7 +428,6 @@ class CliView(object):
                     common=common
                 )
             )
-
 
         for dc in service_configs['ns_configs']:
             title = 'Namespace Configuration for {}'.format(dc)
@@ -699,71 +699,40 @@ class CliView(object):
         if not users_data:
             return 
 
-        # Added a "." as a hack to add some type of seperator.  
-        # All of this will be redone when we integrate sheets.  So don't take 
-        # this too seriously.
-        column_names = ['users .', 'roles']
-        filtered_users = None
-
-        t = Table("User Permissions", column_names, 
-            title_format=TitleFormats.var_to_title , 
-            orientation=Orientation.HORIZONTAL, column_align=ColumnNameAlign.LEFT)
-
         if like:
             likes = compile_likes(like)
-            filtered_users = list(filter(likes.search, users_data.keys()))
+            filtered_keys = list(filter(likes.search, users_data.keys()))
         else:
-            filtered_users = users_data.keys()
+            filtered_keys = users_data.keys()
 
-        for user, roles in users_data.items():
-            if user not in filtered_users:
-                continue
+        users_data = dict(enumerate({k: v} for k, v in users_data.items()
+                    if k in filtered_keys))
 
-            row = {}
-            row['users .'] = user
-            row['roles'] = "\"" + ', '.join(roles) + "\""
-            t.insert_row(row)
+        sources = dict(
+            data=users_data
+        )
+        CliView.print_result(sheet.render(templates.show_users, 'Users', sources))
 
-        t.ignore_sort()
-        CliView.print_result(t)
 
     @staticmethod
     def show_roles(roles_data, like, **ignore):
         if not roles_data:
             return 
 
-        # Added a "." as a hack to add some type of seperator.  
-        # All of this will be redone when we integrate sheets.  So don't take 
-        # this too seriously.
-        column_names = ['roles .', 'privileges', 'allowlist']
-        filtered_users = None
-
-        t = Table("Role Permissions", column_names, 
-            title_format=TitleFormats.var_to_title , 
-            orientation=Orientation.HORIZONTAL, column_align=ColumnNameAlign.LEFT)
-
         if like:
             likes = compile_likes(like)
-            filtered_users = list(filter(likes.search, roles_data.keys()))
+            filtered_keys = list(filter(likes.search, roles_data.keys()))
+            print(filtered_keys)
         else:
-            filtered_users = roles_data.keys()
-        
+            filtered_keys = roles_data.keys()
 
-        for role_key in roles_data:
-            if role_key not in filtered_users:
-                continue
-            
-            privileges = roles_data[role_key]['privileges']
-            allowlist = roles_data[role_key]['whitelist']
+        roles_data = dict(enumerate({k: v} for k, v in roles_data.items()
+                    if k in filtered_keys))
+        sources = dict(
+            data=roles_data
+        )
 
-            row = {}
-            row['roles .'] = role_key
-            row['privileges'] = "\"" + ', '.join(privileges) + "\""
-            row['allowlist'] = "\"" + ', '.join(allowlist) + "\""
-            t.insert_row(row)
-
-        t.ignore_sort()
-        CliView.print_result(t)
+        CliView.print_result(sheet.render(templates.show_roles, 'Roles', sources))
 
 
     @staticmethod
