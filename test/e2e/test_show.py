@@ -40,7 +40,8 @@ class TestShowConfig(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        TestShowConfig.rc = controller.BasicRootController()
+        TestShowConfig.rc = controller.BasicRootController(user='admin', password='admin')
+
         actual_out = util.capture_stdout(TestShowConfig.rc.execute, ["show", "config"])
         actual_out += (
             util.capture_stdout(TestShowConfig.rc.execute, ["show", "config", "xdr"])
@@ -457,29 +458,10 @@ class TestShowConfig(unittest.TestCase):
 
 class TestShowLatenciesDefault(unittest.TestCase):
     output_list = list()
-    batch_index_latencies = ""
-    query_latencies = ""
-    query_rec_count_latencies = ""
-    re_repl_latencies = ""
-    read_latencies = ""
-    read_dup_res_latencies = ""
-    read_local_latencies = ""
-    read_repl_ping_latencies = ""
-    read_response_latencies = ""
-    read_restart_latencies = ""
-    read_start_latencies = ""
-    udf_latencies = ""
-    write_latencies = ""
-    write_dup_res_latencies = ""
-    write_master_latencies = ""
-    write_repl_write_latencies = ""
-    write_response_latencies = ""
-    write_restart_latencies = ""
-    write_start_latencies = ""
 
     @classmethod
     def setUpClass(cls):
-        TestShowLatenciesDefault.rc = controller.BasicRootController()
+        TestShowLatenciesDefault.rc = controller.BasicRootController(user='admin', password='admin')
         actual_out = util.capture_stdout(
             TestShowLatenciesDefault.rc.execute, ["show", "latencies", "-v"]
         )
@@ -491,7 +473,7 @@ class TestShowLatenciesDefault(unittest.TestCase):
     def tearDownClass(cls):
         cls.rc = None
 
-    def test_read_latencies(self):
+    def test_latencies(self):
         """
         Asserts <b> read latencies <b> output with heading, header & no of node processed(based on row count).
         """
@@ -542,7 +524,7 @@ class TestShowLatenciesDefault(unittest.TestCase):
 class TestShowLatenciesWithArguments(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        TestShowLatenciesWithArguments.rc = controller.BasicRootController()
+        TestShowLatenciesWithArguments.rc = controller.BasicRootController(user='admin', password='admin')
 
     def test_latencies_e_1_b_17(self):
         """
@@ -985,7 +967,7 @@ class TestShowDistribution(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        rc = controller.BasicRootController()
+        rc = controller.BasicRootController(user='admin', password='admin')
         actual_out = util.capture_stdout(rc.execute, ["show", "distribution"])
         # use regex in get_separate_output(~.+Distribution.*~.+)
         # if you are changing below Distribution keyword
@@ -1096,7 +1078,7 @@ class TestShowStatistics(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        rc = controller.BasicRootController()
+        rc = controller.BasicRootController(user='admin', password='admin')
         actual_out = util.capture_stdout(rc.execute, ["show", "statistics"])
         actual_out += util.capture_stdout(rc.execute, ["show", "statistics", "xdr"])
         TestShowStatistics.output_list = test_util.get_separate_output(
@@ -1595,6 +1577,75 @@ class TestShowStatistics(unittest.TestCase):
         self.assertListEqual(exp_header, actual_header)
         # self.assertTrue(test_util.check_for_subset(actual_data, exp_header))
 
+class TestShowStatistics(unittest.TestCase):
+    output_list = list()
+
+    @classmethod
+    def setUpClass(cls):
+        rc = controller.BasicRootController(user='admin', password='admin')
+        actual_out = util.capture_stdout(rc.execute, ["show", "statistics"])
+        actual_out += util.capture_stdout(rc.execute, ["show", "statistics", "xdr"])
+        TestShowStatistics.output_list = test_util.get_separate_output(
+            actual_out
+        )
+        TestShowStatistics.is_bar_present = False
+
+        for item in TestShowStatistics.output_list:
+            title = item['title']
+            if "test Bin Statistics" in title:
+                TestShowStatistics.test_bin_stats = item
+            elif "bar Bin Statistics" in title:
+                TestShowStatistics.bar_bin_stats = item
+                TestShowStatistics.is_bar_present = True
+            elif "Service Statistics" in title:
+                TestShowStatistics.service_stats = item
+            elif "bar Namespace Statistics" in title:
+                TestShowStatistics.bar_namespace_stats = item
+                TestShowStatistics.is_bar_present = True
+            elif "test Namespace Statistics" in title:
+                TestShowStatistics.test_namespace_stats = item
+            elif "XDR Statistics" in title:
+                TestShowStatistics.xdr_stats = item
+            # TODO: Add missing tests
+            # else:
+            #     raise Exception('A statistics table is unaccounted for in test setUp', item)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.rc = None
+
+    def test_test_bin(self):
+        """
+        This test will assert <b> test Bin Statistics </b> output for heading, header and parameters.
+        TODO: test for values as well
+        """
+        exp_heading = "test Bin Statistics"
+        exp_header = [
+            ('Node'),
+            ("bin-names-quota", "bin_names_quota"),
+            ("num-bin-names", "bin_names"),
+        ]
+
+        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
+            TestShowStatistics.test_bin_stats
+        )
+
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
+
+# class TestShowStatistics(unittest.TestCase):
+#     output_list = list()
+
+#     @classmethod
+#     def setUpClass(cls):
+#         rc = controller.BasicRootController(user='admin', password='admin')
+
+#     @classmethod
+#     def tearDownClass(cls):
+#         cls.rc = None
+
+#     def test_test_bin(self):
+        
 
 if __name__ == "__main__":
     unittest.main()

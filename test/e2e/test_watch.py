@@ -23,7 +23,7 @@ class TestWatch(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        TestWatch.rc = controller.BasicRootController()
+        TestWatch.rc = controller.BasicRootController(user='admin', password='admin')
         actual_out = util.capture_stdout(TestWatch.rc.execute, ['watch', '1', '3', 'info', 'network'])
         TestWatch.output_list = test_util.get_separate_output(actual_out)
 
