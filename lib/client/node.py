@@ -1692,7 +1692,6 @@ class Node(object):
             raise IOError("Error: Could not connect to node %s" % ip)
 
         try:
-            print(*args)
             result = admin_func(sock, *args)
 
             # Either restore the socket in the pool or close it if it is full.

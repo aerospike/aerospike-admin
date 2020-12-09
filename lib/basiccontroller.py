@@ -1395,6 +1395,7 @@ class ShowUsersController(BasicCommandController):
 
         if isinstance(users_data, ASProtocolError):
             self.logger.error(users_data)
+            return
         elif isinstance(users_data, Exception):
             raise users_data
 
@@ -1411,6 +1412,7 @@ class ShowRolesController(BasicCommandController):
 
         if isinstance(roles_data, ASProtocolError):
             self.logger.error(roles_data)
+            return
         elif isinstance(roles_data, Exception):
             raise roles_data
 

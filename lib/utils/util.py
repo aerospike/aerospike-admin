@@ -100,6 +100,42 @@ def capture_stdout(func, line=""):
     sys.stdout = old
     return output
 
+def capture_stderr(func, line=""):
+    """
+    Redirecting the stderr to use the output elsewhere
+    """
+
+    sys.stderr.flush()
+    old = sys.stderr
+    capturer = io.StringIO()
+    sys.stderr = capturer
+
+    func(line)
+
+    output = capturer.getvalue()
+    sys.stderr = old
+    return output
+
+def capture_stdout_and_stderr(func, line=""):
+    sys.stdout.flush()
+    stdout_old = sys.stdout
+    stdout_capturer = io.StringIO()
+    sys.stdout = stdout_capturer
+
+    sys.stderr.flush()
+    stderr_old = sys.stderr
+    stderr_capturer = io.StringIO()
+    sys.stderr = stderr_capturer
+
+    func(line)
+
+    stdout_output = stdout_capturer.getvalue()
+    sys.stdout = stdout_old
+
+    stderr_output = stderr_capturer.getvalue()
+    sys.stderr = stderr_old
+
+    return stdout_output, stderr_output
 
 def compile_likes(likes):
     likes = ["(" + like.translate(str.maketrans('','','\'"')) + ")" for like in likes]

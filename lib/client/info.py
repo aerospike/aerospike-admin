@@ -196,6 +196,7 @@ class ASPrivilege(IntEnum):
     READ_WRITE = 11
     READ_WRITE_UDF = 12
     WRITE = 13
+    ERROR = 255
 
     @classmethod
     def str_to_enum(cls, privilege_str):
@@ -217,7 +218,7 @@ class ASPrivilege(IntEnum):
         elif privilege_str == 'write':
             return cls.WRITE
         else:
-            raise TypeError("Privilege: Not a valid privilege name: {}".format(privilege_str))
+            return cls.ERROR
     
     def is_global_only_scope(self):
         return (
@@ -242,7 +243,7 @@ class ASResponse(IntEnum):
     UNRECOGNIZED_FIELD_ID = 55
     NO_USER_OR_UNRECOGNIZED_USER = 60
     USER_ALREADY_EXISTS = 61
-    NO_PASSWORD_OR_BAD_PASSORD = 62
+    NO_PASSWORD_OR_BAD_PASSWORD = 62
     NO_CREDENTIAL_OR_BAD_CREDENTIAL = 65
     NO_ROLE_OR_INVALID_ROLE = 70
     ROLE_ALREADY_EXISTS = 71

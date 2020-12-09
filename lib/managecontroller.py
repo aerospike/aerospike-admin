@@ -52,12 +52,8 @@ class ManageACLCreateController(BasicCommandController):
 class ManageACLDeleteController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
-            'create': ManageUsersCreateController,
-            'delete': ManageUsersDropController,
-            'set-password': ManageUsersSetPasswordController,
-            'change-password': ManageUsersChangePasswordController,
-            'grant': ManageUsersGrantController,
-            'revoke': ManageUsersRevokeController,
+            "user": ManageACLDeleteUserController,
+            "role": ManageACLDeleteRoleController,
         }
 
     def _do_default(self, line):
@@ -111,7 +107,7 @@ class ManageACLCreateUserController(BasicCommandController):
 
         principle_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_create_user(username, password, roles, nodes=[principle_node])
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -136,7 +132,7 @@ class ManageACLDeleteUserController(BasicCommandController):
         principle_node = self.cluster.get_expected_principal()
 
         result = self.cluster.admin_delete_user(username, nodes=[principle_node])
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -160,7 +156,14 @@ class ManageACLSetPasswordUserController(BasicCommandController):
         self.controller_map = {}
 
     def _do_default(self, line):
-        username = line.pop(0)
+        username = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='user',
+            return_type=str,
+            default='',
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
         password = None
 
         if len(self.mods['password']):
@@ -170,7 +173,7 @@ class ManageACLSetPasswordUserController(BasicCommandController):
 
         principle_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_set_password(username, password, nodes=[principle_node])
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -192,11 +195,18 @@ class ManageACLChangePasswordUserController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['old', 'new'])
-        self.required_modifiers = set(['line'])
+        self.required_modifiers = set(['user'])
         self.controller_map = {}
 
     def _do_default(self, line):
-        username = line.pop(0)
+        username = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='user',
+            return_type=str,
+            default='',
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
         old_password = None
         new_password = None
 
@@ -211,13 +221,13 @@ class ManageACLChangePasswordUserController(BasicCommandController):
             new_password = getpass('Enter new password:')
 
         principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_set_password(
+        result = self.cluster.admin_change_password(
             username, 
             old_password, 
             new_password, 
             nodes=[principle_node]
         )
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -244,7 +254,7 @@ class ManageACLGrantUserController(BasicCommandController):
         principle_node = self.cluster.get_expected_principal()
 
         result = self.cluster.admin_grant_roles(username, roles, nodes=[principle_node])
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -271,7 +281,7 @@ class ManageACLRevokeUserController(BasicCommandController):
 
         principle_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_revoke_roles(username, roles, nodes=[principle_node])
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -340,7 +350,7 @@ class ManageACLCreateRoleController(BasicCommandController):
             whitelist=allowlist, 
             nodes=[principle_node]
         )
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -365,7 +375,7 @@ class ManageACLDeleteRoleController(BasicCommandController):
         principle_node = self.cluster.get_expected_principal()
 
         result = self.cluster.admin_delete_role(role_name, nodes=[principle_node])
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -408,7 +418,7 @@ class ManageACLGrantRoleController(BasicCommandController):
 
         principle_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_add_privileges(role_name, [privilege], nodes=[principle_node])
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -452,7 +462,7 @@ class ManageACLRevokeRoleController(BasicCommandController):
         
         principle_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_delete_privileges(role_name, [privilege], nodes=[principle_node])
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -474,11 +484,18 @@ class ManageACLAllowListRoleController(BasicCommandController):
 
     def __init__(self):
         self.modifiers = set(['clear', 'allow'])
-        self.required_modifiers = set(['line'])
+        self.required_modifiers = set(['role'])
         self.controller_map = {}
 
     def _do_default(self, line):
-        role_name = line.pop(0)
+        role_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='role',
+            return_type=str,
+            default='',
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
 
         clear = util.check_arg_and_delete_from_mods(
             line=line,
@@ -503,7 +520,7 @@ class ManageACLAllowListRoleController(BasicCommandController):
         else:
             result = self.cluster.admin_set_whitelist(role_name, allowlist, nodes=[principle_node])
         
-        result = result[list(result.keys())[0]]
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -514,4 +531,4 @@ class ManageACLAllowListRoleController(BasicCommandController):
         if clear:
             self.view.print_result("Successfully cleared allowlist from role {}".format(role_name))
         else:
-            self.view.print_result("Successfully added allowlist to role {}".format(role_name))
+            self.view.print_result("Successfully updated allowlist for role {}".format(role_name))
