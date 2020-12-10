@@ -17,6 +17,7 @@ class TestManageACLUsers(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'user', 'foo'])
         cls.rc = None
 
     @classmethod
@@ -180,9 +181,6 @@ class TestManageACLRoles(unittest.TestCase):
 
     # @classmethod
     def setUp(cls):
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'user', 'foo'])
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'user', 'bar'])
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'god-mode'])
         util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'avatar'])
 
     def test_can_create_role_with_privilege(self):
@@ -317,6 +315,16 @@ class TestManageACLRoles(unittest.TestCase):
         exp_stderr_resp = ''
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'allow', '1.1.1.1'])
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'acl', 'allowlist', 'role', exp_role, 'clear'])
+
+        self.assertEqual(exp_stdout_resp, actual_stdout.strip())
+        self.assertEqual(exp_stderr_resp, actual_stderr.strip())
+
+    def test_fails_to_clear_allowlist_if_role_does_not_exist(self):
+        exp_role = 'avatar'
+        exp_stdout_resp = ''
+        exp_stderr_resp = 'Failed to delete whitelist : No role or invalid role'
+
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'acl', 'allowlist', 'role', exp_role, 'clear'])
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())

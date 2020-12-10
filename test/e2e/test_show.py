@@ -26,11 +26,8 @@ from lib.view.sheet import set_style_json
 
 set_style_json()
 
-def print_header(actual_header):
-    for item in actual_header:
-        print("\"" + item + "\",")
-
 class TestShowConfig(unittest.TestCase):
+    real_stdout = None
     output_list = list()
     service_config = ""
     network_config = ""
@@ -40,6 +37,7 @@ class TestShowConfig(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls.real_stdout = sys.stdout
         TestShowConfig.rc = controller.BasicRootController(user='admin', password='admin')
 
         actual_out = util.capture_stdout(TestShowConfig.rc.execute, ["show", "config"])
@@ -69,6 +67,7 @@ class TestShowConfig(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.rc = None
+        sys.stdout = cls.real_stdout
 
     def test_network(self):
         """
@@ -1633,18 +1632,347 @@ class TestShowStatistics(unittest.TestCase):
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
-# class TestShowStatistics(unittest.TestCase):
-#     output_list = list()
+class TestShowUsers(unittest.TestCase):
 
-#     @classmethod
-#     def setUpClass(cls):
-#         rc = controller.BasicRootController(user='admin', password='admin')
+    @classmethod
+    def setUpClass(cls):
+        cls.rc = controller.BasicRootController(user='admin', password='admin')
 
-#     @classmethod
-#     def tearDownClass(cls):
-#         cls.rc = None
+    @classmethod
+    def tearDownClass(cls):
+        cls.rc = None
 
-#     def test_test_bin(self):
+    @classmethod
+    def setUp(cls):
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'user', 'foo'])
+    
+    @staticmethod
+    def get_data(exp_first, data):
+        found = False
+        found_values = None
+        for values in data:
+            if len(data) and values.pop(0) == exp_first:
+                found = True
+                found_values = values
+                break
+
+        return found_values
+
+    @classmethod
+    def capture_seperate_and_parse_output(cls, commands):
+        actual_stdout = util.capture_stdout(cls.rc.execute, commands)
+        separated_stdout = test_util.get_separate_output(actual_stdout)
+        result = test_util.parse_output(
+            separated_stdout[0]
+        )
+
+        return result
+
+
+    def test_show_users(self):
+        exp_title = 'Users'
+        exp_header = [
+            'User',
+            'Roles'
+        ]
+
+        actual_title, _, actual_header, _, _ = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+
+    def test_create_user_with_no_roles(self):
+        exp_user = 'foo'
+        exp_roles = ['--']
+        exp_title = 'Users'
+        exp_header = [
+            'User',
+            'Roles'
+        ]
+
+        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+        exp_num_rows = num_records + 1
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar'])
+
+        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+        actual_roles = self.get_data(exp_user, actual_data)
+
+        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertListEqual(exp_roles, actual_roles)
+
+    def test_create_user_with_roles(self):
+        exp_user = 'foo'
+        exp_roles = ['sys-admin', 'user-admin']
+        exp_title = 'Users'
+        exp_header = [
+            'User',
+            'Roles'
+        ]
+
+        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+        exp_num_rows = num_records + 1
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles])
+
+        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+        actual_roles = self.get_data(exp_user, actual_data)
+
+        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertListEqual([', '.join(exp_roles)], actual_roles)
+
+    def test_delete_a_user(self):
+        exp_user = 'foo'
+        exp_roles = ['sys-admin', 'user-admin']
+        exp_title = 'Users'
+        exp_header = [
+            'User',
+            'Roles'
+        ]
+
+        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles])
+
+        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+        exp_num_rows = num_records - 1
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'delete', 'user', exp_user])
+
+        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+        for data in actual_data:
+            self.assertNotIn(exp_user, data)
+
+        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+
+    def test_revoke_user_role(self):
+        exp_user = 'foo'
+        exp_roles = ['sys-admin', 'user-admin']
+        exp_title = 'Users'
+        exp_header = [
+            'User',
+            'Roles'
+        ]
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles, 'to-remove'])
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'revoke', 'user', exp_user, 'roles', 'to-remove'])
+
+        actual_title, _, actual_header, actual_data, _ = self.capture_seperate_and_parse_output(
+            ['show', 'users']
+        )
+
+        actual_roles = self.get_data(exp_user, actual_data)
+
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertEqual(', '.join(exp_roles), actual_roles[0])
+
+class TestShowRoles(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'create', 'role', 'temp', 'priv', 'sys-admin', 'allow', '1.1.1.1'])
+
+    @classmethod
+    def tearDownClass(cls):
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'foo'])
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'temp'])
+        cls.rc = None
+
+    @classmethod
+    def setUp(cls):
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'foo'])
+    
+    @staticmethod
+    def get_data(exp_first, data):
+        found = False
+        found_values = None
+        for values in data:
+            if len(data) and values.pop(0) == exp_first:
+                found = True
+                found_values = values
+                break
+
+        return found_values
+
+    @classmethod
+    def capture_seperate_and_parse_output(cls, commands):
+        actual_stdout = util.capture_stdout(cls.rc.execute, commands)
+        separated_stdout = test_util.get_separate_output(actual_stdout)
+        result = test_util.parse_output(
+            separated_stdout[0]
+        )
+
+        return result
+
+
+    def test_show_roles(self):
+        exp_title = 'Roles'
+        exp_header = [
+            'Role',
+            'Privileges',
+            'Allowlist',
+            
+        ]
+
+        actual_title, _, actual_header, _, _ = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+
+    def test_create_role_with_privileges(self):
+        exp_role = 'foo'
+        exp_privilege = 'sys-admin'
+        exp_allowlist = ['--']
+        exp_data = [exp_privilege, ', '.join(exp_allowlist)]
+        exp_title = 'Roles'
+        exp_header = [
+            'Role',
+            'Privileges',
+            'Allowlist'
+        ]
+
+        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+        exp_num_rows = num_records + 1
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
+
+        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+        actual_data = self.get_data(exp_role, actual_data)
+
+        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertListEqual(exp_data, actual_data)
+
+    def test_create_role_with_allowlist(self):
+        exp_role = 'foo'
+        exp_privileges = '--'
+        exp_allowlist = ['1.1.1.1', '2.2.2.2']
+        exp_data = [exp_privileges, ', '.join(exp_allowlist)]
+        exp_title = 'Roles'
+        exp_header = [
+            'Role',
+            'Privileges',
+            'Allowlist'
+        ]
+
+        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+        exp_num_rows = num_records + 1
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'allow', *exp_allowlist])
+
+        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+        actual_data = self.get_data(exp_role, actual_data)
+
+        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertListEqual(exp_data, actual_data)
+
+    def test_delete_a_role(self):
+        exp_role = 'foo'
+        exp_privilege = 'sys-admin'
+        exp_title = 'Roles'
+        exp_header = [
+            'Role',
+            'Privileges',
+            'Allowlist'
+        ]
+
+        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
+
+        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+        exp_num_rows = num_records - 1
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'delete', 'role', exp_role])
+
+        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+        for data in actual_data:
+            self.assertNotIn(exp_role, data)
+
+        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+
+    def test_revoke_role_role(self):
+        exp_role = 'foo'
+        exp_privilege = 'read'
+        exp_title = 'Roles'
+        exp_header = [
+            'Role',
+            'Privileges',
+            'Allowlist'
+        ]
+
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'grant', 'role', exp_role, 'priv', 'write'])
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'revoke', 'role', exp_role, 'priv', 'write'])
+
+        actual_title, _, actual_header, actual_data, _ = self.capture_seperate_and_parse_output(
+            ['show', 'roles']
+        )
+
+        actual_privileges = self.get_data(exp_role, actual_data)
+        
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertEqual(exp_privilege, actual_privileges[0])
         
 
 if __name__ == "__main__":

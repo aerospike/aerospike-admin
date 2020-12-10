@@ -91,19 +91,23 @@ class ControllerTest(unittest.TestCase):
         scc.do_namespace(["namespace"])
         scc.do_xdr(["xdr"])
 
-    # def test_show_latency_controller(self):
-    #     slc = ShowLatencyController()
-
-    #     slc.pre_command([""])
-    #     slc._do_default(["latency"])
-
     def test_show_latencies_controller(self):
         slc = ShowLatenciesController()
 
         slc.pre_command([""])
-        slc._do_default(["latencies"])
+        util.capture_stdout_and_stderr(slc._do_default, ["latencies"])
 
     def test_ShowStatisticsController(self):
+        ssc = ShowStatisticsController()
+
+        ssc.pre_command([""])
+        ssc.do_bins("bins")
+        ssc.do_sets("sets")
+        ssc.do_service("service")
+        ssc.do_namespace("namespace")
+        ssc.do_xdr("xdr")
+
+    def test_ShowUsersController(self):
         ssc = ShowStatisticsController()
 
         ssc.pre_command([""])

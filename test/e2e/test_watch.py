@@ -17,8 +17,9 @@ import unittest
 import lib.basiccontroller as controller
 import lib.utils.util as util
 from test.e2e import test_util
+from lib.view.sheet import set_style_json
 
-
+set_style_json()
 class TestWatch(unittest.TestCase):
 
     @classmethod
