@@ -387,11 +387,12 @@ class CliView(object):
         CliView.show_config(*args, **kwargs)
 
     @staticmethod
-    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=True, title_every_nth=0, flip_output=False, timestamp="", col_header="", **mods):
+    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None,  title_every_nth=0, flip_output=False, **mods):
         prefixes = cluster.get_node_names(mods.get('with', []))
         node_ids = dict(((k, cluster.get_node(k)[0].node_id)
                            for k in prefixes.keys()))
         common = dict(principal=cluster.get_expected_principal())
+        style = SheetStyle.columns if flip_output else None
 
         sources = dict(
             prefixes=prefixes,
@@ -403,7 +404,10 @@ class CliView(object):
             sheet.render(
                 templates.show_config_sheet,
                 title, 
-                sources, 
+                sources,
+                selectors=like,
+                style=style,
+                title_repeat=title_every_nth != 0,
                 dynamic_diff=diff, 
                 disable_aggregations=True,
                 common=common
@@ -421,7 +425,10 @@ class CliView(object):
                 sheet.render(
                     templates.show_config_sheet,
                     title, 
-                    sources, 
+                    sources,
+                    selectors=like,
+                    style=style,
+                    title_repeat=title_every_nth != 0, 
                     dynamic_diff=diff, 
                     disable_aggregations=True,
                     common=common
@@ -440,7 +447,10 @@ class CliView(object):
                 sheet.render(
                     templates.show_config_xdr_ns_sheet, 
                     title, 
-                    sources, 
+                    sources,
+                    selectors=like,
+                    style=style,
+                    title_repeat=title_every_nth != 0,
                     dynamic_diff=diff,
                     common=common
                 )
