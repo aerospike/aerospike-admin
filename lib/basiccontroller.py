@@ -1384,7 +1384,7 @@ class ShowPmapController(BasicCommandController):
         return util.Future(self.view.show_pmap, pmap_data, self.cluster)
 
 
-@CommandHelp("Displays users and their assigned roles for Aerospike cluster.")
+@CommandHelp("Displays users and their assigned roles for the Aerospike cluster.")
 class ShowUsersController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
@@ -1401,7 +1401,7 @@ class ShowUsersController(BasicCommandController):
 
         return util.Future(self.view.show_users, users_data, **self.mods)
 
-@CommandHelp("Displays users and their assigned roles for Aerospike cluster.")
+@CommandHelp("Displays roles and their assigned privileges and allowlist for the Aerospike cluster.")
 class ShowRolesController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
