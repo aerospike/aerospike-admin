@@ -707,8 +707,8 @@ class ShowConfigController(BasicCommandController):
     @CommandHelp(
         "Displays service, network, and namespace configuration",
         "  Options:",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeate output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
@@ -823,8 +823,6 @@ class ShowConfigController(BasicCommandController):
 
     @CommandHelp("Displays XDR configuration")
     def do_xdr(self, line):
-        # xdr_builds = util.Future(self.cluster.info_build_version,
-        #         nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
@@ -983,8 +981,8 @@ class ShowStatisticsController(BasicCommandController):
         "Displays bin, set, service, and namespace statistics",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeate output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def _do_default(self, line):
