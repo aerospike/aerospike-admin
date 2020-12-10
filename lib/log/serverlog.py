@@ -17,8 +17,9 @@ import hashlib
 import pipes
 import re
 import subprocess
-from lib.log import utils
+from collections import OrderedDict
 
+from lib.log import utils
 from lib.utils.constants import COUNT_RESULT_KEY, TOTAL_ROW_HEADER, END_ROW_KEY, DT_FMT
 from lib.log.latency import LogLatency
 from lib.utils.util import bytes_to_str
@@ -31,7 +32,7 @@ SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\
 class ServerLog():
 
     def __init__(self, display_name, file_name, reader):
-        self.display_name = display_name
+        self.display_name = display_name.strip()
         self.file_name = file_name
         self.reader = reader
         self.indices = self.reader.generate_server_log_indices(self.file_name)
@@ -356,7 +357,7 @@ class ServerLog():
 
     def count(self):
         count_result = {}
-        count_result[COUNT_RESULT_KEY] = {}
+        count_result[COUNT_RESULT_KEY] = OrderedDict()
         slice_start = self.process_start_tm
         slice_end = slice_start + self.slice_duration
         if slice_end > self.process_end_tm:

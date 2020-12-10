@@ -134,7 +134,7 @@ class CollectinfoSnapshot(object):
 
         return node_names
 
-    def get_node_names(self):
+    def get_node_names(self, nodes=None):
         if not self.node_names:
             if self.cinfo_data:
                 node_names = self.cinfo_data.keys()

@@ -39,7 +39,7 @@ si = [
     (1000 ** 0, '  '),
 ]
 
-sif = [
+si_float = [
     (1000.0 ** 5, ' P'),
     (1000.0 ** 4, ' T'),
     (1000.0 ** 3, ' B'),
@@ -55,7 +55,7 @@ time = [
     (60.0 ** 0,        ' secs')
 ]
 
-systems = (byte, byte_verbose, si, sif, time)
+systems = (byte, byte_verbose, si, si_float, time)
 
 
 def size(bytes, system=byte):
