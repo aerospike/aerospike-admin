@@ -29,7 +29,7 @@ from lib.utils.constants import DT_FMT
 from lib.utils.util import compile_likes, find_delimiter_in, get_value_from_dict
 from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
-from lib.view.table import Extractors, Styles, Table, TitleFormats
+from lib.view.table import ColumnNameAlign, Orientation, Table, TitleFormats
 
 H1_offset = 13
 H2_offset = 15
@@ -307,6 +307,7 @@ class CliView(object):
     @staticmethod
     def show_latency(latency, cluster, machine_wise_display=False,
                      like=None, timestamp="", **mods):
+
         if machine_wise_display:
             return CliView.show_latency_machine_wise(
                 latency, cluster, like=like, timestamp=timestamp, **mods)
@@ -428,7 +429,6 @@ class CliView(object):
                 )
             )
 
-
         for dc in service_configs['ns_configs']:
             title = 'Namespace Configuration for {}'.format(dc)
             sources = dict(
@@ -494,7 +494,7 @@ class CliView(object):
         column_names.insert(0, "NODE")
 
         t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
+                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
 
         for file in sorted(grep_result.keys()):
             if isinstance(grep_result[file], Exception):
@@ -584,7 +584,7 @@ class CliView(object):
         column_names.insert(0, "NODE")
 
         t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
+                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
 
         row = None
         sub_columns_per_column = 0
@@ -693,6 +693,47 @@ class CliView(object):
 
         CliView.print_result(sheet.render(templates.show_pmap_sheet, title, sources,
                                           common=common))
+
+    @staticmethod
+    def show_users(users_data, like, **ignore):
+        if not users_data:
+            return 
+
+        if like:
+            likes = compile_likes(like)
+            filtered_keys = list(filter(likes.search, users_data.keys()))
+        else:
+            filtered_keys = users_data.keys()
+
+        users_data = dict(enumerate({k: v} for k, v in users_data.items()
+                    if k in filtered_keys))
+
+        sources = dict(
+            data=users_data
+        )
+        CliView.print_result(sheet.render(templates.show_users, 'Users', sources))
+
+
+    @staticmethod
+    def show_roles(roles_data, like, **ignore):
+        if not roles_data:
+            return 
+
+        if like:
+            likes = compile_likes(like)
+            filtered_keys = list(filter(likes.search, roles_data.keys()))
+            print(filtered_keys)
+        else:
+            filtered_keys = roles_data.keys()
+
+        roles_data = dict(enumerate({k: v} for k, v in roles_data.items()
+                    if k in filtered_keys))
+        sources = dict(
+            data=roles_data
+        )
+
+        CliView.print_result(sheet.render(templates.show_roles, 'Roles', sources))
+
 
     @staticmethod
     def asinfo(results, line_sep, show_node_name, cluster, **mods):
@@ -1508,4 +1549,4 @@ class CliView(object):
                 summary["FEATURES"]["NAMESPACE"])
         else:
             CliView._summary_namespace_table_view(summary["FEATURES"]["NAMESPACE"])
-
+            

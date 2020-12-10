@@ -16,8 +16,8 @@
 
 # Used for testing "show latencies -v" to get micro benchmarks
 echo "Configuring additional write & read benchmarks for server 5.1+"
-asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-write=true'
-asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-read=true'
+asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-write=true' -Uadmin -Padmin
+asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-read=true' -Uadmin -Padmin
 
 echo "Running unit test cases :"
 # Forced to run with python3 because some tests were not running correctly 

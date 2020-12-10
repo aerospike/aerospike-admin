@@ -66,8 +66,10 @@ sudo easy_install -a readline
 
 ### Setting Test Environment
 asadm has unit and e2e tests. To setup environment for e2e tests, execute following steps:
+- Enable security in the aerospike.conf file.
+- Verify that the default user `admin` exists and that is has the default roles: `sys-admin`, `user-admin`, and `read-write`. 
 - Start Aerospike cluster: Test machine should be part of this cluster with 3000 as asinfo port.
-- Write few records to cluster
+- Write few records to cluster `asbenchmark -h <host> -Uadmin -Padmin`
 - Wait for few seconds so cluster can return histogram output properly.
 
 ### Running Tests

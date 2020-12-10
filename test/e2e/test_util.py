@@ -70,19 +70,13 @@ def parse_output(actual_out = {}, horizontal = False, header_len = 2, merge_head
         
 
 def get_separate_output(in_str = ''):
-    _regex = re.compile(r"((?<=^{).*?(?=^}))", re.MULTILINE | re.DOTALL)
+    _regex = re.compile("((?<=^{).*?(?=^}))", re.MULTILINE | re.DOTALL)
     out = re.findall(_regex, in_str)
     ls = []
     for item in out:
         item = remove_escape_sequence(item)
-        item = '{' + item + '}'
-        try:
-            ls.append(json.loads(item))
-        except Exception:
-            print(out)
-            print(item)
-            # print(item[52:54])
-
+        item = "{" + item + "}"
+        ls.append(json.loads(item))
 
     return ls
 

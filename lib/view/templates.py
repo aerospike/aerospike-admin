@@ -620,6 +620,59 @@ show_latency_machine_wise_sheet = Sheet(
     order_by='Node',
 )
 
+def turn_empty_to_none(ls):
+    if not ls:
+        return None
+    
+    return ls
+        
+
+show_users = Sheet(
+    (
+        Field('User', Projectors.String('data', None, for_each_key=True)),
+        Field(
+            'Roles', 
+            Projectors.Func(
+                FieldType.undefined , 
+                turn_empty_to_none, 
+                Projectors.Identity('data', None)
+            ), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        )
+    ),
+    from_source="data",
+    for_each='data',
+    order_by='User'
+)
+
+show_roles = Sheet(
+    (
+        Field('Role', Projectors.String('data', None, for_each_key=True)),
+        Field(
+            'Privileges', 
+            Projectors.Func(
+                FieldType.string, 
+                turn_empty_to_none, 
+                Projectors.Identity('data', 'privileges')
+            ), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        ),
+        Field('Allowlist', 
+        Projectors.Func(
+            FieldType.string, 
+            turn_empty_to_none, 
+            Projectors.Identity('data', 'whitelist')), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        )
+    ),
+    from_source="data",
+    for_each='data',
+    order_by='Role'
+)
+
 grep_count_sheet = Sheet(
     (TitleField('Node', Projectors.String('node_ids', 'node')),
      DynamicFields('data', required=True, order=DynamicFieldOrder.source)),
