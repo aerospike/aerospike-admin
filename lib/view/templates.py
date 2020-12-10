@@ -620,17 +620,26 @@ show_latency_machine_wise_sheet = Sheet(
     order_by='Node',
 )
 
-def no_entry_or_join_list(ls):
+def turn_empty_to_none(ls):
     if not ls:
         return None
     
-    return ', '.join(ls)
+    return ls
         
 
 show_users = Sheet(
     (
         Field('User', Projectors.String('data', None, for_each_key=True)),
-        Field('Roles', Projectors.Func(FieldType.string, no_entry_or_join_list, Projectors.Identity('data', None)), align=FieldAlignment.right)
+        Field(
+            'Roles', 
+            Projectors.Func(
+                FieldType.undefined , 
+                turn_empty_to_none, 
+                Projectors.Identity('data', None)
+            ), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        )
     ),
     from_source="data",
     for_each='data',
@@ -640,8 +649,24 @@ show_users = Sheet(
 show_roles = Sheet(
     (
         Field('Role', Projectors.String('data', None, for_each_key=True)),
-        Field('Privileges', Projectors.Func(FieldType.string, no_entry_or_join_list, Projectors.Identity('data', 'privileges')), align=FieldAlignment.right),
-        Field('Allowlist', Projectors.Func(FieldType.string, no_entry_or_join_list, Projectors.Identity('data', 'whitelist')), align=FieldAlignment.right)
+        Field(
+            'Privileges', 
+            Projectors.Func(
+                FieldType.string, 
+                turn_empty_to_none, 
+                Projectors.Identity('data', 'privileges')
+            ), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        ),
+        Field('Allowlist', 
+        Projectors.Func(
+            FieldType.string, 
+            turn_empty_to_none, 
+            Projectors.Identity('data', 'whitelist')), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        )
     ),
     from_source="data",
     for_each='data',

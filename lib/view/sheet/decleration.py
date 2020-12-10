@@ -589,6 +589,17 @@ class Converters(object):
         """
         return str(edata.value)
 
+    @staticmethod
+    def _list_to_str(edata, separator):
+        return separator.join(edata)
+
+    @staticmethod
+    def list_to_comma_sep_str(edata):
+        if len(edata.value):
+            return Converters._list_to_str(edata.value, ', ')
+
+        return '--'
+
 
 class Formatters(object):
     @staticmethod
