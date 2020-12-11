@@ -734,6 +734,26 @@ class CliView(object):
 
         CliView.print_result(sheet.render(templates.show_roles, 'Roles', sources))
 
+    @staticmethod
+    def show_udfs(udfs_data, like, **ignore):
+        if not udfs_data:
+            return 
+
+        if like:
+            likes = compile_likes(like)
+            filtered_keys = list(filter(likes.search, udfs_data.keys()))
+            print(filtered_keys)
+        else:
+            filtered_keys = udfs_data.keys()
+
+        udfs_data = dict(enumerate({k: v} for k, v in udfs_data.items()
+                    if k in filtered_keys))
+        sources = dict(
+            data=udfs_data
+        )
+
+        CliView.print_result(sheet.render(templates.show_udfs, 'UDF Modules', sources))
+
 
     @staticmethod
     def asinfo(results, line_sep, show_node_name, cluster, **mods):

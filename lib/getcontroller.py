@@ -969,7 +969,6 @@ class GetRolesController():
     def __init__(self, cluster):
         self.cluster = cluster
 
-    @logthis('asadm', logging.DEBUG)
     def get_roles(self):
         principle_node = self.cluster.get_expected_principal()
         roles_data = self.cluster.admin_query_roles(nodes=[principle_node]).values()
@@ -979,3 +978,12 @@ class GetRolesController():
         principle_node = self.cluster.get_expected_principal()
         role_data = self.cluster.admin_query_role(role_name, nodes=[principle_node]).values()
         return list(role_data)[0]
+
+class GetUdfController():
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_udfs(self):
+        principle_node = self.cluster.get_expected_principal()
+        roles_data = self.cluster.info_udf_list(nodes=[principle_node]).values()
+        return list(roles_data)[0]

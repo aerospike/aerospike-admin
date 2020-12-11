@@ -34,6 +34,7 @@ from lib.getcontroller import (
     GetRolesController,
     GetStatisticsController,
     GetFeaturesController, 
+    GetUdfController, 
     GetUsersController,
     get_sindex_stats,
     GetLatenciesController,
@@ -470,7 +471,7 @@ class ShowController(BasicCommandController):
             "pmap": ShowPmapController,
             'users': ShowUsersController,
             'roles': ShowRolesController,
-            # 'udfs': ShowUdfsController,
+            'udfs': ShowUdfsController,
             # 'rosters': ShowRosterController,
             # 'racks': ShowRacksController,
             # 'jobs': ShowJobsController,
@@ -1417,6 +1418,23 @@ class ShowRolesController(BasicCommandController):
             raise roles_data
 
         return util.Future(self.view.show_roles, roles_data, **self.mods)
+
+@CommandHelp("Displays UDF modules along with metadata.")
+class ShowUdfsController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+        self.getter = GetUdfController(self.cluster)
+
+    def _do_default(self, line):
+        udfs_data = self.getter.get_udfs()
+
+        if isinstance(udfs_data, ASProtocolError):
+            self.logger.error(udfs_data)
+            return
+        elif isinstance(udfs_data, Exception):
+            raise udfs_data
+
+        return util.Future(self.view.show_udfs, udfs_data, **self.mods)
 
 @CommandHelp(
     '"collectinfo" is used to collect cluster info, aerospike conf file and system stats.'

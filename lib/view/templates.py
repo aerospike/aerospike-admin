@@ -673,6 +673,28 @@ show_roles = Sheet(
     order_by='Role'
 )
 
+show_udfs = Sheet(
+    (
+        Field('Filename', Projectors.String('data', None, for_each_key=True)),
+        Field(
+            'Hash', 
+            Projectors.String(
+                'data', 
+                'hash'
+            ), 
+        ),
+        Field('Type', 
+            Projectors.String(
+                'data', 
+                'type'
+            )
+        )
+    ),
+    from_source="data",
+    for_each='data',
+    order_by='Filename'
+)
+
 grep_count_sheet = Sheet(
     (TitleField('Node', Projectors.String('node_ids', 'node')),
      DynamicFields('data', required=True, order=DynamicFieldOrder.source)),
