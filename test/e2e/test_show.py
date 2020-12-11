@@ -14,6 +14,7 @@
 
 import os
 import sys
+import time
 import unittest
 
 import lib.basiccontroller as controller
@@ -1632,6 +1633,24 @@ class TestShowStatistics(unittest.TestCase):
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
+def capture_separate_and_parse_output(rc, commands):
+    actual_stdout = util.capture_stdout(rc.execute, commands)
+    separated_stdout = test_util.get_separate_output(actual_stdout)
+    result = test_util.parse_output(
+        separated_stdout[0]
+    )
+
+    return result
+
+def get_data(exp_first, data):
+    found_values = None
+
+    for values in data:
+        if len(data) and values.pop(0) == exp_first:
+            found_values = values
+            break
+
+    return found_values
 class TestShowUsers(unittest.TestCase):
 
     @classmethod
@@ -1644,31 +1663,11 @@ class TestShowUsers(unittest.TestCase):
 
     @classmethod
     def setUp(cls):
+        # Added since tests were failing.  I assume because the server response
+        # comes before the request is commited to SMD or security layer.
+        time.sleep(.25)
         util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'user', 'foo'])
     
-    @staticmethod
-    def get_data(exp_first, data):
-        found = False
-        found_values = None
-        for values in data:
-            if len(data) and values.pop(0) == exp_first:
-                found = True
-                found_values = values
-                break
-
-        return found_values
-
-    @classmethod
-    def capture_seperate_and_parse_output(cls, commands):
-        actual_stdout = util.capture_stdout(cls.rc.execute, commands)
-        separated_stdout = test_util.get_separate_output(actual_stdout)
-        result = test_util.parse_output(
-            separated_stdout[0]
-        )
-
-        return result
-
-
     def test_show_users(self):
         exp_title = 'Users'
         exp_header = [
@@ -1676,7 +1675,7 @@ class TestShowUsers(unittest.TestCase):
             'Roles'
         ]
 
-        actual_title, _, actual_header, _, _ = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(self.rc,
             ['show', 'users']
         )
 
@@ -1692,7 +1691,7 @@ class TestShowUsers(unittest.TestCase):
             'Roles'
         ]
 
-        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
         )
 
@@ -1700,11 +1699,11 @@ class TestShowUsers(unittest.TestCase):
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar'])
 
-        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
         )
 
-        actual_roles = self.get_data(exp_user, actual_data)
+        actual_roles = get_data(exp_user, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
         self.assertEqual(exp_title, actual_title)
@@ -1720,19 +1719,21 @@ class TestShowUsers(unittest.TestCase):
             'Roles'
         ]
 
-        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
         )
 
         exp_num_rows = num_records + 1
 
+        time.sleep(.5)
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles])
+        time.sleep(1)
 
-        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
         )
 
-        actual_roles = self.get_data(exp_user, actual_data)
+        actual_roles = get_data(exp_user, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
         self.assertEqual(exp_title, actual_title)
@@ -1748,14 +1749,14 @@ class TestShowUsers(unittest.TestCase):
             'Roles'
         ]
 
-        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
         )
 
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles])
 
-        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
         )
 
@@ -1763,7 +1764,7 @@ class TestShowUsers(unittest.TestCase):
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'delete', 'user', exp_user])
 
-        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
         )
 
@@ -1784,13 +1785,15 @@ class TestShowUsers(unittest.TestCase):
         ]
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles, 'to-remove'])
+        time.sleep(.25)
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'revoke', 'user', exp_user, 'roles', 'to-remove'])
+        time.sleep(.25)
 
-        actual_title, _, actual_header, actual_data, _ = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, actual_data, _ = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
         )
 
-        actual_roles = self.get_data(exp_user, actual_data)
+        actual_roles = get_data(exp_user, actual_data)
 
         self.assertEqual(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
@@ -1811,30 +1814,11 @@ class TestShowRoles(unittest.TestCase):
 
     @classmethod
     def setUp(cls):
+        # Added since tests were failing.  I assume because the server response
+        # comes before the request is commited to SMD or security layer.
+        time.sleep(.25)
         util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'foo'])
-    
-    @staticmethod
-    def get_data(exp_first, data):
-        found = False
-        found_values = None
-        for values in data:
-            if len(data) and values.pop(0) == exp_first:
-                found = True
-                found_values = values
-                break
-
-        return found_values
-
-    @classmethod
-    def capture_seperate_and_parse_output(cls, commands):
-        actual_stdout = util.capture_stdout(cls.rc.execute, commands)
-        separated_stdout = test_util.get_separate_output(actual_stdout)
-        result = test_util.parse_output(
-            separated_stdout[0]
-        )
-
-        return result
-
+        time.sleep(.25)
 
     def test_show_roles(self):
         exp_title = 'Roles'
@@ -1845,7 +1829,7 @@ class TestShowRoles(unittest.TestCase):
             
         ]
 
-        actual_title, _, actual_header, _, _ = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
@@ -1864,19 +1848,20 @@ class TestShowRoles(unittest.TestCase):
             'Allowlist'
         ]
 
-        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
         exp_num_rows = num_records + 1
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
+        time.sleep(.5)
 
-        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
-        actual_data = self.get_data(exp_role, actual_data)
+        actual_data = get_data(exp_role, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
         self.assertEqual(exp_title, actual_title)
@@ -1895,19 +1880,20 @@ class TestShowRoles(unittest.TestCase):
             'Allowlist'
         ]
 
-        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
         exp_num_rows = num_records + 1
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'allow', *exp_allowlist])
+        time.sleep(.25)
 
-        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
-        actual_data = self.get_data(exp_role, actual_data)
+        actual_data = get_data(exp_role, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
         self.assertEqual(exp_title, actual_title)
@@ -1924,22 +1910,24 @@ class TestShowRoles(unittest.TestCase):
             'Allowlist'
         ]
 
-        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
+        time.sleep(.25)
 
-        _, _, _, _, num_records = self.capture_seperate_and_parse_output(
+        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
         exp_num_rows = num_records - 1
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'delete', 'role', exp_role])
+        time.sleep(.25)
 
-        actual_title, _, actual_header, actual_data, actual_num_records = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
@@ -1950,7 +1938,7 @@ class TestShowRoles(unittest.TestCase):
         self.assertEqual(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
-    def test_revoke_role_role(self):
+    def test_revoke_role(self):
         exp_role = 'foo'
         exp_privilege = 'read'
         exp_title = 'Roles'
@@ -1962,17 +1950,116 @@ class TestShowRoles(unittest.TestCase):
 
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'grant', 'role', exp_role, 'priv', 'write'])
+        time.sleep(.5)
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'revoke', 'role', exp_role, 'priv', 'write'])
+        time.sleep(.5)
 
-        actual_title, _, actual_header, actual_data, _ = self.capture_seperate_and_parse_output(
+        actual_title, _, actual_header, actual_data, _ = capture_separate_and_parse_output(self.rc, 
             ['show', 'roles']
         )
 
-        actual_privileges = self.get_data(exp_role, actual_data)
+        actual_privileges = get_data(exp_role, actual_data)
         
         self.assertEqual(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_privilege, actual_privileges[0])
+
+class TestShowUdfs(unittest.TestCase):
+    exp_module = 'test.lua'
+    path = 'test/e2e/test.lua'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'add', 'filler.lua', 'path', cls.path])
+
+    @classmethod
+    def tearDownClass(cls):
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', cls.exp_module])
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', 'filler.lua'])
+        cls.rc = None
+
+    @classmethod
+    def setUp(cls):
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', cls.exp_module])
+
+    def test_show_udfs(self):
+        exp_title = 'UDF Modules'
+        exp_header = [
+            'Filename',
+            'Hash',
+            'Type'
+        ]
+
+        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(self.rc, 
+            ['show', 'udfs']
+        )
+
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+
+    def test_add_udf(self):
+        exp_title = 'UDF Modules'
+        exp_header = [
+            'Filename',
+            'Hash',
+            'Type'
+        ]
+        exp_module = [
+            '3352f00b6b9b0c4b8d8047dbef5cf73dda47028e',
+            'LUA'
+        ]
+
+        _, _, _, _, num_rows = capture_separate_and_parse_output(self.rc, 
+            ['show', 'udfs']
+        )
+
+        exp_num_rows = num_rows + 1
+
+        util.capture_stdout(self.rc.execute, ['manage', 'udfs', 'add', self.exp_module, 'path', self.path])
+
+        time.sleep(1)
+
+        actual_title, _, actual_header, actual_data, actual_num_rows = capture_separate_and_parse_output(self.rc, 
+            ['show', 'udfs']
+        )
+
+        actual_module = get_data(self.exp_module, actual_data)
+
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertEqual(exp_num_rows, actual_num_rows)
+        self.assertListEqual(exp_module, actual_module)
+
+    def test_remove_udf(self):
+        exp_title = 'UDF Modules'
+        exp_header = [
+            'Filename',
+            'Hash',
+            'Type'
+        ]
+
+        util.capture_stdout(self.rc.execute, ['manage', 'udfs', 'add', self.exp_module, 'path', self.path])
+        time.sleep(.50
+        )
+        _, _, _, _, num_rows = capture_separate_and_parse_output(self.rc, 
+            ['show', 'udfs']
+        )
+
+        exp_num_rows = num_rows - 1
+
+        util.capture_stdout(self.rc.execute, ['manage', 'udfs', 'remove', self.exp_module])
+        time.sleep(.50)
+
+        actual_title, _, actual_header, actual_data, actual_num_rows = capture_separate_and_parse_output(self.rc, 
+            ['show', 'udfs']
+        )
+
+        self.assertEqual(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertEqual(exp_num_rows, actual_num_rows)
+
+        
         
 
 if __name__ == "__main__":

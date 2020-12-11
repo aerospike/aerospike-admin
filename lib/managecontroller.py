@@ -103,7 +103,6 @@ class ManageACLCreateUserController(BasicCommandController):
             password = getpass('Enter password for new user {}:'.format(username))
 
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
-        print("Test", self.cluster)
         principle_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_create_user(username, password, roles, nodes=[principle_node])
         result = list(result.values())[0]
@@ -556,7 +555,7 @@ class ManageUdfsAddController(BasicCommandController):
             udf_path = os.path.join(os.getcwd(), udf_path)
 
         if not os.path.isfile(udf_path):
-            self.logger.error('UDF path does not exist.')
+            self.logger.error('Failed to add UDF {}: Path does not exist'.format(udf_name))
             return
 
         with open(udf_path) as udf_file:
