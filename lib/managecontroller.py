@@ -475,6 +475,8 @@ class ManageACLRevokeRoleController(BasicCommandController):
     "  role-name     - Role that will have new allowlist.",
     "  allow         - Addresses of nodes that a role will be allowed to connect",
     "                  to. This command erases and re-assigns the allowlist",
+    "allowlist role <role-name> clear",
+    "  role-name     - Role that will have new allowlist.",
     "  clear         - Clears allowlist from role. Either 'allow' or 'clear' is",
     "                  required.",
 )
@@ -542,7 +544,13 @@ class ManageUdfsController(BasicCommandController):
     def _do_default(self, line):
         self.execute_help(line)
 
-
+@CommandHelp(
+    "add <module-name> path <module-path>",
+    "  module-name   - Name of module to be stored in the server.  Can be different",
+    "                  from file in path but must end with an extension.",
+    "  path          - Path to the udf module.  Can be either absolute or relative",
+    "                  to the current working directory.",
+)
 class ManageUdfsAddController(BasicCommandController):
     def __init__(self):
         self.required_modifiers = set(['line', 'path'])
@@ -575,8 +583,10 @@ class ManageUdfsAddController(BasicCommandController):
 
         self.view.print_result("Successfully added UDF {}".format(udf_name))
 
-
-@CommandHelp("dsfs")
+@CommandHelp(
+    "remove <module-name>",
+    "  module-name   - Name of module stored in the server that should be removed.",
+)
 class ManageUdfsRemoveController(BasicCommandController):
     def __init__(self):
         self.required_modifiers = set(['line'])

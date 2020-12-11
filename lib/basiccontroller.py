@@ -85,15 +85,15 @@ class BasicRootController(BaseController):
         BasicRootController.command = BasicCommandController(self.cluster)
 
         self.controller_map = {
-            "asinfo": ASInfoController,
-            "collectinfo": CollectinfoController,
-            "show": ShowController,
-            "info": InfoController,
-            "features": FeaturesController,
-            "pager": PagerController,
             "health": HealthCheckController,
             "summary": SummaryController,
-            "manage": ManageController
+            "features": FeaturesController,
+            "pager": PagerController,
+            "collectinfo": CollectinfoController,
+            "asinfo": ASInfoController,
+            "manage": ManageController,
+            "show": ShowController,
+            "info": InfoController,
         }
 
     def close(self):
