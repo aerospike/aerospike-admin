@@ -327,15 +327,15 @@ class TestManageACLRoles(unittest.TestCase):
         self.assertEqual(exp_stderr_resp, actual_stderr.strip())
 
 class ManageUDFsTest(unittest.TestCase):
-    exp_module = 'test.lua'
+    exp_module = 'test__.lua'
     path = 'test/e2e/test.lua'
     other_modules = [
-        'test0.lua',
-        'test1.lua',
-        'test2.lua',
-        'test3.lua',
-        'test4.lua',
-        'test5.lua'
+        'test0__.lua',
+        'test1__.lua',
+        'test2__.lua',
+        'test3__.lua',
+        'test4__.lua',
+        'test5__.lua'
     ]
 
     @classmethod
@@ -359,23 +359,21 @@ class ManageUDFsTest(unittest.TestCase):
 
 
     def test_can_add_module_with_relative_path(self):
-        exp_module = 'test.lua'
-        exp_stdout_resp = 'Successfully added UDF {}'.format(exp_module)
+        exp_stdout_resp = 'Successfully added UDF {}'.format(self.exp_module)
         exp_stderr_resp = ''
 
-        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'add', exp_module, 'path', self.path])
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'add', self.exp_module, 'path', self.path])
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
         self.assertEqual(exp_stderr_resp, actual_stderr.strip())
 
     def test_can_add_module_with_absolute_path(self):
-        exp_module = 'test.lua'
-        exp_stdout_resp = 'Successfully added UDF {}'.format(exp_module)
+        exp_stdout_resp = 'Successfully added UDF {}'.format(self.exp_module)
         exp_stderr_resp = ''
 
         cwd = os.getcwd()
         path = os.path.join(cwd, self.path)
-        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'add', exp_module, 'path', path])
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'add', self.exp_module, 'path', path])
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
         self.assertEqual(exp_stderr_resp, actual_stderr.strip())
@@ -383,16 +381,7 @@ class ManageUDFsTest(unittest.TestCase):
     def test_can_add_multiple_modules(self):
         exp_stderr_resp = ''
 
-        module_names = [
-            'test0.lua',
-            'test1.lua',
-            'test2.lua',
-            'test3.lua',
-            'test4.lua',
-            'test5.lua',
-        ]
-
-        for exp_module in module_names:
+        for exp_module in self.other_modules:
             exp_stdout_resp = 'Successfully added UDF {}'.format(exp_module)
             actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'add', exp_module, 'path', self.path])
 
@@ -400,23 +389,21 @@ class ManageUDFsTest(unittest.TestCase):
             self.assertEqual(exp_stderr_resp, actual_stderr.strip())
 
     def test_fails_to_add_if_path_does_not_exist(self):
-        exp_module = 'test.lua'
         exp_stdout_resp = ''
-        exp_stderr_resp = 'Failed to add UDF {}: Path does not exist'.format(exp_module)
+        exp_stderr_resp = 'Failed to add UDF {}: Path does not exist'.format(self.exp_module)
         path = 'test/e2e/DNE.lua'
 
-        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'add', exp_module, 'path', path])
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'add', self.exp_module, 'path', path])
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
         self.assertEqual(exp_stderr_resp, actual_stderr.strip())
 
     def test_can_remove_module(self):
-        exp_module = 'test.lua'
-        exp_stdout_resp = 'Successfully removed UDF {}'.format(exp_module)
+        exp_stdout_resp = 'Successfully removed UDF {}'.format(self.exp_module)
         exp_stderr_resp = ''
 
-        util.capture_stdout(self.rc.execute, ['manage', 'udfs', 'add', exp_module, 'path', self.path])
-        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'remove', exp_module])
+        util.capture_stdout(self.rc.execute, ['manage', 'udfs', 'add', self.exp_module, 'path', self.path])
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'udfs', 'remove', self.exp_module])
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
         self.assertEqual(exp_stderr_resp, actual_stderr.strip())

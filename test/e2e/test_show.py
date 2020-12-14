@@ -1727,7 +1727,7 @@ class TestShowUsers(unittest.TestCase):
 
         time.sleep(.5)
         util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles])
-        time.sleep(1)
+        time.sleep(2)
 
         actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
             ['show', 'users']
