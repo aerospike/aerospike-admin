@@ -1965,18 +1965,18 @@ class TestShowRoles(unittest.TestCase):
         self.assertEqual(exp_privilege, actual_privileges[0])
 
 class TestShowUdfs(unittest.TestCase):
-    exp_module = 'test.lua'
+    exp_module = 'test__.lua'
     path = 'test/e2e/test.lua'
 
     @classmethod
     def setUpClass(cls):
         cls.rc = controller.BasicRootController(user='admin', password='admin')
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'add', 'filler.lua', 'path', cls.path])
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'add', 'filler_.lua', 'path', cls.path])
 
     @classmethod
     def tearDownClass(cls):
         util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', cls.exp_module])
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', 'filler.lua'])
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', 'filler_.lua'])
         cls.rc = None
 
     @classmethod
@@ -2006,7 +2006,7 @@ class TestShowUdfs(unittest.TestCase):
             'Type'
         ]
         exp_module = [
-            '3352f00b6b9b0c4b8d8047dbef5cf73dda47028e',
+            '3896d2c19a10415d7e358d38ff133b1157f1d0c9',
             'LUA'
         ]
 

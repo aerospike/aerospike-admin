@@ -417,3 +417,105 @@ class ManageUDFsTest(unittest.TestCase):
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
         self.assertEqual(exp_stderr_resp, actual_stderr.strip())
+
+
+class ManageSindexTest(unittest.TestCase):
+    exp_sindex = 'test-sindex'
+    exp_ns = 'test'
+    exp_set = 'testset'
+    exp_bin = 'test-bin'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'sindex', 'delete', cls.exp_sindex, 'ns', cls.exp_ns])
+
+    @classmethod
+    def tearDownClass(cls):
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'sindex', 'delete', cls.exp_sindex, 'ns', cls.exp_ns])
+        cls.rc = None
+
+    @classmethod
+    def setUp(cls):
+        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'sindex', 'delete', cls.exp_sindex, 'ns', cls.exp_ns])
+        time.sleep(.5)
+
+    def test_can_create_string_sindex(self):
+        exp_stdout = 'Successfully created sindex {}'.format(self.exp_sindex)
+        exp_stderr = ''
+
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'create', 'string', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set, 'bin', self.exp_bin])
+
+        self.assertEqual(exp_stdout, actual_stdout.strip())
+        self.assertEqual(exp_stderr, actual_stderr.strip())
+
+    def test_can_create_numeric_sindex(self):
+        exp_stdout = 'Successfully created sindex {}'.format(self.exp_sindex)
+        exp_stderr = ''
+
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'create', 'numeric', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set, 'bin', self.exp_bin])
+
+        self.assertEqual(exp_stdout, actual_stdout.strip())
+        self.assertEqual(exp_stderr, actual_stderr.strip())
+
+    def test_can_create_geo2dspehere_sindex(self):
+        exp_stdout = 'Successfully created sindex {}'.format(self.exp_sindex)
+        exp_stderr = ''
+
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'create', 'geo2dsphere', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set, 'bin', self.exp_bin])
+
+        self.assertEqual(exp_stdout, actual_stdout.strip())
+        self.assertEqual(exp_stderr, actual_stderr.strip())
+
+    def test_can_create_sindex_in_list(self):
+        exp_stdout = 'Successfully created sindex {}'.format(self.exp_sindex)
+        exp_stderr = ''
+
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'create', 'string', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set, 'bin', self.exp_bin, 'in', 'list'])
+
+        self.assertEqual(exp_stdout, actual_stdout.strip())
+        self.assertEqual(exp_stderr, actual_stderr.strip())
+
+    def test_can_create_sindex_in_mapkeys(self):
+        exp_stdout = 'Successfully created sindex {}'.format(self.exp_sindex)
+        exp_stderr = ''
+
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'create', 'string', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set, 'bin', self.exp_bin, 'in', 'mapkeys'])
+
+        self.assertEqual(exp_stdout, actual_stdout.strip())
+        self.assertEqual(exp_stderr, actual_stderr.strip())
+
+    def test_can_create_sindex_in_mapvalues(self):
+        exp_stdout = 'Successfully created sindex {}'.format(self.exp_sindex)
+        exp_stderr = ''
+
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'create', 'string', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set, 'bin', self.exp_bin, 'in', 'mapvalues'])
+
+        self.assertEqual(exp_stdout, actual_stdout.strip())
+        self.assertEqual(exp_stderr, actual_stderr.strip())
+
+    def test_fails_to_create_sindex_in_invalid(self):
+        exp_stderr = "Failed to create sindex {} : Invalid indextype. Should be one of [DEFAULT, LIST, MAPKEYS, MAPVALUES]".format(self.exp_sindex)
+
+        _, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'create', 'string', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set, 'bin', self.exp_bin, 'in', 'invalid'])
+
+        self.assertEqual(exp_stderr, actual_stderr.strip())
+
+    def test_can_delete_sindex(self):
+        exp_stdout = 'Successfully deleted sindex {}'.format(self.exp_sindex)    
+        exp_stderr = ''
+
+        util.capture_stdout(self.rc.execute, ['manage', 'sindex', 'create', 'string', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set, 'bin', self.exp_bin])
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'delete', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set])
+
+        self.assertEqual(exp_stdout, actual_stdout.strip())
+        self.assertEqual(exp_stderr, actual_stderr.strip())
+
+    def test_fails_to_delete_sindex_that_does_not_exist(self):
+        exp_stdout = ''
+        exp_stderr = "Failed to delete sindex {} : Index does not exist on the system.".format(self.exp_sindex)
+
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'sindex', 'delete', self.exp_sindex, 'ns', self.exp_ns, 'set', self.exp_set])
+
+        self.assertEqual(exp_stdout, actual_stdout.strip())
+        self.assertEqual(exp_stderr, actual_stderr.strip())
