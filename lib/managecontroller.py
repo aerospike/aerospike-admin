@@ -12,7 +12,7 @@ class ManageController(BasicCommandController):
         self.controller_map = {
             "acl": ManageACLController,
             "udfs": ManageUdfsController,
-            # "sindex": ManageSIndexController,
+            "sindex": ManageSIndexController,
             # "config": ManageConfigController,
             # "truncate": ManageTruncateController,
         }
@@ -615,5 +615,121 @@ class ManageUdfsRemoveController(BasicCommandController):
             return
 
         self.view.print_result("Successfully removed UDF {}".format(udf_name))
-        
+
+
+@CommandHelp('"manage udfs" is used to add and remove user defined functions.')
+class ManageSIndexController(BasicCommandController):
+    def __init__(self):
+        self.controller_map = {
+            'create': ManageSIndexCreateController,
+            'delete': ManageSIndexDeleteController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
             
+@CommandHelp('"manage udfs" is used to add and remove user defined functions.')
+class ManageSIndexCreateController(BasicCommandController):
+    
+    def __init__(self):
+        self.required_modifiers = set(['line', 'ns', 'bin'])
+        self.modifiers = set(['set', 'in'])
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+    def _do_create(self, line, bin_type):
+        index_name = line.pop(0)
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='ns',
+            return_type=str,
+            default='',
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
+        set_ = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='set',
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
+        bin_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='bin',
+            return_type=str,
+            default='',
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
+        index_type = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='in',
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
+
+        index_type = index_type.lower() if index_type else None
+        bin_type = bin_type.lower()
+
+        principle_node = self.cluster.get_expected_principal()
+        resp = self.cluster.info_sindex_create(index_name, namespace, bin_name, bin_type, index_type, set_, nodes=[principle_node])
+        resp = list(resp.values())[0]
+
+        if resp != 'ok':
+            self.logger.error("Failed to create sindex {} : {}".format(index_name, resp))
+            return
+
+        self.view.print_result("Successfully created sindex {}".format(index_name))
+
+    
+    # Hack for auto-complete 
+    def do_numeric(self, line):
+        self._do_create(line, 'numeric')
+
+    # Hack for auto-complete 
+    def do_string(self, line):
+        self._do_create(line, 'string')
+
+    # Hack for auto-complete 
+    def do_geo2dsphere(self, line):
+        self._do_create(line, 'geo2dsphere')
+
+@CommandHelp('"manage udfs" is used to add and remove user defined functions.')
+class ManageSIndexDeleteController(BasicCommandController):
+    def __init__(self):
+        self.required_modifiers = set(['line', 'ns'])
+        self.modifiers = set(['set'])
+
+    def _do_default(self, line):
+        index_name = line.pop(0)
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='ns',
+            return_type=str,
+            default='',
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
+        set_ = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg='set',
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods
+        )
+
+        principle_node = self.cluster.get_expected_principal()
+        resp = self.cluster.info_sindex_delete(index_name, namespace, set_, nodes=[principle_node])
+        resp = list(resp.values())[0]
+
+        if resp != 'ok':
+            self.logger.error("Failed to delete sindex {} : {}".format(index_name, resp))
+            return
+
+        self.view.print_result("Successfully deleted sindex {}".format(index_name))

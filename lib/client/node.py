@@ -1471,10 +1471,10 @@ class Node(object):
     @return_exceptions
     def info_udf_list(self):
         """
-        Get config for a udf.
+        Get list of UDFs stored on the node.
 
         Returns:
-        dict -- {file_name1:{key_name : key_value, ...}, file_name2:{key_name : key_value, ...}}
+        dict -- {<file-name>: {"filename": <file-name>, "hash": <hash>, "type": 'LUA'}, . . .}
         """
         udf_data = self.info("udf-list")
 
@@ -1482,6 +1482,33 @@ class Node(object):
             return {}
 
         return util.info_to_dict_multi_level(udf_data, "filename", delimiter2=",")
+
+    @return_exceptions
+    def info_udf_put(self, udf_file_name, udf_str, udf_type = 'LUA'):
+        content = base64.b64encode(udf_str.encode('ascii'))
+        content = content.decode('ascii')
+        content_len = len(content)
+
+        command = ('udf-put:filename=' + udf_file_name + ';udf-type=' + udf_type
+                  + ';content-len=' + str(content_len) + ';content=' + str(content))
+        resp = self.info(command)
+
+        if 'error' in resp:
+            message = resp.split('=')[1]
+            return message
+
+        return 'ok'
+
+    @return_exceptions
+    def info_udf_remove(self, udf_file_name):
+        command = ('udf-remove:filename=' + udf_file_name + ';')
+        resp = self.info(command)
+
+        if 'error' in resp:
+            message = resp.split('=')[1]
+            return message
+
+        return 'ok'
 
     @return_exceptions
     def info_roster(self):
@@ -1665,6 +1692,51 @@ class Node(object):
         return util.info_to_dict(self.info("sindex/%s/%s" % (namespace, indexname)))
 
     @return_exceptions
+    @logthis('asadm', logging.DEBUG)
+    def info_sindex_create(self, index_name, namespace, bin_name, bin_type, index_type=None, set_=None):
+        command = 'sindex-create:indexname={};'.format(index_name)
+
+        if index_type:
+            command += 'indextype={};'.format(index_type)
+
+        command += 'ns={};'.format(namespace)
+
+        if set_:
+            command += 'set={};'.format(set_)
+
+        command += 'indexdata={},{}'.format(bin_name, bin_type)
+        resp = self.info(command)
+
+        if 'FAIL' in resp:
+            message = resp.split(':')[-1]
+            return message.strip()
+
+        return 'ok'
+
+    @return_exceptions
+    def info_sindex_delete(self, index_name, namespace, set_=None):
+        command = ''
+
+        if set_ is None:
+            command = ('sindex-delete:ns={};indexname={}'.format(
+                    namespace, index_name
+                )
+            )
+        else:
+            command = ('sindex-delete:ns={};set={};indexname={}'.format(
+                    namespace, set_, index_name
+                )
+            )
+
+        resp = self.info(command)
+
+        if 'FAIL' in resp:
+            message = resp.split(':')[-1]
+            return message.strip()
+
+        return 'ok'
+
+    @return_exceptions
     def info_build_version(self):
         """
         Get Build Version
@@ -1673,43 +1745,6 @@ class Node(object):
         string -- build version
         """
         return self.info("build")
-
-    @return_exceptions
-    def info_udf_list(self):
-        """
-        Get list of UDFs stored on the node.
-
-        Returns:
-        dict -- {<file-name>: {"filename": <file-name>, "hash": <hash>, "type": 'LUA'}, . . .}
-        """
-        return util.info_to_dict_multi_level(self.info("udf-list"), keyname='filename', delimiter1=';', delimiter2=',')
-
-    @return_exceptions
-    def info_udf_put(self, udf_file_name, udf_str, udf_type = 'LUA'):
-        content = base64.b64encode(udf_str.encode('ascii'))
-        content = content.decode('ascii')
-        content_len = len(content)
-
-        command = ('udf-put:filename=' + udf_file_name + ';udf-type=' + udf_type
-                  + ';content-len=' + str(content_len) + ';content=' + str(content))
-        resp = self.info(command)
-
-        if 'error' in resp:
-            message = resp.split('=')[1]
-            return message
-
-        return 'ok'
-
-    @return_exceptions
-    def info_udf_remove(self, udf_file_name):
-        command = ('udf-remove:filename=' + udf_file_name + ';')
-        resp = self.info(command)
-
-        if 'error' in resp:
-            message = resp.split('=')[1]
-            return message
-
-        return 'ok'
 
 
     ############################################################################
