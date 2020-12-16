@@ -367,8 +367,8 @@ class ShowConfigController(CollectinfoCommandController):
     @CommandHelp(
         "Displays service, network, and namespace configuration",
         "  Options:",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
@@ -798,8 +798,8 @@ class ShowStatisticsController(CollectinfoCommandController):
         "Displays bin, set, service, and namespace statistics",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def _do_default(self, line):
