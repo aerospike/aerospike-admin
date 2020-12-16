@@ -847,8 +847,9 @@ class ShowConfigController(BasicCommandController):
         futures = []
         
         if xdr5_configs:
+            formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
             futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
-                                        xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
+                                        formatted_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
                                         **self.mods))
         if old_xdr_configs:
             futures.append(util.Future(self.view.show_config, "XDR Configuration",
