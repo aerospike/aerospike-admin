@@ -367,8 +367,8 @@ class ShowConfigController(CollectinfoCommandController):
     @CommandHelp(
         "Displays service, network, and namespace configuration",
         "  Options:",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
@@ -515,39 +515,14 @@ class ShowConfigController(CollectinfoCommandController):
                     xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
 
             if xdr5_configs:
-                if self.mods['for']:
-                    xdr_dc = self.mods['for'][0]
-                    for node, config in xdr5_configs.items():
-                        if isinstance(config, Exception):
-                            continue
-                        
-                        config['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
-                        
-                        if xdr_dc in config['dc_configs']:
-                            config['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
-                        else:
-                            config['dc_configs'] = {}
-                        
-                        if xdr_dc in config['ns_configs']:
-                            config['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
-                        else:
-                            config['ns_configs'] = {}
-
-                        if len(self.mods['for']) >= 2:
-                            xdr_ns = self.mods['for'][1]
-                            if xdr_dc in config['ns_configs'] and xdr_ns in config['ns_configs'][xdr_dc]:
-                                config['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
-                            else:
-                                config['ns_configs'] = {}
-
-                for node in xdr5_configs:
-                    self.view.show_xdr5_config("XDR Configuration",
-                                            xdr5_configs,
-                                            cinfo_log,
-                                            title_every_nth=title_every_nth,
-                                            flip_output=flip_output,
-                                            timestamp=timestamp,
-                                            **self.mods)
+                formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
+                self.view.show_xdr5_config("XDR Configuration",
+                                        formatted_configs,
+                                        cinfo_log,
+                                        title_every_nth=title_every_nth,
+                                        flip_output=flip_output,
+                                        timestamp=timestamp,
+                                        **self.mods)
 
 
             if old_xdr_configs:
@@ -822,8 +797,8 @@ class ShowStatisticsController(CollectinfoCommandController):
         "Displays bin, set, service, and namespace statistics",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def _do_default(self, line):

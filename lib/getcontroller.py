@@ -375,6 +375,19 @@ class GetConfigController():
 
         return xdr5_nodes
 
+    # XDR configs >= AS Server 5.0
+    def get_xdr5(self, flip=True, nodes="all"):
+        # get xdr5 nodes and remote port
+        xdr_configs = {}
+        xdr5_nodes = self.get_xdr5_nodes(nodes)
+
+        if not xdr5_nodes:
+            return xdr_configs
+
+        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
+
+        return self.get_xdr(nodes=xdr5_nodes)
+
     def get_old_xdr_nodes(self, nodes="all"):
         old_xdr_nodes = []
         builds = self.cluster.info_build_version(nodes=nodes)
@@ -388,95 +401,6 @@ class GetConfigController():
 
         return old_xdr_nodes
 
-    # XDR configs >= AS Server 5.0
-    def get_xdr5(self, flip=True, nodes="all", for_mods=[]):
-        # get xdr5 nodes and remote port
-        xdr_configs = {}
-        xdr5_nodes = self.get_xdr5_nodes(nodes)
-
-        if not xdr5_nodes:
-            return xdr_configs
-
-        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
-        configs = self.cluster.info_XDR_get_config(nodes=xdr5_nodes)
-
-
-
-        if configs:
-            for node, config in configs.items():
-                if isinstance(config, Exception):
-                    continue
-
-                xdr_configs[node] = config
-
-        # Filter configs for data-center
-        if for_mods:
-            xdr_dc = for_mods[0]
-
-            for config in xdr_configs.values():
-                
-                # There is only one dc config per dc
-                try:
-                    dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
-                except KeyError:
-                    dc_configs_matches = []
-                
-                try:
-                    ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
-                except KeyError:
-                    ns_configs_matches = []
-
-                config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
-                config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
-
-                # There can be multiple namespace configs per dc
-                if len(for_mods) >= 2:
-                    xdr_ns = self.mods['for'][1]
-                    for dc in config['ns_configs']:
-                        try:
-                            ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
-                        except KeyError:
-                            ns_matches = []
-
-                        config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
-
-
-        formatted_xdr_configs = {}
-
-        for node in xdr_configs:
-            formatted_xdr_configs[node] = xdr_configs[node].get('xdr_configs', {})
-
-        formatted_dc_configs = {}
-
-        for node in xdr_configs:
-            for dc in xdr_configs[node]['dc_configs']:
-                if dc not in formatted_dc_configs:
-                    formatted_dc_configs[dc] = {}
-
-                formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
-
-        formatted_ns_configs = {}
-
-        for node in xdr_configs:
-            for dc in xdr_configs[node]['ns_configs']:
-
-                if dc not in formatted_ns_configs:
-                    formatted_ns_configs[dc] = {}
-
-                if node not in formatted_ns_configs[dc]:
-                    formatted_ns_configs[dc][node] = {}
-
-                for ns in xdr_configs[node]['ns_configs'][dc]:
-                    formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
-
-        formatted_configs = {
-            'xdr_configs': formatted_xdr_configs,
-            'dc_configs': formatted_dc_configs,
-            'ns_configs': formatted_ns_configs,
-        }
-
-        return formatted_configs
-
     # XDR configs < AS Server 5.0
     def get_old_xdr(self, flip=True, nodes="all"):
         xdr_configs = {}
@@ -485,8 +409,11 @@ class GetConfigController():
         if not nodes:
             return xdr_configs
 
-        configs = self.cluster.info_XDR_get_config(nodes=nodes)
+        return self.get_xdr(nodes=nodes)
 
+    def get_xdr(self, flip=True, nodes='all'):
+        xdr_configs = {}
+        configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
         if configs:
             for node, config in configs.items():

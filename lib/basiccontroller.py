@@ -707,7 +707,7 @@ class ShowConfigController(BasicCommandController):
     @CommandHelp(
         "Displays service, network, and namespace configuration",
         "  Options:",
-        "    -r           - Repeate output table title and row header after every <terminal width> columns.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
@@ -847,8 +847,9 @@ class ShowConfigController(BasicCommandController):
         futures = []
         
         if xdr5_configs:
+            formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
             futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
-                                        xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
+                                        formatted_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
                                         **self.mods))
         if old_xdr_configs:
             futures.append(util.Future(self.view.show_config, "XDR Configuration",
@@ -981,7 +982,7 @@ class ShowStatisticsController(BasicCommandController):
         "Displays bin, set, service, and namespace statistics",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeate output table title and row header after every <terminal width> columns.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
