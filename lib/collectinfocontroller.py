@@ -516,14 +516,13 @@ class ShowConfigController(CollectinfoCommandController):
 
             if xdr5_configs:
                 formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
-                for node in formatted_configs:
-                    self.view.show_xdr5_config("XDR Configuration",
-                                            formatted_configs,
-                                            cinfo_log,
-                                            title_every_nth=title_every_nth,
-                                            flip_output=flip_output,
-                                            timestamp=timestamp,
-                                            **self.mods)
+                self.view.show_xdr5_config("XDR Configuration",
+                                        formatted_configs,
+                                        cinfo_log,
+                                        title_every_nth=title_every_nth,
+                                        flip_output=flip_output,
+                                        timestamp=timestamp,
+                                        **self.mods)
 
 
             if old_xdr_configs:
