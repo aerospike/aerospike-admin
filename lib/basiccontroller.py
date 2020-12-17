@@ -634,7 +634,6 @@ class ShowLatenciesController(BasicCommandController):
         "    -b           - Number of latency buckets to display.",
         "                   default: 3",
         "    -v           - Set to display verbose output of optionally configured histograms.",
-        "    -m           - Set to display the output group by machine names.",
     )
     def _do_default(self, line):
         increment = util.get_arg_and_delete_from_mods(
@@ -659,10 +658,6 @@ class ShowLatenciesController(BasicCommandController):
             line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods
         )
 
-        machine_wise_display = util.check_arg_and_delete_from_mods(
-            line=line, arg="-m", default=False, modifiers=self.modifiers, mods=self.mods
-        )
-
         namespace_set = self.get_namespace_set()
         (
             latencies_nodes,
@@ -684,14 +679,12 @@ class ShowLatenciesController(BasicCommandController):
                 "WARNING: 'show latencies' is not fully supported on aerospike versions <= 5.0",
             ]
 
-        # Sort data by operation type rather than by node address
-        if not machine_wise_display:
-            latencies = self.sort_data_by_histogram_name(latencies)
+        # TODO: This format should probably be returned from get controller
+        latencies = self.sort_data_by_histogram_name(latencies)
 
         self.view.show_latency(
             latencies,
             self.cluster,
-            machine_wise_display=machine_wise_display,
             show_ns_details=True if namespace_set else False,
             message=message,
             **self.mods

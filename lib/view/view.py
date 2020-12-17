@@ -305,14 +305,9 @@ class CliView(object):
         return latency
 
     @staticmethod
-    def show_latency(latency, cluster, machine_wise_display=False,
+    def show_latency(latency, cluster,
                      like=None, timestamp="", **mods):
-        if machine_wise_display:
-            return CliView.show_latency_machine_wise(
-                latency, cluster, like=like, timestamp=timestamp, **mods)
-
         # TODO - May not need to converter now that dicts can be nested.
-
         prefixes = cluster.get_node_names(mods.get('with', []))
         likes = compile_likes(like)
         title = 'Latency ' + CliView._get_timestamp_suffix(timestamp)
@@ -324,35 +319,6 @@ class CliView(object):
 
         CliView.print_result(sheet.render(
             templates.show_latency_sheet, title, sources))
-
-
-    def format_latency_machine_wise(orig_latency):
-        latency = {}
-
-        for node, node_data in orig_latency.items():
-            for hist, hist_data in node_data.items():
-                node_latency = latency[node] = latency.get(node, OrderedDict())
-                for ns, ns_data in hist_data['namespace'].items():
-                    for slice_id, values in enumerate(ns_data['values']):
-                        node_latency[(ns, hist, slice_id)] = OrderedDict(zip(
-                            ns_data['columns'], values))
-
-        return latency
-
-    @staticmethod
-    def show_latency_machine_wise(latency, cluster, like=None, timestamp="",
-                                  **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
-        likes = compile_likes(like)
-        title = 'Latency ' + CliView._get_timestamp_suffix(timestamp)
-        keys = set(filter(likes.search, latency.keys()))
-        latency = {k: v for k, v in latency.items() if k in keys}
-        latency = CliView.format_latency_machine_wise(latency)
-
-        sources = dict(prefixes=prefixes, histogram=latency)
-
-        CliView.print_result(sheet.render(
-            templates.show_latency_machine_wise_sheet, title, sources))
 
     @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=False,
