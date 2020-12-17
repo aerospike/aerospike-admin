@@ -402,7 +402,11 @@ info_xdr_sheet = Sheet(
 
      Field('Recoveries Pending', Projectors.Number('xdr_stats', 'recoveries_pending'), 
             aggregator=Aggregators.sum()),
-     Field('Lag (hh:mm:ss)', Projectors.Number('xdr_stats', 'lag')),
+     Field(
+         'Lag (hh:mm:ss)', 
+         Projectors.Number('xdr_stats', 'lag'), 
+         converter=Converters.time
+     ),
      Field('Avg Latency (ms)', Projectors.Number('xdr_stats', 'latency_ms'), 
             aggregator=Aggregators.max()),
      Field('Throughput (rec/s)', Projectors.Number('xdr_stats', 'throughput'))),
