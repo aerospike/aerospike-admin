@@ -223,8 +223,6 @@ class BaseRSheet(object):
                     else:
                         proj = self._infer_projector(dfield, key)
 
-                    print(proj)
-
                     if not self.disable_aggregations and \
                        dfield.aggregator_selector is not None:
                         aggr = dfield.aggregator_selector(
