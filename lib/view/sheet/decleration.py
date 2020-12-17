@@ -239,7 +239,8 @@ class TitleField(Field):
 
 class DynamicFields(object):
     def __init__(self, source, infer_projectors=True, required=False,
-                 aggregator_selector=None, order=DynamicFieldOrder.ascending):
+                 aggregator_selector=None, projector_selector=None, 
+                 order=DynamicFieldOrder.ascending):
         """
         Arguments:
         source -- Data source to project fields from.
@@ -247,10 +248,21 @@ class DynamicFields(object):
         Keyword Arguments:
         infer_projectors -- True : If true, will try to infer a projector for a
                             field.
+        aggregator_selector -- None: Function used to select aggregator.  Function
+                               will take the form (key, is_numeric) -> Aggregator.
+                               Key is the row or column header.  is_numeric is passed
+                               in by the rendering function and allows the developer
+                               to know if the the projected value is a numeric value,
+                               i.e. you can use arithmetic aggregators. If none,
+                               no aggregation is used.
+        projector_selector -- None: Function used to select a projector. Function
+                              will take the form (key) -> Projector.  If none and
+                              infer_projector is false String projection is used.
         """
         self.source = source
         self.infer_projectors = infer_projectors
         self.required = required
+        self.projector_selector = projector_selector
         self.aggregator_selector = aggregator_selector
         self.order = order
 

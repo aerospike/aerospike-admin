@@ -594,6 +594,8 @@ def latency_aggregator_selector(key, is_numeric):
     if key != 'Time Span':
         return Aggregators.max()
 
+def latency_projector_selector(key):
+    return Projectors.Float
 
 show_latency_sheet = Sheet(
     (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
@@ -601,6 +603,7 @@ show_latency_sheet = Sheet(
      TitleField('Node', Projectors.String('prefixes', None)),
      DynamicFields('histogram', required=True,
                    order=DynamicFieldOrder.source,
+                   projector_selector=latency_projector_selector,
                    aggregator_selector=latency_aggregator_selector)),
     from_source=('prefixes', 'histogram'),
     for_each='histogram',
