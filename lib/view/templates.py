@@ -528,9 +528,15 @@ show_pmap_sheet = Sheet(
           Field('Secondary',
                 Projectors.Number('pmap', 'prole_partition_count'),
                 aggregator=Aggregators.sum()),
-          Field('Missing',
-                Projectors.Number('pmap', 'missing_partition_count'),
-                aggregator=Aggregators.sum())))),
+          Field('Unavailable',
+                Projectors.Number('pmap', 'unavailable_partitions'),
+                aggregator=Aggregators.sum()),
+          Field('Dead',
+                Projectors.Number('pmap', 'dead_partitions'),
+                aggregator=Aggregators.sum()),
+         )
+     )
+    ),
     from_source=('prefixes', 'node_ids', 'pmap'),
     for_each='pmap',
     group_by='Namespace',
