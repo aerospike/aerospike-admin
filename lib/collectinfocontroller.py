@@ -714,15 +714,8 @@ class ShowLatenciesController(CollectinfoCommandController):
 
     @CommandHelp(
         "Displays latency information for Aerospike cluster.",
-        "  Options:",
-        "    -m           - Set to display the output group by machine names.",
     )
     def _do_default(self, line):
-
-        machine_wise_display = util.check_arg_and_delete_from_mods(
-            line=line, arg="-m", default=False, modifiers=self.modifiers, mods=self.mods
-        )
-
         namespaces = {}
         if self.mods["for"]:
             namespaces = self.loghdlr.info_namespaces()
@@ -766,22 +759,18 @@ class ShowLatenciesController(CollectinfoCommandController):
                 _latency = latency[timestamp]
 
             hist_latency = {}
-            if machine_wise_display:
-                hist_latency = _latency
-            else:
-                for node_id, node_data in _latency.items():
-                    if not node_data or isinstance(node_data, Exception):
-                        continue
-                    for hist_name, hist_data in node_data.items():
-                        if hist_name not in hist_latency:
-                            hist_latency[hist_name] = {}
+            for node_id, node_data in _latency.items():
+                if not node_data or isinstance(node_data, Exception):
+                    continue
+                for hist_name, hist_data in node_data.items():
+                    if hist_name not in hist_latency:
+                        hist_latency[hist_name] = {}
 
-                        hist_latency[hist_name][node_id] = hist_data
+                    hist_latency[hist_name][node_id] = hist_data
 
             self.view.show_latency(
                 hist_latency,
                 self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                machine_wise_display=machine_wise_display,
                 show_ns_details=True if namespace_set else False,
                 timestamp=timestamp,
                 **self.mods
