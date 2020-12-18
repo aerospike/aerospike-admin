@@ -68,16 +68,8 @@ def render(sheet, title, data_source, style=None, common=None,
     elif style is None:
         style = sheet.default_style
 
-    try:
-        return render_class[style](
-            sheet, title, data_source, tcommon, description=description,
-            selectors=selectors, title_repeat=title_repeat,
-            disable_aggregations=disable_aggregations,
-            dynamic_diff=dynamic_diff).render()
-    except Exception as e:
-        # FIXME - Temporary debugging - should be removed before release.
-        print(e)
-        print("title:", title, "field_style:", style, "description:", \
-            description)
-        traceback.print_exc()
-        raise e
+    return render_class[style](
+        sheet, title, data_source, tcommon, description=description,
+        selectors=selectors, title_repeat=title_repeat,
+        disable_aggregations=disable_aggregations,
+        dynamic_diff=dynamic_diff).render()

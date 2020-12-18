@@ -2022,6 +2022,80 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
     ''' Needed in both collectinfoanalyzer and basiccontroller.  This would not
     be needed if collectinfo could load this format but it cannot since the "node"
     is not the top level key
+
+    Sample Input:
+    {
+        '192.168.173.203:3000': {
+            'dc_configs': {
+                'DC1': {
+                    'node-address-port': '', 
+                    . . .
+                }, 
+                'DC2': {
+                    'node-address-port': '', 
+                    . . .
+                }
+            }, 
+            'ns_configs': {
+                'DC1': {
+                    'test': {
+                        'enabled': 'true', 
+                        . . .
+                    }
+                }, 
+                'DC2': {
+                    'bar': {
+                        'enabled': 'true',  
+                        . . .
+                    }
+                }
+            }, 
+            'xdr_configs': {
+                'dcs': 'DC1,DC2', 
+                'trace-fraction': '0'
+            }
+        }
+    }
+    Sample Output:
+    {
+        'xdr_configs': {
+            '192.168.173.203:3000': {
+                'dcs': 'DC1,DC2', 'trace-fraction': '0'
+            }
+        }, 
+        'dc_configs': {
+            'DC1': {
+                '192.168.173.203:3000': {
+                    'node-address-port': '', 
+                     . . .
+                }
+            }, 
+            'DC2': {
+                '192.168.173.203:3000': {
+                    'node-address-port': '',
+                     . . .
+                }
+            }
+        }, 
+        'ns_configs': {
+            'DC1': {
+                '192.168.173.203:3000': {
+                    'test': {
+                        'enabled': 'true',
+                         . . .
+                    }
+                }
+            }, 
+            'DC2': {
+                '192.168.173.203:3000': {
+                    'bar': {
+                        'enabled': 'true',
+                         . . .
+                    }
+                }
+            }
+        }
+    }
     '''
     # Filter configs for data-center
     if for_mods:
