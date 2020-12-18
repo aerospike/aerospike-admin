@@ -58,7 +58,7 @@ class BaseRSheet(object):
 
         self.common = common
         self.description = description
-        self.selector = compile_likes(selectors if selectors else [])
+        self.selector = compile_likes(selectors)
         self.title_repeat = title_repeat
         self.disable_aggregations = disable_aggregations
         self.dynamic_diff = dynamic_diff

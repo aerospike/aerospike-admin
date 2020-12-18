@@ -91,6 +91,9 @@ def capture_stdout(func, line=""):
 
 
 def compile_likes(likes):
+    if likes is None:
+        likes = []
+        
     likes = ["(" + like.translate(str.maketrans('','','\'"')) + ")" for like in likes]
     likes = "|".join(likes)
     likes = re.compile(likes)
