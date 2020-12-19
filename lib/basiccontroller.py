@@ -324,7 +324,7 @@ class InfoController(BasicCommandController):
             xdr5_stats = temp
 
             if self.mods['for']:
-                matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
+                matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
 
             futures = [
                 util.Future(
@@ -1135,6 +1135,8 @@ class ShowStatisticsController(BasicCommandController):
             mods=self.mods,
         )
 
+        print(self.mods['for'])
+
         set_stats = self.getter.get_sets(nodes=self.nodes, for_mods=self.mods["for"])
 
         return [
@@ -1252,7 +1254,7 @@ class ShowStatisticsController(BasicCommandController):
             xdr5_stats = temp
 
             if self.mods['for']:
-                matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
+                matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
 
             futures = [
                 util.Future(

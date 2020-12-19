@@ -181,11 +181,12 @@ class InfoController(CollectinfoCommandController):
                         temp[dc][node] = xdr5_stats[node][dc]
 
                 xdr5_stats = temp
+                matches = set([])
 
                 if self.mods["for"]:
-                    matches = util.filter_list(
+                    matches = set(util.filter_list(
                         list(xdr5_stats.keys()), self.mods["for"]
-                    )
+                    ))
 
                 for dc in xdr5_stats:
                     if not self.mods["for"] or dc in matches:
@@ -905,24 +906,24 @@ class ShowStatisticsController(CollectinfoCommandController):
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
                 continue
-            namespace_list = [ns_set.split()[0]
-                              for ns_set in set_stats[timestamp].keys()]
+            namespace_set = {ns_set.split()[0]
+                              for ns_set in set_stats[timestamp].keys()}
 
             try:
-                namespace_list = util.filter_list(namespace_list, self.mods["for"][:1])
+                namespace_set = set(util.filter_list(namespace_set, self.mods["for"][:1]))
             except Exception:
                 pass
 
-            set_list = [ns_set.split()[1]
-                              for ns_set in set_stats[timestamp].keys()]
+            set_set = {ns_set.split()[1]
+                              for ns_set in set_stats[timestamp].keys()}
             try:
-                set_list = util.filter_list(set_list, self.mods["for"][1:2])
+                set_set = set(util.filter_list(set_set, self.mods["for"][1:2]))
             except Exception:
                 pass
 
             for ns_set, stats in set_stats[timestamp].items():
-                ns, set = ns_set.split()
-                if ns not in namespace_list or set not in set_list:
+                ns, set_ = ns_set.split()
+                if ns not in namespace_set or set_ not in set_set:
                     continue
 
                 self.view.show_stats(
@@ -968,11 +969,11 @@ class ShowStatisticsController(CollectinfoCommandController):
             ):
                 continue
 
-            namespace_list = util.filter_list(new_bin_stats[timestamp].keys(),
-                                              self.mods['for'])
+            namespace_set = set(util.filter_list(new_bin_stats[timestamp].keys(),
+                                              self.mods['for']))
 
             for ns, stats in new_bin_stats[timestamp].items():
-                if ns not in namespace_list:
+                if ns not in namespace_set:
                     continue
 
                 self.view.show_stats(
@@ -1041,9 +1042,10 @@ class ShowStatisticsController(CollectinfoCommandController):
                         temp[dc][node] = xdr5_stats[node][dc]
 
                 xdr5_stats = temp
+                matches = set([])
 
                 if self.mods['for']:
-                    matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
+                    matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
 
                 for dc in xdr5_stats:
                     if not self.mods["for"] or dc in matches:
@@ -1169,23 +1171,23 @@ class ShowStatisticsController(CollectinfoCommandController):
             ):
                 continue
 
-            namespace_list = [ns_set_sindex.split()[0]
-                              for ns_set_sindex in sindex_stats[timestamp].keys()]
+            namespace_set = {ns_set_sindex.split()[0]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()}
             try:
-                namespace_list = util.filter_list(namespace_list, self.mods["for"][:1])
+                namespace_set = set(util.filter_list(namespace_set, self.mods["for"][:1]))
             except Exception:
                 pass
 
-            sindex_list = [ns_set_sindex.split()[2]
-                              for ns_set_sindex in sindex_stats[timestamp].keys()]
+            sindex_set = {ns_set_sindex.split()[2]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()}
             try:
-                sindex_list = util.filter_list(sindex_list, self.mods["for"][1:2])
+                sindex_set = set(util.filter_list(sindex_set, self.mods["for"][1:2]))
             except Exception:
                 pass
 
             for sindex, stats in sindex_stats[timestamp].items():
-                ns, set, si = sindex.split()
-                if ns not in namespace_list or si not in sindex_list:
+                ns, set_, si = sindex.split()
+                if ns not in namespace_set or si not in sindex_set:
                     continue
 
                 self.view.show_stats(

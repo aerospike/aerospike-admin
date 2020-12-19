@@ -509,7 +509,7 @@ def print_config_file_option():
            "                      is set.")
     print (" -s --services-alumni\n"
            "                      Enable use of services-alumni-list instead of services-list")
-    print (" --timeout=value      Set timeout value in seconds to node level operations. \n"
+    print (" --timeout=value      Set timeout value in seconds for node level operations. \n"
            "                      TLS connection does not support timeout. Default: 5 seconds")
 
 def config_file_help():

@@ -29,30 +29,30 @@ def get_sindex_stats(cluster, nodes="all", for_mods=[]):
             if not stat_list or isinstance(stat_list, Exception):
                 continue
 
-            namespace_list = [stat["ns"] for stat in stat_list]
+            namespace_set = {stat["ns"] for stat in stat_list}
             try:
-                namespace_list = util.filter_list(namespace_list, for_mods[:1])
+                namespace_set = set(util.filter_list(namespace_set, for_mods[:1]))
             except Exception:
                 pass
 
-            sindex_list = [stat["indexname"] for stat in stat_list]
+            sindex_set = {stat["indexname"] for stat in stat_list}
             try:
-                sindex_list = util.filter_list(sindex_list, for_mods[1:2])
+                sindex_set = set(util.filter_list(sindex_set, for_mods[1:2]))
             except Exception:
                 pass
 
             for stat in stat_list:
-                if not stat or stat["ns"] not in namespace_list:
+                if not stat or stat["ns"] not in namespace_set:
                     continue
 
                 ns = stat["ns"]
-                set = stat["set"]
+                set_ = stat["set"]
                 indexname = stat["indexname"]
 
-                if not indexname or not ns or indexname not in sindex_list:
+                if not indexname or not ns or indexname not in sindex_set:
                     continue
 
-                sindex_key = "%s %s %s" % (ns, set, indexname)
+                sindex_key = "%s %s %s" % (ns, set_, indexname)
 
                 if sindex_key not in sindex_stats:
                     sindex_stats[sindex_key] = {}
@@ -556,20 +556,22 @@ class GetStatisticsController():
             if isinstance(key_values, Exception) or not key_values:
                 continue
 
-            namespace_list = [ns_set[0] for ns_set in key_values.keys()]
+            namespace_set = {ns_set[0] for ns_set in key_values.keys()}
+
             try:
-                namespace_list = util.filter_list(namespace_list, for_mods[:1])
+                namespace_set = set(util.filter_list(namespace_set, for_mods[:1]))
             except Exception:
                 pass
 
-            set_list = [ns_set[1] for ns_set in key_values.keys()]
+            set_set = {ns_set[1] for ns_set in key_values.keys()}
             try:
-                set_list = util.filter_list(set_list, for_mods[1:2])
+                set_set = set(util.filter_list(set_set, for_mods[1:2]))
             except Exception:
                 pass
 
             for key, values in key_values.items():
-                if key[0] not in namespace_list or key[1] not in set_list:
+
+                if key[0] not in namespace_set or key[1] not in set_set:
                     continue
 
                 if key not in set_stats:
@@ -591,10 +593,10 @@ class GetStatisticsController():
             if not bin_stat or isinstance(bin_stat, Exception):
                 continue
 
-            namespace_list = util.filter_list(bin_stat.keys(), for_mods)
+            namespace_set = set(util.filter_list(bin_stat.keys(), for_mods))
 
             for namespace, stats in bin_stat.items():
-                if namespace not in namespace_list:
+                if namespace not in namespace_set:
                     continue
                 if namespace not in new_bin_stats:
                     new_bin_stats[namespace] = {}
