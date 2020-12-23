@@ -1136,8 +1136,6 @@ class ShowStatisticsController(BasicCommandController):
             mods=self.mods,
         )
 
-        print(self.mods['for'])
-
         set_stats = self.getter.get_sets(nodes=self.nodes, for_mods=self.mods["for"])
 
         return [
