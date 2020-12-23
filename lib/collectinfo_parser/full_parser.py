@@ -86,8 +86,10 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
                     raise
 
     if json_parsed_timestamps:
+
         if not _missing_version and not parsed_conf_map:
             return
+
         return _add_missing_data(imap, parsed_map, parsed_conf_map, json_parsed_timestamps, _missing_version, ignore_exception)
 
     # get as_map using imap
@@ -261,7 +263,7 @@ def _match_nodeip(sys_map, known_ips):
             if uname_host in known_ips[nodeid] or uname_host in nodeid:
                 return nodeid
 
-    if 'hostname' in sys_map:
+    if 'hostname' in sys_map and 'hosts' in sys_map['hostname']:
         sys_hosts = sys_map['hostname']['hosts']
 
         for sys_host in sys_hosts:

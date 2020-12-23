@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-from distutils.version import LooseVersion
 
 from lib.collectinfo_parser.full_parser import parse_info_all
 from lib.utils import common, util

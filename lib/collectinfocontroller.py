@@ -192,7 +192,6 @@ class InfoController(CollectinfoCommandController):
                     if not self.mods["for"] or dc in matches:
                         self.view.info_XDR(
                             xdr5_stats[dc],
-                            builds,
                             xdr_enable,
                             cluster=cinfo_log,
                             timestamp=timestamp,
@@ -203,7 +202,6 @@ class InfoController(CollectinfoCommandController):
             if old_xdr_stats:
                 self.view.info_old_XDR(
                     old_xdr_stats,
-                    builds,
                     xdr_enable,
                     cluster=cinfo_log,
                     timestamp=timestamp,

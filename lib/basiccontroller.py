@@ -40,6 +40,7 @@ from lib.health.util import create_health_input_dict, create_snapshot_key, h_eva
 from lib.utils import common, constants, util
 from lib.view import terminal
 from lib.view.view import CliView
+from lib.view.sheet.render import set_style_json, get_style_json
 
 
 class BasicCommandController(CommandController):
@@ -1404,6 +1405,9 @@ class CollectinfoController(BasicCommandController):
         capture_stdout = util.capture_stdout
         sep = constants.COLLECTINFO_SEPRATOR
 
+        old_style_json = get_style_json()
+        set_style_json()
+
         try:
             name = func.__name__
         except Exception:
@@ -1424,6 +1428,9 @@ class CollectinfoController(BasicCommandController):
                 parm += ["with"] + self.nodes
             o = capture_stdout(func, parm)
         util.write_to_file(self.aslogfile, sep + str(o))
+
+        set_style_json(old_style_json)
+
         return ""
 
     def _write_version(self, line):

@@ -30,9 +30,13 @@ render_class = {
 use_json = False
 
 
-def set_style_json():
+def set_style_json(value=True):
     global use_json
-    use_json = True
+    use_json = value
+
+def get_style_json():
+    global use_json
+    return use_json
 
 
 def render(sheet, title, data_source, style=None, common=None,
