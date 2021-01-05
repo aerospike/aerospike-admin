@@ -78,6 +78,13 @@ ASSERT(s, False, "Node in cluster have firewall setting.", "OPERATIONS", INFO,
                                 "Listed node[s] have firewall setting. Could cause cluster formation issue if misconfigured. Please run 'iptables -L' to check firewall rules.",
 				"Firewall Check.");
 
+s = select "AnonHugePages" from SYSTEM.MEMINFO save;
+r = do s < 102400;
+ASSERT(r, True, "THP may be enabled.", "OPERATIONS", WARNING,
+						"Listed node[s] have AnonHugePages higher than 102400KiB. Node[s] may have THP enabled which may cause higher memory usage. See https://discuss.aerospike.com/t/disabling-transparent-huge-pages-thp-for-aerospike/5233 for more info.", 
+						"System THP enabled check");
+
+
 /* AWS */
 
 l = select "os_age_months" from SYSTEM.LSB save;
