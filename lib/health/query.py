@@ -1639,21 +1639,6 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", 
 				"Namespace partition-tree-sprigs check for Community edition",
 				e);
 
-// enterprise overhead: 320K per 16 partition-tree-sprigs
-ee_overhead = do 320 * 1024;
-ee_overhead = do p * ee_overhead;
-
-total_overhead = do total_overhead + ee_overhead save as "partition-tree-sprigs overhead";
-
-r = do total_overhead < extra_space;
-e = select "edition" from METADATA;
-e = do e == "Enterprise";
-e = group by CLUSTER, NODE do OR(e);
-ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition", "OPERATIONS", INFO,
-				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
-				"Namespace partition-tree-sprigs check for Enterprise edition",
-				e);
-
 SET CONSTRAINT VERSION >= 4.2;
 
 cs = select "cluster_size" from SERVICE.STATISTICS;
