@@ -55,4 +55,4 @@ class HealthResultCounter():
     DEBUG_COUNTER = "debug_prints"
     SYNTAX_EXCEPTION_COUNTER = "syntax_exceptions"
     HEALTH_EXCEPTION_COUNTER = "health_exceptions"
-    OTEHR_EXCEPTION_COUNTER = "other_exceptions"
+    OTHER_EXCEPTION_COUNTER = "other_exceptions"
