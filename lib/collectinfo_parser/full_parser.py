@@ -726,14 +726,20 @@ def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missi
     Add missing data (Aerospike stats, config, metadata and histogram dump) into parsed_map which is loaded from old format json file
 
     """
-
-    meta_map = _get_meta_map(imap, ignore_exception)
-    node_to_ip_mapping = _create_node_ip_map(meta_map)
-    sys_map = _get_sys_map(imap, ignore_exception)
-    node = _match_nodeip(sys_map, node_to_ip_mapping)
-    conf_map = {}
-    conf_map[node] = parsed_conf_map
-    _add_missing_original_config_data(conf_map, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+    
+    # To maintain some backward compatability.  
+    # Not sure if adding missing data is still needed. 
+    # Code seems to support backwards compatibility and is quite dated.
+    try:
+        meta_map = _get_meta_map(imap, ignore_exception)
+        node_to_ip_mapping = _create_node_ip_map(meta_map)
+        sys_map = _get_sys_map(imap, ignore_exception)
+        node = _match_nodeip(sys_map, node_to_ip_mapping)
+        conf_map = {}
+        conf_map[node] = parsed_conf_map
+        _add_missing_original_config_data(conf_map, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+    except:
+        return
 
     if missing_version == 0:
         return
