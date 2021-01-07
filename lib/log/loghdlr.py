@@ -326,7 +326,7 @@ class Loghdlr(object):
             latency_itrs = {}
             min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg)
                                for s in logs)
-
+                               
             for log in logs:
                 log.set_input(search_strs=hist, start_tm=min_start_tm,
                               duration=duration_arg, slice_duration=slice_duration,
