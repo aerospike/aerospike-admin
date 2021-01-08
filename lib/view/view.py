@@ -722,7 +722,6 @@ class CliView(object):
         if like:
             likes = compile_likes(like)
             filtered_keys = list(filter(likes.search, roles_data.keys()))
-            print(filtered_keys)
         else:
             filtered_keys = roles_data.keys()
 
@@ -742,7 +741,6 @@ class CliView(object):
         if like:
             likes = compile_likes(like)
             filtered_keys = list(filter(likes.search, udfs_data.keys()))
-            print(filtered_keys)
         else:
             filtered_keys = udfs_data.keys()
 
@@ -753,6 +751,27 @@ class CliView(object):
         )
 
         CliView.print_result(sheet.render(templates.show_udfs, 'UDF Modules', sources))
+
+    @staticmethod
+    def show_sindex(sindexes_data, like, **ignore):
+        if not sindexes_data:
+            return 
+
+        filtered_data = []
+
+        if like:
+            likes = compile_likes(like)
+            for sindex in sindexes_data:
+                    if 'indexname' in sindex and likes.search(sindex['indexname']):
+                        filtered_data.append(sindex)
+        else:
+            filtered_data = sindexes_data
+
+        sources = dict(
+            data=filtered_data
+        )
+
+        CliView.print_result(sheet.render(templates.show_sindex, 'Secondary Indexes', sources, selectors=like))
 
 
     @staticmethod

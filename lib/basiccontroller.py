@@ -31,7 +31,8 @@ from lib.getcontroller import (
     GetConfigController,
     GetDistributionController,
     GetPmapController, 
-    GetRolesController,
+    GetRolesController, 
+    GetSIndexController,
     GetStatisticsController,
     GetFeaturesController, 
     GetUdfController, 
@@ -472,6 +473,7 @@ class ShowController(BasicCommandController):
             'users': ShowUsersController,
             'roles': ShowRolesController,
             'udfs': ShowUdfsController,
+            'sindex': ShowSIndexController,
             # 'rosters': ShowRosterController,
             # 'racks': ShowRacksController,
             # 'jobs': ShowJobsController,
@@ -1435,6 +1437,17 @@ class ShowUdfsController(BasicCommandController):
             raise udfs_data
 
         return util.Future(self.view.show_udfs, udfs_data, **self.mods)
+
+@CommandHelp("Displays SIndexes and static metadata.")
+class ShowSIndexController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+        self.getter = GetSIndexController(self.cluster)
+
+    def _do_default(self, line):
+        sindexes_data = self.getter.get_sindexs()
+        return util.Future(self.view.show_sindex, sindexes_data, **self.mods)
+
 
 @CommandHelp(
     '"collectinfo" is used to collect cluster info, aerospike conf file and system stats.'

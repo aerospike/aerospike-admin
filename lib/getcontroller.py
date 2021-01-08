@@ -987,3 +987,12 @@ class GetUdfController():
         principle_node = self.cluster.get_expected_principal()
         roles_data = self.cluster.info_udf_list(nodes=[principle_node]).values()
         return list(roles_data)[0]
+
+class GetSIndexController():
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_sindexs(self):
+        principle_node = self.cluster.get_expected_principal()
+        sindex_data = self.cluster.info_sindex(nodes=[principle_node]).values()
+        return list(sindex_data)[0]

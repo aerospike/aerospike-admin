@@ -352,6 +352,7 @@ class ShowController(CollectinfoCommandController):
             "latencies": ShowLatenciesController,
             "distribution": ShowDistributionController,
             "pmap": ShowPmapController,
+            "sindex": ShowSIndexController,
         }
         self.modifiers = set()
 
@@ -1253,6 +1254,30 @@ class ShowPmapController(CollectinfoCommandController):
                 self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
             )
+
+
+@CommandHelp("Displays SIndexes and static metadata.")
+class ShowSIndexController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+
+    def _do_default(self, line):
+        sindexes_data = self.loghdlr.info_statistics(stanza='sindex')
+        
+        for timestamp in sorted(sindexes_data.keys()):
+            if not sindexes_data[timestamp]:
+                continue
+            
+            node_id_to_ip = self.loghdlr.get_node_id_to_ip_mapping(timestamp)
+            principal_id = self.loghdlr.get_principal(timestamp)
+            principal_ip = node_id_to_ip[principal_id]
+            data_to_process = sindexes_data[timestamp][principal_ip]
+
+            # Re-format data since key = "<ns> <set> <sindex>" and it should be
+            # a list of dictionaries where each dict hold meta for a singel sindex.
+            formatted_data = list(data_to_process.values())
+
+            return util.Future(self.view.show_sindex, formatted_data, **self.mods)
 
 
 @CommandHelp("Displays features used in Aerospike cluster.")

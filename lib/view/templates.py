@@ -695,6 +695,19 @@ show_udfs = Sheet(
     order_by='Filename'
 )
 
+show_sindex = Sheet(
+    (Field('Index Name', Projectors.String('data', 'indexname')),
+     Field('Namespace', Projectors.String('data', 'ns')),
+     Field('Set', Projectors.String('data', 'set')),
+     Field('Bin', Projectors.Number('data', 'bins', 'bin')),
+     Field('Bin Type', Projectors.String('data', 'type')),
+     Field('Index Type', Projectors.String('data', 'type')),
+     Field('State', Projectors.String('data', 'state'))),
+    from_source=('data'),
+    group_by=('Namespace', 'Set'),
+    order_by=('Index Name', 'Namespace', 'Set')
+)
+
 grep_count_sheet = Sheet(
     (TitleField('Node', Projectors.String('node_ids', 'node')),
      DynamicFields('data', required=True, order=DynamicFieldOrder.source)),

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from distutils.version import LooseVersion
+import logging
 
 import ntpath
 import os
@@ -51,6 +52,7 @@ class CollectinfoLoghdlr(object):
         self.collectinfo_dir = COLLECTINFO_DIR + str(os.getpid())
         self._validate_and_extract_compressed_files(cinfo_path, dest_dir=self.collectinfo_dir)
         self.cinfo_timestamp = None
+        self.logger = logging.getLogger("asadm")
 
         self.reader = CollectinfoReader()
         try:
@@ -101,6 +103,51 @@ class CollectinfoLoghdlr(object):
             return None
 
         return self.all_cinfo_logs[timestamp]
+
+    def get_principal(self, timestamp):
+        service_data = self.info_statistics(stanza='service')
+        principal = None
+
+        if not timestamp in service_data:
+            return principal
+
+        for node_ip in service_data[timestamp]:
+            temp_principal = service_data[timestamp][node_ip]['cluster_principal']
+
+            if principal and temp_principal != principal:
+                self.logger.warning('Found multiple cluster principals.')
+                return principal
+            elif not principal:
+                principal = temp_principal
+
+        return principal
+
+    def get_node_id_to_ip_mapping(self, timestamp):
+        meta_data = self.info_meta_data()
+        node_to_ip = {}
+
+        if timestamp not in meta_data:
+            return {}
+
+        for node_ip in meta_data[timestamp]:
+            node_id = meta_data[timestamp][node_ip]['node_id']
+            node_to_ip[node_id] = node_ip
+
+        return node_to_ip
+
+    def get_ip_to_node_id_mapping(self, timestamp):
+        meta_data = self.info_meta_data()
+        ip_to_node = {}
+
+        if timestamp not in meta_data:
+            return {}
+
+        for node_ip in meta_data[timestamp]:
+            node_id = meta_data[timestamp][node_ip]['node_id']
+            ip_to_node[node_ip] = node_id
+
+        return ip_to_node
+
 
     def info_getconfig(self, stanza="", flip=False):
         return self._fetch_from_cinfo_log(type="config", stanza=stanza, flip=flip)
