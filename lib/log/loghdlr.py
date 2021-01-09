@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -326,7 +326,7 @@ class Loghdlr(object):
             latency_itrs = {}
             min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg)
                                for s in logs)
-
+                               
             for log in logs:
                 log.set_input(search_strs=hist, start_tm=min_start_tm,
                               duration=duration_arg, slice_duration=slice_duration,

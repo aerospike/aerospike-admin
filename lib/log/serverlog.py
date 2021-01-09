@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ class ServerLog():
         self.file_name = file_name
         self.reader = reader
         self.indices = self.reader.generate_server_log_indices(self.file_name)
-        self.file_stream = open(self.file_name, "rb") # read in binary mode to enable relative seeks in Python3
+        self.file_stream = open(self.file_name, "rb") # binary mode to enable relative seeks in Python3
         self.file_stream.seek(0, 0)
 
         self.server_start_tm = self.reader.parse_dt(
@@ -135,10 +135,13 @@ class ServerLog():
             if self.start_hr_tm.strftime(DT_FMT) in self.indices:
                 self.file_stream.seek(
                     self.indices[self.start_hr_tm.strftime(DT_FMT)])
+
             elif self.start_hr_tm < self.server_start_hr_tm:
                 self.file_stream.seek(0)
+                
             elif self.start_hr_tm > self.server_end_hr_tm:
                 self.file_stream.seek(0, 2)
+
             else:
                 while(self.start_hr_tm < self.server_end_hr_tm):
                     if self.start_hr_tm.strftime(DT_FMT) in self.indices:
@@ -147,6 +150,7 @@ class ServerLog():
                         return
                     self.start_hr_tm = self.start_hr_tm + \
                         datetime.timedelta(hours=1)
+
                 self.file_stream.seek(0, 2)
 
     # system_grep parameter added to test and compare with system_grep. We are
@@ -343,6 +347,7 @@ class ServerLog():
         while True:
             tm = None
             line = self.next_line()
+
             if line:
                 tm = self.reader.parse_dt(line)
             yield tm, line

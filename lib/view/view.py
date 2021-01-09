@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -305,15 +305,9 @@ class CliView(object):
         return latency
 
     @staticmethod
-    def show_latency(latency, cluster, machine_wise_display=False,
+    def show_latency(latency, cluster,
                      like=None, timestamp="", **mods):
-
-        if machine_wise_display:
-            return CliView.show_latency_machine_wise(
-                latency, cluster, like=like, timestamp=timestamp, **mods)
-
         # TODO - May not need to converter now that dicts can be nested.
-
         prefixes = cluster.get_node_names(mods.get('with', []))
         likes = compile_likes(like)
         title = 'Latency ' + CliView._get_timestamp_suffix(timestamp)
@@ -325,35 +319,6 @@ class CliView(object):
 
         CliView.print_result(sheet.render(
             templates.show_latency_sheet, title, sources))
-
-
-    def format_latency_machine_wise(orig_latency):
-        latency = {}
-
-        for node, node_data in orig_latency.items():
-            for hist, hist_data in node_data.items():
-                node_latency = latency[node] = latency.get(node, OrderedDict())
-                for ns, ns_data in hist_data['namespace'].items():
-                    for slice_id, values in enumerate(ns_data['values']):
-                        node_latency[(ns, hist, slice_id)] = OrderedDict(zip(
-                            ns_data['columns'], values))
-
-        return latency
-
-    @staticmethod
-    def show_latency_machine_wise(latency, cluster, like=None, timestamp="",
-                                  **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
-        likes = compile_likes(like)
-        title = 'Latency ' + CliView._get_timestamp_suffix(timestamp)
-        keys = set(filter(likes.search, latency.keys()))
-        latency = {k: v for k, v in latency.items() if k in keys}
-        latency = CliView.format_latency_machine_wise(latency)
-
-        sources = dict(prefixes=prefixes, histogram=latency)
-
-        CliView.print_result(sheet.render(
-            templates.show_latency_machine_wise_sheet, title, sources))
 
     @staticmethod
     def show_config(title, service_configs, cluster, like=None, diff=False,
@@ -388,11 +353,12 @@ class CliView(object):
         CliView.show_config(*args, **kwargs)
 
     @staticmethod
-    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, show_total=True, title_every_nth=0, flip_output=False, timestamp="", col_header="", **mods):
+    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None,  title_every_nth=0, flip_output=False, **mods):
         prefixes = cluster.get_node_names(mods.get('with', []))
         node_ids = dict(((k, cluster.get_node(k)[0].node_id)
                            for k in prefixes.keys()))
         common = dict(principal=cluster.get_expected_principal())
+        style = SheetStyle.columns if flip_output else None
 
         sources = dict(
             prefixes=prefixes,
@@ -404,7 +370,10 @@ class CliView(object):
             sheet.render(
                 templates.show_config_sheet,
                 title, 
-                sources, 
+                sources,
+                selectors=like,
+                style=style,
+                title_repeat=title_every_nth != 0,
                 dynamic_diff=diff, 
                 disable_aggregations=True,
                 common=common
@@ -422,7 +391,10 @@ class CliView(object):
                 sheet.render(
                     templates.show_config_sheet,
                     title, 
-                    sources, 
+                    sources,
+                    selectors=like,
+                    style=style,
+                    title_repeat=title_every_nth != 0, 
                     dynamic_diff=diff, 
                     disable_aggregations=True,
                     common=common
@@ -440,7 +412,10 @@ class CliView(object):
                 sheet.render(
                     templates.show_config_xdr_ns_sheet, 
                     title, 
-                    sources, 
+                    sources,
+                    selectors=like,
+                    style=style,
+                    title_repeat=title_every_nth != 0,
                     dynamic_diff=diff,
                     common=common
                 )
@@ -1370,87 +1345,6 @@ class CliView(object):
     @staticmethod
     def _summary_namespace_table_view(stats, **ignore):
         title = "Namespaces"
-        # column_names = ('namespace', ('_devices', 'Devices (Total,Per-Node)'), ('_memory', 'Memory (Total,Used%,Avail%)'),
-        #                 ('_disk', 'Disk (Total,Used%,Avail%)'), ('repl_factor', 'Replication Factor'), ('cache_read_pct','Post-Write-Queue Hit-Rate'),
-        #                 'rack_aware', ('master_objects', 'Master Objects'),
-        #                 'compression_ratio'
-        #                 )
-
-        # license_data_in_memory = False
-        # license_data_on_disk = False
-
-        # for _, ns_stats in stats.items():
-        #     try:
-        #         if not license_data_in_memory and ns_stats['license_data_in_memory']:
-        #             license_data_in_memory = True
-        #         elif not license_data_on_disk and ns_stats['license_data_on_disk']:
-        #             license_data_on_disk = True
-                
-        #         if license_data_in_memory and license_data_on_disk:
-        #             break
-        #     except KeyError:
-        #         pass
-
-        # if license_data_in_memory:
-        #     column_names = column_names + ('Usage (Unique-Data) In-Memory',)
-        # if license_data_on_disk:
-        #    column_names = column_names + ('Usage (Unique-Data) On-Device',)
-
-        # t = Table(title, column_names, sort_by=0)
-
-        # if license_data_in_memory:
-        #     t.add_data_source(
-        #         'Usage (Unique-Data) In-Memory',
-        #         Extractors.byte_extractor('license_data_in_memory')
-        #     )
-        # if license_data_on_disk:
-        #     t.add_data_source(
-        #         'Usage (Unique-Data) On-Device',
-        #         Extractors.byte_extractor('license_data_on_disk')
-        #     )
-
-        # t.add_cell_alert(
-        #     'namespace',
-        #     lambda data: data['migrations_in_progress'],
-        #     color=terminal.fg_red
-        # )
-
-        # t.add_data_source_tuple(
-        #     '_devices',
-        #     lambda data:str(data['devices_total']),
-        #     lambda data:str(data['devices_per_node']))
-
-        # t.add_data_source_tuple(
-        #     '_memory',
-        #     Extractors.byte_extractor('memory_total'),
-        #     lambda data:"%.2f"%data["memory_used_pct"],
-        #     lambda data:"%.2f"%data["memory_available_pct"])
-
-        # t.add_data_source_tuple(
-        #     '_disk',
-        #     Extractors.byte_extractor('disk_total'),
-        #     lambda data:"%.2f"%data["disk_used_pct"],
-        #     lambda data:"%.2f"%data["disk_available_pct"])
-
-        # t.add_data_source(
-        #     'repl_factor',
-        #     lambda data:",".join([str(rf) for rf in data["repl_factor"]])
-        # )
-
-        # t.add_data_source(
-        #     'master_objects',
-        #     Extractors.sif_extractor('master_objects')
-        # )
-
-        # for ns, ns_stats in stats.items():
-        #     if isinstance(ns_stats, Exception):
-        #         row = {}
-        #     else:
-        #         row = ns_stats
-
-        #     row['namespace'] = ns
-        #     row['memory_used_pct'] = 100.00 - row['memory_available_pct']
-
         new_stats = dict(node_hack=stats)  # XXX - hack
         sources = dict(ns_stats=new_stats)
 

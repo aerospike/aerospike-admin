@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -86,8 +86,10 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
                     raise
 
     if json_parsed_timestamps:
+
         if not _missing_version and not parsed_conf_map:
             return
+
         return _add_missing_data(imap, parsed_map, parsed_conf_map, json_parsed_timestamps, _missing_version, ignore_exception)
 
     # get as_map using imap
@@ -261,7 +263,7 @@ def _match_nodeip(sys_map, known_ips):
             if uname_host in known_ips[nodeid] or uname_host in nodeid:
                 return nodeid
 
-    if 'hostname' in sys_map:
+    if 'hostname' in sys_map and 'hosts' in sys_map['hostname']:
         sys_hosts = sys_map['hostname']['hosts']
 
         for sys_host in sys_hosts:
@@ -724,14 +726,20 @@ def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missi
     Add missing data (Aerospike stats, config, metadata and histogram dump) into parsed_map which is loaded from old format json file
 
     """
-
-    meta_map = _get_meta_map(imap, ignore_exception)
-    node_to_ip_mapping = _create_node_ip_map(meta_map)
-    sys_map = _get_sys_map(imap, ignore_exception)
-    node = _match_nodeip(sys_map, node_to_ip_mapping)
-    conf_map = {}
-    conf_map[node] = parsed_conf_map
-    _add_missing_original_config_data(conf_map, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+    
+    # To maintain some backward compatability.  
+    # Not sure if adding missing data is still needed. 
+    # Code seems to support backwards compatibility and is quite dated.
+    try:
+        meta_map = _get_meta_map(imap, ignore_exception)
+        node_to_ip_mapping = _create_node_ip_map(meta_map)
+        sys_map = _get_sys_map(imap, ignore_exception)
+        node = _match_nodeip(sys_map, node_to_ip_mapping)
+        conf_map = {}
+        conf_map[node] = parsed_conf_map
+        _add_missing_original_config_data(conf_map, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+    except:
+        return
 
     if missing_version == 0:
         return

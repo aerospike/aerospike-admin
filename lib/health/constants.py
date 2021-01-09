@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,4 +55,4 @@ class HealthResultCounter():
     DEBUG_COUNTER = "debug_prints"
     SYNTAX_EXCEPTION_COUNTER = "syntax_exceptions"
     HEALTH_EXCEPTION_COUNTER = "health_exceptions"
-    OTEHR_EXCEPTION_COUNTER = "other_exceptions"
+    OTHER_EXCEPTION_COUNTER = "other_exceptions"

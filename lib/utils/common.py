@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -2017,3 +2017,150 @@ def collect_sys_info(port=3000, timestamp="", outfile=""):
 
 
 ########################################
+
+def format_xdr5_configs(xdr_configs, for_mods=[]):
+    ''' Needed in both collectinfoanalyzer and basiccontroller.  This would not
+    be needed if collectinfo could load this format but it cannot since the "node"
+    is not the top level key
+
+    Sample Input:
+    {
+        '192.168.173.203:3000': {
+            'dc_configs': {
+                'DC1': {
+                    'node-address-port': '', 
+                    . . .
+                }, 
+                'DC2': {
+                    'node-address-port': '', 
+                    . . .
+                }
+            }, 
+            'ns_configs': {
+                'DC1': {
+                    'test': {
+                        'enabled': 'true', 
+                        . . .
+                    }
+                }, 
+                'DC2': {
+                    'bar': {
+                        'enabled': 'true',  
+                        . . .
+                    }
+                }
+            }, 
+            'xdr_configs': {
+                'dcs': 'DC1,DC2', 
+                'trace-fraction': '0'
+            }
+        }
+    }
+    Sample Output:
+    {
+        'xdr_configs': {
+            '192.168.173.203:3000': {
+                'dcs': 'DC1,DC2', 'trace-fraction': '0'
+            }
+        }, 
+        'dc_configs': {
+            'DC1': {
+                '192.168.173.203:3000': {
+                    'node-address-port': '', 
+                     . . .
+                }
+            }, 
+            'DC2': {
+                '192.168.173.203:3000': {
+                    'node-address-port': '',
+                     . . .
+                }
+            }
+        }, 
+        'ns_configs': {
+            'DC1': {
+                '192.168.173.203:3000': {
+                    'test': {
+                        'enabled': 'true',
+                         . . .
+                    }
+                }
+            }, 
+            'DC2': {
+                '192.168.173.203:3000': {
+                    'bar': {
+                        'enabled': 'true',
+                         . . .
+                    }
+                }
+            }
+        }
+    }
+    '''
+    # Filter configs for data-center
+    if for_mods:
+        xdr_dc = for_mods[0]
+
+        for config in xdr_configs.values():
+            
+            # There is only one dc config per dc
+            try:
+                dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
+            except KeyError:
+                dc_configs_matches = []
+            
+            try:
+                ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
+            except KeyError:
+                ns_configs_matches = []
+
+            config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
+            config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
+
+            # There can be multiple namespace configs per dc
+            if len(for_mods) >= 2:
+                xdr_ns = for_mods[1]
+                for dc in config['ns_configs']:
+                    try:
+                        ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
+                    except KeyError:
+                        ns_matches = []
+
+                    config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
+
+
+    formatted_xdr_configs = {}
+
+    for node in xdr_configs:
+        formatted_xdr_configs[node] = xdr_configs[node].get('xdr_configs', {})
+
+    formatted_dc_configs = {}
+
+    for node in xdr_configs:
+        for dc in xdr_configs[node]['dc_configs']:
+            if dc not in formatted_dc_configs:
+                formatted_dc_configs[dc] = {}
+
+            formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
+
+    formatted_ns_configs = {}
+
+    for node in xdr_configs:
+        for dc in xdr_configs[node]['ns_configs']:
+
+            if dc not in formatted_ns_configs:
+                formatted_ns_configs[dc] = {}
+
+            if node not in formatted_ns_configs[dc]:
+                formatted_ns_configs[dc][node] = {}
+
+            for ns in xdr_configs[node]['ns_configs'][dc]:
+                formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
+
+    formatted_configs = {
+        'xdr_configs': formatted_xdr_configs,
+        'dc_configs': formatted_dc_configs,
+        'ns_configs': formatted_ns_configs,
+    }
+
+    return formatted_configs

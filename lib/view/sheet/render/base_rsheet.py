@@ -58,7 +58,7 @@ class BaseRSheet(object):
 
         self.common = common
         self.description = description
-        self.selector = compile_likes(selectors if selectors else [])
+        self.selector = compile_likes(selectors)
         self.title_repeat = title_repeat
         self.disable_aggregations = disable_aggregations
         self.dynamic_diff = dynamic_diff
@@ -224,7 +224,11 @@ class BaseRSheet(object):
                     keys.sort(reverse=True)
 
                 for key in keys:
-                    proj = self._infer_projector(dfield, key)
+                    if dfield.projector_selector:
+                        proj_func = dfield.projector_selector(key)
+                        proj = proj_func(dfield.source, key)
+                    else:
+                        proj = self._infer_projector(dfield, key)
 
                     if not self.disable_aggregations and \
                        dfield.aggregator_selector is not None:
@@ -254,7 +258,14 @@ class BaseRSheet(object):
 
         for sources in self.sources:
             try:
-                entries.append(source_lookup(sources, dfield.source)[key])
+                if isinstance(sources[dfield.source], tuple):
+                    entries.append(
+                        source_lookup(
+                            sources, dfield.source)[1][key]
+                    )
+
+                else:
+                    entries.append(source_lookup(sources, dfield.source)[key])
             except (KeyError, TypeError):
                 # Missing or error retrieving, ignore for inference.
                 pass

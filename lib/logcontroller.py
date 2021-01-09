@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -118,8 +118,8 @@ class GrepController(LogCommandController):
     '    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n \'1,2,5\'.',
     '                   If not set then runs on all server logs in selected list.',
     '    -p <int>     - Showing output in pages with p entries per page. default: 10.',
-    '    -r <int>     - Repeating output table title and row header after every r columns.',
-    '                   default: 0, no repetition.')
+    '    -r           - Repeat output table title and row header after every <terminal width> columns.',
+    '                   default: False, no repetition.')
 class CountController(LogCommandController):
 
     def __init__(self):

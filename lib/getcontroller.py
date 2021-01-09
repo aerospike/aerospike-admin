@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,30 +31,30 @@ def get_sindex_stats(cluster, nodes="all", for_mods=[]):
             if not stat_list or isinstance(stat_list, Exception):
                 continue
 
-            namespace_list = [stat["ns"] for stat in stat_list]
+            namespace_set = {stat["ns"] for stat in stat_list}
             try:
-                namespace_list = util.filter_list(namespace_list, for_mods[:1])
+                namespace_set = set(util.filter_list(namespace_set, for_mods[:1]))
             except Exception:
                 pass
 
-            sindex_list = [stat["indexname"] for stat in stat_list]
+            sindex_set = {stat["indexname"] for stat in stat_list}
             try:
-                sindex_list = util.filter_list(sindex_list, for_mods[1:2])
+                sindex_set = set(util.filter_list(sindex_set, for_mods[1:2]))
             except Exception:
                 pass
 
             for stat in stat_list:
-                if not stat or stat["ns"] not in namespace_list:
+                if not stat or stat["ns"] not in namespace_set:
                     continue
 
                 ns = stat["ns"]
-                set = stat["set"]
+                set_ = stat["set"]
                 indexname = stat["indexname"]
 
-                if not indexname or not ns or indexname not in sindex_list:
+                if not indexname or not ns or indexname not in sindex_set:
                     continue
 
-                sindex_key = "%s %s %s" % (ns, set, indexname)
+                sindex_key = "%s %s %s" % (ns, set_, indexname)
 
                 if sindex_key not in sindex_stats:
                     sindex_stats[sindex_key] = {}
@@ -377,6 +377,19 @@ class GetConfigController():
 
         return xdr5_nodes
 
+    # XDR configs >= AS Server 5.0
+    def get_xdr5(self, flip=True, nodes="all"):
+        # get xdr5 nodes and remote port
+        xdr_configs = {}
+        xdr5_nodes = self.get_xdr5_nodes(nodes)
+
+        if not xdr5_nodes:
+            return xdr_configs
+
+        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
+
+        return self.get_xdr(nodes=xdr5_nodes)
+
     def get_old_xdr_nodes(self, nodes="all"):
         old_xdr_nodes = []
         builds = self.cluster.info_build_version(nodes=nodes)
@@ -390,95 +403,6 @@ class GetConfigController():
 
         return old_xdr_nodes
 
-    # XDR configs >= AS Server 5.0
-    def get_xdr5(self, flip=True, nodes="all", for_mods=[]):
-        # get xdr5 nodes and remote port
-        xdr_configs = {}
-        xdr5_nodes = self.get_xdr5_nodes(nodes)
-
-        if not xdr5_nodes:
-            return xdr_configs
-
-        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
-        configs = self.cluster.info_XDR_get_config(nodes=xdr5_nodes)
-
-
-
-        if configs:
-            for node, config in configs.items():
-                if isinstance(config, Exception):
-                    continue
-
-                xdr_configs[node] = config
-
-        # Filter configs for data-center
-        if for_mods:
-            xdr_dc = for_mods[0]
-
-            for config in xdr_configs.values():
-                
-                # There is only one dc config per dc
-                try:
-                    dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
-                except KeyError:
-                    dc_configs_matches = []
-                
-                try:
-                    ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
-                except KeyError:
-                    ns_configs_matches = []
-
-                config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
-                config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
-
-                # There can be multiple namespace configs per dc
-                if len(for_mods) >= 2:
-                    xdr_ns = self.mods['for'][1]
-                    for dc in config['ns_configs']:
-                        try:
-                            ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
-                        except KeyError:
-                            ns_matches = []
-
-                        config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
-
-
-        formatted_xdr_configs = {}
-
-        for node in xdr_configs:
-            formatted_xdr_configs[node] = xdr_configs[node].get('xdr_configs', {})
-
-        formatted_dc_configs = {}
-
-        for node in xdr_configs:
-            for dc in xdr_configs[node]['dc_configs']:
-                if dc not in formatted_dc_configs:
-                    formatted_dc_configs[dc] = {}
-
-                formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
-
-        formatted_ns_configs = {}
-
-        for node in xdr_configs:
-            for dc in xdr_configs[node]['ns_configs']:
-
-                if dc not in formatted_ns_configs:
-                    formatted_ns_configs[dc] = {}
-
-                if node not in formatted_ns_configs[dc]:
-                    formatted_ns_configs[dc][node] = {}
-
-                for ns in xdr_configs[node]['ns_configs'][dc]:
-                    formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
-
-        formatted_configs = {
-            'xdr_configs': formatted_xdr_configs,
-            'dc_configs': formatted_dc_configs,
-            'ns_configs': formatted_ns_configs,
-        }
-
-        return formatted_configs
-
     # XDR configs < AS Server 5.0
     def get_old_xdr(self, flip=True, nodes="all"):
         xdr_configs = {}
@@ -487,8 +411,11 @@ class GetConfigController():
         if not nodes:
             return xdr_configs
 
-        configs = self.cluster.info_XDR_get_config(nodes=nodes)
+        return self.get_xdr(nodes=nodes)
 
+    def get_xdr(self, flip=True, nodes='all'):
+        xdr_configs = {}
+        configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
         if configs:
             for node, config in configs.items():
@@ -631,20 +558,22 @@ class GetStatisticsController():
             if isinstance(key_values, Exception) or not key_values:
                 continue
 
-            namespace_list = [ns_set[0] for ns_set in key_values.keys()]
+            namespace_set = {ns_set[0] for ns_set in key_values.keys()}
+
             try:
-                namespace_list = util.filter_list(namespace_list, for_mods[:1])
+                namespace_set = set(util.filter_list(namespace_set, for_mods[:1]))
             except Exception:
                 pass
 
-            set_list = [ns_set[1] for ns_set in key_values.keys()]
+            set_set = {ns_set[1] for ns_set in key_values.keys()}
             try:
-                set_list = util.filter_list(set_list, for_mods[1:2])
+                set_set = set(util.filter_list(set_set, for_mods[1:2]))
             except Exception:
                 pass
 
             for key, values in key_values.items():
-                if key[0] not in namespace_list or key[1] not in set_list:
+
+                if key[0] not in namespace_set or key[1] not in set_set:
                     continue
 
                 if key not in set_stats:
@@ -666,10 +595,10 @@ class GetStatisticsController():
             if not bin_stat or isinstance(bin_stat, Exception):
                 continue
 
-            namespace_list = util.filter_list(bin_stat.keys(), for_mods)
+            namespace_set = set(util.filter_list(bin_stat.keys(), for_mods))
 
             for namespace, stats in bin_stat.items():
-                if namespace not in namespace_list:
+                if namespace not in namespace_set:
                     continue
                 if namespace not in new_bin_stats:
                     new_bin_stats[namespace] = {}

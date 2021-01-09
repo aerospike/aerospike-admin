@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ si = [
 si_float = [
     (1000.0 ** 5, ' P'),
     (1000.0 ** 4, ' T'),
-    (1000.0 ** 3, ' B'),
+    (1000.0 ** 3, ' G'),
     (1000.0 ** 2, ' M'),
     (1000.0 ** 1, ' K'),
     (1000.0 ** 0, '  '),

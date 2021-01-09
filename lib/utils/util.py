@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -138,6 +138,9 @@ def capture_stdout_and_stderr(func, line=""):
     return stdout_output, stderr_output
 
 def compile_likes(likes):
+    if likes is None:
+        likes = []
+        
     likes = ["(" + like.translate(str.maketrans('','','\'"')) + ")" for like in likes]
     likes = "|".join(likes)
     likes = re.compile(likes)

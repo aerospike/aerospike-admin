@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -509,7 +509,7 @@ def print_config_file_option():
            "                      is set.")
     print (" -s --services-alumni\n"
            "                      Enable use of services-alumni-list instead of services-list")
-    print (" --timeout=value      Set timeout value in seconds to node level operations. \n"
+    print (" --timeout=value      Set timeout value in seconds for node level operations. \n"
            "                      TLS connection does not support timeout. Default: 5 seconds")
 
 def config_file_help():

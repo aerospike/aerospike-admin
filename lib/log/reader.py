@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -191,18 +191,18 @@ class LogReader(object):
         prefix = prefix.split(".")[0]
         return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:dt_len]))
 
-    def _seek_to(self, f, c):
-        if f and c:
-            if f.tell() <= 0:
-                f.seek(0, 0)
+    def _seek_to(self, file_stream, char):
+        if file_stream and char:
+            if file_stream.tell() <= 0:
+                file_stream.seek(0, 0)
             else:
-                tmp = f.read(1)
-                while tmp != c:
-                    if f.tell() <= 1:
-                        f.seek(0, 0)
+                tmp = file_stream.read(1)
+                while tmp != char:
+                    if file_stream.tell() <= 1:
+                        file_stream.seek(0, 0)
                         break
-                    f.seek(-2, 1)
-                    tmp = f.read(1)
+                    file_stream.seek(-2, 1)
+                    tmp = file_stream.read(1)
 
     def set_next_line(self, file_stream, jump=STEP, whence=1):
         file_stream.seek(int(jump), whence)
@@ -238,7 +238,7 @@ class LogReader(object):
 
         jump = (max - min) // 2
         f.seek(int(jump) + min, 0)
-        self._seek_to(f, '\n')
+        self._seek_to(f, b'\n')
         last_read = f.tell()
         ln = self.read_line(f)
         tm = self.parse_dt(ln, dt_len=INDEX_DT_LEN)
@@ -250,47 +250,44 @@ class LogReader(object):
 
     def generate_server_log_indices(self, file_path):
         indices = {}
-        try:
-            f = open(file_path, 'r')
-            start_timestamp = self.parse_dt(self.read_line(f), dt_len=INDEX_DT_LEN)
+        f = open(file_path, 'rb') # binary mode to enable relative seeks in Python3
+        start_timestamp = self.parse_dt(self.read_line(f), dt_len=INDEX_DT_LEN)
+        indices[start_timestamp.strftime(DT_FMT)] = 0
+        min_seek_pos = 0
+        f.seek(0, 2)
+        self.set_next_line(f, 0)
+        last_pos = f.tell()
+        f.seek(0, 0)
+        last_timestamp = start_timestamp
 
-            indices[start_timestamp.strftime(DT_FMT)] = 0
-            min_seek_pos = 0
-            f.seek(0, 2)
-            self.set_next_line(f, 0)
-            last_pos = f.tell()
-            f.seek(0, 0)
-            last_timestamp = start_timestamp
-
-            while True:
-                if last_pos < (min_seek_pos + STEP):
+        while True:
+            if last_pos < (min_seek_pos + STEP):
+                ln = self.read_next_line(f, last_pos, 0)
+            else:
+                ln = self.read_next_line(f)
+            current_jump = 1000
+            while(self.parse_dt(ln, dt_len=INDEX_DT_LEN) <= last_timestamp):
+                min_seek_pos = f.tell()
+                if last_pos < (min_seek_pos + current_jump):
                     ln = self.read_next_line(f, last_pos, 0)
+                    break
                 else:
-                    ln = self.read_next_line(f)
-                current_jump = 1000
-                while(self.parse_dt(ln, dt_len=INDEX_DT_LEN) <= last_timestamp):
-                    min_seek_pos = f.tell()
-                    if last_pos < (min_seek_pos + current_jump):
-                        ln = self.read_next_line(f, last_pos, 0)
-                        break
-                    else:
-                        ln = self.read_next_line(f, current_jump)
-                    current_jump *= 2
+                    ln = self.read_next_line(f, current_jump)
+                current_jump *= 2
 
-                if self.parse_dt(ln, dt_len=INDEX_DT_LEN) <= last_timestamp:
-                    break
+            if self.parse_dt(ln, dt_len=INDEX_DT_LEN) <= last_timestamp:
+                break
 
-                max_seek_pos = f.tell()
-                pos, tm = self._get_next_timestamp(
-                    f, min_seek_pos, max_seek_pos, last_timestamp)
-                if not tm and not pos:
-                    break
-                indices[tm.strftime(DT_FMT)] = pos
-                f.seek(pos)
-                min_seek_pos = pos
-                last_timestamp = tm
-        except Exception:
-            pass
+            max_seek_pos = f.tell()
+            pos, tm = self._get_next_timestamp(
+                f, min_seek_pos, max_seek_pos, last_timestamp)
+            if not tm and not pos:
+                break
+            indices[tm.strftime(DT_FMT)] = pos
+            f.seek(pos)
+            min_seek_pos = pos
+            last_timestamp = tm
+
         return indices
 
     def read_line(self, f):
