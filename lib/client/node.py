@@ -1692,7 +1692,6 @@ class Node(object):
         return util.info_to_dict(self.info("sindex/%s/%s" % (namespace, indexname)))
 
     @return_exceptions
-    @logthis('asadm', logging.DEBUG)
     def info_sindex_create(self, index_name, namespace, bin_name, bin_type, index_type=None, set_=None):
         command = 'sindex-create:indexname={};'.format(index_name)
 

@@ -63,6 +63,27 @@ class CommandHelp(object):
         print("%s%s" % (indent, message))
 
 
+class DisableAutoComplete():
+    '''Decorator to disable tab completion and auto completion. e.g. if ShowController
+    was decoracted it would not allow 'sho' **enter** to resolve to 'show'.
+    '''
+    def __init__(self, disable=True):
+        self.disable_auto_complete = disable
+
+    def __call__(self, func):
+        func.disable_auto_complete = self.disable_auto_complete
+        return func
+
+    @staticmethod
+    def has_auto_complete(func):
+        try:
+            if func.disable_auto_complete:
+                return False
+            return True
+        except:
+            # Default to enable auto complete to not require decorator
+            return True
+
 class ShellException(Exception):
 
     def __call__(self, *ignore):
@@ -113,6 +134,13 @@ class BaseController(object):
 
         commands = self.commands.get_key(command)
 
+        try:
+            if not DisableAutoComplete.has_auto_complete(self.commands[commands[0]][0]):
+                return []
+        except:
+            import traceback
+            traceback.print_exc()
+
         if command != commands[0] and len(line) == 0:
             # if user has full command name and is hitting tab,
             # the user probably wants the next level
@@ -141,6 +169,8 @@ class BaseController(object):
 
     def _find_method(self, line):
         method = None
+        command = None
+
         try:
             command = line.pop(0)
         except IndexError:
@@ -152,6 +182,7 @@ class BaseController(object):
 
         try:
             method = self.commands[command]
+
             if len(method) > 1:
                 # handle ambiguos commands
                 commands = sorted(self.commands.get_key(command))
@@ -164,6 +195,14 @@ class BaseController(object):
                     "Ambiguous command: '%s' may be %s." % (command, commands))
             else:
                 method = method[0]
+                
+                # If auto complete is diabled check to see if command entered
+                # is prefix or entire command.
+                if not DisableAutoComplete.has_auto_complete(method):
+                    is_full_cmd = command in self.commands.keys()
+
+                    if not is_full_cmd:
+                        return getattr(self, DEFAULT)
 
         except KeyError:
             line.insert(0, command)
@@ -190,7 +229,6 @@ class BaseController(object):
     def execute(self, line):
         # Init all command controller objects
         self._init()
-
         method = self._find_method(line)
 
         if method:
@@ -343,3 +381,19 @@ class BasicCommandController(CommandController):
 
     def __init__(self, cluster):
         BasicCommandController.cluster = cluster
+
+
+def create_disabled_controller(controller, command_):
+    '''Required to keep control logic in the controllers and out of asadm.py.  This
+    also allows us to keep the controller from being executed while still displaying
+    help info.
+    '''
+
+    class DisableController(controller):
+
+        # override
+        def execute(self, line):
+            self.logger.error('User must be in privileged mode to issue "{}" commands.\n' \
+                        '       Type "enable" to enter privileged mode.'.format(command_))
+
+    return DisableController

@@ -884,44 +884,38 @@ class GetUsersController():
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_users(self):
-        principle_node = self.cluster.get_expected_principal()
-        users_data = self.cluster.admin_query_users(nodes=[principle_node]).values()
-        return list(users_data)[0]
+    def get_users(self, nodes='all'):
+        users_data = self.cluster.admin_query_users(nodes=nodes)
+        return users_data
 
-    def get_user(self, username):
-        principle_node = self.cluster.get_expected_principal()
-        user_data = self.cluster.admin_query_user(username, nodes=[principle_node]).values()
-        return list(user_data)[0]
+    def get_user(self, username, nodes='all'):
+        user_data = self.cluster.admin_query_user(username, nodes=nodes)
+        return user_data
 
 class GetRolesController():
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_roles(self):
-        principle_node = self.cluster.get_expected_principal()
-        roles_data = self.cluster.admin_query_roles(nodes=[principle_node]).values()
-        return list(roles_data)[0]
+    def get_roles(self, nodes='all'):
+        roles_data = self.cluster.admin_query_roles(nodes=nodes)
+        return roles_data
 
-    def get_role(self, role_name):
-        principle_node = self.cluster.get_expected_principal()
-        role_data = self.cluster.admin_query_role(role_name, nodes=[principle_node]).values()
-        return list(role_data)[0]
+    def get_role(self, role_name, nodes='all'):
+        role_data = self.cluster.admin_query_role(role_name, nodes=nodes)
+        return role_data
 
 class GetUdfController():
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_udfs(self):
-        principle_node = self.cluster.get_expected_principal()
-        roles_data = self.cluster.info_udf_list(nodes=[principle_node]).values()
-        return list(roles_data)[0]
+    def get_udfs(self, nodes='all'):
+        roles_data = self.cluster.info_udf_list(nodes=nodes)
+        return roles_data
 
 class GetSIndexController():
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_sindexs(self):
-        principle_node = self.cluster.get_expected_principal()
-        sindex_data = self.cluster.info_sindex(nodes=[principle_node]).values()
-        return list(sindex_data)[0]
+    def get_sindexs(self, nodes='all'):
+        sindex_data = self.cluster.info_sindex(nodes=nodes)
+        return sindex_data

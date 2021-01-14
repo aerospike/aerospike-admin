@@ -107,7 +107,10 @@ CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
 CMD_FILE_MULTI_LINE_COMMENT_START = "/*"
 CMD_FILE_MULTI_LINE_COMMENT_END = "*/"
 
-MULTILEVEL_COMMANDS = ["show", "info"]
+MULTILEVEL_COMMANDS = ["show", "info", "manage"]
+
+DEFAULT_PROMPT = "Admin> "
+PRIVILEGED_PROMPT = "Admin+> "
 
 
 class AerospikeShell(cmd.Cmd):
@@ -119,6 +122,7 @@ class AerospikeShell(cmd.Cmd):
         self.connected  = True
         self.admin_history = ADMIN_HOME + 'admin_' + str(mode).lower() + "_history"
         self.execute_only_mode = execute_only_mode
+        self.privileged_mode = False
 
         if mode == AdminMode.LOG_ANALYZER:
             self.name = 'Aerospike Log Analyzer Shell'
@@ -152,7 +156,7 @@ class AerospikeShell(cmd.Cmd):
                                                       clinfo_path=log_path)
                 self.prompt = "Collectinfo-analyzer> "
                 if not execute_only_mode:
-                    self.intro = str(self.ctrl.loghdlr)
+                    self.intro = str(self.ctrl.log_handler)
 
             else:
                 if user is not None:
@@ -180,7 +184,7 @@ class AerospikeShell(cmd.Cmd):
                     else:
                         logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
-                self.prompt = "Admin> "
+                self.prompt = DEFAULT_PROMPT
                 self.intro = ""
                 if not execute_only_mode:
                     self.intro += str(self.ctrl.cluster) + "\n"
@@ -197,9 +201,8 @@ class AerospikeShell(cmd.Cmd):
                             ", ".join(cluster_down_nodes)) + terminal.fg_clear() + "\n"
 
             if self.use_rawinput:
-                self.prompt = "\001" + terminal.bold() + terminal.fg_red() + "\002" +\
-                              self.prompt + "\001" +\
-                              terminal.unbold() + terminal.fg_clear() + "\002"
+                self.set_prompt_red()
+
         except Exception as e:
             self.do_exit('')
             logger.critical(str(e))
@@ -219,6 +222,14 @@ class AerospikeShell(cmd.Cmd):
         for command in commands:
             if command != 'help':
                 self.commands.add(command)
+
+    def set_prompt(self, prompt):
+        self.prompt = prompt
+
+        if self.use_rawinput:
+            self.prompt = "\001" + terminal.bold() + terminal.fg_red() + "\002" +\
+                                        self.prompt + "\001" +\
+                                        terminal.unbold() + terminal.fg_clear() + "\002"
 
     def clean_line(self, line):
         # get rid of extra whitespace
@@ -269,6 +280,7 @@ class AerospikeShell(cmd.Cmd):
                 return " ".join(line)
 
             if len(lines) > max_commands_to_print_header:
+
                 if len(line) > 1 and any(cmd.startswith(line[0]) for cmd in MULTILEVEL_COMMANDS):
                     index = command_index_to_print_from
                 else:
@@ -279,10 +291,19 @@ class AerospikeShell(cmd.Cmd):
                     terminal.bold(), ' '.join(line[index:]), terminal.reset()))
 
             sys.stdout.write(terminal.reset())
+
             try:
                 response = self.ctrl.execute(line)
+                
                 if response == "EXIT":
                     return "exit"
+
+                elif response == "ENABLE":
+                    self.set_prompt(PRIVILEGED_PROMPT)
+
+                elif response == "DISABLE":
+                    self.set_prompt(DEFAULT_PROMPT)
+
             except Exception as e:
                 logger.error(e)
         return ""  # line was handled by execute
@@ -330,48 +351,41 @@ class AerospikeShell(cmd.Cmd):
         return self._complete_path(args[-1])
 
     def completenames(self, text, line, begidx, endidx):
-        try:
-            origline = line
+        origline = line
 
-            if isinstance(origline, str):
-                line = origline.split(" ")
-                line = [v for v in map(str.strip, line) if v]
-                if origline and origline[-1] == ' ':
-                    line.append('')
+        if isinstance(origline, str):
+            line = origline.split(" ")
+            line = [v for v in map(str.strip, line) if v]
+            if origline and origline[-1] == ' ':
+                line.append('')
 
-            if len(line) > 0:
-                self.ctrl._init_commands()  # dirty
-                cmds = self.ctrl.commands.get_key(line[0])
-            else:
-                cmds = []
+        if len(line) > 0:
+            self.ctrl._init_commands()  # dirty
+            cmds = self.ctrl.commands.get_key(line[0])
+        else:
+            cmds = []
 
-            watch = False
-            if len(cmds) == 1:
-                cmd = cmds[0]
-                if cmd == 'help':
-                    line.pop(0)
-                if cmd == 'watch':
-                    watch = True
-                    line.pop(0)
-                    try:
-                        for _ in (1, 2):
-                            int(line[0])
-                            line.pop(0)
-                    except Exception:
-                        pass
-            line_copy = copy.deepcopy(line)
-            names = self.ctrl.complete(line)
-            if watch:
+        watch = False
+        if len(cmds) == 1:
+            cmd = cmds[0]
+            if cmd == 'help':
+                line.pop(0)
+            if cmd == 'watch':
+                watch = True
+                line.pop(0)
                 try:
-                    names.remove('watch')
+                    for _ in (1, 2):
+                        int(line[0])
+                        line.pop(0)
                 except Exception:
                     pass
-            if not names:
-                names = self.complete_path(line_copy) + [None]
-                return names
+        line_copy = copy.deepcopy(line)
+        names = self.ctrl.complete(line)
 
-        except Exception:
-            return []
+        if not names:
+            names = self.complete_path(line_copy) + [None]
+            return names
+
         return ["%s " % n for n in names]
 
     def complete(self, text, state):
@@ -380,17 +394,15 @@ class AerospikeShell(cmd.Cmd):
         If a command has not been entered, then complete against command list.
         Otherwise try to call complete_<command> to get list of completions.
         """
-        try:
-            if state >= 0:
-                origline = readline.get_line_buffer()
-                line = origline.lstrip()
-                stripped = len(origline) - len(line)
-                begidx = readline.get_begidx() - stripped
-                endidx = readline.get_endidx() - stripped
-                compfunc = self.completenames
-                self.completion_matches = compfunc(text, line, begidx, endidx)
-        except Exception:
-            pass
+
+        if state >= 0:
+            origline = readline.get_line_buffer()
+            line = origline.lstrip()
+            stripped = len(origline) - len(line)
+            begidx = readline.get_begidx() - stripped
+            endidx = readline.get_endidx() - stripped
+            compfunc = self.completenames
+            self.completion_matches = compfunc(text, line, begidx, endidx)
 
         try:
             return self.completion_matches[state]

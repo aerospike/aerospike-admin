@@ -353,7 +353,9 @@ class CliView(object):
         CliView.show_config(*args, **kwargs)
 
     @staticmethod
-    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None,  title_every_nth=0, flip_output=False, **mods):
+    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, title_every_nth=0, flip_output=False, timestamp="", **mods):
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = title + title_suffix
         prefixes = cluster.get_node_names(mods.get('with', []))
         node_ids = dict(((k, cluster.get_node(k)[0].node_id)
                            for k in prefixes.keys()))
@@ -381,7 +383,7 @@ class CliView(object):
         )
 
         for dc in service_configs['dc_configs']:
-            title = 'DC Configuration for {}'.format(dc)
+            title = 'DC Configuration for {}{}'.format(dc, title_suffix)
             sources = dict(
                 prefixes=prefixes, 
                 node_ids=node_ids,
@@ -402,12 +404,13 @@ class CliView(object):
             )
 
         for dc in service_configs['ns_configs']:
-            title = 'Namespace Configuration for {}'.format(dc)
+            title = 'Namespace Configuration for {}{}'.format(dc, title_suffix)
             sources = dict(
                 prefixes=prefixes, 
                 node_ids=node_ids,
                 data=service_configs['ns_configs'][dc]
             )
+
             CliView.print_result(
                 sheet.render(
                     templates.show_config_xdr_ns_sheet, 
@@ -670,7 +673,7 @@ class CliView(object):
                                           common=common))
 
     @staticmethod
-    def show_users(users_data, like, **ignore):
+    def show_users(users_data, like, timestamp='', **ignore):
         if not users_data:
             return 
 
@@ -680,17 +683,20 @@ class CliView(object):
         else:
             filtered_keys = users_data.keys()
 
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = 'Users{}'.format(title_timestamp)
+        # Normally the top level of the dict is used to associate different sources.
+        # Since we do not need one here we must artificially create one.
         users_data = dict(enumerate({k: v} for k, v in users_data.items()
                     if k in filtered_keys))
-
         sources = dict(
             data=users_data
         )
-        CliView.print_result(sheet.render(templates.show_users, 'Users', sources))
+        CliView.print_result(sheet.render(templates.show_users, title, sources))
 
 
     @staticmethod
-    def show_roles(roles_data, like, **ignore):
+    def show_roles(roles_data, like, timestamp='', **ignore):
         if not roles_data:
             return 
 
@@ -700,16 +706,18 @@ class CliView(object):
         else:
             filtered_keys = roles_data.keys()
 
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = 'Roles{}'.format(title_timestamp)
         roles_data = dict(enumerate({k: v} for k, v in roles_data.items()
                     if k in filtered_keys))
         sources = dict(
             data=roles_data
         )
 
-        CliView.print_result(sheet.render(templates.show_roles, 'Roles', sources))
+        CliView.print_result(sheet.render(templates.show_roles, title, sources))
 
     @staticmethod
-    def show_udfs(udfs_data, like, **ignore):
+    def show_udfs(udfs_data, like, timestamp='', **ignore):
         if not udfs_data:
             return 
 
@@ -719,16 +727,19 @@ class CliView(object):
         else:
             filtered_keys = udfs_data.keys()
 
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = 'UDF Modules{}'.format(title_timestamp)
         udfs_data = dict(enumerate({k: v} for k, v in udfs_data.items()
                     if k in filtered_keys))
         sources = dict(
             data=udfs_data
         )
 
-        CliView.print_result(sheet.render(templates.show_udfs, 'UDF Modules', sources))
+        CliView.print_result(sheet.render(templates.show_udfs, title, sources))
 
     @staticmethod
-    def show_sindex(sindexes_data, like, **ignore):
+    def show_sindex(sindexes_data, like, timestamp='', **ignore):
+        CliView._get_timestamp_suffix(timestamp)
         if not sindexes_data:
             return 
 
@@ -742,11 +753,13 @@ class CliView(object):
         else:
             filtered_data = sindexes_data
 
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = 'Secondary Indexes{}'.format(title_timestamp)
         sources = dict(
             data=filtered_data
         )
 
-        CliView.print_result(sheet.render(templates.show_sindex, 'Secondary Indexes', sources, selectors=like))
+        CliView.print_result(sheet.render(templates.show_sindex, title, sources, selectors=like))
 
 
     @staticmethod

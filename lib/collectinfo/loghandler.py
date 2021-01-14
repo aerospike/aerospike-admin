@@ -43,7 +43,7 @@ COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
 ######################
 
 
-class CollectinfoLoghdlr(object):
+class CollectinfoLogHandler(object):
     all_cinfo_logs = {}
     selected_cinfo_logs = {}
 
@@ -203,6 +203,9 @@ class CollectinfoLoghdlr(object):
 
     def info_namespaces(self):
         return self._fetch_from_cinfo_log(type="config", stanza="namespace_list")
+
+    def admin_acl(self, stanza):
+        return self._fetch_from_cinfo_log(type="acl", stanza=stanza)
 
     def get_sys_data(self, stanza=""):
         res_dict = {}

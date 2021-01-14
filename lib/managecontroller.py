@@ -1,3 +1,5 @@
+from datetime import datetime
+from lib.view import terminal
 import os
 from lib.utils import util
 from lib.controllerlib import CommandHelp, BasicCommandController
@@ -5,6 +7,19 @@ from lib.client.info import ASProtocolError
 from getpass import getpass
 from logging import DEBUG
 
+def prompt_challenge(view, message):
+    challenge = hex(hash(datetime.now()))[2:8]
+    view.print_result("{}\n" \
+                      "Confirm that you want to proceed by typing ".format(message) + 
+                      terminal.bold() + challenge + terminal.unbold() + 
+                      ", or anything else to cancel.")
+    user_input = input()
+    user_input = user_input.strip()
+
+    if challenge != user_input:
+        return False
+
+    return True
 
 @CommandHelp('"manage" is used to manage users, roles, udf, sindex, and dynamic configs.')
 class ManageController(BasicCommandController):
@@ -21,6 +36,7 @@ class ManageController(BasicCommandController):
 
     def _do_default(self, line):
         self.execute_help(line)
+
 
 @CommandHelp('"manage acl" is used to manage users and roles.')
 class ManageACLController(BasicCommandController):
@@ -96,11 +112,16 @@ class ManageACLCreateUserController(BasicCommandController):
         username = line.pop(0)
         password = None
         roles = None
+        warn = None # TODO
 
         if len(self.mods['password']):
             password = self.mods['password'][0]
         else:
             password = getpass('Enter password for new user {}:'.format(username))
+
+        if warn:
+            if not prompt_challenge(self.view, ''):
+                return
 
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
         principle_node = self.cluster.get_expected_principal()

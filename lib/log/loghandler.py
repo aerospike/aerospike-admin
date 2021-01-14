@@ -42,7 +42,7 @@ SS = 2
 
 ######################
 
-class Loghdlr(object):
+class LogHandler(object):
     all_logs = {}
     selected_logs = {}
     all_system_files = {}

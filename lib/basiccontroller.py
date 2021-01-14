@@ -23,9 +23,9 @@ from distutils.version import LooseVersion
 from lib.client.cluster import Cluster
 from lib.collectinfocontroller import CollectinfoRootController
 from lib.controllerlib import (
-    BaseController, BasicCommandController,
+    DisableAutoComplete, BaseController, BasicCommandController,
     CommandHelp,
-    ShellException,
+    ShellException, create_disabled_controller,
 )
 from lib.getcontroller import (
     GetConfigController,
@@ -48,6 +48,7 @@ from lib.view import terminal
 from lib.view.view import CliView
 from lib.view.sheet.render import set_style_json, get_style_json
 
+      
 @CommandHelp("Aerospike Admin")
 class BasicRootController(BaseController):
 
@@ -92,8 +93,8 @@ class BasicRootController(BaseController):
             "features": FeaturesController,
             "pager": PagerController,
             "collectinfo": CollectinfoController,
-            "asinfo": ASInfoController,
-            "manage": ManageController,
+            'asinfo': create_disabled_controller(ASInfoController, 'asinfo'),
+            'manage': create_disabled_controller(ManageController, 'manage'),
             "show": ShowController,
             "info": InfoController,
         }
@@ -103,6 +104,9 @@ class BasicRootController(BaseController):
             self.cluster.close()
         except Exception:
             pass
+
+    def _do_default(self, line):
+        self.execute_help(line)
 
     # This function is a hack for autocomplete
     @CommandHelp("Terminate session")
@@ -131,8 +135,25 @@ class BasicRootController(BaseController):
         "           interrupted",
         "           watch 5 info namespace",
     )
+    @DisableAutoComplete()
     def do_watch(self, line):
         self.view.watch(self, line)
+
+    @DisableAutoComplete()
+    def do_enable(self, line):
+        self.controller_map.update({
+            'manage': ManageController,
+            'asinfo': ASInfoController,
+        })
+        return 'ENABLE'
+
+    @DisableAutoComplete()
+    def do_disable(self, line):
+        self.controller_map.update({
+            'manage': create_disabled_controller(ManageController, 'manage'),
+            'asinfo': create_disabled_controller(ASInfoController, 'asinfo'),
+        })
+        return 'DISABLE'
 
 
 @CommandHelp(
@@ -1380,39 +1401,43 @@ class ShowPmapController(BasicCommandController):
         return util.Future(self.view.show_pmap, pmap_data, self.cluster)
 
 
-@CommandHelp("Displays users and their assigned roles for the Aerospike cluster.")
+@CommandHelp("Displays users and their assigned roles for Aerospike cluster.")
 class ShowUsersController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
         self.getter = GetUsersController(self.cluster)
 
     def _do_default(self, line):
-        users_data = self.getter.get_users()
+        principle_node = self.cluster.get_expected_principal()
+        users_data = self.getter.get_users(nodes=[principle_node])
+        resp = list(users_data.values())[0]
 
-        if isinstance(users_data, ASProtocolError):
+        if isinstance(resp, ASProtocolError):
             self.logger.error(users_data)
             return
-        elif isinstance(users_data, Exception):
-            raise users_data
+        elif isinstance(resp, Exception):
+            raise resp
 
-        return util.Future(self.view.show_users, users_data, **self.mods)
+        return util.Future(self.view.show_users, resp, **self.mods)
 
-@CommandHelp("Displays roles and their assigned privileges and allowlist for the Aerospike cluster.")
+@CommandHelp("Displays roles and their assigned privileges and allowlist for Aerospike cluster.")
 class ShowRolesController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
         self.getter = GetRolesController(self.cluster)
 
     def _do_default(self, line):
-        roles_data = self.getter.get_roles()
+        principle_node = self.cluster.get_expected_principal()
+        roles_data = self.getter.get_roles(nodes=[principle_node])
+        resp = list(roles_data.values())[0]
 
-        if isinstance(roles_data, ASProtocolError):
-            self.logger.error(roles_data)
+        if isinstance(resp, ASProtocolError):
+            self.logger.error(resp)
             return
-        elif isinstance(roles_data, Exception):
-            raise roles_data
+        elif isinstance(resp, Exception):
+            raise resp
 
-        return util.Future(self.view.show_roles, roles_data, **self.mods)
+        return util.Future(self.view.show_roles, resp, **self.mods)
 
 @CommandHelp("Displays UDF modules along with metadata.")
 class ShowUdfsController(BasicCommandController):
@@ -1421,15 +1446,11 @@ class ShowUdfsController(BasicCommandController):
         self.getter = GetUdfController(self.cluster)
 
     def _do_default(self, line):
-        udfs_data = self.getter.get_udfs()
+        principle_node = self.cluster.get_expected_principal()
+        udfs_data = self.getter.get_udfs(nodes=[principle_node])
+        resp = list(udfs_data.values())[0]
 
-        if isinstance(udfs_data, ASProtocolError):
-            self.logger.error(udfs_data)
-            return
-        elif isinstance(udfs_data, Exception):
-            raise udfs_data
-
-        return util.Future(self.view.show_udfs, udfs_data, **self.mods)
+        return util.Future(self.view.show_udfs, resp, **self.mods)
 
 @CommandHelp("Displays SIndexes and static metadata.")
 class ShowSIndexController(BasicCommandController):
@@ -1438,8 +1459,11 @@ class ShowSIndexController(BasicCommandController):
         self.getter = GetSIndexController(self.cluster)
 
     def _do_default(self, line):
-        sindexes_data = self.getter.get_sindexs()
-        return util.Future(self.view.show_sindex, sindexes_data, **self.mods)
+        principle_node = self.cluster.get_expected_principal()
+        sindexes_data = self.getter.get_sindexs(nodes=[principle_node])
+        resp = list(sindexes_data.values())[0]
+
+        return util.Future(self.view.show_sindex, resp, **self.mods)
 
 
 @CommandHelp(
@@ -1627,6 +1651,9 @@ class CollectinfoController(BasicCommandController):
         getter = GetConfigController(self.cluster)
         config = getter.get_all(nodes=self.nodes, flip=False)
 
+        getter = GetUsersController(self.cluster)
+
+        getter = GetRolesController(self.cluster)
         # All these section have have nodeid in inner level
         # flip keys to get nodeid in upper level.
         # {'namespace': 'test': {'ip1': {}, 'ip2': {}}} -->
@@ -1669,12 +1696,12 @@ class CollectinfoController(BasicCommandController):
 
         return new_as_map
 
-    def _get_meta_for_sec(self, metasec, sec_name, nodeid, metamap):
-        if nodeid in metasec:
-            if not isinstance(metasec[nodeid], Exception):
-                metamap[nodeid][sec_name] = metasec[nodeid]
+    def _check_for_exception_and_set(self, data, section_name, nodeid, result_map):
+        if nodeid in data:
+            if not isinstance(data[nodeid], Exception):
+                result_map[nodeid][section_name] = data[nodeid]
             else:
-                metamap[nodeid][sec_name] = ""
+                result_map[nodeid][section_name] = ""
 
     def _get_as_metadata(self):
         metamap = {}
@@ -1697,6 +1724,7 @@ class CollectinfoController(BasicCommandController):
         ).start()
 
         builds = builds.result()
+        print('BUILDS',builds)
         editions = editions.result()
         xdr_builds = xdr_builds.result()
         node_ids = node_ids.result()
@@ -1708,15 +1736,15 @@ class CollectinfoController(BasicCommandController):
 
         for nodeid in builds:
             metamap[nodeid] = {}
-            self._get_meta_for_sec(builds, "asd_build", nodeid, metamap)
-            self._get_meta_for_sec(editions, "edition", nodeid, metamap)
-            self._get_meta_for_sec(xdr_builds, "xdr_build", nodeid, metamap)
-            self._get_meta_for_sec(node_ids, "node_id", nodeid, metamap)
-            self._get_meta_for_sec(ips, "ip", nodeid, metamap)
-            self._get_meta_for_sec(endpoints, "endpoints", nodeid, metamap)
-            self._get_meta_for_sec(services, "services", nodeid, metamap)
-            self._get_meta_for_sec(udf_data, "udf", nodeid, metamap)
-            self._get_meta_for_sec(health_outliers, "health", nodeid, metamap)
+            self._check_for_exception_and_set(builds, "asd_build", nodeid, metamap)
+            self._check_for_exception_and_set(editions, "edition", nodeid, metamap)
+            self._check_for_exception_and_set(xdr_builds, "xdr_build", nodeid, metamap)
+            self._check_for_exception_and_set(node_ids, "node_id", nodeid, metamap)
+            self._check_for_exception_and_set(ips, "ip", nodeid, metamap)
+            self._check_for_exception_and_set(endpoints, "endpoints", nodeid, metamap)
+            self._check_for_exception_and_set(services, "services", nodeid, metamap)
+            self._check_for_exception_and_set(udf_data, "udf", nodeid, metamap)
+            self._check_for_exception_and_set(health_outliers, "health", nodeid, metamap)
 
         return metamap
 
@@ -1774,6 +1802,24 @@ class CollectinfoController(BasicCommandController):
         getter = GetPmapController(self.cluster)
         return getter.get_pmap(nodes=self.nodes)
 
+    def _get_as_acl(self):
+        acl_map = {}
+        principal_node = self.cluster.get_expected_principal()
+
+        getter = GetUsersController(self.cluster)
+        users_map = getter.get_users(nodes=[principal_node])
+
+        getter = GetRolesController(self.cluster)
+        roles_map = getter.get_roles(nodes=[principal_node])
+
+        for node in users_map:
+            acl_map[node] = {}
+            self._check_for_exception_and_set(users_map, 'users', node, acl_map)
+            self._check_for_exception_and_set(roles_map, 'roles', node, acl_map)
+
+        return acl_map
+
+
     def _dump_in_json_file(self, as_logfile_prefix, dump):
         self.logger.info("Dumping collectinfo in JSON format.")
         self.aslogfile = as_logfile_prefix + "ascinfo.json"
@@ -1802,6 +1848,8 @@ class CollectinfoController(BasicCommandController):
         histogram_map = self._get_as_histograms()
 
         latency_map = self._get_as_latency()
+
+        acl_map = self._get_as_acl()
 
         if CollectinfoController.get_pmap:
             pmap_map = self._get_as_pmap()
@@ -1836,6 +1884,11 @@ class CollectinfoController(BasicCommandController):
 
             if CollectinfoController.get_pmap and node in pmap_map:
                 dump_map[node]["as_stat"]["pmap"] = pmap_map[node]
+
+            # ACL requests only go to principal therefor we are storing it only
+            # for the principal
+            if node in acl_map:
+                dump_map[node]['as_stat']["acl"] = acl_map[node]
 
         # Get the cluster name and add one more level in map
         cluster_name = "null"
