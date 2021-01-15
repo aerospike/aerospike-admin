@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -77,6 +77,13 @@ s = select "has_firewall" from SYSTEM.IPTABLES;
 ASSERT(s, False, "Node in cluster have firewall setting.", "OPERATIONS", INFO,
                                 "Listed node[s] have firewall setting. Could cause cluster formation issue if misconfigured. Please run 'iptables -L' to check firewall rules.",
 				"Firewall Check.");
+
+s = select "AnonHugePages" from SYSTEM.MEMINFO save;
+r = do s < 102400;
+ASSERT(r, True, "THP may be enabled.", "OPERATIONS", WARNING,
+						"Listed node[s] have AnonHugePages higher than 102400KiB. Node[s] may have THP enabled which may cause higher memory usage. See https://discuss.aerospike.com/t/disabling-transparent-huge-pages-thp-for-aerospike/5233 for more info.", 
+						"System THP enabled check");
+
 
 /* AWS */
 
@@ -1639,21 +1646,6 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", 
 				"Namespace partition-tree-sprigs check for Community edition",
 				e);
 
-// enterprise overhead: 320K per 16 partition-tree-sprigs
-ee_overhead = do 320 * 1024;
-ee_overhead = do p * ee_overhead;
-
-total_overhead = do total_overhead + ee_overhead save as "partition-tree-sprigs overhead";
-
-r = do total_overhead < extra_space;
-e = select "edition" from METADATA;
-e = do e == "Enterprise";
-e = group by CLUSTER, NODE do OR(e);
-ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition", "OPERATIONS", INFO,
-				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
-				"Namespace partition-tree-sprigs check for Enterprise edition",
-				e);
-
 SET CONSTRAINT VERSION >= 4.2;
 
 cs = select "cluster_size" from SERVICE.STATISTICS;
@@ -1694,24 +1686,6 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", 
 				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
 				"Namespace partition-tree-sprigs check for Community edition",
 				e);
-
-// enterprise overhead: 5bytes per partition-tree-sprigs
-ee_overhead = do 5 * sprigs;
-ee_overhead = do ee_overhead * 4096;
-ee_overhead = do ee_overhead / cs;
-ee_overhead = do ee_overhead * repl;
-
-total_overhead = do total_overhead + ee_overhead save as "partition-tree-sprigs overhead";
-
-r = do total_overhead < extra_space;
-e = select "edition" from METADATA;
-e = do e == "Enterprise";
-e = group by CLUSTER, NODE do OR(e);
-ASSERT(r, False, "Non-recommended partition-tree-sprigs for Enterprise edition", "OPERATIONS", INFO,
-				"Listed namespace[s] show low value for partition-tree-sprigs with respect to memory-size. partition-tree-sprigs overhead is less than (100 - stop-write-pct) % memory-size. It should be increased. Please contact Aerospike support team or SA team.",
-				"Namespace partition-tree-sprigs check for Enterprise edition",
-				e);
-
 
 SET CONSTRAINT VERSION >= 4.3.0.2;
 // sprig mounts-size-limit checks

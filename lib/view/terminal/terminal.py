@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,41 @@
 
 import sys
 
+_add_it = None 
+_remove_it = None 
+_reset = None
+
+sclear = None 
+sbold = None 
+sdim = None 
+snormal = None 
+sunderline = None
+sinverse = None 
+siclear = None
+
+fgblack = None 
+fgred = None 
+fggreen = None 
+fgyellow = None 
+fgblue = None 
+fgmagenta = None 
+fgcyan = None 
+fgwhite = None
+
+bgblack = None 
+bgred = None 
+bggreen = None 
+bgyellow = None 
+bgblue = None 
+bgmagenta = None 
+bgcyan = None 
+bgwhite = None
+
+esc = None
+term = None
+
+sclear_code = None 
+cur_format = None
 
 def enable_color(is_enable):
     global _add_it, _remove_it, _reset
@@ -180,20 +215,40 @@ def fg_red():
     return _add_it(fgred)
 
 
+def fg_not_red():
+    return _remove_it(fgred)
+
+
 def fg_green():
     return _add_it(fggreen)
+
+
+def fg_not_green():
+    return _remove_it(fggreen)
 
 
 def fg_yellow():
     return _add_it(fgyellow)
 
 
+def fg_not_yellow():
+    return _remove_it(fgyellow)
+
+
 def fg_blue():
     return _add_it(fgblue)
 
 
+def fg_not_blue():
+    return _remove_it(fgblue)
+
+
 def fg_magenta():
     return _add_it(fgmagenta)
+
+
+def fg_not_magenta():
+    return _remove_it(fgmagenta)
 
 
 def fg_cyan():

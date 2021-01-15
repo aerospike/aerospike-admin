@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-from distutils.version import LooseVersion
 
 from lib.collectinfo_parser.full_parser import parse_info_all
 from lib.utils import common, util
@@ -134,7 +133,7 @@ class CollectinfoSnapshot(object):
 
         return node_names
 
-    def get_node_names(self):
+    def get_node_names(self, nodes=None):
         if not self.node_names:
             if self.cinfo_data:
                 node_names = self.cinfo_data.keys()

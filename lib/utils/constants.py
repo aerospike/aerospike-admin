@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -103,3 +103,4 @@ AdminMode = Enumeration([
 # server versions with critical changes
 SERVER_NEW_HISTOGRAM_FIRST_VERSION = "4.2"
 SERVER_NEW_LATENCIES_CMD_FIRST_VERSION = "5.1"
+SERVER_NEW_XDR5_VERSION = "5.0"

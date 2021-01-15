@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import copy
+from distutils.version import LooseVersion
+from lib.utils.util import filter_list
+from lib.utils import constants
 from lib.utils import common, util
 from lib.utils.common import is_new_latencies_version
 
@@ -26,30 +29,30 @@ def get_sindex_stats(cluster, nodes="all", for_mods=[]):
             if not stat_list or isinstance(stat_list, Exception):
                 continue
 
-            namespace_list = [stat["ns"] for stat in stat_list]
+            namespace_set = {stat["ns"] for stat in stat_list}
             try:
-                namespace_list = util.filter_list(namespace_list, for_mods[:1])
+                namespace_set = set(util.filter_list(namespace_set, for_mods[:1]))
             except Exception:
                 pass
 
-            sindex_list = [stat["indexname"] for stat in stat_list]
+            sindex_set = {stat["indexname"] for stat in stat_list}
             try:
-                sindex_list = util.filter_list(sindex_list, for_mods[1:2])
+                sindex_set = set(util.filter_list(sindex_set, for_mods[1:2]))
             except Exception:
                 pass
 
             for stat in stat_list:
-                if not stat or stat["ns"] not in namespace_list:
+                if not stat or stat["ns"] not in namespace_set:
                     continue
 
                 ns = stat["ns"]
-                set = stat["set"]
+                set_ = stat["set"]
                 indexname = stat["indexname"]
 
-                if not indexname or not ns or indexname not in sindex_list:
+                if not indexname or not ns or indexname not in sindex_set:
                     continue
 
-                sindex_key = "%s %s %s" % (ns, set, indexname)
+                sindex_key = "%s %s %s" % (ns, set_, indexname)
 
                 if sindex_key not in sindex_stats:
                     sindex_stats[sindex_key] = {}
@@ -359,10 +362,58 @@ class GetConfigController():
 
         return ns_configs
 
-    def get_xdr(self, flip=True, nodes="all"):
-        configs = self.cluster.info_XDR_get_config(nodes=nodes)
+    def get_xdr5_nodes(self, nodes="all"):
+        xdr5_nodes = []
+        builds = self.cluster.info_build_version(nodes=nodes)
 
+        for node, build in builds.items():
+            if isinstance(build, Exception):
+                continue
+            if (LooseVersion(constants.SERVER_NEW_XDR5_VERSION) <= 
+                LooseVersion(build)):
+                xdr5_nodes.append(node)
+
+        return xdr5_nodes
+
+    # XDR configs >= AS Server 5.0
+    def get_xdr5(self, flip=True, nodes="all"):
+        # get xdr5 nodes and remote port
         xdr_configs = {}
+        xdr5_nodes = self.get_xdr5_nodes(nodes)
+
+        if not xdr5_nodes:
+            return xdr_configs
+
+        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
+
+        return self.get_xdr(nodes=xdr5_nodes)
+
+    def get_old_xdr_nodes(self, nodes="all"):
+        old_xdr_nodes = []
+        builds = self.cluster.info_build_version(nodes=nodes)
+
+        for node, build in builds.items():
+            if isinstance(build, Exception):
+                continue
+            if (LooseVersion(constants.SERVER_NEW_XDR5_VERSION) > 
+                LooseVersion(build)):
+                old_xdr_nodes.append(node)
+
+        return old_xdr_nodes
+
+    # XDR configs < AS Server 5.0
+    def get_old_xdr(self, flip=True, nodes="all"):
+        xdr_configs = {}
+        nodes = self.get_old_xdr_nodes(nodes)
+
+        if not nodes:
+            return xdr_configs
+
+        return self.get_xdr(nodes=nodes)
+
+    def get_xdr(self, flip=True, nodes='all'):
+        xdr_configs = {}
+        configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
         if configs:
             for node, config in configs.items():
@@ -505,20 +556,22 @@ class GetStatisticsController():
             if isinstance(key_values, Exception) or not key_values:
                 continue
 
-            namespace_list = [ns_set[0] for ns_set in key_values.keys()]
+            namespace_set = {ns_set[0] for ns_set in key_values.keys()}
+
             try:
-                namespace_list = util.filter_list(namespace_list, for_mods[:1])
+                namespace_set = set(util.filter_list(namespace_set, for_mods[:1]))
             except Exception:
                 pass
 
-            set_list = [ns_set[1] for ns_set in key_values.keys()]
+            sets = {ns_set[1] for ns_set in key_values.keys()}
             try:
-                set_list = util.filter_list(set_list, for_mods[1:2])
+                sets = set(util.filter_list(sets, for_mods[1:2]))
             except Exception:
                 pass
 
             for key, values in key_values.items():
-                if key[0] not in namespace_list or key[1] not in set_list:
+
+                if key[0] not in namespace_set or key[1] not in sets:
                     continue
 
                 if key not in set_stats:
@@ -540,10 +593,10 @@ class GetStatisticsController():
             if not bin_stat or isinstance(bin_stat, Exception):
                 continue
 
-            namespace_list = util.filter_list(bin_stat.keys(), for_mods)
+            namespace_set = set(util.filter_list(bin_stat.keys(), for_mods))
 
             for namespace, stats in bin_stat.items():
-                if namespace not in namespace_list:
+                if namespace not in namespace_set:
                     continue
                 if namespace not in new_bin_stats:
                     new_bin_stats[namespace] = {}
@@ -705,7 +758,6 @@ class GetPmapController():
 
                 if not index_set:
                     # pmap format contains headers from server 3.8.4 onwards
-
                     index_set = True
 
                     if all(i[1] in fields for i in required_fields):
@@ -713,12 +765,9 @@ class GetPmapController():
                             f_indices[t[0]] = fields.index(t[1])
 
                         if all(i[1] in fields for i in optional_old_fields):
-
                             for t in optional_old_fields:
                                 f_indices[t[0]] = fields.index(t[1])
-
                         elif all(i[1] in fields for i in optional_new_fields):
-
                             for t in optional_new_fields:
                                 f_indices[t[0]] = fields.index(t[1])
 
@@ -733,8 +782,7 @@ class GetPmapController():
 
                 if f_indices["working_master_index"]:
                     working_master = fields[f_indices["working_master_index"]]
-                    origin, target = None, None
-
+                    origin = target = None
                 else:
                     origin, target = (
                         fields[f_indices["origin_index"]],
@@ -796,8 +844,7 @@ class GetPmapController():
 
                 try:
                     params.update(ns_info[ck][ns][_node])
-
-                except Exception as e:
+                except Exception:
                     pass
 
         return pmap_data
@@ -811,10 +858,7 @@ class GetPmapController():
         service_stats = util.Future(getter.get_service, nodes=nodes).start()
         namespace_stats = util.Future(getter.get_namespace, nodes=nodes).start()
 
-        node_ids = node_ids.result()
-        pmap_info = pmap_info.result()
         service_stats = service_stats.result()
-        namespace_stats = namespace_stats.result()
 
         cluster_keys = {}
         for node in service_stats.keys():
@@ -825,7 +869,10 @@ class GetPmapController():
                     service_stats[node], ("cluster_key"), default_value="N/E"
                 )
 
+        namespace_stats = namespace_stats.result()
         ns_info = self._get_namespace_data(namespace_stats, cluster_keys)
+        node_ids = node_ids.result()
+        pmap_info = pmap_info.result()
 
         pmap_data = self._get_pmap_data(pmap_info, ns_info, cluster_keys, node_ids)
 

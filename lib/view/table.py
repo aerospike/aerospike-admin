@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ class Extractors():
 
     @staticmethod
     def sif_extractor(columns):
-        return Extractors._num_extractor(columns, filesize.sif)
+        return Extractors._num_extractor(columns, filesize.si_float)
 
     @staticmethod
     def si_extractor(columns):

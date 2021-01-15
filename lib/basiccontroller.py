@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,10 +36,11 @@ from lib.getcontroller import (
     get_sindex_stats,
     GetLatenciesController,
 )
-from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval
+from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval, print_dict
 from lib.utils import common, constants, util
 from lib.view import terminal
 from lib.view.view import CliView
+from lib.view.sheet.render import set_style_json, get_style_json
 
 
 class BasicCommandController(CommandController):
@@ -324,13 +325,12 @@ class InfoController(BasicCommandController):
             xdr5_stats = temp
 
             if self.mods['for']:
-                matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
+                matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
 
             futures = [
                 util.Future(
                     self.view.info_XDR,
                     xdr5_stats[dc],
-                    xdr_builds,
                     xdr_enable,
                     self.cluster,
                     title="XDR Information %s" % dc,
@@ -635,7 +635,6 @@ class ShowLatenciesController(BasicCommandController):
         "    -b           - Number of latency buckets to display.",
         "                   default: 3",
         "    -v           - Set to display verbose output of optionally configured histograms.",
-        "    -m           - Set to display the output group by machine names.",
     )
     def _do_default(self, line):
         increment = util.get_arg_and_delete_from_mods(
@@ -660,10 +659,6 @@ class ShowLatenciesController(BasicCommandController):
             line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods
         )
 
-        machine_wise_display = util.check_arg_and_delete_from_mods(
-            line=line, arg="-m", default=False, modifiers=self.modifiers, mods=self.mods
-        )
-
         namespace_set = self.get_namespace_set()
         (
             latencies_nodes,
@@ -685,14 +680,12 @@ class ShowLatenciesController(BasicCommandController):
                 "WARNING: 'show latencies' is not fully supported on aerospike versions <= 5.0",
             ]
 
-        # Sort data by operation type rather than by node address
-        if not machine_wise_display:
-            latencies = self.sort_data_by_histogram_name(latencies)
+        # TODO: This format should probably be returned from get controller
+        latencies = self.sort_data_by_histogram_name(latencies)
 
         self.view.show_latency(
             latencies,
             self.cluster,
-            machine_wise_display=machine_wise_display,
             show_ns_details=True if namespace_set else False,
             message=message,
             **self.mods
@@ -708,8 +701,8 @@ class ShowConfigController(BasicCommandController):
     @CommandHelp(
         "Displays service, network, and namespace configuration",
         "  Options:",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
@@ -824,8 +817,6 @@ class ShowConfigController(BasicCommandController):
 
     @CommandHelp("Displays XDR configuration")
     def do_xdr(self, line):
-        xdr_builds = util.Future(self.cluster.info_build_version,
-                nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
@@ -843,60 +834,17 @@ class ShowConfigController(BasicCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
-
-        xdr_configs = self.getter.get_xdr(nodes=self.nodes)
-        xdr_builds = xdr_builds.result()
-        old_xdr_configs = {}
-        xdr5_configs = {}
-        node_xdr_build_major_version = 4
-
-        for node in xdr_configs:
-            try:
-                node_xdr_build_major_version = int(xdr_builds[node][0])
-            except:
-                continue
-
-            if node_xdr_build_major_version < 5:
-                old_xdr_configs[node] = xdr_configs[node]
-            else:
-                xdr5_configs[node] = xdr_configs[node]
+        
+        xdr5_configs = self.getter.get_xdr5(nodes=self.nodes)
+        old_xdr_configs = self.getter.get_old_xdr(nodes=self.nodes)
 
         futures = []
-        if xdr5_configs:
-            if self.mods['for']:
-                xdr_dc = self.mods['for'][0]
-
-                for config in xdr5_configs.values():
-                    if isinstance(config, Exception):
-                        continue
-
-                    try:
-                        dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
-                    except KeyError:
-                        dc_configs_matches = []
-                    
-                    try:
-                        ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
-                    except KeyError:
-                        ns_configs_matches = []
-
-                    config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
-                    config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
-
-                    if len(self.mods['for']) >= 2:
-                        xdr_ns = self.mods['for'][1]
-                        for dc in config['ns_configs']:
-                            try:
-                                ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
-                            except KeyError:
-                                ns_matches = []
-
-                            config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
-
-            futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
-                                        xdr5_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
-                                        **self.mods))
         
+        if xdr5_configs:
+            formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
+            futures.append(util.Future(self.view.show_xdr5_config, "XDR Configuration",
+                                        formatted_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
+                                        **self.mods))
         if old_xdr_configs:
             futures.append(util.Future(self.view.show_config, "XDR Configuration",
                                         old_xdr_configs, self.cluster, title_every_nth=title_every_nth, flip_output=flip_output,
@@ -1028,8 +976,8 @@ class ShowStatisticsController(BasicCommandController):
         "Displays bin, set, service, and namespace statistics",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def _do_default(self, line):
@@ -1305,7 +1253,7 @@ class ShowStatisticsController(BasicCommandController):
             xdr5_stats = temp
 
             if self.mods['for']:
-                matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
+                matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
 
             futures = [
                 util.Future(
@@ -1455,6 +1403,9 @@ class CollectinfoController(BasicCommandController):
         capture_stdout = util.capture_stdout
         sep = constants.COLLECTINFO_SEPRATOR
 
+        old_style_json = get_style_json()
+        set_style_json()
+
         try:
             name = func.__name__
         except Exception:
@@ -1475,6 +1426,9 @@ class CollectinfoController(BasicCommandController):
                 parm += ["with"] + self.nodes
             o = capture_stdout(func, parm)
         util.write_to_file(self.aslogfile, sep + str(o))
+
+        set_style_json(old_style_json)
+
         return ""
 
     def _write_version(self, line):

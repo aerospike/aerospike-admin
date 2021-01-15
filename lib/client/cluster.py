@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -108,11 +108,28 @@ class Cluster(object):
 
         return node_names
 
-    def get_node_names(self):
+    def get_node_names(self, nodes=None):
+        selected_nodes = nodes
+        nodes = self.nodes.items()
+
+        if selected_nodes:
+            with_nodes = set()
+
+            for w in selected_nodes:
+                with_nodes.update(self.get_node(w))
+
+            new_nodes = []
+
+            for node_key, node in nodes:
+                if node in with_nodes:
+                    new_nodes.append((node_key, node))
+
+            nodes = new_nodes
+
         node_names = {}
 
         if not self._same_name_nodes:
-            for node_key, node in self.nodes.items():
+            for node_key, node in nodes:
                 name = node.sock_name(use_fqdn=True)
                 if name in list(node_names.values()):
                     # found same name for multiple nodes

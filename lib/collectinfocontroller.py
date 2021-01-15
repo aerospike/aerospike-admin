@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -181,17 +181,17 @@ class InfoController(CollectinfoCommandController):
                         temp[dc][node] = xdr5_stats[node][dc]
 
                 xdr5_stats = temp
+                matches = set([])
 
                 if self.mods["for"]:
-                    matches = util.filter_list(
+                    matches = set(util.filter_list(
                         list(xdr5_stats.keys()), self.mods["for"]
-                    )
+                    ))
 
                 for dc in xdr5_stats:
                     if not self.mods["for"] or dc in matches:
                         self.view.info_XDR(
                             xdr5_stats[dc],
-                            builds,
                             xdr_enable,
                             cluster=cinfo_log,
                             timestamp=timestamp,
@@ -202,7 +202,6 @@ class InfoController(CollectinfoCommandController):
             if old_xdr_stats:
                 self.view.info_old_XDR(
                     old_xdr_stats,
-                    builds,
                     xdr_enable,
                     cluster=cinfo_log,
                     timestamp=timestamp,
@@ -367,8 +366,8 @@ class ShowConfigController(CollectinfoCommandController):
     @CommandHelp(
         "Displays service, network, and namespace configuration",
         "  Options:",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
@@ -515,39 +514,14 @@ class ShowConfigController(CollectinfoCommandController):
                     xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
 
             if xdr5_configs:
-                if self.mods['for']:
-                    xdr_dc = self.mods['for'][0]
-                    for node, config in xdr5_configs.items():
-                        if isinstance(config, Exception):
-                            continue
-                        
-                        config['xdr_configs'] = config['xdr_configs'] if 'xdr_configs' in config else {}
-                        
-                        if xdr_dc in config['dc_configs']:
-                            config['dc_configs'] = {xdr_dc: config['dc_configs'][xdr_dc]}
-                        else:
-                            config['dc_configs'] = {}
-                        
-                        if xdr_dc in config['ns_configs']:
-                            config['ns_configs'] = {xdr_dc: config['ns_configs'][xdr_dc]}
-                        else:
-                            config['ns_configs'] = {}
-
-                        if len(self.mods['for']) >= 2:
-                            xdr_ns = self.mods['for'][1]
-                            if xdr_dc in config['ns_configs'] and xdr_ns in config['ns_configs'][xdr_dc]:
-                                config['ns_configs'] = {xdr_dc: {xdr_ns: config['ns_configs'][xdr_dc][xdr_ns]}}
-                            else:
-                                config['ns_configs'] = {}
-
-                for node in xdr5_configs:
-                    self.view.show_xdr5_config("XDR Configuration",
-                                            xdr5_configs,
-                                            cinfo_log,
-                                            title_every_nth=title_every_nth,
-                                            flip_output=flip_output,
-                                            timestamp=timestamp,
-                                            **self.mods)
+                formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
+                self.view.show_xdr5_config("XDR Configuration",
+                                        formatted_configs,
+                                        cinfo_log,
+                                        title_every_nth=title_every_nth,
+                                        flip_output=flip_output,
+                                        timestamp=timestamp,
+                                        **self.mods)
 
 
             if old_xdr_configs:
@@ -739,15 +713,8 @@ class ShowLatenciesController(CollectinfoCommandController):
 
     @CommandHelp(
         "Displays latency information for Aerospike cluster.",
-        "  Options:",
-        "    -m           - Set to display the output group by machine names.",
     )
     def _do_default(self, line):
-
-        machine_wise_display = util.check_arg_and_delete_from_mods(
-            line=line, arg="-m", default=False, modifiers=self.modifiers, mods=self.mods
-        )
-
         namespaces = {}
         if self.mods["for"]:
             namespaces = self.loghdlr.info_namespaces()
@@ -791,22 +758,18 @@ class ShowLatenciesController(CollectinfoCommandController):
                 _latency = latency[timestamp]
 
             hist_latency = {}
-            if machine_wise_display:
-                hist_latency = _latency
-            else:
-                for node_id, node_data in _latency.items():
-                    if not node_data or isinstance(node_data, Exception):
-                        continue
-                    for hist_name, hist_data in node_data.items():
-                        if hist_name not in hist_latency:
-                            hist_latency[hist_name] = {}
+            for node_id, node_data in _latency.items():
+                if not node_data or isinstance(node_data, Exception):
+                    continue
+                for hist_name, hist_data in node_data.items():
+                    if hist_name not in hist_latency:
+                        hist_latency[hist_name] = {}
 
-                        hist_latency[hist_name][node_id] = hist_data
+                    hist_latency[hist_name][node_id] = hist_data
 
             self.view.show_latency(
                 hist_latency,
                 self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
-                machine_wise_display=machine_wise_display,
                 show_ns_details=True if namespace_set else False,
                 timestamp=timestamp,
                 **self.mods
@@ -822,8 +785,8 @@ class ShowStatisticsController(CollectinfoCommandController):
         "Displays bin, set, service, and namespace statistics",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r <int>     - Repeating output table title and row header after every r columns.",
-        "                   default: 0, no repetition.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def _do_default(self, line):
@@ -941,24 +904,24 @@ class ShowStatisticsController(CollectinfoCommandController):
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
                 continue
-            namespace_list = [ns_set.split()[0]
-                              for ns_set in set_stats[timestamp].keys()]
+            namespace_set = {ns_set.split()[0]
+                              for ns_set in set_stats[timestamp].keys()}
 
             try:
-                namespace_list = util.filter_list(namespace_list, self.mods["for"][:1])
+                namespace_set = set(util.filter_list(namespace_set, self.mods["for"][:1]))
             except Exception:
                 pass
 
-            set_list = [ns_set.split()[1]
-                              for ns_set in set_stats[timestamp].keys()]
+            sets = {ns_set.split()[1]
+                              for ns_set in set_stats[timestamp].keys()}
             try:
-                set_list = util.filter_list(set_list, self.mods["for"][1:2])
+                sets = set(util.filter_list(sets, self.mods["for"][1:2]))
             except Exception:
                 pass
 
             for ns_set, stats in set_stats[timestamp].items():
-                ns, set = ns_set.split()
-                if ns not in namespace_list or set not in set_list:
+                ns, set_ = ns_set.split()
+                if ns not in namespace_set or set_ not in sets:
                     continue
 
                 self.view.show_stats(
@@ -1004,11 +967,11 @@ class ShowStatisticsController(CollectinfoCommandController):
             ):
                 continue
 
-            namespace_list = util.filter_list(new_bin_stats[timestamp].keys(),
-                                              self.mods['for'])
+            namespace_set = set(util.filter_list(new_bin_stats[timestamp].keys(),
+                                              self.mods['for']))
 
             for ns, stats in new_bin_stats[timestamp].items():
-                if ns not in namespace_list:
+                if ns not in namespace_set:
                     continue
 
                 self.view.show_stats(
@@ -1077,9 +1040,10 @@ class ShowStatisticsController(CollectinfoCommandController):
                         temp[dc][node] = xdr5_stats[node][dc]
 
                 xdr5_stats = temp
+                matches = set([])
 
                 if self.mods['for']:
-                    matches = util.filter_list(xdr5_stats.keys(), self.mods['for'])
+                    matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
 
                 for dc in xdr5_stats:
                     if not self.mods["for"] or dc in matches:
@@ -1205,23 +1169,23 @@ class ShowStatisticsController(CollectinfoCommandController):
             ):
                 continue
 
-            namespace_list = [ns_set_sindex.split()[0]
-                              for ns_set_sindex in sindex_stats[timestamp].keys()]
+            namespace_set = {ns_set_sindex.split()[0]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()}
             try:
-                namespace_list = util.filter_list(namespace_list, self.mods["for"][:1])
+                namespace_set = set(util.filter_list(namespace_set, self.mods["for"][:1]))
             except Exception:
                 pass
 
-            sindex_list = [ns_set_sindex.split()[2]
-                              for ns_set_sindex in sindex_stats[timestamp].keys()]
+            sindex_set = {ns_set_sindex.split()[2]
+                              for ns_set_sindex in sindex_stats[timestamp].keys()}
             try:
-                sindex_list = util.filter_list(sindex_list, self.mods["for"][1:2])
+                sindex_set = set(util.filter_list(sindex_set, self.mods["for"][1:2]))
             except Exception:
                 pass
 
             for sindex, stats in sindex_stats[timestamp].items():
-                ns, set, si = sindex.split()
-                if ns not in namespace_list or si not in sindex_list:
+                ns, set_, si = sindex.split()
+                if ns not in namespace_set or si not in sindex_set:
                     continue
 
                 self.view.show_stats(

@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,12 +25,12 @@ class TestWatch(unittest.TestCase):
     def setUpClass(cls):
         TestWatch.rc = controller.BasicRootController()
         actual_out = util.capture_stdout(TestWatch.rc.execute, ['watch', '1', '3', 'info', 'network'])
-        TestWatch.output_list = test_util.get_separate_output(actual_out, 'Information')
+        TestWatch.output_list = test_util.get_separate_output(actual_out)
 
     def test_watch(self):
         info_counter = 0
         for item in TestWatch.output_list:
-            if "~~Network Information" in item:
+            if "Network Information" in item['title']:
                 info_counter += 1
         self.assertEqual(info_counter, 3)
 

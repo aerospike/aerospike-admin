@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License")
 # you may not use this file except in compliance with the License.
@@ -569,6 +569,9 @@ def main():
             logger.critical("collectinfo-analyser and log-analyser are mutually exclusive options. Please enable only one.")
         mode = AdminMode.LOG_ANALYZER
 
+    if cli_args.json:
+        output_json()
+
     if not os.path.isdir(ADMIN_HOME):
         os.makedirs(ADMIN_HOME)
 
@@ -691,6 +694,12 @@ def disable_coloring():
     terminal.enable_color(False)
 
 
+def output_json():
+    from lib.view.sheet import set_style_json
+
+    set_style_json()
+
+
 def cmdloop(shell, func, args, use_yappi, single_command):
     try:
         if use_yappi:
@@ -729,6 +738,7 @@ def parse_commands(file):
         except Exception:
             commands = line
     return commands
+
 
 def get_version():
     if __version__.startswith('$$'):

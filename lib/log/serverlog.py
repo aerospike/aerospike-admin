@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,8 +17,9 @@ import hashlib
 import pipes
 import re
 import subprocess
-from lib.log import utils
+from collections import OrderedDict
 
+from lib.log import utils
 from lib.utils.constants import COUNT_RESULT_KEY, TOTAL_ROW_HEADER, END_ROW_KEY, DT_FMT
 from lib.log.latency import LogLatency
 from lib.utils.util import bytes_to_str
@@ -31,11 +32,11 @@ SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\
 class ServerLog():
 
     def __init__(self, display_name, file_name, reader):
-        self.display_name = display_name
+        self.display_name = display_name.strip()
         self.file_name = file_name
         self.reader = reader
         self.indices = self.reader.generate_server_log_indices(self.file_name)
-        self.file_stream = open(self.file_name, "rb") # read in binary mode to enable relative seeks in Python3
+        self.file_stream = open(self.file_name, "rb") # binary mode to enable relative seeks in Python3
         self.file_stream.seek(0, 0)
 
         self.server_start_tm = self.reader.parse_dt(
@@ -134,10 +135,13 @@ class ServerLog():
             if self.start_hr_tm.strftime(DT_FMT) in self.indices:
                 self.file_stream.seek(
                     self.indices[self.start_hr_tm.strftime(DT_FMT)])
+
             elif self.start_hr_tm < self.server_start_hr_tm:
                 self.file_stream.seek(0)
+                
             elif self.start_hr_tm > self.server_end_hr_tm:
                 self.file_stream.seek(0, 2)
+
             else:
                 while(self.start_hr_tm < self.server_end_hr_tm):
                     if self.start_hr_tm.strftime(DT_FMT) in self.indices:
@@ -146,6 +150,7 @@ class ServerLog():
                         return
                     self.start_hr_tm = self.start_hr_tm + \
                         datetime.timedelta(hours=1)
+
                 self.file_stream.seek(0, 2)
 
     # system_grep parameter added to test and compare with system_grep. We are
@@ -342,6 +347,7 @@ class ServerLog():
         while True:
             tm = None
             line = self.next_line()
+
             if line:
                 tm = self.reader.parse_dt(line)
             yield tm, line
@@ -356,7 +362,7 @@ class ServerLog():
 
     def count(self):
         count_result = {}
-        count_result[COUNT_RESULT_KEY] = {}
+        count_result[COUNT_RESULT_KEY] = OrderedDict()
         slice_start = self.process_start_tm
         slice_end = slice_start + self.slice_duration
         if slice_end > self.process_end_tm:

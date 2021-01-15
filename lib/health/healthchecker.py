@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ class HealthChecker():
         self.status_counters[HealthResultCounter.DEBUG_COUNTER] = 0
         self.status_counters[HealthResultCounter.SYNTAX_EXCEPTION_COUNTER] = 0
         self.status_counters[HealthResultCounter.HEALTH_EXCEPTION_COUNTER] = 0
-        self.status_counters[HealthResultCounter.OTEHR_EXCEPTION_COUNTER] = 0
+        self.status_counters[HealthResultCounter.OTHER_EXCEPTION_COUNTER] = 0
 
         self.assert_outputs = {}
         self.health_exceptions = []
@@ -247,7 +247,7 @@ class HealthChecker():
 
     def _filter_health_input_data(self):
         data = copy.deepcopy(self.health_input_data)
-        for sn in data.keys():
+        for sn in list(data.keys()):
             # SNAPSHOT level
             remove_nodes = self._filter_nodes_to_remove(data[sn])
             if remove_nodes == 1:
@@ -306,75 +306,71 @@ class HealthChecker():
             raise Exception("Query input source is not valid")
 
         queries = parse_queries(query_source, is_file=is_source_file)
+
         if not queries:
             raise Exception("Wrong Health query source.")
 
-        try:
-            for query in queries:
-                if not query:
-                    continue
+        for query in queries:
+            if not query:
+                continue
 
-                self._increment_counter(HealthResultCounter.QUERY_COUNTER)
+            self._increment_counter(HealthResultCounter.QUERY_COUNTER)
 
-                if query.lower() == "exit":
-                    self._increment_counter(
-                        HealthResultCounter.QUERY_SUCCESS_COUNTER)
-                    break
+            if query.lower() == "exit":
+                self._increment_counter(
+                    HealthResultCounter.QUERY_SUCCESS_COUNTER)
+                break
 
-                result = None
+            result = None
+            if self._is_version_set_query(query):
+                self._filter_and_set_health_input_data(query)
+                self._increment_counter(
+                    HealthResultCounter.QUERY_SUCCESS_COUNTER)
+                continue
 
-                if self._is_version_set_query(query):
-                    self._filter_and_set_health_input_data(query)
-                    self._increment_counter(
-                        HealthResultCounter.QUERY_SUCCESS_COUNTER)
-                    continue
+            if self.no_valid_version:
+                self._increment_counter(
+                    HealthResultCounter.QUERY_SKIPPED_COUNTER)
+                continue
+            if self._is_assert_query(query):
+                self._increment_counter(
+                    HealthResultCounter.ASSERT_QUERY_COUNTER)
 
-                if self.no_valid_version:
-                    self._increment_counter(
-                        HealthResultCounter.QUERY_SKIPPED_COUNTER)
-                    continue
+            try:
+                result = self._execute_query(query)
+                self._increment_counter(
+                    HealthResultCounter.QUERY_SUCCESS_COUNTER)
+            except SyntaxException as se:
+                self._increment_counter(
+                    HealthResultCounter.SYNTAX_EXCEPTION_COUNTER)
+                self.syntax_exceptions.append({"index": self.status_counters[
+                                                HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(se)})
+            except HealthException as he:
+                self._increment_counter(
+                    HealthResultCounter.HEALTH_EXCEPTION_COUNTER)
+                self.health_exceptions.append({"index": self.status_counters[
+                                                HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(he)})
+            except Exception as oe:
+                self._increment_counter(
+                    HealthResultCounter.OTHER_EXCEPTION_COUNTER)
+                self.other_exceptions.append({"index": self.status_counters[
+                                                HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(oe)})
 
-                if self._is_assert_query(query):
-                    self._increment_counter(
-                        HealthResultCounter.ASSERT_QUERY_COUNTER)
-
+            if result:
                 try:
-                    result = self._execute_query(query)
-                    self._increment_counter(
-                        HealthResultCounter.QUERY_SUCCESS_COUNTER)
-                except SyntaxException as se:
-                    self._increment_counter(
-                        HealthResultCounter.SYNTAX_EXCEPTION_COUNTER)
-                    self.syntax_exceptions.append({"index": self.status_counters[
-                                                  HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(se)})
-                except HealthException as he:
-                    self._increment_counter(
-                        HealthResultCounter.HEALTH_EXCEPTION_COUNTER)
-                    self.health_exceptions.append({"index": self.status_counters[
-                                                  HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(he)})
-                except Exception as oe:
-                    self._increment_counter(
-                        HealthResultCounter.OTEHR_EXCEPTION_COUNTER)
-                    self.other_exceptions.append({"index": self.status_counters[
-                                                 HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(oe)})
-
-                if result:
-                    try:
-                        if isinstance(result, tuple):
-                            if(result[0] == ParserResultType.ASSERT):
-                                if result[1][AssertResultKey.SUCCESS]:
-                                    self._increment_counter(HealthResultCounter.ASSERT_PASSED_COUNTER)
-                                else:
-                                    self._increment_counter(HealthResultCounter.ASSERT_FAILED_COUNTER)
-                                self._add_assert_output(result[1])
-                            elif is_health_parser_variable(result):
-                                self._increment_counter(
-                                    HealthResultCounter.DEBUG_COUNTER)
-                                self.debug_outputs.append(result)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    if isinstance(result, tuple):
+                        if(result[0] == ParserResultType.ASSERT):
+                            if result[1][AssertResultKey.SUCCESS]:
+                                self._increment_counter(HealthResultCounter.ASSERT_PASSED_COUNTER)
+                            else:
+                                self._increment_counter(HealthResultCounter.ASSERT_FAILED_COUNTER)
+                            self._add_assert_output(result[1])
+                        elif is_health_parser_variable(result):
+                            self._increment_counter(
+                                HealthResultCounter.DEBUG_COUNTER)
+                            self.debug_outputs.append(result)
+                except Exception:
+                    pass
 
         return True
 

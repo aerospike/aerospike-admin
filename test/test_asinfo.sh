@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -84,7 +84,7 @@ if ! run_test ${asinfo_cmd} ${output_substring} ; then
 	fi
 fi
 
-asinfo_cmd="latency:"
+asinfo_cmd="latencies:"
 output_substring="test"
 if ! run_test ${asinfo_cmd} ${output_substring} ; then
 	echo "Error while running asinfo command: ${asinfo_cmd}"

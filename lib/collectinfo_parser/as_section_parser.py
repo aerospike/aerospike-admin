@@ -1,4 +1,4 @@
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 import re
 import copy
 import logging
@@ -117,16 +117,12 @@ def get_meta_info(imap, meta_map):
     if len(nodes) == 0:
         return
     asd_meta = _get_meta_from_network_info(imap, nodes)
-    xdr_meta = _get_xdr_build(imap, nodes)
     ip_meta = _get_ip_from_network_info(imap, nodes)
 
     for node in nodes:
         meta_map[node] = {}
         if node in asd_meta:
             meta_map[node].update(asd_meta[node])
-
-        if node in xdr_meta:
-            meta_map[node].update(xdr_meta[node])
 
         if node in ip_meta:
             meta_map[node].update(ip_meta[node])
@@ -330,6 +326,8 @@ def _get_nodes_from_latency_info(imap):
 
     raw_section_name, final_section_name, _ = get_section_name_from_id('ID_10')
 
+    logger.info("Parsing section: " + raw_section_name)
+
     if not is_valid_section(imap, raw_section_name, final_section_name):
         return
 
@@ -370,45 +368,28 @@ def _get_nodes_from_network_info(imap):
     sec_id = 'ID_49'
     raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
 
+    logger.info("Parsing section: " + raw_section_name)
+
     if not is_valid_section(imap, raw_section_name, final_section_name, is_collision_allowed_for_section(sec_id)):
         return
 
-    info_section_lines = imap[raw_section_name][0]
-    del_found = False
+    info_section_lines = "".join(imap[raw_section_name][0])
     nodes = []
-    nodeid = 0
-    skip_lines = 2
-    for i in range(len(info_section_lines)):
-        if "~" in info_section_lines[i] or "=" in info_section_lines[i]:
-            del_found = True
-            continue
-        # Section ends with "Number of lines/No. of lines"
-        if "Number" in info_section_lines[i] or "No." in info_section_lines[i]:
-            logger.debug(
+
+    info_network_dict = json.loads(info_section_lines)
+
+    try:
+        for group in info_network_dict['groups']:
+            for record in group['records']:
+                        nodes.append(record['Node ID'][
+                            "raw"
+                        ])
+    except KeyError:
+        raise  KeyError("New format of Network info detected. can not get nodeids")
+
+    logger.debug(
                 "Parsed all the nodes in info_network, signing off" + str(nodes))
-            return nodes
 
-        if 'Node' in info_section_lines[i]:
-            if 'Cluster' in info_section_lines[i].split()[0]:
-                if 'Node' in info_section_lines[i].split()[1]:
-                    nodeid = 1
-                else:
-                    raise Exception(
-                        "New format of Network info detected. can not get nodeids")
-
-        if del_found:
-            if skip_lines == 0:
-                # Get node ip
-                node_line = info_section_lines[i].split()
-                if node_line[nodeid].rstrip() == '' or node_line[nodeid] == '.':
-                    logger.debug(
-                        "Node_id absent in info_network section line" + info_section_lines[i])
-                    continue
-                else:
-                    nodes.append(node_line[nodeid])
-
-            else:
-                skip_lines = skip_lines - 1
     return nodes
 
 
@@ -1139,7 +1120,7 @@ def _parse_hist_dump(section):
     if not parsed_section:
         return namespace, parsed_section
 
-    for node, hist_dump in listparsed_section.items():
+    for node, hist_dump in parsed_section.items():
         if not node or not hist_dump or isinstance(hist_dump, Exception) or ":" not in hist_dump:
             continue
 
@@ -1366,182 +1347,63 @@ def _identify_features_from_stats(nodes, imap, parsed_map, section_name):
                         break
         parsed_map[node][section_name] = featureobj
 
-def _get_xdr_build(imap, nodes):
-    sec_id = 'ID_3'
-    raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
-    if not is_valid_section(imap, raw_section_name, final_section_name, is_collision_allowed_for_section(sec_id)):
-        return {}
-
-    xdr_info = imap[raw_section_name][0]
-    header_line = 5
-    build_found = False
-    build_index = 0
-    xdr_build = {}
-    for i in range(len(xdr_info)):
-        if header_line == 0:
-            break
-        if 'Node' in xdr_info[i]:
-            tags = xdr_info[i].split()
-            for tag in tags:
-                if 'Build' in tag:
-                    build_found = True
-                    break
-                build_index = build_index + 1
-        header_line = header_line - 1
-
-    for node in nodes:
-        for i in range(len(xdr_info)):
-            if node in xdr_info[i]:
-                xdr_build[node] = {}
-                build = ''
-                if build_found:
-                    build = xdr_info[i].split()[build_index]
-                xdr_build[node]['xdr_build'] = build
-
-    return xdr_build
-
-
 def _get_meta_from_network_info(imap, nodes):
     sec_id = 'ID_49'
     raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
 
-    logger.info("Parsing section: " + final_section_name)
+    logger.info("Parsing section: " + raw_section_name)
 
     if not is_valid_section(imap, raw_section_name, final_section_name, is_collision_allowed_for_section(sec_id)):
         return {}
 
-    info_section_lines = imap[raw_section_name][0]
+    info_section_lines = "".join(imap[raw_section_name][0])
+    info_network_dict = json.loads(info_section_lines)
     meta_map = {}
-    del_found = False
-    node_found = False
-    skip_lines = 2
-    build_found = False
-    build_index = -1
-    node_id_found = False
-    node_id_index = -1
-    node_indices = []
-    for i in range(len(info_section_lines)):
-        if "~~~~~~~" in info_section_lines[i] or "====" in info_section_lines[i]:
-            del_found = True
-            continue
 
-        # Get index for node_ids
-        if node_found and 'Id' in info_section_lines[i]:
-            tags = info_section_lines[i].split()
-            for j in node_indices:
-                if 'Id' in tags[j]:
-                    node_id_found = True
-                    node_id_index = j
+    try:
+        for group in info_network_dict['groups']:
+            for record in group['records']:
+                node = record['Node ID']['converted']
+                build = record['Build']['converted']
+                node_id = record['Node ID']['converted']
+                edition = 'EE'
 
-            if node_id_index == -1:
-                node_id_index = len(tags) + 1
-
-        # Get index for build
-        if not node_found and 'Node' in info_section_lines[i]:
-            index = 0
-            tags = info_section_lines[i].split()
-            for tag in tags:
-                if not build_found and 'Build' in tag:
-                    build_found = True
-                    build_index = index
-                    # break
-                if 'Node' in tag:
-                    node_indices.append(index)
-                index += 1
-
-            if build_index == -1:
-                build_index = index
-
-            node_found = True
-
-        if del_found:
-            if skip_lines == 0:
-                break
-            skip_lines = skip_lines - 1
-
-    for node in nodes:
-        for i in range(len(info_section_lines)):
-            if node not in info_section_lines[i]:
-                continue
-
-            meta_map[node] = {}
-            node_line = info_section_lines[i].split()
-            build = ''
-            edition = ''
-            node_id = ''
-            if build_found:
-                if 'C-' in node_line[build_index]:
-                    build = node_line[build_index][2:]
+                if 'C-' in build:
                     edition = 'CE'
-                elif 'E-' in node_line[build_index]:
-                    build = node_line[build_index][2:]
-                    edition = 'EE'
-                else:
-                    build = node_line[build_index]
-
-            if node_id_found:
-                node_id = node_line[node_id_index]
-                if node_id:
-                    node_id = node_id.strip()
-
-            meta_map[node]['asd_build'] = build
-            meta_map[node]['edition'] = edition
-            meta_map[node]['node_id'] = node_id
+                
+                meta_map[node] = {} 
+                meta_map[node]['asd_build'] = build
+                meta_map[node]['edition'] = edition
+                meta_map[node]['node_id'] = node_id
+    
+    except KeyError:
+        raise  KeyError("New format of Network info detected. Can not get network metadata")
 
     return meta_map
 
 def _get_ip_from_network_info(imap, nodes):
     sec_id = 'ID_49'
     raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
-    logger.info("Parsing section: " + final_section_name)
+    logger.info("Parsing section: " + raw_section_name)
 
     if not is_valid_section(imap, raw_section_name, final_section_name, is_collision_allowed_for_section(sec_id)):
         return {}
 
-    info_section_lines = imap[raw_section_name][0]
+    info_section_lines = "".join(imap[raw_section_name][0])
     ip_map = {}
-    del_found = False
-    skip_lines = 2
-    ip_found = False
-    ip_index = 0
 
-    for i in range(len(info_section_lines)):
-        if "~~~~~~~" in info_section_lines[i] or "====" in info_section_lines[i]:
-            del_found = True
-            continue
+    info_network_dict = json.loads(info_section_lines)
 
-        # Get index for build
-        if 'Node' in info_section_lines[i]:
-            tags = info_section_lines[i].split()
-            for tag in tags:
-                if 'Ip' in tag:
-                    ip_found = True
-                    break
-                ip_index = ip_index + 1
+    try:
+        for group in info_network_dict['groups']:
+            for record in group['records']:
+                node = record['Node ID']['raw']
+                ip = record['IP']['converted']
 
-        if del_found:
-            if skip_lines == 0:
-                break
-            skip_lines = skip_lines - 1
-
-    for node in nodes:
-        for i in range(len(info_section_lines)):
-            if node not in info_section_lines[i]:
-                continue
-
-            ip_map[node] = {}
-            node_line = info_section_lines[i].split()
-            ip = ''
-
-            if ip_found:
-                ip = node_line[ip_index]
-                if ip:
-                    ip = ip.strip()
-            ip_map[node]['ip'] = ip
+                ip_map[node] = {}
+                ip_map[node]['ip'] = ip
+    
+    except KeyError:
+        raise  KeyError("New format of Network info detected. Can not get network metadata")
 
     return ip_map
-
-
-
