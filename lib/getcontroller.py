@@ -13,9 +13,6 @@
 # limitations under the License.
 
 import copy
-import logging
-from re import DEBUG
-from lib.utils.util import logthis
 from distutils.version import LooseVersion
 from lib.utils import constants
 from lib.utils import common, util
@@ -565,15 +562,15 @@ class GetStatisticsController():
             except Exception:
                 pass
 
-            set_set = {ns_set[1] for ns_set in key_values.keys()}
+            sets = {ns_set[1] for ns_set in key_values.keys()}
             try:
-                set_set = set(util.filter_list(set_set, for_mods[1:2]))
+                sets = set(util.filter_list(sets, for_mods[1:2]))
             except Exception:
                 pass
 
             for key, values in key_values.items():
 
-                if key[0] not in namespace_set or key[1] not in set_set:
+                if key[0] not in namespace_set or key[1] not in sets:
                     continue
 
                 if key not in set_stats:

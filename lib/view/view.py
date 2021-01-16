@@ -29,7 +29,7 @@ from lib.utils.constants import DT_FMT
 from lib.utils.util import compile_likes, find_delimiter_in, get_value_from_dict
 from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
-from lib.view.table import ColumnNameAlign, Orientation, Table, TitleFormats
+from lib.view.table import Orientation, Table, TitleFormats
 
 H1_offset = 13
 H2_offset = 15
@@ -1495,4 +1495,3 @@ class CliView(object):
                 summary["FEATURES"]["NAMESPACE"])
         else:
             CliView._summary_namespace_table_view(summary["FEATURES"]["NAMESPACE"])
-            

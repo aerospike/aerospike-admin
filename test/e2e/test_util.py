@@ -70,7 +70,7 @@ def parse_output(actual_out = {}, horizontal = False, header_len = 2, merge_head
         
 
 def get_separate_output(in_str = ''):
-    _regex = re.compile("((?<=^{).*?(?=^}))", re.MULTILINE | re.DOTALL)
+    _regex = re.compile(r"((?<=^{).*?(?=^}))", re.MULTILINE | re.DOTALL)
     out = re.findall(_regex, in_str)
     ls = []
     for item in out:

@@ -916,16 +916,16 @@ class ShowStatisticsController(CollectinfoCommandController):
             except Exception:
                 pass
 
-            set_set = {ns_set.split()[1]
+            sets = {ns_set.split()[1]
                               for ns_set in set_stats[timestamp].keys()}
             try:
-                set_set = set(util.filter_list(set_set, self.mods["for"][1:2]))
+                sets = set(util.filter_list(sets, self.mods["for"][1:2]))
             except Exception:
                 pass
 
             for ns_set, stats in set_stats[timestamp].items():
                 ns, set_ = ns_set.split()
-                if ns not in namespace_set or set_ not in set_set:
+                if ns not in namespace_set or set_ not in sets:
                     continue
 
                 self.view.show_stats(

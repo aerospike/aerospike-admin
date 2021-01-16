@@ -27,6 +27,10 @@ from lib.view.sheet import set_style_json
 
 set_style_json()
 
+def print_header(actual_header):
+    for item in actual_header:
+        print("\"" + item + "\",")
+
 class TestShowConfig(unittest.TestCase):
     real_stdout = None
     output_list = list()
@@ -791,6 +795,8 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         # exp_heading = "~read Latency"
         exp_header = ["Namespace", "Histogram", "Node", "ops/sec", ">1ms"]
         exp_data_types = [
+            str,
+            str,
             str,
             str,
             str,
@@ -1656,6 +1662,7 @@ class TestShowUsers(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout(cls.rc.execute, ['enable'])
 
     @classmethod
     def tearDownClass(cls):
@@ -1804,6 +1811,7 @@ class TestShowRoles(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout(cls.rc.execute, ['enable'])
         util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'create', 'role', 'temp', 'priv', 'sys-admin', 'allow', '1.1.1.1'])
 
     @classmethod
@@ -1971,6 +1979,7 @@ class TestShowUdfs(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout(cls.rc.execute, ['enable'])
         util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'add', 'filler_.lua', 'path', cls.path])
 
     @classmethod

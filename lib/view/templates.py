@@ -617,22 +617,6 @@ show_latency_sheet = Sheet(
     order_by='Node',
 )
 
-# Only difference between this and latency_sheet is the group_by contains
-# 'Node'. TODO - allowing render to override group_by would eliminate this
-# template.
-show_latency_machine_wise_sheet = Sheet(
-    (Field('Namespace', Projectors.String('histogram', 0, for_each_key=True)),
-     Field('Histogram', Projectors.String('histogram', 1, for_each_key=True)),
-     TitleField('Node', Projectors.String('prefixes', None)),
-     DynamicFields('histogram', required=True,
-                   order=DynamicFieldOrder.source,
-                   aggregator_selector=latency_aggregator_selector)),
-    from_source=('prefixes', 'histogram'),
-    for_each='histogram',
-    group_by=('Node', 'Namespace', 'Histogram'),
-    order_by='Node',
-)
-
 def turn_empty_to_none(ls):
     if not ls:
         return None

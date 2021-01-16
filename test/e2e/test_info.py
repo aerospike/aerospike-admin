@@ -38,7 +38,6 @@ class TestInfo(unittest.TestCase):
 
         actual_out = util.capture_stdout(TestInfo.rc.execute, ['info'])
         actual_out += util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex'])
-
         TestInfo.output_list = test_util.get_separate_output(actual_out)
 
         for item in TestInfo.output_list:
@@ -198,7 +197,7 @@ class TestInfo(unittest.TestCase):
         ]
         
         actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(TestInfo.xdr_info, horizontal = True, header_len=3)
-
+        
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
         

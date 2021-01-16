@@ -1500,6 +1500,9 @@ class CollectinfoController(BasicCommandController):
         old_style_json = get_style_json()
         set_style_json()
 
+        old_style_json = get_style_json()
+        set_style_json()
+
         try:
             name = func.__name__
         except Exception:
