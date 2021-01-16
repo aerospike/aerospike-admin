@@ -12,6 +12,7 @@ class TestManageACLUsers(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout(cls.rc.execute, ['enable'])
 
     @classmethod
     def tearDownClass(cls):
@@ -173,6 +174,7 @@ class TestManageACLRoles(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout(cls.rc.execute, ['enable'])
 
     @classmethod
     def tearDownClass(cls):
@@ -341,6 +343,7 @@ class ManageUDFsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout(cls.rc.execute, ['enable'])
         util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', cls.exp_module])
 
     @classmethod
@@ -428,6 +431,7 @@ class ManageSindexTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rc = controller.BasicRootController(user='admin', password='admin')
+        util.capture_stdout(cls.rc.execute, ['enable'])
         util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'sindex', 'delete', cls.exp_sindex, 'ns', cls.exp_ns])
 
     @classmethod

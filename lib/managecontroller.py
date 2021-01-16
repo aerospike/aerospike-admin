@@ -7,19 +7,27 @@ from lib.client.info import ASProtocolError
 from getpass import getpass
 from logging import DEBUG
 
-def prompt_challenge(view, message):
-    challenge = hex(hash(datetime.now()))[2:8]
-    view.print_result("{}\n" \
-                      "Confirm that you want to proceed by typing ".format(message) + 
-                      terminal.bold() + challenge + terminal.unbold() + 
-                      ", or anything else to cancel.")
-    user_input = input()
-    user_input = user_input.strip()
+class ManageLeafCommandController(BasicCommandController):
+    warn = False
 
-    if challenge != user_input:
-        return False
+    def prompt_challenge(self, message=''):
+        challenge = hex(hash(datetime.now()))[2:8]
+        
+        if message :
+            self.view.print_result(message)
 
-    return True
+        self.view.print_result(
+                        "Confirm that you want to proceed by typing ".format(message) + 
+                        terminal.bold() + challenge + terminal.unbold() + 
+                        ", or anything else to cancel."
+        )
+        user_input = input()
+        user_input = user_input.strip()
+
+        if challenge != user_input:
+            return False
+
+        return True
 
 @CommandHelp('"manage" is used to manage users, roles, udf, sindex, and dynamic configs.')
 class ManageController(BasicCommandController):
@@ -101,7 +109,7 @@ class ManageACLRevokeController(BasicCommandController):
     "                     password is provided.",
     "   roles           - Roles to be granted to the user. Default: None"
 )
-class ManageACLCreateUserController(BasicCommandController):
+class ManageACLCreateUserController(ManageLeafCommandController):
 
     def __init__(self):
         self.modifiers = set(['password', 'roles'])
@@ -119,13 +127,16 @@ class ManageACLCreateUserController(BasicCommandController):
         else:
             password = getpass('Enter password for new user {}:'.format(username))
 
-        if warn:
-            if not prompt_challenge(self.view, ''):
+        if warn and not self.prompt_challenge(self.view, ''):
                 return
 
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
-        principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_create_user(username, password, roles, nodes=[principle_node])
+
+        if self.warn and not self.prompt_challenge():
+            return
+
+        principal_node = self.cluster.get_expected_principal()
+        result = self.cluster.admin_create_user(username, password, roles, nodes=[principal_node])
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -140,7 +151,7 @@ class ManageACLCreateUserController(BasicCommandController):
     "delete user <username>",
     "  username           - User to delete.",
 )
-class ManageACLDeleteUserController(BasicCommandController):
+class ManageACLDeleteUserController(ManageLeafCommandController):
 
     def __init__(self):
         self.required_modifiers = set(['line'])
@@ -148,9 +159,12 @@ class ManageACLDeleteUserController(BasicCommandController):
 
     def _do_default(self, line):
         username = line.pop(0)
-        principle_node = self.cluster.get_expected_principal()
+        principal_node = self.cluster.get_expected_principal()
 
-        result = self.cluster.admin_delete_user(username, nodes=[principle_node])
+        if self.warn and not self.prompt_challenge():
+            return
+
+        result = self.cluster.admin_delete_user(username, nodes=[principal_node])
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -167,7 +181,7 @@ class ManageACLDeleteUserController(BasicCommandController):
     "  password           - Password for the new user.  User will be prompted if no",
     "                       password is provided.",
 )
-class ManageACLSetPasswordUserController(BasicCommandController):
+class ManageACLSetPasswordUserController(ManageLeafCommandController):
 
     def __init__(self):
         self.modifiers = set(['password'])
@@ -190,8 +204,11 @@ class ManageACLSetPasswordUserController(BasicCommandController):
         else:
             password = getpass('Enter password for user {}:'.format(username))
 
-        principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_set_password(username, password, nodes=[principle_node])
+        if self.warn and not self.prompt_challenge():
+            return
+
+        principal_node = self.cluster.get_expected_principal()
+        result = self.cluster.admin_set_password(username, password, nodes=[principal_node])
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -210,7 +227,7 @@ class ManageACLSetPasswordUserController(BasicCommandController):
     "  new                - New password for user.  User will be prompted ",
     "                       if no password is provided.",
 )
-class ManageACLChangePasswordUserController(BasicCommandController):
+class ManageACLChangePasswordUserController(ManageLeafCommandController):
 
     def __init__(self):
         self.modifiers = set(['old', 'new'])
@@ -239,12 +256,15 @@ class ManageACLChangePasswordUserController(BasicCommandController):
         else:
             new_password = getpass('Enter new password:')
 
-        principle_node = self.cluster.get_expected_principal()
+        if self.warn and not self.prompt_challenge():
+            return
+
+        principal_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_change_password(
             username, 
             old_password, 
             new_password, 
-            nodes=[principle_node]
+            nodes=[principal_node]
         )
         result = list(result.values())[0]
 
@@ -261,7 +281,7 @@ class ManageACLChangePasswordUserController(BasicCommandController):
     "  username        - User to have roles added.",
     "  roles           - Roles to be add to user.",
 )
-class ManageACLGrantUserController(BasicCommandController):
+class ManageACLGrantUserController(ManageLeafCommandController):
 
     def __init__(self):
         self.required_modifiers = set(['line', 'roles'])
@@ -270,9 +290,12 @@ class ManageACLGrantUserController(BasicCommandController):
     def _do_default(self, line):
         username = line.pop(0)
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
-        principle_node = self.cluster.get_expected_principal()
+        principal_node = self.cluster.get_expected_principal()
 
-        result = self.cluster.admin_grant_roles(username, roles, nodes=[principle_node])
+        if self.warn and not self.prompt_challenge():
+            return
+
+        result = self.cluster.admin_grant_roles(username, roles, nodes=[principal_node])
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -288,7 +311,7 @@ class ManageACLGrantUserController(BasicCommandController):
     "  username        - User to have roles deleted.",
     "  roles           - Roles to delete from user.",
 )
-class ManageACLRevokeUserController(BasicCommandController):
+class ManageACLRevokeUserController(ManageLeafCommandController):
 
     def __init__(self):
         self.required_modifiers = set(['line', 'roles'])
@@ -298,8 +321,11 @@ class ManageACLRevokeUserController(BasicCommandController):
         username = line.pop(0)
         roles = list(filter(lambda x: x != ',', self.mods['roles']))
 
-        principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_revoke_roles(username, roles, nodes=[principle_node])
+        if self.warn and not self.prompt_challenge():
+            return
+
+        principal_node = self.cluster.get_expected_principal()
+        result = self.cluster.admin_revoke_roles(username, roles, nodes=[principal_node])
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -328,7 +354,7 @@ class ManageACLRevokeUserController(BasicCommandController):
     "                  to.",
     "                  default: None"
 )
-class ManageACLCreateRoleController(BasicCommandController):
+class ManageACLCreateRoleController(ManageLeafCommandController):
 
     def __init__(self):
         self.modifiers = set(['priv', 'ns', 'set', 'allow'])
@@ -362,12 +388,15 @@ class ManageACLCreateRoleController(BasicCommandController):
         # admin_create_role expects a list of privileges but the UI excepts one.
         privilege = [] if privilege is None else [privilege]
 
-        principle_node = self.cluster.get_expected_principal()
+        if self.warn and not self.prompt_challenge():
+            return
+
+        principal_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_create_role(
             role_name, 
             privileges=privilege, 
             whitelist=allowlist, 
-            nodes=[principle_node]
+            nodes=[principal_node]
         )
         result = list(result.values())[0]
 
@@ -383,7 +412,7 @@ class ManageACLCreateRoleController(BasicCommandController):
     "delete role <role-name>",
     "  role-name     - Name of role to delete.",
 )
-class ManageACLDeleteRoleController(BasicCommandController):
+class ManageACLDeleteRoleController(ManageLeafCommandController):
 
     def __init__(self):
         self.required_modifiers = set(['line'])
@@ -391,9 +420,12 @@ class ManageACLDeleteRoleController(BasicCommandController):
 
     def _do_default(self, line):
         role_name = line.pop(0)
-        principle_node = self.cluster.get_expected_principal()
+        principal_node = self.cluster.get_expected_principal()
 
-        result = self.cluster.admin_delete_role(role_name, nodes=[principle_node])
+        if self.warn and not self.prompt_challenge():
+                    return
+
+        result = self.cluster.admin_delete_role(role_name, nodes=[principal_node])
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -413,7 +445,7 @@ class ManageACLDeleteRoleController(BasicCommandController):
     "  set           - Set scope of privilege. Namespace scope is required.",
     "                  defualt: None",
 )
-class ManageACLGrantRoleController(BasicCommandController):
+class ManageACLGrantRoleController(ManageLeafCommandController):
 
     def __init__(self):
         self.modifiers = set(['ns', 'set'])
@@ -435,9 +467,12 @@ class ManageACLGrantRoleController(BasicCommandController):
             if len(self.mods['set']):
                 privilege += '.' + self.mods['set'][0]
 
-        principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_add_privileges(role_name, [privilege], nodes=[principle_node])
+        principal_node = self.cluster.get_expected_principal()
+        result = self.cluster.admin_add_privileges(role_name, [privilege], nodes=[principal_node])
         result = list(result.values())[0]
+
+        if self.warn and not self.prompt_challenge():
+            return
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result.message)
@@ -456,7 +491,7 @@ class ManageACLGrantRoleController(BasicCommandController):
     "  set           - Set scope of privilege. Namespace scope is required.",
     "                  defualt: None",
 )
-class ManageACLRevokeRoleController(BasicCommandController):
+class ManageACLRevokeRoleController(ManageLeafCommandController):
 
     def __init__(self):
         self.modifiers = set(['ns', 'set'])
@@ -478,9 +513,11 @@ class ManageACLRevokeRoleController(BasicCommandController):
             if len(self.mods['set']):
                 privilege += '.' + self.mods['set'][0]
 
+        if self.warn and not self.prompt_challenge():
+            return
         
-        principle_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_delete_privileges(role_name, [privilege], nodes=[principle_node])
+        principal_node = self.cluster.get_expected_principal()
+        result = self.cluster.admin_delete_privileges(role_name, [privilege], nodes=[principal_node])
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -501,7 +538,7 @@ class ManageACLRevokeRoleController(BasicCommandController):
     "  clear         - Clears allowlist from role. Either 'allow' or 'clear' is",
     "                  required.",
 )
-class ManageACLAllowListRoleController(BasicCommandController):
+class ManageACLAllowListRoleController(ManageLeafCommandController):
 
     def __init__(self):
         self.modifiers = set(['clear', 'allow'])
@@ -533,13 +570,16 @@ class ManageACLAllowListRoleController(BasicCommandController):
             self.logger.error("Allowlist or clear is required.")
             return
 
+        if self.warn and not self.prompt_challenge():
+            return
+
         result = None
-        principle_node = self.cluster.get_expected_principal()
+        principal_node = self.cluster.get_expected_principal()
 
         if clear:
-            result = self.cluster.admin_delete_whitelist(role_name, nodes=[principle_node])
+            result = self.cluster.admin_delete_whitelist(role_name, nodes=[principal_node])
         else:
-            result = self.cluster.admin_set_whitelist(role_name, allowlist, nodes=[principle_node])
+            result = self.cluster.admin_set_whitelist(role_name, allowlist, nodes=[principal_node])
         
         result = list(result.values())[0]
 
@@ -572,7 +612,7 @@ class ManageUdfsController(BasicCommandController):
     "  path          - Path to the udf module.  Can be either absolute or relative",
     "                  to the current working directory.",
 )
-class ManageUdfsAddController(BasicCommandController):
+class ManageUdfsAddController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(['line', 'path'])
 
@@ -590,9 +630,18 @@ class ManageUdfsAddController(BasicCommandController):
         with open(udf_path) as udf_file:
             udf_str = udf_file.read()
 
-        principle_node = self.cluster.get_expected_principal()
+        principal_node = self.cluster.get_expected_principal()
 
-        resp = self.cluster.info_udf_put(udf_name, udf_str, nodes=[principle_node])
+        if self.warn:
+            existing_udfs = self.cluster.info_udf_list(nodes=[principal_node])
+            existing_udfs = list(existing_udfs.values())[0]
+            existing_names = existing_udfs.keys()
+
+            if (udf_name in existing_names and
+                not self.prompt_challenge("You are about to write over an existing UDF module.")):
+                    return
+
+        resp = self.cluster.info_udf_put(udf_name, udf_str, nodes=[principal_node])
         resp = list(resp.values())[0]
 
         if isinstance(resp, Exception):
@@ -608,7 +657,7 @@ class ManageUdfsAddController(BasicCommandController):
     "remove <module-name>",
     "  module-name   - Name of module stored in the server that should be removed.",
 )
-class ManageUdfsRemoveController(BasicCommandController):
+class ManageUdfsRemoveController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(['line'])
 
@@ -621,9 +670,15 @@ class ManageUdfsRemoveController(BasicCommandController):
         existing_udfs = list(existing_udfs.values())[0]
         existing_names = existing_udfs.keys()
 
+        # The server does not check this as of 5.3 and will return success even
+        # if it does not exist.
         if udf_name not in existing_names:
             self.logger.error('Failed to remove UDF {}: UDF does not exist'.format(udf_name))
             return
+
+        if (self.warn and
+            not self.prompt_challenge("You are about to remove a UDF module that may be in use.")):
+                return
 
         resp = self.cluster.info_udf_remove(udf_name, nodes=[principal_node])
         resp = list(resp.values())[0]
@@ -650,7 +705,7 @@ class ManageSIndexController(BasicCommandController):
         self.execute_help(line)
             
 @CommandHelp('"manage udfs" is used to add and remove user defined functions.')
-class ManageSIndexCreateController(BasicCommandController):
+class ManageSIndexCreateController(ManageLeafCommandController):
     
     def __init__(self):
         self.required_modifiers = set(['line', 'ns', 'bin'])
@@ -697,8 +752,12 @@ class ManageSIndexCreateController(BasicCommandController):
         index_type = index_type.lower() if index_type else None
         bin_type = bin_type.lower()
 
-        principle_node = self.cluster.get_expected_principal()
-        resp = self.cluster.info_sindex_create(index_name, namespace, bin_name, bin_type, index_type, set_, nodes=[principle_node])
+        if (self.warn and 
+            not self.prompt_challenge('Adding a secondary index will cause longer restart times.')):
+                return
+
+        principal_node = self.cluster.get_expected_principal()
+        resp = self.cluster.info_sindex_create(index_name, namespace, bin_name, bin_type, index_type, set_, nodes=[principal_node])
         resp = list(resp.values())[0]
 
         if resp != 'ok':
@@ -721,7 +780,7 @@ class ManageSIndexCreateController(BasicCommandController):
         self._do_create(line, 'geo2dsphere')
 
 @CommandHelp('"manage udfs" is used to add and remove user defined functions.')
-class ManageSIndexDeleteController(BasicCommandController):
+class ManageSIndexDeleteController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(['line', 'ns'])
         self.modifiers = set(['set'])
@@ -745,8 +804,17 @@ class ManageSIndexDeleteController(BasicCommandController):
             mods=self.mods
         )
 
-        principle_node = self.cluster.get_expected_principal()
-        resp = self.cluster.info_sindex_delete(index_name, namespace, set_, nodes=[principle_node])
+        principal_node = self.cluster.get_expected_principal()
+
+        if self.warn:
+            sindex_data = self.cluster.info_sindex_statistics(namespace, index_name, nodes=[principal_node])
+            sindex_data = list(sindex_data.values())[0]
+            num_keys = sindex_data.get('keys', 0)
+
+            if not self.prompt_challenge('The secondary index {} has {} keys indexed.'.format(index_name, num_keys)):
+                return
+
+        resp = self.cluster.info_sindex_delete(index_name, namespace, set_, nodes=[principal_node])
         resp = list(resp.values())[0]
 
         if resp != 'ok':

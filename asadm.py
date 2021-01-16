@@ -89,7 +89,7 @@ logging.setLoggerClass(BaseLogger)
 logging.basicConfig(level=logging.WARNING)
 
 logger = logging.getLogger('asadm')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 from lib.controllerlib import ShellException
 from lib.basiccontroller import BasicRootController
@@ -184,7 +184,7 @@ class AerospikeShell(cmd.Cmd):
                     else:
                         logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
-                self.prompt = DEFAULT_PROMPT
+                self.set_prompt(DEFAULT_PROMPT)
                 self.intro = ""
                 if not execute_only_mode:
                     self.intro += str(self.ctrl.cluster) + "\n"
@@ -199,9 +199,6 @@ class AerospikeShell(cmd.Cmd):
                     if cluster_down_nodes:
                         self.intro += terminal.fg_red() + "Extra nodes in alumni list: %s" % (
                             ", ".join(cluster_down_nodes)) + terminal.fg_clear() + "\n"
-
-            if self.use_rawinput:
-                self.set_prompt_red()
 
         except Exception as e:
             self.do_exit('')

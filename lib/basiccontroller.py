@@ -41,7 +41,7 @@ from lib.getcontroller import (
     GetLatenciesController,
 )
 
-from lib.managecontroller import ManageController
+from lib.managecontroller import ManageController, ManageLeafCommandController
 from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval
 from lib.utils import common, constants, util
 from lib.view import terminal
@@ -141,6 +141,14 @@ class BasicRootController(BaseController):
 
     @DisableAutoComplete()
     def do_enable(self, line):
+        warn = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg='--warn',
+            default=False,
+            modifiers={},
+            mods={}
+        )
+        ManageLeafCommandController.warn = warn
         self.controller_map.update({
             'manage': ManageController,
             'asinfo': ASInfoController,
@@ -1408,8 +1416,8 @@ class ShowUsersController(BasicCommandController):
         self.getter = GetUsersController(self.cluster)
 
     def _do_default(self, line):
-        principle_node = self.cluster.get_expected_principal()
-        users_data = self.getter.get_users(nodes=[principle_node])
+        principal_node = self.cluster.get_expected_principal()
+        users_data = self.getter.get_users(nodes=[principal_node])
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
@@ -1427,8 +1435,8 @@ class ShowRolesController(BasicCommandController):
         self.getter = GetRolesController(self.cluster)
 
     def _do_default(self, line):
-        principle_node = self.cluster.get_expected_principal()
-        roles_data = self.getter.get_roles(nodes=[principle_node])
+        principal_node = self.cluster.get_expected_principal()
+        roles_data = self.getter.get_roles(nodes=[principal_node])
         resp = list(roles_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
@@ -1446,8 +1454,8 @@ class ShowUdfsController(BasicCommandController):
         self.getter = GetUdfController(self.cluster)
 
     def _do_default(self, line):
-        principle_node = self.cluster.get_expected_principal()
-        udfs_data = self.getter.get_udfs(nodes=[principle_node])
+        principal_node = self.cluster.get_expected_principal()
+        udfs_data = self.getter.get_udfs(nodes=[principal_node])
         resp = list(udfs_data.values())[0]
 
         return util.Future(self.view.show_udfs, resp, **self.mods)
@@ -1459,8 +1467,8 @@ class ShowSIndexController(BasicCommandController):
         self.getter = GetSIndexController(self.cluster)
 
     def _do_default(self, line):
-        principle_node = self.cluster.get_expected_principal()
-        sindexes_data = self.getter.get_sindexs(nodes=[principle_node])
+        principal_node = self.cluster.get_expected_principal()
+        sindexes_data = self.getter.get_sindexs(nodes=[principal_node])
         resp = list(sindexes_data.values())[0]
 
         return util.Future(self.view.show_sindex, resp, **self.mods)
