@@ -17,6 +17,8 @@ if [[ -z "${CODESIGNMAC}" ]]; then
         echo "codesign environment variable not set.  Skipping codesign of .so in wheels"
 else
         echo "codesign environment variable is set.  Running codesign of .so in wheels"
+        pip install wheel
+        export PATH="/Library/Frameworks/Python.framework/Versions/2.7/bin:$PATH"
         ls -lat "$BUILD_ROOT"tmp/wheels
 		for WHEEL_PATH in "$BUILD_ROOT"tmp/wheels/* ; do
 			wheel unpack "$WHEEL_PATH"
@@ -43,4 +45,5 @@ if [ -x "$(command -v auditwheel)" ]; then
         rm "$BUILD_ROOT"tmp/audit/wheels/*.whl
 fi
 
+pip install pex
 pex -v -r $REQUIREMENT_FILE $PEX_PYTHONS --python-shebang="$SHEBANG" --repo="$BUILD_ROOT"tmp/wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o "$BUILD_ROOT"tmp/asadm/asadm.pex
