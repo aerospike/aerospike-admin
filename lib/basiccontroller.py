@@ -114,9 +114,9 @@ class BasicRootController(BaseController):
         return "EXIT"
 
     @CommandHelp(
-        "Returns documentation related to a command",
-        'for example, to retrieve documentation for the "info"',
-        'command use "help info".',
+        "Displays the documentation for the specified command.",
+        "For example, to see the documentation for the 'info' command,",
+        "use the command 'help info'.",
     )
     def do_help(self, line):
         self.execute_help(line)
@@ -129,8 +129,8 @@ class BasicRootController(BaseController):
         "   iterations: Number of iterations to execute command.",
         "               [default: until keyboard interrupt]",
         "  Options:",
-        "   --no-diff:  Do not do diff highlighting",
-        'Example 1: Show "info network" 3 times with 1 second pause',
+        "   --no-diff:  Do not highlight differences",
+        "Example 1: Show 'info network' 3 times and pause for 1 second each time.",
         "           watch 1 3 info network",
         'Example 2: Show "info namespace" with 5 seconds pause until',
         "           interrupted",
@@ -142,11 +142,11 @@ class BasicRootController(BaseController):
 
     @DisableAutoComplete()
     @CommandHelp(
-        'Enters privileged mode which allows a user to issue manage',
+        'Enters privileged mode, which allows a you to issue manage',
         "and asinfo commands.",
         "  Options:",
-        "    --warn:    A warning prompt will be provided before a manage",
-        "               command is issued.",
+        "    --warn:    Use this option to receive a prompt to confirm",
+        "               that you want to run the command.",
     )
     def do_enable(self, line):
         warn = util.check_arg_and_delete_from_mods(
@@ -579,7 +579,8 @@ class ShowDistributionController(BasicCommandController):
         "                       Default is rblock wise distribution in percentage",
         "    -k <buckets>     - Maximum number of buckets to show if -b is set.",
         "                       It distributes objects in same size k buckets and ",
-        "                       display only buckets which has objects in it. Default is 5.",
+        "                       displays only buckets that have objects in them. ",
+        "                       [default is 5].",
     )
     def do_object_size(self, line):
 
@@ -2337,14 +2338,17 @@ class CollectinfoController(BasicCommandController):
         "  Options:",
         "    -n              <int>        - Number of snapshots. Default: 1",
         "    -s              <int>        - Sleep time in seconds between each snapshot. Default: 5 sec",
-        "    --enable-ssh                 - Enable remote server system statistics collection.",
-        "    --ssh-user      <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).",
-        "    --ssh-pwd       <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).",
+        "    --enable-ssh                 - Enables the collection of system statistics from the remote server.",
+        "    --ssh-user      <string>     - Default user ID for remote servers. This is the ID of a user of the system",
+        "                                   not the ID of an Aerospike user.",
+        "    --ssh-pwd       <string>     - Default password or passphrase for key for remote servers. This is the user's", 
+        "                                   password for logging into the system, not a password for logging into Aerospike.",
         "    --ssh-port      <int>        - Default SSH port for remote servers. Default: 22",
         "    --ssh-key       <string>     - Default SSH key (file path) for remote servers.",
         "    --ssh-cf        <string>     - Remote System Credentials file path.",
-        "                                   If server credentials are not available in credential file then default credentials will be used ",
-        "                                   File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>",
+        "                                   If the server credentials are not in the credentials file, then authentication is",
+        "                                   attempted with the default credentials.",
+        "                                   File format : each line must contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>",
         "                                   Example:  1.2.3.4,uid,pwd",
         "                                             1.2.3.4:3232,uid,pwd",
         "                                             1.2.3.4:3232,uid,,key_path",
@@ -2358,7 +2362,7 @@ class CollectinfoController(BasicCommandController):
         self._collect_info(line=line)
 
 
-@CommandHelp("Displays features used in running Aerospike cluster.")
+@CommandHelp("Lists the features in use in a running Aerospike cluster.")
 class FeaturesController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like"])

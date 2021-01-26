@@ -19,7 +19,7 @@ class ManageLeafCommandController(BasicCommandController):
         self.view.print_result(
                         "Confirm that you want to proceed by typing ".format(message) + 
                         terminal.bold() + challenge + terminal.unbold() + 
-                        ", or anything else to cancel."
+                        ", or cancel by typeing anything else."
         )
         user_input = input()
         user_input = user_input.strip()
@@ -655,7 +655,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
 
 @CommandHelp(
     "Usage: remove <module-name>",
-    "  module-name   - Name of module stored in the server that should be removed.",
+    "  module-name   - Name of module to remove as stored in the server.",
 )
 class ManageUdfsRemoveController(ManageLeafCommandController):
     def __init__(self):
