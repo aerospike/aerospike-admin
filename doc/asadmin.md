@@ -47,7 +47,7 @@
 ##### info xdr
 - Same as current except always sorted by **alias**.
 
-#### clinfo/asinfo
+#### asinfo
 ##### Modifiers
 - with
 
@@ -71,7 +71,7 @@
     - **xdr** - show statistics for xdr
     - **set** - show statistics for set
 
-##### latency
+##### latencies
 - **latency** - Show Aerospike latency information sorted by **alias**.
 
 ##### show config
@@ -87,44 +87,9 @@
 ###### Modifier
 - **diff** - only show parameters that are different for the nodes selected.
     - IE =show config xdr compare= would only show parameters that are different.
-
-#### set
-- The purpose of set is to provide an easier interface to set dynamic options as well as allow tab completion for the various options.
-
-##### Modifiers
-- **with**
-
-##### Default
-- Show help
-
-##### set service
-- **service** <config name> <value>
-
-##### set network.heartbeat
-- **network.heartbeat** <config name> <value>
-
-##### set network.info
-- **network.info** <config name> <value>
-
-##### set namespace
-- **namespace** <namespace name> <config name> <value>
-- **namespace** <namespace name> <set name> <config name> <value>
-
-##### set xdr
-- **xdr** <config name> <value>
-
-#### exec
-##### Modifiers
-- with
-
-##### TBD
-- Requires SSH
-- Execute a shell command on node selection
-
 #### watch
 - Similar to current watch
 - Default to display every 10 seconds and only if there are changes
-- Would be nice to highlight changes (similar to watch -d)
 - {,#} - if a number is not provided, watch will check for changes every
 	      10 seconds otherwise every provided number seconds. This command
 	      may be used to prefix any other command.
@@ -140,12 +105,15 @@
 ## Developer Guide
 Important files and structure:
 
-1. /asadmin.py <br>
+1. /asadmin.py
+
    asadmin.py is the entry point specifically the **precmd** performs a
    search and finds the actual command the user is requesting and executes.
    <br>
    For most updates this file will not need modified.
-2. /lib/controller.py <br>
+
+2. /lib/controller.py
+
    The controller is where commands are defined. Each command has a
    **commandHelp** decorator that accepts a list of lines to be displayed when
    help on a command is requested.
@@ -154,26 +122,38 @@ Important files and structure:
    **RootController**. End points in the hierarchy will be methods of a controller
    that are prefixed "do_", default controller behavior will be prefixed
    "\_do\_".
-3. /lib/view.py <br>
+
+3. /lib/view/view.py
+
    With a little exception, nothing prints unless it is defined in view.py.
    This is where the results are rendered to the user. Very likely if you are
    adding a feature you will need to add code here.
-4. /lib/table.py <br>
+
+4. /lib/view/table.py  Replaced by sheets.py
+
    The table class handles presentation of info and show commands and may work
    for yours as well.
    In the table module, the Extractors class defines various numeric formaters
    for instance if you wanted to display uptime in hrs/days use timeExtractor.
-   <br>
+
    Before adding rows to the table you need to define a list of column names,
    if a column is being renamed, use a tuple of ('original\_name', 'new\_name')
-   <br>
+
    A datasource is really a data transformation, if you want to use
    timeExtractor on a column then you would need to call **addDataSource** on a
    new column name and pass the extractor as the function to do the
    transformation, passing the function the old columnname.
 
-   Afterward will need to add data to the table one row at a time.
-5. /lib/cluster.py <br>
+5. /lib/view/sheets.py
+
+   The sheet class was made as a retrospective replacement of table.py.  It was
+   mostly developed by Kevin Porter.  Creating a table using sheets requires that
+   you create a template defining how your table should appear, where it should
+   extract (project) data from, if it should be converted, and if it should be 
+   aggregated.  You can see all the created templates in /lib/view/templates.py
+
+5. /lib/cluster.py
+
    Calls node methods in parallel, shouldn't need to modify for anything other
    than bug fixes.
 

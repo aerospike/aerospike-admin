@@ -1,7 +1,8 @@
 # Aerospike Admin
 ## Description
 Aerospike Admin provides an interface for Aerospike users to view the stat
-of their Aerospike Cluster by fetching information from running cluster (Cluster mode) or logs (Log-analyser mode).
+of their Aerospike Cluster by fetching information from a running cluster (Cluster mode) 
+a collectinfo file (Collectinfo-Analyzer), or logs (Log-analyser mode).
 Start the tool with *asadm* and run the *help* command to get started.
 
 ## Installing Aerospike Admin
