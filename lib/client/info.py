@@ -1,6 +1,6 @@
 ####
 #
-# Copyright 2013-2020 Aerospike, Inc.
+# Copyright 2013-2021 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -196,6 +196,7 @@ class ASPrivilege(IntEnum):
     READ_WRITE = 11
     READ_WRITE_UDF = 12
     WRITE = 13
+    ERROR = 255
 
     @classmethod
     def str_to_enum(cls, privilege_str):
@@ -217,7 +218,7 @@ class ASPrivilege(IntEnum):
         elif privilege_str == 'write':
             return cls.WRITE
         else:
-            raise TypeError("Privilege: Not a valid privilege name: {}".format(privilege_str))
+            return cls.ERROR
     
     def is_global_only_scope(self):
         return (
@@ -236,13 +237,14 @@ class ASPrivilege(IntEnum):
 class ASResponse(IntEnum):
     OK = 0
     UNKNOWN_SERVER_ERROR = 1
+    QUERY_END = 50 # Signal end of a query response. Is OK
     SECURITY_NOT_SUPPORTED = 51
     SECURITY_NOT_ENABLED = 52
     INVALID_COMMAND = 54
     UNRECOGNIZED_FIELD_ID = 55
     NO_USER_OR_UNRECOGNIZED_USER = 60
     USER_ALREADY_EXISTS = 61
-    NO_PASSWORD_OR_BAD_PASSORD = 62
+    NO_PASSWORD_OR_BAD_PASSWORD = 62
     NO_CREDENTIAL_OR_BAD_CREDENTIAL = 65
     NO_ROLE_OR_INVALID_ROLE = 70
     ROLE_ALREADY_EXISTS = 71
@@ -618,43 +620,45 @@ def _query_users(sock, user=None):
 
     try:
         sock.sendall(send_buf)
-        rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
-        _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
-        rsp_buf = _receive_data(sock, data_size)
-        offset = 0
 
-        # Each loop will process a user:role pair.
-        while offset < data_size:
-            _, result_code, _, field_count, offset = _unpack_admin_header(rsp_buf, offset)
+        while True:
+            rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
+            _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
+            rsp_buf = _receive_data(sock, data_size)
+            offset = 0
 
-            if result_code != ASResponse.OK:
-                return result_code, users_dict
+            # Each loop will process a user:role pair.
+            while offset < data_size:
+                _, result_code, _, field_count, offset = _unpack_admin_header(rsp_buf, offset)
 
-            user_name = None
-            user_roles = []
+                if result_code != ASResponse.OK:
+                    if result_code == ASResponse.QUERY_END:
+                        result_code = ASResponse.OK
+                    return result_code, users_dict
 
-            for _ in range(field_count):
-                field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
-                field_len -= 1
+                user_name = None
+                user_roles = []
 
-                if field_type == ASField.USER:
-                    user_name, offset = _unpack_string(rsp_buf, offset, field_len)
+                for _ in range(field_count):
+                    field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
+                    field_len -= 1
 
-                    if user_name not in users_dict:
-                        users_dict[user_name] = users_dict
+                    if field_type == ASField.USER:
+                        user_name, offset = _unpack_string(rsp_buf, offset, field_len)
 
-                elif field_type == ASField.ROLES:
-                    roles, offset = _unpack_admin_roles(rsp_buf, offset)
-                    user_roles.extend(roles)
-                else:
-                    offset += field_len
+                        if user_name not in users_dict:
+                            users_dict[user_name] = users_dict
 
-            if user_name is None:
-                continue
+                    elif field_type == ASField.ROLES:
+                        roles, offset = _unpack_admin_roles(rsp_buf, offset)
+                        user_roles.extend(roles)
+                    else:
+                        offset += field_len
 
-            users_dict[user_name] = user_roles
+                if user_name is None:
+                    continue
 
-        return ASResponse.OK, users_dict
+                users_dict[user_name] = user_roles
 
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
@@ -806,49 +810,52 @@ def _query_role(sock, role=None):
 
     try:
         sock.sendall(send_buf)
-        rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
-        _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
-        rsp_buf = _receive_data(sock, data_size)
 
-        offset = 0
+        while True:
+            rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
+            _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
+            rsp_buf = _receive_data(sock, data_size)
 
-        while offset < data_size:
-            _, result_code, _, field_count, offset = _unpack_admin_header(rsp_buf, offset)
+            offset = 0
 
-            if result_code != ASResponse.OK:
-                return result_code, role_dict
+            while offset < data_size:
+                _, result_code, _, field_count, offset = _unpack_admin_header(rsp_buf, offset)
 
-            role_name = None
-            privileges = []
-            whitelist = []
+                if result_code != ASResponse.OK:
+                    if result_code == ASResponse.QUERY_END:
+                        result_code = ASResponse.OK
 
-            for _ in range(field_count):
-                field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
-                field_len -= 1
+                    return result_code, role_dict
 
-                if field_type == ASField.ROLE:
-                    role_name, offset = _unpack_string(rsp_buf, offset, field_len)
+                role_name = None
+                privileges = []
+                whitelist = []
 
-                    if role_name not in role_dict:
-                        role_dict[role_name] = role_name
+                for _ in range(field_count):
+                    field_len, field_type, offset = _unpack_admin_field_header(rsp_buf, offset)
+                    field_len -= 1
 
-                elif field_type == ASField.PRIVILEGES:
-                    roles, offset = _unpack_admin_privileges(rsp_buf, offset)
-                    privileges.extend(roles)
-                elif field_type == ASField.WHITELIST:
-                    white, offset = _unpack_string(rsp_buf, offset, field_len)
-                    whitelist = white.split(',')
-                else:
-                    offset += field_len
+                    if field_type == ASField.ROLE:
+                        role_name, offset = _unpack_string(rsp_buf, offset, field_len)
 
-            if role_name is None:
-                continue
-            
-            role_dict[role_name] = {}
-            role_dict[role_name]['privileges'] = privileges
-            role_dict[role_name]['whitelist'] = whitelist
+                        if role_name not in role_dict:
+                            role_dict[role_name] = role_name
 
-        return ASResponse.OK, role_dict
+                    elif field_type == ASField.PRIVILEGES:
+                        roles, offset = _unpack_admin_privileges(rsp_buf, offset)
+                        privileges.extend(roles)
+                    elif field_type == ASField.WHITELIST:
+                        white, offset = _unpack_string(rsp_buf, offset, field_len)
+                        whitelist = white.split(',')
+                    else:
+                        offset += field_len
+
+                if role_name is None:
+                    continue
+                
+                role_dict[role_name] = {}
+                role_dict[role_name]['privileges'] = privileges
+                role_dict[role_name]['whitelist'] = whitelist
 
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
