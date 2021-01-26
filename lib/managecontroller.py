@@ -29,7 +29,7 @@ class ManageLeafCommandController(BasicCommandController):
 
         return True
 
-@CommandHelp('"manage" is used to manage users, roles, udf, sindex, and dynamic configs.')
+@CommandHelp('"manage" is used for administrative tasks like managing users, roles, udf, and sindexes')
 class ManageController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
@@ -62,6 +62,7 @@ class ManageACLController(BasicCommandController):
     def _do_default(self, line):
         self.execute_help(line)
 
+@CommandHelp('')
 class ManageACLCreateController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
@@ -72,6 +73,7 @@ class ManageACLCreateController(BasicCommandController):
     def _do_default(self, line):
         self.execute_help(line)
 
+@CommandHelp('')
 class ManageACLDeleteController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
@@ -82,6 +84,7 @@ class ManageACLDeleteController(BasicCommandController):
     def _do_default(self, line):
         self.execute_help(line)
 
+@CommandHelp('')
 class ManageACLGrantController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
@@ -92,6 +95,7 @@ class ManageACLGrantController(BasicCommandController):
     def _do_default(self, line):
         self.execute_help(line)
 
+@CommandHelp('')
 class ManageACLRevokeController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
@@ -103,11 +107,12 @@ class ManageACLRevokeController(BasicCommandController):
         self.execute_help(line)
 
 @CommandHelp(
-    "create user <username> [password <password>] [roles <role1> <role2> ...]",
+    "Usage: create user <username> [password <password>] [roles <role1> <role2> ...]",
     "   username        - Name of new user.",
     "   password        - Password for the new user.  User will be prompted if no",
     "                     password is provided.",
-    "   roles           - Roles to be granted to the user. Default: None"
+    "   roles           - Roles to be granted to the user.",
+    "                     [default: None]",
 )
 class ManageACLCreateUserController(ManageLeafCommandController):
 
@@ -148,7 +153,7 @@ class ManageACLCreateUserController(ManageLeafCommandController):
         self.view.print_result("Successfully created user {}".format(username))
 
 @CommandHelp(
-    "delete user <username>",
+    "Usage: delete user <username>",
     "  username           - User to delete.",
 )
 class ManageACLDeleteUserController(ManageLeafCommandController):
@@ -176,9 +181,9 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
         self.view.print_result("Successfully deleted user {}".format(username))
 
 @CommandHelp(
-    "set-password user <username> [password <password>]",
-    "  username           - User with no password set.",
-    "  password           - Password for the new user.  User will be prompted if no",
+    "Usage: set-password user <username> [password <password>]",
+    "  username           - User to have password set.",
+    "  password           - Password for the user.  A prompt will appear if no",
     "                       password is provided.",
 )
 class ManageACLSetPasswordUserController(ManageLeafCommandController):
@@ -202,7 +207,7 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
         if len(self.mods['password']):
             password = self.mods['password'][0]
         else:
-            password = getpass('Enter password for user {}:'.format(username))
+            password = getpass('Enter new password for user {}:'.format(username))
 
         if self.warn and not self.prompt_challenge():
             return
@@ -220,7 +225,7 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
         self.view.print_result("Successfully set password for user {}".format(username))
 
 @CommandHelp(
-    "change-password user <username> [old <old-password>] [new <new-password>]",
+    "Usage: change-password user <username> [old <old-password>] [new <new-password>]",
     "  username           - User that needs a new password.",
     "  old                - Current password for user.  User will be",
     "                       prompted if no password is provided.",
@@ -277,8 +282,8 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         self.view.print_result("Successfully changed password for user {}".format(username))
 
 @CommandHelp(
-    "grant user <username> roles <role1> [<role2> [...]]",
-    "  username        - User to have roles added.",
+    "Usage: grant user <username> roles <role1> [<role2> [...]]",
+    "  username        - User to have roles granted.",
     "  roles           - Roles to be add to user.",
 )
 class ManageACLGrantUserController(ManageLeafCommandController):
@@ -307,8 +312,8 @@ class ManageACLGrantUserController(ManageLeafCommandController):
         self.view.print_result("Successfully granted roles to user {}".format(username))
 
 @CommandHelp(
-    "revoke user <username> roles <role1> [<role2> [...]]",
-    "  username        - User to have roles deleted.",
+    "Usage: revoke user <username> roles <role1> [<role2> [...]]",
+    "  username        - User to have roles revoked.",
     "  roles           - Roles to delete from user.",
 )
 class ManageACLRevokeUserController(ManageLeafCommandController):
@@ -338,27 +343,27 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "create role <role-name> priv <privilege> [ns <namespace> [set <set>]]> allow <addr1> [<addr2> [...]]",
+    "Usage: create role <role-name> priv <privilege> [ns <namespace> [set <set>]]> allow <addr1> [<addr2> [...]]",
     "  role-name     - Name of new role.",
     "  priv          - Privilege for the new role. Some privileges are not", 
     "                  limited to a global scope. Scopes are either global, per", 
     "                  namespace, or per namespace and set. For more ",
     "                  information: ",
     "                  https://www.aerospike.com/docs/operations/configure/security/access-control/#privileges-permissions-and-scopes",
-    "                  default: None",
+    "                  [default: None]",
     "  ns            - Namespace scope of privilege.",
-    "                  defualt: None",
+    "                  [default: None]",
     "  set           - Set scope of privilege. Namespace scope is required.",
-    "                  defualt: None",
+    "                  [default: None]",
     "  allow         - Addresses of nodes that a role will be allowed to connect",
-    "                  to.",
-    "                  default: None"
+    "                  to a cluster from.",
+    "                  [default: None]"
 )
 class ManageACLCreateRoleController(ManageLeafCommandController):
 
     def __init__(self):
-        self.modifiers = set(['priv', 'ns', 'set', 'allow'])
-        self.required_modifiers = set(['line'])
+        self.modifiers = set(['ns', 'set', 'allow'])
+        self.required_modifiers = set(['line', 'priv'])
         self.controller_map = {}
 
     def _do_default(self, line):
@@ -368,11 +373,6 @@ class ManageACLCreateRoleController(ManageLeafCommandController):
 
         if len(self.mods['priv']):
             privilege = self.mods['priv'][0]
-
-        if not len(allowlist) and privilege is None:
-            self.execute_help(line)
-            self.logger.error('Privilege or allowlist is required')
-            return
 
         if len(self.mods['set']) and not len(self.mods['ns']):
             self.execute_help(line)
@@ -409,8 +409,8 @@ class ManageACLCreateRoleController(ManageLeafCommandController):
         self.view.print_result('Successfully created role {}'.format(role_name))
 
 @CommandHelp(
-    "delete role <role-name>",
-    "  role-name     - Name of role to delete.",
+    "Usage: delete role <role-name>",
+    "  role-name     - Role to delete.",
 )
 class ManageACLDeleteRoleController(ManageLeafCommandController):
 
@@ -437,13 +437,13 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
         self.view.print_result("Successfully deleted role {}".format(role_name))
 
 @CommandHelp(
-    "grant role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
-    "  role-name     - Role to have privilege added.",
+    "Usage: grant role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
+    "  role-name     - Role to have privilege granted.",
     "  priv          - Privilege to be added to role.",
     "  ns            - Namespace scope of privilege.",
-    "                  defualt: None",
+    "                  [default: None]",
     "  set           - Set scope of privilege. Namespace scope is required.",
-    "                  defualt: None",
+    "                  [default: None]",
 )
 class ManageACLGrantRoleController(ManageLeafCommandController):
 
@@ -483,13 +483,13 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
         self.view.print_result("Successfully granted privilege to role {}".format(role_name))
 
 @CommandHelp(
-    "revoke role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
-    "  role-name     - Role to have privilege deleted.",
+    "Usage: revoke role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
+    "  role-name     - Role to have privilege revoked.",
     "  priv          - Privilege to delete from role.",
     "  ns            - Namespace scope of privilege",
-    "                  defualt: None",
+    "                  [default: None]",
     "  set           - Set scope of privilege. Namespace scope is required.",
-    "                  defualt: None",
+    "                  [default: None]",
 )
 class ManageACLRevokeRoleController(ManageLeafCommandController):
 
@@ -529,12 +529,12 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
         self.view.print_result("Successfully revoked privilege from role {}".format(role_name))
 
 @CommandHelp(
-    "allowlist role <role-name> allow <addr1> [<addr2> [...]]",
+    "Usage: allowlist role <role-name> allow <addr1> [<addr2> [...]]",
     "  role-name     - Role that will have new allowlist.",
     "  allow         - Addresses of nodes that a role will be allowed to connect",
-    "                  to. This command erases and re-assigns the allowlist",
-    "allowlist role <role-name> clear",
-    "  role-name     - Role that will have new allowlist.",
+    "                  from. This command erases and re-assigns the allowlist",
+    "Usage: allowlist role <role-name> clear",
+    "  role-name     - Role that will have allowlist cleared.",
     "  clear         - Clears allowlist from role. Either 'allow' or 'clear' is",
     "                  required.",
 )
@@ -606,7 +606,7 @@ class ManageUdfsController(BasicCommandController):
         self.execute_help(line)
 
 @CommandHelp(
-    "add <module-name> path <module-path>",
+    "Usage: add <module-name> path <module-path>",
     "  module-name   - Name of module to be stored in the server.  Can be different",
     "                  from file in path but must end with an extension.",
     "  path          - Path to the udf module.  Can be either absolute or relative",
@@ -654,7 +654,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
         self.view.print_result("Successfully added UDF {}".format(udf_name))
 
 @CommandHelp(
-    "remove <module-name>",
+    "Usage: remove <module-name>",
     "  module-name   - Name of module stored in the server that should be removed.",
 )
 class ManageUdfsRemoveController(ManageLeafCommandController):
@@ -693,7 +693,7 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
         self.view.print_result("Successfully removed UDF {}".format(udf_name))
 
 
-@CommandHelp('"manage udfs" is used to add and remove user defined functions.')
+@CommandHelp('"manage sindex" is used to create and delete secondary indexes.')
 class ManageSIndexController(BasicCommandController):
     def __init__(self):
         self.controller_map = {
@@ -704,7 +704,21 @@ class ManageSIndexController(BasicCommandController):
     def _do_default(self, line):
         self.execute_help(line)
             
-@CommandHelp('"manage udfs" is used to add and remove user defined functions.')
+@CommandHelp(
+    "Usage: create <bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>]",
+    "  bin-type    - The bin type of the provided <bin-name>. Should be one of the following values:",
+    "                  numeric, string, or geo2dsphere",
+    "  index-name    - Name of secondary index to be created. Should be 20 charaters",
+    "                  or less and not contain \":\" or \";\".",
+    "  ns            - Name of namespace to create the secondary index on.",
+    "  set           - Name of set to create the secondary index on.",
+    "  bin           - Name of bin to create secondary index on.",
+    "  in            - Specifies how the secondary index is to collect keys:",
+    "                  list: Specifies to use the elements of a list as keys.",
+    "                  mapkeys: Specifies to use the keys of a map as keys.",
+    "                  mapvalues: Specifies to use the values of a map as keys.",
+    "                  [default: Specifies to use the contents of a bin as keys.]",
+)
 class ManageSIndexCreateController(ManageLeafCommandController):
     
     def __init__(self):
@@ -779,7 +793,12 @@ class ManageSIndexCreateController(ManageLeafCommandController):
     def do_geo2dsphere(self, line):
         self._do_create(line, 'geo2dsphere')
 
-@CommandHelp('"manage udfs" is used to add and remove user defined functions.')
+@CommandHelp(
+    "Usage: delete <index-name> ns <ns> [set <set>]",
+    "  index-name    - Name of secondary index to be deleted.",
+    "  ns            - Namespace where the sindex resides.",
+    "  set           - Set where the sindex resides.",
+)
 class ManageSIndexDeleteController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(['line', 'ns'])

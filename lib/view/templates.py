@@ -698,7 +698,7 @@ show_sindex = Sheet(
      Field('Set', Projectors.String('data', 'set')),
      Field('Bin', Projectors.Number('data', 'bins', 'bin')),
      Field('Bin Type', Projectors.String('data', 'type')),
-     Field('Index Type', Projectors.String('data', 'type')),
+     Field('Index Type', Projectors.String('data', 'indextype')),
      Field('State', Projectors.String('data', 'state'))),
     from_source=('data'),
     group_by=('Namespace', 'Set'),

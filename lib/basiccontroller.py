@@ -122,12 +122,13 @@ class BasicRootController(BaseController):
         self.execute_help(line)
 
     @CommandHelp(
-        '"watch" Runs a command for a specified pause and iterations.',
-        "Usage: watch [pause] [iterations] [--no-diff] command]",
+        'Runs a command for a specified pause and iterations.',
+        "Usage: watch [pause] [iterations] [--no-diff] command",
         "   pause:      the duration between executions.",
         "               [default: 2 seconds]",
         "   iterations: Number of iterations to execute command.",
         "               [default: until keyboard interrupt]",
+        "  Options:",
         "   --no-diff:  Do not do diff highlighting",
         'Example 1: Show "info network" 3 times with 1 second pause',
         "           watch 1 3 info network",
@@ -140,6 +141,13 @@ class BasicRootController(BaseController):
         self.view.watch(self, line)
 
     @DisableAutoComplete()
+    @CommandHelp(
+        'Enters privileged mode which allows a user to issue manage',
+        "and asinfo commands.",
+        "  Options:",
+        "    --warn:    A warning prompt will be provided before a manage",
+        "               command is issued.",
+    )
     def do_enable(self, line):
         warn = util.check_arg_and_delete_from_mods(
             line=line,
@@ -155,7 +163,6 @@ class BasicRootController(BaseController):
         })
         return 'ENABLE'
 
-    @DisableAutoComplete()
     def do_disable(self, line):
         self.controller_map.update({
             'manage': create_disabled_controller(ManageController, 'manage'),
@@ -196,7 +203,7 @@ class InfoController(BasicCommandController):
 
         return [action.result() for action in actions]
 
-    @CommandHelp("Displays network information for Aerospike.")
+    @CommandHelp('"info network" displays network information for Aerospike.')
     def do_network(self, line):
         stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
 
@@ -229,14 +236,14 @@ class InfoController(BasicCommandController):
             **self.mods
         )
 
-    @CommandHelp("Displays summary information for each set.")
+    @CommandHelp('info set" isplays summary information for each set.')
     def do_set(self, line):
         stats = self.cluster.info_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
 
     # pre 5.0
     @CommandHelp(
-        "Displays summary information for each datacenter.",
+        '"info dc" displays summary information for each datacenter.',
         'Replaced by "info xdr" for server >= 5.0.',
     )
     def do_dc(self, line):
@@ -312,7 +319,7 @@ class InfoController(BasicCommandController):
 
         return futures
 
-    @CommandHelp("Displays summary information for each datacenter.")
+    @CommandHelp('"info xdr" displays summary information for each datacenter.')
     def do_xdr(self, line):
         stats = util.Future(self.cluster.info_XDR_statistics, nodes=self.nodes).start()
 
@@ -382,7 +389,7 @@ class InfoController(BasicCommandController):
 
         return futures
 
-    @CommandHelp("Displays summary information for Secondary Indexes (SIndex).")
+    @CommandHelp('"info sindex" displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
         return util.Future(
@@ -391,7 +398,7 @@ class InfoController(BasicCommandController):
 
 
 @CommandHelp(
-    'The "namespace" command provides summary tables for various aspects',
+    '"info namespace" command provides summary tables for various aspects',
     "of Aerospike namespaces.",
 )
 class InfoNamespaceController(BasicCommandController):
@@ -516,7 +523,7 @@ class ShowController(BasicCommandController):
 
 
 @CommandHelp(
-    '"distribution" is used to show the distribution of object sizes',
+    '"show distribution" is used to show the distribution of object sizes',
     "and time to live for node and a namespace.",
 )
 class ShowDistributionController(BasicCommandController):
@@ -634,7 +641,7 @@ class ShowDistributionController(BasicCommandController):
         )
 
 
-@CommandHelp("latencies is used to show server latency histograms")
+@CommandHelp('"show latencies" is used to show server latency histograms')
 class ShowLatenciesController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like", "for"])
@@ -666,9 +673,9 @@ class ShowLatenciesController(BasicCommandController):
         "Displays latency information for Aerospike cluster.",
         "  Options:",
         "    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)",
-        "                   default: 3",
+        "                   [default: 3]",
         "    -b           - Number of latency buckets to display.",
-        "                   default: 3",
+        "                   [default: 3]",
         "    -v           - Set to display verbose output of optionally configured histograms.",
     )
     def _do_default(self, line):
@@ -731,7 +738,7 @@ class ShowConfigController(BasicCommandController):
         "Displays service, network, and namespace configuration",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   default: False, no repetition.",
+        "                   [default: False, no repetition]",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
@@ -995,7 +1002,7 @@ class ShowMappingController(BasicCommandController):
         )
 
 
-@CommandHelp("Displays statistics for Aerospike components.")
+@CommandHelp('"show statistics" is used to display statistics for Aerospike components.')
 class ShowStatisticsController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like", "for"])
@@ -1006,7 +1013,7 @@ class ShowStatisticsController(BasicCommandController):
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   default: False, no repetition.",
+        "                   [default: False, no repetition]",
         "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def _do_default(self, line):
@@ -1397,7 +1404,7 @@ class ShowStatisticsController(BasicCommandController):
         return futures
 
 
-@CommandHelp("Displays partition map analysis of Aerospike cluster.")
+@CommandHelp('"show pmap" displays partition map analysis of Aerospike cluster.')
 class ShowPmapController(BasicCommandController):
     def __init__(self):
         self.modifiers = set()
@@ -1409,7 +1416,7 @@ class ShowPmapController(BasicCommandController):
         return util.Future(self.view.show_pmap, pmap_data, self.cluster)
 
 
-@CommandHelp("Displays users and their assigned roles for Aerospike cluster.")
+@CommandHelp('"show users" displays users and their assigned roles for Aerospike cluster.')
 class ShowUsersController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
@@ -1421,14 +1428,14 @@ class ShowUsersController(BasicCommandController):
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
-            self.logger.error(users_data)
+            self.logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
 
         return util.Future(self.view.show_users, resp, **self.mods)
 
-@CommandHelp("Displays roles and their assigned privileges and allowlist for Aerospike cluster.")
+@CommandHelp('"show roles" displays roles and their assigned privileges and allowlist for Aerospike cluster.')
 class ShowRolesController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
@@ -1447,7 +1454,7 @@ class ShowRolesController(BasicCommandController):
 
         return util.Future(self.view.show_roles, resp, **self.mods)
 
-@CommandHelp("Displays UDF modules along with metadata.")
+@CommandHelp('"show udfs" displays UDF modules along with metadata.')
 class ShowUdfsController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
@@ -1460,7 +1467,7 @@ class ShowUdfsController(BasicCommandController):
 
         return util.Future(self.view.show_udfs, resp, **self.mods)
 
-@CommandHelp("Displays SIndexes and static metadata.")
+@CommandHelp('"show sindex" displays secondary indexes and static metadata.')
 class ShowSIndexController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(['like'])
@@ -2393,7 +2400,7 @@ class PagerController(BasicCommandController):
 
 @CommandHelp(
     "Checks for common inconsistencies and print if there is any.",
-    "This command is still in beta and its output should not be directly acted upon without further analysis.",
+    "This command is still in beta and its output should not be directly acted upon without further analysis.", hide=True
 )
 class HealthCheckController(BasicCommandController):
     last_snapshot_collection_time = 0

@@ -202,7 +202,7 @@ class TestManageACLRoles(unittest.TestCase):
         exp_stdout_resp = 'Successfully created role {}'.format(self.exp_role)
         exp_stderr_resp = ''
 
-        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'acl', 'create', 'role', self.exp_role, 'allow', '1.1.1.1', '2.2.2.2'])
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'acl', 'create', 'role', self.exp_role, 'priv', 'read', 'allow', '1.1.1.1', '2.2.2.2'])
 
         self.assertEqual(exp_stderr_resp, actual_stderr.strip())
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
@@ -261,7 +261,7 @@ class TestManageACLRoles(unittest.TestCase):
         exp_stdout_resp = 'Successfully granted privilege to role {}'.format(self.exp_role)
         exp_stderr_resp = ''
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', self.exp_role, 'allow', '1.1.1.1'])
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', self.exp_role, 'priv', 'read', 'allow', '1.1.1.1'])
         time.sleep(.5)
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'acl', 'grant', 'role', self.exp_role, 'priv', 'read'])
 
@@ -301,7 +301,7 @@ class TestManageACLRoles(unittest.TestCase):
         exp_stdout_resp = "Successfully updated allowlist for role {}".format(self.exp_role)
         exp_stderr_resp = ''
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', self.exp_role, 'allow', '1.1.1.1'])
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', self.exp_role, 'priv', 'user-admin', 'allow', '1.1.1.1'])
         time.sleep(.5)
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'acl', 'allowlist', 'role', self.exp_role, 'allow', '2.2.2.2'])
 
@@ -312,7 +312,7 @@ class TestManageACLRoles(unittest.TestCase):
         exp_stdout_resp = "Successfully cleared allowlist from role {}".format(self.exp_role)
         exp_stderr_resp = ''
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', self.exp_role, 'allow', '1.1.1.1'])
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', self.exp_role, 'priv', 'read-write', 'allow', '1.1.1.1'])
         time.sleep(.5)
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'acl', 'allowlist', 'role', self.exp_role, 'clear'])
 
@@ -321,7 +321,7 @@ class TestManageACLRoles(unittest.TestCase):
 
     def test_fails_to_clear_allowlist_if_role_does_not_exist(self):
         exp_stdout_resp = ''
-        exp_stderr_resp = 'Failed to delete whitelist : No role or invalid role'
+        exp_stderr_resp = 'Failed to delete allowlist : No role or invalid role'
 
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(self.rc.execute, ['manage', 'acl', 'allowlist', 'role', self.exp_role, 'clear'])
 

@@ -263,13 +263,13 @@ class ASSocket():
         rsp_code = set_whitelist(self.sock, role, whitelist)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, 'Failed to set whitelist')
+            raise ASProtocolError(rsp_code, 'Failed to set allowlist')
 
     def delete_whitelist(self, role):
         rsp_code = delete_whitelist(self.sock, role)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, 'Failed to delete whitelist')
+            raise ASProtocolError(rsp_code, 'Failed to delete allowlist')
 
     def query_roles(self):
         rsp_code, role_dict = query_roles(self.sock)

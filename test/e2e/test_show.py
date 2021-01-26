@@ -1686,7 +1686,7 @@ class TestShowUsers(unittest.TestCase):
             ['show', 'users']
         )
 
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
     def test_create_user_with_no_roles(self):
@@ -1713,7 +1713,7 @@ class TestShowUsers(unittest.TestCase):
         actual_roles = get_data(exp_user, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertListEqual(exp_roles, actual_roles)
 
@@ -1743,7 +1743,7 @@ class TestShowUsers(unittest.TestCase):
         actual_roles = get_data(exp_user, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertListEqual([', '.join(exp_roles)], actual_roles)
 
@@ -1779,7 +1779,7 @@ class TestShowUsers(unittest.TestCase):
             self.assertNotIn(exp_user, data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
     def test_revoke_user_role(self):
@@ -1802,7 +1802,7 @@ class TestShowUsers(unittest.TestCase):
 
         actual_roles = get_data(exp_user, actual_data)
 
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(', '.join(exp_roles), actual_roles[0])
 
@@ -1841,7 +1841,7 @@ class TestShowRoles(unittest.TestCase):
             ['show', 'roles']
         )
 
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
     def test_create_role_with_privileges(self):
@@ -1872,13 +1872,13 @@ class TestShowRoles(unittest.TestCase):
         actual_data = get_data(exp_role, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertListEqual(exp_data, actual_data)
 
     def test_create_role_with_allowlist(self):
         exp_role = 'foo'
-        exp_privileges = '--'
+        exp_privileges = 'write'
         exp_allowlist = ['1.1.1.1', '2.2.2.2']
         exp_data = [exp_privileges, ', '.join(exp_allowlist)]
         exp_title = 'Roles'
@@ -1894,7 +1894,7 @@ class TestShowRoles(unittest.TestCase):
 
         exp_num_rows = num_records + 1
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'allow', *exp_allowlist])
+        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', 'write', 'allow', *exp_allowlist])
         time.sleep(.25)
 
         actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
@@ -1904,7 +1904,7 @@ class TestShowRoles(unittest.TestCase):
         actual_data = get_data(exp_role, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertListEqual(exp_data, actual_data)
 
@@ -1943,7 +1943,7 @@ class TestShowRoles(unittest.TestCase):
             self.assertNotIn(exp_role, data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
     def test_revoke_role(self):
@@ -1968,7 +1968,7 @@ class TestShowRoles(unittest.TestCase):
 
         actual_privileges = get_data(exp_role, actual_data)
         
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_privilege, actual_privileges[0])
 
@@ -2004,7 +2004,7 @@ class TestShowUdfs(unittest.TestCase):
             ['show', 'udfs']
         )
 
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
     def test_add_udf(self):
@@ -2015,7 +2015,7 @@ class TestShowUdfs(unittest.TestCase):
             'Type'
         ]
         exp_module = [
-            '3896d2c19a10415d7e358d38ff133b1157f1d0c9',
+            '61e9c132a6a4c1a14852dc1641a35b420664c4a1',
             'LUA'
         ]
 
@@ -2035,7 +2035,7 @@ class TestShowUdfs(unittest.TestCase):
 
         actual_module = get_data(self.exp_module, actual_data)
 
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_num_rows, actual_num_rows)
         self.assertListEqual(exp_module, actual_module)
@@ -2064,7 +2064,7 @@ class TestShowUdfs(unittest.TestCase):
             ['show', 'udfs']
         )
 
-        self.assertEqual(exp_title, actual_title)
+        self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_num_rows, actual_num_rows)
 

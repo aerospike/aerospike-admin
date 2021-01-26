@@ -26,8 +26,16 @@ DEFAULT = "_do_default"
 
 class CommandHelp(object):
 
-    def __init__(self, *message):
+    '''
+    hide - If True then the help info of command and its children will not be
+           displayed unless it is explicitly called on the command.
+
+    If no help info is defined but succeeding help should still be shown you 
+    must define CommandHelp with an empty message i.e. ''
+    '''
+    def __init__(self, *message, hide=False):
         self.message = list(message)
+        self.hide = hide
 
     def __call__(self, func):
         try:
@@ -38,6 +46,7 @@ class CommandHelp(object):
             pass
 
         func._command_help = self.message
+        func._hide = self.hide
 
         return func
 
@@ -53,6 +62,9 @@ class CommandHelp(object):
     def display(func, indent=0):
         indent = "  " * indent
         try:
+            if func._command_help == ['']:
+                return
+
             print("\n".join([indent + l for l in func._command_help]))
         except Exception:
             pass
@@ -61,6 +73,13 @@ class CommandHelp(object):
     def print_text(message, indent=0):
         indent = "  " * indent
         print("%s%s" % (indent, message))
+
+    @staticmethod
+    def is_hidden(func):
+        try:
+            return func._hide
+        except:
+            return False
 
 
 class DisableAutoComplete():
@@ -253,10 +272,14 @@ class BaseController(object):
         else:
             raise ShellException("Method was not set? %s" % (line))
 
-    def execute_help(self, line, indent=0):
+    def execute_help(self, line, indent=0, method=None):
         self._init()
 
-        method = self._find_method(line)
+        # Removes the need to call _find_method twice since it also happens
+        # in parent call.
+        if method == None:
+            method = self._find_method(line)
+
         if method:
             try:
                 try:
@@ -283,12 +306,14 @@ class BaseController(object):
 
                     indent += 2
                     for command in self.commands.keys():
-                        if command != "health":
+                        command_method = self._find_method([command])
+
+                        if CommandHelp.has_help(command_method) and not CommandHelp.is_hidden(command_method):
                             CommandHelp.print_text(
                                 "- %s%s%s:" % (terminal.bold(), command,
                                             terminal.reset()), indent=indent - 1)
 
-                            self.execute_help([command], indent=indent)
+                            self.execute_help([command], indent=indent, method=command_method)
                     return
 
                 elif isinstance(method, ShellException):
