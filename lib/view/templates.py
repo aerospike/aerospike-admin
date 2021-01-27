@@ -34,7 +34,7 @@ def project_build(b, v):
 
 
 def project_xdr_free_dlog(s):
-    return int(s.translate(None, '%'))
+    return int(s.replace('%', ''))
 
 
 def project_xdr_req_shipped_success(s, rs, esc, ess):

@@ -358,6 +358,7 @@ class InfoController(BasicCommandController):
                     temp[dc][node] = xdr5_stats[node][dc]
 
             xdr5_stats = temp
+            matches = None
 
             if self.mods['for']:
                 matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
