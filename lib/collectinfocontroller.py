@@ -563,6 +563,7 @@ class ShowConfigController(CollectinfoCommandController):
         node_xdr_build_major_version = 5
 
         for timestamp in sorted(dc_configs.keys()):
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False

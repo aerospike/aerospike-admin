@@ -2137,7 +2137,7 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
     formatted_dc_configs = {}
 
     for node in xdr_configs:
-        for dc in xdr_configs[node]['dc_configs']:
+        for dc in xdr_configs[node].get('dc_configs', {}):
             if dc not in formatted_dc_configs:
                 formatted_dc_configs[dc] = {}
 
@@ -2146,7 +2146,7 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
     formatted_ns_configs = {}
 
     for node in xdr_configs:
-        for dc in xdr_configs[node]['ns_configs']:
+        for dc in xdr_configs[node].get('ns_configs', {}):
 
             if dc not in formatted_ns_configs:
                 formatted_ns_configs[dc] = {}
