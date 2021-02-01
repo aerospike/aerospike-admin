@@ -133,9 +133,9 @@ class ManageACLCreateUserController(ManageLeafCommandController):
             password = getpass('Enter password for new user {}:'.format(username))
 
         if warn and not self.prompt_challenge(self.view, ''):
-                return
+            return
 
-        roles = list(filter(lambda x: x != ',', self.mods['roles']))
+        roles = self.mods['roles']
 
         if self.warn and not self.prompt_challenge():
             return
@@ -294,7 +294,7 @@ class ManageACLGrantUserController(ManageLeafCommandController):
 
     def _do_default(self, line):
         username = line.pop(0)
-        roles = list(filter(lambda x: x != ',', self.mods['roles']))
+        roles = self.mods['roles']
         principal_node = self.cluster.get_expected_principal()
 
         if self.warn and not self.prompt_challenge():
@@ -324,7 +324,7 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
 
     def _do_default(self, line):
         username = line.pop(0)
-        roles = list(filter(lambda x: x != ',', self.mods['roles']))
+        roles = self.mods['roles']
 
         if self.warn and not self.prompt_challenge():
             return
@@ -369,7 +369,7 @@ class ManageACLCreateRoleController(ManageLeafCommandController):
     def _do_default(self, line):
         role_name = line.pop(0)
         privilege = None
-        allowlist = list(filter(lambda x: x != ',', self.mods['allow']))
+        allowlist = self.mods['allow']
 
         if len(self.mods['priv']):
             privilege = self.mods['priv'][0]
@@ -563,7 +563,7 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
             mods=self.mods
         )
 
-        allowlist = list(filter(lambda x: x != ',', self.mods['allow']))
+        allowlist = self.mods['allow']
 
         if not clear and not len(allowlist):
             self.execute_help(line)

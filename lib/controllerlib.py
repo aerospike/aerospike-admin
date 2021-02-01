@@ -358,11 +358,18 @@ class CommandController(BaseController):
 
         while line:
             word = line.pop(0)
+
+            # Remove ',' from input since it can cause it needs to be filtered
+            # out in many cases.
+            if word == ',':
+                continue
+
             if word in mods:
                 mod = word
                 # Special case for handling diff modifier of show config
                 if mod == 'diff':
                     groups[mod].append(True)
+
             else:
                 if duplicates_in_line_allowed or word not in groups[mod]:
                     groups[mod].append(word)
