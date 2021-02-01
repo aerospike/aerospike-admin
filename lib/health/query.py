@@ -1691,30 +1691,39 @@ SET CONSTRAINT VERSION >= 4.3.0.2;
 // sprig mounts-size-limit checks
 
 // critical case
-cs = select "cluster_size" as "sprig_limit_critical" from SERVICE.STATISTICS;
-cs = group by CLUSTER do MAX(cs) save as "cluster-size";
-repl = select "replication-factor" as "sprig_limit_critical" from NAMESPACE.STATISTICS;
-pts = select "partition-tree-sprigs" as "sprig_limit_critical" from NAMESPACE.CONFIG;
-msl = select "index-type.mounts-size-limit" as "sprig_limit_critical" from NAMESPACE.CONFIG;
+cluster_size = select "cluster_size" as "sprig_limit_critical" from SERVICE.STATISTICS;
+cluster_size = group by CLUSTER do MAX(cluster_size) save as "cluster-size";
+repl = select "effective_replication_factor" as "sprig_limit_critical" from NAMESPACE.STATISTICS save as "effective_repl_factor";
+pts = select "partition-tree-sprigs" as "sprig_limit_critical" from NAMESPACE.CONFIG save as "partition-tree-sprigs";
+size_limit = select "index-type.mounts-size-limit" as "sprig_limit_critical" from NAMESPACE.CONFIG;
 // below statement adds thousand delimiter to mounts-size-limiter when it prints
-msl = do msl * 1 save as "mounts-size-limit";
+size_limit = do size_limit * 1 save as "mounts-size-limit";
 
 // check for enterprise edition
-e = select "edition" from METADATA;
-e = do e == "Enterprise";
-e = group by CLUSTER, NODE do OR(e);
+edition = select "edition" from METADATA;
+is_enterprise = do edition == "Enterprise";
+is_enterprise = group by CLUSTER, NODE do OR(is_enterprise);
+
+// check for all flash
+index_type = select "index-type" from NAMESPACE.STATISTICS;
+is_flash = do index_type == "flash";
+
+// combine enterprise and all flash conditions
+dont_skip = do is_enterprise && is_flash;
+dont_skip = group by CLUSTER, NODE, NAMESPACE do OR(dont_skip);
 
 // calculate sprig overhead
-r = do 4096 * repl;
-r = do r/cs;
-r = do r * pts;
-r = do r * 4096 save as "Minimum space required";
-r = do r > msl;
-ASSERT(r, False, "ALL FLASH / PMEM - Too many sprigs per partition for current available index mounted space. Some records are likely failing to be created.", "OPERATIONS", CRITICAL,
+num_partitions = do 4096 * repl;
+partitions_per_node = do num_partitions/cluster_size;
+pts_per_node = do partitions_per_node * pts;
+total_pts = do pts_per_node * 4096 save as "Minimum space required";
+result = do total_pts > size_limit;
+
+ASSERT(result, False, "ALL FLASH - Too many sprigs per partition for current available index mounted space. Some records are likely failing to be created.", "OPERATIONS", CRITICAL,
 				"Minimum space required for sprig overhead at current cluster size exceeds mounts-size-limit.
 				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
 				"Check for too many sprigs for current cluster size.",
-				e);
+				dont_skip);
 
 
 // warning case
@@ -1727,17 +1736,39 @@ msl = select "index-type.mounts-size-limit" as "sprig_limit_warning" from NAMESP
 msl = do msl * 1 save as "mounts-size-limit";
 
 // calculate sprig overhead
-r = do 4096 * repl;
-r = do r/mcs;
-r = do r * pts;
-r = do r * 4096 save as "Minimum space required";
-r = do r > msl;
-ASSERT(r, False, "ALL FLASH / PMEM - Too many sprigs per partition for configured min-cluster-size.", "OPERATIONS", WARNING,
+// The replication factor should be min(repl, mcs)
+r1 = do 4096 * repl;
+r1 = do r1/mcs;
+r1 = do r1 * pts;
+r1 = do r1 * 4096 save as "Minimum space required";
+r1 = do r1 > msl;
+
+repl_smaller = do repl < mcs;
+e1 = do repl_smaller && dont_skip;
+
+ASSERT(r1, False, "ALL FLASH - Too many sprigs per partition for configured min-cluster-size.", "OPERATIONS", WARNING,
 				"Minimum space required for sprig overhead at min-cluster-size exceeds mounts-size-limit. 
 				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
 				"Check for too many sprigs for minimum cluster size.",
-				e);
-SET CONSTRAINT VERSION ALL;
+				e1);
+
+// same as calculation above but with min-cluster-size
+// Only is asserted if min-cluster-size is smaller than replication-factor.
+// r2 = do 4096 * mcs;
+// r2 = do r2/mcs;
+r2 = 4096;
+r2 = do r2 * pts;
+r2 = do r2 * 4096 save as "Minimum space required";
+r2 = do r2 > msl;
+
+mcs_smaller = do mcs <= repl;
+e2 = do mcs_smaller && dont_skip;
+
+ASSERT(r2, False, "ALL FLASH - Too many sprigs per partition for configured min-cluster-size.", "OPERATIONS", WARNING,
+				"Minimum space required for sprig overhead at min-cluster-size exceeds mounts-size-limit. 
+				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
+				"Check for too many sprigs for minimum cluster size.",
+				e2);
 
 SET CONSTRAINT VERSION >= 4.0.0.1;
 // SC mode rules
