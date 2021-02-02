@@ -523,9 +523,7 @@ class ShowConfigController(CollectinfoCommandController):
 
                 if formatted_configs:
                     self.view.show_xdr5_config("XDR Configuration",
-                                            formatted_configs,
-                    self.view.show_xdr5_config("XDR Configuration",
-                                            formatted_configs,
+                                               formatted_configs,
                                                cinfo_log,
                                                title_every_nth=title_every_nth,
                                                flip_output=flip_output,
