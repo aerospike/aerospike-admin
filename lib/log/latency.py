@@ -417,6 +417,7 @@ class LogLatency(object):
             self._set_bucket_details(arg_hist)
 
             slice_timedelta = arg_slice
+            max_bucket = 0
 
             # sometimes slice timestamps are not perfect, there might be some delta
             if slice_timedelta > self.reader.parse_timedelta("1"):
@@ -579,11 +580,11 @@ class LogLatency(object):
                 if which_slice > 0:
                     for i in range(max_bucket):
                         if i % arg_every_nth == 0:
-                            avg_overs[i] = avg_overs[i] // which_slice
-                    avg_rate = total_ops // total_seconds
+                            avg_overs[i] = avg_overs[i] / which_slice
+                    avg_rate = total_ops / total_seconds
                     avg_stat_values = []
                     if relative_stat_path:
-                        avg_stat_values = [v // total_seconds for v in total_stat_values]
+                        avg_stat_values = [v / total_seconds for v in total_stat_values]
 
                     for i in range(max_bucket):
                         if i % arg_every_nth:
