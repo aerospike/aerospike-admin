@@ -520,14 +520,23 @@ class ShowConfigController(CollectinfoCommandController):
 
             if xdr5_configs:
                 formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
-                self.view.show_xdr5_config("XDR Configuration",
-                                        formatted_configs,
-                                        cinfo_log,
-                                        title_every_nth=title_every_nth,
-                                        flip_output=flip_output,
-                                        timestamp=timestamp,
-                                        **self.mods)
 
+                if formatted_configs:
+                    self.view.show_xdr5_config("XDR Configuration",
+                                            formatted_configs,
+                    self.view.show_xdr5_config("XDR Configuration",
+                                            formatted_configs,
+                                               cinfo_log,
+                                               title_every_nth=title_every_nth,
+                                               flip_output=flip_output,
+                                               timestamp=timestamp,
+                                               **self.mods)
+                else:
+                    # ASADM versions < 1.0.2 could cause this error if ran on
+                    # aerospike server >= 5.0.
+                    # 
+                    self.logger.warning("Unable to parse XDR configuration info.  Collectinfo file may have been generated \n" \
+                                        "         with an old version of ASADM on Aerospike server >= 5.0.")
 
             if old_xdr_configs:
                 self.view.show_config("XDR Configuration",

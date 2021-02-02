@@ -2130,32 +2130,38 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
 
 
     formatted_xdr_configs = {}
+    
+    try:
+        for node in xdr_configs:
+            formatted_xdr_configs[node] = xdr_configs[node]['xdr_configs']
 
-    for node in xdr_configs:
-        formatted_xdr_configs[node] = xdr_configs[node].get('xdr_configs', {})
+        formatted_dc_configs = {}
 
-    formatted_dc_configs = {}
+        for node in xdr_configs:
+            for dc in xdr_configs[node]['dc_configs']:
+                if dc not in formatted_dc_configs:
+                    formatted_dc_configs[dc] = {}
 
-    for node in xdr_configs:
-        for dc in xdr_configs[node].get('dc_configs', {}):
-            if dc not in formatted_dc_configs:
-                formatted_dc_configs[dc] = {}
+                formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
 
-            formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
+        formatted_ns_configs = {}
 
-    formatted_ns_configs = {}
-
-    for node in xdr_configs:
+        for node in xdr_configs:
         for dc in xdr_configs[node].get('ns_configs', {}):
 
-            if dc not in formatted_ns_configs:
-                formatted_ns_configs[dc] = {}
+                if dc not in formatted_ns_configs:
+                    formatted_ns_configs[dc] = {}
 
-            if node not in formatted_ns_configs[dc]:
-                formatted_ns_configs[dc][node] = {}
+                if node not in formatted_ns_configs[dc]:
+                    formatted_ns_configs[dc][node] = {}
 
-            for ns in xdr_configs[node]['ns_configs'][dc]:
-                formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
+                for ns in xdr_configs[node]['ns_configs'][dc]:
+                    formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
+    
+    # A Key error is possible if the incomming data has the wrong schema.
+    # This can happen on asadm < 1.0.2 on server >= 5.0
+    except KeyError:
+        return {}
 
     formatted_configs = {
         'xdr_configs': formatted_xdr_configs,
