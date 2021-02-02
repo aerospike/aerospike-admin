@@ -913,8 +913,9 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
 
             for i, v in enumerate(hist):
                 cum_total += float(v)
+
                 if total > 0:
-                    portion = cum_total // total
+                    portion = cum_total / total
                 else:
                     portion = 0.0
 

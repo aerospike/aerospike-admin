@@ -651,9 +651,10 @@ class ShowDistributionController(CollectinfoCommandController):
         for timestamp in sorted(histogram.keys()):
             if not histogram[timestamp]:
                 continue
+            hist_output = common.create_histogram_output(histogram_name, histogram[timestamp])
             self.view.show_distribution(
                 title,
-                common.create_histogram_output(histogram_name, histogram[timestamp]),
+                hist_output,
                 unit,
                 histogram_name,
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),

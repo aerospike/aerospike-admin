@@ -1744,7 +1744,6 @@ class CollectinfoController(BasicCommandController):
         ).start()
 
         builds = builds.result()
-        print('BUILDS',builds)
         editions = editions.result()
         xdr_builds = xdr_builds.result()
         node_ids = node_ids.result()
