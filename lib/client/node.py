@@ -1414,10 +1414,19 @@ class Node(object):
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
+            xdr_data = None
+
             if self.is_feature_present("xdr"):
-                return util.dcs_info_to_list(self.info("get-config:context=xdr"))
+                xdr_data = util.info_to_dict(self.info("get-config:context=xdr"))
             else:
-                return util.dcs_info_to_list(self.xdr_info("get-config:context=xdr"))
+                xdr_data = util.info_to_dict(self.xdr_info("get-config:context=xdr"))
+            
+            dcs = []
+
+            if xdr_data:
+                dcs = xdr_data.get('dcs', '')
+
+            return dcs.split(',')
 
         # for older servers/XDRs
         else:
