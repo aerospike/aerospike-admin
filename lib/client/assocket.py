@@ -12,10 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.client.info import (
+    ASResponse,
+    ASProtocolError,
+    add_privileges, 
+    authenticate_new, 
+    authenticate_old, 
+    change_password, 
+    create_role, 
+    create_user, 
+    delete_privileges, 
+    delete_role, 
+    delete_whitelist, 
+    drop_user, 
+    grant_roles, 
+    info, 
+    login, 
+    query_role, 
+    query_roles, 
+    query_user, 
+    query_users, 
+    revoke_roles, 
+    set_password, 
+    set_whitelist
+ )
 import socket
 import warnings
-
-from lib.client.info import *
 
 try:
     with warnings.catch_warnings():
