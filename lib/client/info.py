@@ -89,7 +89,8 @@ def _unpack_string(buf, offset, sz):
 def _pack_protocol_header(buf, offset, protocol_version, protocol_type, sz):
     proto = (protocol_version << 56) | (protocol_type << 48) | sz
     _STRUCT_PROTOCOL_HEADER.pack_into(
-        buf, offset,
+        buf, 
+        offset,
         protocol_version, 
         protocol_type, 
         (sz >> 32) & 0xFFFF, 
@@ -143,7 +144,7 @@ def _hash_password(password):
 
 class ASProtocolError(Exception):
     def __init__(self, as_response, message):
-        self.message = message + " : " + str(ASResponse(as_response))
+        self.message = message + " : " + str(ASResponse(as_response)) + '.'
         super().__init__(self.message)
 
 
@@ -203,20 +204,18 @@ class ASPrivilege(IntEnum):
         privilege_str = privilege_str.lower()
         privilege_str = privilege_str.replace('_', '-')
 
-        if privilege_str == 'user-admin':
-            return cls.USER_ADMIN
-        elif privilege_str == 'sys-admin':
-            return cls.SYS_ADMIN
-        elif privilege_str == 'data-admin':
-            return cls.DATA_ADMIN
-        elif privilege_str == 'read':
-            return cls.READ
-        elif privilege_str == 'read-write':
-            return cls.READ_WRITE
-        elif privilege_str == 'read-write-udf':
-            return cls.READ_WRITE_UDF
-        elif privilege_str == 'write':
-            return cls.WRITE
+        str_to_enum_map = {
+            'user-admin': cls.USER_ADMIN,
+            'sys-admin': cls.SYS_ADMIN,
+            'data-admin': cls.DATA_ADMIN,
+            'read': cls.READ,
+            'read-write': cls.READ_WRITE,
+            'read-write-udf': cls.READ_WRITE_UDF,
+            'write': cls.WRITE,
+        }
+
+        if privilege_str in str_to_enum_map:
+            return str_to_enum_map[privilege_str]
         else:
             return cls.ERROR
     
@@ -276,8 +275,8 @@ def _unpack_admin_header(buf, offset=_PROTOCOL_HEADER_SIZE):
     return scheme, result_code, command, fields_count, offset
 
 def _create_admin_header(sz, command, field_count):
-    # 4B = field size, 1B = filed type
-    protocol_data_size = sz + _ADMIN_HEADER_SIZE + (5 * field_count)
+    # 4B = field size, 1B = fieled type
+    protocol_data_size = sz + _ADMIN_HEADER_SIZE + (_STRUCT_FIELD_HEADER.size * field_count)
     buffer_size = protocol_data_size + _PROTOCOL_HEADER_SIZE
     buf = create_string_buffer(buffer_size)
     offset = _pack_protocol_header(buf, 0, _ADMIN_MSG_VERSION, _ADMIN_MSG_TYPE, protocol_data_size)
@@ -898,14 +897,14 @@ def login(sock, user, password, auth_mode):
 
     if auth_mode == AuthMode.INTERNAL:
         field_count = 2
-        # 4B = field size, 1B = filed type
+        # 4B = field size, 1B = field type
         admin_data_size = len(user) + len(credential)
         send_buf, offset = _create_admin_header(admin_data_size, ASCommand.LOGIN, field_count)
         offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
         offset = _pack_admin_field(send_buf, offset, ASField.CREDENTIAL, credential)
     else:
         field_count = 3
-        # 4B = field size, 1B = filed type
+        # 4B = field size, 1B = field type
         admin_data_size = len(user) + len(credential) + len(password)
         send_buf, offset = _create_admin_header(admin_data_size, ASCommand.LOGIN, field_count)
         offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
