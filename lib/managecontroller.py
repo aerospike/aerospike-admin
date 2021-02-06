@@ -150,7 +150,7 @@ class ManageACLCreateUserController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully created user {}".format(username))
+        self.view.print_result("Successfully created user {}.".format(username))
 
 @CommandHelp(
     "Usage: delete user <username>",
@@ -178,7 +178,7 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully deleted user {}".format(username))
+        self.view.print_result("Successfully deleted user {}.".format(username))
 
 @CommandHelp(
     "Usage: set-password user <username> [password <password>]",
@@ -222,7 +222,7 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully set password for user {}".format(username))
+        self.view.print_result("Successfully set password for user {}.".format(username))
 
 @CommandHelp(
     "Usage: change-password user <username> [old <old-password>] [new <new-password>]",
@@ -279,7 +279,7 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully changed password for user {}".format(username))
+        self.view.print_result("Successfully changed password for user {}.".format(username))
 
 @CommandHelp(
     "Usage: grant user <username> roles <role1> [<role2> [...]]",
@@ -309,7 +309,7 @@ class ManageACLGrantUserController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully granted roles to user {}".format(username))
+        self.view.print_result("Successfully granted roles to user {}.".format(username))
 
 @CommandHelp(
     "Usage: revoke user <username> roles <role1> [<role2> [...]]",
@@ -339,7 +339,7 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully revoked roles from user {}".format(username))
+        self.view.print_result("Successfully revoked roles from user {}.".format(username))
 
 
 @CommandHelp(
@@ -406,7 +406,7 @@ class ManageACLCreateRoleController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result('Successfully created role {}'.format(role_name))
+        self.view.print_result('Successfully created role {}.'.format(role_name))
 
 @CommandHelp(
     "Usage: delete role <role-name>",
@@ -434,7 +434,7 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully deleted role {}".format(role_name))
+        self.view.print_result("Successfully deleted role {}.".format(role_name))
 
 @CommandHelp(
     "Usage: grant role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
@@ -480,7 +480,7 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully granted privilege to role {}".format(role_name))
+        self.view.print_result("Successfully granted privilege to role {}.".format(role_name))
 
 @CommandHelp(
     "Usage: revoke role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
@@ -526,7 +526,7 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
         
-        self.view.print_result("Successfully revoked privilege from role {}".format(role_name))
+        self.view.print_result("Successfully revoked privilege from role {}.".format(role_name))
 
 @CommandHelp(
     "Usage: allowlist role <role-name> allow <addr1> [<addr2> [...]]",
@@ -590,9 +590,9 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
             raise result
         
         if clear:
-            self.view.print_result("Successfully cleared allowlist from role {}".format(role_name))
+            self.view.print_result("Successfully cleared allowlist from role {}.".format(role_name))
         else:
-            self.view.print_result("Successfully updated allowlist for role {}".format(role_name))
+            self.view.print_result("Successfully updated allowlist for role {}.".format(role_name))
 @CommandHelp('"manage udfs" is used to add and remove user defined functions.')
 class ManageUdfsController(BasicCommandController):
     def __init__(self):
@@ -624,7 +624,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
             udf_path = os.path.join(os.getcwd(), udf_path)
 
         if not os.path.isfile(udf_path):
-            self.logger.error('Failed to add UDF {}: Path does not exist'.format(udf_name))
+            self.logger.error('Failed to add UDF {}: Path does not exist.'.format(udf_name))
             return
 
         with open(udf_path) as udf_file:
@@ -648,10 +648,10 @@ class ManageUdfsAddController(ManageLeafCommandController):
             raise resp
         
         if resp != 'ok':
-            self.logger.error('Failed to add UDF: {}'.format(resp))
+            self.logger.error('Failed to add UDF: {}.'.format(resp))
             return
 
-        self.view.print_result("Successfully added UDF {}".format(udf_name))
+        self.view.print_result("Successfully added UDF {}.".format(udf_name))
 
 @CommandHelp(
     "Usage: remove <module-name>",
@@ -673,7 +673,7 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
         # The server does not check this as of 5.3 and will return success even
         # if it does not exist.
         if udf_name not in existing_names:
-            self.logger.error('Failed to remove UDF {}: UDF does not exist'.format(udf_name))
+            self.logger.error('Failed to remove UDF {}: UDF does not exist.'.format(udf_name))
             return
 
         if (self.warn and
@@ -687,10 +687,10 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
             raise resp
 
         if resp != 'ok':
-            self.logger.error('Failed to remove UDF: {}'.format(resp))
+            self.logger.error('Failed to remove UDF: {}.'.format(resp))
             return
 
-        self.view.print_result("Successfully removed UDF {}".format(udf_name))
+        self.view.print_result("Successfully removed UDF {}.".format(udf_name))
 
 
 @CommandHelp('"manage sindex" is used to create and delete secondary indexes.')
@@ -775,10 +775,10 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         resp = list(resp.values())[0]
 
         if resp != 'ok':
-            self.logger.error("Failed to create sindex {} : {}".format(index_name, resp))
+            self.logger.error("Failed to create sindex {} : {}.".format(index_name, resp))
             return
 
-        self.view.print_result("Successfully created sindex {}".format(index_name))
+        self.view.print_result("Successfully created sindex {}.".format(index_name))
 
     
     # Hack for auto-complete 
@@ -840,4 +840,4 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
             self.logger.error("Failed to delete sindex {} : {}".format(index_name, resp))
             return
 
-        self.view.print_result("Successfully deleted sindex {}".format(index_name))
+        self.view.print_result("Successfully deleted sindex {}.".format(index_name))
