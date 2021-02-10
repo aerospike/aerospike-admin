@@ -1271,19 +1271,19 @@ class ShowUdfsController(CollectinfoCommandController):
         self.modifiers = set(['like'])
 
     def _do_default(self, line):
-        sindexes_data = self.log_handler.info_meta_data(stanza='udf')
+        udf_data = self.log_handler.info_meta_data(stanza='udf')
         
-        for timestamp in sorted(sindexes_data.keys()):
-            if not sindexes_data[timestamp]:
+        for timestamp in sorted(udf_data.keys()):
+            if not udf_data[timestamp]:
                 continue
             
             node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
             principal_id = self.log_handler.get_principal(timestamp)
             principal_ip = node_id_to_ip[principal_id]
-            data = sindexes_data[timestamp][principal_ip]
+            data = udf_data[timestamp][principal_ip]
             return util.Future(self.view.show_udfs, data, timestamp=timestamp,  **self.mods)
 
-@CommandHelp("Displays SIndexes and static metadata.")
+@CommandHelp("Displays secondary indexes and static metadata.")
 class ShowSIndexController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(['like'])

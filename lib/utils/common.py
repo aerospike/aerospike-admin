@@ -1792,7 +1792,7 @@ def _zip_files(dir_path, _size=1):
 
 
 def get_system_commands(port=3000):
-    # Unfortunately timestamp can not be printed in Centos with dmesg,
+    # Unfortunately timestamp cannot be printed in Centos with dmesg,
     # storing dmesg logs without timestamp for this particular OS.
     if "centos" == (distro.linux_distribution()[0]).lower():
         cmd_dmesg = "sudo dmesg"

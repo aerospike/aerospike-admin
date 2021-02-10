@@ -82,7 +82,7 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
                 cinfo_parser.extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception)
             except Exception as e:
                 if not ignore_exception:
-                    logger.error("Cinfo parser can not create intermediate json. Err: " + str(e))
+                    logger.error("Cinfo parser cannot create intermediate json. Err: " + str(e))
                     raise
 
     if json_parsed_timestamps:
@@ -431,7 +431,7 @@ def _get_meta_map(imap, ignore_exception):
     except Exception as e:
 
         if not ignore_exception:
-            logger.error("as_section_parser can not parse intermediate json to get meta info. Err: " + str(e))
+            logger.error("as_section_parser cannot parse intermediate json to get meta info. Err: " + str(e))
             raise
 
     return meta_map
@@ -450,7 +450,7 @@ def _get_as_map(imap, as_section_name_list, ignore_exception):
     except Exception as e:
 
         if not ignore_exception:
-            logger.error("as_section_parser can not parse intermediate json. Err: " + str(e))
+            logger.error("as_section_parser cannot parse intermediate json. Err: " + str(e))
             raise
 
     return as_map
@@ -470,7 +470,7 @@ def _get_sys_map(imap, ignore_exception):
     except Exception as e:
 
         if not ignore_exception:
-            logger.error("sys_section_parser can not parse intermediate json. Err: " + str(e))
+            logger.error("sys_section_parser cannot parse intermediate json. Err: " + str(e))
             raise
 
     return sys_map

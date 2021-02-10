@@ -289,7 +289,7 @@ class BaseController(object):
 
                 if method_name == DEFAULT:  # Print controller help
                     CommandHelp.display(self, indent=indent)
-                    required_mods = list(filter(lambda mod: mod != 'line', self.required_modifiers))
+                    required_mods = [mod for mod in self.required_modifiers if mod != 'line']
                     if required_mods:
                         CommandHelp.print_text(
                             "%sRequired%s: %s" % (terminal.underline(),
@@ -359,7 +359,7 @@ class CommandController(BaseController):
         while line:
             word = line.pop(0)
 
-            # Remove ',' from input since it can cause it needs to be filtered
+            # Remove ',' from input since it needs to be filtered
             # out in many cases.
             if word == ',':
                 continue

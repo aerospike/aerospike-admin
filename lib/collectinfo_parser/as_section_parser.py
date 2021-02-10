@@ -31,7 +31,7 @@ def parse_as_section(section_list, imap, parsed_map):
     nodes = _identify_nodes(imap)
 
     if not nodes:
-        logger.warning("Node can't be identified. Can not parse")
+        logger.warning("Node can't be identified. Cannot parse")
         return
 
     for section in section_list:
@@ -82,11 +82,11 @@ def parse_as_section(section_list, imap, parsed_map):
 
         else:
             logger.warning(
-                "Section unknown, can not be parsed. Check AS_SECTION_NAME_LIST. Section: " + section)
+                "Section unknown, cannot be parsed. Check AS_SECTION_NAME_LIST. Section: " + section)
 
     # Change raw value after parsing all sections. A section can be a child
 	# section of other like 'stat_dc'. Note that parsed_map[node][section]
-	# is not be there for child section. Can not parse all sections blindly,
+	# is not be there for child section. Cannot parse all sections blindly,
 	# otherwise it could run over, sections, which are been already converted.
     logger.info(
         "Converting basic raw string vals to original vals. sections: " + str(section_list))
@@ -385,7 +385,7 @@ def _get_nodes_from_network_info(imap):
                             "raw"
                         ])
     except KeyError:
-        raise  KeyError("New format of Network info detected. can not get nodeids")
+        raise  KeyError("New format of Network info detected. Cannot get nodeids.")
 
     logger.debug(
                 "Parsed all the nodes in info_network, signing off" + str(nodes))
@@ -845,7 +845,7 @@ def _parse_nondefault_section(sec_id, nodes, imap, parsed_map):
 
     if parent_section_name == '':
         logger.warning(
-            "Parent section name not present. Can not parse section")
+            "Parent section name not present. Cannot parse section")
         return
 
     info_section = imap[raw_section_name][0]
@@ -1241,7 +1241,7 @@ def _identify_features_from_stats(nodes, imap, parsed_map, section_name):
         _parse_stat_section(nodes, imap, parsed_map)
 
     if not _is_statistics_parsed(nodes, parsed_map):
-        logger.warning("Statistics not present. can not get feature.")
+        logger.warning("Statistics not present. Cannot get feature.")
         return
 
     for node in parsed_map:
@@ -1380,7 +1380,7 @@ def _get_meta_from_network_info(imap, nodes):
                 meta_map[node]['node_id'] = node_id
     
     except KeyError:
-        raise  KeyError("New format of Network info detected. Can not get network metadata")
+        raise  KeyError("New format of Network info detected. Cannot get network metadata.")
 
     return meta_map
 
@@ -1407,6 +1407,6 @@ def _get_ip_from_network_info(imap, nodes):
                 ip_map[node]['ip'] = ip
     
     except KeyError:
-        raise  KeyError("New format of Network info detected. Can not get network metadata")
+        raise  KeyError("New format of Network info detected. Cannot get network metadata.")
 
     return ip_map

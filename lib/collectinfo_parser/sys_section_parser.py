@@ -90,7 +90,7 @@ def parse_sys_section(section_list, imap, parsed_map):
 
         else:
             logger.warning(
-                "Section unknown, can not be parsed. Check SYS_SECTION_NAME_LIST. Section: " + section)
+                "Section unknown, cannot be parsed. Check SYS_SECTION_NAME_LIST. Section: " + section)
 
     logger.info("Converting basic raw string vals to original vals. Sections: " + str(section_list))
 

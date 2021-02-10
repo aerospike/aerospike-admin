@@ -512,6 +512,7 @@ class ShowController(BasicCommandController):
             'roles': ShowRolesController,
             'udfs': ShowUdfsController,
             'sindex': ShowSIndexController,
+            # TODO
             # 'rosters': ShowRosterController,
             # 'racks': ShowRacksController,
             # 'jobs': ShowJobsController,
@@ -1509,9 +1510,6 @@ class CollectinfoController(BasicCommandController):
         old_style_json = get_style_json()
         set_style_json()
 
-        old_style_json = get_style_json()
-        set_style_json()
-
         try:
             name = func.__name__
         except Exception:
@@ -1821,7 +1819,7 @@ class CollectinfoController(BasicCommandController):
         getter = GetPmapController(self.cluster)
         return getter.get_pmap(nodes=self.nodes)
 
-    def _get_as_acl(self):
+    def _get_as_access_control_list(self):
         acl_map = {}
         principal_node = self.cluster.get_expected_principal()
 
@@ -1868,7 +1866,7 @@ class CollectinfoController(BasicCommandController):
 
         latency_map = self._get_as_latency()
 
-        acl_map = self._get_as_acl()
+        acl_map = self._get_as_access_control_list()
 
         if CollectinfoController.get_pmap:
             pmap_map = self._get_as_pmap()

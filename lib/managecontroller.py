@@ -1,11 +1,11 @@
-from datetime import datetime
-from lib.view import terminal
 import os
+from datetime import datetime
+from getpass import getpass
+from logging import DEBUG
+from lib.view import terminal
 from lib.utils import util
 from lib.controllerlib import CommandHelp, BasicCommandController
 from lib.client.info import ASProtocolError
-from getpass import getpass
-from logging import DEBUG
 
 class ManageLeafCommandController(BasicCommandController):
     warn = False
@@ -36,6 +36,7 @@ class ManageController(BasicCommandController):
             "acl": ManageACLController,
             "udfs": ManageUdfsController,
             "sindex": ManageSIndexController,
+            # TODO hopefully next
             # "config": ManageConfigController,
             # "truncate": ManageTruncateController,
         }
@@ -131,9 +132,6 @@ class ManageACLCreateUserController(ManageLeafCommandController):
             password = self.mods['password'][0]
         else:
             password = getpass('Enter password for new user {}:'.format(username))
-
-        if warn and not self.prompt_challenge(self.view, ''):
-            return
 
         roles = self.mods['roles']
 
@@ -420,11 +418,11 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
 
     def _do_default(self, line):
         role_name = line.pop(0)
-        principal_node = self.cluster.get_expected_principal()
 
         if self.warn and not self.prompt_challenge():
                     return
 
+        principal_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_delete_role(role_name, nodes=[principal_node])
         result = list(result.values())[0]
 

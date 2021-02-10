@@ -1499,7 +1499,7 @@ class Node(object):
         content_len = len(content)
 
         command = ('udf-put:filename=' + udf_file_name + ';udf-type=' + udf_type
-                  + ';content-len=' + str(content_len) + ';content=' + str(content))
+                  + ';content-len=' + str(content_len) + ';content=' + content)
         resp = self.info(command)
 
         if 'error' in resp:
@@ -2004,7 +2004,7 @@ class Node(object):
                 f = open(self.sys_credential_file, "r")
             except IOError as e:
                 self.logger.warning(
-                    "Ignoring credential file. Can not open credential file. \n%s."
+                    "Ignoring credential file. cannot open credential file. \n%s."
                     % (str(e))
                 )
                 return result

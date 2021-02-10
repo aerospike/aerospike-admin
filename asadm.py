@@ -601,7 +601,7 @@ def main():
     if cli_args.asinfo_mode:
 
         if mode == AdminMode.COLLECTINFO_ANALYZER or mode == AdminMode.LOG_ANALYZER:
-            logger.critical("asinfo mode can not work with Collectinfo-analyser or Log-analyser mode.")
+            logger.critical("asinfo mode cannot work with Collectinfo-analyser or Log-analyser mode.")
 
         commands_arg = cli_args.execute
         if commands_arg and os.path.isfile(commands_arg):
