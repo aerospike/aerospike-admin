@@ -964,6 +964,9 @@ def _info_request(sock, buf):
     rsp_data = None
     # request over TCP
     try:
+        if not isinstance(buf, bytes):
+            buf = bytes(buf) # OpenSSL does not support c-types
+
         sock.send(buf)
         # get response
         rsp_hdr = sock.recv(8)
