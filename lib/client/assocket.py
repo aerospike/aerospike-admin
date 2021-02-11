@@ -133,6 +133,8 @@ class ASSocket():
         resp_code, self.session_token, self.session_expiration = login(self.sock, self.user, self.password, self.auth_mode)
 
         if resp_code != ASResponse.OK:
+            # TODO remove print statement and raise an exception like requests
+            print("Login failed for", self.user, ": ", str(ASResponse(resp_code)))
             self.sock.close()
             return False
 
@@ -153,6 +155,7 @@ class ASSocket():
             resp_code = authenticate_new(self.sock, self.user, session_token)
 
         if resp_code != ASResponse.OK:
+            # TODO remove print statement and raise an exception like requests
             print("Authentication failed for", self.user, ": ", str(ASResponse(resp_code)))
             self.sock.close()
             return False
