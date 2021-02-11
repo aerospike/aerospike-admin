@@ -134,7 +134,7 @@ class ASSocket():
 
         if resp_code != ASResponse.OK:
             # TODO remove print statement and raise an exception like requests
-            print("Login failed for", self.user, ": ", str(ASResponse(resp_code)))
+            print("Login failed for", self.user, ":", str(ASResponse(resp_code)) + '.')
             self.sock.close()
             return False
 
@@ -156,7 +156,7 @@ class ASSocket():
 
         if resp_code != ASResponse.OK:
             # TODO remove print statement and raise an exception like requests
-            print("Authentication failed for", self.user, ": ", str(ASResponse(resp_code)))
+            print("Authentication failed for", self.user, ":", str(ASResponse(resp_code)) + '.')
             self.sock.close()
             return False
 
