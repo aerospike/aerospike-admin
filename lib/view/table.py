@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from enum import Enum, auto, unique
+from enum import Enum, unique
 import re
 
 from lib.utils import filesize
@@ -100,14 +100,14 @@ class TitleFormats():
 @unique
 class Orientation(Enum):
     # Styles
-    HORIZONTAL = auto()
-    VERTICAL = auto()
+    HORIZONTAL = 0
+    VERTICAL = 1
 
 @unique
 class ColumnNameAlign(Enum):
-    LEFT = auto()
-    CENTER = auto()
-    RIGHT = auto()
+    LEFT = 0
+    CENTER = 1
+    RIGHT = 2
 
 
 class Table():
