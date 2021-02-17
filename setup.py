@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 setup (
-	version = "2.0.0",
+	version = "2.1.0",
 	name = "asadm",
 	packages=find_packages(exclude=['doc', 'test*']),
 	include_package_data=True,
