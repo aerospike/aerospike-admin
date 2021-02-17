@@ -15,6 +15,7 @@
 import copy
 import re
 import threading
+import logging
 from time import time
 
 from lib.client import util
@@ -35,6 +36,7 @@ class Cluster(object):
     use_services_alumni = False
     use_services_alt = False
     crawl_lock = threading.Lock()
+    logger = logging.getLogger("asadm")
 
     def __init__(self, seed_nodes, user=None, password=None, auth_mode=AuthMode.INTERNAL,
                  use_services_alumni=False, use_services_alt=False,
@@ -43,7 +45,6 @@ class Cluster(object):
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port,tls) address can be fqdn or ip.
         """
-
         self.__dict__ = self.cluster_state
         if self.cluster_state != {}:
             return
@@ -153,7 +154,7 @@ class Cluster(object):
                     principal = n.node_id
             return principal
         except Exception as e:
-            print(e)
+            self.logger.error(e)
             return ''
 
     def get_live_nodes(self):
@@ -500,7 +501,7 @@ class Cluster(object):
         return ip_map
 
     def __getattr__(self, name):
-        regex = re.compile("^info.*$|^xdr.*$")
+        regex = re.compile("^info.*$|^xdr.*$|^admin.*$")
         if regex.match(name):
             def info_func(*args, **kwargs):
                 if 'nodes' not in kwargs:

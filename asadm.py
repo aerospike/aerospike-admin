@@ -529,7 +529,7 @@ def execute_asinfo_commands(commands_arg, seed, user=None, password=None, auth_m
         if command:
             command = util.strip_string(command)
 
-        result = assock.execute(command)
+        result = assock.info(command)
 
         if result == -1 or result is None:
             result = IOError("Error: Invalid command '%s'" % command)

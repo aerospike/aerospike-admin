@@ -12,10 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.client.info import (
+    ASResponse,
+    ASProtocolError,
+    add_privileges, 
+    authenticate_new, 
+    authenticate_old, 
+    change_password, 
+    create_role, 
+    create_user, 
+    delete_privileges, 
+    delete_role, 
+    delete_whitelist, 
+    drop_user, 
+    grant_roles, 
+    info, 
+    login, 
+    query_role, 
+    query_roles, 
+    query_user, 
+    query_users, 
+    revoke_roles, 
+    set_password, 
+    set_whitelist
+ )
 import socket
 import warnings
-
-from lib.client.info import authenticate_old, authenticate_new, info, login
 
 try:
     with warnings.catch_warnings():
@@ -108,10 +130,9 @@ class ASSocket():
         if not self.sock:
             return False
 
-        rc, self.session_token, self.session_expiration = login(self.sock, self.user, self.password, self.auth_mode)
+        resp_code, self.session_token, self.session_expiration = login(self.sock, self.user, self.password, self.auth_mode)
 
-        if rc != 0:
-            print("Login failed for", self.user, ":", rc)
+        if resp_code != ASResponse.OK:
             self.sock.close()
             return False
 
@@ -126,17 +147,20 @@ class ASSocket():
 
         if session_token is None:
             # old authentication
-            rc = authenticate_old(self.sock, self.user, self.password)
+            resp_code = authenticate_old(self.sock, self.user, self.password)
         else:
             # new authentication with session_token
-            rc = authenticate_new(self.sock, self.user, session_token)
+            resp_code = authenticate_new(self.sock, self.user, session_token)
 
-        if rc != 0:
-            print("Authentication failed for", self.user, ":", rc)
+        if resp_code != ASResponse.OK:
+            print("Authentication failed for", self.user, ": ", str(ASResponse(resp_code)))
             self.sock.close()
             return False
 
         return True
+
+    def get_session_info(self):
+        return self.session_token, self.session_expiration
 
     def connect(self):
         try:
@@ -153,8 +177,8 @@ class ASSocket():
             return False
 
         try:
-            result = self.execute("node")
-
+            result = self.info("node")
+            
             if result is None or result == -1:
                 return False
 
@@ -178,8 +202,110 @@ class ASSocket():
     def settimeout(self, timeout):
         self.sock.settimeout(timeout)
 
-    def execute(self, command):
+    def info(self, command):
         return info(self.sock, command)
 
-    def get_session_info(self):
-        return self.session_token, self.session_expiration
+    def create_user(self, user, password, roles):
+        rsp_code = create_user(self.sock, user, password, roles)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to create user')
+
+    def delete_user(self, user):
+        rsp_code = drop_user(self.sock, user)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to drop user')
+
+    def set_password(self, user, password):
+        rsp_code = set_password(self.sock, user, password)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to set password')
+
+    def change_password(self, user, old_password, new_password):
+        rsp_code = change_password(self.sock, user, old_password, new_password)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to change password')
+
+    def grant_roles(self, user, roles):
+        rsp_code = grant_roles(self.sock, user, roles)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to grant roles')
+
+    def revoke_roles(self, user, roles):
+        rsp_code = revoke_roles(self.sock, user, roles)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to revoked roles')
+
+    def query_users(self):
+        rsp_code, users_dict = query_users(self.sock)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to query users')
+
+        return users_dict
+
+    def query_user(self, user):
+        rsp_code, users_dict = query_user(self.sock, user)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to query user')
+
+        return users_dict
+
+    def create_role(self, role, privileges, whitelist=None):
+        rsp_code = create_role(self.sock, role, privileges, whitelist)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to create role')
+
+    def delete_role(self, role):
+        rsp_code = delete_role(self.sock, role)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to delete role')
+
+    def add_privileges(self, role, privileges):
+        rsp_code = add_privileges(self.sock, role, privileges)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to add privileges')
+
+    def delete_privileges(self, role, privileges):
+        rsp_code = delete_privileges(self.sock, role, privileges)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to delete privileges')
+
+    def set_whitelist(self, role, whitelist):
+        rsp_code = set_whitelist(self.sock, role, whitelist)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to set whitelist')
+
+    def delete_whitelist(self, role):
+        rsp_code = delete_whitelist(self.sock, role)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to delete whitelist')
+
+    def query_roles(self):
+        rsp_code, role_dict = query_roles(self.sock)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to query roles')
+
+        return role_dict
+
+    def query_role(self, role):
+        rsp_code, role_dict = query_role(self.sock, role)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(rsp_code, 'Failed to query role')
+
+        return role_dict
+
