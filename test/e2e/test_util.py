@@ -75,14 +75,8 @@ def get_separate_output(in_str = ''):
     ls = []
     for item in out:
         item = remove_escape_sequence(item)
-        item = '{' + item + '}'
-        try:
-            ls.append(json.loads(item))
-        except Exception:
-            print(out)
-            print(item)
-            # print(item[52:54])
-
+        item = "{" + item + "}"
+        ls.append(json.loads(item))
 
     return ls
 

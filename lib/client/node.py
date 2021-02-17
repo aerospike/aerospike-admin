@@ -19,6 +19,7 @@ import re
 import socket
 import threading
 from time import time
+import base64
 
 from lib.client import util
 from lib.client.assocket import ASSocket
@@ -1413,10 +1414,19 @@ class Node(object):
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
+            xdr_data = None
+
             if self.is_feature_present("xdr"):
-                return util.dcs_info_to_list(self.info("get-config:context=xdr"))
+                xdr_data = util.info_to_dict(self.info("get-config:context=xdr"))
             else:
-                return util.dcs_info_to_list(self.xdr_info("get-config:context=xdr"))
+                xdr_data = util.info_to_dict(self.xdr_info("get-config:context=xdr"))
+            
+            dcs = []
+
+            if xdr_data:
+                dcs = xdr_data.get('dcs', '')
+
+            return dcs.split(',')
 
         # for older servers/XDRs
         else:
@@ -1470,10 +1480,10 @@ class Node(object):
     @return_exceptions
     def info_udf_list(self):
         """
-        Get config for a udf.
+        Get list of UDFs stored on the node.
 
         Returns:
-        dict -- {file_name1:{key_name : key_value, ...}, file_name2:{key_name : key_value, ...}}
+        dict -- {<file-name>: {"filename": <file-name>, "hash": <hash>, "type": 'LUA'}, . . .}
         """
         udf_data = self.info("udf-list")
 
@@ -1481,6 +1491,33 @@ class Node(object):
             return {}
 
         return util.info_to_dict_multi_level(udf_data, "filename", delimiter2=",")
+
+    @return_exceptions
+    def info_udf_put(self, udf_file_name, udf_str, udf_type = 'LUA'):
+        content = base64.b64encode(udf_str.encode('ascii'))
+        content = content.decode('ascii')
+        content_len = len(content)
+
+        command = ('udf-put:filename=' + udf_file_name + ';udf-type=' + udf_type
+                  + ';content-len=' + str(content_len) + ';content=' + content)
+        resp = self.info(command)
+
+        if 'error' in resp:
+            message = resp.split('=')[1]
+            return message
+
+        return 'ok'
+
+    @return_exceptions
+    def info_udf_remove(self, udf_file_name):
+        command = ('udf-remove:filename=' + udf_file_name + ';')
+        resp = self.info(command)
+
+        if 'error' in resp:
+            message = resp.split('=')[1]
+            return message
+
+        return 'ok'
 
     @return_exceptions
     def info_roster(self):
@@ -1664,6 +1701,50 @@ class Node(object):
         return util.info_to_dict(self.info("sindex/%s/%s" % (namespace, indexname)))
 
     @return_exceptions
+    def info_sindex_create(self, index_name, namespace, bin_name, bin_type, index_type=None, set_=None):
+        command = 'sindex-create:indexname={};'.format(index_name)
+
+        if index_type:
+            command += 'indextype={};'.format(index_type)
+
+        command += 'ns={};'.format(namespace)
+
+        if set_:
+            command += 'set={};'.format(set_)
+
+        command += 'indexdata={},{}'.format(bin_name, bin_type)
+        resp = self.info(command)
+
+        if 'FAIL' in resp:
+            message = resp.split(':')[-1]
+            return message.strip()
+
+        return 'ok'
+
+    @return_exceptions
+    def info_sindex_delete(self, index_name, namespace, set_=None):
+        command = ''
+
+        if set_ is None:
+            command = ('sindex-delete:ns={};indexname={}'.format(
+                    namespace, index_name
+                )
+            )
+        else:
+            command = ('sindex-delete:ns={};set={};indexname={}'.format(
+                    namespace, set_, index_name
+                )
+            )
+
+        resp = self.info(command)
+
+        if 'FAIL' in resp:
+            message = resp.split(':')[-1]
+            return message.strip()
+
+        return 'ok'
+
+    @return_exceptions
     def info_build_version(self):
         """
         Get Build Version
@@ -1692,7 +1773,6 @@ class Node(object):
             raise IOError("Error: Could not connect to node %s" % ip)
 
         try:
-            print(*args)
             result = admin_func(sock, *args)
 
             # Either restore the socket in the pool or close it if it is full.
@@ -1924,7 +2004,7 @@ class Node(object):
                 f = open(self.sys_credential_file, "r")
             except IOError as e:
                 self.logger.warning(
-                    "Ignoring credential file. Can not open credential file. \n%s."
+                    "Ignoring credential file. cannot open credential file. \n%s."
                     % (str(e))
                 )
                 return result

@@ -913,8 +913,9 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
 
             for i, v in enumerate(hist):
                 cum_total += float(v)
+
                 if total > 0:
-                    portion = cum_total // total
+                    portion = cum_total / total
                 else:
                     portion = 0.0
 
@@ -1714,7 +1715,7 @@ def _collectinfo_content(func, cmd="", alt_cmds=[]):
     )
     logger.info(info_line)
 
-    o_line = constants.COLLECTINFO_SEPRATOR
+    o_line = constants.COLLECTINFO_SEPERATOR
 
     o, e = None, None
 
@@ -1791,7 +1792,7 @@ def _zip_files(dir_path, _size=1):
 
 
 def get_system_commands(port=3000):
-    # Unfortunately timestamp can not be printed in Centos with dmesg,
+    # Unfortunately timestamp cannot be printed in Centos with dmesg,
     # storing dmesg logs without timestamp for this particular OS.
     if "centos" == (distro.linux_distribution()[0]).lower():
         cmd_dmesg = "sudo dmesg"
@@ -2130,32 +2131,38 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
 
 
     formatted_xdr_configs = {}
+    
+    try:
+        for node in xdr_configs:
+            formatted_xdr_configs[node] = xdr_configs[node]['xdr_configs']
 
-    for node in xdr_configs:
-        formatted_xdr_configs[node] = xdr_configs[node].get('xdr_configs', {})
+        formatted_dc_configs = {}
 
-    formatted_dc_configs = {}
+        for node in xdr_configs:
+            for dc in xdr_configs[node]['dc_configs']:
+                if dc not in formatted_dc_configs:
+                    formatted_dc_configs[dc] = {}
 
-    for node in xdr_configs:
-        for dc in xdr_configs[node]['dc_configs']:
-            if dc not in formatted_dc_configs:
-                formatted_dc_configs[dc] = {}
+                formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
 
-            formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
+        formatted_ns_configs = {}
 
-    formatted_ns_configs = {}
+        for node in xdr_configs:
+            for dc in xdr_configs[node]['ns_configs']:
 
-    for node in xdr_configs:
-        for dc in xdr_configs[node]['ns_configs']:
+                if dc not in formatted_ns_configs:
+                    formatted_ns_configs[dc] = {}
 
-            if dc not in formatted_ns_configs:
-                formatted_ns_configs[dc] = {}
+                if node not in formatted_ns_configs[dc]:
+                    formatted_ns_configs[dc][node] = {}
 
-            if node not in formatted_ns_configs[dc]:
-                formatted_ns_configs[dc][node] = {}
-
-            for ns in xdr_configs[node]['ns_configs'][dc]:
-                formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
+                for ns in xdr_configs[node]['ns_configs'][dc]:
+                    formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
+    
+    # A Key error is possible if the incomming data has the wrong schema.
+    # This can happen on asadm < 1.0.2 on server >= 5.0
+    except KeyError:
+        return {}
 
     formatted_configs = {
         'xdr_configs': formatted_xdr_configs,

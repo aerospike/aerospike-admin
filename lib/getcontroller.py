@@ -14,7 +14,6 @@
 
 import copy
 from distutils.version import LooseVersion
-from lib.utils.util import filter_list
 from lib.utils import constants
 from lib.utils import common, util
 from lib.utils.common import is_new_latencies_version
@@ -877,3 +876,43 @@ class GetPmapController():
         pmap_data = self._get_pmap_data(pmap_info, ns_info, cluster_keys, node_ids)
 
         return pmap_data
+
+class GetUsersController():
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_users(self, nodes='all'):
+        users_data = self.cluster.admin_query_users(nodes=nodes)
+        return users_data
+
+    def get_user(self, username, nodes='all'):
+        user_data = self.cluster.admin_query_user(username, nodes=nodes)
+        return user_data
+
+class GetRolesController():
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_roles(self, nodes='all'):
+        roles_data = self.cluster.admin_query_roles(nodes=nodes)
+        return roles_data
+
+    def get_role(self, role_name, nodes='all'):
+        role_data = self.cluster.admin_query_role(role_name, nodes=nodes)
+        return role_data
+
+class GetUdfController():
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_udfs(self, nodes='all'):
+        roles_data = self.cluster.info_udf_list(nodes=nodes)
+        return roles_data
+
+class GetSIndexController():
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_sindexs(self, nodes='all'):
+        sindex_data = self.cluster.info_sindex(nodes=nodes)
+        return sindex_data

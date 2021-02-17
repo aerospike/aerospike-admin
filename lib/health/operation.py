@@ -917,7 +917,7 @@ def apply_operator(data, key, op_fn, group_by=None, arg2=None, recurse=False, on
                 # Apply operation on next level only, no further
                 if isinstance(data[_key], dict):
                     # Next level is dict, so apply operation on keys
-                    res_dict[k] = op_fn(data[_key].keys(), save_param)
+                    res_dict[k] = op_fn(list(data[_key].keys()), save_param)
                 else:
                     # Next level is not dict, so apply operation on value
                     res_dict[k] = op_fn([data[_key]], save_param)

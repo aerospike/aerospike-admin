@@ -72,12 +72,12 @@ class NodeTest(unittest.TestCase):
             return return_value
 
         Node._info_cinfo = Mock(side_effect=info_cinfo_side_effect)
-        # Node._info_cinfo.return_value = side_effect
 
         n = Node("192.1.1.1")
         return n
 
     def setUp(self):
+        self.maxDiff = None
         info_cinfo = patch('lib.client.node.Node._info_cinfo')
         info_build_version = patch('lib.client.node.Node.info_build_version')
         getfqdn = patch('lib.client.node.getfqdn')
@@ -570,6 +570,114 @@ class NodeTest(unittest.TestCase):
         n.new_histogram_version = False
         n.info_histogram('objsz', logarithmic=True, raw_output=True)
         n._info_cinfo.assert_called_with("hist-dump:ns=test;hist=objsz", n.ip)
+
+    def test_info_latencies_default(self):
+        raw = '''
+        batch-index:;{test}-read:msec,1.0,2.00,3.00,4.00,5.00,6.00,7.00,8.00,
+        9.00,10.00,11.00,12.00,13.00,14.00,15.00,16.00,17.00,18.00;{test}-write:msec,
+        19.0,20.00,21.00,22.00,23.00,24.00,25.00,26.00,27.00,28.00,29.00,30.00,31.00,32.00,
+        33.00,34.00,35.00,36.00;{test}-udf:;{test}-query:;{bar}-read:msec,37.0,38.00,39.00,40.00,41.00,42.00,43.00,44.00,
+        45.00,46.00,47.00,48.00,49.00,50.00,51.00,52.00,53.00,54.00;{bar}-write:msec,
+        55.0,56.00,57.00,58.00,59.00,60.00,61.00,62.00,63.00,64.00,65.00,66.00,67.00,68.00,
+        69.00,70.00,71.00,72.00;
+        {bar}-udf:;{bar}-query:"
+        '''
+        n = self.get_info_mock(raw, {})
+        expected = {
+            'read': {
+                'namespace': {
+                    'test': {
+                        "columns": ['ops/sec', '>1ms', '>8ms', '>64ms'],
+                        "values": [[1.0, 2.0, 5.0, 8.0]]
+                    },
+                    'bar': {
+                        "columns": ['ops/sec', '>1ms', '>8ms', '>64ms'],
+                        "values": [[37.0, 38.0, 41.0, 44.0]]
+                    }
+                },
+                'total': {
+                    "columns": ['ops/sec', '>1ms', '>8ms', '>64ms'],
+                    "values": [[38.0, 37.05, 40.05, 43.05]]
+                }
+            },
+            'write': {
+                'namespace': {
+                    'test': {
+                        "columns": ['ops/sec', '>1ms', '>8ms', '>64ms'],
+                        "values": [[19.0, 20.0, 23.0, 26.0]]
+                    },
+                    'bar': {
+                        "columns": ['ops/sec', '>1ms', '>8ms', '>64ms'],
+                        "values": [[55.0, 56.0, 59.0, 62.0]]
+                    }
+                },
+                'total': {
+                    "columns": ['ops/sec', '>1ms', '>8ms', '>64ms'],
+                    "values": [[74.0, 46.76, 49.76, 52.76]]
+                }
+            }
+        }
+
+        result = n.info_latencies()
+        self.assertDictEqual(result, expected)
+        n._info_cinfo.assert_called_with("latencies:", n.ip)
+
+    def test_info_latencies_e2_b4(self):
+        raw = '''
+        batch-index:;{test}-read:msec,1.0,2.00,3.00,4.00,5.00,6.00,7.00,8.00,
+        9.00,10.00,11.00,12.00,13.00,14.00,15.00,16.00,17.00,18.00;{test}-write:msec,
+        19.0,20.00,21.00,22.00,23.00,24.00,25.00,26.00,27.00,28.00,29.00,30.00,31.00,32.00,
+        33.00,34.00,35.00,36.00;{test}-udf:;{test}-query:;{bar}-read:msec,37.0,38.00,39.00,40.00,41.00,42.00,43.00,44.00,
+        45.00,46.00,47.00,48.00,49.00,50.00,51.00,52.00,53.00,54.00;{bar}-write:msec,
+        55.0,56.00,57.00,58.00,59.00,60.00,61.00,62.00,63.00,64.00,65.00,66.00,67.00,68.00,
+        69.00,70.00,71.00,72.00;
+        {bar}-udf:;{bar}-query:"
+        '''
+        n = self.get_info_mock(raw, {})
+        expected = {
+            'read': {
+                'namespace': {
+                    'test': {
+                        "columns": ['ops/sec', '>1ms', '>4ms', '>16ms', '>64ms'],
+                        "values": [[1.0, 2.0, 4.0, 6.0, 8.0]]
+                    },
+                    'bar': {
+                        "columns": ['ops/sec', '>1ms', '>4ms', '>16ms', '>64ms'],
+                        "values": [[37.0, 38.0, 40.0, 42.0, 44.0]]
+                    }
+                },
+                'total': {
+                    "columns": ['ops/sec', '>1ms', '>4ms', '>16ms', '>64ms'],
+                    "values": [[38.0, 37.05, 39.05, 41.05, 43.05]]
+                }
+            },
+            'write': {
+                'namespace': {
+                    'test': {
+                        "columns": ['ops/sec', '>1ms', '>4ms', '>16ms', '>64ms'],
+                        "values": [[19.0, 20.0, 22.0, 24.0, 26.0]]
+                    },
+                    'bar': {
+                        "columns": ['ops/sec', '>1ms', '>4ms', '>16ms', '>64ms'],
+                        "values": [[55.0, 56.0, 58.0, 60.0, 62.0]]
+                    }
+                },
+                'total': {
+                    "columns": ['ops/sec', '>1ms', '>4ms', '>16ms', '>64ms'],
+                    "values": [[74.0, 46.76, 48.76, 50.76, 52.76]]
+                }
+            }
+        }
+
+        result = n.info_latencies(buckets=4, exponent_increment=2)
+        self.assertDictEqual(result, expected)
+        n._info_cinfo.assert_called_with("latencies:", n.ip)
+
+    def test_info_latencies_verbose(self):
+        raw = ''
+        n = self.get_info_mock(raw, {'namespaces': 'test'})
+        _ = n.info_latencies(verbose=True)
+        n._info_cinfo.assert_called_with("latencies:hist={test}-benchmarks-batch-sub", n.ip)
 
 if __name__ == "__main__":
     unittest.main()

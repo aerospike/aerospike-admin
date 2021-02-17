@@ -34,10 +34,10 @@ class TestInfo(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        TestInfo.rc = controller.BasicRootController()
+        TestInfo.rc = controller.BasicRootController(user='admin', password='admin')
+
         actual_out = util.capture_stdout(TestInfo.rc.execute, ['info'])
         actual_out += util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex'])
-        # print(actual_out)
         TestInfo.output_list = test_util.get_separate_output(actual_out)
 
         for item in TestInfo.output_list:
@@ -94,22 +94,20 @@ class TestInfo(unittest.TestCase):
 
         # Know to be up-to-date with server 5.1
         exp_header = [
-            'Node', 
             'Index Name',
-            'Index Type',
             'Namespace', 
             'Set', 
+            'Node', 
             'Bins', 
-            'Num Bins', 
             'Bin Type', 
             'State', 
             'Keys',
             'Entries',
-            'Si Accounted',
-            'q',
-            'w',
-            'd',
-            's'
+            'Memory Used',
+            'Queries Requests',
+            'Queries Avg Num Recs',
+            'Updates Writes',
+            'Updates Deletes'
         ]
 
         if TestInfo.sindex_info == '':
@@ -199,7 +197,7 @@ class TestInfo(unittest.TestCase):
         ]
         
         actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(TestInfo.xdr_info, horizontal = True, header_len=3)
-        # print(actual_header)
+        
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
         

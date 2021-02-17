@@ -133,6 +133,8 @@ class ASSocket():
         resp_code, self.session_token, self.session_expiration = login(self.sock, self.user, self.password, self.auth_mode)
 
         if resp_code != ASResponse.OK:
+            # TODO remove print statement and raise an exception like requests
+            print("Login failed for", self.user, ":", str(ASResponse(resp_code)) + '.')
             self.sock.close()
             return False
 
@@ -153,7 +155,8 @@ class ASSocket():
             resp_code = authenticate_new(self.sock, self.user, session_token)
 
         if resp_code != ASResponse.OK:
-            print("Authentication failed for", self.user, ": ", str(ASResponse(resp_code)))
+            # TODO remove print statement and raise an exception like requests
+            print("Authentication failed for", self.user, ":", str(ASResponse(resp_code)) + '.')
             self.sock.close()
             return False
 
@@ -215,7 +218,7 @@ class ASSocket():
         rsp_code = drop_user(self.sock, user)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, 'Failed to drop user')
+            raise ASProtocolError(rsp_code, 'Failed to delete user')
 
     def set_password(self, user, password):
         rsp_code = set_password(self.sock, user, password)
@@ -239,7 +242,7 @@ class ASSocket():
         rsp_code = revoke_roles(self.sock, user, roles)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, 'Failed to revoked roles')
+            raise ASProtocolError(rsp_code, 'Failed to revoke roles')
 
     def query_users(self):
         rsp_code, users_dict = query_users(self.sock)
@@ -273,25 +276,25 @@ class ASSocket():
         rsp_code = add_privileges(self.sock, role, privileges)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, 'Failed to add privileges')
+            raise ASProtocolError(rsp_code, 'Failed to grant privilege')
 
     def delete_privileges(self, role, privileges):
         rsp_code = delete_privileges(self.sock, role, privileges)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, 'Failed to delete privileges')
+            raise ASProtocolError(rsp_code, 'Failed to revoke privileges')
 
     def set_whitelist(self, role, whitelist):
         rsp_code = set_whitelist(self.sock, role, whitelist)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, 'Failed to set whitelist')
+            raise ASProtocolError(rsp_code, 'Failed to set allowlist')
 
     def delete_whitelist(self, role):
         rsp_code = delete_whitelist(self.sock, role)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, 'Failed to delete whitelist')
+            raise ASProtocolError(rsp_code, 'Failed to delete allowlist')
 
     def query_roles(self):
         rsp_code, role_dict = query_roles(self.sock)

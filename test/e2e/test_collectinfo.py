@@ -21,7 +21,7 @@ class TestCollectinfo(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        TestCollectinfo.rc = controller.BasicRootController()
+        TestCollectinfo.rc = controller.BasicRootController(user='admin', password='admin')
         # actual_out = util.capture_stdout(TestCollectinfo.rc.execute, ['collectinfo'])
 
     def test_collectinfo(self):

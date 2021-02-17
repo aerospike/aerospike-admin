@@ -15,7 +15,7 @@
 import logging
 
 from lib.controllerlib import BaseController, CommandController, CommandHelp, ShellException
-from lib.log.loghdlr import Loghdlr
+from lib.log.loghandler import LogHandler
 from lib.utils import util
 from lib.utils.constants import SHOW_RESULT_KEY
 from lib.view import terminal
@@ -24,25 +24,25 @@ from lib.view.view import CliView
 
 class LogCommandController(CommandController):
 
-    loghdlr = None
+    log_handler = None
 
-    def __init__(self, loghdlr):
-        LogCommandController.loghdlr = loghdlr
+    def __init__(self, log_handler):
+        LogCommandController.log_handler = log_handler
 
 
 @CommandHelp('Aerospike Admin')
 class LogRootController(BaseController):
 
-    loghdlr = None
+    log_handler = None
 
     def __init__(self, asadm_version='', log_path=" "):
 
         super(LogRootController, self).__init__(asadm_version)
 
-        # Create static instance of loghdlr
-        LogRootController.loghdlr = Loghdlr(log_path)
+        # Create static instance of log_handler
+        LogRootController.log_handler = LogHandler(log_path)
 
-        LogRootController.command = LogCommandController(self.loghdlr)
+        LogRootController.command = LogCommandController(self.log_handler)
 
         self.controller_map = {
             'add': AddController,
@@ -217,7 +217,7 @@ class AddController(LogCommandController):
 
             path = util.strip_string(line[index])
 
-            n_log_added, error = self.loghdlr.add_log_files_at_path(path)
+            n_log_added, error = self.log_handler.add_log_files_at_path(path)
 
             if n_log_added == 1:
                 print("%d server log added for server analysis." % (n_log_added))
@@ -238,7 +238,7 @@ class ListController(LogCommandController):
     def _do_default(self, line):
         print(terminal.bold() + "Added Logs:" + terminal.unbold(), end=' ')
         index = 1
-        all_log_files = self.loghdlr.get_log_files(all_list=True)
+        all_log_files = self.log_handler.get_log_files(all_list=True)
         for key in sorted(all_log_files.keys()):
             print("\n" + str(index) + "  : " + key.ljust(20) + all_log_files[key], end=' ')
             index += 1
@@ -249,7 +249,7 @@ class ListController(LogCommandController):
 
         print("\n" + terminal.bold() + "Selected Logs:" + terminal.unbold(), end=' ')
         index = 1
-        selected_log_files = self.loghdlr.get_log_files(all_list=False)
+        selected_log_files = self.log_handler.get_log_files(all_list=False)
         for key in sorted(selected_log_files.keys()):
             print("\n" + " ".ljust(5) + key.ljust(20) + selected_log_files[key], end=' ')
             index += 1
@@ -271,7 +271,7 @@ class SelectController(LogCommandController):
         self.modifiers = set()
 
     def _do_default(self, line):
-        self.loghdlr.select_logs_by_index(line)
+        self.log_handler.select_logs_by_index(line)
 
 
 @CommandHelp(
@@ -285,7 +285,7 @@ class RemoveController(LogCommandController):
         self.modifiers = set()
 
     def _do_default(self, line):
-        self.loghdlr.remove_logs_by_index(line)
+        self.log_handler.remove_logs_by_index(line)
 
 
 @CommandHelp("Set pager for output")
@@ -390,12 +390,12 @@ class _GrepFile(LogCommandController):
         if not search_strs:
             return
 
-        logs = self.loghdlr.get_logs_by_index(sources)
+        logs = self.log_handler.get_logs_by_index(sources)
 
         if not logs:
             self.logger.info("No log files added. Use add command to add log files.")
 
-        show_results = self.loghdlr.grep(logs, search_strs, ignore_strs=ignore_strs, is_and=is_and,
+        show_results = self.log_handler.grep(logs, search_strs, ignore_strs=ignore_strs, is_and=is_and,
                                          is_casesensitive=is_casesensitive, start_tm_arg=start_tm, duration_arg=duration, uniq=uniq,
                                          output_page_size=output_page_size, system_grep=system_grep)
 
@@ -488,12 +488,12 @@ class _GrepFile(LogCommandController):
         if not search_strs:
             return
 
-        logs = self.loghdlr.get_logs_by_index(sources)
+        logs = self.log_handler.get_logs_by_index(sources)
 
         if not logs:
             self.logger.info("No log files added. Use add command to add log files.")
 
-        count_results = self.loghdlr.grep_count(logs, search_strs, ignore_strs=ignore_strs,
+        count_results = self.log_handler.grep_count(logs, search_strs, ignore_strs=ignore_strs,
                                                 is_and=is_and, is_casesensitive=is_casesensitive, start_tm_arg=start_tm, duration_arg=duration,
                                                 uniq=uniq, slice_duration=slice_duration, output_page_size=output_page_size, system_grep=system_grep)
 
@@ -590,12 +590,12 @@ class _GrepFile(LogCommandController):
         if not search_strs:
             return
 
-        logs = self.loghdlr.get_logs_by_index(sources)
+        logs = self.log_handler.get_logs_by_index(sources)
 
         if not logs:
             self.logger.info("No log files added. Use add command to add log files.")
 
-        diff_results = self.loghdlr.grep_diff(logs, search_strs, is_casesensitive=is_casesensitive, start_tm_arg=start_tm,
+        diff_results = self.log_handler.grep_diff(logs, search_strs, is_casesensitive=is_casesensitive, start_tm_arg=start_tm,
                                               duration_arg=duration, slice_duration=slice_tm, every_nth_slice=show_count,
                                               upper_limit_check=limit, output_page_size=output_page_size)
 
@@ -691,12 +691,12 @@ class _GrepFile(LogCommandController):
             ns_hist += "%s - " % (ns)
         ns_hist += "%s" % (hist)
 
-        logs = self.loghdlr.get_logs_by_index(sources)
+        logs = self.log_handler.get_logs_by_index(sources)
 
         if not logs:
             self.logger.info("No log files added. Use 'add /path/to/log' command to add log files.")
 
-        latency_results = self.loghdlr.loglatency(logs, hist, start_tm_arg=start_tm, duration_arg=duration,
+        latency_results = self.log_handler.loglatency(logs, hist, start_tm_arg=start_tm, duration_arg=duration,
                                                   slice_duration=slice_tm, bucket_count=bucket_count,
                                                   every_nth_bucket=every_nth_bucket, rounding_time=time_rounding,
                                                   output_page_size=output_page_size, ns=ns,

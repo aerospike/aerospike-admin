@@ -15,7 +15,7 @@
 import copy
 
 from lib.controllerlib import BaseController, CommandHelp, CommandController
-from lib.collectinfo.loghdlr import CollectinfoLoghdlr
+from lib.collectinfo.loghandler import CollectinfoLogHandler
 from lib.health.util import create_health_input_dict, h_eval, create_snapshot_key
 from lib.utils.constants import *
 from lib.utils import common, util
@@ -25,16 +25,16 @@ from lib.view.view import CliView
 
 class CollectinfoCommandController(CommandController):
 
-    loghdlr = None
+    log_handler = None
 
-    def __init__(self, loghdlr):
-        CollectinfoCommandController.loghdlr = loghdlr
+    def __init__(self, log_handler):
+        CollectinfoCommandController.log_handler = log_handler
 
 
 @CommandHelp("Aerospike Admin")
 class CollectinfoRootController(BaseController):
 
-    loghdlr = None
+    log_handler = None
     command = None
 
     def __init__(self, asadm_version="", clinfo_path=" "):
@@ -42,9 +42,9 @@ class CollectinfoRootController(BaseController):
         super(CollectinfoRootController, self).__init__(asadm_version)
 
         # Create Static Instance of Loghdlr
-        CollectinfoRootController.loghdlr = CollectinfoLoghdlr(clinfo_path)
+        CollectinfoRootController.log_handler = CollectinfoLogHandler(clinfo_path)
 
-        CollectinfoRootController.command = CollectinfoCommandController(self.loghdlr)
+        CollectinfoRootController.command = CollectinfoCommandController(self.log_handler)
 
         self.controller_map = {
             "list": ListController,
@@ -58,7 +58,7 @@ class CollectinfoRootController(BaseController):
 
     def close(self):
         try:
-            self.loghdlr.close()
+            self.log_handler.close()
         except Exception:
             pass
 
@@ -94,8 +94,8 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays network summary information.")
     def do_network(self, line):
-        service_stats = self.loghdlr.info_statistics(stanza=STAT_SERVICE)
-        cluster_configs = self.loghdlr.info_getconfig(stanza=CONFIG_CLUSTER)
+        service_stats = self.log_handler.info_statistics(stanza=STAT_SERVICE)
+        cluster_configs = self.log_handler.info_getconfig(stanza=CONFIG_CLUSTER)
         for timestamp in sorted(service_stats.keys()):
             for node in service_stats[timestamp]:
                 try:
@@ -107,7 +107,7 @@ class InfoController(CollectinfoCommandController):
                         ] = cluster_configs[timestamp][node]["mode"]
                 except Exception:
                     pass
-            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_asd_build()
             versions = cinfo_log.get_asd_version()
             cluster_names = cinfo_log.get_cluster_name()
@@ -132,7 +132,7 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays set summary information.")
     def do_set(self, line):
-        set_stats = self.loghdlr.info_statistics(stanza=STAT_SETS, flip=True)
+        set_stats = self.log_handler.info_statistics(stanza=STAT_SETS, flip=True)
 
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
@@ -141,21 +141,21 @@ class InfoController(CollectinfoCommandController):
             self._convert_key_to_tuple(set_stats[timestamp])
             self.view.info_set(
                 util.flip_keys(set_stats[timestamp]),
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
             )
 
     @CommandHelp("Displays Cross Datacenter Replication (XDR) summary information.")
     def do_xdr(self, line):
-        xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
+        xdr_stats = self.log_handler.info_statistics(stanza=STAT_XDR)
         node_xdr_build_major_version = 5
         for timestamp in sorted(xdr_stats.keys()):
             if not xdr_stats[timestamp]:
                 continue
 
             xdr_enable = {}
-            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
             old_xdr_stats = {}
             xdr5_stats = {}
@@ -202,6 +202,7 @@ class InfoController(CollectinfoCommandController):
             if old_xdr_stats:
                 self.view.info_old_XDR(
                     old_xdr_stats,
+                    builds,
                     xdr_enable,
                     cluster=cinfo_log,
                     timestamp=timestamp,
@@ -214,10 +215,10 @@ class InfoController(CollectinfoCommandController):
         'Replaced by "info xdr" for server >= 5.0.',
     )
     def do_dc(self, line):
-        dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
-        dc_config = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
+        dc_stats = self.log_handler.info_statistics(stanza=STAT_DC, flip=True)
+        dc_config = self.log_handler.info_getconfig(stanza=CONFIG_DC, flip=True)
         for timestamp in sorted(dc_stats.keys()):
-            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
@@ -271,7 +272,7 @@ class InfoController(CollectinfoCommandController):
             if nodes_running_v49_or_lower:
                 self.view.info_dc(
                     util.flip_keys(dc_stats[timestamp]),
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     timestamp=timestamp,
                     **self.mods
                 )
@@ -285,14 +286,14 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays secondary index (SIndex) summary information).")
     def do_sindex(self, line):
-        sindex_stats = self.loghdlr.info_statistics(stanza=STAT_SINDEX, flip=True)
+        sindex_stats = self.log_handler.info_statistics(stanza=STAT_SINDEX, flip=True)
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp]:
                 continue
 
             self.view.info_sindex(
                 sindex_stats[timestamp],
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
             )
@@ -313,7 +314,7 @@ class InfoNamespaceController(CollectinfoCommandController):
 
     @CommandHelp("Displays usage information for each namespace.")
     def do_usage(self, line):
-        ns_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE, flip=True)
+        ns_stats = self.log_handler.info_statistics(stanza=STAT_NAMESPACE, flip=True)
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
@@ -321,14 +322,14 @@ class InfoNamespaceController(CollectinfoCommandController):
 
             self.view.info_namespace_usage(
                 util.flip_keys(ns_stats[timestamp]),
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
             )
 
     @CommandHelp("Displays object information for each namespace.")
     def do_object(self, line):
-        ns_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE, flip=True)
+        ns_stats = self.log_handler.info_statistics(stanza=STAT_NAMESPACE, flip=True)
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
@@ -336,7 +337,7 @@ class InfoNamespaceController(CollectinfoCommandController):
 
             self.view.info_namespace_object(
                 util.flip_keys(ns_stats[timestamp]),
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
             )
@@ -351,6 +352,10 @@ class ShowController(CollectinfoCommandController):
             "latencies": ShowLatenciesController,
             "distribution": ShowDistributionController,
             "pmap": ShowPmapController,
+            "sindex": ShowSIndexController,
+            "udfs": ShowUdfsController,
+            "users": ShowUsersController,
+            "roles": ShowRolesController,
         }
         self.modifiers = set()
 
@@ -394,13 +399,13 @@ class ShowConfigController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        service_configs = self.loghdlr.info_getconfig(stanza=CONFIG_SERVICE)
+        service_configs = self.log_handler.info_getconfig(stanza=CONFIG_SERVICE)
 
         for timestamp in sorted(service_configs.keys()):
             self.view.show_config(
                 "Service Configuration",
                 service_configs[timestamp],
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 timestamp=timestamp,
@@ -426,13 +431,13 @@ class ShowConfigController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        network_configs = self.loghdlr.info_getconfig(stanza=CONFIG_NETWORK)
+        network_configs = self.log_handler.info_getconfig(stanza=CONFIG_NETWORK)
 
         for timestamp in sorted(network_configs.keys()):
             self.view.show_config(
                 "Network Configuration",
                 network_configs[timestamp],
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 timestamp=timestamp,
@@ -459,14 +464,14 @@ class ShowConfigController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        ns_configs = self.loghdlr.info_getconfig(stanza=CONFIG_NAMESPACE, flip=True)
+        ns_configs = self.log_handler.info_getconfig(stanza=CONFIG_NAMESPACE, flip=True)
 
         for timestamp in sorted(ns_configs.keys()):
             for ns, configs in ns_configs[timestamp].items():
                 self.view.show_config(
                     "%s Namespace Configuration" % (ns),
                     configs,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
                     timestamp=timestamp,
@@ -493,13 +498,13 @@ class ShowConfigController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        xdr_configs = self.loghdlr.info_getconfig(stanza=CONFIG_XDR)
+        xdr_configs = self.log_handler.info_getconfig(stanza=CONFIG_XDR)
         old_xdr_configs = {}
         xdr5_configs = {}
         node_xdr_build_major_version = 5
 
         for timestamp in sorted(xdr_configs.keys()):
-            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
 
             for xdr_node in xdr_configs[timestamp]:
@@ -515,14 +520,21 @@ class ShowConfigController(CollectinfoCommandController):
 
             if xdr5_configs:
                 formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
-                self.view.show_xdr5_config("XDR Configuration",
-                                        formatted_configs,
-                                        cinfo_log,
-                                        title_every_nth=title_every_nth,
-                                        flip_output=flip_output,
-                                        timestamp=timestamp,
-                                        **self.mods)
 
+                if formatted_configs:
+                    self.view.show_xdr5_config("XDR Configuration",
+                                               formatted_configs,
+                                               cinfo_log,
+                                               title_every_nth=title_every_nth,
+                                               flip_output=flip_output,
+                                               timestamp=timestamp,
+                                               **self.mods)
+                else:
+                    # ASADM versions < 1.0.2 could cause this error if ran on
+                    # aerospike server >= 5.0.
+                    # 
+                    self.logger.warning("Unable to parse XDR configuration info.  Collectinfo file may have been generated \n" \
+                                        "         with an old version of ASADM on Aerospike server >= 5.0.")
 
             if old_xdr_configs:
                 self.view.show_config("XDR Configuration",
@@ -554,10 +566,11 @@ class ShowConfigController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        dc_configs = self.loghdlr.info_getconfig(stanza=CONFIG_DC, flip=True)
+        dc_configs = self.log_handler.info_getconfig(stanza=CONFIG_DC, flip=True)
         node_xdr_build_major_version = 5
 
         for timestamp in sorted(dc_configs.keys()):
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
@@ -576,7 +589,7 @@ class ShowConfigController(CollectinfoCommandController):
             if nodes_running_v49_or_lower:
                 for dc, configs in dc_configs[timestamp].items():
                     self.view.show_config("%s DC Configuration"%(dc), configs,
-                                        self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                                        self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                                         title_every_nth=title_every_nth, flip_output=flip_output,
                                         timestamp=timestamp, **self.mods)
             
@@ -606,13 +619,13 @@ class ShowConfigController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        cl_configs = self.loghdlr.info_getconfig(stanza=CONFIG_CLUSTER)
+        cl_configs = self.log_handler.info_getconfig(stanza=CONFIG_CLUSTER)
 
         for timestamp in sorted(cl_configs.keys()):
             self.view.show_config(
                 "Cluster Configuration",
                 cl_configs[timestamp],
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 timestamp=timestamp,
@@ -634,16 +647,17 @@ class ShowDistributionController(CollectinfoCommandController):
         self.do_object_size(line)
 
     def _do_distribution(self, histogram_name, title, unit):
-        histogram = self.loghdlr.info_histogram(histogram_name)
+        histogram = self.log_handler.info_histogram(histogram_name)
         for timestamp in sorted(histogram.keys()):
             if not histogram[timestamp]:
                 continue
+            hist_output = common.create_histogram_output(histogram_name, histogram[timestamp])
             self.view.show_distribution(
                 title,
-                common.create_histogram_output(histogram_name, histogram[timestamp]),
+                hist_output,
                 unit,
                 histogram_name,
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 like=self.mods["for"],
             )
@@ -677,8 +691,8 @@ class ShowDistributionController(CollectinfoCommandController):
                 histogram_name, "Object Size Distribution", "Record Blocks"
             )
 
-        histogram = self.loghdlr.info_histogram(histogram_name, byte_distribution=True)
-        builds = self.loghdlr.info_meta_data(stanza="asd_build")
+        histogram = self.log_handler.info_histogram(histogram_name, byte_distribution=True)
+        builds = self.log_handler.info_meta_data(stanza="asd_build")
 
         for timestamp in histogram:
             self.view.show_object_distribution(
@@ -694,7 +708,7 @@ class ShowDistributionController(CollectinfoCommandController):
                 "objsz",
                 bucket_count,
                 True,
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 loganalyser_mode=True,
                 like=self.mods["for"],
@@ -717,9 +731,9 @@ class ShowLatenciesController(CollectinfoCommandController):
     def _do_default(self, line):
         namespaces = {}
         if self.mods["for"]:
-            namespaces = self.loghdlr.info_namespaces()
+            namespaces = self.log_handler.info_namespaces()
 
-        latency = self.loghdlr.info_latency()
+        latency = self.log_handler.info_latency()
 
         for timestamp in sorted(latency.keys()):
             namespace_set = set()
@@ -769,7 +783,7 @@ class ShowLatenciesController(CollectinfoCommandController):
 
             self.view.show_latency(
                 hist_latency,
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 show_ns_details=True if namespace_set else False,
                 timestamp=timestamp,
                 **self.mods
@@ -819,13 +833,13 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        service_stats = self.loghdlr.info_statistics(stanza=STAT_SERVICE)
+        service_stats = self.log_handler.info_statistics(stanza=STAT_SERVICE)
 
         for timestamp in sorted(service_stats.keys()):
             self.view.show_config(
                 "Service Statistics",
                 service_stats[timestamp],
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 show_total=show_total,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
@@ -857,7 +871,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        ns_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE, flip=True)
+        ns_stats = self.log_handler.info_statistics(stanza=STAT_NAMESPACE, flip=True)
 
         for timestamp in sorted(ns_stats.keys()):
             namespace_list = util.filter_list(
@@ -867,7 +881,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 self.view.show_stats(
                     "%s Namespace Statistics" % (ns),
                     stats,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
@@ -899,7 +913,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        set_stats = self.loghdlr.info_statistics(stanza=STAT_SETS, flip=True)
+        set_stats = self.log_handler.info_statistics(stanza=STAT_SETS, flip=True)
 
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
@@ -927,7 +941,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 self.view.show_stats(
                     "%s Set Statistics" % (ns_set),
                     stats,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
@@ -959,7 +973,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        new_bin_stats = self.loghdlr.info_statistics(stanza=STAT_BINS, flip=True)
+        new_bin_stats = self.log_handler.info_statistics(stanza=STAT_BINS, flip=True)
 
         for timestamp in sorted(new_bin_stats.keys()):
             if not new_bin_stats[timestamp] or isinstance(
@@ -977,7 +991,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 self.view.show_stats(
                     "%s Bin Statistics" % (ns),
                     stats,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
@@ -1009,14 +1023,14 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        xdr_stats = self.loghdlr.info_statistics(stanza=STAT_XDR)
+        xdr_stats = self.log_handler.info_statistics(stanza=STAT_XDR)
         old_xdr_stats = {}
         xdr5_stats = {}
         node_xdr_build_major_version = 5
 
         for timestamp in sorted(xdr_stats.keys()):
 
-            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
             for_mods = self.mods["for"]
 
@@ -1050,7 +1064,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                         self.view.show_config(
                             "XDR Statistics %s" % dc,
                             xdr5_stats[dc],
-                            self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                            self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                             show_total=show_total,
                             title_every_nth=title_every_nth,
                             flip_output=flip_output,
@@ -1062,7 +1076,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 self.view.show_config(
                     "XDR Statistics",
                     old_xdr_stats,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
@@ -1098,10 +1112,10 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        dc_stats = self.loghdlr.info_statistics(stanza=STAT_DC, flip=True)
+        dc_stats = self.log_handler.info_statistics(stanza=STAT_DC, flip=True)
         node_xdr_build_major_version = 5
         for timestamp in sorted(dc_stats.keys()):
-            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=timestamp)
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_xdr_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
@@ -1122,7 +1136,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                     self.view.show_stats(
                         "%s DC Statistics" % (dc),
                         stats,
-                        self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                        self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                         show_total=show_total,
                         title_every_nth=title_every_nth,
                         flip_output=flip_output,
@@ -1161,7 +1175,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        sindex_stats = self.loghdlr.info_statistics(stanza=STAT_SINDEX, flip=True)
+        sindex_stats = self.log_handler.info_statistics(stanza=STAT_SINDEX, flip=True)
 
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp] or isinstance(
@@ -1191,7 +1205,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 self.view.show_stats(
                     "%s Sindex Statistics" % (sindex),
                     stats,
-                    self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                    self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
@@ -1206,7 +1220,7 @@ class ShowPmapController(CollectinfoCommandController):
         self.modifiers = set()
 
     def _do_default(self, line):
-        pmap_data = self.loghdlr.info_pmap()
+        pmap_data = self.log_handler.info_pmap()
 
         for timestamp in sorted(pmap_data.keys()):
             if not pmap_data[timestamp]:
@@ -1214,9 +1228,83 @@ class ShowPmapController(CollectinfoCommandController):
 
             self.view.show_pmap(
                 pmap_data[timestamp],
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
             )
+
+@CommandHelp("Displays users and their assigned roles for Aerospike cluster.")
+class ShowUsersController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+
+    def _do_default(self, line):
+        users_data = self.log_handler.admin_acl(stanza='users')
+
+        for timestamp in sorted(users_data.keys()):
+            if not users_data[timestamp]:
+                continue
+            
+            data = list(users_data[timestamp].values())[0]
+
+            return util.Future(self.view.show_users, data, timestamp=timestamp,  **self.mods)
+
+@CommandHelp("Displays roles and their assigned privileges and allowlist for Aerospike cluster.")
+class ShowRolesController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+
+    def _do_default(self, line):
+        roles_data = self.log_handler.admin_acl(stanza='roles')
+
+        for timestamp in sorted(roles_data.keys()):
+            if not roles_data[timestamp]:
+                continue
+            
+            data = list(roles_data[timestamp].values())[0]
+
+            return util.Future(self.view.show_roles, data, timestamp=timestamp,  **self.mods)
+
+
+@CommandHelp("Displays UDF modules along with metadata.")
+class ShowUdfsController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+
+    def _do_default(self, line):
+        udf_data = self.log_handler.info_meta_data(stanza='udf')
+        
+        for timestamp in sorted(udf_data.keys()):
+            if not udf_data[timestamp]:
+                continue
+            
+            node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
+            principal_id = self.log_handler.get_principal(timestamp)
+            principal_ip = node_id_to_ip[principal_id]
+            data = udf_data[timestamp][principal_ip]
+            return util.Future(self.view.show_udfs, data, timestamp=timestamp,  **self.mods)
+
+@CommandHelp("Displays secondary indexes and static metadata.")
+class ShowSIndexController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+
+    def _do_default(self, line):
+        sindexes_data = self.log_handler.info_statistics(stanza='sindex')
+        
+        for timestamp in sorted(sindexes_data.keys()):
+            if not sindexes_data[timestamp]:
+                continue
+            
+            node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
+            principal_id = self.log_handler.get_principal(timestamp)
+            principal_ip = node_id_to_ip[principal_id]
+            data_to_process = sindexes_data[timestamp][principal_ip]
+
+            # Re-format data since key = "<ns> <set> <sindex>" and it should be
+            # a list of dictionaries where each dict hold meta for a singel sindex.
+            formatted_data = list(data_to_process.values())
+
+            return util.Future(self.view.show_sindex, formatted_data, timestamp=timestamp, **self.mods)
 
 
 @CommandHelp("Displays features used in Aerospike cluster.")
@@ -1225,11 +1313,11 @@ class FeaturesController(CollectinfoCommandController):
         self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        service_stats = self.loghdlr.info_statistics(stanza=STAT_SERVICE)
-        namespace_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE)
-        service_configs = self.loghdlr.info_getconfig(stanza=CONFIG_SERVICE)
-        namespace_configs = self.loghdlr.info_getconfig(stanza=CONFIG_NAMESPACE)
-        cluster_configs = self.loghdlr.info_getconfig(stanza=CONFIG_CLUSTER)
+        service_stats = self.log_handler.info_statistics(stanza=STAT_SERVICE)
+        namespace_stats = self.log_handler.info_statistics(stanza=STAT_NAMESPACE)
+        service_configs = self.log_handler.info_getconfig(stanza=CONFIG_SERVICE)
+        namespace_configs = self.log_handler.info_getconfig(stanza=CONFIG_NAMESPACE)
+        cluster_configs = self.log_handler.info_getconfig(stanza=CONFIG_CLUSTER)
 
         for timestamp in sorted(service_stats.keys()):
             features = {}
@@ -1262,7 +1350,7 @@ class FeaturesController(CollectinfoCommandController):
             self.view.show_config(
                 "Features",
                 features,
-                self.loghdlr.get_cinfo_log_at(timestamp=timestamp),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
             )
@@ -1368,7 +1456,7 @@ class HealthCheckController(CollectinfoCommandController):
             cluster_name = "C1"
             stanza_dict = {
                 "statistics": (
-                    self.loghdlr.info_statistics,
+                    self.log_handler.info_statistics,
                     [
                         (
                             "service",
@@ -1462,7 +1550,7 @@ class HealthCheckController(CollectinfoCommandController):
                     ],
                 ),
                 "config": (
-                    self.loghdlr.info_getconfig,
+                    self.log_handler.info_getconfig,
                     [
                         (
                             "service",
@@ -1538,7 +1626,7 @@ class HealthCheckController(CollectinfoCommandController):
                     ],
                 ),
                 "original_config": (
-                    self.loghdlr.info_get_originalconfig,
+                    self.log_handler.info_get_originalconfig,
                     [
                         (
                             "service",
@@ -1588,7 +1676,7 @@ class HealthCheckController(CollectinfoCommandController):
                     ],
                 ),
                 "cluster": (
-                    self.loghdlr.info_meta_data,
+                    self.log_handler.info_meta_data,
                     [
                         (
                             "asd_build",
@@ -1626,7 +1714,7 @@ class HealthCheckController(CollectinfoCommandController):
                     ],
                 ),
                 "endpoints": (
-                    self.loghdlr.info_meta_data,
+                    self.log_handler.info_meta_data,
                     [
                         (
                             "endpoints",
@@ -1642,7 +1730,7 @@ class HealthCheckController(CollectinfoCommandController):
                     ],
                 ),
                 "services": (
-                    self.loghdlr.info_meta_data,
+                    self.log_handler.info_meta_data,
                     [
                         (
                             "services",
@@ -1658,7 +1746,7 @@ class HealthCheckController(CollectinfoCommandController):
                     ],
                 ),
                 "udf": (
-                    self.loghdlr.info_meta_data,
+                    self.log_handler.info_meta_data,
                     [
                         (
                             "udf",
@@ -1675,7 +1763,7 @@ class HealthCheckController(CollectinfoCommandController):
                     ],
                 ),
                 "health": (
-                    self.loghdlr.info_meta_data,
+                    self.log_handler.info_meta_data,
                     [
                         (
                             "health",
@@ -1692,7 +1780,7 @@ class HealthCheckController(CollectinfoCommandController):
                     ],
                 ),
                 "sys_stats": (
-                    self.loghdlr.get_sys_data,
+                    self.log_handler.get_sys_data,
                     [
                         (
                             "free-m",
@@ -1916,7 +2004,7 @@ class ListController(CollectinfoCommandController):
 
     @CommandHelp("Displays list of all added collectinfos files.")
     def do_all(self, line):
-        cinfo_logs = self.loghdlr.all_cinfo_logs
+        cinfo_logs = self.log_handler.all_cinfo_logs
         for timestamp, snapshot in cinfo_logs.items():
             print(terminal.bold() + str(timestamp) + terminal.unbold() + ": " + str(snapshot.cinfo_file))
 
@@ -1959,18 +2047,18 @@ class SummaryController(CollectinfoCommandController):
             line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods
         )
 
-        service_stats = self.loghdlr.info_statistics(stanza=STAT_SERVICE)
-        namespace_stats = self.loghdlr.info_statistics(stanza=STAT_NAMESPACE)
-        set_stats = self.loghdlr.info_statistics(stanza=STAT_SETS)
+        service_stats = self.log_handler.info_statistics(stanza=STAT_SERVICE)
+        namespace_stats = self.log_handler.info_statistics(stanza=STAT_NAMESPACE)
+        set_stats = self.log_handler.info_statistics(stanza=STAT_SETS)
 
-        service_configs = self.loghdlr.info_getconfig(stanza=CONFIG_SERVICE)
-        namespace_configs = self.loghdlr.info_getconfig(stanza=CONFIG_NAMESPACE)
-        cluster_configs = self.loghdlr.info_getconfig(stanza=CONFIG_CLUSTER)
+        service_configs = self.log_handler.info_getconfig(stanza=CONFIG_SERVICE)
+        namespace_configs = self.log_handler.info_getconfig(stanza=CONFIG_NAMESPACE)
+        cluster_configs = self.log_handler.info_getconfig(stanza=CONFIG_CLUSTER)
 
-        os_version = self.loghdlr.get_sys_data(stanza="lsb")
-        kernel_version = self.loghdlr.get_sys_data(stanza="uname")
-        server_version = self.loghdlr.info_meta_data(stanza="asd_build")
-        server_edition = self.loghdlr.info_meta_data(stanza="edition")
+        os_version = self.log_handler.get_sys_data(stanza="lsb")
+        kernel_version = self.log_handler.get_sys_data(stanza="uname")
+        server_version = self.log_handler.info_meta_data(stanza="asd_build")
+        server_edition = self.log_handler.info_meta_data(stanza="edition")
 
         last_timestamp = sorted(service_stats.keys())[-1]
 
@@ -1981,7 +2069,7 @@ class SummaryController(CollectinfoCommandController):
 
         cluster_name = {}
         try:
-            cinfo_log = self.loghdlr.get_cinfo_log_at(timestamp=last_timestamp)
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=last_timestamp)
             cluster_name = cinfo_log.get_cluster_name()
         except Exception:
             pass

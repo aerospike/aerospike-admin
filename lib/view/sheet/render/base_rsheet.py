@@ -135,11 +135,18 @@ class BaseRSheet(object):
         # Change sources from: {'source':{'row_key':value}}
         #                  to: [{'source':value}]
         
-        # Using a dict as a set to maintain order and exclusivity
+        # If source is a list convert it to a dictionary
+        for key in sources.keys():
+            if isinstance(sources[key], list):
+                sources[key] = dict(enumerate(sources[key]))
+
         source_keys = {}
-        for d in sources.values():
-            for keys in d.keys():
-                source_keys[keys] = None
+
+        # Using a dict as a set to maintain order and exclusivity
+        for data in sources.values():
+            if isinstance(data, dict):
+                for keys in data.keys():
+                    source_keys[keys] = None
                 
         converted_sources = []
 

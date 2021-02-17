@@ -53,7 +53,7 @@ except:
 #
 # |1|1|  6  |1|1|1|1|    12    | 4 |1| field data . . .| next field . . .|
 
-_STRUCT_PROTOCOL_HEADER = struct.Struct('! B B 3h')
+_STRUCT_PROTOCOL_HEADER = struct.Struct('! B B 3H')
 _STRUCT_UINT8 = struct.Struct('! B')
 _STRUCT_UINT32 = struct.Struct('! I')
 _STRUCT_FIELD_HEADER = struct.Struct("! I B")
@@ -964,6 +964,9 @@ def _info_request(sock, buf):
     rsp_data = None
     # request over TCP
     try:
+        if not isinstance(buf, bytes):
+            buf = bytes(buf) # OpenSSL does not support c-types
+
         sock.send(buf)
         # get response
         rsp_hdr = sock.recv(8)

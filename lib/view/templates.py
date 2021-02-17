@@ -34,7 +34,7 @@ def project_build(b, v):
 
 
 def project_xdr_free_dlog(s):
-    return int(s.translate(None, '%'))
+    return int(s.replace('%', ''))
 
 
 def project_xdr_req_shipped_success(s, rs, esc, ess):
@@ -615,6 +615,94 @@ show_latency_sheet = Sheet(
     for_each='histogram',
     group_by=('Namespace', 'Histogram'),
     order_by='Node',
+)
+
+def turn_empty_to_none(ls):
+    if not ls:
+        return None
+    
+    return ls
+        
+
+show_users = Sheet(
+    (
+        Field('User', Projectors.String('data', None, for_each_key=True)),
+        Field(
+            'Roles', 
+            Projectors.Func(
+                FieldType.undefined , 
+                turn_empty_to_none, 
+                Projectors.Identity('data', None)
+            ), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        )
+    ),
+    from_source="data",
+    for_each='data',
+    order_by='User'
+)
+
+show_roles = Sheet(
+    (
+        Field('Role', Projectors.String('data', None, for_each_key=True)),
+        Field(
+            'Privileges', 
+            Projectors.Func(
+                FieldType.string, 
+                turn_empty_to_none, 
+                Projectors.Identity('data', 'privileges')
+            ), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        ),
+        Field('Allowlist', 
+        Projectors.Func(
+            FieldType.string, 
+            turn_empty_to_none, 
+            Projectors.Identity('data', 'whitelist')), 
+            Converters.list_to_comma_sep_str, 
+            align=FieldAlignment.right
+        )
+    ),
+    from_source="data",
+    for_each='data',
+    order_by='Role'
+)
+
+show_udfs = Sheet(
+    (
+        Field('Filename', Projectors.String('data', None, for_each_key=True)),
+        Field(
+            'Hash', 
+            Projectors.String(
+                'data', 
+                'hash'
+            ), 
+        ),
+        Field('Type', 
+            Projectors.String(
+                'data', 
+                'type'
+            )
+        )
+    ),
+    from_source="data",
+    for_each='data',
+    order_by='Filename'
+)
+
+show_sindex = Sheet(
+    (Field('Index Name', Projectors.String('data', 'indexname')),
+     Field('Namespace', Projectors.String('data', 'ns')),
+     Field('Set', Projectors.String('data', 'set')),
+     Field('Bin', Projectors.Number('data', 'bins', 'bin')),
+     Field('Bin Type', Projectors.String('data', 'type')),
+     Field('Index Type', Projectors.String('data', 'indextype')),
+     Field('State', Projectors.String('data', 'state'))),
+    from_source=('data'),
+    group_by=('Namespace', 'Set'),
+    order_by=('Index Name', 'Namespace', 'Set')
 )
 
 grep_count_sheet = Sheet(

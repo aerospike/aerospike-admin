@@ -1,7 +1,8 @@
 # Aerospike Admin
 ## Description
 Aerospike Admin provides an interface for Aerospike users to view the stat
-of their Aerospike Cluster by fetching information from running cluster (Cluster mode) or logs (Log-analyser mode).
+of their Aerospike Cluster by fetching information from a running cluster (Cluster mode) 
+a collectinfo file (Collectinfo-Analyzer), or logs (Log-analyser mode).
 Start the tool with *asadm* and run the *help* command to get started.
 
 ## Installing Aerospike Admin
@@ -66,8 +67,10 @@ sudo easy_install -a readline
 
 ### Setting Test Environment
 asadm has unit and e2e tests. To setup environment for e2e tests, execute following steps:
+- Enable security in the aerospike.conf file.
+- Verify that the default user `admin` exists and that is has the default roles: `sys-admin`, `user-admin`, and `read-write`. 
 - Start Aerospike cluster: Test machine should be part of this cluster with 3000 as asinfo port.
-- Write few records to cluster
+- Write few records to cluster `asbenchmark -h <host> -Uadmin -Padmin`
 - Wait for few seconds so cluster can return histogram output properly.
 
 ### Running Tests

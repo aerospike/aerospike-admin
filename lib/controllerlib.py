@@ -26,8 +26,16 @@ DEFAULT = "_do_default"
 
 class CommandHelp(object):
 
-    def __init__(self, *message):
+    '''
+    hide - If True then the help info of command and its children will not be
+           displayed unless it is explicitly called on the command.
+
+    If no help info is defined but succeeding help should still be shown you 
+    must define CommandHelp with an empty message i.e. ''
+    '''
+    def __init__(self, *message, hide=False):
         self.message = list(message)
+        self.hide = hide
 
     def __call__(self, func):
         try:
@@ -38,6 +46,7 @@ class CommandHelp(object):
             pass
 
         func._command_help = self.message
+        func._hide = self.hide
 
         return func
 
@@ -53,6 +62,9 @@ class CommandHelp(object):
     def display(func, indent=0):
         indent = "  " * indent
         try:
+            if func._command_help == ['']:
+                return
+
             print("\n".join([indent + l for l in func._command_help]))
         except Exception:
             pass
@@ -62,6 +74,34 @@ class CommandHelp(object):
         indent = "  " * indent
         print("%s%s" % (indent, message))
 
+    @staticmethod
+    def is_hidden(func):
+        try:
+            return func._hide
+        except:
+            return False
+
+
+class DisableAutoComplete():
+    '''Decorator to disable tab completion and auto completion. e.g. if ShowController
+    was decoracted it would not allow 'sho' **enter** to resolve to 'show'.
+    '''
+    def __init__(self, disable=True):
+        self.disable_auto_complete = disable
+
+    def __call__(self, func):
+        func.disable_auto_complete = self.disable_auto_complete
+        return func
+
+    @staticmethod
+    def has_auto_complete(func):
+        try:
+            if func.disable_auto_complete:
+                return False
+            return True
+        except:
+            # Default to enable auto complete to not require decorator
+            return True
 
 class ShellException(Exception):
 
@@ -76,6 +116,10 @@ class BaseController(object):
     asadm_version = ''
     logger = None
 
+    # Here so each command controller does not need to define them
+    modifiers = set()
+    required_modifiers = set()
+
     def __init__(self, asadm_version=''):
         # Create static instances of view / health_checker / asadm_version /
         # logger
@@ -83,8 +127,7 @@ class BaseController(object):
         BaseController.health_checker = HealthChecker()
         BaseController.asadm_version = asadm_version
         BaseController.logger = logging.getLogger("asadm")
-        # instance vars
-        self.modifiers = set()
+
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
@@ -109,6 +152,13 @@ class BaseController(object):
         command = line.pop(0) if line else ''
 
         commands = self.commands.get_key(command)
+
+        try:
+            if not DisableAutoComplete.has_auto_complete(self.commands[commands[0]][0]):
+                return []
+        except:
+            import traceback
+            traceback.print_exc()
 
         if command != commands[0] and len(line) == 0:
             # if user has full command name and is hitting tab,
@@ -138,6 +188,8 @@ class BaseController(object):
 
     def _find_method(self, line):
         method = None
+        command = None
+
         try:
             command = line.pop(0)
         except IndexError:
@@ -149,6 +201,7 @@ class BaseController(object):
 
         try:
             method = self.commands[command]
+
             if len(method) > 1:
                 # handle ambiguos commands
                 commands = sorted(self.commands.get_key(command))
@@ -161,6 +214,14 @@ class BaseController(object):
                     "Ambiguous command: '%s' may be %s." % (command, commands))
             else:
                 method = method[0]
+                
+                # If auto complete is diabled check to see if command entered
+                # is prefix or entire command.
+                if not DisableAutoComplete.has_auto_complete(method):
+                    is_full_cmd = command in self.commands.keys()
+
+                    if not is_full_cmd:
+                        return getattr(self, DEFAULT)
 
         except KeyError:
             line.insert(0, command)
@@ -187,7 +248,6 @@ class BaseController(object):
     def execute(self, line):
         # Init all command controller objects
         self._init()
-
         method = self._find_method(line)
 
         if method:
@@ -212,10 +272,13 @@ class BaseController(object):
         else:
             raise ShellException("Method was not set? %s" % (line))
 
-    def execute_help(self, line, indent=0):
+    def execute_help(self, line, indent=0, method=None):
         self._init()
 
-        method = self._find_method(line)
+        # Removes the need to call _find_method twice since it also happens
+        # in parent call.
+        if method == None:
+            method = self._find_method(line)
 
         if method:
             try:
@@ -226,6 +289,12 @@ class BaseController(object):
 
                 if method_name == DEFAULT:  # Print controller help
                     CommandHelp.display(self, indent=indent)
+                    required_mods = [mod for mod in self.required_modifiers if mod != 'line']
+                    if required_mods:
+                        CommandHelp.print_text(
+                            "%sRequired%s: %s" % (terminal.underline(),
+                                                    terminal.reset(), ", ".join(
+                                sorted(required_mods))), indent=indent)
                     if self.modifiers:
                         CommandHelp.print_text(
                             "%sModifiers%s: %s" % (terminal.underline(),
@@ -236,13 +305,15 @@ class BaseController(object):
                         CommandHelp.display(method, indent=indent)
 
                     indent += 2
-                    for command in sorted(self.commands.keys()):
-                        if command != "health":
+                    for command in self.commands.keys():
+                        command_method = self._find_method([command])
+
+                        if CommandHelp.has_help(command_method) and not CommandHelp.is_hidden(command_method):
                             CommandHelp.print_text(
                                 "- %s%s%s:" % (terminal.bold(), command,
                                             terminal.reset()), indent=indent - 1)
 
-                            self.execute_help([command], indent=indent)
+                            self.execute_help([command], indent=indent, method=command_method)
                     return
 
                 elif isinstance(method, ShellException):
@@ -273,12 +344,8 @@ class BaseController(object):
 
 class CommandController(BaseController):
 
-    def __init__(self):
-        # Root controller configs class vars
-        self.modifiers = set()
-
     def parse_modifiers(self, line, duplicates_in_line_allowed=False):
-        mods = self.modifiers
+        mods = self.modifiers | self.required_modifiers
 
         groups = {}
 
@@ -291,17 +358,32 @@ class CommandController(BaseController):
 
         while line:
             word = line.pop(0)
-            if word in self.modifiers:
+
+            # Remove ',' from input since it needs to be filtered
+            # out in many cases.
+            if word == ',':
+                continue
+
+            if word in mods:
                 mod = word
                 # Special case for handling diff modifier of show config
                 if mod == 'diff':
                     groups[mod].append(True)
+
             else:
                 if duplicates_in_line_allowed or word not in groups[mod]:
                     groups[mod].append(word)
 
         if 'with' in mods and 'all' in groups['with']:
             groups['with'] = 'all'
+
+        for mod in self.required_modifiers:
+            if not len(groups[mod]):
+                self.execute_help(line)
+                if mod == 'line':
+                    raise IOError('Missing required argument'.format(mod))
+
+                raise IOError('{} is required'.format(mod))
 
         return groups
 
@@ -325,3 +407,25 @@ class CommandController(BaseController):
                     self.nodes = self.default_nodes
             except Exception:
                 self.nodes = 'all'  # default not set use all
+
+class BasicCommandController(CommandController):
+    cluster = None
+
+    def __init__(self, cluster):
+        BasicCommandController.cluster = cluster
+
+
+def create_disabled_controller(controller, command_):
+    '''Required to keep control logic in the controllers and out of asadm.py.  This
+    also allows us to keep the controller from being executed while still displaying
+    help info.
+    '''
+
+    class DisableController(controller):
+
+        # override
+        def execute(self, line):
+            self.logger.error('User must be in privileged mode to issue "{}" commands.\n' \
+                        '       Type "enable" to enter privileged mode.'.format(command_))
+
+    return DisableController

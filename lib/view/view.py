@@ -29,7 +29,7 @@ from lib.utils.constants import DT_FMT
 from lib.utils.util import compile_likes, find_delimiter_in, get_value_from_dict
 from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
-from lib.view.table import Extractors, Styles, Table, TitleFormats
+from lib.view.table import Orientation, Table, TitleFormats
 
 H1_offset = 13
 H2_offset = 15
@@ -353,7 +353,9 @@ class CliView(object):
         CliView.show_config(*args, **kwargs)
 
     @staticmethod
-    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None,  title_every_nth=0, flip_output=False, **mods):
+    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, title_every_nth=0, flip_output=False, timestamp="", **mods):
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = title + title_suffix
         prefixes = cluster.get_node_names(mods.get('with', []))
         node_ids = dict(((k, cluster.get_node(k)[0].node_id)
                            for k in prefixes.keys()))
@@ -381,7 +383,7 @@ class CliView(object):
         )
 
         for dc in service_configs['dc_configs']:
-            title = 'DC Configuration for {}'.format(dc)
+            title = 'DC Configuration for {}{}'.format(dc, title_suffix)
             sources = dict(
                 prefixes=prefixes, 
                 node_ids=node_ids,
@@ -401,14 +403,14 @@ class CliView(object):
                 )
             )
 
-
         for dc in service_configs['ns_configs']:
-            title = 'Namespace Configuration for {}'.format(dc)
+            title = 'Namespace Configuration for {}{}'.format(dc, title_suffix)
             sources = dict(
                 prefixes=prefixes, 
                 node_ids=node_ids,
                 data=service_configs['ns_configs'][dc]
             )
+
             CliView.print_result(
                 sheet.render(
                     templates.show_config_xdr_ns_sheet, 
@@ -470,7 +472,7 @@ class CliView(object):
         column_names.insert(0, "NODE")
 
         t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
+                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
 
         for file in sorted(grep_result.keys()):
             if isinstance(grep_result[file], Exception):
@@ -560,7 +562,7 @@ class CliView(object):
         column_names.insert(0, "NODE")
 
         t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, style=Styles.VERTICAL)
+                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
 
         row = None
         sub_columns_per_column = 0
@@ -669,6 +671,96 @@ class CliView(object):
 
         CliView.print_result(sheet.render(templates.show_pmap_sheet, title, sources,
                                           common=common))
+
+    @staticmethod
+    def show_users(users_data, like, timestamp='', **ignore):
+        if not users_data:
+            return 
+
+        if like:
+            likes = compile_likes(like)
+            filtered_keys = list(filter(likes.search, users_data.keys()))
+        else:
+            filtered_keys = users_data.keys()
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = 'Users{}'.format(title_timestamp)
+        # Normally the top level of the dict is used to associate different sources.
+        # Since we do not need one here we must artificially create one.
+        users_data = dict(enumerate({k: v} for k, v in users_data.items()
+                    if k in filtered_keys))
+        sources = dict(
+            data=users_data
+        )
+        CliView.print_result(sheet.render(templates.show_users, title, sources))
+
+
+    @staticmethod
+    def show_roles(roles_data, like, timestamp='', **ignore):
+        if not roles_data:
+            return 
+
+        if like:
+            likes = compile_likes(like)
+            filtered_keys = list(filter(likes.search, roles_data.keys()))
+        else:
+            filtered_keys = roles_data.keys()
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = 'Roles{}'.format(title_timestamp)
+        roles_data = dict(enumerate({k: v} for k, v in roles_data.items()
+                    if k in filtered_keys))
+        sources = dict(
+            data=roles_data
+        )
+
+        CliView.print_result(sheet.render(templates.show_roles, title, sources))
+
+    @staticmethod
+    def show_udfs(udfs_data, like, timestamp='', **ignore):
+        if not udfs_data:
+            return 
+
+        if like:
+            likes = compile_likes(like)
+            filtered_keys = list(filter(likes.search, udfs_data.keys()))
+        else:
+            filtered_keys = udfs_data.keys()
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = 'UDF Modules{}'.format(title_timestamp)
+        udfs_data = dict(enumerate({k: v} for k, v in udfs_data.items()
+                    if k in filtered_keys))
+        sources = dict(
+            data=udfs_data
+        )
+
+        CliView.print_result(sheet.render(templates.show_udfs, title, sources))
+
+    @staticmethod
+    def show_sindex(sindexes_data, like, timestamp='', **ignore):
+        CliView._get_timestamp_suffix(timestamp)
+        if not sindexes_data:
+            return 
+
+        filtered_data = []
+
+        if like:
+            likes = compile_likes(like)
+            for sindex in sindexes_data:
+                    if 'indexname' in sindex and likes.search(sindex['indexname']):
+                        filtered_data.append(sindex)
+        else:
+            filtered_data = sindexes_data
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = 'Secondary Indexes{}'.format(title_timestamp)
+        sources = dict(
+            data=filtered_data
+        )
+
+        CliView.print_result(sheet.render(templates.show_sindex, title, sources, selectors=like))
+
 
     @staticmethod
     def asinfo(results, line_sep, show_node_name, cluster, **mods):
@@ -1403,4 +1495,3 @@ class CliView(object):
                 summary["FEATURES"]["NAMESPACE"])
         else:
             CliView._summary_namespace_table_view(summary["FEATURES"]["NAMESPACE"])
-

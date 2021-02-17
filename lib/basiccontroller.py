@@ -14,6 +14,7 @@
 
 import copy
 import json
+from lib.client.info import ASProtocolError
 import shutil
 import sys
 import time
@@ -22,34 +23,32 @@ from distutils.version import LooseVersion
 from lib.client.cluster import Cluster
 from lib.collectinfocontroller import CollectinfoRootController
 from lib.controllerlib import (
-    BaseController,
-    CommandController,
+    DisableAutoComplete, BaseController, BasicCommandController,
     CommandHelp,
-    ShellException,
+    ShellException, create_disabled_controller,
 )
 from lib.getcontroller import (
     GetConfigController,
     GetDistributionController,
-    GetPmapController,
+    GetPmapController, 
+    GetRolesController, 
+    GetSIndexController,
     GetStatisticsController,
-    GetFeaturesController,
+    GetFeaturesController, 
+    GetUdfController, 
+    GetUsersController,
     get_sindex_stats,
     GetLatenciesController,
 )
-from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval, print_dict
+
+from lib.managecontroller import ManageController, ManageLeafCommandController
+from lib.health.util import create_health_input_dict, create_snapshot_key, h_eval
 from lib.utils import common, constants, util
 from lib.view import terminal
 from lib.view.view import CliView
 from lib.view.sheet.render import set_style_json, get_style_json
 
-
-class BasicCommandController(CommandController):
-    cluster = None
-
-    def __init__(self, cluster):
-        BasicCommandController.cluster = cluster
-
-
+      
 @CommandHelp("Aerospike Admin")
 class BasicRootController(BaseController):
 
@@ -70,7 +69,7 @@ class BasicRootController(BaseController):
         timeout=5,
     ):
 
-        super(BasicRootController, self).__init__(asadm_version)
+        super().__init__(asadm_version)
 
         # Create static instance of cluster
         BasicRootController.cluster = Cluster(
@@ -89,14 +88,15 @@ class BasicRootController(BaseController):
         BasicRootController.command = BasicCommandController(self.cluster)
 
         self.controller_map = {
-            "asinfo": ASInfoController,
-            "collectinfo": CollectinfoController,
-            "show": ShowController,
-            "info": InfoController,
-            "features": FeaturesController,
-            "pager": PagerController,
             "health": HealthCheckController,
             "summary": SummaryController,
+            "features": FeaturesController,
+            "pager": PagerController,
+            "collectinfo": CollectinfoController,
+            'asinfo': create_disabled_controller(ASInfoController, 'asinfo'),
+            'manage': create_disabled_controller(ManageController, 'manage'),
+            "show": ShowController,
+            "info": InfoController,
         }
 
     def close(self):
@@ -105,35 +105,70 @@ class BasicRootController(BaseController):
         except Exception:
             pass
 
+    def _do_default(self, line):
+        self.execute_help(line)
+
     # This function is a hack for autocomplete
     @CommandHelp("Terminate session")
     def do_exit(self, line):
         return "EXIT"
 
     @CommandHelp(
-        "Returns documentation related to a command",
-        'for example, to retrieve documentation for the "info"',
-        'command use "help info".',
+        "Displays the documentation for the specified command.",
+        "For example, to see the documentation for the 'info' command,",
+        "use the command 'help info'.",
     )
     def do_help(self, line):
         self.execute_help(line)
 
     @CommandHelp(
-        '"watch" Runs a command for a specified pause and iterations.',
-        "Usage: watch [pause] [iterations] [--no-diff] command]",
+        'Runs a command for a specified pause and iterations.',
+        "Usage: watch [pause] [iterations] [--no-diff] command",
         "   pause:      the duration between executions.",
         "               [default: 2 seconds]",
         "   iterations: Number of iterations to execute command.",
         "               [default: until keyboard interrupt]",
-        "   --no-diff:  Do not do diff highlighting",
-        'Example 1: Show "info network" 3 times with 1 second pause',
+        "  Options:",
+        "   --no-diff:  Do not highlight differences",
+        "Example 1: Show 'info network' 3 times and pause for 1 second each time.",
         "           watch 1 3 info network",
         'Example 2: Show "info namespace" with 5 seconds pause until',
         "           interrupted",
         "           watch 5 info namespace",
     )
+    @DisableAutoComplete()
     def do_watch(self, line):
         self.view.watch(self, line)
+
+    @DisableAutoComplete()
+    @CommandHelp(
+        'Enters privileged mode, which allows a you to issue manage',
+        "and asinfo commands.",
+        "  Options:",
+        "    --warn:    Use this option to receive a prompt to confirm",
+        "               that you want to run the command.",
+    )
+    def do_enable(self, line):
+        warn = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg='--warn',
+            default=False,
+            modifiers={},
+            mods={}
+        )
+        ManageLeafCommandController.warn = warn
+        self.controller_map.update({
+            'manage': ManageController,
+            'asinfo': ASInfoController,
+        })
+        return 'ENABLE'
+
+    def do_disable(self, line):
+        self.controller_map.update({
+            'manage': create_disabled_controller(ManageController, 'manage'),
+            'asinfo': create_disabled_controller(ASInfoController, 'asinfo'),
+        })
+        return 'DISABLE'
 
 
 @CommandHelp(
@@ -168,7 +203,7 @@ class InfoController(BasicCommandController):
 
         return [action.result() for action in actions]
 
-    @CommandHelp("Displays network information for Aerospike.")
+    @CommandHelp('"info network" displays network information for Aerospike.')
     def do_network(self, line):
         stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
 
@@ -201,14 +236,14 @@ class InfoController(BasicCommandController):
             **self.mods
         )
 
-    @CommandHelp("Displays summary information for each set.")
+    @CommandHelp('info set" isplays summary information for each set.')
     def do_set(self, line):
         stats = self.cluster.info_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
 
     # pre 5.0
     @CommandHelp(
-        "Displays summary information for each datacenter.",
+        '"info dc" displays summary information for each datacenter.',
         'Replaced by "info xdr" for server >= 5.0.',
     )
     def do_dc(self, line):
@@ -276,15 +311,15 @@ class InfoController(BasicCommandController):
         if nodes_running_v5_or_higher:
             futures.append(
                 util.Future(
-                    self.view.print_result,
-                    "WARNING: 'info dc' is deprecated on aerospike versions >= 5.0. "
+                    self.logger.warning,
+                    "'info dc' is deprecated on aerospike versions >= 5.0. "
                     + "Use 'info xdr' instead.",
                 )
             )
 
         return futures
 
-    @CommandHelp("Displays summary information for each datacenter.")
+    @CommandHelp('"info xdr" displays summary information for each datacenter.')
     def do_xdr(self, line):
         stats = util.Future(self.cluster.info_XDR_statistics, nodes=self.nodes).start()
 
@@ -323,6 +358,7 @@ class InfoController(BasicCommandController):
                     temp[dc][node] = xdr5_stats[node][dc]
 
             xdr5_stats = temp
+            matches = None
 
             if self.mods['for']:
                 matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
@@ -354,7 +390,7 @@ class InfoController(BasicCommandController):
 
         return futures
 
-    @CommandHelp("Displays summary information for Secondary Indexes (SIndex).")
+    @CommandHelp('"info sindex" displays summary information for Secondary Indexes (SIndex).')
     def do_sindex(self, line):
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
         return util.Future(
@@ -363,7 +399,7 @@ class InfoController(BasicCommandController):
 
 
 @CommandHelp(
-    'The "namespace" command provides summary tables for various aspects',
+    '"info namespace" command provides summary tables for various aspects',
     "of Aerospike namespaces.",
 )
 class InfoNamespaceController(BasicCommandController):
@@ -472,6 +508,14 @@ class ShowController(BasicCommandController):
             "distribution": ShowDistributionController,
             "mapping": ShowMappingController,
             "pmap": ShowPmapController,
+            'users': ShowUsersController,
+            'roles': ShowRolesController,
+            'udfs': ShowUdfsController,
+            'sindex': ShowSIndexController,
+            # TODO
+            # 'rosters': ShowRosterController,
+            # 'racks': ShowRacksController,
+            # 'jobs': ShowJobsController,
         }
 
         self.modifiers = set()
@@ -481,7 +525,7 @@ class ShowController(BasicCommandController):
 
 
 @CommandHelp(
-    '"distribution" is used to show the distribution of object sizes',
+    '"show distribution" is used to show the distribution of object sizes',
     "and time to live for node and a namespace.",
 )
 class ShowDistributionController(BasicCommandController):
@@ -537,7 +581,8 @@ class ShowDistributionController(BasicCommandController):
         "                       Default is rblock wise distribution in percentage",
         "    -k <buckets>     - Maximum number of buckets to show if -b is set.",
         "                       It distributes objects in same size k buckets and ",
-        "                       display only buckets which has objects in it. Default is 5.",
+        "                       displays only buckets that have objects in them. ",
+        "                       [default is 5].",
     )
     def do_object_size(self, line):
 
@@ -599,7 +644,7 @@ class ShowDistributionController(BasicCommandController):
         )
 
 
-@CommandHelp("latencies is used to show server latency histograms")
+@CommandHelp('"show latencies" is used to show server latency histograms')
 class ShowLatenciesController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like", "for"])
@@ -631,9 +676,9 @@ class ShowLatenciesController(BasicCommandController):
         "Displays latency information for Aerospike cluster.",
         "  Options:",
         "    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)",
-        "                   default: 3",
+        "                   [default: 3]",
         "    -b           - Number of latency buckets to display.",
-        "                   default: 3",
+        "                   [default: 3]",
         "    -v           - Set to display verbose output of optionally configured histograms.",
     )
     def _do_default(self, line):
@@ -667,18 +712,13 @@ class ShowLatenciesController(BasicCommandController):
         latencies = self.latency_getter.get_all(
             self.nodes, buckets, increment, verbose, namespace_set
         )
-        message = None
 
         # No nodes support "show latencies"
         if len(latencies_nodes) == 0:
-            message = [
-                "WARNING: 'show latencies' is not fully supported on aerospike versions <= 5.0",
-            ]
+            self.logger.warning("'show latencies' is not fully supported on aerospike versions <= 5.0")
         # Some nodes support latencies and some do not
         elif len(latency_nodes) != 0:
-            message = [
-                "WARNING: 'show latencies' is not fully supported on aerospike versions <= 5.0",
-            ]
+            self.logger.warning("'show latencies' is not fully supported on aerospike versions <= 5.0")
 
         # TODO: This format should probably be returned from get controller
         latencies = self.sort_data_by_histogram_name(latencies)
@@ -687,7 +727,6 @@ class ShowLatenciesController(BasicCommandController):
             latencies,
             self.cluster,
             show_ns_details=True if namespace_set else False,
-            message=message,
             **self.mods
         )
 
@@ -702,7 +741,7 @@ class ShowConfigController(BasicCommandController):
         "Displays service, network, and namespace configuration",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   default: False, no repetition.",
+        "                   [default: False, no repetition]",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
@@ -897,8 +936,8 @@ class ShowConfigController(BasicCommandController):
                 for dc, configs in dc_configs.items()]
         
         if nodes_running_v5_or_higher:
-            futures.append(util.Future(self.view.print_result, 
-            "WARNING: Detected nodes running aerospike version >= 5.0. " +
+            futures.append(util.Future(self.logger.warning, 
+            "Detected nodes running aerospike version >= 5.0. " +
             "Please use 'asadm -e \"show config xdr\"' for versions 5.0 and up."))
 
         return futures
@@ -966,7 +1005,7 @@ class ShowMappingController(BasicCommandController):
         )
 
 
-@CommandHelp("Displays statistics for Aerospike components.")
+@CommandHelp('"show statistics" is used to display statistics for Aerospike components.')
 class ShowStatisticsController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like", "for"])
@@ -977,7 +1016,7 @@ class ShowStatisticsController(BasicCommandController):
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   default: False, no repetition.",
+        "                   [default: False, no repetition]",
         "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def _do_default(self, line):
@@ -1359,8 +1398,8 @@ class ShowStatisticsController(BasicCommandController):
         if nodes_running_v5_or_higher:
             futures.append(
                 util.Future(
-                    self.view.print_result,
-                    "WARNING: 'show statistics dc' is deprecated on aerospike versions >= 5.0. \n"
+                    self.logger.warning,
+                    "'show statistics dc' is deprecated on aerospike versions >= 5.0. \n"
                     + "Use 'show statistics xdr' instead.",
                 )
             )
@@ -1368,7 +1407,7 @@ class ShowStatisticsController(BasicCommandController):
         return futures
 
 
-@CommandHelp("Displays partition map analysis of Aerospike cluster.")
+@CommandHelp('"show pmap" displays partition map analysis of Aerospike cluster.')
 class ShowPmapController(BasicCommandController):
     def __init__(self):
         self.modifiers = set()
@@ -1378,6 +1417,71 @@ class ShowPmapController(BasicCommandController):
         pmap_data = self.getter.get_pmap(nodes=self.nodes)
 
         return util.Future(self.view.show_pmap, pmap_data, self.cluster)
+
+
+@CommandHelp('"show users" displays users and their assigned roles for Aerospike cluster.')
+class ShowUsersController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+        self.getter = GetUsersController(self.cluster)
+
+    def _do_default(self, line):
+        principal_node = self.cluster.get_expected_principal()
+        users_data = self.getter.get_users(nodes=[principal_node])
+        resp = list(users_data.values())[0]
+
+        if isinstance(resp, ASProtocolError):
+            self.logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        return util.Future(self.view.show_users, resp, **self.mods)
+
+@CommandHelp('"show roles" displays roles and their assigned privileges and allowlist for Aerospike cluster.')
+class ShowRolesController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+        self.getter = GetRolesController(self.cluster)
+
+    def _do_default(self, line):
+        principal_node = self.cluster.get_expected_principal()
+        roles_data = self.getter.get_roles(nodes=[principal_node])
+        resp = list(roles_data.values())[0]
+
+        if isinstance(resp, ASProtocolError):
+            self.logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        return util.Future(self.view.show_roles, resp, **self.mods)
+
+@CommandHelp('"show udfs" displays UDF modules along with metadata.')
+class ShowUdfsController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+        self.getter = GetUdfController(self.cluster)
+
+    def _do_default(self, line):
+        principal_node = self.cluster.get_expected_principal()
+        udfs_data = self.getter.get_udfs(nodes=[principal_node])
+        resp = list(udfs_data.values())[0]
+
+        return util.Future(self.view.show_udfs, resp, **self.mods)
+
+@CommandHelp('"show sindex" displays secondary indexes and static metadata.')
+class ShowSIndexController(BasicCommandController):
+    def __init__(self):
+        self.modifiers = set(['like'])
+        self.getter = GetSIndexController(self.cluster)
+
+    def _do_default(self, line):
+        principal_node = self.cluster.get_expected_principal()
+        sindexes_data = self.getter.get_sindexs(nodes=[principal_node])
+        resp = list(sindexes_data.values())[0]
+
+        return util.Future(self.view.show_sindex, resp, **self.mods)
 
 
 @CommandHelp(
@@ -1401,7 +1505,7 @@ class CollectinfoController(BasicCommandController):
     def _collectinfo_content(self, func, parm="", alt_parms=""):
         name = ""
         capture_stdout = util.capture_stdout
-        sep = constants.COLLECTINFO_SEPRATOR
+        sep = constants.COLLECTINFO_SEPERATOR
 
         old_style_json = get_style_json()
         set_style_json()
@@ -1565,6 +1669,9 @@ class CollectinfoController(BasicCommandController):
         getter = GetConfigController(self.cluster)
         config = getter.get_all(nodes=self.nodes, flip=False)
 
+        getter = GetUsersController(self.cluster)
+
+        getter = GetRolesController(self.cluster)
         # All these section have have nodeid in inner level
         # flip keys to get nodeid in upper level.
         # {'namespace': 'test': {'ip1': {}, 'ip2': {}}} -->
@@ -1607,12 +1714,12 @@ class CollectinfoController(BasicCommandController):
 
         return new_as_map
 
-    def _get_meta_for_sec(self, metasec, sec_name, nodeid, metamap):
-        if nodeid in metasec:
-            if not isinstance(metasec[nodeid], Exception):
-                metamap[nodeid][sec_name] = metasec[nodeid]
+    def _check_for_exception_and_set(self, data, section_name, nodeid, result_map):
+        if nodeid in data:
+            if not isinstance(data[nodeid], Exception):
+                result_map[nodeid][section_name] = data[nodeid]
             else:
-                metamap[nodeid][sec_name] = ""
+                result_map[nodeid][section_name] = ""
 
     def _get_as_metadata(self):
         metamap = {}
@@ -1646,15 +1753,15 @@ class CollectinfoController(BasicCommandController):
 
         for nodeid in builds:
             metamap[nodeid] = {}
-            self._get_meta_for_sec(builds, "asd_build", nodeid, metamap)
-            self._get_meta_for_sec(editions, "edition", nodeid, metamap)
-            self._get_meta_for_sec(xdr_builds, "xdr_build", nodeid, metamap)
-            self._get_meta_for_sec(node_ids, "node_id", nodeid, metamap)
-            self._get_meta_for_sec(ips, "ip", nodeid, metamap)
-            self._get_meta_for_sec(endpoints, "endpoints", nodeid, metamap)
-            self._get_meta_for_sec(services, "services", nodeid, metamap)
-            self._get_meta_for_sec(udf_data, "udf", nodeid, metamap)
-            self._get_meta_for_sec(health_outliers, "health", nodeid, metamap)
+            self._check_for_exception_and_set(builds, "asd_build", nodeid, metamap)
+            self._check_for_exception_and_set(editions, "edition", nodeid, metamap)
+            self._check_for_exception_and_set(xdr_builds, "xdr_build", nodeid, metamap)
+            self._check_for_exception_and_set(node_ids, "node_id", nodeid, metamap)
+            self._check_for_exception_and_set(ips, "ip", nodeid, metamap)
+            self._check_for_exception_and_set(endpoints, "endpoints", nodeid, metamap)
+            self._check_for_exception_and_set(services, "services", nodeid, metamap)
+            self._check_for_exception_and_set(udf_data, "udf", nodeid, metamap)
+            self._check_for_exception_and_set(health_outliers, "health", nodeid, metamap)
 
         return metamap
 
@@ -1712,6 +1819,24 @@ class CollectinfoController(BasicCommandController):
         getter = GetPmapController(self.cluster)
         return getter.get_pmap(nodes=self.nodes)
 
+    def _get_as_access_control_list(self):
+        acl_map = {}
+        principal_node = self.cluster.get_expected_principal()
+
+        getter = GetUsersController(self.cluster)
+        users_map = getter.get_users(nodes=[principal_node])
+
+        getter = GetRolesController(self.cluster)
+        roles_map = getter.get_roles(nodes=[principal_node])
+
+        for node in users_map:
+            acl_map[node] = {}
+            self._check_for_exception_and_set(users_map, 'users', node, acl_map)
+            self._check_for_exception_and_set(roles_map, 'roles', node, acl_map)
+
+        return acl_map
+
+
     def _dump_in_json_file(self, as_logfile_prefix, dump):
         self.logger.info("Dumping collectinfo in JSON format.")
         self.aslogfile = as_logfile_prefix + "ascinfo.json"
@@ -1740,6 +1865,8 @@ class CollectinfoController(BasicCommandController):
         histogram_map = self._get_as_histograms()
 
         latency_map = self._get_as_latency()
+
+        acl_map = self._get_as_access_control_list()
 
         if CollectinfoController.get_pmap:
             pmap_map = self._get_as_pmap()
@@ -1774,6 +1901,11 @@ class CollectinfoController(BasicCommandController):
 
             if CollectinfoController.get_pmap and node in pmap_map:
                 dump_map[node]["as_stat"]["pmap"] = pmap_map[node]
+
+            # ACL requests only go to principal therefor we are storing it only
+            # for the principal
+            if node in acl_map:
+                dump_map[node]['as_stat']["acl"] = acl_map[node]
 
         # Get the cluster name and add one more level in map
         cluster_name = "null"
@@ -2204,14 +2336,17 @@ class CollectinfoController(BasicCommandController):
         "  Options:",
         "    -n              <int>        - Number of snapshots. Default: 1",
         "    -s              <int>        - Sleep time in seconds between each snapshot. Default: 5 sec",
-        "    --enable-ssh                 - Enable remote server system statistics collection.",
-        "    --ssh-user      <string>     - Default user id for remote servers. This is System user id (not Aerospike user id).",
-        "    --ssh-pwd       <string>     - Default password or passphrase for key for remote servers. This is System password (not Aerospike password).",
+        "    --enable-ssh                 - Enables the collection of system statistics from the remote server.",
+        "    --ssh-user      <string>     - Default user ID for remote servers. This is the ID of a user of the system",
+        "                                   not the ID of an Aerospike user.",
+        "    --ssh-pwd       <string>     - Default password or passphrase for key for remote servers. This is the user's", 
+        "                                   password for logging into the system, not a password for logging into Aerospike.",
         "    --ssh-port      <int>        - Default SSH port for remote servers. Default: 22",
         "    --ssh-key       <string>     - Default SSH key (file path) for remote servers.",
         "    --ssh-cf        <string>     - Remote System Credentials file path.",
-        "                                   If server credentials are not available in credential file then default credentials will be used ",
-        "                                   File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>",
+        "                                   If the server credentials are not in the credentials file, then authentication is",
+        "                                   attempted with the default credentials.",
+        "                                   File format : each line must contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>",
         "                                   Example:  1.2.3.4,uid,pwd",
         "                                             1.2.3.4:3232,uid,pwd",
         "                                             1.2.3.4:3232,uid,,key_path",
@@ -2225,7 +2360,7 @@ class CollectinfoController(BasicCommandController):
         self._collect_info(line=line)
 
 
-@CommandHelp("Displays features used in running Aerospike cluster.")
+@CommandHelp("Lists the features in use in a running Aerospike cluster.")
 class FeaturesController(BasicCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like"])
@@ -2267,7 +2402,7 @@ class PagerController(BasicCommandController):
 
 @CommandHelp(
     "Checks for common inconsistencies and print if there is any.",
-    "This command is still in beta and its output should not be directly acted upon without further analysis.",
+    "This command is still in beta and its output should not be directly acted upon without further analysis.", hide=True
 )
 class HealthCheckController(BasicCommandController):
     last_snapshot_collection_time = 0

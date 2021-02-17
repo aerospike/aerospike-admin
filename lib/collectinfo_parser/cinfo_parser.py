@@ -74,7 +74,7 @@ def extract_section_from_live_cmd(command, command_raw_output, imap):
             sectionName = section['raw_section_name']
             sectionId = key
     if sectionName == '':
-        logger.warning("Can not find section_name for command: " + command)
+        logger.warning("Cannot find section_name for command: " + command)
         return
 
     imap[sectionName] = []
