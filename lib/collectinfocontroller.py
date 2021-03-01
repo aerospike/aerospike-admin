@@ -44,7 +44,9 @@ class CollectinfoRootController(BaseController):
         # Create Static Instance of Loghdlr
         CollectinfoRootController.log_handler = CollectinfoLogHandler(clinfo_path)
 
-        CollectinfoRootController.command = CollectinfoCommandController(self.log_handler)
+        CollectinfoRootController.command = CollectinfoCommandController(
+            self.log_handler
+        )
 
         self.controller_map = {
             "list": ListController,
@@ -184,9 +186,9 @@ class InfoController(CollectinfoCommandController):
                 matches = set([])
 
                 if self.mods["for"]:
-                    matches = set(util.filter_list(
-                        list(xdr5_stats.keys()), self.mods["for"]
-                    ))
+                    matches = set(
+                        util.filter_list(list(xdr5_stats.keys()), self.mods["for"])
+                    )
 
                 for dc in xdr5_stats:
                     if not self.mods["for"] or dc in matches:
@@ -366,7 +368,7 @@ class ShowController(CollectinfoCommandController):
 @CommandHelp('"show config" is used to display Aerospike configuration settings')
 class ShowConfigController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(['like', 'diff', 'for'])
+        self.modifiers = set(["like", "diff", "for"])
 
     @CommandHelp(
         "Displays service, network, and namespace configuration",
@@ -519,34 +521,45 @@ class ShowConfigController(CollectinfoCommandController):
                     xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
 
             if xdr5_configs:
-                formatted_configs = common.format_xdr5_configs(xdr5_configs, self.mods.get('for', []))
+                formatted_configs = common.format_xdr5_configs(
+                    xdr5_configs, self.mods.get("for", [])
+                )
 
                 if formatted_configs:
-                    self.view.show_xdr5_config("XDR Configuration",
-                                               formatted_configs,
-                                               cinfo_log,
-                                               title_every_nth=title_every_nth,
-                                               flip_output=flip_output,
-                                               timestamp=timestamp,
-                                               **self.mods)
+                    self.view.show_xdr5_config(
+                        "XDR Configuration",
+                        formatted_configs,
+                        cinfo_log,
+                        title_every_nth=title_every_nth,
+                        flip_output=flip_output,
+                        timestamp=timestamp,
+                        **self.mods
+                    )
                 else:
                     # ASADM versions < 1.0.2 could cause this error if ran on
                     # aerospike server >= 5.0.
-                    # 
-                    self.logger.warning("Unable to parse XDR configuration info.  Collectinfo file may have been generated \n" \
-                                        "         with an old version of ASADM on Aerospike server >= 5.0.")
+                    #
+                    self.logger.warning(
+                        "Unable to parse XDR configuration info.  Collectinfo file may have been generated \n"
+                        "         with an old version of ASADM on Aerospike server >= 5.0."
+                    )
 
             if old_xdr_configs:
-                self.view.show_config("XDR Configuration",
-                                    old_xdr_configs,
-                                    cinfo_log,
-                                    title_every_nth=title_every_nth,
-                                    flip_output=flip_output,
-                                    timestamp=timestamp, **self.mods)
+                self.view.show_config(
+                    "XDR Configuration",
+                    old_xdr_configs,
+                    cinfo_log,
+                    title_every_nth=title_every_nth,
+                    flip_output=flip_output,
+                    timestamp=timestamp,
+                    **self.mods
+                )
 
     # pre 5.0
-    @CommandHelp('Displays datacenter configuration',
-                    'Replaced by "show config xdr" for server >= 5.0.')
+    @CommandHelp(
+        "Displays datacenter configuration",
+        'Replaced by "show config xdr" for server >= 5.0.',
+    )
     def do_dc(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -580,7 +593,7 @@ class ShowConfigController(CollectinfoCommandController):
                     node_xdr_build_major_version = int(version[0])
                 except:
                     continue
-                
+
                 if node_xdr_build_major_version >= 5:
                     nodes_running_v5_or_higher = True
                 else:
@@ -588,16 +601,23 @@ class ShowConfigController(CollectinfoCommandController):
 
             if nodes_running_v49_or_lower:
                 for dc, configs in dc_configs[timestamp].items():
-                    self.view.show_config("%s DC Configuration"%(dc), configs,
-                                        self.log_handler.get_cinfo_log_at(timestamp=timestamp),
-                                        title_every_nth=title_every_nth, flip_output=flip_output,
-                                        timestamp=timestamp, **self.mods)
-            
+                    self.view.show_config(
+                        "%s DC Configuration" % (dc),
+                        configs,
+                        self.log_handler.get_cinfo_log_at(timestamp=timestamp),
+                        title_every_nth=title_every_nth,
+                        flip_output=flip_output,
+                        timestamp=timestamp,
+                        **self.mods
+                    )
+
             if nodes_running_v5_or_higher:
-                self.view.print_result("WARNING: Detected nodes running " +
-                 "aerospike version >= 5.0. Please use 'asadm -cf " + 
-                 "/path/to/collect_info_file -e \"show config xdr\"'" + 
-                 " for versions 5.0 and up.")
+                self.view.print_result(
+                    "WARNING: Detected nodes running "
+                    + "aerospike version >= 5.0. Please use 'asadm -cf "
+                    + '/path/to/collect_info_file -e "show config xdr"\''
+                    + " for versions 5.0 and up."
+                )
 
     @CommandHelp("Displays cluster configuration")
     def do_cluster(self, line):
@@ -651,7 +671,9 @@ class ShowDistributionController(CollectinfoCommandController):
         for timestamp in sorted(histogram.keys()):
             if not histogram[timestamp]:
                 continue
-            hist_output = common.create_histogram_output(histogram_name, histogram[timestamp])
+            hist_output = common.create_histogram_output(
+                histogram_name, histogram[timestamp]
+            )
             self.view.show_distribution(
                 title,
                 hist_output,
@@ -691,7 +713,9 @@ class ShowDistributionController(CollectinfoCommandController):
                 histogram_name, "Object Size Distribution", "Record Blocks"
             )
 
-        histogram = self.log_handler.info_histogram(histogram_name, byte_distribution=True)
+        histogram = self.log_handler.info_histogram(
+            histogram_name, byte_distribution=True
+        )
         builds = self.log_handler.info_meta_data(stanza="asd_build")
 
         for timestamp in histogram:
@@ -725,9 +749,7 @@ class ShowLatenciesController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["like", "for"])
 
-    @CommandHelp(
-        "Displays latency information for Aerospike cluster.",
-    )
+    @CommandHelp("Displays latency information for Aerospike cluster.",)
     def _do_default(self, line):
         namespaces = {}
         if self.mods["for"]:
@@ -743,8 +765,7 @@ class ShowLatenciesController(CollectinfoCommandController):
                     if isinstance(_namespace, Exception):
                         continue
                     namespace_set.update(_namespace)
-                namespace_set = set(
-                    util.filter_list(namespace_set, self.mods['for']))
+                namespace_set = set(util.filter_list(namespace_set, self.mods["for"]))
 
                 for node_id, node_data in latency[timestamp].items():
                     if not node_data or isinstance(node_data, Exception):
@@ -875,7 +896,8 @@ class ShowStatisticsController(CollectinfoCommandController):
 
         for timestamp in sorted(ns_stats.keys()):
             namespace_list = util.filter_list(
-                ns_stats[timestamp].keys(), self.mods['for'])
+                ns_stats[timestamp].keys(), self.mods["for"]
+            )
             for ns in sorted(namespace_list):
                 stats = ns_stats[timestamp][ns]
                 self.view.show_stats(
@@ -918,16 +940,18 @@ class ShowStatisticsController(CollectinfoCommandController):
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
                 continue
-            namespace_set = {ns_set.split()[0]
-                              for ns_set in set_stats[timestamp].keys()}
+            namespace_set = {
+                ns_set.split()[0] for ns_set in set_stats[timestamp].keys()
+            }
 
             try:
-                namespace_set = set(util.filter_list(namespace_set, self.mods["for"][:1]))
+                namespace_set = set(
+                    util.filter_list(namespace_set, self.mods["for"][:1])
+                )
             except Exception:
                 pass
 
-            sets = {ns_set.split()[1]
-                              for ns_set in set_stats[timestamp].keys()}
+            sets = {ns_set.split()[1] for ns_set in set_stats[timestamp].keys()}
             try:
                 sets = set(util.filter_list(sets, self.mods["for"][1:2]))
             except Exception:
@@ -981,8 +1005,9 @@ class ShowStatisticsController(CollectinfoCommandController):
             ):
                 continue
 
-            namespace_set = set(util.filter_list(new_bin_stats[timestamp].keys(),
-                                              self.mods['for']))
+            namespace_set = set(
+                util.filter_list(new_bin_stats[timestamp].keys(), self.mods["for"])
+            )
 
             for ns, stats in new_bin_stats[timestamp].items():
                 if ns not in namespace_set:
@@ -1056,8 +1081,8 @@ class ShowStatisticsController(CollectinfoCommandController):
                 xdr5_stats = temp
                 matches = set([])
 
-                if self.mods['for']:
-                    matches = set(util.filter_list(xdr5_stats.keys(), self.mods['for']))
+                if self.mods["for"]:
+                    matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
 
                 for dc in xdr5_stats:
                     if not self.mods["for"] or dc in matches:
@@ -1183,15 +1208,21 @@ class ShowStatisticsController(CollectinfoCommandController):
             ):
                 continue
 
-            namespace_set = {ns_set_sindex.split()[0]
-                              for ns_set_sindex in sindex_stats[timestamp].keys()}
+            namespace_set = {
+                ns_set_sindex.split()[0]
+                for ns_set_sindex in sindex_stats[timestamp].keys()
+            }
             try:
-                namespace_set = set(util.filter_list(namespace_set, self.mods["for"][:1]))
+                namespace_set = set(
+                    util.filter_list(namespace_set, self.mods["for"][:1])
+                )
             except Exception:
                 pass
 
-            sindex_set = {ns_set_sindex.split()[2]
-                              for ns_set_sindex in sindex_stats[timestamp].keys()}
+            sindex_set = {
+                ns_set_sindex.split()[2]
+                for ns_set_sindex in sindex_stats[timestamp].keys()
+            }
             try:
                 sindex_set = set(util.filter_list(sindex_set, self.mods["for"][1:2]))
             except Exception:
@@ -1232,69 +1263,80 @@ class ShowPmapController(CollectinfoCommandController):
                 timestamp=timestamp,
             )
 
+
 @CommandHelp("Displays users and their assigned roles for Aerospike cluster.")
 class ShowUsersController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        users_data = self.log_handler.admin_acl(stanza='users')
+        users_data = self.log_handler.admin_acl(stanza="users")
 
         for timestamp in sorted(users_data.keys()):
             if not users_data[timestamp]:
                 continue
-            
+
             data = list(users_data[timestamp].values())[0]
 
-            return util.Future(self.view.show_users, data, timestamp=timestamp,  **self.mods)
+            return util.Future(
+                self.view.show_users, data, timestamp=timestamp, **self.mods
+            )
 
-@CommandHelp("Displays roles and their assigned privileges and allowlist for Aerospike cluster.")
+
+@CommandHelp(
+    "Displays roles and their assigned privileges and allowlist for Aerospike cluster."
+)
 class ShowRolesController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        roles_data = self.log_handler.admin_acl(stanza='roles')
+        roles_data = self.log_handler.admin_acl(stanza="roles")
 
         for timestamp in sorted(roles_data.keys()):
             if not roles_data[timestamp]:
                 continue
-            
+
             data = list(roles_data[timestamp].values())[0]
 
-            return util.Future(self.view.show_roles, data, timestamp=timestamp,  **self.mods)
+            return util.Future(
+                self.view.show_roles, data, timestamp=timestamp, **self.mods
+            )
 
 
 @CommandHelp("Displays UDF modules along with metadata.")
 class ShowUdfsController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        udf_data = self.log_handler.info_meta_data(stanza='udf')
-        
+        udf_data = self.log_handler.info_meta_data(stanza="udf")
+
         for timestamp in sorted(udf_data.keys()):
             if not udf_data[timestamp]:
                 continue
-            
+
             node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
             principal_id = self.log_handler.get_principal(timestamp)
             principal_ip = node_id_to_ip[principal_id]
             data = udf_data[timestamp][principal_ip]
-            return util.Future(self.view.show_udfs, data, timestamp=timestamp,  **self.mods)
+            return util.Future(
+                self.view.show_udfs, data, timestamp=timestamp, **self.mods
+            )
+
 
 @CommandHelp("Displays secondary indexes and static metadata.")
 class ShowSIndexController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(['like'])
+        self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        sindexes_data = self.log_handler.info_statistics(stanza='sindex')
-        
+        sindexes_data = self.log_handler.info_statistics(stanza="sindex")
+
         for timestamp in sorted(sindexes_data.keys()):
             if not sindexes_data[timestamp]:
                 continue
-            
+
             node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
             principal_id = self.log_handler.get_principal(timestamp)
             principal_ip = node_id_to_ip[principal_id]
@@ -1304,7 +1346,9 @@ class ShowSIndexController(CollectinfoCommandController):
             # a list of dictionaries where each dict hold meta for a singel sindex.
             formatted_data = list(data_to_process.values())
 
-            return util.Future(self.view.show_sindex, formatted_data, timestamp=timestamp, **self.mods)
+            return util.Future(
+                self.view.show_sindex, formatted_data, timestamp=timestamp, **self.mods
+            )
 
 
 @CommandHelp("Displays features used in Aerospike cluster.")
@@ -1486,20 +1530,8 @@ class HealthCheckController(CollectinfoCommandController):
                                 ("CLUSTER", cluster_name),
                                 ("NODE", None),
                                 (None, None),
-                                (
-                                    "NAMESPACE",
-                                    (
-                                        "ns_name",
-                                        "ns",
-                                    ),
-                                ),
-                                (
-                                    "SET",
-                                    (
-                                        "set_name",
-                                        "set",
-                                    ),
-                                ),
+                                ("NAMESPACE", ("ns_name", "ns",),),
+                                ("SET", ("set_name", "set",),),
                             ],
                         ),
                         (
@@ -2006,7 +2038,14 @@ class ListController(CollectinfoCommandController):
     def do_all(self, line):
         cinfo_logs = self.log_handler.all_cinfo_logs
         for timestamp, snapshot in cinfo_logs.items():
-            print(terminal.bold() + str(timestamp) + terminal.unbold() + ": " + str(snapshot.cinfo_file))
+            print(
+                terminal.bold()
+                + str(timestamp)
+                + terminal.unbold()
+                + ": "
+                + str(snapshot.cinfo_file)
+            )
+
 
 @CommandHelp("Set pager for output")
 class PagerController(CollectinfoCommandController):

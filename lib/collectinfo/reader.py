@@ -15,12 +15,21 @@
 from lib.utils.util import shell_command
 
 
-class CollectinfoReader():
+class CollectinfoReader:
     cinfo_log_file_identifier_key = "=ASCOLLECTINFO"
-    cinfo_log_file_identifiers = ["Configuration~~~\|Configuration (.*)~", "Statistics~\|Statistics (.*)~"]
+    cinfo_log_file_identifiers = [
+        "Configuration~~~\|Configuration (.*)~",
+        "Statistics~\|Statistics (.*)~",
+    ]
     system_log_file_identifier_key = "=ASCOLLECTINFO"
-    system_log_file_identifiers = ["hostname -I", "uname -a", "ip addr",
-                                   "Data collection for get_awsdata in progress", "top -n", "cat /var/log/syslog"]
+    system_log_file_identifiers = [
+        "hostname -I",
+        "uname -a",
+        "ip addr",
+        "Data collection for get_awsdata in progress",
+        "top -n",
+        "cat /var/log/syslog",
+    ]
 
     def is_cinfo_log_file(self, log_file=""):
         if not log_file:
@@ -34,7 +43,7 @@ class CollectinfoReader():
         if err or not out:
             return False
 
-        lines = out.strip().split('\n')
+        lines = out.strip().split("\n")
         found = False
         for line in lines:
             try:
@@ -50,7 +59,8 @@ class CollectinfoReader():
         for search_string in self.cinfo_log_file_identifiers:
             try:
                 out, err = shell_command(
-                    ['grep -m 1 "%s" "%s"' % (search_string, log_file)])
+                    ['grep -m 1 "%s" "%s"' % (search_string, log_file)]
+                )
             except Exception:
                 return False
             if err or not out:
@@ -66,7 +76,7 @@ class CollectinfoReader():
             return False
         if err or not out:
             return False
-        lines = out.strip().split('\n')
+        lines = out.strip().split("\n")
         found = False
         for line in lines:
             try:
@@ -80,7 +90,8 @@ class CollectinfoReader():
         for search_string in self.system_log_file_identifiers:
             try:
                 out, err = shell_command(
-                    ['grep -m 1 "%s" "%s"' % (search_string, log_file)])
+                    ['grep -m 1 "%s" "%s"' % (search_string, log_file)]
+                )
             except Exception:
                 continue
             if err or not out:
@@ -88,4 +99,3 @@ class CollectinfoReader():
             else:
                 return True
         return False
-

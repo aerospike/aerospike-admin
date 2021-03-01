@@ -27,27 +27,35 @@ from lib.utils.util import bytes_to_str
 READ_BLOCK_BYTES = 4096
 RETURN_REQUIRED_EVERY_NTH_BLOCK = 5
 TIME_ZONE = "GMT"
-SERVER_LOG_LINE_WRITER_INFO_PATTERN = "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \(([^\)]+)\)"
+SERVER_LOG_LINE_WRITER_INFO_PATTERN = (
+    "(?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \(([^\)]+)\)"
+)
 
-class ServerLog():
 
+class ServerLog:
     def __init__(self, display_name, file_name, reader):
         self.display_name = display_name.strip()
         self.file_name = file_name
         self.reader = reader
         self.indices = self.reader.generate_server_log_indices(self.file_name)
-        self.file_stream = open(self.file_name, "rb") # binary mode to enable relative seeks in Python3
+        self.file_stream = open(
+            self.file_name, "rb"
+        )  # binary mode to enable relative seeks in Python3
         self.file_stream.seek(0, 0)
 
         self.server_start_tm = self.reader.parse_dt(
-            self.reader.read_line(self.file_stream))
+            self.reader.read_line(self.file_stream)
+        )
 
         self.server_end_tm = self.reader.parse_dt(
-            self.reader.read_next_line(self.file_stream, jump=0, whence=2))
+            self.reader.read_next_line(self.file_stream, jump=0, whence=2)
+        )
         self.log_latency = LogLatency(self.reader)
 
         # re
-        self.server_log_line_writer_info_re = re.compile(SERVER_LOG_LINE_WRITER_INFO_PATTERN)
+        self.server_log_line_writer_info_re = re.compile(
+            SERVER_LOG_LINE_WRITER_INFO_PATTERN
+        )
 
     def destroy(self):
         try:
@@ -88,77 +96,96 @@ class ServerLog():
     def set_start_and_end_tms(self, start_tm, duration=""):
         self.process_start_tm = start_tm
         if self.process_start_tm > self.server_end_tm:
-            self.process_start_tm = self.server_end_tm + \
-                self.reader.parse_timedelta("10")
+            self.process_start_tm = self.server_end_tm + self.reader.parse_timedelta(
+                "10"
+            )
 
         if duration:
             duration_tm = self.reader.parse_timedelta(duration)
             self.process_end_tm = self.process_start_tm + duration_tm
         if not duration or self.process_end_tm > self.server_end_tm:
-            self.process_end_tm = self.server_end_tm + \
-                self.reader.parse_timedelta("10")
+            self.process_end_tm = self.server_end_tm + self.reader.parse_timedelta("10")
 
     def run_linux_cmd(self, cmd):
         cmd = pipes.quote(" ".join(cmd))
-        cmd = ['sh', '-c', "'%s'" % (cmd)]
-        process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        for line in iter(process.stdout.readline, ''):
+        cmd = ["sh", "-c", "'%s'" % (cmd)]
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        for line in iter(process.stdout.readline, ""):
             yield line
 
     def set_file_stream(self, system_grep=False):
         if system_grep:
             try:
                 grep_str = self.reader.get_grep_string(
-                    strs=self.search_strings, file=self.file_name, is_and=self.is_and, is_casesensitive=self.is_casesensitive)
-                #cmd = shlex.split(grep_str)
+                    strs=self.search_strings,
+                    file=self.file_name,
+                    is_and=self.is_and,
+                    is_casesensitive=self.is_casesensitive,
+                )
+                # cmd = shlex.split(grep_str)
                 cmd = [grep_str]
                 if self.ignore_strs:
                     g_cmd = "grep "
                     if not self.is_casesensitive:
                         g_cmd += "-i "
                     for i_str in self.ignore_strs:
-                        cmd.extend([' |', '%s -v "%s"' % (g_cmd, i_str)])
+                        cmd.extend([" |", '%s -v "%s"' % (g_cmd, i_str)])
                 self.system_grep_itr = self.run_linux_cmd(cmd)
             except Exception:
                 # print "Error in system grep command, reading file line by
                 # line.\n"
                 self.set_file_stream(system_grep=False)
         else:
-            self.start_hr_tm = self.neglect_minutes_seconds_time(
-                self.process_start_tm)
+            self.start_hr_tm = self.neglect_minutes_seconds_time(self.process_start_tm)
             self.server_start_hr_tm = self.neglect_minutes_seconds_time(
-                self.server_start_tm)
+                self.server_start_tm
+            )
             self.server_end_hr_tm = self.neglect_minutes_seconds_time(
-                self.server_end_tm)
+                self.server_end_tm
+            )
 
             if self.start_hr_tm.strftime(DT_FMT) in self.indices:
-                self.file_stream.seek(
-                    self.indices[self.start_hr_tm.strftime(DT_FMT)])
+                self.file_stream.seek(self.indices[self.start_hr_tm.strftime(DT_FMT)])
 
             elif self.start_hr_tm < self.server_start_hr_tm:
                 self.file_stream.seek(0)
-                
+
             elif self.start_hr_tm > self.server_end_hr_tm:
                 self.file_stream.seek(0, 2)
 
             else:
-                while(self.start_hr_tm < self.server_end_hr_tm):
+                while self.start_hr_tm < self.server_end_hr_tm:
                     if self.start_hr_tm.strftime(DT_FMT) in self.indices:
                         self.file_stream.seek(
-                            self.indices[self.start_hr_tm.strftime(DT_FMT)])
+                            self.indices[self.start_hr_tm.strftime(DT_FMT)]
+                        )
                         return
-                    self.start_hr_tm = self.start_hr_tm + \
-                        datetime.timedelta(hours=1)
+                    self.start_hr_tm = self.start_hr_tm + datetime.timedelta(hours=1)
 
                 self.file_stream.seek(0, 2)
 
     # system_grep parameter added to test and compare with system_grep. We are
     # not using this but keeping it here for future reference.
-    def set_input(self, search_strs, ignore_strs=[], is_and=False, is_casesensitive=True, start_tm="", duration="",
-                  slice_duration="10", every_nth_slice=1, upper_limit_check="", bucket_count=3, every_nth_bucket=1,
-                  read_all_lines=False, rounding_time=True, system_grep=False, uniq=False, ns=None,
-                  show_relative_stats=False):
+    def set_input(
+        self,
+        search_strs,
+        ignore_strs=[],
+        is_and=False,
+        is_casesensitive=True,
+        start_tm="",
+        duration="",
+        slice_duration="10",
+        every_nth_slice=1,
+        upper_limit_check="",
+        bucket_count=3,
+        every_nth_bucket=1,
+        read_all_lines=False,
+        rounding_time=True,
+        system_grep=False,
+        uniq=False,
+        ns=None,
+        show_relative_stats=False,
+    ):
         if isinstance(search_strs, str):
             search_strs = [search_strs]
         self.search_strings = [search_str for search_str in search_strs]
@@ -182,9 +209,18 @@ class ServerLog():
         latency_start_tm = self.process_start_tm
         if latency_start_tm < self.server_start_tm:
             latency_start_tm = self.server_start_tm
-        self.latency_itr = self.log_latency.compute_latency(self.show_itr, self.search_strings[0], self.slice_duration, latency_start_tm,
-                                                           self.process_end_tm, bucket_count, every_nth_bucket, arg_rounding_time=rounding_time,
-                                                           arg_ns=ns, arg_relative_stats=show_relative_stats)
+        self.latency_itr = self.log_latency.compute_latency(
+            self.show_itr,
+            self.search_strings[0],
+            self.slice_duration,
+            latency_start_tm,
+            self.process_end_tm,
+            bucket_count,
+            every_nth_bucket,
+            arg_rounding_time=rounding_time,
+            arg_ns=ns,
+            arg_relative_stats=show_relative_stats,
+        )
         self.count_itr = self.count()
         self.slice_show_count = every_nth_slice
         self.uniq = uniq
@@ -194,10 +230,12 @@ class ServerLog():
 
     def read_line_block(self):
         try:
-            while(True):
+            while True:
                 self.read_block = []
                 self.read_block = self.file_stream.readlines(READ_BLOCK_BYTES)
-                self.read_block = [bytes_to_str(line) for line in self.read_block] # convert bytes from rb file to string for Python3
+                self.read_block = [
+                    bytes_to_str(line) for line in self.read_block
+                ]  # convert bytes from rb file to string for Python3
                 self.read_block_count += 1
                 if not self.read_block or self.read_all_lines:
                     break
@@ -205,20 +243,32 @@ class ServerLog():
                     one_string = " ".join(self.read_block)
                     if self.is_and:
                         if self.is_casesensitive:
-                            if all(substring in one_string for substring in self.search_strings):
+                            if all(
+                                substring in one_string
+                                for substring in self.search_strings
+                            ):
                                 break
                         else:
-                            if all(re.search(substring, one_string, re.IGNORECASE) for substring in self.search_strings):
+                            if all(
+                                re.search(substring, one_string, re.IGNORECASE)
+                                for substring in self.search_strings
+                            ):
                                 break
                     else:
                         if self.is_casesensitive:
-                            if any(substring in one_string for substring in self.search_strings):
+                            if any(
+                                substring in one_string
+                                for substring in self.search_strings
+                            ):
                                 break
                         else:
-                            if any(re.search(substring, one_string, re.IGNORECASE) for substring in self.search_strings):
+                            if any(
+                                re.search(substring, one_string, re.IGNORECASE)
+                                for substring in self.search_strings
+                            ):
                                 break
 
-                    if (self.read_block_count % RETURN_REQUIRED_EVERY_NTH_BLOCK == 0):
+                    if self.read_block_count % RETURN_REQUIRED_EVERY_NTH_BLOCK == 0:
                         line = self.read_block[-1]
                         self.read_block = []
                         self.read_block.append(line)
@@ -243,7 +293,7 @@ class ServerLog():
                 self.prev_line = line
                 # if line:
                 #     line = line + "\n"
-                #self.greped_lines_index += 1
+                # self.greped_lines_index += 1
             except Exception:
                 pass
         else:
@@ -263,7 +313,7 @@ class ServerLog():
         if self.system_grep:
             self.read_prev_line = True
         else:
-            #self.reader.set_next_line(file_stream=self.file_stream, jump=-(line_lenght))
+            # self.reader.set_next_line(file_stream=self.file_stream, jump=-(line_lenght))
             self.read_block_index -= 1
 
     def next_line(self, read_start_tm=None, read_end_tm=None):
@@ -301,17 +351,27 @@ class ServerLog():
                 if self.search_strings:
                     if self.is_and:
                         if self.is_casesensitive:
-                            if all(substring in line for substring in self.search_strings):
+                            if all(
+                                substring in line for substring in self.search_strings
+                            ):
                                 fail = False
                         else:
-                            if all(re.search(substring, line, re.IGNORECASE) for substring in self.search_strings):
+                            if all(
+                                re.search(substring, line, re.IGNORECASE)
+                                for substring in self.search_strings
+                            ):
                                 fail = False
                     else:
                         if self.is_casesensitive:
-                            if any(substring in line for substring in self.search_strings):
+                            if any(
+                                substring in line for substring in self.search_strings
+                            ):
                                 fail = False
                         else:
-                            if any(re.search(substring, line, re.IGNORECASE) for substring in self.search_strings):
+                            if any(
+                                re.search(substring, line, re.IGNORECASE)
+                                for substring in self.search_strings
+                            ):
                                 fail = False
                 if fail:
                     continue
@@ -320,7 +380,10 @@ class ServerLog():
                         if any(substring in line for substring in self.ignore_strs):
                             continue
                     else:
-                        if any(re.search(substring, line, re.IGNORECASE) for substring in self.ignore_strs):
+                        if any(
+                            re.search(substring, line, re.IGNORECASE)
+                            for substring in self.ignore_strs
+                        ):
                             continue
             else:
                 fail = False
@@ -358,7 +421,9 @@ class ServerLog():
     def neglect_minutes_seconds_time(self, tm):
         if not tm or type(tm) is not datetime.datetime:
             return None
-        return tm + datetime.timedelta(minutes=-tm.minute, seconds=-tm.second, microseconds=-tm.microsecond)
+        return tm + datetime.timedelta(
+            minutes=-tm.minute, seconds=-tm.second, microseconds=-tm.microsecond
+        )
 
     def count(self):
         count_result = {}
@@ -371,11 +436,11 @@ class ServerLog():
         current_slice_count = 0
 
         while slice_start < self.process_end_tm:
-            line = self.next_line(
-                read_start_tm=slice_start, read_end_tm=slice_end)
+            line = self.next_line(read_start_tm=slice_start, read_end_tm=slice_end)
             if not line:
                 count_result[COUNT_RESULT_KEY][
-                    slice_start.strftime(DT_FMT)] = current_slice_count
+                    slice_start.strftime(DT_FMT)
+                ] = current_slice_count
                 total_count += current_slice_count
                 yield slice_start, count_result
                 count_result[COUNT_RESULT_KEY] = {}
@@ -394,17 +459,20 @@ class ServerLog():
     def count_iterator(self):
         return self.count_itr
 
-    def _get_next_slice_start_and_end_tm(self, old_slice_start, old_slice_end, slice_duration, current_line_tm):
+    def _get_next_slice_start_and_end_tm(
+        self, old_slice_start, old_slice_end, slice_duration, current_line_tm
+    ):
         slice_jump = 0
 
         if current_line_tm < old_slice_end and current_line_tm >= old_slice_start:
             return old_slice_start, old_slice_end, slice_jump
-        if current_line_tm >= old_slice_end and current_line_tm < (old_slice_end + slice_duration):
+        if current_line_tm >= old_slice_end and current_line_tm < (
+            old_slice_end + slice_duration
+        ):
             return old_slice_end, old_slice_end + slice_duration, 1
         if current_line_tm >= old_slice_end:
             d = current_line_tm - old_slice_start
-            slice_jump = int(
-                (d.seconds + 86400 * d.days) // slice_duration.seconds)
+            slice_jump = int((d.seconds + 86400 * d.days) // slice_duration.seconds)
             slice_start = old_slice_start + slice_duration * slice_jump
             slice_end = slice_start + slice_duration
             return slice_start, slice_end, slice_jump
@@ -417,17 +485,21 @@ class ServerLog():
         if self.upper_limit_check:
             under_limit = False
         if prev:
-            temp = ([b - a for b, a in zip(slice_val, prev)])
-            if not self.upper_limit_check or any(i >= self.upper_limit_check for i in temp):
-                diff = ([b for b in temp])
+            temp = [b - a for b, a in zip(slice_val, prev)]
+            if not self.upper_limit_check or any(
+                i >= self.upper_limit_check for i in temp
+            ):
+                diff = [b for b in temp]
                 under_limit = True
         else:
-            if not self.upper_limit_check or any(i >= self.upper_limit_check for i in slice_val):
-                diff = ([b for b in slice_val])
+            if not self.upper_limit_check or any(
+                i >= self.upper_limit_check for i in slice_val
+            ):
+                diff = [b for b in slice_val]
                 under_limit = True
 
         if under_limit:
-            value = ([b for b in slice_val])
+            value = [b for b in slice_val]
         return value, diff
 
     def _fetch_writer_info(self, line):
@@ -441,10 +513,10 @@ class ServerLog():
         return m1.group(1)
 
     def diff(self):
-        latency_pattern1 = '%s (\d+)'
-        latency_pattern2 = '%s \(([0-9,\s]+)\)'
-        latency_pattern3 = '(\d+)\((\d+)\) %s'
-        latency_pattern4 = '%s \((\d+)'
+        latency_pattern1 = "%s (\d+)"
+        latency_pattern2 = "%s \(([0-9,\s]+)\)"
+        latency_pattern3 = "(\d+)\((\d+)\) %s"
+        latency_pattern4 = "%s \((\d+)"
 
         different_writer_info = False
 
@@ -458,7 +530,7 @@ class ServerLog():
             # ignore lines till slice_start time
             slice_start = self.process_start_tm
             slice_end = slice_start + self.slice_duration
-            while(self.reader.parse_dt(line) < slice_start):
+            while self.reader.parse_dt(line) < slice_start:
                 line = self.next_line()
                 if not line:
                     break
@@ -472,22 +544,20 @@ class ServerLog():
                     m3 = re.search(latency_pattern3 % (grep_str), line)
                     m4 = re.search(latency_pattern4 % (grep_str), line)
                 else:
-                    m1 = re.search(latency_pattern1 %
-                                   (grep_str), line, re.IGNORECASE)
-                    m2 = re.search(latency_pattern2 %
-                                   (grep_str), line, re.IGNORECASE)
-                    m3 = re.search(latency_pattern3 %
-                                   (grep_str), line, re.IGNORECASE)
-                    m4 = re.search(latency_pattern4 %
-                                   (grep_str), line, re.IGNORECASE)
+                    m1 = re.search(latency_pattern1 % (grep_str), line, re.IGNORECASE)
+                    m2 = re.search(latency_pattern2 % (grep_str), line, re.IGNORECASE)
+                    m3 = re.search(latency_pattern3 % (grep_str), line, re.IGNORECASE)
+                    m4 = re.search(latency_pattern4 % (grep_str), line, re.IGNORECASE)
 
             # check for possible key-value pattern and fix pattern for next process
-            while(not m1 and not m2 and not m3 and not m4):
+            while not m1 and not m2 and not m3 and not m4:
                 try:
                     line = self.next_line()
                     if not line:
                         break
-                    if not utils.contains_substrings_in_order(line=line, strs=self.search_strings):
+                    if not utils.contains_substrings_in_order(
+                        line=line, strs=self.search_strings
+                    ):
                         continue
                 except Exception:
                     break
@@ -498,21 +568,25 @@ class ServerLog():
                     m3 = re.search(latency_pattern3 % (grep_str), line)
                     m4 = re.search(latency_pattern4 % (grep_str), line)
                 else:
-                    m1 = re.search(latency_pattern1 %
-                                   (grep_str), line, re.IGNORECASE)
-                    m2 = re.search(latency_pattern2 %
-                                   (grep_str), line, re.IGNORECASE)
-                    m3 = re.search(latency_pattern3 %
-                                   (grep_str), line, re.IGNORECASE)
-                    m4 = re.search(latency_pattern4 %
-                                   (grep_str), line, re.IGNORECASE)
+                    m1 = re.search(latency_pattern1 % (grep_str), line, re.IGNORECASE)
+                    m2 = re.search(latency_pattern2 % (grep_str), line, re.IGNORECASE)
+                    m3 = re.search(latency_pattern3 % (grep_str), line, re.IGNORECASE)
+                    m4 = re.search(latency_pattern4 % (grep_str), line, re.IGNORECASE)
 
         if line:
             writer_info = self._fetch_writer_info(line)
             slice_count = 0
-            if (self.reader.parse_dt(line) >= slice_end):
-                slice_start, slice_end, slice_count = self._get_next_slice_start_and_end_tm(
-                    slice_start, slice_end, self.slice_duration, self.reader.parse_dt(line))
+            if self.reader.parse_dt(line) >= slice_end:
+                (
+                    slice_start,
+                    slice_end,
+                    slice_count,
+                ) = self._get_next_slice_start_and_end_tm(
+                    slice_start,
+                    slice_end,
+                    self.slice_duration,
+                    self.reader.parse_dt(line),
+                )
                 # slice_count -= 1
             if slice_end > self.process_end_tm:
                 slice_end = self.process_end_tm
@@ -548,7 +622,9 @@ class ServerLog():
                 if not line:
                     break
 
-                if not utils.contains_substrings_in_order(line=line, strs=self.search_strings):
+                if not utils.contains_substrings_in_order(
+                    line=line, strs=self.search_strings
+                ):
                     continue
 
                 if line_tm >= self.process_end_tm:
@@ -579,10 +655,16 @@ class ServerLog():
                             value = []
                             diff = []
                         prev = slice_val
-                    slice_start, slice_end, slice_count_jump = self._get_next_slice_start_and_end_tm(
-                        slice_start, slice_end, self.slice_duration, line_tm)
+                    (
+                        slice_start,
+                        slice_end,
+                        slice_count_jump,
+                    ) = self._get_next_slice_start_and_end_tm(
+                        slice_start, slice_end, self.slice_duration, line_tm
+                    )
                     slice_count = (
-                        slice_count + slice_count_jump) % self.slice_show_count
+                        slice_count + slice_count_jump
+                    ) % self.slice_show_count
                     slice_val = []
                     if slice_end > self.process_end_tm:
                         slice_end = self.process_end_tm
@@ -602,10 +684,9 @@ class ServerLog():
                         else:
                             current = [int(x) for x in m.group(1).split(",")]
                         if slice_val:
-                            slice_val = (
-                                [b + a for b, a in zip(current, slice_val)])
+                            slice_val = [b + a for b, a in zip(current, slice_val)]
                         else:
-                            slice_val = ([b for b in current])
+                            slice_val = [b for b in current]
 
             if not slice_count % self.slice_show_count and slice_val:
                 value, diff = self._get_value_and_diff(prev, slice_val)

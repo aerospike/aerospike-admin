@@ -21,8 +21,12 @@ from io import StringIO
 from collections import OrderedDict
 from pydoc import pipepager
 
-from lib.health.constants import (AssertLevel, AssertResultKey,
-                                  HealthResultCounter, HealthResultType)
+from lib.health.constants import (
+    AssertLevel,
+    AssertResultKey,
+    HealthResultCounter,
+    HealthResultType,
+)
 from lib.health.util import print_dict
 from lib.utils import filesize
 from lib.utils.constants import DT_FMT
@@ -48,11 +52,11 @@ class CliView(object):
         if type(out) is not str:
             out = str(out)
         if CliView.pager == CliView.LESS:
-            pipepager(out, cmd='less -RSX')
+            pipepager(out, cmd="less -RSX")
         elif CliView.pager == CliView.SCROLL:
-            for i in out.split('\n'):
+            for i in out.split("\n"):
                 print(i)
-                time.sleep(.05)
+                time.sleep(0.05)
         else:
             print(out)
 
@@ -72,100 +76,115 @@ class CliView(object):
         if not timestamp:
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
 
-        return ' (' + str(timestamp) + ')'
+        return " (" + str(timestamp) + ")"
 
     @staticmethod
-    def info_network(stats, cluster_names, versions, builds, cluster,
-                     timestamp='', **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
+    def info_network(
+        stats, cluster_names, versions, builds, cluster, timestamp="", **mods
+    ):
+        prefixes = cluster.get_node_names(mods.get("with", []))
         hosts = cluster.nodes
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = 'Network Information' + title_suffix
+        title = "Network Information" + title_suffix
         sources = dict(
             cluster_names=cluster_names,
             prefixes=prefixes,
-            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys())),
-            hosts=dict(((k, h.sock_name(use_fqdn=False))
-                        for k, h in hosts.items())),
+            node_ids=dict(
+                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
+            ),
+            hosts=dict(((k, h.sock_name(use_fqdn=False)) for k, h in hosts.items())),
             builds=builds,
             versions=versions,
-            stats=stats)
+            stats=stats,
+        )
         common = dict(principal=cluster.get_expected_principal())
         CliView.print_result(
-            sheet.render(templates.info_network_sheet, title, sources,
-                         common=common))
+            sheet.render(templates.info_network_sheet, title, sources, common=common)
+        )
 
     @staticmethod
-    def info_namespace_usage(stats, cluster, timestamp='', **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
+    def info_namespace_usage(stats, cluster, timestamp="", **mods):
+        prefixes = cluster.get_node_names(mods.get("with", []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = 'Namespace Usage Information' + title_suffix
+        title = "Namespace Usage Information" + title_suffix
         sources = dict(
             # TODO - collect cluster-name.
             cluster_names=dict([(k, None) for k in stats.keys()]),
-            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys())),
+            node_ids=dict(
+                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
+            ),
             prefixes=prefixes,
-            ns_stats=stats)
+            ns_stats=stats,
+        )
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.info_namespace_usage_sheet, title, sources,
-                         common=common))
+            sheet.render(
+                templates.info_namespace_usage_sheet, title, sources, common=common
+            )
+        )
 
     @staticmethod
-    def info_namespace_object(stats, cluster, timestamp='', **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
+    def info_namespace_object(stats, cluster, timestamp="", **mods):
+        prefixes = cluster.get_node_names(mods.get("with", []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = 'Namespace Object Information' + title_suffix
+        title = "Namespace Object Information" + title_suffix
         sources = dict(
             # TODO - collect cluster-name.
             cluster_names=dict([(k, None) for k in stats.keys()]),
-            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys())),
+            node_ids=dict(
+                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
+            ),
             prefixes=prefixes,
-            ns_stats=stats)
+            ns_stats=stats,
+        )
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.info_namespace_object_sheet, title, sources,
-                         common=common))
+            sheet.render(
+                templates.info_namespace_object_sheet, title, sources, common=common
+            )
+        )
 
     @staticmethod
-    def info_set(stats, cluster, timestamp='', **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
+    def info_set(stats, cluster, timestamp="", **mods):
+        prefixes = cluster.get_node_names(mods.get("with", []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = 'Set Information%s' + title_suffix
+        title = "Set Information%s" + title_suffix
         sources = dict(
             # TODO - collect cluster-name.
             cluster_names=dict([(k, None) for k in stats.keys()]),
-            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys())),
+            node_ids=dict(
+                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
+            ),
             prefixes=prefixes,
-            set_stats=stats)
+            set_stats=stats,
+        )
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.info_set_sheet, title, sources, common=common))
+            sheet.render(templates.info_set_sheet, title, sources, common=common)
+        )
 
     # pre 5.0
     @staticmethod
-    def info_dc(stats, cluster, timestamp='', **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
+    def info_dc(stats, cluster, timestamp="", **mods):
+        prefixes = cluster.get_node_names(mods.get("with", []))
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = 'DC Information%s' % (title_suffix)
+        title = "DC Information%s" % (title_suffix)
         sources = dict(
-            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys())),
+            node_ids=dict(
+                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
+            ),
             prefixes=prefixes,
-            dc_stats=stats)
+            dc_stats=stats,
+        )
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.info_dc_sheet, title, sources,
-                         common=common))
+            sheet.render(templates.info_dc_sheet, title, sources, common=common)
+        )
 
     # pre 5.0
     @staticmethod
@@ -173,41 +192,44 @@ class CliView(object):
         if not max(xdr_enable.values()):
             return
 
-        prefixes = cluster.get_node_names(mods.get('with', []))
+        prefixes = cluster.get_node_names(mods.get("with", []))
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = 'XDR Information' + title_suffix
+        title = "XDR Information" + title_suffix
         sources = dict(
             xdr_enable=xdr_enable,
-            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys())),
+            node_ids=dict(
+                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
+            ),
             prefixes=prefixes,
             builds=builds,
-            xdr_stats=stats)
+            xdr_stats=stats,
+        )
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.info_old_xdr_sheet, title, sources, common=common))
+            sheet.render(templates.info_old_xdr_sheet, title, sources, common=common)
+        )
 
     @staticmethod
-    def info_XDR(stats, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore):
+    def info_XDR(
+        stats, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore
+    ):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
         prefixes = cluster.get_node_names()
-        node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                        for k in prefixes.keys()))
+        node_ids = dict(((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys()))
         sources = dict(
-            xdr_enable=xdr_enable,
-            node_ids=node_ids,
-            prefixes=prefixes,
-            xdr_stats=stats)
+            xdr_enable=xdr_enable, node_ids=node_ids, prefixes=prefixes, xdr_stats=stats
+        )
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.info_xdr_sheet, title, sources, common=common))
+            sheet.render(templates.info_xdr_sheet, title, sources, common=common)
+        )
 
     @staticmethod
-    def info_sindex(stats, cluster, timestamp='', **mods):
+    def info_sindex(stats, cluster, timestamp="", **mods):
         # return if sindex stats are empty.
         if not stats:
             return
@@ -220,72 +242,98 @@ class CliView(object):
                 sindex_stats[node] = node_stats = sindex_stats.get(node, {})
                 node_stats[iname] = values
 
-        prefixes = cluster.get_node_names(mods.get('with', []))
+        prefixes = cluster.get_node_names(mods.get("with", []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = 'Secondary Index Information' + title_suffix
+        title = "Secondary Index Information" + title_suffix
         sources = dict(
-            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys())),
+            node_ids=dict(
+                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
+            ),
             prefixes=prefixes,
-            sindex_stats=sindex_stats)
+            sindex_stats=sindex_stats,
+        )
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
-            sheet.render(templates.info_sindex_sheet, title, sources,
-                         common=common))
+            sheet.render(templates.info_sindex_sheet, title, sources, common=common)
+        )
 
     @staticmethod
-    def show_distribution(title, histogram, unit, hist, cluster, like=None,
-                          timestamp="", **mods):
+    def show_distribution(
+        title, histogram, unit, hist, cluster, like=None, timestamp="", **mods
+    ):
         likes = compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        description = 'Percentage of records having {} less than or '.format(
-            hist) + 'equal to value measured in {}'.format(unit)
+        description = "Percentage of records having {} less than or ".format(
+            hist
+        ) + "equal to value measured in {}".format(unit)
         namespaces = set(filter(likes.search, histogram.keys()))
 
         for namespace, node_data in histogram.items():
-            if namespace not in namespaces or not node_data or \
-               isinstance(node_data, Exception):
+            if (
+                namespace not in namespaces
+                or not node_data
+                or isinstance(node_data, Exception)
+            ):
                 continue
 
-            this_title = '{} - {} in {}{}'.format(
-                namespace, title, unit, title_suffix)
+            this_title = "{} - {} in {}{}".format(namespace, title, unit, title_suffix)
             sources = dict(
-                prefixes=cluster.get_node_names(mods.get('with', [])),
-                histogram=dict((k, d['percentiles'])
-                               for k, d in node_data.items())
+                prefixes=cluster.get_node_names(mods.get("with", [])),
+                histogram=dict((k, d["percentiles"]) for k, d in node_data.items()),
             )
 
             CliView.print_result(
-                sheet.render(templates.show_distribution_sheet, this_title, sources,
-                             description=description))
+                sheet.render(
+                    templates.show_distribution_sheet,
+                    this_title,
+                    sources,
+                    description=description,
+                )
+            )
 
     @staticmethod
     def show_object_distribution(
-            title, histogram, unit, hist, bucket_count, set_bucket_count,
-            cluster, like=None, timestamp="", loganalyser_mode=False, **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
+        title,
+        histogram,
+        unit,
+        hist,
+        bucket_count,
+        set_bucket_count,
+        cluster,
+        like=None,
+        timestamp="",
+        loganalyser_mode=False,
+        **mods
+    ):
+        prefixes = cluster.get_node_names(mods.get("with", []))
         likes = compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = "Number of records having {} in the range ".format(
-            hist) + "measured in {}".format(unit)
+            hist
+        ) + "measured in {}".format(unit)
         namespaces = set(filter(likes.search, histogram.keys()))
 
         for namespace, node_data in histogram.items():
             if namespace not in namespaces:
                 continue
 
-            ns_title = "{} - {} in {}{}".format(
-                namespace, title, unit, title_suffix)
+            ns_title = "{} - {} in {}{}".format(namespace, title, unit, title_suffix)
             sources = dict(
                 prefixes=prefixes,
-                histogram={h: d.get('data', {})
-                           for h, d in node_data.items()
-                           if h != 'columns'})
+                histogram={
+                    h: d.get("data", {}) for h, d in node_data.items() if h != "columns"
+                },
+            )
 
-            CliView.print_result(sheet.render(
-                templates.show_object_distribution_sheet, ns_title, sources,
-                description=description))
+            CliView.print_result(
+                sheet.render(
+                    templates.show_object_distribution_sheet,
+                    ns_title,
+                    sources,
+                    description=description,
+                )
+            )
 
     @staticmethod
     def format_latency(orig_latency):
@@ -297,52 +345,63 @@ class CliView(object):
             for node, node_data in nodes_data.items():
                 node_latency = latency[node] = latency.get(node, OrderedDict())
 
-                for ns, ns_data in node_data['namespace'].items():
-                    for slice_id, values in enumerate(ns_data['values']):
-                        node_latency[(ns, hist, slice_id)] = OrderedDict(zip(
-                            ns_data['columns'], values))
+                for ns, ns_data in node_data["namespace"].items():
+                    for slice_id, values in enumerate(ns_data["values"]):
+                        node_latency[(ns, hist, slice_id)] = OrderedDict(
+                            zip(ns_data["columns"], values)
+                        )
 
         return latency
 
     @staticmethod
-    def show_latency(latency, cluster,
-                     like=None, timestamp="", **mods):
+    def show_latency(latency, cluster, like=None, timestamp="", **mods):
         # TODO - May not need to converter now that dicts can be nested.
-        prefixes = cluster.get_node_names(mods.get('with', []))
+        prefixes = cluster.get_node_names(mods.get("with", []))
         likes = compile_likes(like)
-        title = 'Latency ' + CliView._get_timestamp_suffix(timestamp)
+        title = "Latency " + CliView._get_timestamp_suffix(timestamp)
         keys = set(filter(likes.search, latency.keys()))
         latency = {k: v for k, v in latency.items() if k in keys}
         latency = CliView.format_latency(latency)
 
         sources = dict(prefixes=prefixes, histogram=latency)
 
-        CliView.print_result(sheet.render(
-            templates.show_latency_sheet, title, sources))
+        CliView.print_result(sheet.render(templates.show_latency_sheet, title, sources))
 
     @staticmethod
-    def show_config(title, service_configs, cluster, like=None, diff=False,
-                    show_total=False, title_every_nth=0, flip_output=False,
-                    timestamp="", **mods):
+    def show_config(
+        title,
+        service_configs,
+        cluster,
+        like=None,
+        diff=False,
+        show_total=False,
+        title_every_nth=0,
+        flip_output=False,
+        timestamp="",
+        **mods
+    ):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
-        prefixes = cluster.get_node_names(mods.get('with', []))
-        node_ids = dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys()))
-        sources = dict(
-            prefixes=prefixes,
-            data=service_configs,
-            node_ids=node_ids)
+        prefixes = cluster.get_node_names(mods.get("with", []))
+        node_ids = dict(((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys()))
+        sources = dict(prefixes=prefixes, data=service_configs, node_ids=node_ids)
         disable_aggregations = not show_total
         style = SheetStyle.columns if flip_output else None
         common = dict(principal=cluster.get_expected_principal())
 
         CliView.print_result(
             sheet.render(
-                templates.show_config_sheet, title, sources, style=style,
-                selectors=like, title_repeat=title_every_nth != 0,
-                disable_aggregations=disable_aggregations, dynamic_diff=diff,
-                common=common))
+                templates.show_config_sheet,
+                title,
+                sources,
+                style=style,
+                selectors=like,
+                title_repeat=title_every_nth != 0,
+                disable_aggregations=disable_aggregations,
+                dynamic_diff=diff,
+                common=common,
+            )
+        )
 
     @staticmethod
     def show_stats(*args, **kwargs):
@@ -353,74 +412,81 @@ class CliView(object):
         CliView.show_config(*args, **kwargs)
 
     @staticmethod
-    def show_xdr5_config(title, service_configs, cluster, like=None, diff=None, title_every_nth=0, flip_output=False, timestamp="", **mods):
+    def show_xdr5_config(
+        title,
+        service_configs,
+        cluster,
+        like=None,
+        diff=None,
+        title_every_nth=0,
+        flip_output=False,
+        timestamp="",
+        **mods
+    ):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
-        prefixes = cluster.get_node_names(mods.get('with', []))
-        node_ids = dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys()))
+        prefixes = cluster.get_node_names(mods.get("with", []))
+        node_ids = dict(((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys()))
         common = dict(principal=cluster.get_expected_principal())
         style = SheetStyle.columns if flip_output else None
 
         sources = dict(
-            prefixes=prefixes,
-            node_ids=node_ids,
-            data=service_configs['xdr_configs'],
+            prefixes=prefixes, node_ids=node_ids, data=service_configs["xdr_configs"],
         )
 
         CliView.print_result(
             sheet.render(
                 templates.show_config_sheet,
-                title, 
+                title,
                 sources,
                 selectors=like,
                 style=style,
                 title_repeat=title_every_nth != 0,
-                dynamic_diff=diff, 
+                dynamic_diff=diff,
                 disable_aggregations=True,
-                common=common
+                common=common,
             )
         )
 
-        for dc in service_configs['dc_configs']:
-            title = 'DC Configuration for {}{}'.format(dc, title_suffix)
+        for dc in service_configs["dc_configs"]:
+            title = "DC Configuration for {}{}".format(dc, title_suffix)
             sources = dict(
-                prefixes=prefixes, 
+                prefixes=prefixes,
                 node_ids=node_ids,
-                data=service_configs['dc_configs'][dc]
+                data=service_configs["dc_configs"][dc],
             )
             CliView.print_result(
                 sheet.render(
                     templates.show_config_sheet,
-                    title, 
-                    sources,
-                    selectors=like,
-                    style=style,
-                    title_repeat=title_every_nth != 0, 
-                    dynamic_diff=diff, 
-                    disable_aggregations=True,
-                    common=common
-                )
-            )
-
-        for dc in service_configs['ns_configs']:
-            title = 'Namespace Configuration for {}{}'.format(dc, title_suffix)
-            sources = dict(
-                prefixes=prefixes, 
-                node_ids=node_ids,
-                data=service_configs['ns_configs'][dc]
-            )
-
-            CliView.print_result(
-                sheet.render(
-                    templates.show_config_xdr_ns_sheet, 
-                    title, 
+                    title,
                     sources,
                     selectors=like,
                     style=style,
                     title_repeat=title_every_nth != 0,
                     dynamic_diff=diff,
-                    common=common
+                    disable_aggregations=True,
+                    common=common,
+                )
+            )
+
+        for dc in service_configs["ns_configs"]:
+            title = "Namespace Configuration for {}{}".format(dc, title_suffix)
+            sources = dict(
+                prefixes=prefixes,
+                node_ids=node_ids,
+                data=service_configs["ns_configs"][dc],
+            )
+
+            CliView.print_result(
+                sheet.render(
+                    templates.show_config_xdr_ns_sheet,
+                    title,
+                    sources,
+                    selectors=like,
+                    style=style,
+                    title_repeat=title_every_nth != 0,
+                    dynamic_diff=diff,
+                    common=common,
                 )
             )
 
@@ -443,12 +509,17 @@ class CliView(object):
 
         CliView.print_result(
             sheet.render(
-                templates.grep_count_sheet, title,
+                templates.grep_count_sheet,
+                title,
                 dict(data=grep_result, node_ids=node_ids),
-                title_repeat=title_every_nth != 0))
+                title_repeat=title_every_nth != 0,
+            )
+        )
 
     @staticmethod
-    def show_grep_diff(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
+    def show_grep_diff(
+        title, grep_result, title_every_nth=0, like=None, diff=None, **ignore
+    ):
         column_names = set()
         different_writer_info = False
 
@@ -463,16 +534,21 @@ class CliView(object):
                         continue
 
             column_names = CliView._sort_list_with_string_and_datetime(
-                list(grep_result[list(grep_result.keys())[0]]["value"].keys()))
+                list(grep_result[list(grep_result.keys())[0]]["value"].keys())
+            )
 
         if len(column_names) == 0:
-            return ''
+            return ""
 
         column_names.insert(0, ".")
         column_names.insert(0, "NODE")
 
-        t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
+        t = Table(
+            title,
+            column_names,
+            title_format=TitleFormats.no_change,
+            orientation=Orientation.VERTICAL,
+        )
 
         for file in sorted(grep_result.keys()):
             if isinstance(grep_result[file], Exception):
@@ -487,14 +563,14 @@ class CliView(object):
                 for key in grep_result[file]["value"].keys():
                     row3[key] = "|"
 
-            row1['NODE'] = file
-            row1['.'] = "Total"
+            row1["NODE"] = file
+            row1["."] = "Total"
 
-            row2['NODE'] = "."
-            row2['.'] = "Diff"
+            row2["NODE"] = "."
+            row2["."] = "Diff"
 
-            row3['NODE'] = "|"
-            row3['.'] = "|"
+            row3["NODE"] = "|"
+            row3["."] = "|"
 
             t.insert_row(row1)
             t.insert_row(row2)
@@ -502,11 +578,15 @@ class CliView(object):
 
         t.ignore_sort()
 
-        CliView.print_result(
-            t.__str__(horizontal_title_every_nth=title_every_nth * 3))
+        CliView.print_result(t.__str__(horizontal_title_every_nth=title_every_nth * 3))
 
         if different_writer_info:
-            print("\n" + terminal.fg_red() + "Input Key is not uniq, multiple writer instance (server_file:line_no) found." + terminal.fg_clear())
+            print(
+                "\n"
+                + terminal.fg_red()
+                + "Input Key is not uniq, multiple writer instance (server_file:line_no) found."
+                + terminal.fg_clear()
+            )
 
     @staticmethod
     def _sort_list_with_string_and_datetime(keys):
@@ -542,7 +622,9 @@ class CliView(object):
         return dt_list
 
     @staticmethod
-    def show_log_latency(title, grep_result, title_every_nth=0, like=None, diff=None, **ignore):
+    def show_log_latency(
+        title, grep_result, title_every_nth=0, like=None, diff=None, **ignore
+    ):
         column_names = set()
         tps_key = ("ops/sec", None)
         last_unit = None
@@ -553,16 +635,21 @@ class CliView(object):
             # find column names
             if grep_result[list(grep_result.keys())[0]]:
                 column_names = CliView._sort_list_with_string_and_datetime(
-                    list(grep_result[list(grep_result.keys())[0]][tps_key].keys()))
+                    list(grep_result[list(grep_result.keys())[0]][tps_key].keys())
+                )
 
         if len(column_names) == 0:
-            return ''
+            return ""
 
         column_names.insert(0, ".")
         column_names.insert(0, "NODE")
 
-        t = Table(title, column_names,
-                  title_format=TitleFormats.no_change, orientation=Orientation.VERTICAL)
+        t = Table(
+            title,
+            column_names,
+            title_format=TitleFormats.no_change,
+            orientation=Orientation.VERTICAL,
+        )
 
         row = None
         sub_columns_per_column = 0
@@ -573,7 +660,7 @@ class CliView(object):
                 is_first = True
                 sub_columns_per_column = len(grep_result[file].keys())
                 relative_stats_columns = []
-                
+
                 # Get keys and remove tps so that they can be sorted
                 grep_result_keys = list(grep_result[file].keys())
                 grep_result_keys.remove(tps_key)
@@ -593,23 +680,23 @@ class CliView(object):
                         units_have_changed = True
 
                     if is_first:
-                        row['NODE'] = file
+                        row["NODE"] = file
                         is_first = False
                     else:
-                        row['NODE'] = "."
+                        row["NODE"] = "."
 
-                    row['.'] = "%% >%d%s" % (key, unit)
+                    row["."] = "%% >%d%s" % (key, unit)
                     t.insert_row(row)
 
                 row = grep_result[file][tps_key]
-                row['NODE'] = "."
-                row['.'] = tps_key[0]
+                row["NODE"] = "."
+                row["."] = tps_key[0]
                 t.insert_row(row)
 
                 for stat in relative_stats_columns:
                     row = grep_result[file][stat]
-                    row['NODE'] = "."
-                    row['.'] = stat[0]
+                    row["NODE"] = "."
+                    row["."] = stat[0]
                     t.insert_row(row)
 
                 row = {}
@@ -617,17 +704,26 @@ class CliView(object):
                 for key in grep_result[file][tps_key].keys():
                     row[key] = "|"
 
-                row['NODE'] = "|"
-                row['.'] = "|"
+                row["NODE"] = "|"
+                row["."] = "|"
                 t.insert_row(row)
 
         t.ignore_sort()
-        CliView.print_result(t.__str__(
-            horizontal_title_every_nth=title_every_nth * (sub_columns_per_column + 1)))
+        CliView.print_result(
+            t.__str__(
+                horizontal_title_every_nth=title_every_nth
+                * (sub_columns_per_column + 1)
+            )
+        )
 
         if units_have_changed:
-            CliView.print_result('WARNING: asadm stopped early because latency units have changed from %s to %s.' % (last_unit, current_unit))
-            CliView.print_result("Use 'histogram -h <histogram> -f <datetime> to bypass this problem.")
+            CliView.print_result(
+                "WARNING: asadm stopped early because latency units have changed from %s to %s."
+                % (last_unit, current_unit)
+            )
+            CliView.print_result(
+                "Use 'histogram -h <histogram> -f <datetime> to bypass this problem."
+            )
             return False
 
         return True
@@ -645,11 +741,13 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "{} to {} Mappings{}".format(col1, col2, title_suffix)
-        sources = dict(mapping=dict(
-            enumerate((k, v) for k, v in mapping.items()
-                      if k in filtered_keys)))
+        sources = dict(
+            mapping=dict(
+                enumerate((k, v) for k, v in mapping.items() if k in filtered_keys)
+            )
+        )
 
-        if col2 == 'IPs':
+        if col2 == "IPs":
             map_sheet = templates.show_mapping_to_ip_sheet
         else:
             map_sheet = templates.show_mapping_to_id_sheet
@@ -657,25 +755,27 @@ class CliView(object):
         CliView.print_result(sheet.render(map_sheet, title, sources))
 
     @staticmethod
-    def show_pmap(pmap_data, cluster, timestamp='', **mods):
-        prefixes = cluster.get_node_names(mods.get('with', []))
+    def show_pmap(pmap_data, cluster, timestamp="", **mods):
+        prefixes = cluster.get_node_names(mods.get("with", []))
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = 'Partition Map Analysis' + title_suffix
+        title = "Partition Map Analysis" + title_suffix
         sources = dict(
             prefixes=prefixes,
-            node_ids=dict(((k, cluster.get_node(k)[0].node_id)
-                           for k in prefixes.keys())),
-            pmap=pmap_data
+            node_ids=dict(
+                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
+            ),
+            pmap=pmap_data,
         )
         common = dict(principal=cluster.get_expected_principal())
 
-        CliView.print_result(sheet.render(templates.show_pmap_sheet, title, sources,
-                                          common=common))
+        CliView.print_result(
+            sheet.render(templates.show_pmap_sheet, title, sources, common=common)
+        )
 
     @staticmethod
-    def show_users(users_data, like, timestamp='', **ignore):
+    def show_users(users_data, like, timestamp="", **ignore):
         if not users_data:
-            return 
+            return
 
         if like:
             likes = compile_likes(like)
@@ -684,21 +784,19 @@ class CliView(object):
             filtered_keys = users_data.keys()
 
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
-        title = 'Users{}'.format(title_timestamp)
+        title = "Users{}".format(title_timestamp)
         # Normally the top level of the dict is used to associate different sources.
         # Since we do not need one here we must artificially create one.
-        users_data = dict(enumerate({k: v} for k, v in users_data.items()
-                    if k in filtered_keys))
-        sources = dict(
-            data=users_data
+        users_data = dict(
+            enumerate({k: v} for k, v in users_data.items() if k in filtered_keys)
         )
+        sources = dict(data=users_data)
         CliView.print_result(sheet.render(templates.show_users, title, sources))
 
-
     @staticmethod
-    def show_roles(roles_data, like, timestamp='', **ignore):
+    def show_roles(roles_data, like, timestamp="", **ignore):
         if not roles_data:
-            return 
+            return
 
         if like:
             likes = compile_likes(like)
@@ -707,19 +805,18 @@ class CliView(object):
             filtered_keys = roles_data.keys()
 
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
-        title = 'Roles{}'.format(title_timestamp)
-        roles_data = dict(enumerate({k: v} for k, v in roles_data.items()
-                    if k in filtered_keys))
-        sources = dict(
-            data=roles_data
+        title = "Roles{}".format(title_timestamp)
+        roles_data = dict(
+            enumerate({k: v} for k, v in roles_data.items() if k in filtered_keys)
         )
+        sources = dict(data=roles_data)
 
         CliView.print_result(sheet.render(templates.show_roles, title, sources))
 
     @staticmethod
-    def show_udfs(udfs_data, like, timestamp='', **ignore):
+    def show_udfs(udfs_data, like, timestamp="", **ignore):
         if not udfs_data:
-            return 
+            return
 
         if like:
             likes = compile_likes(like)
@@ -728,52 +825,53 @@ class CliView(object):
             filtered_keys = udfs_data.keys()
 
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
-        title = 'UDF Modules{}'.format(title_timestamp)
-        udfs_data = dict(enumerate({k: v} for k, v in udfs_data.items()
-                    if k in filtered_keys))
-        sources = dict(
-            data=udfs_data
+        title = "UDF Modules{}".format(title_timestamp)
+        udfs_data = dict(
+            enumerate({k: v} for k, v in udfs_data.items() if k in filtered_keys)
         )
+        sources = dict(data=udfs_data)
 
         CliView.print_result(sheet.render(templates.show_udfs, title, sources))
 
     @staticmethod
-    def show_sindex(sindexes_data, like, timestamp='', **ignore):
+    def show_sindex(sindexes_data, like, timestamp="", **ignore):
         CliView._get_timestamp_suffix(timestamp)
         if not sindexes_data:
-            return 
+            return
 
         filtered_data = []
 
         if like:
             likes = compile_likes(like)
             for sindex in sindexes_data:
-                    if 'indexname' in sindex and likes.search(sindex['indexname']):
-                        filtered_data.append(sindex)
+                if "indexname" in sindex and likes.search(sindex["indexname"]):
+                    filtered_data.append(sindex)
         else:
             filtered_data = sindexes_data
 
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
-        title = 'Secondary Indexes{}'.format(title_timestamp)
-        sources = dict(
-            data=filtered_data
+        title = "Secondary Indexes{}".format(title_timestamp)
+        sources = dict(data=filtered_data)
+
+        CliView.print_result(
+            sheet.render(templates.show_sindex, title, sources, selectors=like)
         )
-
-        CliView.print_result(sheet.render(templates.show_sindex, title, sources, selectors=like))
-
 
     @staticmethod
     def asinfo(results, line_sep, show_node_name, cluster, **mods):
         like = set([])
 
-        if 'like' in mods:
-            like = set(mods['like'])
+        if "like" in mods:
+            like = set(mods["like"])
 
         for node_id, value in results.items():
             if show_node_name:
-                prefix = cluster.get_node_names(mods.get('with', []))[node_id]
+                prefix = cluster.get_node_names(mods.get("with", []))[node_id]
                 node = cluster.get_node(node_id)[0]
-                print("%s%s (%s) returned%s:" % (terminal.bold(), prefix, node.ip, terminal.reset()))
+                print(
+                    "%s%s (%s) returned%s:"
+                    % (terminal.bold(), prefix, node.ip, terminal.reset())
+                )
 
             if isinstance(value, Exception):
                 print("%s%s%s" % (terminal.fg_red(), value, terminal.reset()))
@@ -793,7 +891,7 @@ class CliView(object):
                         value = delimiter.join(value)
 
                     print(value)
-                    
+
                     if show_node_name:
                         print()
                 else:
@@ -813,12 +911,12 @@ class CliView(object):
         while i < len(output):
             group = output[i]
 
-            if group == '\033':
+            if group == "\033":
                 i += 1
 
                 while i < len(output):
                     group = group + output[i]
-                    if output[i] == 'm':
+                    if output[i] == "m":
                         i += 1
                         break
                     i += 1
@@ -881,21 +979,20 @@ class CliView(object):
                     prev_iterator = CliView.group_output(previous)
                     next_peeked = []
                     next_iterator = CliView.group_output(output)
-                    next_iterator = CliView.peekable(
-                        next_peeked, next_iterator)
+                    next_iterator = CliView.peekable(next_peeked, next_iterator)
 
                     for prev_group in prev_iterator:
-                        if '\033' in prev_group:
+                        if "\033" in prev_group:
                             # skip prev escape seq
                             continue
 
                         for next_group in next_iterator:
-                            if '\033' in next_group:
+                            if "\033" in next_group:
                                 # add current escape seq
                                 result += next_group
                                 continue
-                            elif next_group == '\n':
-                                if prev_group != '\n':
+                            elif next_group == "\n":
+                                if prev_group != "\n":
                                     next_peeked.append(next_group)
                                     break
                                 if highlight:
@@ -912,12 +1009,12 @@ class CliView(object):
 
                             result += next_group
 
-                            if '\n' == prev_group and '\n' != next_group:
+                            if "\n" == prev_group and "\n" != next_group:
                                 continue
                             break
 
                     for next_group in next_iterator:
-                        if next_group == ' ' or next_group == '\n':
+                        if next_group == " " or next_group == "\n":
                             if highlight:
                                 result += terminal.uninverse()
                                 highlight = False
@@ -939,13 +1036,15 @@ class CliView(object):
                     previous = output
 
                 ts = time.time()
-                st = datetime.datetime.fromtimestamp(
-                    ts).strftime(' %Y-%m-%d %H:%M:%S')
+                st = datetime.datetime.fromtimestamp(ts).strftime(" %Y-%m-%d %H:%M:%S")
                 command = " ".join(line)
-                print("[%s '%s' sleep: %ss iteration: %s" % (
-                    st, command, sleep, count), end=' ', file=real_stdout)
+                print(
+                    "[%s '%s' sleep: %ss iteration: %s" % (st, command, sleep, count),
+                    end=" ",
+                    file=real_stdout,
+                )
                 if num_iterations:
-                    print(" of %s" % (num_iterations), end=' ', file=real_stdout)
+                    print(" of %s" % (num_iterations), end=" ", file=real_stdout)
                 print("]", file=real_stdout)
                 print(result, file=real_stdout)
 
@@ -959,11 +1058,11 @@ class CliView(object):
             return
         finally:
             sys.stdout = real_stdout
-            print('')
+            print("")
 
-# ##########################
-# ## Health Print functions
-# ##########################
+    # ##########################
+    # ## Health Print functions
+    # ##########################
 
     @staticmethod
     def _print_data(d):
@@ -982,7 +1081,14 @@ class CliView(object):
             return
         print("\n" + ("_" * 100) + "\n")
         if header:
-            print(terminal.fg_red() + terminal.bold() + str(header) + " ::\n" + terminal.unbold() + terminal.fg_clear())
+            print(
+                terminal.fg_red()
+                + terminal.bold()
+                + str(header)
+                + " ::\n"
+                + terminal.unbold()
+                + terminal.fg_clear()
+            )
         for d in data:
             CliView._print_data(d)
             print("")
@@ -992,12 +1098,28 @@ class CliView(object):
         if not status_counters:
             return
         s = "\n" + terminal.bold() + "Summary".center(H_width, "_") + terminal.unbold()
-        s += "\n" + CliView._get_header("Total") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER])])
-        s += CliView._get_header("Passed") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])])
-        s += CliView._get_header("Failed") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER])])
-        s += CliView._get_header("Skipped") + CliView._get_msg([str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER]
-                                                        - status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER]
-                                                        - status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])])
+        s += (
+            "\n"
+            + CliView._get_header("Total")
+            + CliView._get_msg(
+                [str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER])]
+            )
+        )
+        s += CliView._get_header("Passed") + CliView._get_msg(
+            [str(status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])]
+        )
+        s += CliView._get_header("Failed") + CliView._get_msg(
+            [str(status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER])]
+        )
+        s += CliView._get_header("Skipped") + CliView._get_msg(
+            [
+                str(
+                    status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER]
+                    - status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER]
+                    - status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER]
+                )
+            ]
+        )
         print(s)
 
     @staticmethod
@@ -1019,7 +1141,8 @@ class CliView(object):
                 try:
                     CliView._print_counter_list(
                         data=ho[HealthResultType.EXCEPTIONS][e],
-                        header="%s Exceptions" % (e.upper()))
+                        header="%s Exceptions" % (e.upper()),
+                    )
                 except Exception:
                     pass
         except Exception:
@@ -1027,21 +1150,35 @@ class CliView(object):
 
     @staticmethod
     def _get_header(header):
-        return "\n" + terminal.bold() + ("%s:" % header).rjust(H1_offset) + \
-            terminal.unbold() + " ".rjust(H2_offset - H1_offset)
+        return (
+            "\n"
+            + terminal.bold()
+            + ("%s:" % header).rjust(H1_offset)
+            + terminal.unbold()
+            + " ".rjust(H2_offset - H1_offset)
+        )
 
     @staticmethod
     def _get_msg(msg, level=None):
         if level is not None:
             if level == AssertLevel.WARNING:
-                return terminal.fg_blue() + ("\n" + " ".rjust(
-                    H2_offset)).join(msg) + terminal.fg_clear()
+                return (
+                    terminal.fg_blue()
+                    + ("\n" + " ".rjust(H2_offset)).join(msg)
+                    + terminal.fg_clear()
+                )
             elif level == AssertLevel.INFO:
-                return terminal.fg_green() + ("\n" + " ".rjust(
-                    H2_offset)).join(msg) + terminal.fg_clear()
+                return (
+                    terminal.fg_green()
+                    + ("\n" + " ".rjust(H2_offset)).join(msg)
+                    + terminal.fg_clear()
+                )
             else:
-                return terminal.fg_red() + ("\n" + " ".rjust(
-                    H2_offset)).join(msg) + terminal.fg_clear()
+                return (
+                    terminal.fg_red()
+                    + ("\n" + " ".rjust(H2_offset)).join(msg)
+                    + terminal.fg_clear()
+                )
         else:
             return ("\n" + " ".rjust(H2_offset)).join(msg)
 
@@ -1053,12 +1190,12 @@ class CliView(object):
         if isinstance(val, int):
             try:
                 # For python 2.7
-                return str(format(val, ',d'))
+                return str(format(val, ",d"))
             except Exception:
                 try:
                     # For python 2.6
-                    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
-                    return str(locale.format('%d', val, True))
+                    locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
+                    return str(locale.format("%d", val, True))
 
                 except Exception:
                     pass
@@ -1067,21 +1204,21 @@ class CliView(object):
 
             try:
                 # For python 2.7
-                return_val = format(val, ',f')
+                return_val = format(val, ",f")
             except Exception:
                 try:
                     # For python 2.6
-                    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
-                    return_val = locale.format('%f', val, True)
+                    locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
+                    return_val = locale.format("%f", val, True)
                 except Exception:
                     pass
 
             if return_val is not None:
                 return_val = str(return_val)
 
-                if '.' in return_val:
-                    return_val = return_val.rstrip('0')
-                    return_val = return_val.rstrip('.')
+                if "." in return_val:
+                    return_val = return_val.rstrip("0")
+                    return_val = return_val.rstrip(".")
 
                 return return_val
         elif isinstance(val, str) and val.isdigit():
@@ -1114,15 +1251,21 @@ class CliView(object):
                 for _kv in kv[1]:
                     if _kv:
                         try:
-                            _str += ", " + ("%s:" % (str(
-                                _kv[0])) if len(str(
-                                    _kv[0]).strip()) > 0 else "") + \
-                                "%s" % (CliView._format_value(_kv[1], _kv[2]))
+                            _str += (
+                                ", "
+                                + (
+                                    "%s:" % (str(_kv[0]))
+                                    if len(str(_kv[0]).strip()) > 0
+                                    else ""
+                                )
+                                + "%s" % (CliView._format_value(_kv[1], _kv[2]))
+                            )
                         except Exception:
-                            _str = ("%s:" % (str(
-                                _kv[0])) if len(str(
-                                    _kv[0]).strip()) > 0 else "") + \
-                                "%s" % (CliView._format_value(_kv[1], _kv[2]))
+                            _str = (
+                                "%s:" % (str(_kv[0]))
+                                if len(str(_kv[0]).strip()) > 0
+                                else ""
+                            ) + "%s" % (CliView._format_value(_kv[1], _kv[2]))
 
                 if _str:
                     tmp_res_str += " {%s}" % (_str)
@@ -1151,28 +1294,34 @@ class CliView(object):
                     if d[AssertResultKey.SUCCESS_MSG]:
 
                         s_msg_str += CliView._get_header(
-                            d[AssertResultKey.CATEGORY][0]) + \
-                            CliView._get_msg([d[AssertResultKey.SUCCESS_MSG]])
+                            d[AssertResultKey.CATEGORY][0]
+                        ) + CliView._get_msg([d[AssertResultKey.SUCCESS_MSG]])
                         s_msg_cnt += 1
 
                     continue
 
-                s += CliView._get_header(d[AssertResultKey.CATEGORY][0]) + \
-                    CliView._get_msg([d[AssertResultKey.FAIL_MSG]], level)
+                s += CliView._get_header(
+                    d[AssertResultKey.CATEGORY][0]
+                ) + CliView._get_msg([d[AssertResultKey.FAIL_MSG]], level)
 
                 if verbose:
                     import textwrap
 
                     s += "\n"
                     s += CliView._get_header("Description:")
-                    s += CliView._get_msg(textwrap.wrap(
-                        str(d[AssertResultKey.DESCRIPTION]),
-                        H_width - H2_offset,
-                        break_long_words=False, break_on_hyphens=False))
+                    s += CliView._get_msg(
+                        textwrap.wrap(
+                            str(d[AssertResultKey.DESCRIPTION]),
+                            H_width - H2_offset,
+                            break_long_words=False,
+                            break_on_hyphens=False,
+                        )
+                    )
                     s += "\n"
                     s += CliView._get_header("Keys:")
-                    s += CliView._get_msg(CliView._get_kv_msg_list(
-                        d[AssertResultKey.KEYS]))
+                    s += CliView._get_msg(
+                        CliView._get_kv_msg_list(d[AssertResultKey.KEYS])
+                    )
 
                     # Extra new line in case verbose output is printed
                     s += "\n"
@@ -1193,9 +1342,9 @@ class CliView(object):
         return res_fail_msg_str, f_msg_cnt, res_success_msg_str, s_msg_cnt
 
     @staticmethod
-    def _get_assert_output_string(assert_out, verbose=False,
-                                  output_filter_category=[],
-                                  level=AssertLevel.CRITICAL):
+    def _get_assert_output_string(
+        assert_out, verbose=False, output_filter_category=[], level=AssertLevel.CRITICAL
+    ):
         if not assert_out:
             return ""
 
@@ -1213,28 +1362,48 @@ class CliView(object):
 
                 if output_filter_category:
                     if _k == output_filter_category[0]:
-                        category = output_filter_category[1:] if len(
-                            output_filter_category) > 1 else []
+                        category = (
+                            output_filter_category[1:]
+                            if len(output_filter_category) > 1
+                            else []
+                        )
                     else:
                         category = output_filter_category
 
-                f_msg_str, f_msg_cnt, s_msg_str, s_msg_cnt = CliView._get_assert_output_string(
-                    assert_out[_k], verbose, category, level=level)
+                (
+                    f_msg_str,
+                    f_msg_cnt,
+                    s_msg_str,
+                    s_msg_cnt,
+                ) = CliView._get_assert_output_string(
+                    assert_out[_k], verbose, category, level=level
+                )
 
                 res_fail_msg_str += f_msg_str
                 total_fail_msg_cnt += f_msg_cnt
                 res_success_msg_str += s_msg_str
                 total_success_msg_cnt += s_msg_cnt
 
-        return res_fail_msg_str, total_fail_msg_cnt, res_success_msg_str, total_success_msg_cnt
+        return (
+            res_fail_msg_str,
+            total_fail_msg_cnt,
+            res_success_msg_str,
+            total_success_msg_cnt,
+        )
 
     @staticmethod
-    def _print_assert_summary(assert_out, verbose=False,
-                              output_filter_category=[],
-                              output_filter_warning_level=None):
+    def _print_assert_summary(
+        assert_out,
+        verbose=False,
+        output_filter_category=[],
+        output_filter_warning_level=None,
+    ):
         if not output_filter_warning_level:
-            search_levels = [AssertLevel.INFO, AssertLevel.WARNING,
-                             AssertLevel.CRITICAL]
+            search_levels = [
+                AssertLevel.INFO,
+                AssertLevel.WARNING,
+                AssertLevel.CRITICAL,
+            ]
         elif output_filter_warning_level == "CRITICAL":
             search_levels = [AssertLevel.CRITICAL]
         elif output_filter_warning_level == "WARNING":
@@ -1242,8 +1411,11 @@ class CliView(object):
         elif output_filter_warning_level == "INFO":
             search_levels = [AssertLevel.INFO]
         else:
-            search_levels = [AssertLevel.INFO, AssertLevel.WARNING,
-                             AssertLevel.CRITICAL]
+            search_levels = [
+                AssertLevel.INFO,
+                AssertLevel.WARNING,
+                AssertLevel.CRITICAL,
+            ]
 
         all_success_str = ""
         all_fail_str = ""
@@ -1264,14 +1436,22 @@ class CliView(object):
 
                 if output_filter_category:
                     if _k == output_filter_category[0]:
-                        category = output_filter_category[1:] if len(
-                            output_filter_category) > 1 else []
+                        category = (
+                            output_filter_category[1:]
+                            if len(output_filter_category) > 1
+                            else []
+                        )
                     else:
                         category = output_filter_category
 
-                f_msg_str, f_msg_cnt, s_msg_str, s_msg_cnt = \
-                    CliView._get_assert_output_string(
-                        assert_out[_k], verbose, category, level=level)
+                (
+                    f_msg_str,
+                    f_msg_cnt,
+                    s_msg_str,
+                    s_msg_cnt,
+                ) = CliView._get_assert_output_string(
+                    assert_out[_k], verbose, category, level=level
+                )
 
                 if f_msg_str:
                     total_fail_msg_cnt += f_msg_cnt
@@ -1285,17 +1465,29 @@ class CliView(object):
                 summary_str = ""
 
                 if level == AssertLevel.CRITICAL:
-                    summary_str = terminal.bold() + terminal.fg_red() + \
-                        "CRITICAL".center(H_width, " ") + \
-                        terminal.fg_clear() + terminal.unbold()
+                    summary_str = (
+                        terminal.bold()
+                        + terminal.fg_red()
+                        + "CRITICAL".center(H_width, " ")
+                        + terminal.fg_clear()
+                        + terminal.unbold()
+                    )
                 elif level == AssertLevel.WARNING:
-                    summary_str = terminal.bold() + terminal.fg_blue() + \
-                        "WARNING".center(H_width, " ") + \
-                        terminal.fg_clear() + terminal.unbold()
+                    summary_str = (
+                        terminal.bold()
+                        + terminal.fg_blue()
+                        + "WARNING".center(H_width, " ")
+                        + terminal.fg_clear()
+                        + terminal.unbold()
+                    )
                 elif level == AssertLevel.INFO:
-                    summary_str = terminal.bold() + terminal.fg_green() + \
-                        "INFO".center(H_width, " ") + \
-                        terminal.fg_clear() + terminal.unbold()
+                    summary_str = (
+                        terminal.bold()
+                        + terminal.fg_green()
+                        + "INFO".center(H_width, " ")
+                        + terminal.fg_clear()
+                        + terminal.unbold()
+                    )
 
                 all_fail_str += "\n" + summary_str + "\n" + res_fail_msg_str + "\n"
                 all_fail_cnt += total_fail_msg_cnt
@@ -1305,19 +1497,36 @@ class CliView(object):
                 all_success_cnt += total_success_msg_cnt
 
         if all_success_cnt > 0:
-            print("\n\n" + terminal.bold() + str(" %s: count(%d) " %("PASS", all_success_cnt)).center(H_width, "_") + terminal.unbold())
+            print(
+                "\n\n"
+                + terminal.bold()
+                + str(" %s: count(%d) " % ("PASS", all_success_cnt)).center(
+                    H_width, "_"
+                )
+                + terminal.unbold()
+            )
             print(all_success_str)
 
         if all_fail_cnt > 0:
-            print("\n\n" + terminal.bold() + str(" %s: count(%d) " %("FAIL", all_fail_cnt)).center(H_width, "_") + terminal.unbold())
+            print(
+                "\n\n"
+                + terminal.bold()
+                + str(" %s: count(%d) " % ("FAIL", all_fail_cnt)).center(H_width, "_")
+                + terminal.unbold()
+            )
             print(all_fail_str)
 
         print("_" * H_width + "\n")
 
     @staticmethod
-    def print_health_output(ho, verbose=False, debug=False, output_file=None,
-                            output_filter_category=[],
-                            output_filter_warning_level=None):
+    def print_health_output(
+        ho,
+        verbose=False,
+        debug=False,
+        output_file=None,
+        output_filter_category=[],
+        output_filter_warning_level=None,
+    ):
         if not ho:
             return
         o_s = None
@@ -1333,18 +1542,19 @@ class CliView(object):
         if debug:
             CliView._print_exceptions(ho)
 
-        CliView._print_status(
-            ho[HealthResultType.STATUS_COUNTERS], verbose=verbose)
+        CliView._print_status(ho[HealthResultType.STATUS_COUNTERS], verbose=verbose)
         CliView._print_assert_summary(
-            ho[HealthResultType.ASSERT], verbose=verbose,
+            ho[HealthResultType.ASSERT],
+            verbose=verbose,
             output_filter_category=output_filter_category,
-            output_filter_warning_level=output_filter_warning_level)
+            output_filter_warning_level=output_filter_warning_level,
+        )
 
         if o_s:
             o_s.close()
         sys.stdout = sys.__stdout__
 
-###########################
+    ###########################
 
     @staticmethod
     def get_summary_line_prefix(index, key):
@@ -1362,7 +1572,8 @@ class CliView(object):
         sources = dict(ns_stats=new_stats)
 
         CliView.print_result(
-            sheet.render(templates.summary_namespace_sheet, title, sources))
+            sheet.render(templates.summary_namespace_sheet, title, sources)
+        )
 
     @staticmethod
     def _summary_namespace_list_view(stats, **ignore):
@@ -1371,101 +1582,209 @@ class CliView(object):
         print()
         for ns in stats:
             index = 1
-            print("   " + ("%s"%(terminal.fg_red() + ns + terminal.fg_clear())
-                           if stats[ns]["migrations_in_progress"] else ns))
+            print(
+                "   "
+                + (
+                    "%s" % (terminal.fg_red() + ns + terminal.fg_clear())
+                    if stats[ns]["migrations_in_progress"]
+                    else ns
+                )
+            )
             print("   " + "=" * len(ns))
 
-            print(CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
-                stats[ns]["devices_total"], stats[ns]["devices_per_node"],
-                " (number differs across nodes)" if not stats[ns]["devices_count_same_across_nodes"] else ""))
+            print(
+                CliView.get_summary_line_prefix(index, "Devices")
+                + "Total %d, per-node %d%s"
+                % (
+                    stats[ns]["devices_total"],
+                    stats[ns]["devices_per_node"],
+                    " (number differs across nodes)"
+                    if not stats[ns]["devices_count_same_across_nodes"]
+                    else "",
+                )
+            )
             index += 1
 
-            print(CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
-                filesize.size(stats[ns]["memory_total"]).strip(), 100.00 - stats[ns]["memory_available_pct"],
-                filesize.size(stats[ns]["memory_total"] - stats[ns]["memory_aval"]).strip(),
-                stats[ns]["memory_available_pct"], filesize.size(stats[ns]["memory_aval"]).strip()))
+            print(
+                CliView.get_summary_line_prefix(index, "Memory")
+                + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                % (
+                    filesize.size(stats[ns]["memory_total"]).strip(),
+                    100.00 - stats[ns]["memory_available_pct"],
+                    filesize.size(
+                        stats[ns]["memory_total"] - stats[ns]["memory_aval"]
+                    ).strip(),
+                    stats[ns]["memory_available_pct"],
+                    filesize.size(stats[ns]["memory_aval"]).strip(),
+                )
+            )
             index += 1
 
             if stats[ns]["disk_total"]:
-                print(CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
-                    filesize.size(stats[ns]["disk_total"]).strip(), stats[ns]["disk_used_pct"],
-                    filesize.size(stats[ns]["disk_used"]).strip(), stats[ns]["disk_available_pct"],
-                    filesize.size(stats[ns]["disk_aval"]).strip()))
+                print(
+                    CliView.get_summary_line_prefix(index, "Disk")
+                    + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
+                    % (
+                        filesize.size(stats[ns]["disk_total"]).strip(),
+                        stats[ns]["disk_used_pct"],
+                        filesize.size(stats[ns]["disk_used"]).strip(),
+                        stats[ns]["disk_available_pct"],
+                        filesize.size(stats[ns]["disk_aval"]).strip(),
+                    )
+                )
                 index += 1
 
-            print(CliView.get_summary_line_prefix(index, "Replication Factor") + "%s"%(",".join([str(rf) for rf in stats[ns]["repl_factor"]])))
+            print(
+                CliView.get_summary_line_prefix(index, "Replication Factor")
+                + "%s" % (",".join([str(rf) for rf in stats[ns]["repl_factor"]]))
+            )
             index += 1
 
             if "cache_read_pct" in stats[ns]:
-                print(CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate") + "%s"%(filesize.size(stats[ns]["cache_read_pct"], filesize.si_float)))
+                print(
+                    CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate")
+                    + "%s"
+                    % (filesize.size(stats[ns]["cache_read_pct"], filesize.si_float))
+                )
                 index += 1
 
             if "rack_aware" in stats[ns]:
-                print(CliView.get_summary_line_prefix(index, "Rack-aware") + "%s"%(str(stats[ns]["rack_aware"])))
+                print(
+                    CliView.get_summary_line_prefix(index, "Rack-aware")
+                    + "%s" % (str(stats[ns]["rack_aware"]))
+                )
                 index += 1
 
-            print(CliView.get_summary_line_prefix(index, "Master Objects") + "%s"%(filesize.size(stats[ns]["master_objects"], filesize.si_float)))
+            print(
+                CliView.get_summary_line_prefix(index, "Master Objects")
+                + "%s" % (filesize.size(stats[ns]["master_objects"], filesize.si_float))
+            )
             index += 1
             s = ""
 
-            if "license_data_in_memory" in stats[ns] and stats[ns]["license_data_in_memory"]:
-                s += "%s in-memory"%(filesize.size(stats[ns]["license_data_in_memory"]))
-            elif "license_data_on_disk" in stats[ns] and stats[ns]["license_data_on_disk"]:
+            if (
+                "license_data_in_memory" in stats[ns]
+                and stats[ns]["license_data_in_memory"]
+            ):
+                s += "%s in-memory" % (
+                    filesize.size(stats[ns]["license_data_in_memory"])
+                )
+            elif (
+                "license_data_on_disk" in stats[ns]
+                and stats[ns]["license_data_on_disk"]
+            ):
                 if s:
                     s += ", "
-                s += "%s on-device"%(filesize.size(stats[ns]["license_data_on_disk"]))
+                s += "%s on-device" % (filesize.size(stats[ns]["license_data_on_disk"]))
             else:
                 s += "None"
             print(CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s)
             index += 1
 
             if "compression_ratio" in stats[ns]:
-                print(CliView.get_summary_line_prefix(index, "Compression-ratio") + "%s"%(str(stats[ns]["compression_ratio"])))
+                print(
+                    CliView.get_summary_line_prefix(index, "Compression-ratio")
+                    + "%s" % (str(stats[ns]["compression_ratio"]))
+                )
                 index += 1
             print()
 
     @staticmethod
     def print_summary(summary, list_view=True):
         index = 1
-        print("Cluster" + ("  (%s)"%(terminal.fg_red() + "Migrations in Progress" + terminal.fg_clear())
-                           if summary["CLUSTER"]["migrations_in_progress"] else ""))
-        print("=======" + ("==========================" if summary["CLUSTER"]["migrations_in_progress"] else ""))
+        print(
+            "Cluster"
+            + (
+                "  (%s)"
+                % (terminal.fg_red() + "Migrations in Progress" + terminal.fg_clear())
+                if summary["CLUSTER"]["migrations_in_progress"]
+                else ""
+            )
+        )
+        print(
+            "======="
+            + (
+                "=========================="
+                if summary["CLUSTER"]["migrations_in_progress"]
+                else ""
+            )
+        )
         print()
 
-        if "cluster_name" in summary["CLUSTER"] and len(summary["CLUSTER"]["cluster_name"]) > 0:
-            print(CliView.get_summary_line_prefix(index, "Cluster Name") + ", ".join(summary["CLUSTER"]["cluster_name"]))
+        if (
+            "cluster_name" in summary["CLUSTER"]
+            and len(summary["CLUSTER"]["cluster_name"]) > 0
+        ):
+            print(
+                CliView.get_summary_line_prefix(index, "Cluster Name")
+                + ", ".join(summary["CLUSTER"]["cluster_name"])
+            )
             index += 1
 
-        print(CliView.get_summary_line_prefix(index, "Server Version") + ", ".join(summary["CLUSTER"]["server_version"]))
+        print(
+            CliView.get_summary_line_prefix(index, "Server Version")
+            + ", ".join(summary["CLUSTER"]["server_version"])
+        )
         index += 1
 
-        print(CliView.get_summary_line_prefix(index, "OS Version") + ", ".join(summary["CLUSTER"]["os_version"]))
+        print(
+            CliView.get_summary_line_prefix(index, "OS Version")
+            + ", ".join(summary["CLUSTER"]["os_version"])
+        )
         index += 1
 
-        print(CliView.get_summary_line_prefix(index, "Cluster Size") + ", ".join([str(cs) for cs in summary["CLUSTER"]["cluster_size"]]))
+        print(
+            CliView.get_summary_line_prefix(index, "Cluster Size")
+            + ", ".join([str(cs) for cs in summary["CLUSTER"]["cluster_size"]])
+        )
         index += 1
 
-        print(CliView.get_summary_line_prefix(index, "Devices") + "Total %d, per-node %d%s"%(
-            summary["CLUSTER"]["device"]["count"], summary["CLUSTER"]["device"]["count_per_node"],
-            " (number differs across nodes)" if not summary["CLUSTER"]["device"]["count_same_across_nodes"] else ""))
+        print(
+            CliView.get_summary_line_prefix(index, "Devices")
+            + "Total %d, per-node %d%s"
+            % (
+                summary["CLUSTER"]["device"]["count"],
+                summary["CLUSTER"]["device"]["count_per_node"],
+                " (number differs across nodes)"
+                if not summary["CLUSTER"]["device"]["count_same_across_nodes"]
+                else "",
+            )
+        )
         index += 1
 
-        print(CliView.get_summary_line_prefix(index, "Memory") + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"%(
-            filesize.size(summary["CLUSTER"]["memory"]["total"]).strip(), 100.00 - summary["CLUSTER"]["memory"]["aval_pct"],
-            filesize.size(summary["CLUSTER"]["memory"]["total"] - summary["CLUSTER"]["memory"]["aval"]).strip(),
-            summary["CLUSTER"]["memory"]["aval_pct"], filesize.size(summary["CLUSTER"]["memory"]["aval"]).strip()))
+        print(
+            CliView.get_summary_line_prefix(index, "Memory")
+            + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+            % (
+                filesize.size(summary["CLUSTER"]["memory"]["total"]).strip(),
+                100.00 - summary["CLUSTER"]["memory"]["aval_pct"],
+                filesize.size(
+                    summary["CLUSTER"]["memory"]["total"]
+                    - summary["CLUSTER"]["memory"]["aval"]
+                ).strip(),
+                summary["CLUSTER"]["memory"]["aval_pct"],
+                filesize.size(summary["CLUSTER"]["memory"]["aval"]).strip(),
+            )
+        )
         index += 1
 
-        print(CliView.get_summary_line_prefix(index, "Disk") + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"%(
-            filesize.size(summary["CLUSTER"]["device"]["total"]).strip(), summary["CLUSTER"]["device"]["used_pct"],
-            filesize.size(summary["CLUSTER"]["device"]["used"]).strip(), summary["CLUSTER"]["device"]["aval_pct"],
-            filesize.size(summary["CLUSTER"]["device"]["aval"]).strip()))
+        print(
+            CliView.get_summary_line_prefix(index, "Disk")
+            + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
+            % (
+                filesize.size(summary["CLUSTER"]["device"]["total"]).strip(),
+                summary["CLUSTER"]["device"]["used_pct"],
+                filesize.size(summary["CLUSTER"]["device"]["used"]).strip(),
+                summary["CLUSTER"]["device"]["aval_pct"],
+                filesize.size(summary["CLUSTER"]["device"]["aval"]).strip(),
+            )
+        )
         index += 1
 
         data_summary = CliView.get_summary_line_prefix(index, "Usage (Unique Data)")
         uniq_mem_used = summary["CLUSTER"]["license_data"]["memory_size"]
         uniq_device_used = summary["CLUSTER"]["license_data"]["device_size"]
-        
+
         # Sum all "Usage" data whether on disk or in memory.
         if uniq_mem_used or uniq_device_used:
             total = 0
@@ -1475,7 +1794,7 @@ class CliView(object):
             if uniq_device_used:
                 total += uniq_device_used
 
-            data_summary += "%s"%filesize.size(total)
+            data_summary += "%s" % filesize.size(total)
 
         else:
             data_summary += "None"
@@ -1483,15 +1802,21 @@ class CliView(object):
         print(data_summary)
         index += 1
 
-        print(CliView.get_summary_line_prefix(index, "Active Namespaces") + "%d of %d"%(summary["CLUSTER"]["active_ns"], summary["CLUSTER"]["ns_count"]))
+        print(
+            CliView.get_summary_line_prefix(index, "Active Namespaces")
+            + "%d of %d"
+            % (summary["CLUSTER"]["active_ns"], summary["CLUSTER"]["ns_count"])
+        )
         index += 1
 
-        print(CliView.get_summary_line_prefix(index, "Features") + ", ".join(sorted(summary["CLUSTER"]["active_features"])))
+        print(
+            CliView.get_summary_line_prefix(index, "Features")
+            + ", ".join(sorted(summary["CLUSTER"]["active_features"]))
+        )
 
         print("\n")
 
         if list_view:
-            CliView._summary_namespace_list_view(
-                summary["FEATURES"]["NAMESPACE"])
+            CliView._summary_namespace_list_view(summary["FEATURES"]["NAMESPACE"])
         else:
             CliView._summary_namespace_table_view(summary["FEATURES"]["NAMESPACE"])

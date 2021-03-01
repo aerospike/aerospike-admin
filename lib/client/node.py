@@ -1037,29 +1037,36 @@ class Node(object):
 
         elif stanza == "" or stanza == "service":
             config = util.info_to_dict(self.info("get-config:"))
-        elif stanza == 'xdr' and xdr_major_version >= 5:
+        elif stanza == "xdr" and xdr_major_version >= 5:
             xdr_config = {}
-            xdr_config['dc_configs'] = {}
-            xdr_config['ns_configs'] = {}
-            xdr_config['xdr_configs'] = util.info_to_dict(self.info("get-config:context=xdr"))
+            xdr_config["dc_configs"] = {}
+            xdr_config["ns_configs"] = {}
+            xdr_config["xdr_configs"] = util.info_to_dict(
+                self.info("get-config:context=xdr")
+            )
 
-            for dc in xdr_config['xdr_configs']['dcs'].split(','):
+            for dc in xdr_config["xdr_configs"]["dcs"].split(","):
                 dc_config = self.info("get-config:context=xdr;dc=%s" % dc)
-                xdr_config['ns_configs'][dc] = {}
-                xdr_config['dc_configs'][dc] = util.info_to_dict(dc_config)
+                xdr_config["ns_configs"][dc] = {}
+                xdr_config["dc_configs"][dc] = util.info_to_dict(dc_config)
 
-                start_namespaces = dc_config.find('namespaces=') + len('namespaces=')
-                end_namespaces = dc_config.find(';', start_namespaces)
-                namespaces = (ns for ns in dc_config[start_namespaces:end_namespaces].split(','))
+                start_namespaces = dc_config.find("namespaces=") + len("namespaces=")
+                end_namespaces = dc_config.find(";", start_namespaces)
+                namespaces = (
+                    ns for ns in dc_config[start_namespaces:end_namespaces].split(",")
+                )
 
                 for namespace in namespaces:
-                    namespace_config = self.info("get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace))
-                    xdr_config['ns_configs'][dc][namespace] = util.info_to_dict(namespace_config)
+                    namespace_config = self.info(
+                        "get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace)
+                    )
+                    xdr_config["ns_configs"][dc][namespace] = util.info_to_dict(
+                        namespace_config
+                    )
 
             config = xdr_config
-        elif stanza != 'all':
-            config = util.info_to_dict(
-                self.info("get-config:context=%s" % stanza))
+        elif stanza != "all":
+            config = util.info_to_dict(self.info("get-config:context=%s" % stanza))
         elif stanza == "all":
             config["namespace"] = self.info_get_config("namespace")
             config["service"] = self.info_get_config("service")
@@ -1122,7 +1129,7 @@ class Node(object):
         has_time_range_col = int(has_time_range_col)
         time_range = row[0]
         updated = False
-        
+
         for total_row in total_rows:
             if not has_time_range_col or total_row[0] == time_range:
                 new_sum = float(row[has_time_range_col])
@@ -1138,8 +1145,8 @@ class Node(object):
                         new_transactions = float((new_sum * row[row_idx]) / 100.00)
                         total_row[row_idx] = round(
                             float(
-                                    ((old_transactions + new_transactions) * 100) /
-                                    (old_sum + new_sum)
+                                ((old_transactions + new_transactions) * 100)
+                                / (old_sum + new_sum)
                             ),
                             2,
                         )
@@ -1420,13 +1427,13 @@ class Node(object):
                 xdr_data = util.info_to_dict(self.info("get-config:context=xdr"))
             else:
                 xdr_data = util.info_to_dict(self.xdr_info("get-config:context=xdr"))
-            
+
             dcs = []
 
             if xdr_data:
-                dcs = xdr_data.get('dcs', '')
+                dcs = xdr_data.get("dcs", "")
 
-            return dcs.split(',')
+            return dcs.split(",")
 
         # for older servers/XDRs
         else:
@@ -1493,31 +1500,39 @@ class Node(object):
         return util.info_to_dict_multi_level(udf_data, "filename", delimiter2=",")
 
     @return_exceptions
-    def info_udf_put(self, udf_file_name, udf_str, udf_type = 'LUA'):
-        content = base64.b64encode(udf_str.encode('ascii'))
-        content = content.decode('ascii')
+    def info_udf_put(self, udf_file_name, udf_str, udf_type="LUA"):
+        content = base64.b64encode(udf_str.encode("ascii"))
+        content = content.decode("ascii")
         content_len = len(content)
 
-        command = ('udf-put:filename=' + udf_file_name + ';udf-type=' + udf_type
-                  + ';content-len=' + str(content_len) + ';content=' + content)
+        command = (
+            "udf-put:filename="
+            + udf_file_name
+            + ";udf-type="
+            + udf_type
+            + ";content-len="
+            + str(content_len)
+            + ";content="
+            + content
+        )
         resp = self.info(command)
 
-        if 'error' in resp:
-            message = resp.split('=')[1]
+        if "error" in resp:
+            message = resp.split("=")[1]
             return message
 
-        return 'ok'
+        return "ok"
 
     @return_exceptions
     def info_udf_remove(self, udf_file_name):
-        command = ('udf-remove:filename=' + udf_file_name + ';')
+        command = "udf-remove:filename=" + udf_file_name + ";"
         resp = self.info(command)
 
-        if 'error' in resp:
-            message = resp.split('=')[1]
+        if "error" in resp:
+            message = resp.split("=")[1]
             return message
 
-        return 'ok'
+        return "ok"
 
     @return_exceptions
     def info_roster(self):
@@ -1701,48 +1716,46 @@ class Node(object):
         return util.info_to_dict(self.info("sindex/%s/%s" % (namespace, indexname)))
 
     @return_exceptions
-    def info_sindex_create(self, index_name, namespace, bin_name, bin_type, index_type=None, set_=None):
-        command = 'sindex-create:indexname={};'.format(index_name)
+    def info_sindex_create(
+        self, index_name, namespace, bin_name, bin_type, index_type=None, set_=None
+    ):
+        command = "sindex-create:indexname={};".format(index_name)
 
         if index_type:
-            command += 'indextype={};'.format(index_type)
+            command += "indextype={};".format(index_type)
 
-        command += 'ns={};'.format(namespace)
+        command += "ns={};".format(namespace)
 
         if set_:
-            command += 'set={};'.format(set_)
+            command += "set={};".format(set_)
 
-        command += 'indexdata={},{}'.format(bin_name, bin_type)
+        command += "indexdata={},{}".format(bin_name, bin_type)
         resp = self.info(command)
 
-        if 'FAIL' in resp:
-            message = resp.split(':')[-1]
+        if "FAIL" in resp:
+            message = resp.split(":")[-1]
             return message.strip()
 
-        return 'ok'
+        return "ok"
 
     @return_exceptions
     def info_sindex_delete(self, index_name, namespace, set_=None):
-        command = ''
+        command = ""
 
         if set_ is None:
-            command = ('sindex-delete:ns={};indexname={}'.format(
-                    namespace, index_name
-                )
-            )
+            command = "sindex-delete:ns={};indexname={}".format(namespace, index_name)
         else:
-            command = ('sindex-delete:ns={};set={};indexname={}'.format(
-                    namespace, set_, index_name
-                )
+            command = "sindex-delete:ns={};set={};indexname={}".format(
+                namespace, set_, index_name
             )
 
         resp = self.info(command)
 
-        if 'FAIL' in resp:
-            message = resp.split(':')[-1]
+        if "FAIL" in resp:
+            message = resp.split(":")[-1]
             return message.strip()
 
-        return 'ok'
+        return "ok"
 
     @return_exceptions
     def info_build_version(self):
@@ -1754,14 +1767,13 @@ class Node(object):
         """
         return self.info("build")
 
-
     ############################################################################
     #
     #                      Admin (Security Protocol) API
     #
     ############################################################################
 
-    @logthis('asadm', logging.DEBUG)
+    @logthis("asadm", logging.DEBUG)
     def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port
@@ -1785,9 +1797,9 @@ class Node(object):
         except Exception as e:
             if sock:
                 sock.close()
-            
+
             # Re-raise the last exception
-            raise 
+            raise
 
         return result
 
@@ -1832,7 +1844,9 @@ class Node(object):
         new_password: string (un-hashed)
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.change_password, (user, old_password, new_password), self.ip)
+        self._admin_cadmin(
+            ASSocket.change_password, (user, old_password, new_password), self.ip
+        )
 
     @return_exceptions
     def admin_grant_roles(self, user, roles):
@@ -1960,7 +1974,6 @@ class Node(object):
         """
         return self._admin_cadmin(ASSocket.query_role, [role], self.ip)
 
-
     ############################################################################
     #
     #                           System Commands
@@ -2085,26 +2098,20 @@ class Node(object):
         sys_stats = {}
 
         self.logger.debug(
-            ("{}._get_localhost_system_statistics cmds={}")
-            .format(
-                self.ip,
-                commands,
-            ), 
-            stackinfo=True
+            ("{}._get_localhost_system_statistics cmds={}").format(self.ip, commands,),
+            stackinfo=True,
         )
-        
+
         for _key, ignore_error, cmds in self.sys_cmds:
             if _key not in commands:
                 continue
 
             for cmd in cmds:
                 self.logger.debug(
-                    ("{}._get_localhost_system_statistics running cmd={}")
-                    .format(
-                        self.ip,
-                        cmd,
-                    ), 
-                    stackinfo=True
+                    ("{}._get_localhost_system_statistics running cmd={}").format(
+                        self.ip, cmd,
+                    ),
+                    stackinfo=True,
                 )
                 o, e = shell_command([cmd])
                 if (e and not ignore_error) or not o:
@@ -2428,22 +2435,23 @@ class Node(object):
         dict -- {stat_name : stat_value, ...}
         """
         self.logger.debug(
-            ("{}.info_system_statistics default_user={} default_pws={}"
-            "default_ssh_key={} default_ssh_port={} credential_file={}"
-            "commands={} collect_remote_data={}")
-            .format(
+            (
+                "{}.info_system_statistics default_user={} default_pws={}"
+                "default_ssh_key={} default_ssh_port={} credential_file={}"
+                "commands={} collect_remote_data={}"
+            ).format(
                 self.ip,
                 default_user,
-                default_pwd, 
-                default_ssh_key, 
-                default_ssh_port, 
-                credential_file, 
+                default_pwd,
+                default_ssh_key,
+                default_ssh_port,
+                credential_file,
                 commands,
-                collect_remote_data
-            ), 
-            stackinfo=True
+                collect_remote_data,
+            ),
+            stackinfo=True,
         )
-        
+
         if commands:
             cmd_list = copy.deepcopy(commands)
         else:

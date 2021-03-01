@@ -21,41 +21,42 @@ from test.e2e import test_util
 
 set_style_json()
 
+
 class TestInfo(unittest.TestCase):
-    
+
     rc = None
     output_list = list()
-    service_info = ''
-    network_info = ''
-    namespace_usage_info = ''
-    namespace_object_info = ''
-    sindex_info = ''
-    xdr_info = ''
-    
+    service_info = ""
+    network_info = ""
+    namespace_usage_info = ""
+    namespace_object_info = ""
+    sindex_info = ""
+    xdr_info = ""
+
     @classmethod
     def setUpClass(cls):
-        TestInfo.rc = controller.BasicRootController(user='admin', password='admin')
+        TestInfo.rc = controller.BasicRootController(user="admin", password="admin")
 
-        actual_out = util.capture_stdout(TestInfo.rc.execute, ['info'])
-        actual_out += util.capture_stdout(TestInfo.rc.execute, ['info', 'sindex'])
+        actual_out = util.capture_stdout(TestInfo.rc.execute, ["info"])
+        actual_out += util.capture_stdout(TestInfo.rc.execute, ["info", "sindex"])
         TestInfo.output_list = test_util.get_separate_output(actual_out)
 
         for item in TestInfo.output_list:
-            title = item['title']
+            title = item["title"]
             if "Network Information" in title:
                 TestInfo.network_info = item
             elif "Namespace Usage Information" in title:
                 TestInfo.namespace_usage_info = item
             elif "Secondary Index Information" in title:
-                TestInfo.sindex_info = item              
+                TestInfo.sindex_info = item
             elif "XDR Information" in title:
                 TestInfo.xdr_info = item
             elif "Namespace Object Information" in title:
                 TestInfo.namespace_object_info = item
-        
-    @classmethod    
+
+    @classmethod
     def tearDownClass(cls):
-        cls.rc = None    
+        cls.rc = None
 
     def test_network(self):
         """
@@ -64,22 +65,28 @@ class TestInfo(unittest.TestCase):
         TODO: test for values as well
         """
         exp_heading = "Network Information"
-        exp_header = [   
-            'Node',
-            'Node ID',
-            'IP',
-            'Build',
-            'Migrations',
-            'Cluster Size',
-            'Cluster Key',
-            'Cluster Integrity',
-            'Cluster Principal',
-            'Client Conns',
-            'Uptime'
+        exp_header = [
+            "Node",
+            "Node ID",
+            "IP",
+            "Build",
+            "Migrations",
+            "Cluster Size",
+            "Cluster Key",
+            "Cluster Integrity",
+            "Cluster Principal",
+            "Client Conns",
+            "Uptime",
         ]
         expected_num_records = len(TestInfo.rc.cluster.nodes)
-        
-        actual_heading, actual_description, actual_header, actual_data, actual_num_records = test_util.parse_output(TestInfo.network_info, horizontal = True)
+
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = test_util.parse_output(TestInfo.network_info, horizontal=True)
         self.assertTrue(exp_heading in actual_heading)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(expected_num_records, actual_num_records)
@@ -90,30 +97,36 @@ class TestInfo(unittest.TestCase):
         and no of row displayed in output
         TODO: test for values as well
         """
-        exp_heading = 'Secondary Index Information'
+        exp_heading = "Secondary Index Information"
 
         # Know to be up-to-date with server 5.1
         exp_header = [
-            'Index Name',
-            'Namespace', 
-            'Set', 
-            'Node', 
-            'Bins', 
-            'Bin Type', 
-            'State', 
-            'Keys',
-            'Entries',
-            'Memory Used',
-            'Queries Requests',
-            'Queries Avg Num Recs',
-            'Updates Writes',
-            'Updates Deletes'
+            "Index Name",
+            "Namespace",
+            "Set",
+            "Node",
+            "Bins",
+            "Bin Type",
+            "State",
+            "Keys",
+            "Entries",
+            "Memory Used",
+            "Queries Requests",
+            "Queries Avg Num Recs",
+            "Updates Writes",
+            "Updates Deletes",
         ]
 
-        if TestInfo.sindex_info == '':
-            self.skipTest('No sindex information found.')
+        if TestInfo.sindex_info == "":
+            self.skipTest("No sindex information found.")
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(TestInfo.sindex_info, horizontal = True)        
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestInfo.sindex_info, horizontal=True)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
@@ -125,25 +138,31 @@ class TestInfo(unittest.TestCase):
         TODO: test for values as well
         """
         exp_heading = "Namespace Usage Information"
-        exp_header = [   
-            'Namespace',
-            'Node',
-            'Total Records',
-            'Expirations',
-            'Evictions',
-            'Stop Writes',
-            'Disk Used',
-            'Disk Used%',
-            'Disk HWM%',
-            'Disk Avail%',
-            'Memory Used',
-            'Memory Used%',
-            'Memory HWM%',
-            'Memory Stop%',
-            'Primary Index Type',
+        exp_header = [
+            "Namespace",
+            "Node",
+            "Total Records",
+            "Expirations",
+            "Evictions",
+            "Stop Writes",
+            "Disk Used",
+            "Disk Used%",
+            "Disk HWM%",
+            "Disk Avail%",
+            "Memory Used",
+            "Memory Used%",
+            "Memory HWM%",
+            "Memory Stop%",
+            "Primary Index Type",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(TestInfo.namespace_usage_info, horizontal = True)
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestInfo.namespace_usage_info, horizontal=True)
         self.assertListEqual(actual_header, exp_header)
         self.assertTrue(exp_heading in actual_heading)
 
@@ -154,27 +173,33 @@ class TestInfo(unittest.TestCase):
         TODO: test for values as well
         """
         exp_heading = "Namespace Object Information"
-        exp_header = [   
-            'Namespace',
-            'Node',
-            'Rack ID',
-            'Repl Factor',
-            'Total Records',
-            'Objects Master',
-            'Objects Prole',
-            'Objects Non-Replica',
-            'Tombstones Master',
-            'Tombstones Prole',
-            'Tombstones Non-Replica',
-            'Pending Migrates Tx',
-            'Pending Migrates Rx',
+        exp_header = [
+            "Namespace",
+            "Node",
+            "Rack ID",
+            "Repl Factor",
+            "Total Records",
+            "Objects Master",
+            "Objects Prole",
+            "Objects Non-Replica",
+            "Tombstones Master",
+            "Tombstones Prole",
+            "Tombstones Non-Replica",
+            "Pending Migrates Tx",
+            "Pending Migrates Rx",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(TestInfo.namespace_object_info, horizontal = True)
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestInfo.namespace_object_info, horizontal=True)
         self.assertListEqual(actual_header, exp_header)
         self.assertTrue(exp_heading in actual_heading)
 
-    #@unittest.skip("Will enable only when xdr is configured")
+    # @unittest.skip("Will enable only when xdr is configured")
     def test_xdr(self):
         """
         This test will assert info XDR output.
@@ -186,21 +211,26 @@ class TestInfo(unittest.TestCase):
         # Left incase older server versions need testing
 
         exp_header = [
-            'Node',
-            'Success',
-            'Retry Connection Reset',
-            'Retry Destination',
-            'Recoveries Pending',
-            'Lag (hh:mm:ss)',
-            'Avg Latency (ms)',
-            'Throughput (rec/s)',
+            "Node",
+            "Success",
+            "Retry Connection Reset",
+            "Retry Destination",
+            "Recoveries Pending",
+            "Lag (hh:mm:ss)",
+            "Avg Latency (ms)",
+            "Throughput (rec/s)",
         ]
-        
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(TestInfo.xdr_info, horizontal = True, header_len=3)
-        
+
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestInfo.xdr_info, horizontal=True, header_len=3)
+
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
-        
 
 
 if __name__ == "__main__":

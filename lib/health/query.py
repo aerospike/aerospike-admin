@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-QUERIES = '''
+QUERIES = """
 /***************************************************
 * System Resource                                  *
 ****************************************************/
@@ -1848,4 +1848,4 @@ ASSERT(m, False, "Outlier[s] detected by the server health check.", "OPERATIONS"
 
 SET CONSTRAINT VERSION ALL;
 
-'''
+"""

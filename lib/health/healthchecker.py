@@ -16,7 +16,12 @@ import copy
 from distutils.version import LooseVersion
 import re
 
-from lib.health.constants import ParserResultType, HealthResultType, HealthResultCounter, AssertResultKey
+from lib.health.constants import (
+    ParserResultType,
+    HealthResultType,
+    HealthResultCounter,
+    AssertResultKey,
+)
 from lib.health.exceptions import SyntaxException, HealthException
 from lib.health.parser import HealthParser
 from lib.health.query import QUERIES
@@ -27,8 +32,7 @@ from lib.view import terminal
 VERSION_CONSTRAINT_PATTERN = "SET CONSTRAINT VERSION(.+)"
 
 
-class HealthChecker():
-
+class HealthChecker:
     def __init__(self):
         try:
             self.health_parser = HealthParser()
@@ -68,7 +72,9 @@ class HealthChecker():
         try:
             self.health_parser.set_health_data(data)
         except Exception:
-            raise Exception("No parser available. Please check ply module installed or not.")
+            raise Exception(
+                "No parser available. Please check ply module installed or not."
+            )
 
     def _reset_parser(self):
         self.health_parser.clear_health_cache()
@@ -81,26 +87,30 @@ class HealthChecker():
         self.health_input_data = data
         if not data or not isinstance(data, dict):
             raise ValueError(
-                terminal.fg_red() + "Wrong Input Data for HealthChecker" + terminal.fg_clear())
+                terminal.fg_red()
+                + "Wrong Input Data for HealthChecker"
+                + terminal.fg_clear()
+            )
 
         self._set_parser_input(data)
 
     def _create_health_result_dict(self):
         res = {}
-        res[HealthResultType.STATUS_COUNTERS] = copy.deepcopy(
-            self.status_counters)
+        res[HealthResultType.STATUS_COUNTERS] = copy.deepcopy(self.status_counters)
 
         res[HealthResultType.EXCEPTIONS] = {}
         res[HealthResultType.EXCEPTIONS][
-            HealthResultType.EXCEPTIONS_SYNTAX] = copy.deepcopy(self.syntax_exceptions)
+            HealthResultType.EXCEPTIONS_SYNTAX
+        ] = copy.deepcopy(self.syntax_exceptions)
         res[HealthResultType.EXCEPTIONS][
-            HealthResultType.EXCEPTIONS_PROCESSING] = copy.deepcopy(self.health_exceptions)
+            HealthResultType.EXCEPTIONS_PROCESSING
+        ] = copy.deepcopy(self.health_exceptions)
         res[HealthResultType.EXCEPTIONS][
-            HealthResultType.EXCEPTIONS_OTHER] = copy.deepcopy(self.other_exceptions)
+            HealthResultType.EXCEPTIONS_OTHER
+        ] = copy.deepcopy(self.other_exceptions)
 
         res[HealthResultType.ASSERT] = copy.deepcopy(self.assert_outputs)
-        res[HealthResultType.DEBUG_MESSAGES] = copy.deepcopy(
-            self.debug_outputs)
+        res[HealthResultType.DEBUG_MESSAGES] = copy.deepcopy(self.debug_outputs)
         return res
 
     def _is_assert_query(self, query):
@@ -122,23 +132,27 @@ class HealthChecker():
 
         if re.search(vp_l_e, v_str):
             v = re.search(vp_l_e, v_str).group(1)
-            self.version_checker_fn = lambda x: LooseVersion(
-                x.strip()) <= LooseVersion(v.strip())
+            self.version_checker_fn = lambda x: LooseVersion(x.strip()) <= LooseVersion(
+                v.strip()
+            )
 
         elif re.search(vp_l, v_str):
             v = re.search(vp_l, v_str).group(1)
-            self.version_checker_fn = lambda x: LooseVersion(
-                x.strip()) < LooseVersion(v.strip())
+            self.version_checker_fn = lambda x: LooseVersion(x.strip()) < LooseVersion(
+                v.strip()
+            )
 
         elif re.search(vp_g_e, v_str):
             v = re.search(vp_g_e, v_str).group(1)
-            self.version_checker_fn = lambda x: LooseVersion(
-                x.strip()) >= LooseVersion(v.strip())
+            self.version_checker_fn = lambda x: LooseVersion(x.strip()) >= LooseVersion(
+                v.strip()
+            )
 
         elif re.search(vp_g, v_str):
             v = re.search(vp_g, v_str).group(1)
-            self.version_checker_fn = lambda x: LooseVersion(
-                x.strip()) > LooseVersion(v.strip())
+            self.version_checker_fn = lambda x: LooseVersion(x.strip()) > LooseVersion(
+                v.strip()
+            )
 
         elif re.search(vp_e, v_str):
             v = re.search(vp_e, v_str).group(1).strip()
@@ -146,22 +160,25 @@ class HealthChecker():
                 self.version_checker_fn = None
             else:
                 self.version_checker_fn = lambda x: LooseVersion(
-                    x.strip()) == LooseVersion(v)
+                    x.strip()
+                ) == LooseVersion(v)
         elif re.search(vp_in, v_str):
             v = re.search(vp_in, v_str).group(1).strip()
             v = [i.strip() for i in v.split(",")]
             if "ALL" in v or "all" in v:
                 self.version_checker_fn = None
             else:
-                self.version_checker_fn = lambda x: LooseVersion(
-                    x.strip()) in [LooseVersion(i) for i in v]
+                self.version_checker_fn = lambda x: LooseVersion(x.strip()) in [
+                    LooseVersion(i) for i in v
+                ]
         else:
             v = v_str.strip()
             if v.lower() == "all":
                 self.version_checker_fn = None
             else:
                 self.version_checker_fn = lambda x: LooseVersion(
-                    x.strip()) == LooseVersion(v.strip())
+                    x.strip()
+                ) == LooseVersion(v.strip())
 
     def _filter_nodes_to_remove(self, data):
         """
@@ -190,7 +207,9 @@ class HealthChecker():
                 for n in data["METADATA"]["CLUSTER"][cl].keys():
                     cl_total_nodes += 1
                     try:
-                        if not self.version_checker_fn(data["METADATA"]["CLUSTER"][cl][n][("version", "KEY")]):
+                        if not self.version_checker_fn(
+                            data["METADATA"]["CLUSTER"][cl][n][("version", "KEY")]
+                        ):
                             cl_zero_count += 1
                             cl_node_list.append(n)
                         else:
@@ -317,57 +336,73 @@ class HealthChecker():
             self._increment_counter(HealthResultCounter.QUERY_COUNTER)
 
             if query.lower() == "exit":
-                self._increment_counter(
-                    HealthResultCounter.QUERY_SUCCESS_COUNTER)
+                self._increment_counter(HealthResultCounter.QUERY_SUCCESS_COUNTER)
                 break
 
             result = None
             if self._is_version_set_query(query):
                 self._filter_and_set_health_input_data(query)
-                self._increment_counter(
-                    HealthResultCounter.QUERY_SUCCESS_COUNTER)
+                self._increment_counter(HealthResultCounter.QUERY_SUCCESS_COUNTER)
                 continue
 
             if self.no_valid_version:
-                self._increment_counter(
-                    HealthResultCounter.QUERY_SKIPPED_COUNTER)
+                self._increment_counter(HealthResultCounter.QUERY_SKIPPED_COUNTER)
                 continue
             if self._is_assert_query(query):
-                self._increment_counter(
-                    HealthResultCounter.ASSERT_QUERY_COUNTER)
+                self._increment_counter(HealthResultCounter.ASSERT_QUERY_COUNTER)
 
             try:
                 result = self._execute_query(query)
-                self._increment_counter(
-                    HealthResultCounter.QUERY_SUCCESS_COUNTER)
+                self._increment_counter(HealthResultCounter.QUERY_SUCCESS_COUNTER)
             except SyntaxException as se:
-                self._increment_counter(
-                    HealthResultCounter.SYNTAX_EXCEPTION_COUNTER)
-                self.syntax_exceptions.append({"index": self.status_counters[
-                                                HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(se)})
+                self._increment_counter(HealthResultCounter.SYNTAX_EXCEPTION_COUNTER)
+                self.syntax_exceptions.append(
+                    {
+                        "index": self.status_counters[
+                            HealthResultCounter.QUERY_COUNTER
+                        ],
+                        "query": query,
+                        "error": str(se),
+                    }
+                )
             except HealthException as he:
-                self._increment_counter(
-                    HealthResultCounter.HEALTH_EXCEPTION_COUNTER)
-                self.health_exceptions.append({"index": self.status_counters[
-                                                HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(he)})
+                self._increment_counter(HealthResultCounter.HEALTH_EXCEPTION_COUNTER)
+                self.health_exceptions.append(
+                    {
+                        "index": self.status_counters[
+                            HealthResultCounter.QUERY_COUNTER
+                        ],
+                        "query": query,
+                        "error": str(he),
+                    }
+                )
             except Exception as oe:
-                self._increment_counter(
-                    HealthResultCounter.OTHER_EXCEPTION_COUNTER)
-                self.other_exceptions.append({"index": self.status_counters[
-                                                HealthResultCounter.QUERY_COUNTER], "query": query, "error": str(oe)})
+                self._increment_counter(HealthResultCounter.OTHER_EXCEPTION_COUNTER)
+                self.other_exceptions.append(
+                    {
+                        "index": self.status_counters[
+                            HealthResultCounter.QUERY_COUNTER
+                        ],
+                        "query": query,
+                        "error": str(oe),
+                    }
+                )
 
             if result:
                 try:
                     if isinstance(result, tuple):
-                        if(result[0] == ParserResultType.ASSERT):
+                        if result[0] == ParserResultType.ASSERT:
                             if result[1][AssertResultKey.SUCCESS]:
-                                self._increment_counter(HealthResultCounter.ASSERT_PASSED_COUNTER)
+                                self._increment_counter(
+                                    HealthResultCounter.ASSERT_PASSED_COUNTER
+                                )
                             else:
-                                self._increment_counter(HealthResultCounter.ASSERT_FAILED_COUNTER)
+                                self._increment_counter(
+                                    HealthResultCounter.ASSERT_FAILED_COUNTER
+                                )
                             self._add_assert_output(result[1])
                         elif is_health_parser_variable(result):
-                            self._increment_counter(
-                                HealthResultCounter.DEBUG_COUNTER)
+                            self._increment_counter(HealthResultCounter.DEBUG_COUNTER)
                             self.debug_outputs.append(result)
                 except Exception:
                     pass

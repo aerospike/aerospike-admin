@@ -14,7 +14,7 @@
 #
 ####
 
-#===========================================================
+# ===========================================================
 # Imports
 #
 
@@ -22,7 +22,7 @@ import datetime
 import re
 
 
-#===========================================================
+# ===========================================================
 # Constants
 #
 from lib.log import utils
@@ -41,56 +41,114 @@ SIZE_HIST_LIST = ["device-read-size", "device-write-size"]
 COUNT_HIST_LIST = ["query-rec-count"]
 
 # Unit map
-UNITS_MAP = {
-    'msec' : 'ms',
-    'usec' : '\u03bcs'
-}
+UNITS_MAP = {"msec": "ms", "usec": "\u03bcs"}
 
 
 # relative stats to input histogram
 # format:
 # histogram: (
-#	[in order path for stat with stat name],
-#	[(index of value, "name of output column")]
+# 	[in order path for stat with stat name],
+# 	[(index of value, "name of output column")]
 # )
-relative_stat_info = {
-	"batch-index" : (
-		['batch-sub:', 'read'],
-		[(0,"recs/sec")]
-	)
-}
+relative_stat_info = {"batch-index": (["batch-sub:", "read"], [(0, "recs/sec")])}
 
-#===========================================================
+# ===========================================================
 
 
 class LogLatency(object):
-
     def __init__(self, reader):
         self.reader = reader
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Read a complete line from the log file.
     #
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Set bucket details.
     #
     def _set_bucket_details(self, hist):
         if any(ht in hist for ht in SIZE_HIST_LIST):
-            self._bucket_labels = ("00", "01", "02", "03", "04", "05", "06", "07", "08", "09",
-                                   "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
-                                   "21", "22", "23", "24", "25")
+            self._bucket_labels = (
+                "00",
+                "01",
+                "02",
+                "03",
+                "04",
+                "05",
+                "06",
+                "07",
+                "08",
+                "09",
+                "10",
+                "11",
+                "12",
+                "13",
+                "14",
+                "15",
+                "16",
+                "17",
+                "18",
+                "19",
+                "20",
+                "21",
+                "22",
+                "23",
+                "24",
+                "25",
+            )
             self._all_buckets = len(self._bucket_labels)
             self._bucket_unit = "bytes"
         elif any(ht in hist for ht in COUNT_HIST_LIST):
-            self._bucket_labels = ("00", "01", "02", "03", "04", "05", "06", "07", "08", "09",
-                                   "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
-                                   "21", "22", "23", "24", "25")
+            self._bucket_labels = (
+                "00",
+                "01",
+                "02",
+                "03",
+                "04",
+                "05",
+                "06",
+                "07",
+                "08",
+                "09",
+                "10",
+                "11",
+                "12",
+                "13",
+                "14",
+                "15",
+                "16",
+                "17",
+                "18",
+                "19",
+                "20",
+                "21",
+                "22",
+                "23",
+                "24",
+                "25",
+            )
             self._all_buckets = len(self._bucket_labels)
             self._bucket_unit = "records"
         else:
-            self._bucket_labels = ("00", "01", "02", "03", "04", "05", "06", "07", "08", "09",
-                                   "10", "11", "12", "13", "14", "15", "16")
+            self._bucket_labels = (
+                "00",
+                "01",
+                "02",
+                "03",
+                "04",
+                "05",
+                "06",
+                "07",
+                "08",
+                "09",
+                "10",
+                "11",
+                "12",
+                "13",
+                "14",
+                "15",
+                "16",
+            )
             self._all_buckets = len(self._bucket_labels)
             # histogram bucket units are set on a per line basis
 
@@ -104,14 +162,14 @@ class LogLatency(object):
         except Exception:
             return None
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Parse a histogram total from a log line.
     #
 
     def _parse_total_ops(self, line):
-        return int(line[line.rfind("(") + 1: line.rfind(" total)")])
+        return int(line[line.rfind("(") + 1 : line.rfind(" total)")])
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Get one set of bucket values.
     #
 
@@ -129,7 +187,7 @@ class LogLatency(object):
             found = 0
             if HIST_BUCKET_LINE_SUBSTRING in line:
                 for b in range(b_min, self._all_buckets):
-                    pattern = '.*?\(' + self._bucket_labels[b] + ': (.*?)\).*?'
+                    pattern = ".*?\(" + self._bucket_labels[b] + ": (.*?)\).*?"
                     r = re.compile(pattern)
                     if r.search(line):
                         found = found + 1
@@ -150,7 +208,7 @@ class LogLatency(object):
             b_min = b_min + found
         return total, values, line
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Subtract one set of bucket values from another.
     #
 
@@ -162,7 +220,7 @@ class LogLatency(object):
             slice_values[b] = new_values[b] - old_values[b]
         return slice_values
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Add one set of bucket values to another.
     #
 
@@ -172,7 +230,7 @@ class LogLatency(object):
             slice_values[b] = b1_values[b] + b2_values[b]
         return slice_values
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Get the percentage of operations within every bucket.
     #
 
@@ -183,7 +241,7 @@ class LogLatency(object):
                 percentages[b] = (float(values[b]) / total) * 100
         return percentages
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Get the percentage of operations in all buckets > bucket.
     #
 
@@ -200,7 +258,7 @@ class LogLatency(object):
             return dt
         return dt + datetime.timedelta(0, seconds, -dt.microsecond)
 
-    #-------------------------------------------------
+    # -------------------------------------------------
     # Get a stat value from line.
     #
     def _read_stat(self, line, stat=[]):
@@ -208,10 +266,10 @@ class LogLatency(object):
         if not stat:
             return values
 
-        latency_pattern1 = '%s (\d+)'
-        latency_pattern2 = '%s \(([0-9,\s]+)\)'
-        latency_pattern3 = '(\d+)\((\d+)\) %s'
-        latency_pattern4 = '%s \((\d+)'
+        latency_pattern1 = "%s (\d+)"
+        latency_pattern2 = "%s \(([0-9,\s]+)\)"
+        latency_pattern3 = "(\d+)\((\d+)\) %s"
+        latency_pattern4 = "%s \((\d+)"
 
         grep_str = stat[-1]
 
@@ -236,7 +294,7 @@ class LogLatency(object):
 
         return values
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Add one list of stat values to another.
     #
     def _add_stat_values(self, v1, v2):
@@ -262,7 +320,7 @@ class LogLatency(object):
 
         return values
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Subtract one list of stat values from another.
     #
     def _subtract_stat_values(self, new_values, old_values):
@@ -290,7 +348,7 @@ class LogLatency(object):
 
         return values
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Find max from two lists of stat values.
     #
     def _get_max_stat_values(self, new_values, old_values):
@@ -312,12 +370,21 @@ class LogLatency(object):
 
         return values
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Get a histogram at or just after the specified datetime.
     #
 
-    def _read_hist(self, hist_tags, after_dt, file_itr, line=0, end_dt=None,
-                   before_dt=None, read_all_dumps=False, relative_stat_path=[]):
+    def _read_hist(
+        self,
+        hist_tags,
+        after_dt,
+        file_itr,
+        line=0,
+        end_dt=None,
+        before_dt=None,
+        read_all_dumps=False,
+        relative_stat_path=[],
+    ):
         if not line:
             # read next line
             line = self._read_line(file_itr)
@@ -326,7 +393,7 @@ class LogLatency(object):
         values = 0
         stat_values = []
         dt = ""
-        unit = 'msec'
+        unit = "msec"
 
         while True:
             if not line:
@@ -347,7 +414,9 @@ class LogLatency(object):
                 # found line with timestamp after before_dt
                 return total, values, dt, line, stat_values, unit
 
-            if relative_stat_path and utils.contains_substrings_in_order(line, relative_stat_path):
+            if relative_stat_path and utils.contains_substrings_in_order(
+                line, relative_stat_path
+            ):
                 temp_sval = self._read_stat(line, relative_stat_path)
                 stat_values = self._add_stat_values(stat_values, temp_sval)
 
@@ -356,10 +425,10 @@ class LogLatency(object):
 
             line = self._read_line(file_itr)
 
-        if 'usec' in line:
-            unit = 'usec'
-        elif 'msec' in line:
-            unit = 'msec'
+        if "usec" in line:
+            unit = "usec"
+        elif "msec" in line:
+            unit = "msec"
 
         total, values, line = self._read_bucket_values(line, file_itr)
 
@@ -371,8 +440,15 @@ class LogLatency(object):
                 before_dt = dt + datetime.timedelta(seconds=NS_SLICE_SECONDS)
 
             r_total, r_values, r_dt, line, r_stat_values, _ = self._read_hist(
-                hist_tags, after_dt, file_itr, line, end_dt, before_dt, read_all_dumps=read_all_dumps,
-                relative_stat_path=relative_stat_path)
+                hist_tags,
+                after_dt,
+                file_itr,
+                line,
+                end_dt,
+                before_dt,
+                read_all_dumps=read_all_dumps,
+                relative_stat_path=relative_stat_path,
+            )
 
             total += r_total
             if r_values:
@@ -383,14 +459,14 @@ class LogLatency(object):
 
         return total, values, dt, line, stat_values, unit
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Get a timedelta in seconds.
     #
 
     def _elapsed_seconds(self, td):
         return td.seconds + (td.days * 24 * 3600)
 
-    #------------------------------------------------
+    # ------------------------------------------------
     # Generate padding.
     #
 
@@ -400,17 +476,31 @@ class LogLatency(object):
             pad = pad + what
         return pad
 
-    def compute_latency(self, arg_log_itr, arg_hist, arg_slice, arg_from,
-                        arg_end_date, arg_num_buckets, arg_every_nth,
-                        arg_rounding_time=True, arg_ns=None, arg_relative_stats=False):
+    def compute_latency(
+        self,
+        arg_log_itr,
+        arg_hist,
+        arg_slice,
+        arg_from,
+        arg_end_date,
+        arg_num_buckets,
+        arg_every_nth,
+        arg_rounding_time=True,
+        arg_ns=None,
+        arg_relative_stats=False,
+    ):
 
         latency = {}
         tps_key = ("ops/sec", None)
         latency[tps_key] = {}
 
         # Sanity-check some arguments:
-        if (arg_hist is None or arg_num_buckets < 1 or arg_every_nth < 1
-                or not arg_slice):
+        if (
+            arg_hist is None
+            or arg_num_buckets < 1
+            or arg_every_nth < 1
+            or not arg_slice
+        ):
             yield None, None
         else:
             # Set buckets
@@ -446,7 +536,7 @@ class LogLatency(object):
             elif re.match(HIST_WITH_NS_PATTERN, arg_hist):
                 # Analysing latency for specific histogram for specific namespace ({namespace}-histogram)
                 # It needs to read single bucket dump for a slice
-                hist_tags = [HIST_TAG_PREFIX+"%s "%(arg_hist)]
+                hist_tags = [HIST_TAG_PREFIX + "%s " % (arg_hist)]
 
             else:
                 # Analysing latency for histogram arg_hist
@@ -468,9 +558,14 @@ class LogLatency(object):
 
             # Find first histogram:
             old_total, old_values, old_dt, line, old_stat_values, _ = self._read_hist(
-                    hist_tags, init_dt, file_itr, end_dt=arg_end_date, read_all_dumps=read_all_dumps,
-                    relative_stat_path=relative_stat_path)
-            
+                hist_tags,
+                init_dt,
+                file_itr,
+                end_dt=arg_end_date,
+                read_all_dumps=read_all_dumps,
+                relative_stat_path=relative_stat_path,
+            )
+
             if line:
                 end_dt = arg_end_date
                 labels = []
@@ -478,8 +573,11 @@ class LogLatency(object):
                 # Other initialization before processing time slices:
                 which_slice = 0
                 after_dt = old_dt + slice_timedelta
-                overs, avg_overs, max_overs = [
-                    0.0] * max_bucket, [0.0] * max_bucket, [0.0] * max_bucket
+                overs, avg_overs, max_overs = (
+                    [0.0] * max_bucket,
+                    [0.0] * max_bucket,
+                    [0.0] * max_bucket,
+                )
                 total_ops, total_seconds = 0, 0
                 max_rate = 0.0
 
@@ -488,9 +586,22 @@ class LogLatency(object):
 
                 # Process all the time slices:
                 while end_dt > old_dt:
-                    new_total, new_values, new_dt, line, new_stat_values, new_unit = self._read_hist(
-                        hist_tags, after_dt, file_itr, line, end_dt=arg_end_date, read_all_dumps=read_all_dumps,
-                        relative_stat_path=relative_stat_path)
+                    (
+                        new_total,
+                        new_values,
+                        new_dt,
+                        line,
+                        new_stat_values,
+                        new_unit,
+                    ) = self._read_hist(
+                        hist_tags,
+                        after_dt,
+                        file_itr,
+                        line,
+                        end_dt=arg_end_date,
+                        read_all_dumps=read_all_dumps,
+                        relative_stat_path=relative_stat_path,
+                    )
 
                     self._bucket_unit = UNITS_MAP[new_unit]
 
@@ -501,17 +612,19 @@ class LogLatency(object):
 
                     # Get the "deltas" for this slice:
                     slice_total = new_total - old_total
-                    slice_values = self._subtract_buckets(
-                        new_values, old_values)
-                    slice_seconds_actual = self._elapsed_seconds(
-                        new_dt - old_dt)
+                    slice_values = self._subtract_buckets(new_values, old_values)
+                    slice_seconds_actual = self._elapsed_seconds(new_dt - old_dt)
 
                     slice_stat_values = []
                     slice_stat_rates = []
                     if relative_stat_path:
-                        slice_stat_values = self._subtract_stat_values(new_stat_values, old_stat_values)
-                        slice_stat_rates = [round(float(v) / slice_seconds_actual, 1)
-                                            for v in slice_stat_values]
+                        slice_stat_values = self._subtract_stat_values(
+                            new_stat_values, old_stat_values
+                        )
+                        slice_stat_rates = [
+                            round(float(v) / slice_seconds_actual, 1)
+                            for v in slice_stat_values
+                        ]
 
                     # Get the rate for this slice:
                     rate = round(float(slice_total) / slice_seconds_actual, 1)
@@ -521,20 +634,22 @@ class LogLatency(object):
                         max_rate = rate
 
                     if relative_stat_path:
-                        total_stat_values = self._add_stat_values(total_stat_values, slice_stat_values)
-                        max_stat_values = self._get_max_stat_values(max_stat_values, slice_stat_rates)
+                        total_stat_values = self._add_stat_values(
+                            total_stat_values, slice_stat_values
+                        )
+                        max_stat_values = self._get_max_stat_values(
+                            max_stat_values, slice_stat_rates
+                        )
 
                     # Convert bucket values for this slice to percentages:
-                    percentages = self._bucket_percentages(
-                        slice_total, slice_values)
+                    percentages = self._bucket_percentages(slice_total, slice_values)
 
                     # For each (displayed) threshold, accumulate percentages
                     # over threshold:
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
-                        overs[i] = round(
-                            self._percentage_over(i, percentages), 2)
+                        overs[i] = round(self._percentage_over(i, percentages), 2)
                         avg_overs[i] = avg_overs[i] + overs[i]
                         if overs[i] > max_overs[i]:
                             max_overs[i] = overs[i]
@@ -543,27 +658,31 @@ class LogLatency(object):
                     if arg_rounding_time:
                         key_dt = self.ceil_time(key_dt)
 
-
                     for i in range(max_bucket):
                         labels.append(0)
                         if i % arg_every_nth == 0:
-                            labels[i] = (2**i, self._bucket_unit)
-                            latency[(2**i, self._bucket_unit)] = {}
+                            labels[i] = (2 ** i, self._bucket_unit)
+                            latency[(2 ** i, self._bucket_unit)] = {}
 
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
-                        latency[labels[i]][
-                            key_dt.strftime(DT_FMT)] = "%.2f" % (overs[i])
+                        latency[labels[i]][key_dt.strftime(DT_FMT)] = "%.2f" % (
+                            overs[i]
+                        )
 
                     latency[tps_key][key_dt.strftime(DT_FMT)] = "%.1f" % (rate)
 
                     if relative_stat_index:
                         for idx_name in relative_stat_index:
                             if idx_name[0] < len(slice_stat_rates):
-                                latency[(idx_name[1], None)][key_dt.strftime(DT_FMT)] = "%.1f" % (slice_stat_rates[idx_name[0]])
+                                latency[(idx_name[1], None)][
+                                    key_dt.strftime(DT_FMT)
+                                ] = "%.1f" % (slice_stat_rates[idx_name[0]])
                             else:
-                                latency[(idx_name[1], None)][key_dt.strftime(DT_FMT)] = "-"
+                                latency[(idx_name[1], None)][
+                                    key_dt.strftime(DT_FMT)
+                                ] = "-"
 
                     yield key_dt, latency
 
@@ -589,10 +708,8 @@ class LogLatency(object):
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
-                        latency[labels[i]][
-                            "avg"] = "%.2f" % (avg_overs[i])
-                        latency[labels[i]][
-                            "max"] = "%.2f" % (max_overs[i])
+                        latency[labels[i]]["avg"] = "%.2f" % (avg_overs[i])
+                        latency[labels[i]]["max"] = "%.2f" % (max_overs[i])
 
                     latency[tps_key]["avg"] = "%.1f" % (avg_rate)
                     latency[tps_key]["max"] = "%.1f" % (max_rate)
@@ -600,9 +717,13 @@ class LogLatency(object):
                     if relative_stat_index:
                         for idx_name in relative_stat_index:
                             if idx_name[0] < len(avg_stat_values):
-                                latency[(idx_name[1], None)]["avg"] = "%.1f" % (avg_stat_values[idx_name[0]])
+                                latency[(idx_name[1], None)]["avg"] = "%.1f" % (
+                                    avg_stat_values[idx_name[0]]
+                                )
 
                             if idx_name[0] < len(max_stat_values):
-                                latency[(idx_name[1], None)]["max"] = "%.1f" % (max_stat_values[idx_name[0]])
+                                latency[(idx_name[1], None)]["max"] = "%.1f" % (
+                                    max_stat_values[idx_name[0]]
+                                )
 
                 yield END_ROW_KEY, latency

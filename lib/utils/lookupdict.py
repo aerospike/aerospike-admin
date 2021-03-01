@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 class LookupDict(object):
 
     LOOKUP_MODE = 0
@@ -55,8 +56,7 @@ class LookupDict(object):
         # There should only be one key found
         keys = self._get_key_by_filter(key, self._prefix_filter)
         if len(keys) > 1:
-            raise KeyError(
-                "Unable to get prefix for an ambiguous key: '%s'" % (key))
+            raise KeyError("Unable to get prefix for an ambiguous key: '%s'" % (key))
 
         if min_prefix_len == 0:
             return ""
@@ -81,7 +81,6 @@ class LookupDict(object):
         except Exception:
             return prefix
 
-
     def _prefix_filter(self, prefix, keys):
         return [key for key in keys if key.startswith(prefix)]
 
@@ -89,8 +88,7 @@ class LookupDict(object):
         # There should only be one key found
         keys = self._get_key_by_filter(key, self._suffix_filter)
         if len(keys) > 1:
-            raise KeyError(
-                "Unable to get suffix for an ambiguous key: '%s'" % (key))
+            raise KeyError("Unable to get suffix for an ambiguous key: '%s'" % (key))
 
         if min_suffix_len == 0:
             return ""
@@ -110,7 +108,7 @@ class LookupDict(object):
             k = keys[0]
             if len(k) <= min_suffix_len:
                 return k
-            return k[len(k)-min_suffix_len:]
+            return k[len(k) - min_suffix_len :]
 
         except Exception:
             return suffix
@@ -147,8 +145,7 @@ class LookupDict(object):
         keys = self.get_key(k)
 
         if len(keys) > 1:
-            raise KeyError(
-                "Prefix may not be ambiguous for removal: %s" % (k))
+            raise KeyError("Prefix may not be ambiguous for removal: %s" % (k))
 
         value = self._kv[keys[0]]
         del self._kv[keys[0]]
@@ -165,8 +162,7 @@ class LookupDict(object):
         # There should only be one key found
         keys = self.get_key(key)
         if len(keys) > 1:
-            raise KeyError(
-                "Unable to get shortname for an ambiguous key: '%s'" % (key))
+            raise KeyError("Unable to get shortname for an ambiguous key: '%s'" % (key))
 
         if min_prefix_len + min_suffix_len >= len(key):
             return key
@@ -175,15 +171,15 @@ class LookupDict(object):
 
         p = self._get_prefix(key, min_prefix_len=min_prefix_len)
         s = self._get_suffix(key, min_suffix_len=min_suffix_len)
-        shortname = short_format%(p, s)
+        shortname = short_format % (p, s)
 
         if len(shortname) >= len(key):
             return key
 
         return shortname
 
-class PrefixDict(LookupDict):
 
+class PrefixDict(LookupDict):
     def __init__(self):
         super(PrefixDict, self).__init__(self.PREFIX_MODE)
 

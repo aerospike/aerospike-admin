@@ -36,11 +36,11 @@ DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
 
 
 def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
-    UNKNOWN_NODE = 'UNKNOWN_NODE'
+    UNKNOWN_NODE = "UNKNOWN_NODE"
 
     # Get imap
     imap = {}
-    timestamp = ''
+    timestamp = ""
 
     json_parsed_timestamps = []
     _missing_version = 0
@@ -76,13 +76,17 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
             parsed_conf_map = conf_parser.parse_file(cinfo_path)
 
         else:
-            if timestamp == '':
+            if timestamp == "":
                 timestamp = cinfo_parser.get_timestamp_from_file(cinfo_path)
             try:
-                cinfo_parser.extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception)
+                cinfo_parser.extract_validate_filter_section_from_file(
+                    cinfo_path, imap, ignore_exception
+                )
             except Exception as e:
                 if not ignore_exception:
-                    logger.error("Cinfo parser cannot create intermediate json. Err: " + str(e))
+                    logger.error(
+                        "Cinfo parser cannot create intermediate json. Err: " + str(e)
+                    )
                     raise
 
     if json_parsed_timestamps:
@@ -90,7 +94,14 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
         if not _missing_version and not parsed_conf_map:
             return
 
-        return _add_missing_data(imap, parsed_map, parsed_conf_map, json_parsed_timestamps, _missing_version, ignore_exception)
+        return _add_missing_data(
+            imap,
+            parsed_map,
+            parsed_conf_map,
+            json_parsed_timestamps,
+            _missing_version,
+            ignore_exception,
+        )
 
     # get as_map using imap
     as_map = _get_as_map(imap, AS_SECTION_NAME_LIST, ignore_exception)
@@ -99,7 +110,9 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
     histogram_map = _get_as_map(imap, HISTOGRAM_SECTION_NAME_LIST, ignore_exception)
 
     # get latency_map using imap
-    latency_map = _convert_parsed_latency_map_to_collectinfo_format(_get_as_map(imap, LATENCY_SECTION_NAME_LIST, ignore_exception))
+    latency_map = _convert_parsed_latency_map_to_collectinfo_format(
+        _get_as_map(imap, LATENCY_SECTION_NAME_LIST, ignore_exception)
+    )
 
     # get sys_map using imap
     sys_map = _get_sys_map(imap, ignore_exception)
@@ -113,40 +126,71 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
     # Valid Cluster name could be stored in parsed_map, check that too.
     cluster_name = get_cluster_name(as_map)
     if cluster_name is None:
-        cluster_name = 'null'
+        cluster_name = "null"
 
     if timestamp not in parsed_map:
         parsed_map[timestamp] = {}
         parsed_map[timestamp][cluster_name] = {}
     else:
-        if 'null' in parsed_map[timestamp] and cluster_name != 'null':
-            parsed_map[timestamp][cluster_name] = copy.deepcopy(parsed_map[timestamp]['null'])
-            (parsed_map[timestamp]).pop('null', None)
-        elif 'null' not in parsed_map[timestamp] and cluster_name == 'null':
+        if "null" in parsed_map[timestamp] and cluster_name != "null":
+            parsed_map[timestamp][cluster_name] = copy.deepcopy(
+                parsed_map[timestamp]["null"]
+            )
+            (parsed_map[timestamp]).pop("null", None)
+        elif "null" not in parsed_map[timestamp] and cluster_name == "null":
             cluster_name = list(parsed_map[timestamp].keys())[0]
 
     # Insert as_stat
-    _merge_nodelevel_map_to_mainmap(parsed_map, as_map, [timestamp], keys_after_node_id=["as_stat"], create_new_node=True)
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map,
+        as_map,
+        [timestamp],
+        keys_after_node_id=["as_stat"],
+        create_new_node=True,
+    )
 
     # Insert histogram stat
-    _merge_nodelevel_map_to_mainmap(parsed_map, histogram_map, [timestamp], keys_after_node_id=["as_stat"], node_ip_mapping=ip_to_node_map)
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map,
+        histogram_map,
+        [timestamp],
+        keys_after_node_id=["as_stat"],
+        node_ip_mapping=ip_to_node_map,
+    )
 
     # Insert latency stat
-    _merge_nodelevel_map_to_mainmap(parsed_map, latency_map, [timestamp], keys_after_node_id=["as_stat"], node_ip_mapping=ip_to_node_map)
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map,
+        latency_map,
+        [timestamp],
+        keys_after_node_id=["as_stat"],
+        node_ip_mapping=ip_to_node_map,
+    )
 
     # insert meta_stat
-    _merge_nodelevel_map_to_mainmap(parsed_map, meta_map, [timestamp], keys_after_node_id=["as_stat", "meta_data"], node_ip_mapping=ip_to_node_map)
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map,
+        meta_map,
+        [timestamp],
+        keys_after_node_id=["as_stat", "meta_data"],
+        node_ip_mapping=ip_to_node_map,
+    )
 
     # insert endpoints
-    _add_missing_endpoints_data(imap, parsed_map, [timestamp], ip_to_node_map, ignore_exception)
+    _add_missing_endpoints_data(
+        imap, parsed_map, [timestamp], ip_to_node_map, ignore_exception
+    )
 
     nodemap = parsed_map[timestamp][cluster_name]
     node_ip_map = _create_node_ip_map(meta_map)
 
     # Insert sys_stat
-    if len(sys_map) == 0 and UNKNOWN_NODE in nodemap \
-            and 'sys_stat' in nodemap[UNKNOWN_NODE]:
-        sys_map = nodemap[UNKNOWN_NODE]['sys_stat']
+    if (
+        len(sys_map) == 0
+        and UNKNOWN_NODE in nodemap
+        and "sys_stat" in nodemap[UNKNOWN_NODE]
+    ):
+        sys_map = nodemap[UNKNOWN_NODE]["sys_stat"]
 
     node = _match_nodeip(sys_map, node_ip_map)
     if node is None:
@@ -155,10 +199,10 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
     if len(sys_map) != 0:
         if node not in nodemap:
             nodemap[node] = {}
-        _update_map(nodemap[node], 'sys_stat', sys_map)
+        _update_map(nodemap[node], "sys_stat", sys_map)
 
     try:
-        nodemap[node]['as_stat']['original_config'] = parsed_conf_map
+        nodemap[node]["as_stat"]["original_config"] = parsed_conf_map
     except Exception:
         pass
 
@@ -169,21 +213,22 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
     for node in nodemap:
         if node == UNKNOWN_NODE:
             continue
-        if 'sys_stat' in nodemap[node] and UNKNOWN_NODE in nodemap:
-            nodemap[node]['sys_stat'].update(nodemap[UNKNOWN_NODE]['sys_stat'])
+        if "sys_stat" in nodemap[node] and UNKNOWN_NODE in nodemap:
+            nodemap[node]["sys_stat"].update(nodemap[UNKNOWN_NODE]["sys_stat"])
             found_sys_node = True
             break
     if UNKNOWN_NODE in nodemap:
         nodemap.pop(UNKNOWN_NODE, None)
 
+
 def parse_aerospike_info_all(cinfo_path, parsed_map, ignore_exception=False):
     # Parse collectinfo and create intermediate section_map
     imap = {}
     cinfo_parser.extract_validate_filter_section_from_file(
-        cinfo_path, imap, ignore_exception)
+        cinfo_path, imap, ignore_exception
+    )
 
-    section_filter_list = _get_section_list_for_parsing(
-        imap, AS_SECTION_NAME_LIST)
+    section_filter_list = _get_section_list_for_parsing(imap, AS_SECTION_NAME_LIST)
 
     logger.info("Parsing sections: " + str(section_filter_list))
 
@@ -193,25 +238,35 @@ def parse_aerospike_info_all(cinfo_path, parsed_map, ignore_exception=False):
 def parse_system_info_all(cinfo_path, parsed_map, ignore_exception=False):
     # Parse collectinfo and create intermediate section_map
     imap = {}
-    cinfo_parser.extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception)
+    cinfo_parser.extract_validate_filter_section_from_file(
+        cinfo_path, imap, ignore_exception
+    )
     section_filter_list = _get_section_list_for_parsing(imap, SYS_SECTION_NAME_LIST)
 
     logger.info("Parsing sections: " + str(section_filter_list))
     parse_sys_section(section_filter_list, imap, parsed_map)
 
 
-def parse_aerospike_info_section(cinfo_path, parsed_map, sectionlist, ignore_exception=False):
+def parse_aerospike_info_section(
+    cinfo_path, parsed_map, sectionlist, ignore_exception=False
+):
     # Parse collectinfo and create intermediate section_map
     imap = {}
-    cinfo_parser.extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception)
+    cinfo_parser.extract_validate_filter_section_from_file(
+        cinfo_path, imap, ignore_exception
+    )
 
     parse_as_section(sectionlist, imap, parsed_map)
 
 
-def parse_system_info_section(cinfo_path, parsed_map, sectionlist, ignore_exception=False):
+def parse_system_info_section(
+    cinfo_path, parsed_map, sectionlist, ignore_exception=False
+):
     # Parse collectinfo and create intermediate section_map
     imap = {}
-    cinfo_parser.extract_validate_filter_section_from_file(cinfo_path, imap, ignore_exception)
+    cinfo_parser.extract_validate_filter_section_from_file(
+        cinfo_path, imap, ignore_exception
+    )
 
     parse_sys_section(sectionlist, imap, parsed_map)
 
@@ -230,18 +285,20 @@ def _get_section_list_for_parsing(imap, available_section):
     imap_section_list = []
     imap_section_list.extend(DERIVED_SECTION_LIST)
 
-    if 'section_ids' not in imap:
+    if "section_ids" not in imap:
         logger.warning("`section_ids` section missing in section_json.")
         return final_section_list
 
-    for section_id in imap['section_ids']:
+    for section_id in imap["section_ids"]:
         section = SECTION_FILTER_LIST[section_id]
-        if 'final_section_name' in section:
-            sec_name = ''
-            if 'parent_section_name' in section:
-                sec_name = section['parent_section_name'] + '.' + section['final_section_name']
+        if "final_section_name" in section:
+            sec_name = ""
+            if "parent_section_name" in section:
+                sec_name = (
+                    section["parent_section_name"] + "." + section["final_section_name"]
+                )
             else:
-                sec_name = section['final_section_name']
+                sec_name = section["final_section_name"]
             imap_section_list.append(sec_name)
 
     final_section_list = list(set(imap_section_list).intersection(available_section))
@@ -256,20 +313,21 @@ def _update_map(datamap, key, valuemap):
 
 
 def _match_nodeip(sys_map, known_ips):
-    if 'uname' in sys_map:
-        uname_host = sys_map['uname']['nodename']
+    if "uname" in sys_map:
+        uname_host = sys_map["uname"]["nodename"]
 
         for nodeid in known_ips:
             if uname_host in known_ips[nodeid] or uname_host in nodeid:
                 return nodeid
 
-    if 'hostname' in sys_map and 'hosts' in sys_map['hostname']:
-        sys_hosts = sys_map['hostname']['hosts']
+    if "hostname" in sys_map and "hosts" in sys_map["hostname"]:
+        sys_hosts = sys_map["hostname"]["hosts"]
 
         for sys_host in sys_hosts:
             for nodeid in known_ips:
                 if sys_host in known_ips[nodeid] or sys_host in nodeid:
                     return nodeid
+
 
 def _is_valid_collectinfo_json(cinfo_map):
     timestamp_format = "%Y-%m-%d %H:%M:%S UTC"
@@ -285,6 +343,7 @@ def _is_valid_collectinfo_json(cinfo_map):
             return False
     return True
 
+
 def _create_node_ip_map(nodemap):
     if not nodemap:
         return {}
@@ -292,11 +351,12 @@ def _create_node_ip_map(nodemap):
     node_ip_map = {}
     for nodeid in nodemap:
         try:
-            node_ip_map[nodeid] = nodemap[nodeid]['ip']
+            node_ip_map[nodeid] = nodemap[nodeid]["ip"]
         except Exception:
             pass
 
     return node_ip_map
+
 
 def _create_ip_to_node_map(meta_map):
     """
@@ -309,12 +369,13 @@ def _create_ip_to_node_map(meta_map):
         return ip_to_node
 
     for node in meta_map:
-        if not meta_map[node] or not 'ip' in meta_map[node]:
+        if not meta_map[node] or not "ip" in meta_map[node]:
             continue
 
-        ip_to_node[meta_map[node]['ip']] = node
+        ip_to_node[meta_map[node]["ip"]] = node
 
     return ip_to_node
+
 
 def _stringify(data):
     """
@@ -324,7 +385,7 @@ def _stringify(data):
 
     if isinstance(data, dict):
         data_str = {}
-        for _k,v in data.items():
+        for _k, v in data.items():
             data_str[_stringify(_k)] = _stringify(v)
 
         return data_str
@@ -335,12 +396,13 @@ def _stringify(data):
     else:
         return data
 
+
 def _merge_samelevel_maps(main_map, from_map):
-    '''
+    """
     :param main_map: main dictionary to update
     :param from_map: dictionary to merge into main_map
     :return: updated main_map
-    '''
+    """
 
     if not main_map:
         return copy.deepcopy(from_map)
@@ -353,13 +415,25 @@ def _merge_samelevel_maps(main_map, from_map):
         if _k not in main_map:
             main_map[_k] = copy.deepcopy(from_map[_k])
 
-        elif _k in main_map and isinstance(main_map[_k], dict) and isinstance(from_map[_k], dict):
+        elif (
+            _k in main_map
+            and isinstance(main_map[_k], dict)
+            and isinstance(from_map[_k], dict)
+        ):
             main_map[_k] = _merge_samelevel_maps(main_map[_k], from_map[_k])
 
     return main_map
 
-def _merge_nodelevel_map_to_mainmap(main_map, nodes_data_map, timestamps, node_ip_mapping={}, keys_after_node_id=[], create_new_node=False):
-    '''
+
+def _merge_nodelevel_map_to_mainmap(
+    main_map,
+    nodes_data_map,
+    timestamps,
+    node_ip_mapping={},
+    keys_after_node_id=[],
+    create_new_node=False,
+):
+    """
     :param main_map: main dictionary which is output of this function. Format should be {timestamp: { cluster: {nodeid: {....}}}}
     :param nodes_data_map: dictionary to merge into main_map. Format should be {nodeid: {...}}
     :param timestamps: list of timestamps to consider while merging
@@ -367,7 +441,7 @@ def _merge_nodelevel_map_to_mainmap(main_map, nodes_data_map, timestamps, node_i
     :param keys_after_node_id: List of extra keys to add after nodeid
     :param create_new_node: True if want to force to create new nodeid which is available in nodes_data_map but not available in main_map
     :return: updated main_map
-    '''
+    """
 
     if not nodes_data_map:
         return
@@ -384,7 +458,10 @@ def _merge_nodelevel_map_to_mainmap(main_map, nodes_data_map, timestamps, node_i
                 if node in main_map[timestamp][cl]:
                     node_key = node
 
-                elif node in node_ip_mapping and node_ip_mapping[node] in main_map[timestamp][cl]:
+                elif (
+                    node in node_ip_mapping
+                    and node_ip_mapping[node] in main_map[timestamp][cl]
+                ):
                     node_key = node_ip_mapping[node]
 
                 elif create_new_node:
@@ -414,7 +491,9 @@ def _merge_nodelevel_map_to_mainmap(main_map, nodes_data_map, timestamps, node_i
                     if _key not in _dict_ptr:
                         _dict_ptr[_key] = {}
 
-                _dict_ptr[_key] = _merge_samelevel_maps(_dict_ptr[_key], nodes_data_map[node])
+                _dict_ptr[_key] = _merge_samelevel_maps(
+                    _dict_ptr[_key], nodes_data_map[node]
+                )
 
 
 def _get_meta_map(imap, ignore_exception):
@@ -431,10 +510,14 @@ def _get_meta_map(imap, ignore_exception):
     except Exception as e:
 
         if not ignore_exception:
-            logger.error("as_section_parser cannot parse intermediate json to get meta info. Err: " + str(e))
+            logger.error(
+                "as_section_parser cannot parse intermediate json to get meta info. Err: "
+                + str(e)
+            )
             raise
 
     return meta_map
+
 
 def _get_as_map(imap, as_section_name_list, ignore_exception):
     """
@@ -450,10 +533,13 @@ def _get_as_map(imap, as_section_name_list, ignore_exception):
     except Exception as e:
 
         if not ignore_exception:
-            logger.error("as_section_parser cannot parse intermediate json. Err: " + str(e))
+            logger.error(
+                "as_section_parser cannot parse intermediate json. Err: " + str(e)
+            )
             raise
 
     return as_map
+
 
 def _get_sys_map(imap, ignore_exception):
     """
@@ -470,12 +556,17 @@ def _get_sys_map(imap, ignore_exception):
     except Exception as e:
 
         if not ignore_exception:
-            logger.error("sys_section_parser cannot parse intermediate json. Err: " + str(e))
+            logger.error(
+                "sys_section_parser cannot parse intermediate json. Err: " + str(e)
+            )
             raise
 
     return sys_map
 
-def _add_missing_as_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+
+def _add_missing_as_data(
+    imap, parsed_map, timestamps, node_ip_mapping, ignore_exception
+):
     """
     Add missing Aerospike data (config and stats) into parsed_map which is loaded from old format json file
 
@@ -483,31 +574,48 @@ def _add_missing_as_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_e
 
     as_section_name_list = ["config.cluster"]
     as_map = _get_as_map(imap, as_section_name_list, ignore_exception)
-    _merge_nodelevel_map_to_mainmap(parsed_map, as_map, timestamps, node_ip_mapping, ["as_stat"])
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map, as_map, timestamps, node_ip_mapping, ["as_stat"]
+    )
 
-def _add_missing_endpoints_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+
+def _add_missing_endpoints_data(
+    imap, parsed_map, timestamps, node_ip_mapping, ignore_exception
+):
     """
     Add missing Aerospike data (config and stats) into parsed_map which is loaded from old format json file
 
     """
     as_section_name_list = ["endpoints", "services"]
     as_map = _get_as_map(imap, as_section_name_list, ignore_exception)
-    _merge_nodelevel_map_to_mainmap(parsed_map, as_map, timestamps, node_ip_mapping, ["as_stat", "meta_data"])
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map, as_map, timestamps, node_ip_mapping, ["as_stat", "meta_data"]
+    )
 
-def _add_missing_histogram_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+
+def _add_missing_histogram_data(
+    imap, parsed_map, timestamps, node_ip_mapping, ignore_exception
+):
     """
     Add missing Aerospike histogram data into parsed_map which is loaded from old format json file
 
     """
 
     histogram_map = _get_as_map(imap, HISTOGRAM_SECTION_NAME_LIST, ignore_exception)
-    _merge_nodelevel_map_to_mainmap(parsed_map, histogram_map, timestamps, node_ip_mapping, ["as_stat"])
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map, histogram_map, timestamps, node_ip_mapping, ["as_stat"]
+    )
+
 
 def _convert_parsed_latency_map_to_collectinfo_format(parsed_map):
     latency_map = {}
 
     for node, node_data in parsed_map.items():
-        if not node_data or isinstance(node_data, Exception) or "latency" not in node_data:
+        if (
+            not node_data
+            or isinstance(node_data, Exception)
+            or "latency" not in node_data
+        ):
             continue
 
         latency_data = node_data["latency"]
@@ -535,7 +643,9 @@ def _convert_parsed_latency_map_to_collectinfo_format(parsed_map):
     return latency_map
 
 
-def _add_missing_latency_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+def _add_missing_latency_data(
+    imap, parsed_map, timestamps, node_ip_mapping, ignore_exception
+):
     """
     Add missing Aerospike latency data into parsed_map which is loaded from old format json file
 
@@ -546,7 +656,9 @@ def _add_missing_latency_data(imap, parsed_map, timestamps, node_ip_mapping, ign
 
     latency_map = _convert_parsed_latency_map_to_collectinfo_format(parsed_latency_map)
 
-    _merge_nodelevel_map_to_mainmap(parsed_map, latency_map, timestamps, node_ip_mapping, ["as_stat"])
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map, latency_map, timestamps, node_ip_mapping, ["as_stat"]
+    )
 
 
 def _to_map(value, delimiter1=":", delimiter2="="):
@@ -587,7 +699,11 @@ def _to_roster_map(parsed_map):
     list_fields = ["roster", "pending_roster", "observed_nodes"]
 
     for node, node_data in parsed_map.items():
-        if not node_data or isinstance(node_data, Exception) or "roster" not in node_data:
+        if (
+            not node_data
+            or isinstance(node_data, Exception)
+            or "roster" not in node_data
+        ):
             continue
 
         roster_data = node_data["roster"]
@@ -621,7 +737,9 @@ def _to_roster_map(parsed_map):
     return roster_map
 
 
-def _add_missing_roster_data(imap, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+def _add_missing_roster_data(
+    imap, parsed_map, timestamps, node_ip_mapping, ignore_exception
+):
     """
     Add missing Aerospike roster data into parsed_map which is loaded from old format file
 
@@ -630,17 +748,31 @@ def _add_missing_roster_data(imap, parsed_map, timestamps, node_ip_mapping, igno
     roster_map = {}
     parsed_roster_map = _get_as_map(imap, ["roster"], ignore_exception)
     roster_map = _to_roster_map(parsed_roster_map)
-    _merge_nodelevel_map_to_mainmap(parsed_map, roster_map, timestamps, node_ip_mapping, ["as_stat", "config"])
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map, roster_map, timestamps, node_ip_mapping, ["as_stat", "config"]
+    )
 
-def _add_missing_original_config_data(parsed_conf_map, parsed_map, timestamps, node_ip_mapping, ignore_exception):
+
+def _add_missing_original_config_data(
+    parsed_conf_map, parsed_map, timestamps, node_ip_mapping, ignore_exception
+):
     """
     Add missing Aerospike original config data (from conf file) into parsed_map.
 
     """
 
-    _merge_nodelevel_map_to_mainmap(parsed_map, parsed_conf_map, timestamps, node_ip_mapping, ["as_stat", "original_config"])
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map,
+        parsed_conf_map,
+        timestamps,
+        node_ip_mapping,
+        ["as_stat", "original_config"],
+    )
 
-def _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_ip_mapping, ignore_exception):
+
+def _add_missing_dmesg_data(
+    sys_map, parsed_map, timestamps, node, node_ip_mapping, ignore_exception
+):
     """
     Add missing system dmesg data into parsed_map.
 
@@ -651,9 +783,14 @@ def _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_ip_mappi
     dmesg_map = {}
     dmesg_map[node] = {}
     dmesg_map[node]["dmesg"] = sys_map["dmesg"]
-    _merge_nodelevel_map_to_mainmap(parsed_map, dmesg_map, timestamps, node_ip_mapping, ["sys_stat"])
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map, dmesg_map, timestamps, node_ip_mapping, ["sys_stat"]
+    )
 
-def _add_missing_scheduler_data(sys_map, parsed_map, timestamps, node, node_ip_mapping, ignore_exception):
+
+def _add_missing_scheduler_data(
+    sys_map, parsed_map, timestamps, node, node_ip_mapping, ignore_exception
+):
     """
     Add missing IO scheduler details into parsed_map.
 
@@ -665,7 +802,10 @@ def _add_missing_scheduler_data(sys_map, parsed_map, timestamps, node, node_ip_m
     scheduler_map = {}
     scheduler_map[node] = {}
     scheduler_map[node]["scheduler"] = sys_map["scheduler"]
-    _merge_nodelevel_map_to_mainmap(parsed_map, scheduler_map, timestamps, node_ip_mapping, ["sys_stat"])
+    _merge_nodelevel_map_to_mainmap(
+        parsed_map, scheduler_map, timestamps, node_ip_mapping, ["sys_stat"]
+    )
+
 
 # Format: [version, key to identify version changes, parent keys of key till node]
 new_additional_field_pointers = [
@@ -674,6 +814,7 @@ new_additional_field_pointers = [
     [3, "endpoints", ["as_stat", "meta_data"]],
     [4, "latency", ["as_stat"]],
 ]
+
 
 def _find_missing_data_version(cinfo_map):
     """
@@ -721,14 +862,22 @@ def _find_missing_data_version(cinfo_map):
 
     return 0
 
-def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missing_version=0, ignore_exception=False):
+
+def _add_missing_data(
+    imap,
+    parsed_map,
+    parsed_conf_map={},
+    timestamps=[],
+    missing_version=0,
+    ignore_exception=False,
+):
     """
     Add missing data (Aerospike stats, config, metadata and histogram dump) into parsed_map which is loaded from old format json file
 
     """
-    
-    # To maintain some backward compatability.  
-    # Not sure if adding missing data is still needed. 
+
+    # To maintain some backward compatability.
+    # Not sure if adding missing data is still needed.
     # Code seems to support backwards compatibility and is quite dated.
     try:
         meta_map = _get_meta_map(imap, ignore_exception)
@@ -737,7 +886,9 @@ def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missi
         node = _match_nodeip(sys_map, node_to_ip_mapping)
         conf_map = {}
         conf_map[node] = parsed_conf_map
-        _add_missing_original_config_data(conf_map, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+        _add_missing_original_config_data(
+            conf_map, parsed_map, timestamps, node_to_ip_mapping, ignore_exception
+        )
     except:
         return
 
@@ -745,17 +896,37 @@ def _add_missing_data(imap, parsed_map, parsed_conf_map={}, timestamps=[], missi
         return
 
     if missing_version == 1:
-        _merge_nodelevel_map_to_mainmap(parsed_map, meta_map, timestamps, node_to_ip_mapping, ["as_stat", "meta_data"])
-        _add_missing_as_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
-        _add_missing_histogram_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+        _merge_nodelevel_map_to_mainmap(
+            parsed_map,
+            meta_map,
+            timestamps,
+            node_to_ip_mapping,
+            ["as_stat", "meta_data"],
+        )
+        _add_missing_as_data(
+            imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception
+        )
+        _add_missing_histogram_data(
+            imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception
+        )
 
     if missing_version <= 2:
-        _add_missing_dmesg_data(sys_map, parsed_map, timestamps, node, node_to_ip_mapping, ignore_exception)
+        _add_missing_dmesg_data(
+            sys_map, parsed_map, timestamps, node, node_to_ip_mapping, ignore_exception
+        )
 
     if missing_version <= 3:
-        _add_missing_scheduler_data(sys_map, parsed_map, timestamps, node, node_to_ip_mapping, ignore_exception)
-        _add_missing_endpoints_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+        _add_missing_scheduler_data(
+            sys_map, parsed_map, timestamps, node, node_to_ip_mapping, ignore_exception
+        )
+        _add_missing_endpoints_data(
+            imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception
+        )
 
     if missing_version <= 4:
-        _add_missing_latency_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
-        _add_missing_roster_data(imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception)
+        _add_missing_latency_data(
+            imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception
+        )
+        _add_missing_roster_data(
+            imap, parsed_map, timestamps, node_to_ip_mapping, ignore_exception
+        )

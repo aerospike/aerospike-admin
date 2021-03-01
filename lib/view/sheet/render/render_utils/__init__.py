@@ -39,31 +39,31 @@ class Aggregator(object):
 
 
 class ErrorEntry(object):
-    def __lt__(self,other):
-        return (False)
+    def __lt__(self, other):
+        return False
 
-    def __le__(self,other):
-        return(True)
+    def __le__(self, other):
+        return True
 
-    def __gt__(self,other):
-        return(True)
+    def __gt__(self, other):
+        return True
 
-    def __ge__(self,other):
-        return(False)
+    def __ge__(self, other):
+        return False
 
 
 class NoEntry(object):
-    def __lt__(self,other):
-        return (False)
+    def __lt__(self, other):
+        return False
 
-    def __le__(self,other):
-        return(True)
+    def __le__(self, other):
+        return True
 
-    def __gt__(self,other):
-        return(True)
+    def __gt__(self, other):
+        return True
 
-    def __ge__(self,other):
-        return(False)
+    def __ge__(self, other):
+        return False
 
 
 ErrorEntry = ErrorEntry()

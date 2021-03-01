@@ -14,7 +14,7 @@
 
 
 def source_hierarchy(source_path):
-    return source_path.split('.')
+    return source_path.split(".")
 
 
 def source_root(source_path):

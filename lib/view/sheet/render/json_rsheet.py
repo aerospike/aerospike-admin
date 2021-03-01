@@ -14,8 +14,7 @@
 
 import json
 
-from .base_rsheet import (BaseRField, BaseRSheet, BaseRSubgroup, ErrorEntry,
-                          NoEntry)
+from .base_rsheet import BaseRField, BaseRSheet, BaseRSubgroup, ErrorEntry, NoEntry
 
 
 class JSONRSheet(BaseRSheet):
@@ -32,7 +31,7 @@ class JSONRSheet(BaseRSheet):
         result = dict(title=self.title, groups=groups)
 
         if self.description:
-            result['description'] = self.description
+            result["description"] = self.description
 
         if len(rfields) == 0:
             return json.dumps(result, indent=2)
@@ -60,10 +59,10 @@ class JSONRSheet(BaseRSheet):
 
                         for rsubfield in rfield.visible:
                             self.do_render_field(
-                                rsubfield, group_ix, entry_ix, tuple_field)
+                                rsubfield, group_ix, entry_ix, tuple_field
+                            )
                     else:
-                        self.do_render_field(
-                            rfield, group_ix, entry_ix, record)
+                        self.do_render_field(rfield, group_ix, entry_ix, record)
 
             for rfield in rfields:
                 field_key = rfield.decleration.key
@@ -72,8 +71,7 @@ class JSONRSheet(BaseRSheet):
                     tuple_agg = {}
 
                     for rsubfield in rfield.visible:
-                        self.do_render_aggregate(
-                            rsubfield, group_ix, tuple_agg)
+                        self.do_render_aggregate(rsubfield, group_ix, tuple_agg)
 
                     if tuple_agg:
                         aggregates[field_key] = tuple_agg
@@ -81,7 +79,7 @@ class JSONRSheet(BaseRSheet):
                     self.do_render_aggregate(rfield, group_ix, aggregates)
 
             if aggregates:
-                group['aggregates'] = aggregates
+                group["aggregates"] = aggregates
 
         return json.dumps(result, indent=2)
 
@@ -90,31 +88,30 @@ class JSONRSheet(BaseRSheet):
         converted_value = rfield.groups_converted[group_ix][entry_ix].strip()
 
         if value is ErrorEntry:
-            value = 'error'
+            value = "error"
         elif value is NoEntry:
-            value = 'null'
+            value = "null"
 
         key = rfield.decleration.key  # use key, instead of title, for uniqueness
         record[key] = dict(raw=value, converted=converted_value)
         format_name, _ = rfield.entry_format(group_ix, entry_ix)
 
         if format_name is not None:
-            record[key]['format'] = format_name
+            record[key]["format"] = format_name
 
     def do_render_aggregate(self, rfield, group_ix, aggregates):
         aggregate = rfield.aggregates[group_ix]
         converted_aggregate = rfield.aggregates_converted[group_ix].strip()
 
         if aggregate is ErrorEntry:
-            aggregate = 'error'
+            aggregate = "error"
         elif aggregate is NoEntry:
-            aggregate = 'null'
+            aggregate = "null"
 
         key = rfield.decleration.key  # use key, instead of title, for uniqueness
 
         if aggregate is not None:
-            aggregates[key] = dict(
-                raw=aggregate, converted=converted_aggregate)
+            aggregates[key] = dict(raw=aggregate, converted=converted_aggregate)
 
 
 class RSubgroupJSON(BaseRSubgroup):

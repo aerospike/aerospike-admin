@@ -14,14 +14,12 @@
 
 
 class HealthException(Exception):
-
     def __call__(self, *ignore):
         # act as a callable and raise self
         raise self
 
 
 class SyntaxException(Exception):
-
     def __call__(self, *ignore):
         # act as a callable and raise self
         raise self

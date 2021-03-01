@@ -20,7 +20,6 @@ from lib.utils.lookupdict import LookupDict
 
 
 class CollectinfoNode(object):
-
     def __init__(self, timestamp, node_name, node_id="N/E"):
         self.timestamp = timestamp
         self.node_name = node_name
@@ -59,7 +58,6 @@ class CollectinfoNode(object):
 
 
 class CollectinfoSnapshot(object):
-
     def __init__(self, cluster_name, timestamp, cinfo_data, cinfo_file):
         self.cluster_name = cluster_name
         self.timestamp = timestamp
@@ -97,25 +95,38 @@ class CollectinfoSnapshot(object):
             for node, node_data in value.items():
                 if not node or not node_data:
                     continue
-                if not 'as_stat' in node_data:
+                if not "as_stat" in node_data:
                     continue
 
-                if 'config' in node_data['as_stat']:
-                    if 'namespace' in node_data['as_stat']['config']:
-                        for ns in value[node]['as_stat']['config']['namespace'].keys():
-                            if ' ' in ns:
-                                del value[node]['as_stat']['config']['namespace'][ns]
+                if "config" in node_data["as_stat"]:
+                    if "namespace" in node_data["as_stat"]["config"]:
+                        for ns in value[node]["as_stat"]["config"]["namespace"].keys():
+                            if " " in ns:
+                                del value[node]["as_stat"]["config"]["namespace"][ns]
 
-                if 'statistics' in node_data['as_stat']:
-                    if 'namespace' in node_data['as_stat']['statistics']:
-                        for ns in value[node]['as_stat']['statistics']['namespace'].keys():
-                            if ' ' in ns:
-                                del value[node]['as_stat']['statistics']['namespace'][ns]
+                if "statistics" in node_data["as_stat"]:
+                    if "namespace" in node_data["as_stat"]["statistics"]:
+                        for ns in value[node]["as_stat"]["statistics"][
+                            "namespace"
+                        ].keys():
+                            if " " in ns:
+                                del value[node]["as_stat"]["statistics"]["namespace"][
+                                    ns
+                                ]
                                 continue
-                            if 'set' in value[node]['as_stat']['statistics']['namespace'][ns]:
-                                for sets in list(value[node]['as_stat']['statistics']['namespace'][ns]['set'].keys()):
-                                    if ' ' in sets:
-                                        del value[node]['as_stat']['statistics']['namespace'][ns]['set'][sets]
+                            if (
+                                "set"
+                                in value[node]["as_stat"]["statistics"]["namespace"][ns]
+                            ):
+                                for sets in list(
+                                    value[node]["as_stat"]["statistics"]["namespace"][
+                                        ns
+                                    ]["set"].keys()
+                                ):
+                                    if " " in sets:
+                                        del value[node]["as_stat"]["statistics"][
+                                            "namespace"
+                                        ][ns]["set"][sets]
 
         except Exception:
             pass
@@ -129,7 +140,8 @@ class CollectinfoSnapshot(object):
                 node_names[key] = key
             else:
                 node_names[key] = self.node_lookup.get_shortname(
-                    key, min_prefix_len=20, min_suffix_len=5)
+                    key, min_prefix_len=20, min_suffix_len=5
+                )
 
         return node_names
 
@@ -157,19 +169,26 @@ class CollectinfoSnapshot(object):
                     if not node or not node_data:
                         continue
 
-                    if not 'as_stat' in node_data or type not in node_data['as_stat']:
+                    if not "as_stat" in node_data or type not in node_data["as_stat"]:
                         continue
 
                     if node not in data:
                         data[node] = {}
 
-                    d = node_data['as_stat'][type]
+                    d = node_data["as_stat"][type]
 
                     if not stanza:
                         data[node] = copy.deepcopy(d)
                         continue
 
-                    if stanza in ['namespace', 'bin', 'bins', 'set', 'sindex', 'namespace_list']:
+                    if stanza in [
+                        "namespace",
+                        "bin",
+                        "bins",
+                        "set",
+                        "sindex",
+                        "namespace_list",
+                    ]:
                         d = d["namespace"]
 
                         if stanza == "namespace_list":
@@ -180,36 +199,39 @@ class CollectinfoSnapshot(object):
                             try:
                                 if stanza == "namespace":
                                     data[node][ns_name] = copy.deepcopy(
-                                        d[ns_name]["service"])
+                                        d[ns_name]["service"]
+                                    )
 
                                 elif stanza == "bin" or stanza == "bins":
                                     data[node][ns_name] = copy.deepcopy(
-                                        d[ns_name][stanza])
+                                        d[ns_name][stanza]
+                                    )
 
                                 elif stanza == "set":
                                     for _name in d[ns_name][stanza]:
                                         _key = "%s %s" % (ns_name, _name)
                                         data[node][_key] = copy.deepcopy(
-                                            d[ns_name][stanza][_name])
+                                            d[ns_name][stanza][_name]
+                                        )
 
                                 elif stanza == "sindex":
                                     for _name in d[ns_name][stanza]:
                                         try:
                                             set = d[ns_name][stanza][_name]["set"]
-                                            _key = "%s %s %s" % (
-                                                ns_name, set, _name)
+                                            _key = "%s %s %s" % (ns_name, set, _name)
                                         except Exception:
                                             continue
 
                                         data[node][_key] = copy.deepcopy(
-                                            d[ns_name][stanza][_name])
+                                            d[ns_name][stanza][_name]
+                                        )
 
                             except Exception:
                                 pass
 
                     elif type == "meta_data" and stanza in ["endpoints", "services"]:
                         try:
-                            data[node] = copy.deepcopy(d[stanza]).split(';')
+                            data[node] = copy.deepcopy(d[stanza]).split(";")
                         except Exception:
                             data[node] = copy.deepcopy(d[stanza])
 
@@ -224,9 +246,12 @@ class CollectinfoSnapshot(object):
                         else:
                             # old collectinfo does not have object-size-logarithmic
                             # it should return objsz if server version is old
-                            as_version = node_data['as_stat']['meta_data']['asd_build']
-                            if not common.is_new_histogram_version(as_version) and 'objsz' in d:
-                                data[node] = copy.deepcopy(d['objsz'])
+                            as_version = node_data["as_stat"]["meta_data"]["asd_build"]
+                            if (
+                                not common.is_new_histogram_version(as_version)
+                                and "objsz" in d
+                            ):
+                                data[node] = copy.deepcopy(d["objsz"])
 
                             else:
                                 data[node] = {}
@@ -254,10 +279,13 @@ class CollectinfoSnapshot(object):
                     if not node or not node_data:
                         continue
 
-                    if not 'sys_stat' in node_data or stanza not in node_data['sys_stat']:
+                    if (
+                        not "sys_stat" in node_data
+                        or stanza not in node_data["sys_stat"]
+                    ):
                         continue
 
-                    data[node] = node_data['sys_stat'][stanza]
+                    data[node] = node_data["sys_stat"][stanza]
 
                 except Exception:
                     data[node] = {}
@@ -289,7 +317,7 @@ class CollectinfoSnapshot(object):
         try:
             principal = "0"
             for n in self.nodes.values():
-                if n.node_id == 'N/E':
+                if n.node_id == "N/E":
                     if self._get_node_count() == 1:
                         return n.node_id
                     return "UNKNOWN_PRINCIPAL"
@@ -348,7 +376,8 @@ class CollectinfoSnapshot(object):
         for node in self.nodes:
             try:
                 self.nodes[node].set_node_id(
-                    self.cinfo_data[node]['as_stat']['meta_data']['node_id'])
+                    self.cinfo_data[node]["as_stat"]["meta_data"]["node_id"]
+                )
             except Exception:
                 pass
 
@@ -357,7 +386,8 @@ class CollectinfoSnapshot(object):
         for node in self.nodes:
             try:
                 self.nodes[node].set_ip(
-                    self.cinfo_data[node]['as_stat']['meta_data']['ip'])
+                    self.cinfo_data[node]["as_stat"]["meta_data"]["ip"]
+                )
             except Exception:
                 pass
 
@@ -366,7 +396,8 @@ class CollectinfoSnapshot(object):
         for node in self.nodes:
             try:
                 self.nodes[node].set_xdr_build(
-                    self.cinfo_data[node]['as_stat']['meta_data']['xdr_build'])
+                    self.cinfo_data[node]["as_stat"]["meta_data"]["xdr_build"]
+                )
             except Exception:
                 pass
 
@@ -375,7 +406,8 @@ class CollectinfoSnapshot(object):
         for node in self.nodes:
             try:
                 self.nodes[node].set_asd_build(
-                    self.cinfo_data[node]['as_stat']['meta_data']['asd_build'])
+                    self.cinfo_data[node]["as_stat"]["meta_data"]["asd_build"]
+                )
             except Exception:
                 pass
 
@@ -384,7 +416,8 @@ class CollectinfoSnapshot(object):
         for node in self.nodes:
             try:
                 self.nodes[node].set_asd_version(
-                    self.cinfo_data[node]['as_stat']['meta_data']['edition'])
+                    self.cinfo_data[node]["as_stat"]["meta_data"]["edition"]
+                )
             except Exception:
                 pass
 
@@ -412,7 +445,8 @@ class CollectinfoLog(object):
                         cinfo_data = self.data[ts][cl]
                         if cinfo_data and not isinstance(cinfo_data, Exception):
                             self.snapshots[ts] = CollectinfoSnapshot(
-                                cl, ts, cinfo_data, cinfo_path)
+                                cl, ts, cinfo_data, cinfo_path
+                            )
 
                     # Since we are not dealing with timeseries we should fetch only one snapshot
                     break

@@ -20,22 +20,25 @@ from test.e2e import test_util
 from lib.view.sheet import set_style_json
 
 set_style_json()
-class TestWatch(unittest.TestCase):
 
+
+class TestWatch(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        TestWatch.rc = controller.BasicRootController(user='admin', password='admin')
-        actual_out = util.capture_stdout(TestWatch.rc.execute, ['watch', '1', '3', 'info', 'network'])
+        TestWatch.rc = controller.BasicRootController(user="admin", password="admin")
+        actual_out = util.capture_stdout(
+            TestWatch.rc.execute, ["watch", "1", "3", "info", "network"]
+        )
         TestWatch.output_list = test_util.get_separate_output(actual_out)
 
     def test_watch(self):
         info_counter = 0
         for item in TestWatch.output_list:
-            if "Network Information" in item['title']:
+            if "Network Information" in item["title"]:
                 info_counter += 1
         self.assertEqual(info_counter, 3)
 
 
 if __name__ == "__main__":
-    #import sys;sys.argv = ['', 'Test.testName']
+    # import sys;sys.argv = ['', 'Test.testName']
     unittest.main()

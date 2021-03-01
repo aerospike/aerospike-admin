@@ -22,18 +22,30 @@ import sys
 import threading
 import logging
 
+
 def logthis(log, level):
     logger = logging.getLogger(log)
+
     def _decorator(func):
-        def _decorated(*arg,**kwargs):
+        def _decorated(*arg, **kwargs):
             logger.log(level, "calling '%s'(%r,%r)", func.__name__, arg, kwargs)
-            ret=func(*arg,**kwargs)
-            logger.log(level, "called '%s'(%r,%r) got return value: %r", func.__name__, arg, kwargs, ret)
+            ret = func(*arg, **kwargs)
+            logger.log(
+                level,
+                "called '%s'(%r,%r) got return value: %r",
+                func.__name__,
+                arg,
+                kwargs,
+                ret,
+            )
             return ret
+
         return _decorated
+
     return _decorator
 
-class Future():
+
+class Future:
 
     """
     Very basic implementation of a async future.
@@ -62,7 +74,7 @@ class Future():
 
     def result(self):
         if self.exc:
-            raise(self.exc)
+            raise (self.exc)
 
         self._worker.join()
         return self._result
@@ -100,6 +112,7 @@ def capture_stdout(func, line=""):
     sys.stdout = old
     return output
 
+
 def capture_stderr(func, line=""):
     """
     Redirecting the stderr to use the output elsewhere
@@ -115,6 +128,7 @@ def capture_stderr(func, line=""):
     output = capturer.getvalue()
     sys.stderr = old
     return output
+
 
 def capture_stdout_and_stderr(func, line=""):
     sys.stdout.flush()
@@ -137,11 +151,12 @@ def capture_stdout_and_stderr(func, line=""):
 
     return stdout_output, stderr_output
 
+
 def compile_likes(likes):
     if likes is None:
         likes = []
-        
-    likes = ["(" + like.translate(str.maketrans('','','\'"')) + ")" for like in likes]
+
+    likes = ["(" + like.translate(str.maketrans("", "", "'\"")) + ")" for like in likes]
     likes = "|".join(likes)
     likes = re.compile(likes)
     return likes
@@ -683,7 +698,7 @@ def bytes_to_str(data):
 
     if not is_str(data):
         return data.decode("utf-8")
-    
+
     return data
 
 
@@ -693,5 +708,5 @@ def str_to_bytes(data):
 
     if is_str(data):
         return str.encode(data, "utf-8")
-    
+
     return data

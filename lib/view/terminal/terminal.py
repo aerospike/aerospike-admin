@@ -14,41 +14,42 @@
 
 import sys
 
-_add_it = None 
-_remove_it = None 
+_add_it = None
+_remove_it = None
 _reset = None
 
-sclear = None 
-sbold = None 
-sdim = None 
-snormal = None 
+sclear = None
+sbold = None
+sdim = None
+snormal = None
 sunderline = None
-sinverse = None 
+sinverse = None
 siclear = None
 
-fgblack = None 
-fgred = None 
-fggreen = None 
-fgyellow = None 
-fgblue = None 
-fgmagenta = None 
-fgcyan = None 
+fgblack = None
+fgred = None
+fggreen = None
+fgyellow = None
+fgblue = None
+fgmagenta = None
+fgcyan = None
 fgwhite = None
 
-bgblack = None 
-bgred = None 
-bggreen = None 
-bgyellow = None 
-bgblue = None 
-bgmagenta = None 
-bgcyan = None 
+bgblack = None
+bgred = None
+bggreen = None
+bgyellow = None
+bgblue = None
+bgmagenta = None
+bgcyan = None
 bgwhite = None
 
 esc = None
 term = None
 
-sclear_code = None 
+sclear_code = None
 cur_format = None
+
 
 def enable_color(is_enable):
     global _add_it, _remove_it, _reset
@@ -62,108 +63,109 @@ def enable_color(is_enable):
     color_enabled = is_enable
 
     if is_enable:
-        sclear = '0'
-        sbold = '1'
-        sdim = '2'
-        snormal = '22'
-        sunderline = '4'
-        sinverse = '7'
-        siclear = '27'
+        sclear = "0"
+        sbold = "1"
+        sdim = "2"
+        snormal = "22"
+        sunderline = "4"
+        sinverse = "7"
+        siclear = "27"
 
-        fgblack = '30;90'
-        fgred = '31;91'
-        fggreen = '32;92'
-        fgyellow = '33;93'
-        fgblue = '34;94'
-        fgmagenta = '35;95'
-        fgcyan = '36;96'
-        fgwhite = '37;97'
+        fgblack = "30;90"
+        fgred = "31;91"
+        fggreen = "32;92"
+        fgyellow = "33;93"
+        fgblue = "34;94"
+        fgmagenta = "35;95"
+        fgcyan = "36;96"
+        fgwhite = "37;97"
 
-        bgblack = '40;100'
-        bgred = '41;101'
-        bggreen = '42;102'
-        bgyellow = '43;103'
-        bgblue = '44;104'
-        bgmagenta = '45;105'
-        bgcyan = '46;106'
-        bgwhite = '47;107'
+        bgblack = "40;100"
+        bgred = "41;101"
+        bggreen = "42;102"
+        bgyellow = "43;103"
+        bgblue = "44;104"
+        bgmagenta = "45;105"
+        bgcyan = "46;106"
+        bgwhite = "47;107"
 
-        esc = '\033['
-        term = 'm'
+        esc = "\033["
+        term = "m"
 
         sclear_code = esc + sclear + term
         cur_format = set()
 
         def _add_it(decoration):
             if decoration in cur_format:
-                return ''  # nothing to do
+                return ""  # nothing to do
             else:
                 cur_format.add(decoration)
-                return esc + ';'.join(cur_format) + term
+                return esc + ";".join(cur_format) + term
 
-        def _remove_it(decoration, decoration_clear=''):
+        def _remove_it(decoration, decoration_clear=""):
             if decoration in cur_format:
                 cur_format.remove(decoration)
                 if decoration_clear:
                     return esc + decoration_clear + term
                 else:
-                    return esc + sclear + ';' + ';'.join(cur_format) + term
+                    return esc + sclear + ";" + ";".join(cur_format) + term
             else:
-                return ''  # nothing to do
+                return ""  # nothing to do
 
         def _reset():
             cur_format.clear()
             return esc + sclear + term
 
     else:
-        sclear = ''
-        sbold = ''
-        sdim = ''
-        snormal = ''
-        sunderline = ''
-        sinverse = ''
-        siclear = ''
+        sclear = ""
+        sbold = ""
+        sdim = ""
+        snormal = ""
+        sunderline = ""
+        sinverse = ""
+        siclear = ""
 
-        fgblack = ''
-        fgred = ''
-        fggreen = ''
-        fgyellow = ''
-        fgblue = ''
-        fgmagenta = ''
-        fgcyan = ''
-        fgwhite = ''
+        fgblack = ""
+        fgred = ""
+        fggreen = ""
+        fgyellow = ""
+        fgblue = ""
+        fgmagenta = ""
+        fgcyan = ""
+        fgwhite = ""
 
-        bgblack = ''
-        bgred = ''
-        bggreen = ''
-        bgyellow = ''
-        bgblue = ''
-        bgmagenta = ''
-        bgcyan = ''
-        bgwhite = ''
+        bgblack = ""
+        bgred = ""
+        bggreen = ""
+        bgyellow = ""
+        bgblue = ""
+        bgmagenta = ""
+        bgcyan = ""
+        bgwhite = ""
 
-        sclear_code = ''
+        sclear_code = ""
         cur_format = list()
 
         def _add_it(decoration):
             if decoration in cur_format:
-                return ''  # nothing to do
+                return ""  # nothing to do
             else:
                 cur_format.append(decoration)
                 return decoration
 
-        def _remove_it(decoration, decoration_clear=''):
+        def _remove_it(decoration, decoration_clear=""):
             if decoration in cur_format:
                 cur_format.remove(decoration)
                 return decoration
             else:
-                return ''  # nothing to do
+                return ""  # nothing to do
 
         def _reset():
             cur_format.reverse()
-            retval = ''.join(cur_format)
-            del(cur_format[:])
+            retval = "".join(cur_format)
+            del cur_format[:]
             return retval
+
 
 # Real terminal?
 isatty = sys.stdout.isatty()
@@ -315,7 +317,7 @@ def bg_clear():
 
 def style(*functions):
     if not functions:
-        return ''
+        return ""
 
     for function in functions[:-1]:
         function()

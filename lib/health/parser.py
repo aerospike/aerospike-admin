@@ -19,7 +19,12 @@ from lib.health.commands import select_keys, do_assert, do_operation, do_assert_
 from lib.health.constants import AssertLevel, HEALTH_PARSER_VAR, MAJORITY
 from lib.health.exceptions import SyntaxException
 from lib.health.operation import do_multiple_group_by
-from lib.health.util import create_health_internal_tuple, create_snapshot_key, h_eval, is_health_parser_variable
+from lib.health.util import (
+    create_health_internal_tuple,
+    create_snapshot_key,
+    h_eval,
+    is_health_parser_variable,
+)
 
 try:
     from ply import lex, yacc
@@ -29,176 +34,182 @@ except Exception:
 HealthVars = {}
 
 
-class HealthLexer():
+class HealthLexer:
     SNAPSHOT_KEY_PATTERN = r"SNAPSHOT(\d+)$"
 
     assert_levels = {
-        'CRITICAL': AssertLevel.CRITICAL,
-        'WARNING': AssertLevel.WARNING,
-        'INFO': AssertLevel.INFO
+        "CRITICAL": AssertLevel.CRITICAL,
+        "WARNING": AssertLevel.WARNING,
+        "INFO": AssertLevel.INFO,
     }
 
     components = {
-        'ALL': 'ALL',
-        'ASD_PROCESS': 'ASD_PROCESS',
-        'AVG-CPU': 'AVG-CPU',
-        'BIN': 'BIN',
-        'BUFFERS/CACHE': 'BUFFERS/CACHE',
-        'CONFIG': 'CONFIG',
-        'CPU_UTILIZATION': 'CPU_UTILIZATION',
-        'DEVICE_INTERRUPTS': 'DEVICE_INTERRUPTS',
-        'DEVICE_STAT': 'DEVICE_STAT',
-        'DF': 'DF',
-        'DMESG': 'DMESG',
-        'ENDPOINTS': 'ENDPOINTS',
-        'ENVIRONMENT': 'ENVIRONMENT',
-        'FREE': 'FREE',
-        'HDPARM': 'HDPARM',
-        'HEALTH': 'HEALTH',
-        'INTERRUPTS': 'INTERRUPTS',
-        'IOSTAT': 'IOSTAT',
-        'IPTABLES': 'IPTABLES',
-        'LIMITS': 'LIMITS',
-        'LSB': 'LSB',
-        'LSCPU': 'LSCPU',
-        'MEM': 'MEM',
-        'MEMINFO': 'MEMINFO',
-        'METADATA': 'METADATA',
-        'NETWORK': 'NETWORK',
-        'ORIGINAL_CONFIG': 'ORIGINAL_CONFIG',
-        'RAM': 'RAM',
-        'ROLES': 'ROLES',
-        'ROSTER': 'ROSTER',
-        'SYSTEM': 'SYSTEM',
-        'SECURITY': 'SECURITY',
-        'SERVICE': 'SERVICE',
-        'SERVICES': 'SERVICES',
-        'SCHEDULER': 'SCHEDULER',
-        'STATISTICS': 'STATISTICS',
-        'SWAP': 'SWAP',
-        'SYSCTLALL': 'SYSCTLALL',
-        'TASKS': 'TASKS',
-        'TOP': 'TOP',
-        'UDF': 'UDF',
-        'UPTIME': 'UPTIME',
-        'USERS': 'USERS',
-        'XDR': 'XDR',
-        'XDR_PROCESS': 'XDR_PROCESS',
+        "ALL": "ALL",
+        "ASD_PROCESS": "ASD_PROCESS",
+        "AVG-CPU": "AVG-CPU",
+        "BIN": "BIN",
+        "BUFFERS/CACHE": "BUFFERS/CACHE",
+        "CONFIG": "CONFIG",
+        "CPU_UTILIZATION": "CPU_UTILIZATION",
+        "DEVICE_INTERRUPTS": "DEVICE_INTERRUPTS",
+        "DEVICE_STAT": "DEVICE_STAT",
+        "DF": "DF",
+        "DMESG": "DMESG",
+        "ENDPOINTS": "ENDPOINTS",
+        "ENVIRONMENT": "ENVIRONMENT",
+        "FREE": "FREE",
+        "HDPARM": "HDPARM",
+        "HEALTH": "HEALTH",
+        "INTERRUPTS": "INTERRUPTS",
+        "IOSTAT": "IOSTAT",
+        "IPTABLES": "IPTABLES",
+        "LIMITS": "LIMITS",
+        "LSB": "LSB",
+        "LSCPU": "LSCPU",
+        "MEM": "MEM",
+        "MEMINFO": "MEMINFO",
+        "METADATA": "METADATA",
+        "NETWORK": "NETWORK",
+        "ORIGINAL_CONFIG": "ORIGINAL_CONFIG",
+        "RAM": "RAM",
+        "ROLES": "ROLES",
+        "ROSTER": "ROSTER",
+        "SYSTEM": "SYSTEM",
+        "SECURITY": "SECURITY",
+        "SERVICE": "SERVICE",
+        "SERVICES": "SERVICES",
+        "SCHEDULER": "SCHEDULER",
+        "STATISTICS": "STATISTICS",
+        "SWAP": "SWAP",
+        "SYSCTLALL": "SYSCTLALL",
+        "TASKS": "TASKS",
+        "TOP": "TOP",
+        "UDF": "UDF",
+        "UPTIME": "UPTIME",
+        "USERS": "USERS",
+        "XDR": "XDR",
+        "XDR_PROCESS": "XDR_PROCESS",
     }
 
     group_ids = {
-        'BUCKET_END': 'BUCKET_END',
-        'BUCKET_START': 'BUCKET_START',
-        'CLUSTER': 'CLUSTER',
-        'DEVICE': 'DEVICE',
-        'FILENAME': 'FILENAME',
-        'FILE_SYSTEM': 'FILE_SYSTEM',
-        'INTERRUPT_DEVICE': 'INTERRUPT_DEVICE',
-        'INTERRUPT_ID': 'INTERRUPT_ID',
-        'INTERRUPT_TYPE': 'INTERRUPT_TYPE',
-        'KEY': 'KEY',
-        'NODE': 'NODE',
-        'OUTLIER': 'OUTLIER',
-        'SNAPSHOT': 'SNAPSHOT'
+        "BUCKET_END": "BUCKET_END",
+        "BUCKET_START": "BUCKET_START",
+        "CLUSTER": "CLUSTER",
+        "DEVICE": "DEVICE",
+        "FILENAME": "FILENAME",
+        "FILE_SYSTEM": "FILE_SYSTEM",
+        "INTERRUPT_DEVICE": "INTERRUPT_DEVICE",
+        "INTERRUPT_ID": "INTERRUPT_ID",
+        "INTERRUPT_TYPE": "INTERRUPT_TYPE",
+        "KEY": "KEY",
+        "NODE": "NODE",
+        "OUTLIER": "OUTLIER",
+        "SNAPSHOT": "SNAPSHOT",
     }
 
     component_and_group_id = {
-        'DC': 'DC',
-        'HISTOGRAM': 'HISTOGRAM',
-        'NAMESPACE': 'NAMESPACE',
-        'RACKS': 'RACKS',
-        'SET': 'SET',
-        'SINDEX': 'SINDEX',
+        "DC": "DC",
+        "HISTOGRAM": "HISTOGRAM",
+        "NAMESPACE": "NAMESPACE",
+        "RACKS": "RACKS",
+        "SET": "SET",
+        "SINDEX": "SINDEX",
     }
 
     agg_ops = {
-        'AND': 'AND',
-        'AVG': 'AVG',
-        'COUNT': 'COUNT',
-        'COUNT_ALL': 'COUNT_ALL',
-        'EQUAL': 'EQUAL',
-        'MAX': 'MAX',
-        'MIN': 'MIN',
-        'OR' : 'OR',
-        'FIRST': 'FIRST',
-        'SUM': 'SUM',
-        'VALUE_UNIFORM': 'VALUE_UNIFORM',
+        "AND": "AND",
+        "AVG": "AVG",
+        "COUNT": "COUNT",
+        "COUNT_ALL": "COUNT_ALL",
+        "EQUAL": "EQUAL",
+        "MAX": "MAX",
+        "MIN": "MIN",
+        "OR": "OR",
+        "FIRST": "FIRST",
+        "SUM": "SUM",
+        "VALUE_UNIFORM": "VALUE_UNIFORM",
     }
 
-    complex_ops = {
-        'DIFF': 'DIFF',
-        'SD_ANOMALY': 'SD_ANOMALY',
-        'NO_MATCH': 'NO_MATCH'
-    }
+    complex_ops = {"DIFF": "DIFF", "SD_ANOMALY": "SD_ANOMALY", "NO_MATCH": "NO_MATCH"}
 
-    apply_ops = {
-        'APPLY_TO_ANY': 'APPLY_TO_ANY',
-        'APPLY_TO_ALL': 'APPLY_TO_ALL'
-    }
+    apply_ops = {"APPLY_TO_ANY": "APPLY_TO_ANY", "APPLY_TO_ALL": "APPLY_TO_ALL"}
 
-    simple_ops = {
-        'SPLIT': 'SPLIT',
-        'UNIQUE': 'UNIQUE'
-    }
+    simple_ops = {"SPLIT": "SPLIT", "UNIQUE": "UNIQUE"}
 
     complex_params = {
-        'MAJORITY': MAJORITY,
+        "MAJORITY": MAJORITY,
     }
 
-    assert_ops = {
-        'ASSERT': 'ASSERT'
-    }
+    assert_ops = {"ASSERT": "ASSERT"}
 
-    bool_vals = {
-        'true': True,
-        'false': False
-    }
+    bool_vals = {"true": True, "false": False}
 
     reserved = {
-        'as': 'AS',
-        'by': 'BY',
-        'common': 'COMMON',
-        'do': 'DO',
-        'from': 'FROM',
-        'group': 'GROUP',
-        'ignore': 'IGNORE',
-        'like': 'LIKE',
-        'on': 'ON',
-        'save': 'SAVE',
-        'select': 'SELECT'
+        "as": "AS",
+        "by": "BY",
+        "common": "COMMON",
+        "do": "DO",
+        "from": "FROM",
+        "group": "GROUP",
+        "ignore": "IGNORE",
+        "like": "LIKE",
+        "on": "ON",
+        "save": "SAVE",
+        "select": "SELECT",
     }
 
-    tokens = ['NUMBER',     'FLOAT', 'BOOL_VAL',
-              'VAR',        'NEW_VAR',
-              'COMPONENT', 'GROUP_ID', 'COMPONENT_AND_GROUP_ID',
-              'AGG_OP', 'COMPLEX_OP', 'APPLY_OP', 'SIMPLE_OP', 'COMPLEX_PARAM', 'ASSERT_OP', 'ASSERT_LEVEL',
-              'STRING',
-              'COMMA',      'DOT', 'IN',
-              'PLUS',       'MINUS',
-              'TIMES',      'DIVIDE',
-              'BINARY_AND', 'BINARY_OR',
-              'LPAREN',     'RPAREN',
-              'GT',         'GE',
-              'LT',         'LE',
-              'EQ',         'NE',
-              'ASSIGN',
-              'PCT',
-              ] + list(reserved.values())
+    tokens = [
+        "NUMBER",
+        "FLOAT",
+        "BOOL_VAL",
+        "VAR",
+        "NEW_VAR",
+        "COMPONENT",
+        "GROUP_ID",
+        "COMPONENT_AND_GROUP_ID",
+        "AGG_OP",
+        "COMPLEX_OP",
+        "APPLY_OP",
+        "SIMPLE_OP",
+        "COMPLEX_PARAM",
+        "ASSERT_OP",
+        "ASSERT_LEVEL",
+        "STRING",
+        "COMMA",
+        "DOT",
+        "IN",
+        "PLUS",
+        "MINUS",
+        "TIMES",
+        "DIVIDE",
+        "BINARY_AND",
+        "BINARY_OR",
+        "LPAREN",
+        "RPAREN",
+        "GT",
+        "GE",
+        "LT",
+        "LE",
+        "EQ",
+        "NE",
+        "ASSIGN",
+        "PCT",
+    ] + list(reserved.values())
 
     def t_FLOAT(self, t):
-        r'\d+(\.(\d+)?([eE][-+]?\d+)?|[eE][-+]?\d+)'
+        r"\d+(\.(\d+)?([eE][-+]?\d+)?|[eE][-+]?\d+)"
         t.value = float(t.value)
         return t
 
     def t_NUMBER(self, t):
-        r'\d+'
+        r"\d+"
         t.value = int(t.value)
         return t
 
     def t_VAR(self, t):
-        r'[a-zA-Z_][a-zA-Z_0-9]*'
+        r"[a-zA-Z_][a-zA-Z_0-9]*"
         # Check for reserved words
-        t.type = HealthLexer.reserved.get(t.value.lower(), 'NEW_VAR')
+        t.type = HealthLexer.reserved.get(t.value.lower(), "NEW_VAR")
         if not t.type == "NEW_VAR":
             return t
         elif t.value.lower() in HealthLexer.bool_vals.keys():
@@ -206,7 +217,8 @@ class HealthLexer():
             t.value = HealthLexer.bool_vals.get(t.value.lower())
         elif re.match(HealthLexer.SNAPSHOT_KEY_PATTERN, t.value):
             t.value = create_snapshot_key(
-                int(re.search(HealthLexer.SNAPSHOT_KEY_PATTERN, t.value).group(1)))
+                int(re.search(HealthLexer.SNAPSHOT_KEY_PATTERN, t.value).group(1))
+            )
             t.type = "COMPONENT"
         elif t.value in HealthLexer.components.keys():
             t.type = "COMPONENT"
@@ -238,39 +250,39 @@ class HealthLexer():
         return t
 
     def t_STRING(self, t):
-        r'\".*?\"'
+        r"\".*?\""
         if len(t.value) < 3:
             t.value = None
         else:
-            t.value = t.value[1:len(t.value) - 1]
+            t.value = t.value[1 : len(t.value) - 1]
         return t
 
     # Define a rule so we can track line numbers
     def t_newline(self, t):
-        r'\n+'
+        r"\n+"
         t.lexer.lineno += len(t.value)
 
-    t_ignore = ' \t'
+    t_ignore = " \t"
 
     # Regular expression rules for simple tokens
-    t_COMMA = r'\,'
-    t_DOT = r'\.'
-    t_PLUS = r'\+'
-    t_MINUS = r'-'
-    t_PCT = r'%%'
-    t_TIMES = r'\*'
-    t_DIVIDE = r'/'
-    t_BINARY_OR = r'\|\|'
-    t_BINARY_AND = r'&&'
-    t_LPAREN = r'\('
-    t_RPAREN = r'\)'
-    t_GT = r'>'
-    t_GE = r'>='
-    t_LT = r'<'
-    t_LE = r'<='
-    t_EQ = r'=='
-    t_NE = r'!='
-    t_ASSIGN = r'='
+    t_COMMA = r"\,"
+    t_DOT = r"\."
+    t_PLUS = r"\+"
+    t_MINUS = r"-"
+    t_PCT = r"%%"
+    t_TIMES = r"\*"
+    t_DIVIDE = r"/"
+    t_BINARY_OR = r"\|\|"
+    t_BINARY_AND = r"&&"
+    t_LPAREN = r"\("
+    t_RPAREN = r"\)"
+    t_GT = r">"
+    t_GE = r">="
+    t_LT = r"<"
+    t_LE = r"<="
+    t_EQ = r"=="
+    t_NE = r"!="
+    t_ASSIGN = r"="
 
     def t_error(self, t):
         raise TypeError("Unknown text '%s'" % (t.value,))
@@ -280,19 +292,19 @@ class HealthLexer():
         return self.lexer
 
 
-class HealthParser():
+class HealthParser:
 
     tokens = HealthLexer.tokens
     health_input_data = {}
 
     precedence = (
-        ('left', 'ASSIGN'),
-        ('left', 'BINARY_OR'),
-        ('left', 'BINARY_AND'),
-        ('left', 'EQ', 'NE', 'LT', 'GT', 'LE', 'GE'),
-        ('left', 'PLUS', 'MINUS'),
-        ('left', 'TIMES', 'DIVIDE'),
-        ('left', 'PCT')
+        ("left", "ASSIGN"),
+        ("left", "BINARY_OR"),
+        ("left", "BINARY_AND"),
+        ("left", "EQ", "NE", "LT", "GT", "LE", "GE"),
+        ("left", "PLUS", "MINUS"),
+        ("left", "TIMES", "DIVIDE"),
+        ("left", "PCT"),
     )
 
     def p_statement(self, p):
@@ -523,8 +535,16 @@ class HealthParser():
                         | opt_group_by_clause DO simple_operation opt_save_clause
         """
         try:
-            p[0] = do_operation(op=p[3][0], arg1=p[3][1], arg2=p[3][2], group_by=p[
-                                1], result_comp_op=p[3][3], result_comp_val=p[3][4], on_common_only=p[3][5], save_param=p[4])
+            p[0] = do_operation(
+                op=p[3][0],
+                arg1=p[3][1],
+                arg2=p[3][2],
+                group_by=p[1],
+                result_comp_op=p[3][3],
+                result_comp_val=p[3][4],
+                on_common_only=p[3][5],
+                save_param=p[4],
+            )
         except Exception as e:
             p[0] = e
 
@@ -553,13 +573,34 @@ class HealthParser():
         """
         if len(p) < 14:
             p[0] = do_assert(
-                op=p[1], data=p[3], check_val=p[5], error=p[7], category=p[9], level=p[11])
+                op=p[1],
+                data=p[3],
+                check_val=p[5],
+                error=p[7],
+                category=p[9],
+                level=p[11],
+            )
         elif len(p) < 16:
             p[0] = do_assert(
-                op=p[1], data=p[3], check_val=p[5], error=p[7], category=p[9], level=p[11], description=p[13])
+                op=p[1],
+                data=p[3],
+                check_val=p[5],
+                error=p[7],
+                category=p[9],
+                level=p[11],
+                description=p[13],
+            )
         elif len(p) < 18:
             p[0] = do_assert(
-                op=p[1], data=p[3], check_val=p[5], error=p[7], category=p[9], level=p[11], description=p[13], success_msg=p[15])
+                op=p[1],
+                data=p[3],
+                check_val=p[5],
+                error=p[7],
+                category=p[9],
+                level=p[11],
+                description=p[13],
+                success_msg=p[15],
+            )
         else:
             skip_assert, assert_filter_arg = p[17]
             if skip_assert:
@@ -569,17 +610,38 @@ class HealthParser():
                     data = do_operation(op="==", arg1=p[3], arg2=p[5])
                     try:
                         # If key filtration throws exception (due to non-matching), it just passes that and executes main assert
-                        new_data = do_operation(op="||", arg1=data, arg2=assert_filter_arg, on_common_only=True)
+                        new_data = do_operation(
+                            op="||",
+                            arg1=data,
+                            arg2=assert_filter_arg,
+                            on_common_only=True,
+                        )
                         if new_data:
                             data = new_data
                     except Exception:
                         pass
 
                     p[0] = do_assert(
-                        op=p[1], data=data, check_val=create_health_internal_tuple(True,[]), error=p[7], category=p[9], level=p[11], description=p[13], success_msg=p[15])
+                        op=p[1],
+                        data=data,
+                        check_val=create_health_internal_tuple(True, []),
+                        error=p[7],
+                        category=p[9],
+                        level=p[11],
+                        description=p[13],
+                        success_msg=p[15],
+                    )
                 else:
                     p[0] = do_assert(
-                        op=p[1], data=p[3], check_val=p[5], error=p[7], category=p[9], level=p[11], description=p[13], success_msg=p[15])
+                        op=p[1],
+                        data=p[3],
+                        check_val=p[5],
+                        error=p[7],
+                        category=p[9],
+                        level=p[11],
+                        description=p[13],
+                        success_msg=p[15],
+                    )
 
     def p_assert_if_condition(self, p):
         """
@@ -652,8 +714,13 @@ class HealthParser():
         """
         if len(p) > 2:
             try:
-                p[0] = select_keys(data=self.health_input_data, select_keys=p[2],
-                                   select_from_keys=p[3], ignore_keys=p[4], save_param=p[5])
+                p[0] = select_keys(
+                    data=self.health_input_data,
+                    select_keys=p[2],
+                    select_from_keys=p[3],
+                    ignore_keys=p[4],
+                    save_param=p[5],
+                )
             except Exception as e:
                 p[0] = e
         else:
@@ -791,13 +858,19 @@ class HealthParser():
     def p_error(self, p):
         if p:
             raise SyntaxException(
-                "Syntax error at position %d : %s" % ((p.lexpos), str(p)))
+                "Syntax error at position %d : %s" % ((p.lexpos), str(p))
+            )
         else:
             raise SyntaxException("Syntax error : Insufficient tokens")
 
     def build(self, **kwargs):
         self.parser = yacc.yacc(
-            module=self, debug=False, write_tables=False, errorlog=yacc.NullLogger(), **kwargs)
+            module=self,
+            debug=False,
+            write_tables=False,
+            errorlog=yacc.NullLogger(),
+            **kwargs
+        )
         self.lexer = HealthLexer().build()
         return self.parser
 

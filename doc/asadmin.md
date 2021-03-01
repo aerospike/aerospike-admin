@@ -103,6 +103,12 @@
 - Show help
 
 ## Developer Guide
+Style Guide:
+   To make things simple we are using "Black" a no hassle formatter https://black.readthedocs.io/en/stable/.
+   Install it and you can either run Black manually on all files using `black test lib asadm.py` before
+   committing or set it to format on save using your chosen code editor.
+
+
 Important files and structure:
 
 1. /asadmin.py

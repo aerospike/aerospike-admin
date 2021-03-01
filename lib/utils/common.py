@@ -424,13 +424,36 @@ def _compute_license_data_size(
         device_compression_ratio = 0.0
 
         for host_id, host_stats in ns_stats.items():
-            master_objects = util.get_value_from_dict(host_stats, ("master_objects", "master-objects"), default_value=0,
-                                                     return_type=int)
-            replica_objects = util.get_value_from_dict(host_stats, ("prole_objects", "prole-objects", "replica_objects",
-                                                                    "replica-objects"), default_value=0, return_type=int)
-            devices_in_use = util.get_values_from_dict(host_stats, ("^storage-engine.device$", "^device$", "^storage-engine.file$",
-                                                        "^file$", "^dev$", "^storage-engine.device\[[0-9]+\]$", "^storage-engine.file\[[0-9]+\]$")
-                                                       , return_type=str)
+            master_objects = util.get_value_from_dict(
+                host_stats,
+                ("master_objects", "master-objects"),
+                default_value=0,
+                return_type=int,
+            )
+            replica_objects = util.get_value_from_dict(
+                host_stats,
+                (
+                    "prole_objects",
+                    "prole-objects",
+                    "replica_objects",
+                    "replica-objects",
+                ),
+                default_value=0,
+                return_type=int,
+            )
+            devices_in_use = util.get_values_from_dict(
+                host_stats,
+                (
+                    "^storage-engine.device$",
+                    "^device$",
+                    "^storage-engine.file$",
+                    "^file$",
+                    "^dev$",
+                    "^storage-engine.device\[[0-9]+\]$",
+                    "^storage-engine.file\[[0-9]+\]$",
+                ),
+                return_type=str,
+            )
             total_objects = master_objects + replica_objects
 
             if not devices_in_use:
@@ -442,7 +465,9 @@ def _compute_license_data_size(
                     return_type=int,
                 )
                 if total_objects > 0:
-                    memory_data_size = (memory_data_size // total_objects) * master_objects
+                    memory_data_size = (
+                        memory_data_size // total_objects
+                    ) * master_objects
                 else:
                     memory_data_size = 0
 
@@ -491,7 +516,9 @@ def _compute_license_data_size(
                     device_data_size = device_data_size - tombstone_overhead
 
                 if total_objects > 0:
-                    device_data_size = (device_data_size // total_objects) * master_objects
+                    device_data_size = (
+                        device_data_size // total_objects
+                    ) * master_objects
                 else:
                     device_data_size = 0
 
@@ -710,8 +737,15 @@ def create_summary(
             return_type=str,
         )
 
-        device_counts = dict([(k, sum(len(i.split(",")) for i in v) if v else 0) for k, v in device_name_list.items()])
-        cl_nodewise_device_counts = util.add_dicts(cl_nodewise_device_counts, device_counts)
+        device_counts = dict(
+            [
+                (k, sum(len(i.split(",")) for i in v) if v else 0)
+                for k, v in device_name_list.items()
+            ]
+        )
+        cl_nodewise_device_counts = util.add_dicts(
+            cl_nodewise_device_counts, device_counts
+        )
         ns_total_devices = sum(device_counts.values())
         ns_total_nodes = len(ns_stats.keys())
 
@@ -821,8 +855,9 @@ def create_summary(
             )
             if cache_read_pcts:
                 try:
-                    summary_dict["FEATURES"]["NAMESPACE"][ns]["cache_read_pct"] = sum(cache_read_pcts) // len(
-                        cache_read_pcts)
+                    summary_dict["FEATURES"]["NAMESPACE"][ns]["cache_read_pct"] = sum(
+                        cache_read_pcts
+                    ) // len(cache_read_pcts)
                 except Exception:
                     pass
         master_objects = sum(
@@ -1148,8 +1183,8 @@ def _restructure_new_log_histogram(histogram_data):
                 continue
 
             for k in columns:
-                if k not in host_data['values'].keys():
-                    host_data['values'][k] = 0
+                if k not in host_data["values"].keys():
+                    host_data["values"][k] = 0
 
         ns_data["columns"] = sorted(columns, key=_string_to_bytes)
 
@@ -1160,7 +1195,7 @@ def _parse_old_histogram(histogram, histogram_data):
     datum = histogram_data.split(",")
     datum.pop(0)  # don't care about ns, hist_name, or length
     width = int(datum.pop(0))
-    datum[-1] = datum[-1].split(';')[0]
+    datum[-1] = datum[-1].split(";")[0]
     datum = [int(data) for data in datum]
     return {"histogram": histogram, "width": width, "data": datum}
 
@@ -1188,7 +1223,7 @@ def _parse_new_linear_histogram(histogram, histogram_data):
 
     if result:
         buckets = result["data"]
-        buckets = buckets.split(',')
+        buckets = buckets.split(",")
         result["data"] = [int(bucket) for bucket in buckets]
         result["width"] = int(result["width"])
         result["histogram"] = histogram
@@ -1343,10 +1378,12 @@ def is_new_latencies_version(version):
 
 ########## System Collectinfo ##########
 
+
 def _create_fail_string(cloud_provider):
     return "\nCould not determine if node is in {0}, check lsb_release, kernel name and dmesg manually".format(
         cloud_provider
     )
+
 
 def _get_aws_metadata(response_str, prefix="", old_response=""):
     aws_c = ""
@@ -1368,7 +1405,7 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
             req = urllib.request.Request(meta_url)
             r = urllib.request.urlopen(req)
             if r.code != 404:
-                response = r.read().strip().decode('utf-8')
+                response = r.read().strip().decode("utf-8")
                 if response == old_response:
                     last_values.append(rsp.strip())
                     continue
@@ -1390,7 +1427,7 @@ def _check_cmds_for_str(cmds, strings):
     for cmd in cmds:
         try:
             output, _ = util.shell_command([cmd])
-            
+
             for string in strings:
                 if string in output:
                     return True
@@ -1406,37 +1443,37 @@ def _collect_aws_data(cmd=""):
     aws_timeout = 1
     socket.setdefaulttimeout(aws_timeout)
     aws_metadata_base_url = "http://169.254.169.254/latest/meta-data"
-    cloud_provider = 'AWS'
+    cloud_provider = "AWS"
     out = "['" + cloud_provider + "']"
-    grep_for = 'Amazon'
+    grep_for = "Amazon"
     extra_cmds_to_check = [
-        'lsb_release -a',
-        'ls /etc|grep release|xargs -I f cat /etc/f'
+        "lsb_release -a",
+        "ls /etc|grep release|xargs -I f cat /etc/f",
     ]
     try:
-        out += '\nRequesting . . . {0}'.format(aws_metadata_base_url)
+        out += "\nRequesting . . . {0}".format(aws_metadata_base_url)
         req = urllib.request.Request(aws_metadata_base_url)
         r = urllib.request.urlopen(req)
         if r.code == 200:
-            rsp = r.read().decode('utf-8')
+            rsp = r.read().decode("utf-8")
             aws_rsp += _get_aws_metadata(rsp, "/")
             out += "\nSuccess! Resp: {0}".format(aws_rsp)
         else:
-            out += '\nFailed! Response Code: {0}'.format(r.code)
+            out += "\nFailed! Response Code: {0}".format(r.code)
             out += "\nChecking {0} for '{1}'".format(extra_cmds_to_check, grep_for)
             if _check_cmds_for_str(extra_cmds_to_check, [grep_for]):
-                out += '\nSuccess!'
+                out += "\nSuccess!"
             else:
                 out += "\nFailed!"
                 out += _create_fail_string(cloud_provider)
 
     except Exception as e:
         out += "\nFailed! Exception: {0}".format(e)
-        out += '\nChecking [{0}] for {1}'.format(extra_cmds_to_check, grep_for)
+        out += "\nChecking [{0}] for {1}".format(extra_cmds_to_check, grep_for)
         if _check_cmds_for_str(extra_cmds_to_check, [grep_for]):
-            out += '\nSuccess!'
+            out += "\nSuccess!"
         else:
-            out += '\nFailed!'
+            out += "\nFailed!"
             out += _create_fail_string(cloud_provider)
 
     return out, None
@@ -1444,9 +1481,7 @@ def _collect_aws_data(cmd=""):
 
 def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
     res_str = ""
-    gce_metadata_base_url = (
-        "http://169.254.169.254/computeMetadata/v1/instance"
-    )
+    gce_metadata_base_url = "http://169.254.169.254/computeMetadata/v1/instance"
 
     for rsp in response_str.split("\n"):
         rsp = rsp.strip()
@@ -1454,7 +1489,7 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
             continue
 
         urls_to_join = [gce_metadata_base_url, prefix, rsp]
-        meta_url = '/'.join(urls_to_join)
+        meta_url = "/".join(urls_to_join)
 
         try:
             req = urllib.request.Request(
@@ -1463,7 +1498,7 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
             r = urllib.request.urlopen(req)
 
             if r.code != 404:
-                response = r.read().strip().decode('utf-8')
+                response = r.read().strip().decode("utf-8")
 
                 if rsp[-1:] == "/":
                     res_str += _get_gce_metadata(
@@ -1480,26 +1515,24 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
 def _collect_gce_data(cmd=""):
     gce_timeout = 1
     socket.setdefaulttimeout(gce_timeout)
-    gce_metadata_base_url = (
-        "http://169.254.169.254/computeMetadata/v1/instance"
-    )
-    cloud_provider = 'GCE'
+    gce_metadata_base_url = "http://169.254.169.254/computeMetadata/v1/instance"
+    cloud_provider = "GCE"
     out = "['" + cloud_provider + "']"
     fields_to_ignore = ["attributes/"]
 
     try:
-        out += '\nRequesting . . . {0}'.format(gce_metadata_base_url)
+        out += "\nRequesting . . . {0}".format(gce_metadata_base_url)
         req = urllib.request.Request(
             gce_metadata_base_url, headers={"Metadata-Flavor": "Google"}
         )
         r = urllib.request.urlopen(req)
 
         if r.code == 200:
-            rsp = r.read().decode('utf-8')
+            rsp = r.read().decode("utf-8")
             gce_rsp = _get_gce_metadata(rsp, fields_to_ignore=fields_to_ignore)
             out += "\nSuccess! Resp: {0}".format(gce_rsp)
         else:
-            out += '\nFailed! Resp Code: {0}'.format(r.code)
+            out += "\nFailed! Resp Code: {0}".format(r.code)
             out += _create_fail_string(cloud_provider)
 
     except Exception as e:
@@ -1515,11 +1548,11 @@ def _collect_azure_data(cmd=""):
     azure_metadata_base_url = (
         "http://169.254.169.254/metadata/instance?api-version=2017-04-02"
     )
-    cloud_provider = 'Azure'
+    cloud_provider = "Azure"
     out = "['" + cloud_provider + "']"
 
     try:
-        out += '\nRequesting . . . {0}'.format(azure_metadata_base_url)
+        out += "\nRequesting . . . {0}".format(azure_metadata_base_url)
         req = urllib.request.Request(
             azure_metadata_base_url, headers={"Metadata": "true"}
         )
@@ -1532,7 +1565,7 @@ def _collect_azure_data(cmd=""):
                 json.dumps(jsonObj, sort_keys=True, indent=4, separators=(",", ": "))
             )
         else:
-            out += '\nFailed! Response Code: {0}'.format(r.code)
+            out += "\nFailed! Response Code: {0}".format(r.code)
             out += _create_fail_string(cloud_provider)
 
     except Exception as e:
@@ -1778,7 +1811,7 @@ def _zip_files(dir_path, _size=1):
     for root, dirs, files in os.walk(dir_path):
         for _file in files:
             file_path = os.path.join(root, _file)
-            size_mb = (os.path.getsize(file_path) // (1024 * 1024))
+            size_mb = os.path.getsize(file_path) // (1024 * 1024)
             if size_mb >= _size:
                 os.chdir(root)
                 try:
@@ -2019,8 +2052,9 @@ def collect_sys_info(port=3000, timestamp="", outfile=""):
 
 ########################################
 
+
 def format_xdr5_configs(xdr_configs, for_mods=[]):
-    ''' Needed in both collectinfoanalyzer and basiccontroller.  This would not
+    """ Needed in both collectinfoanalyzer and basiccontroller.  This would not
     be needed if collectinfo could load this format but it cannot since the "node"
     is not the top level key
 
@@ -2097,58 +2131,65 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
             }
         }
     }
-    '''
+    """
     # Filter configs for data-center
     if for_mods:
         xdr_dc = for_mods[0]
 
         for config in xdr_configs.values():
-            
+
             # There is only one dc config per dc
             try:
-                dc_configs_matches = util.filter_list(config['dc_configs'], [xdr_dc])
+                dc_configs_matches = util.filter_list(config["dc_configs"], [xdr_dc])
             except KeyError:
                 dc_configs_matches = []
-            
+
             try:
-                ns_configs_matches = util.filter_list(config['ns_configs'], [xdr_dc])
+                ns_configs_matches = util.filter_list(config["ns_configs"], [xdr_dc])
             except KeyError:
                 ns_configs_matches = []
 
-            config['dc_configs'] = {dc: config['dc_configs'][dc] for dc in dc_configs_matches}
-            config['ns_configs'] = {dc: config['ns_configs'][dc] for dc in ns_configs_matches}
+            config["dc_configs"] = {
+                dc: config["dc_configs"][dc] for dc in dc_configs_matches
+            }
+            config["ns_configs"] = {
+                dc: config["ns_configs"][dc] for dc in ns_configs_matches
+            }
 
             # There can be multiple namespace configs per dc
             if len(for_mods) >= 2:
                 xdr_ns = for_mods[1]
-                for dc in config['ns_configs']:
+                for dc in config["ns_configs"]:
                     try:
-                        ns_matches = util.filter_list(config['ns_configs'][dc], [xdr_ns])
+                        ns_matches = util.filter_list(
+                            config["ns_configs"][dc], [xdr_ns]
+                        )
                     except KeyError:
                         ns_matches = []
 
-                    config['ns_configs'][dc] = {ns: config['ns_configs'][dc][ns] for ns in ns_matches}
-
+                    config["ns_configs"][dc] = {
+                        ns: config["ns_configs"][dc][ns] for ns in ns_matches
+                    }
 
     formatted_xdr_configs = {}
-    
+
     try:
         for node in xdr_configs:
-            formatted_xdr_configs[node] = xdr_configs[node]['xdr_configs']
+            formatted_xdr_configs[node] = xdr_configs[node]["xdr_configs"]
 
         formatted_dc_configs = {}
 
         for node in xdr_configs:
-            for dc in xdr_configs[node]['dc_configs']:
+            for dc in xdr_configs[node]["dc_configs"]:
                 if dc not in formatted_dc_configs:
                     formatted_dc_configs[dc] = {}
 
-                formatted_dc_configs[dc][node] = xdr_configs[node]['dc_configs'][dc]
+                formatted_dc_configs[dc][node] = xdr_configs[node]["dc_configs"][dc]
 
         formatted_ns_configs = {}
 
         for node in xdr_configs:
-            for dc in xdr_configs[node]['ns_configs']:
+            for dc in xdr_configs[node]["ns_configs"]:
 
                 if dc not in formatted_ns_configs:
                     formatted_ns_configs[dc] = {}
@@ -2156,18 +2197,20 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
                 if node not in formatted_ns_configs[dc]:
                     formatted_ns_configs[dc][node] = {}
 
-                for ns in xdr_configs[node]['ns_configs'][dc]:
-                    formatted_ns_configs[dc][node][ns] = xdr_configs[node]['ns_configs'][dc][ns]
-    
+                for ns in xdr_configs[node]["ns_configs"][dc]:
+                    formatted_ns_configs[dc][node][ns] = xdr_configs[node][
+                        "ns_configs"
+                    ][dc][ns]
+
     # A Key error is possible if the incomming data has the wrong schema.
     # This can happen on asadm < 1.0.2 on server >= 5.0
     except KeyError:
         return {}
 
     formatted_configs = {
-        'xdr_configs': formatted_xdr_configs,
-        'dc_configs': formatted_dc_configs,
-        'ns_configs': formatted_ns_configs,
+        "xdr_configs": formatted_xdr_configs,
+        "dc_configs": formatted_dc_configs,
+        "ns_configs": formatted_ns_configs,
     }
 
     return formatted_configs

@@ -12,31 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#------------------------------------------------
+# ------------------------------------------------
 # Check line contains strings from strs in given order.
 #
 def contains_substrings_in_order(line="", strs=[]):
-	if not strs:
-		return True
+    if not strs:
+        return True
 
-	if not line:
-		return False
+    if not line:
+        return False
 
-	s_str = strs[0]
-	if not s_str:
-		return True
+    s_str = strs[0]
+    if not s_str:
+        return True
 
-	if s_str in line:
-		try:
-			main_str = line.split(s_str, 1)[1]
+    if s_str in line:
+        try:
+            main_str = line.split(s_str, 1)[1]
 
-		except Exception:
-			main_str = ""
+        except Exception:
+            main_str = ""
 
-		if len(strs) <= 1:
-			return True
+        if len(strs) <= 1:
+            return True
 
-		return contains_substrings_in_order(main_str, strs[1:])
+        return contains_substrings_in_order(main_str, strs[1:])
 
-	else:
-		return False
+    else:
+        return False

@@ -27,7 +27,7 @@ try:
     def _get_terminal_size(fd):
         handle = windll.kernel32.GetStdHandle(_handle_ids[fd])
         if handle == 0:
-            raise OSError('handle cannot be retrieved')
+            raise OSError("handle cannot be retrieved")
         if handle == -1:
             raise WinError()
         csbi = create_string_buffer(22)
@@ -40,6 +40,7 @@ try:
             return terminal_size(columns, lines)
         else:
             raise WinError()
+
 
 except ImportError:
     import fcntl
@@ -98,4 +99,3 @@ def get_terminal_size(fallback=(160, 48)):
             lines = size.lines
 
     return terminal_size(columns, lines)
-

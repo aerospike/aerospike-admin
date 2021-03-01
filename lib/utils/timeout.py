@@ -21,11 +21,11 @@ DEFAULT_TIMEOUT = 5.0
 class TimeoutException(Exception):
 
     """A timeout has occurred."""
+
     pass
 
 
-class call_with_timeout():
-
+class call_with_timeout:
     def __init__(self, function, timeout=DEFAULT_TIMEOUT):
         self.timeout = timeout
         self.function = function
@@ -49,8 +49,10 @@ class call_with_timeout():
 
 def timeout(timeout):
     """This decorator takes a timeout parameter in seconds."""
+
     def wrap_function(function):
         return call_with_timeout(function, timeout)
+
     return wrap_function
 
 

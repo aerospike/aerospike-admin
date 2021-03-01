@@ -24,33 +24,53 @@ def check_time(val, date_string, segment, index=""):
     try:
         if segment == DATE_SEG:
             if val.__contains__("-"):
-                for v in range(
-                        int(val.split("-")[0]), int(val.split("-")[1]) + 1):
-                    if int(date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[index]) == v:
+                for v in range(int(val.split("-")[0]), int(val.split("-")[1]) + 1):
+                    if (
+                        int(
+                            date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[
+                                index
+                            ]
+                        )
+                        == v
+                    ):
                         return True
 
             elif val.__contains__(","):
                 for v in val.split(","):
-                    if int(date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[index]) == int(v):
+                    if int(
+                        date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[index]
+                    ) == int(v):
                         return True
 
             else:
-                if int(date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[index]) == int(val):
+                if int(
+                    date_string.split(" ")[DATE_SEG].split(DATE_SEPARATOR)[index]
+                ) == int(val):
                     return True
         elif segment == TIME_SEG:
             if val.__contains__("-"):
-                for v in range(
-                        int(val.split("-")[0]), int(val.split("-")[1]) + 1):
-                    if int(date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]) == v:
+                for v in range(int(val.split("-")[0]), int(val.split("-")[1]) + 1):
+                    if (
+                        int(
+                            date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[
+                                index
+                            ]
+                        )
+                        == v
+                    ):
                         return True
 
             elif val.__contains__(","):
                 for v in val.split(","):
-                    if int(date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]) == int(v):
+                    if int(
+                        date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]
+                    ) == int(v):
                         return True
 
             else:
-                if int(date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]) == int(val):
+                if int(
+                    date_string.split(" ")[TIME_SEG].split(TIME_SEPARATOR)[index]
+                ) == int(val):
                     return True
     except Exception:
         pass
@@ -60,8 +80,9 @@ def check_time(val, date_string, segment, index=""):
 
 def get_dirs(path=""):
     try:
-        return [name for name in os.listdir(path)
-                if os.path.isdir(os.path.join(path, name))]
+        return [
+            name for name in os.listdir(path) if os.path.isdir(os.path.join(path, name))
+        ]
     except Exception:
         return []
 

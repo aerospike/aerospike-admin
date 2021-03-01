@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-class Errors():
+
+class Errors:
     errors = {
         "HEALTH_ERROR1": "System Has Low Memory Pct",
         "HEALTH_ERROR2": "System Has Low Memory Pct",
@@ -22,7 +23,6 @@ class Errors():
         "HEALTH_ERROR6": "Namespace Possible misconfiguration",
         "HEALTH_ERROR7": "Namespace Anamolistic Pattern",
         "HEALTH_ERROR8": "Set Delete in progress",
-
     }
 
     @staticmethod

@@ -35,19 +35,26 @@ class ColumnRSheet(BaseRSheetCLI):
             n_title_lines = max(rfield.n_title_lines for rfield in rfields)
         except ValueError:
             # Sheet is empty.
-            return ''
+            return ""
 
         # Render field titles.
         if self.title_repeat:
             title_field_keys = self.decleration.title_field_keys
-            title_rfields = [rfield for rfield in rfields
-                             if rfield.decleration.key in title_field_keys]
-            other_rfields = (rfield for rfield in rfields
-                             if rfield.decleration.key not in title_field_keys)
+            title_rfields = [
+                rfield
+                for rfield in rfields
+                if rfield.decleration.key in title_field_keys
+            ]
+            other_rfields = (
+                rfield
+                for rfield in rfields
+                if rfield.decleration.key not in title_field_keys
+            )
             terminal_width = self.terminal_size.columns
             repeated_rfields = []
-            title_incr = sum(rfield.width for rfield in title_rfields) + \
-                (len(title_rfields) - 1 * len(self.decleration.vertical_separator))
+            title_incr = sum(rfield.width for rfield in title_rfields) + (
+                len(title_rfields) - 1 * len(self.decleration.vertical_separator)
+            )
             cur_pos = title_incr
             need_column = True
             repeated_rfields = []
@@ -68,7 +75,8 @@ class ColumnRSheet(BaseRSheetCLI):
             rfields = repeated_rfields
 
         title_width = sum(rfield.width for rfield in rfields) + (
-            len(rfields) - 1) * len(self.decleration.vertical_separator)
+            len(rfields) - 1
+        ) * len(self.decleration.vertical_separator)
         render = []
 
         self._do_render_title(render, title_width)
@@ -76,9 +84,11 @@ class ColumnRSheet(BaseRSheetCLI):
 
         # Render fields.
         title_lines = [
-            self.decleration.formatted_vertical_separator.join(rfield.get_title_line(line_num)
-                                               for rfield in rfields)
-            for line_num in range(n_title_lines)]
+            self.decleration.formatted_vertical_separator.join(
+                rfield.get_title_line(line_num) for rfield in rfields
+            )
+            for line_num in range(n_title_lines)
+        ]
         num_groups = 0 if not rfields else rfields[0].n_groups
         has_aggregates = any(rfield.has_aggregate() for rfield in rfields)
         terminal_height = self.terminal_size.lines
@@ -91,13 +101,15 @@ class ColumnRSheet(BaseRSheetCLI):
             num_entries = rfields[0].n_entries_in_group(group_ix)
 
             for entry_ix in range(num_entries):
-                if self.title_repeat and num_lines != 0 and \
-                   num_lines % repeats_every == 0:
+                if (
+                    self.title_repeat
+                    and num_lines != 0
+                    and num_lines % repeats_every == 0
+                ):
                     render.extend(title_lines)
 
                 num_lines += 1
-                row = [rfield.entry_cell(group_ix, entry_ix)
-                       for rfield in rfields]
+                row = [rfield.entry_cell(group_ix, entry_ix) for rfield in rfields]
                 render.append(self.decleration.formatted_vertical_separator.join(row))
 
             if has_aggregates:
@@ -132,14 +144,18 @@ class RSubgroupColumn(BaseRSubgroup):
     def _do_prepare_find_width(self):
         sub_fields_width = sum(sub.width for sub in self.visible)
         separators_width = len(self.rsheet.decleration.vertical_separator) * (
-            len(self.visible) - 1)
-        min_width = max(map(len, self.decleration.title.split(' ')))
+            len(self.visible) - 1
+        )
+        min_width = max(map(len, self.decleration.title.split(" ")))
 
-        self.width = max((
-            # Visible subfield width with separators.
-            sub_fields_width + separators_width,
-            # Min group title width.
-            min_width))
+        self.width = max(
+            (
+                # Visible subfield width with separators.
+                sub_fields_width + separators_width,
+                # Min group title width.
+                min_width,
+            )
+        )
 
         self._do_prepare_title()
 
@@ -176,7 +192,7 @@ class RSubgroupColumn(BaseRSubgroup):
             self.n_title_lines = 1
             return
 
-        words = self.decleration.title.split(' ')
+        words = self.decleration.title.split(" ")
         lines = []
         line = [words[0]]
         cur_len = len(line[0])
@@ -186,18 +202,19 @@ class RSubgroupColumn(BaseRSubgroup):
                 line.append(word)
                 cur_len += len(word) + 1  # add one for a space
             else:
-                lines.append(' '.join(line))
+                lines.append(" ".join(line))
                 cur_len = len(word)
                 line = [word]
 
         if line:
-            lines.append(' '.join(line))
+            lines.append(" ".join(line))
 
         self.title_lines = lines
 
     def _do_prepare_count_title_lines(self):
-        self.n_title_lines = max(
-            sub.n_title_lines for sub in self.visible) + len(self.title_lines)
+        self.n_title_lines = max(sub.n_title_lines for sub in self.visible) + len(
+            self.title_lines
+        )
 
     def get_title_line(self, line_num):
         try:
@@ -205,7 +222,8 @@ class RSubgroupColumn(BaseRSubgroup):
         except IndexError:
             sub_line = line_num - len(self.title_lines)
             line = self.rsheet.decleration.formatted_vertical_separator.join(
-                sub.get_title_line(sub_line) for sub in self.visible)
+                sub.get_title_line(sub_line) for sub in self.visible
+            )
 
             return line
 
@@ -214,11 +232,13 @@ class RSubgroupColumn(BaseRSubgroup):
 
     def entry_cell(self, group_ix, entry_ix):
         return self.rsheet.decleration.formatted_vertical_separator.join(
-            sub.entry_cell(group_ix, entry_ix) for sub in self.visible)
+            sub.entry_cell(group_ix, entry_ix) for sub in self.visible
+        )
 
     def aggregate_cell(self, group_ix):
         return self.rsheet.decleration.formatted_vertical_separator.join(
-            sub.aggregate_cell(group_ix) for sub in self.visible)
+            sub.aggregate_cell(group_ix) for sub in self.visible
+        )
 
 
 class RFieldColumn(BaseRField):
@@ -237,13 +257,18 @@ class RFieldColumn(BaseRField):
     # Other methods.
 
     def _do_prepare_find_width(self):
-        self.width = max((
-            # maximum entry width.
-            max(max(map(len, group_converted))
-                for group_converted in self.groups_converted),
-            # maximum aggregate width.
-            max(map(len, self.aggregates_converted)),
-            self.decleration.min_title_width))
+        self.width = max(
+            (
+                # maximum entry width.
+                max(
+                    max(map(len, group_converted))
+                    for group_converted in self.groups_converted
+                ),
+                # maximum aggregate width.
+                max(map(len, self.aggregates_converted)),
+                self.decleration.min_title_width,
+            )
+        )
 
     def ready(self):
         """ready is called after prepare or after a parent has prepared all
@@ -267,12 +292,12 @@ class RFieldColumn(BaseRField):
                 line.append(word)
                 cur_len += len(word) + 1  # add one for a space
             else:
-                lines.append(' '.join(line))
+                lines.append(" ".join(line))
                 cur_len = len(word)
                 line = [word]
 
         if line:
-            lines.append(' '.join(line))
+            lines.append(" ".join(line))
 
         self.title_lines = lines
         self.n_title_lines = len(lines)
@@ -294,10 +319,8 @@ class RFieldColumn(BaseRField):
         return terminal.bold() + line.rjust(width) + terminal.unbold()
 
     def entry_cell(self, group_ix, entry_ix):
-        cell = self._entry_cell_align(
-            self.groups_converted[group_ix][entry_ix])
-        format_name, formatter = self.entry_format(
-            group_ix, entry_ix)
+        cell = self._entry_cell_align(self.groups_converted[group_ix][entry_ix])
+        format_name, formatter = self.entry_format(group_ix, entry_ix)
 
         if formatter is not None:
             cell = formatter(cell)

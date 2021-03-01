@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 
-ADMIN_HOME = os.path.expanduser('~') + '/.aerospike/'
+ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 
 CONFIG_SERVICE = "service"
 CONFIG_NETWORK = "network"
@@ -66,38 +66,33 @@ class Enumeration(set):
             return name
         raise AttributeError
 
-AuthMode = Enumeration([
-    # Use internal authentication only.  Hashed password is stored on the server.
-	# Do not send clear password. This is the default.
 
-	"INTERNAL",
+AuthMode = Enumeration(
+    [
+        # Use internal authentication only.  Hashed password is stored on the server.
+        # Do not send clear password. This is the default.
+        "INTERNAL",
+        # Use external authentication (like LDAP).  Specific external authentication is
+        # configured on server.  If TLS defined, send clear password on node login via TLS.
+        # Throw exception if TLS is not defined.
+        "EXTERNAL",
+        # Use external authentication (like LDAP).  Specific external authentication is
+        # configured on server.  Send clear password on node login whether or not TLS is defined.
+        # This mode should only be used for testing purposes because it is not secure authentication.
+        "EXTERNAL_INSECURE",
+    ]
+)
 
-    # Use external authentication (like LDAP).  Specific external authentication is
-	# configured on server.  If TLS defined, send clear password on node login via TLS.
-	# Throw exception if TLS is not defined.
-
-	"EXTERNAL",
-
-    # Use external authentication (like LDAP).  Specific external authentication is
-	# configured on server.  Send clear password on node login whether or not TLS is defined.
-	# This mode should only be used for testing purposes because it is not secure authentication.
-
-	"EXTERNAL_INSECURE",
-])
-
-AdminMode = Enumeration([
-    # Connect to live cluster
-
-	"LIVE_CLUSTER",
-
-    # Analyse collectinfo
-
-	"COLLECTINFO_ANALYZER",
-
-    # Analyse Aerospike logs
-
-	"LOG_ANALYZER",
-])
+AdminMode = Enumeration(
+    [
+        # Connect to live cluster
+        "LIVE_CLUSTER",
+        # Analyse collectinfo
+        "COLLECTINFO_ANALYZER",
+        # Analyse Aerospike logs
+        "LOG_ANALYZER",
+    ]
+)
 
 
 # server versions with critical changes

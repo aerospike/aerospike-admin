@@ -42,6 +42,7 @@ SS = 2
 
 ######################
 
+
 class LogHandler(object):
     all_logs = {}
     selected_logs = {}
@@ -50,8 +51,8 @@ class LogHandler(object):
 
     def __init__(self, log_path):
         self.log_path = log_path
-        self.logger = logging.getLogger('asadm')
-        
+        self.logger = logging.getLogger("asadm")
+
         self.reader = LogReader()
 
         log_added, err = self.add_log_files_at_path(log_path)
@@ -62,14 +63,26 @@ class LogHandler(object):
             self.logger.info(err)
 
         fg_color_re = re.compile("^(fg_(.*))$")
-        self.fg_colors = [(
-                fg_color_re.match(v).groups()[1], getattr(
-                    terminal, fg_color_re.match(v).group(1))) for v in [x for x in dir(terminal) if fg_color_re.search(x) and "clear" not in x]]
+        self.fg_colors = [
+            (
+                fg_color_re.match(v).groups()[1],
+                getattr(terminal, fg_color_re.match(v).group(1)),
+            )
+            for v in [
+                x for x in dir(terminal) if fg_color_re.search(x) and "clear" not in x
+            ]
+        ]
 
         bg_color_re = re.compile("^(bg_(.*))$")
-        self.bg_colors = [(
-                bg_color_re.match(v).groups()[1], getattr(
-                    terminal, bg_color_re.match(v).group(1))) for v in [x for x in dir(terminal) if bg_color_re.search(x) and "clear" not in x]]
+        self.bg_colors = [
+            (
+                bg_color_re.match(v).groups()[1],
+                getattr(terminal, bg_color_re.match(v).group(1)),
+            )
+            for v in [
+                x for x in dir(terminal) if bg_color_re.search(x) and "clear" not in x
+            ]
+        ]
 
     def __str__(self):
         return ""
@@ -95,7 +108,12 @@ class LogHandler(object):
             else:
                 return server_logs_added, err_str
         else:
-            return 0 ,"Incorrect log file path \'" + str(log_path) + "\' specified. Use add command to add log files."
+            return (
+                0,
+                "Incorrect log file path '"
+                + str(log_path)
+                + "' specified. Use add command to add log files.",
+            )
 
         return server_logs_added, ""
 
@@ -133,14 +151,14 @@ class LogHandler(object):
 
         return logs
 
-    def remove_logs_by_index(self, indices='all'):
+    def remove_logs_by_index(self, indices="all"):
 
         if not indices or not isinstance(indices, list):
             return
 
         log_names = sorted(self.all_logs.keys())
 
-        if indices == 'all' or 'all' in indices:
+        if indices == "all" or "all" in indices:
             indices = range(len(self.all_logs))
 
         for index in indices:
@@ -149,7 +167,9 @@ class LogHandler(object):
                 log = log_names[int(index) - 1]
 
                 if log in self.all_logs:
-                    self.logger.info("Removed Log File " + str(self.all_logs[log].file_name) + ".")
+                    self.logger.info(
+                        "Removed Log File " + str(self.all_logs[log].file_name) + "."
+                    )
                     self.all_logs[log].destroy()
                     del self.all_logs[log]
 
@@ -157,7 +177,10 @@ class LogHandler(object):
                     del self.selected_logs[log]
 
             except Exception as e:
-                self.logger.warning("Ignoring remove operation for index %s. Error: %s"%(str(index), str(e)))
+                self.logger.warning(
+                    "Ignoring remove operation for index %s. Error: %s"
+                    % (str(index), str(e))
+                )
                 continue
 
     def select_logs_by_index(self, indices="all"):
@@ -168,21 +191,32 @@ class LogHandler(object):
         selected_list = {}
 
         all_log_keys = sorted(all_list.keys())
-        if indices == 'all' or 'all' in indices:
+        if indices == "all" or "all" in indices:
             indices = range(len(all_log_keys))
 
         for index in indices:
             try:
-                selected_list[
-                    all_log_keys[int(index) - 1]] = all_list[all_log_keys[int(index) - 1]]
+                selected_list[all_log_keys[int(index) - 1]] = all_list[
+                    all_log_keys[int(index) - 1]
+                ]
             except Exception:
                 continue
 
         self.selected_logs = selected_list
 
-    def grep(self, logs, search_strs, ignore_strs=[], is_and=False,
-             is_casesensitive=True, start_tm_arg="head", duration_arg="",
-             uniq=False, output_page_size=10, system_grep=False):
+    def grep(
+        self,
+        logs,
+        search_strs,
+        ignore_strs=[],
+        is_and=False,
+        is_casesensitive=True,
+        start_tm_arg="head",
+        duration_arg="",
+        uniq=False,
+        output_page_size=10,
+        system_grep=False,
+    ):
         """
         Function takes a server log logs, search strings, enable casesensitive, start time, duration, enable uniq,
         slice_duratiion, output page size
@@ -195,19 +229,25 @@ class LogHandler(object):
             return
 
         show_itrs = {}
-        min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg)
-                           for s in logs)
+        min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg) for s in logs)
 
         for log in logs:
-            log.set_input(search_strs=search_strs, ignore_strs=ignore_strs,
-                          is_and=is_and, is_casesensitive=is_casesensitive,
-                          start_tm=min_start_tm, duration=duration_arg,
-                          system_grep=system_grep, uniq=uniq)
+            log.set_input(
+                search_strs=search_strs,
+                ignore_strs=ignore_strs,
+                is_and=is_and,
+                is_casesensitive=is_casesensitive,
+                start_tm=min_start_tm,
+                duration=duration_arg,
+                system_grep=system_grep,
+                uniq=uniq,
+            )
 
             show_itrs[log.display_name] = log.show_iterator()
 
-        merger = self._server_log_output_merger(show_itrs, return_strings=True,
-                                                output_page_size=output_page_size)
+        merger = self._server_log_output_merger(
+            show_itrs, return_strings=True, output_page_size=output_page_size
+        )
 
         for val in merger:
             yield val
@@ -217,10 +257,20 @@ class LogHandler(object):
 
         merger.close()
 
-    def grep_count(self, logs, search_strs, ignore_strs=[], is_and=False,
-                   is_casesensitive=True, start_tm_arg="head", duration_arg="",
-                   uniq=False, slice_duration="600", output_page_size=10,
-                   system_grep=False):
+    def grep_count(
+        self,
+        logs,
+        search_strs,
+        ignore_strs=[],
+        is_and=False,
+        is_casesensitive=True,
+        start_tm_arg="head",
+        duration_arg="",
+        uniq=False,
+        slice_duration="600",
+        output_page_size=10,
+        system_grep=False,
+    ):
         """
         Function takes a server log logs, search strings, enable casesensitive, start time, duration, enable uniq,
         slice_duratiion, output page size
@@ -235,21 +285,26 @@ class LogHandler(object):
 
             try:
                 count_itrs = {}
-                min_start_tm = min(
-                    s.get_start_tm(start_tm=start_tm_arg) for s in logs)
+                min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg) for s in logs)
 
                 for log in logs:
-                    log.set_input(search_strs=search_strs,
-                                  ignore_strs=ignore_strs, is_and=is_and,
-                                  is_casesensitive=is_casesensitive,
-                                  start_tm=min_start_tm, duration=duration_arg,
-                                  slice_duration=slice_duration,
-                                  uniq=uniq, system_grep=system_grep)
+                    log.set_input(
+                        search_strs=search_strs,
+                        ignore_strs=ignore_strs,
+                        is_and=is_and,
+                        is_casesensitive=is_casesensitive,
+                        start_tm=min_start_tm,
+                        duration=duration_arg,
+                        slice_duration=slice_duration,
+                        uniq=uniq,
+                        system_grep=system_grep,
+                    )
 
                     count_itrs[log.display_name] = log.count_iterator()
 
-                merger = self._server_log_output_merger(count_itrs,
-                                                        output_page_size=output_page_size, default_value=0)
+                merger = self._server_log_output_merger(
+                    count_itrs, output_page_size=output_page_size, default_value=0
+                )
 
                 for val in merger:
                     yield val
@@ -265,9 +320,18 @@ class LogHandler(object):
         except Exception:
             pass
 
-    def grep_diff(self, logs, search_strs, is_casesensitive=True,
-                  start_tm_arg="head", duration_arg="", slice_duration="600",
-                  every_nth_slice=1, upper_limit_check="", output_page_size=10):
+    def grep_diff(
+        self,
+        logs,
+        search_strs,
+        is_casesensitive=True,
+        start_tm_arg="head",
+        duration_arg="",
+        slice_duration="600",
+        every_nth_slice=1,
+        upper_limit_check="",
+        output_page_size=10,
+    ):
         """
         Function takes a serverlog logs, search strings, enable casesensitive, start time, duration, slice_duratiion, nth_slice to show,
         output page size
@@ -281,21 +345,25 @@ class LogHandler(object):
                 return
 
             diff_itrs = {}
-            min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg)
-                               for s in logs)
+            min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg) for s in logs)
 
             for log in logs:
-                log.set_input(search_strs=search_strs,
-                              is_casesensitive=is_casesensitive, is_and=True,
-                              start_tm=min_start_tm, duration=duration_arg,
-                              slice_duration=slice_duration,
-                              upper_limit_check=upper_limit_check,
-                              every_nth_slice=every_nth_slice)
+                log.set_input(
+                    search_strs=search_strs,
+                    is_casesensitive=is_casesensitive,
+                    is_and=True,
+                    start_tm=min_start_tm,
+                    duration=duration_arg,
+                    slice_duration=slice_duration,
+                    upper_limit_check=upper_limit_check,
+                    every_nth_slice=every_nth_slice,
+                )
 
                 diff_itrs[log.display_name] = log.diff_iterator()
 
-            merger = self._server_log_output_merger(diff_itrs,
-                                                    output_page_size=output_page_size)
+            merger = self._server_log_output_merger(
+                diff_itrs, output_page_size=output_page_size
+            )
 
             for val in merger:
                 yield val
@@ -308,9 +376,20 @@ class LogHandler(object):
         except Exception:
             pass
 
-    def loglatency(self, logs, hist, start_tm_arg="head", duration_arg="",
-                   slice_duration="10", bucket_count=3, every_nth_bucket=1,
-                   rounding_time=True, output_page_size=10, ns=None, show_relative_stats=False):
+    def loglatency(
+        self,
+        logs,
+        hist,
+        start_tm_arg="head",
+        duration_arg="",
+        slice_duration="10",
+        bucket_count=3,
+        every_nth_bucket=1,
+        rounding_time=True,
+        output_page_size=10,
+        ns=None,
+        show_relative_stats=False,
+    ):
         """
         Function takes a serverlog logs, histogram, start time, duration, slice_duratiion, number of buckets, nth_bucket to show, rounding_time,
         output page size, namespace name
@@ -324,20 +403,27 @@ class LogHandler(object):
                 return
 
             latency_itrs = {}
-            min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg)
-                               for s in logs)
-                               
+            min_start_tm = min(s.get_start_tm(start_tm=start_tm_arg) for s in logs)
+
             for log in logs:
-                log.set_input(search_strs=hist, start_tm=min_start_tm,
-                              duration=duration_arg, slice_duration=slice_duration,
-                              bucket_count=bucket_count,
-                              every_nth_bucket=every_nth_bucket, read_all_lines=True,
-                              rounding_time=rounding_time, ns=ns, show_relative_stats=show_relative_stats)
+                log.set_input(
+                    search_strs=hist,
+                    start_tm=min_start_tm,
+                    duration=duration_arg,
+                    slice_duration=slice_duration,
+                    bucket_count=bucket_count,
+                    every_nth_bucket=every_nth_bucket,
+                    read_all_lines=True,
+                    rounding_time=rounding_time,
+                    ns=ns,
+                    show_relative_stats=show_relative_stats,
+                )
 
                 latency_itrs[log.display_name] = log.latency_iterator()
 
-            merger = self._server_log_output_merger(latency_itrs,
-                                                    output_page_size=output_page_size)
+            merger = self._server_log_output_merger(
+                latency_itrs, output_page_size=output_page_size
+            )
 
             for val in merger:
                 yield val
@@ -349,7 +435,6 @@ class LogHandler(object):
 
         except Exception:
             pass
-
 
     def _get_valid_log_files(self, log_path=""):
 
@@ -393,7 +478,6 @@ class LogHandler(object):
         self.selected_logs[file_key] = log
         return True, ""
 
-
     def _get_diff_fg_bg_color(self, old_fg_index, old_bg_index):
         new_fg_index = old_fg_index + 1
         new_bg_index = old_bg_index
@@ -401,7 +485,7 @@ class LogHandler(object):
             new_fg_index = 0
             new_bg_index = (new_bg_index + 1) % len(self.bg_colors)
 
-        while(self.bg_colors[new_bg_index][0] == self.fg_colors[new_fg_index][0]):
+        while self.bg_colors[new_bg_index][0] == self.fg_colors[new_fg_index][0]:
             new_fg_index += 1
             if new_fg_index >= len(self.fg_colors):
                 new_fg_index = 0
@@ -420,9 +504,14 @@ class LogHandler(object):
 
         return colors
 
-
-    def _server_log_output_merger(self, file_streams, output_page_size=3,
-                                  return_strings=False, end_key=END_ROW_KEY, default_value=[]):
+    def _server_log_output_merger(
+        self,
+        file_streams,
+        output_page_size=3,
+        return_strings=False,
+        end_key=END_ROW_KEY,
+        default_value=[],
+    ):
         latency_end = {}
         result = {}
         merge_result = {}
@@ -464,7 +553,10 @@ class LogHandler(object):
             need_to_process = False
             try:
                 min_keys = [
-                    k for k, x in tm_keys.items() if not any(y < x for y in tm_keys.values())]
+                    k
+                    for k, x in tm_keys.items()
+                    if not any(y < x for y in tm_keys.values())
+                ]
             except Exception:
                 break
 
@@ -477,22 +569,31 @@ class LogHandler(object):
                     if return_strings:
                         try:
                             merge_result[SHOW_RESULT_KEY] += "%s  %s%s::" % (
-                                    self.bg_colors[colors[(
-                                        list(file_streams.keys()).index(file_key))][0]][1](),
-                                    terminal.reset(), file_key)
+                                self.bg_colors[
+                                    colors[(list(file_streams.keys()).index(file_key))][
+                                        0
+                                    ]
+                                ][1](),
+                                terminal.reset(),
+                                file_key,
+                            )
                         except Exception:
-                            merge_result[SHOW_RESULT_KEY] = "%s  %s%s::" %(
-                                    self.bg_colors[colors[(
-                                        list(file_streams.keys()).index(file_key))][0]][1](),
-                                    terminal.reset(), file_key)
+                            merge_result[SHOW_RESULT_KEY] = "%s  %s%s::" % (
+                                self.bg_colors[
+                                    colors[(list(file_streams.keys()).index(file_key))][
+                                        0
+                                    ]
+                                ][1](),
+                                terminal.reset(),
+                                file_key,
+                            )
 
                         merge_result[SHOW_RESULT_KEY] += result[file_key]
 
                     else:
                         if merge_result[file_key]:
                             for k in keys_in_input:
-                                merge_result[file_key][k].update(
-                                    result[file_key][k])
+                                merge_result[file_key][k].update(result[file_key][k])
 
                         else:
                             merge_result[file_key].update(result[file_key])
@@ -527,7 +628,8 @@ class LogHandler(object):
                         if k not in merge_result[file_key]:
                             merge_result[file_key][k] = {}
                         merge_result[file_key][k][
-                            current_tm.strftime(DT_FMT)] = default_value
+                            current_tm.strftime(DT_FMT)
+                        ] = default_value
 
             result_count += 1
             if result_count == output_page_size:
@@ -549,13 +651,17 @@ class LogHandler(object):
                     merge_result[file_key] = latency_end[file_key]
                 else:
                     for sub_key in latency_end[file_key]:
-                        if (sub_key not in merge_result[file_key]
-                                or not merge_result[file_key][sub_key]):
-                            merge_result[file_key][
-                                sub_key] = latency_end[file_key][sub_key]
+                        if (
+                            sub_key not in merge_result[file_key]
+                            or not merge_result[file_key][sub_key]
+                        ):
+                            merge_result[file_key][sub_key] = latency_end[file_key][
+                                sub_key
+                            ]
                         else:
                             merge_result[file_key][sub_key].update(
-                                latency_end[file_key][sub_key])
+                                latency_end[file_key][sub_key]
+                            )
 
             yield merge_result
 
@@ -563,8 +669,7 @@ class LogHandler(object):
         if not data or not isinstance(data, dict):
             return data
 
-        structure = self._get_dict_structure(data[list(data.keys())[0]],
-                                             default_value)
+        structure = self._get_dict_structure(data[list(data.keys())[0]], default_value)
 
         for _key in keys:
             if not _key in data.keys() or not data[_key]:

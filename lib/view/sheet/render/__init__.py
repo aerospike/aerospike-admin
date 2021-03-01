@@ -24,7 +24,7 @@ from .json_rsheet import JSONRSheet
 render_class = {
     SheetStyle.columns: ColumnRSheet,
     SheetStyle.rows: RowRSheet,
-    SheetStyle.json: JSONRSheet
+    SheetStyle.json: JSONRSheet,
 }
 
 use_json = False
@@ -34,14 +34,24 @@ def set_style_json(value=True):
     global use_json
     use_json = value
 
+
 def get_style_json():
     global use_json
     return use_json
 
 
-def render(sheet, title, data_source, style=None, common=None,
-           description=None, selectors=None, title_repeat=False,
-           disable_aggregations=False, dynamic_diff=False):
+def render(
+    sheet,
+    title,
+    data_source,
+    style=None,
+    common=None,
+    description=None,
+    selectors=None,
+    title_repeat=False,
+    disable_aggregations=False,
+    dynamic_diff=False,
+):
     """
     Arguments:
     sheet       -- The decleration.sheet to render.
@@ -73,7 +83,13 @@ def render(sheet, title, data_source, style=None, common=None,
         style = sheet.default_style
 
     return render_class[style](
-        sheet, title, data_source, tcommon, description=description,
-        selectors=selectors, title_repeat=title_repeat,
+        sheet,
+        title,
+        data_source,
+        tcommon,
+        description=description,
+        selectors=selectors,
+        title_repeat=title_repeat,
         disable_aggregations=disable_aggregations,
-        dynamic_diff=dynamic_diff).render()
+        dynamic_diff=dynamic_diff,
+    ).render()

@@ -18,26 +18,28 @@ import lib.basiccontroller as controller
 
 
 class TestCollectinfo(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
-        TestCollectinfo.rc = controller.BasicRootController(user='admin', password='admin')
+        TestCollectinfo.rc = controller.BasicRootController(
+            user="admin", password="admin"
+        )
         # actual_out = util.capture_stdout(TestCollectinfo.rc.execute, ['collectinfo'])
 
     def test_collectinfo(self):
-        expected = ['aerospike.log',
-                    'aerospike.conf',
-                    'collectSys.log',
-                    'awsData.log',
-                    'sysInformation/dmesg.log',
-                    'sysInformation/cpu_stat.log',
-                    'sysInformation/sysCmdOutput.log',
-                    'asadmCmd.log',
-                    'clusterCmd.log'
-                    ]
+        expected = [
+            "aerospike.log",
+            "aerospike.conf",
+            "collectSys.log",
+            "awsData.log",
+            "sysInformation/dmesg.log",
+            "sysInformation/cpu_stat.log",
+            "sysInformation/sysCmdOutput.log",
+            "asadmCmd.log",
+            "clusterCmd.log",
+        ]
         pass
 
 
 if __name__ == "__main__":
-    #import sys;sys.argv = ['', 'Test.testName']
+    # import sys;sys.argv = ['', 'Test.testName']
     unittest.main()

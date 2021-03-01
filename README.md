@@ -84,3 +84,10 @@ asadm has unit and e2e tests. To setup environment for e2e tests, execute follow
 ### Run Profiler
 asadm --profile
 Do not exit with 'ctrl+c' exit with the *exit* command
+
+## Style Guide
+
+### Dependencies
+- black
+
+It's simple, just use black.

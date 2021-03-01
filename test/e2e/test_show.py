@@ -27,9 +27,11 @@ from lib.view.sheet import set_style_json
 
 set_style_json()
 
+
 def print_header(actual_header):
     for item in actual_header:
-        print("\"" + item + "\",")
+        print('"' + item + '",')
+
 
 class TestShowConfig(unittest.TestCase):
     real_stdout = None
@@ -43,19 +45,19 @@ class TestShowConfig(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.real_stdout = sys.stdout
-        TestShowConfig.rc = controller.BasicRootController(user='admin', password='admin')
+        TestShowConfig.rc = controller.BasicRootController(
+            user="admin", password="admin"
+        )
 
         actual_out = util.capture_stdout(TestShowConfig.rc.execute, ["show", "config"])
-        actual_out += (
-            util.capture_stdout(TestShowConfig.rc.execute, ["show", "config", "xdr"])
+        actual_out += util.capture_stdout(
+            TestShowConfig.rc.execute, ["show", "config", "xdr"]
         )
-        TestShowConfig.output_list = test_util.get_separate_output(
-            actual_out
-        )
+        TestShowConfig.output_list = test_util.get_separate_output(actual_out)
         TestShowConfig.is_bar_present = False
 
         for item in TestShowConfig.output_list:
-            title = item['title']
+            title = item["title"]
 
             if "Service Configuration" in title:
                 TestShowConfig.service_config = item
@@ -120,12 +122,16 @@ class TestShowConfig(unittest.TestCase):
             "service.tls-port",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowConfig.network_config
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowConfig.network_config)
 
         self.assertTrue(exp_heading in actual_heading)
-        self.assertListEqual(exp_header,actual_header)
+        self.assertListEqual(exp_header, actual_header)
 
     def test_service(self):
         """
@@ -260,9 +266,13 @@ class TestShowConfig(unittest.TestCase):
             "syslog-local",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowConfig.service_config
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowConfig.service_config)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(actual_header, exp_header)
@@ -335,9 +345,13 @@ class TestShowConfig(unittest.TestCase):
             "sindex.num-partitions",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowConfig.test_namespace_config
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowConfig.test_namespace_config)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header_test))
@@ -413,9 +427,13 @@ class TestShowConfig(unittest.TestCase):
             "xdr-tomb-raider-threads",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowConfig.bar_namespace_config
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowConfig.bar_namespace_config)
         self.assertTrue(exp_heading in actual_heading)
         self.assertListEqual(exp_header_bar, actual_header)
 
@@ -452,9 +470,12 @@ class TestShowConfig(unittest.TestCase):
             "xdr-write-batch-size",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data = test_util.parse_output(
-            TestShowConfig.xdr_config
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+        ) = test_util.parse_output(TestShowConfig.xdr_config)
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(exp_header in actual_header)
         self.assertTrue(set(exp_params).issubset(set(actual_data)))
@@ -465,13 +486,13 @@ class TestShowLatenciesDefault(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        TestShowLatenciesDefault.rc = controller.BasicRootController(user='admin', password='admin')
+        TestShowLatenciesDefault.rc = controller.BasicRootController(
+            user="admin", password="admin"
+        )
         actual_out = util.capture_stdout(
             TestShowLatenciesDefault.rc.execute, ["show", "latencies", "-v"]
         )
-        TestShowLatenciesDefault.output_list = test_util.get_separate_output(
-            actual_out
-        )
+        TestShowLatenciesDefault.output_list = test_util.get_separate_output(actual_out)
 
     @classmethod
     def tearDownClass(cls):
@@ -482,30 +503,38 @@ class TestShowLatenciesDefault(unittest.TestCase):
         Asserts <b> read latencies <b> output with heading, header & no of node processed(based on row count).
         """
         exp_heading = "Latency"
-        exp_header = ["Namespace", "Histogram", "Node", "ops/sec", ">1ms", ">8ms", ">64ms"]
+        exp_header = [
+            "Namespace",
+            "Histogram",
+            "Node",
+            "ops/sec",
+            ">1ms",
+            ">8ms",
+            ">64ms",
+        ]
         exp_data = [
-            ('bar', 'test'),
+            ("bar", "test"),
             (
-                'read',
-                'read-dup-res', 
-                "read-local", 
-                "read-repl-ping", 
-                "read-response", 
-                "read-restart", 
+                "read",
+                "read-dup-res",
+                "read-local",
+                "read-repl-ping",
+                "read-response",
+                "read-restart",
                 "read-start",
-                'write',
-                'write-dup-res',
-                'write-master',
-                'write-repl-write',
-                'write-response',
-                'write-restart',
-                'write-start'
+                "write",
+                "write-dup-res",
+                "write-master",
+                "write-repl-write",
+                "write-response",
+                "write-restart",
+                "write-start",
             ),
         ]
         exp_data_types = [str, str, str, float, float, float, float]
 
         (
-            actual_heading, 
+            actual_heading,
             actual_description,
             actual_header,
             actual_data,
@@ -521,14 +550,15 @@ class TestShowLatenciesDefault(unittest.TestCase):
         )
 
         for data in actual_data:
-            self.assertTrue(
-                test_util.check_for_subset(data, exp_data)
-            )
+            self.assertTrue(test_util.check_for_subset(data, exp_data))
+
 
 class TestShowLatenciesWithArguments(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        TestShowLatenciesWithArguments.rc = controller.BasicRootController(user='admin', password='admin')
+        TestShowLatenciesWithArguments.rc = controller.BasicRootController(
+            user="admin", password="admin"
+        )
 
     def test_latencies_e_1_b_17(self):
         """
@@ -759,11 +789,7 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         """
 
         # exp_heading = "~read Latency"
-        exp_header = ["Namespace",
-            "Histogram",
-            "Node",
-            "ops/sec", 
-            ">1ms"]
+        exp_header = ["Namespace", "Histogram", "Node", "ops/sec", ">1ms"]
         exp_data_types = [str, str, str, float, float]
 
         actual_out = util.capture_stdout(
@@ -898,7 +924,15 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         """
         Asserts <b> show latencies <b> with a -m argument which groups tables by machine name
         """
-        exp_header = ["Namespace", "Histogram", "Node", "ops/sec", ">1ms", ">8ms", ">64ms"]
+        exp_header = [
+            "Namespace",
+            "Histogram",
+            "Node",
+            "ops/sec",
+            ">1ms",
+            ">8ms",
+            ">64ms",
+        ]
         exp_data_types = [str, str, str, float, float, float, float]
 
         actual_out = util.capture_stdout(
@@ -907,9 +941,13 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
-            actual_heading,  actual_description, actual_header, actual_data, _ = test_util.parse_output(
-                output
-            )
+            (
+                actual_heading,
+                actual_description,
+                actual_header,
+                actual_data,
+                _,
+            ) = test_util.parse_output(output)
             self.assertEqual(exp_header, actual_header)
             self.assertTrue(
                 test_util.check_for_types(actual_data, exp_data_types),
@@ -956,9 +994,13 @@ class TestShowLatenciesWithArguments(unittest.TestCase):
         output_list = test_util.get_separate_output(actual_out)
 
         for output in output_list:
-            actual_heading, actual_description, actual_header, actual_data, _ = test_util.parse_output(
-                output, horizontal=True, header_len=1
-            )
+            (
+                actual_heading,
+                actual_description,
+                actual_header,
+                actual_data,
+                _,
+            ) = test_util.parse_output(output, horizontal=True, header_len=1)
             self.assertEqual(exp_header, actual_header)
             self.assertTrue(
                 test_util.check_for_types(actual_data, exp_data_types),
@@ -973,16 +1015,14 @@ class TestShowDistribution(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        rc = controller.BasicRootController(user='admin', password='admin')
+        rc = controller.BasicRootController(user="admin", password="admin")
         actual_out = util.capture_stdout(rc.execute, ["show", "distribution"])
         # use regex in get_separate_output(~.+Distribution.*~.+)
         # if you are changing below Distribution keyword
-        TestShowDistribution.output_list = test_util.get_separate_output(
-            actual_out
-        )
+        TestShowDistribution.output_list = test_util.get_separate_output(actual_out)
         TestShowDistribution.is_bar_present = False
         for item in TestShowDistribution.output_list:
-            title = item['title']
+            title = item["title"]
             if "test - TTL Distribution in Seconds" in title:
                 TestShowDistribution.test_ttl_distri = item
             elif "bar - TTL Distribution in Seconds" in title:
@@ -1002,22 +1042,28 @@ class TestShowDistribution(unittest.TestCase):
         """
         exp_heading = "test - TTL Distribution in Seconds"
         exp_description = """Percentage of records having ttl less than or equal to value measured in Seconds"""
-        
+
         exp_header = [
             "Node",
-            "10%",   
-            "20%",   
-            "30%",   
-            "40%",   
-            "50%",   
-            "60%",   
-            "70%",   
-            "80%",   
-            "90%",   
-            "100%"
+            "10%",
+            "20%",
+            "30%",
+            "40%",
+            "50%",
+            "60%",
+            "70%",
+            "80%",
+            "90%",
+            "100%",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(
             TestShowDistribution.test_ttl_distri, horizontal=True, merge_header=False
         )
 
@@ -1036,41 +1082,33 @@ class TestShowDistribution(unittest.TestCase):
         exp_description = """Percentage of records having ttl less than or equal to value measured in Seconds"""
         exp_header = [
             "Node",
-            "10%",   
-            "20%",   
-            "30%",   
-            "40%",   
-            "50%",   
-            "60%",   
-            "70%",   
-            "80%",   
-            "90%",   
-            "100%"
+            "10%",
+            "20%",
+            "30%",
+            "40%",
+            "50%",
+            "60%",
+            "70%",
+            "80%",
+            "90%",
+            "100%",
         ]
-        exp_types = [
-            str,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int
-        ]
+        exp_types = [str, int, int, int, int, int, int, int, int, int, int]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(
             TestShowDistribution.bar_ttl_distri, horizontal=True, merge_header=False
         )
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_description, actual_description)
         self.assertListEqual(exp_header, actual_header)
-        self.assertTrue(
-            test_util.check_for_types(actual_data, exp_types)
-        )
+        self.assertTrue(test_util.check_for_types(actual_data, exp_types))
 
 
 class TestShowStatistics(unittest.TestCase):
@@ -1084,16 +1122,14 @@ class TestShowStatistics(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        rc = controller.BasicRootController(user='admin', password='admin')
+        rc = controller.BasicRootController(user="admin", password="admin")
         actual_out = util.capture_stdout(rc.execute, ["show", "statistics"])
         actual_out += util.capture_stdout(rc.execute, ["show", "statistics", "xdr"])
-        TestShowStatistics.output_list = test_util.get_separate_output(
-            actual_out
-        )
+        TestShowStatistics.output_list = test_util.get_separate_output(actual_out)
         TestShowStatistics.is_bar_present = False
 
         for item in TestShowStatistics.output_list:
-            title = item['title']
+            title = item["title"]
             if "test Bin Statistics" in title:
                 TestShowStatistics.test_bin_stats = item
             elif "bar Bin Statistics" in title:
@@ -1123,14 +1159,18 @@ class TestShowStatistics(unittest.TestCase):
         """
         exp_heading = "test Bin Statistics"
         exp_header = [
-            ('Node'),
+            ("Node"),
             ("bin-names-quota", "bin_names_quota"),
             ("num-bin-names", "bin_names"),
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowStatistics.test_bin_stats
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowStatistics.test_bin_stats)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
@@ -1149,9 +1189,13 @@ class TestShowStatistics(unittest.TestCase):
             ("num-bin-names", "bin_names"),
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowStatistics.bar_bin_stats
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowStatistics.bar_bin_stats)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
@@ -1162,7 +1206,6 @@ class TestShowStatistics(unittest.TestCase):
         TODO: test for values as well
         """
         exp_heading = "Service Statistics"
-
 
         # TODO: Add possibly missing params.  This is only verified as a subset
         exp_header = [
@@ -1189,9 +1232,13 @@ class TestShowStatistics(unittest.TestCase):
             "uptime",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowStatistics.service_stats
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowStatistics.service_stats)
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
@@ -1239,9 +1286,13 @@ class TestShowStatistics(unittest.TestCase):
             "write-commit-level-override",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowStatistics.bar_namespace_stats
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowStatistics.bar_namespace_stats)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
@@ -1255,7 +1306,7 @@ class TestShowStatistics(unittest.TestCase):
 
         # TODO: Add possibly missing params.  This is only verified as a subset
         exp_header = [
-            'Node',
+            "Node",
             "allow-ttl-without-nsup",
             "appeals_records_exonerated",
             "appeals_rx_active",
@@ -1538,9 +1589,13 @@ class TestShowStatistics(unittest.TestCase):
             "xmem_id",
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowStatistics.test_namespace_stats
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowStatistics.test_namespace_stats)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
@@ -1575,29 +1630,32 @@ class TestShowStatistics(unittest.TestCase):
             "throughput",
             "uncompressed_pct",
         ]
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowStatistics.xdr_stats
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowStatistics.xdr_stats)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertListEqual(exp_header, actual_header)
         # self.assertTrue(test_util.check_for_subset(actual_data, exp_header))
+
 
 class TestShowStatistics(unittest.TestCase):
     output_list = list()
 
     @classmethod
     def setUpClass(cls):
-        rc = controller.BasicRootController(user='admin', password='admin')
+        rc = controller.BasicRootController(user="admin", password="admin")
         actual_out = util.capture_stdout(rc.execute, ["show", "statistics"])
         actual_out += util.capture_stdout(rc.execute, ["show", "statistics", "xdr"])
-        TestShowStatistics.output_list = test_util.get_separate_output(
-            actual_out
-        )
+        TestShowStatistics.output_list = test_util.get_separate_output(actual_out)
         TestShowStatistics.is_bar_present = False
 
         for item in TestShowStatistics.output_list:
-            title = item['title']
+            title = item["title"]
             if "test Bin Statistics" in title:
                 TestShowStatistics.test_bin_stats = item
             elif "bar Bin Statistics" in title:
@@ -1627,26 +1685,30 @@ class TestShowStatistics(unittest.TestCase):
         """
         exp_heading = "test Bin Statistics"
         exp_header = [
-            ('Node'),
+            ("Node"),
             ("bin-names-quota", "bin_names_quota"),
             ("num-bin-names", "bin_names"),
         ]
 
-        actual_heading, actual_description, actual_header, actual_data, num_records = test_util.parse_output(
-            TestShowStatistics.test_bin_stats
-        )
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(TestShowStatistics.test_bin_stats)
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertTrue(test_util.check_for_subset(actual_header, exp_header))
 
+
 def capture_separate_and_parse_output(rc, commands):
     actual_stdout = util.capture_stdout(rc.execute, commands)
     separated_stdout = test_util.get_separate_output(actual_stdout)
-    result = test_util.parse_output(
-        separated_stdout[0]
-    )
+    result = test_util.parse_output(separated_stdout[0])
 
     return result
+
 
 def get_data(exp_first, data):
     found_values = None
@@ -1657,12 +1719,13 @@ def get_data(exp_first, data):
             break
 
     return found_values
-class TestShowUsers(unittest.TestCase):
 
+
+class TestShowUsers(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.rc = controller.BasicRootController(user='admin', password='admin')
-        util.capture_stdout(cls.rc.execute, ['enable'])
+        cls.rc = controller.BasicRootController(user="admin", password="admin")
+        util.capture_stdout(cls.rc.execute, ["enable"])
 
     @classmethod
     def tearDownClass(cls):
@@ -1672,43 +1735,46 @@ class TestShowUsers(unittest.TestCase):
     def setUp(cls):
         # Added since tests were failing.  I assume because the server response
         # comes before the request is commited to SMD or security layer.
-        time.sleep(.25)
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'user', 'foo'])
-    
-    def test_show_users(self):
-        exp_title = 'Users'
-        exp_header = [
-            'User',
-            'Roles'
-        ]
+        time.sleep(0.25)
+        util.capture_stdout_and_stderr(
+            cls.rc.execute, ["manage", "acl", "delete", "user", "foo"]
+        )
 
-        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(self.rc,
-            ['show', 'users']
+    def test_show_users(self):
+        exp_title = "Users"
+        exp_header = ["User", "Roles"]
+
+        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(
+            self.rc, ["show", "users"]
         )
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
     def test_create_user_with_no_roles(self):
-        exp_user = 'foo'
-        exp_roles = ['--']
-        exp_title = 'Users'
-        exp_header = [
-            'User',
-            'Roles'
-        ]
+        exp_user = "foo"
+        exp_roles = ["--"]
+        exp_title = "Users"
+        exp_header = ["User", "Roles"]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'users']
+        _, _, _, _, num_records = capture_separate_and_parse_output(
+            self.rc, ["show", "users"]
         )
 
         exp_num_rows = num_records + 1
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar'])
-
-        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'users']
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "acl", "create", "user", exp_user, "password", "bar"],
         )
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         actual_roles = get_data(exp_user, actual_data)
 
@@ -1718,62 +1784,91 @@ class TestShowUsers(unittest.TestCase):
         self.assertListEqual(exp_roles, actual_roles)
 
     def test_create_user_with_roles(self):
-        exp_user = 'foo'
-        exp_roles = ['sys-admin', 'user-admin']
-        exp_title = 'Users'
-        exp_header = [
-            'User',
-            'Roles'
-        ]
+        exp_user = "foo"
+        exp_roles = ["sys-admin", "user-admin"]
+        exp_title = "Users"
+        exp_header = ["User", "Roles"]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'users']
+        _, _, _, _, num_records = capture_separate_and_parse_output(
+            self.rc, ["show", "users"]
         )
 
         exp_num_rows = num_records + 1
 
-        time.sleep(.5)
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles])
+        time.sleep(0.5)
+        util.capture_stdout(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "create",
+                "user",
+                exp_user,
+                "password",
+                "bar",
+                "roles",
+                *exp_roles,
+            ],
+        )
         time.sleep(2)
 
-        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'users']
-        )
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         actual_roles = get_data(exp_user, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        self.assertListEqual([', '.join(exp_roles)], actual_roles)
+        self.assertListEqual([", ".join(exp_roles)], actual_roles)
 
     def test_delete_a_user(self):
-        exp_user = 'foo'
-        exp_roles = ['sys-admin', 'user-admin']
-        exp_title = 'Users'
-        exp_header = [
-            'User',
-            'Roles'
-        ]
+        exp_user = "foo"
+        exp_roles = ["sys-admin", "user-admin"]
+        exp_title = "Users"
+        exp_header = ["User", "Roles"]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'users']
+        _, _, _, _, num_records = capture_separate_and_parse_output(
+            self.rc, ["show", "users"]
         )
 
+        util.capture_stdout(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "create",
+                "user",
+                exp_user,
+                "password",
+                "bar",
+                "roles",
+                *exp_roles,
+            ],
+        )
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles])
-
-        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'users']
+        _, _, _, _, num_records = capture_separate_and_parse_output(
+            self.rc, ["show", "users"]
         )
 
         exp_num_rows = num_records - 1
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'delete', 'user', exp_user])
-
-        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'users']
+        util.capture_stdout(
+            self.rc.execute, ["manage", "acl", "delete", "user", exp_user]
         )
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         for data in actual_data:
             self.assertNotIn(exp_user, data)
@@ -1783,91 +1878,130 @@ class TestShowUsers(unittest.TestCase):
         self.assertListEqual(exp_header, actual_header)
 
     def test_revoke_user_role(self):
-        exp_user = 'foo'
-        exp_roles = ['sys-admin', 'user-admin']
-        exp_title = 'Users'
-        exp_header = [
-            'User',
-            'Roles'
-        ]
+        exp_user = "foo"
+        exp_roles = ["sys-admin", "user-admin"]
+        exp_title = "Users"
+        exp_header = ["User", "Roles"]
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'user', exp_user, 'password', 'bar', 'roles', *exp_roles, 'to-remove'])
-        time.sleep(.25)
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'revoke', 'user', exp_user, 'roles', 'to-remove'])
-        time.sleep(.25)
-
-        actual_title, _, actual_header, actual_data, _ = capture_separate_and_parse_output(self.rc, 
-            ['show', 'users']
+        util.capture_stdout(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "create",
+                "user",
+                exp_user,
+                "password",
+                "bar",
+                "roles",
+                *exp_roles,
+                "to-remove",
+            ],
         )
+        time.sleep(0.25)
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "acl", "revoke", "user", exp_user, "roles", "to-remove"],
+        )
+        time.sleep(0.25)
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            _,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         actual_roles = get_data(exp_user, actual_data)
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        self.assertEqual(', '.join(exp_roles), actual_roles[0])
+        self.assertEqual(", ".join(exp_roles), actual_roles[0])
+
 
 class TestShowRoles(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
-        cls.rc = controller.BasicRootController(user='admin', password='admin')
-        util.capture_stdout(cls.rc.execute, ['enable'])
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'create', 'role', 'temp', 'priv', 'sys-admin', 'allow', '1.1.1.1'])
+        cls.rc = controller.BasicRootController(user="admin", password="admin")
+        util.capture_stdout(cls.rc.execute, ["enable"])
+        util.capture_stdout_and_stderr(
+            cls.rc.execute,
+            [
+                "manage",
+                "acl",
+                "create",
+                "role",
+                "temp",
+                "priv",
+                "sys-admin",
+                "allow",
+                "1.1.1.1",
+            ],
+        )
 
     @classmethod
     def tearDownClass(cls):
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'foo'])
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'temp'])
+        util.capture_stdout_and_stderr(
+            cls.rc.execute, ["manage", "acl", "delete", "role", "foo"]
+        )
+        util.capture_stdout_and_stderr(
+            cls.rc.execute, ["manage", "acl", "delete", "role", "temp"]
+        )
         cls.rc = None
 
     @classmethod
     def setUp(cls):
         # Added since tests were failing.  I assume because the server response
         # comes before the request is commited to SMD or security layer.
-        time.sleep(.25)
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'acl', 'delete', 'role', 'foo'])
-        time.sleep(.25)
+        time.sleep(0.25)
+        util.capture_stdout_and_stderr(
+            cls.rc.execute, ["manage", "acl", "delete", "role", "foo"]
+        )
+        time.sleep(0.25)
 
     def test_show_roles(self):
-        exp_title = 'Roles'
+        exp_title = "Roles"
         exp_header = [
-            'Role',
-            'Privileges',
-            'Allowlist',
-            
+            "Role",
+            "Privileges",
+            "Allowlist",
         ]
 
-        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(
+            self.rc, ["show", "roles"]
         )
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
     def test_create_role_with_privileges(self):
-        exp_role = 'foo'
-        exp_privilege = 'sys-admin'
-        exp_allowlist = ['--']
-        exp_data = [exp_privilege, ', '.join(exp_allowlist)]
-        exp_title = 'Roles'
-        exp_header = [
-            'Role',
-            'Privileges',
-            'Allowlist'
-        ]
+        exp_role = "foo"
+        exp_privilege = "sys-admin"
+        exp_allowlist = ["--"]
+        exp_data = [exp_privilege, ", ".join(exp_allowlist)]
+        exp_title = "Roles"
+        exp_header = ["Role", "Privileges", "Allowlist"]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        _, _, _, _, num_records = capture_separate_and_parse_output(
+            self.rc, ["show", "roles"]
         )
 
         exp_num_rows = num_records + 1
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
-        time.sleep(.5)
-
-        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "acl", "create", "role", exp_role, "priv", exp_privilege],
         )
+        time.sleep(0.5)
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         actual_data = get_data(exp_role, actual_data)
 
@@ -1877,29 +2011,42 @@ class TestShowRoles(unittest.TestCase):
         self.assertListEqual(exp_data, actual_data)
 
     def test_create_role_with_allowlist(self):
-        exp_role = 'foo'
-        exp_privileges = 'write'
-        exp_allowlist = ['1.1.1.1', '2.2.2.2']
-        exp_data = [exp_privileges, ', '.join(exp_allowlist)]
-        exp_title = 'Roles'
-        exp_header = [
-            'Role',
-            'Privileges',
-            'Allowlist'
-        ]
+        exp_role = "foo"
+        exp_privileges = "write"
+        exp_allowlist = ["1.1.1.1", "2.2.2.2"]
+        exp_data = [exp_privileges, ", ".join(exp_allowlist)]
+        exp_title = "Roles"
+        exp_header = ["Role", "Privileges", "Allowlist"]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        _, _, _, _, num_records = capture_separate_and_parse_output(
+            self.rc, ["show", "roles"]
         )
 
         exp_num_rows = num_records + 1
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', 'write', 'allow', *exp_allowlist])
-        time.sleep(.25)
-
-        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        util.capture_stdout(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "create",
+                "role",
+                exp_role,
+                "priv",
+                "write",
+                "allow",
+                *exp_allowlist,
+            ],
         )
+        time.sleep(0.25)
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         actual_data = get_data(exp_role, actual_data)
 
@@ -1909,35 +2056,39 @@ class TestShowRoles(unittest.TestCase):
         self.assertListEqual(exp_data, actual_data)
 
     def test_delete_a_role(self):
-        exp_role = 'foo'
-        exp_privilege = 'sys-admin'
-        exp_title = 'Roles'
-        exp_header = [
-            'Role',
-            'Privileges',
-            'Allowlist'
-        ]
+        exp_role = "foo"
+        exp_privilege = "sys-admin"
+        exp_title = "Roles"
+        exp_header = ["Role", "Privileges", "Allowlist"]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        _, _, _, _, num_records = capture_separate_and_parse_output(
+            self.rc, ["show", "roles"]
         )
 
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "acl", "create", "role", exp_role, "priv", exp_privilege],
+        )
+        time.sleep(0.25)
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
-        time.sleep(.25)
-
-        _, _, _, _, num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        _, _, _, _, num_records = capture_separate_and_parse_output(
+            self.rc, ["show", "roles"]
         )
 
         exp_num_rows = num_records - 1
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'delete', 'role', exp_role])
-        time.sleep(.25)
-
-        actual_title, _, actual_header, actual_data, actual_num_records = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        util.capture_stdout(
+            self.rc.execute, ["manage", "acl", "delete", "role", exp_role]
         )
+        time.sleep(0.25)
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         for data in actual_data:
             self.assertNotIn(exp_role, data)
@@ -1947,91 +2098,105 @@ class TestShowRoles(unittest.TestCase):
         self.assertListEqual(exp_header, actual_header)
 
     def test_revoke_role(self):
-        exp_role = 'foo'
-        exp_privilege = 'read'
-        exp_title = 'Roles'
-        exp_header = [
-            'Role',
-            'Privileges',
-            'Allowlist'
-        ]
+        exp_role = "foo"
+        exp_privilege = "read"
+        exp_title = "Roles"
+        exp_header = ["Role", "Privileges", "Allowlist"]
 
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'create', 'role', exp_role, 'priv', exp_privilege])
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'grant', 'role', exp_role, 'priv', 'write'])
-        time.sleep(.5)
-        util.capture_stdout(self.rc.execute, ['manage', 'acl', 'revoke', 'role', exp_role, 'priv', 'write'])
-        time.sleep(.5)
-
-        actual_title, _, actual_header, actual_data, _ = capture_separate_and_parse_output(self.rc, 
-            ['show', 'roles']
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "acl", "create", "role", exp_role, "priv", exp_privilege],
         )
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "acl", "grant", "role", exp_role, "priv", "write"],
+        )
+        time.sleep(0.5)
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "acl", "revoke", "role", exp_role, "priv", "write"],
+        )
+        time.sleep(0.5)
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            _,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         actual_privileges = get_data(exp_role, actual_data)
-        
+
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_privilege, actual_privileges[0])
 
+
 class TestShowUdfs(unittest.TestCase):
-    exp_module = 'test__.lua'
-    path = 'test/e2e/test.lua'
+    exp_module = "test__.lua"
+    path = "test/e2e/test.lua"
 
     @classmethod
     def setUpClass(cls):
-        cls.rc = controller.BasicRootController(user='admin', password='admin')
-        util.capture_stdout(cls.rc.execute, ['enable'])
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'add', 'filler_.lua', 'path', cls.path])
+        cls.rc = controller.BasicRootController(user="admin", password="admin")
+        util.capture_stdout(cls.rc.execute, ["enable"])
+        util.capture_stdout_and_stderr(
+            cls.rc.execute, ["manage", "udfs", "add", "filler_.lua", "path", cls.path]
+        )
 
     @classmethod
     def tearDownClass(cls):
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', cls.exp_module])
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', 'filler_.lua'])
+        util.capture_stdout_and_stderr(
+            cls.rc.execute, ["manage", "udfs", "remove", cls.exp_module]
+        )
+        util.capture_stdout_and_stderr(
+            cls.rc.execute, ["manage", "udfs", "remove", "filler_.lua"]
+        )
         cls.rc = None
 
     @classmethod
     def setUp(cls):
-        util.capture_stdout_and_stderr(cls.rc.execute, ['manage', 'udfs', 'remove', cls.exp_module])
+        util.capture_stdout_and_stderr(
+            cls.rc.execute, ["manage", "udfs", "remove", cls.exp_module]
+        )
 
     def test_show_udfs(self):
-        exp_title = 'UDF Modules'
-        exp_header = [
-            'Filename',
-            'Hash',
-            'Type'
-        ]
+        exp_title = "UDF Modules"
+        exp_header = ["Filename", "Hash", "Type"]
 
-        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(self.rc, 
-            ['show', 'udfs']
+        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(
+            self.rc, ["show", "udfs"]
         )
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
     def test_add_udf(self):
-        exp_title = 'UDF Modules'
-        exp_header = [
-            'Filename',
-            'Hash',
-            'Type'
-        ]
-        exp_module = [
-            '61e9c132a6a4c1a14852dc1641a35b420664c4a1',
-            'LUA'
-        ]
+        exp_title = "UDF Modules"
+        exp_header = ["Filename", "Hash", "Type"]
+        exp_module = ["61e9c132a6a4c1a14852dc1641a35b420664c4a1", "LUA"]
 
-        _, _, _, _, num_rows = capture_separate_and_parse_output(self.rc, 
-            ['show', 'udfs']
+        _, _, _, _, num_rows = capture_separate_and_parse_output(
+            self.rc, ["show", "udfs"]
         )
 
         exp_num_rows = num_rows + 1
 
-        util.capture_stdout(self.rc.execute, ['manage', 'udfs', 'add', self.exp_module, 'path', self.path])
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "udfs", "add", self.exp_module, "path", self.path],
+        )
 
         time.sleep(1)
 
-        actual_title, _, actual_header, actual_data, actual_num_rows = capture_separate_and_parse_output(self.rc, 
-            ['show', 'udfs']
-        )
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_rows,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "udfs"])
 
         actual_module = get_data(self.exp_module, actual_data)
 
@@ -2041,35 +2206,37 @@ class TestShowUdfs(unittest.TestCase):
         self.assertListEqual(exp_module, actual_module)
 
     def test_remove_udf(self):
-        exp_title = 'UDF Modules'
-        exp_header = [
-            'Filename',
-            'Hash',
-            'Type'
-        ]
+        exp_title = "UDF Modules"
+        exp_header = ["Filename", "Hash", "Type"]
 
-        util.capture_stdout(self.rc.execute, ['manage', 'udfs', 'add', self.exp_module, 'path', self.path])
-        time.sleep(.50
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "udfs", "add", self.exp_module, "path", self.path],
         )
-        _, _, _, _, num_rows = capture_separate_and_parse_output(self.rc, 
-            ['show', 'udfs']
+        time.sleep(0.50)
+        _, _, _, _, num_rows = capture_separate_and_parse_output(
+            self.rc, ["show", "udfs"]
         )
 
         exp_num_rows = num_rows - 1
 
-        util.capture_stdout(self.rc.execute, ['manage', 'udfs', 'remove', self.exp_module])
-        time.sleep(.50)
-
-        actual_title, _, actual_header, actual_data, actual_num_rows = capture_separate_and_parse_output(self.rc, 
-            ['show', 'udfs']
+        util.capture_stdout(
+            self.rc.execute, ["manage", "udfs", "remove", self.exp_module]
         )
+        time.sleep(0.50)
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_rows,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "udfs"])
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_num_rows, actual_num_rows)
 
-        
-        
 
 if __name__ == "__main__":
     unittest.main()

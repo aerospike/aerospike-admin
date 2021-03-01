@@ -38,9 +38,18 @@ class Cluster(object):
     crawl_lock = threading.Lock()
     logger = logging.getLogger("asadm")
 
-    def __init__(self, seed_nodes, user=None, password=None, auth_mode=AuthMode.INTERNAL,
-                 use_services_alumni=False, use_services_alt=False,
-                 ssl_context=None, only_connect_seed=False, timeout=5):
+    def __init__(
+        self,
+        seed_nodes,
+        user=None,
+        password=None,
+        auth_mode=AuthMode.INTERNAL,
+        use_services_alumni=False,
+        use_services_alt=False,
+        ssl_context=None,
+        only_connect_seed=False,
+        timeout=5,
+    ):
         """
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port,tls) address can be fqdn or ip.
@@ -105,7 +114,9 @@ class Cluster(object):
             if commonutil.is_valid_ip_port(k):
                 node_names[node_key] = k
             else:
-                node_names[node_key] = self.node_lookup.get_shortname(k, min_prefix_len=20, min_suffix_len=5)
+                node_names[node_key] = self.node_lookup.get_shortname(
+                    k, min_prefix_len=20, min_suffix_len=5
+                )
 
         return node_names
 
@@ -155,7 +166,7 @@ class Cluster(object):
             return principal
         except Exception as e:
             self.logger.error(e)
-            return ''
+            return ""
 
     def get_live_nodes(self):
         return self._live_nodes
@@ -269,16 +280,16 @@ class Cluster(object):
             while unvisited - visited:
                 l_unvisited = list(unvisited)
                 nodes = util.concurrent_map(self._register_node, l_unvisited)
-                live_nodes = [node
-                              for node in nodes
-                              if (node is not None and node.alive
-                                  and node not in visited)]
+                live_nodes = [
+                    node
+                    for node in nodes
+                    if (node is not None and node.alive and node not in visited)
+                ]
                 visited |= unvisited
                 unvisited.clear()
 
                 if not self.only_connect_seed:
-                    services_list = util.concurrent_map(
-                        self._get_services, live_nodes)
+                    services_list = util.concurrent_map(self._get_services, live_nodes)
                     for node, services in zip(live_nodes, services_list):
                         if isinstance(services, Exception):
                             continue
@@ -304,7 +315,8 @@ class Cluster(object):
         live_nodes = [node for node in self.nodes.values() if node.alive]
         self._live_nodes.clear()
         self._live_nodes.update(
-            ((node.ip, node.port, node.tls_name) for node in live_nodes))
+            ((node.ip, node.port, node.tls_name) for node in live_nodes)
+        )
 
     def update_node(self, node):
         self.nodes[node.key] = node
@@ -369,9 +381,11 @@ class Cluster(object):
                 addr, port = addr_port_tls
                 tls_name = None
             except Exception:
-                print("ip_port is expected to be a tuple of len 2, " + \
-                    "instead it is of type %s and str value of %s" % (
-                        type(addr_port_tls), str(addr_port_tls)))
+                print(
+                    "ip_port is expected to be a tuple of len 2, "
+                    + "instead it is of type %s and str value of %s"
+                    % (type(addr_port_tls), str(addr_port_tls))
+                )
                 return None
         try:
             if self.is_present_as_alias(addr, port):
@@ -386,11 +400,18 @@ class Cluster(object):
                 # Will create node again
 
             # if not existing:
-            new_node = Node(addr, port, tls_name=tls_name, timeout=self._timeout,
-                            user=self.user, password=self.password, auth_mode=self.auth_mode,
-                            consider_alumni=Cluster.use_services_alumni,
-                            use_services_alt=Cluster.use_services_alt,
-                            ssl_context=self.ssl_context)
+            new_node = Node(
+                addr,
+                port,
+                tls_name=tls_name,
+                timeout=self._timeout,
+                user=self.user,
+                password=self.password,
+                auth_mode=self.auth_mode,
+                consider_alumni=Cluster.use_services_alumni,
+                use_services_alt=Cluster.use_services_alt,
+                ssl_context=self.ssl_context,
+            )
 
             if not new_node:
                 return new_node
@@ -400,8 +421,7 @@ class Cluster(object):
                     new_node.close()
                     return None
             self.update_node(new_node)
-            self.update_aliases(
-                self.aliases, new_node.service_addresses, new_node.key)
+            self.update_aliases(self.aliases, new_node.service_addresses, new_node.key)
             return new_node
         except Exception:
             return None
@@ -440,7 +460,7 @@ class Cluster(object):
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
 
-        if nodes == 'all':
+        if nodes == "all":
             use_nodes = list(self.nodes.values())
         elif isinstance(nodes, list):
             use_nodes = []
@@ -454,21 +474,21 @@ class Cluster(object):
                 except Exception:  # Ignore ambiguous and key errors
                     continue
         else:
-            raise TypeError(
-                "nodes should be 'all' or list found %s" % type(nodes))
+            raise TypeError("nodes should be 'all' or list found %s" % type(nodes))
         if len(use_nodes) == 0:
-            raise IOError('Unable to find any Aerospike nodes')
+            raise IOError("Unable to find any Aerospike nodes")
         return dict(
             util.concurrent_map(
-                lambda node:
-                (node.key, getattr(node, method_name)(*args, **kwargs)),
-                use_nodes))
+                lambda node: (node.key, getattr(node, method_name)(*args, **kwargs)),
+                use_nodes,
+            )
+        )
 
-    def is_XDR_enabled(self, nodes='all'):
-        return self.call_node_method(nodes, 'is_XDR_enabled')
+    def is_XDR_enabled(self, nodes="all"):
+        return self.call_node_method(nodes, "is_XDR_enabled")
 
-    def is_feature_present(self, feature, nodes='all'):
-        return self.call_node_method(nodes, 'is_feature_present', feature)
+    def is_feature_present(self, feature, nodes="all"):
+        return self.call_node_method(nodes, "is_feature_present", feature)
 
     def get_IP_to_node_map(self):
         if self.need_to_refresh_cluster():
@@ -503,12 +523,13 @@ class Cluster(object):
     def __getattr__(self, name):
         regex = re.compile("^info.*$|^xdr.*$|^admin.*$")
         if regex.match(name):
+
             def info_func(*args, **kwargs):
-                if 'nodes' not in kwargs:
-                    nodes = 'all'
+                if "nodes" not in kwargs:
+                    nodes = "all"
                 else:
-                    nodes = kwargs['nodes']
-                    del kwargs['nodes']
+                    nodes = kwargs["nodes"]
+                    del kwargs["nodes"]
 
                 return self.call_node_method(nodes, name, *args, **kwargs)
 

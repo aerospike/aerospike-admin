@@ -37,7 +37,7 @@ MM = 1
 SS = 2
 
 # for zipped files
-COLLECTINFO_DIR = ADMIN_HOME + 'collectinfo/'
+COLLECTINFO_DIR = ADMIN_HOME + "collectinfo/"
 COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
 
 ######################
@@ -50,7 +50,9 @@ class CollectinfoLogHandler(object):
     def __init__(self, cinfo_path):
         self.cinfo_path = cinfo_path
         self.collectinfo_dir = COLLECTINFO_DIR + str(os.getpid())
-        self._validate_and_extract_compressed_files(cinfo_path, dest_dir=self.collectinfo_dir)
+        self._validate_and_extract_compressed_files(
+            cinfo_path, dest_dir=self.collectinfo_dir
+        )
         self.cinfo_timestamp = None
         self.logger = logging.getLogger("asadm")
 
@@ -105,17 +107,17 @@ class CollectinfoLogHandler(object):
         return self.all_cinfo_logs[timestamp]
 
     def get_principal(self, timestamp):
-        service_data = self.info_statistics(stanza='service')
+        service_data = self.info_statistics(stanza="service")
         principal = None
 
         if not timestamp in service_data:
             return principal
 
         for node_ip in service_data[timestamp]:
-            temp_principal = service_data[timestamp][node_ip]['cluster_principal']
+            temp_principal = service_data[timestamp][node_ip]["cluster_principal"]
 
             if principal and temp_principal != principal:
-                self.logger.warning('Found multiple cluster principals.')
+                self.logger.warning("Found multiple cluster principals.")
                 return principal
             elif not principal:
                 principal = temp_principal
@@ -130,7 +132,7 @@ class CollectinfoLogHandler(object):
             return {}
 
         for node_ip in meta_data[timestamp]:
-            node_id = meta_data[timestamp][node_ip]['node_id']
+            node_id = meta_data[timestamp][node_ip]["node_id"]
             node_to_ip[node_id] = node_ip
 
         return node_to_ip
@@ -143,17 +145,18 @@ class CollectinfoLogHandler(object):
             return {}
 
         for node_ip in meta_data[timestamp]:
-            node_id = meta_data[timestamp][node_ip]['node_id']
+            node_id = meta_data[timestamp][node_ip]["node_id"]
             ip_to_node[node_ip] = node_id
 
         return ip_to_node
-
 
     def info_getconfig(self, stanza="", flip=False):
         return self._fetch_from_cinfo_log(type="config", stanza=stanza, flip=flip)
 
     def info_get_originalconfig(self, stanza="", flip=False):
-        return self._fetch_from_cinfo_log(type="original_config", stanza=stanza, flip=flip)
+        return self._fetch_from_cinfo_log(
+            type="original_config", stanza=stanza, flip=flip
+        )
 
     def info_statistics(self, stanza="", flip=False):
         return self._fetch_from_cinfo_log(type="statistics", stanza=stanza, flip=flip)
@@ -162,7 +165,9 @@ class CollectinfoLogHandler(object):
         if byte_distribution and stanza == "objsz":
             stanza = "object-size"
 
-        hist_dict = self._fetch_from_cinfo_log(type="histogram", stanza=stanza, flip=flip)
+        hist_dict = self._fetch_from_cinfo_log(
+            type="histogram", stanza=stanza, flip=flip
+        )
         res_dict = {}
 
         version = self.info_meta_data(stanza="asd_build")
@@ -183,8 +188,14 @@ class CollectinfoLogHandler(object):
 
                     try:
                         as_version = version[timestamp][node]
-                        d = common.parse_raw_histogram(stanza, namespace_snapshot, logarithmic=byte_distribution,
-                            new_histogram_version=common.is_new_histogram_version(as_version))
+                        d = common.parse_raw_histogram(
+                            stanza,
+                            namespace_snapshot,
+                            logarithmic=byte_distribution,
+                            new_histogram_version=common.is_new_histogram_version(
+                                as_version
+                            ),
+                        )
                         if d and not isinstance(d, Exception):
                             res_dict[timestamp][node][namespace] = d
 
@@ -313,7 +324,9 @@ class CollectinfoLogHandler(object):
 
         for timestamp in sorted(self.selected_cinfo_logs.keys()):
             try:
-                out = self.selected_cinfo_logs[timestamp].get_data(type=type, stanza=stanza)
+                out = self.selected_cinfo_logs[timestamp].get_data(
+                    type=type, stanza=stanza
+                )
                 if flip:
                     out = util.flip_keys(out)
 
@@ -342,7 +355,7 @@ class CollectinfoLogHandler(object):
                 compressed_file = tarfile.open(file)
 
             elif zipfile.is_zipfile(file):
-                compressed_file =  zipfile.ZipFile(file, "r")
+                compressed_file = zipfile.ZipFile(file, "r")
 
             else:
                 return False
@@ -376,7 +389,9 @@ class CollectinfoLogHandler(object):
                 return
 
             if self._extract_to(cinfo_path, dest_dir):
-                self._validate_and_extract_compressed_files(dest_dir, dest_dir=os.path.join(dest_dir, COLLECTINFO_INTERNAL_DIR))
+                self._validate_and_extract_compressed_files(
+                    dest_dir, dest_dir=os.path.join(dest_dir, COLLECTINFO_INTERNAL_DIR)
+                )
                 return
 
         files = logutil.get_all_files(cinfo_path)
@@ -392,6 +407,6 @@ class CollectinfoLogHandler(object):
                 file_extracted = True
 
         if file_extracted:
-            self._validate_and_extract_compressed_files(dest_dir, dest_dir=os.path.join(dest_dir, COLLECTINFO_INTERNAL_DIR))
-
-
+            self._validate_and_extract_compressed_files(
+                dest_dir, dest_dir=os.path.join(dest_dir, COLLECTINFO_INTERNAL_DIR)
+            )

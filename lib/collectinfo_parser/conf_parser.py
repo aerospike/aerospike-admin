@@ -18,59 +18,98 @@ SPACE = re.compile("\s+")
 
 space_unit_converter = {
     # units in capital letters
-    "P": 1024*1024*1024*1024*1024,
-    "T": 1024*1024*1024*1024,
-    "G": 1024*1024*1024,
-    "M": 1024*1024,
+    "P": 1024 * 1024 * 1024 * 1024 * 1024,
+    "T": 1024 * 1024 * 1024 * 1024,
+    "G": 1024 * 1024 * 1024,
+    "M": 1024 * 1024,
     "K": 1024,
-
     # units in small letters
-    "p": 1024*1024*1024*1024*1024,
-    "t": 1024*1024*1024*1024,
-    "g": 1024*1024*1024,
-    "m": 1024*1024,
-    "k": 1024
+    "p": 1024 * 1024 * 1024 * 1024 * 1024,
+    "t": 1024 * 1024 * 1024 * 1024,
+    "g": 1024 * 1024 * 1024,
+    "m": 1024 * 1024,
+    "k": 1024,
 }
 
 time_unit_converter = {
     # units in capital letters
-    "D": 24*60*60,
-    "H": 60*60,
+    "D": 24 * 60 * 60,
+    "H": 60 * 60,
     "M": 60,
     "S": 1,
-
     # units in small letters
-    "d": 24*60*60,
-    "h": 60*60,
+    "d": 24 * 60 * 60,
+    "h": 60 * 60,
     "m": 60,
     "s": 1,
 }
 
 # space configs which need conversion to bytes
-context_space_configs = ["dump-message-above-size", "filesize", "memory-size", "storage-engine.commit-min-size",
-                         "storage-engine.max-write-cache", "storage-engine.write-block-size", "xdr-max-ship-bandwidth"]
+context_space_configs = [
+    "dump-message-above-size",
+    "filesize",
+    "memory-size",
+    "storage-engine.commit-min-size",
+    "storage-engine.max-write-cache",
+    "storage-engine.write-block-size",
+    "xdr-max-ship-bandwidth",
+]
 
 # time configs which need conversion to seconds
-context_time_configs = ["dc-connections-idle-ms", "default-ttl", "defrag-sleep", "hist-track-slice", "interval",
-                        "keepalive-time", "max-ttl", "mcast-ttl", "migrate-fill-delay", "migrate-retransmit-ms",
-                        "migrate-sleep", "nsup-hist-period", "nsup-period", "polling-period", "proto-fd-idle-ms",
-                        "query-untracked-time-ms", "session-ttl", "sindex-gc-period", "ticker-interval",
-                        "tomb-raider-eligable-age", "tomb-raider-period", "tomb-raider-sleep", "transaction-max-ms",
-                        "transaction-retry-ms", "xdr-digestlog-iowait-ms", "xdr-hotkey-time-ms",
-                        "xdr-info-timeout", "xdr-write-timeout"]
+context_time_configs = [
+    "dc-connections-idle-ms",
+    "default-ttl",
+    "defrag-sleep",
+    "hist-track-slice",
+    "interval",
+    "keepalive-time",
+    "max-ttl",
+    "mcast-ttl",
+    "migrate-fill-delay",
+    "migrate-retransmit-ms",
+    "migrate-sleep",
+    "nsup-hist-period",
+    "nsup-period",
+    "polling-period",
+    "proto-fd-idle-ms",
+    "query-untracked-time-ms",
+    "session-ttl",
+    "sindex-gc-period",
+    "ticker-interval",
+    "tomb-raider-eligable-age",
+    "tomb-raider-period",
+    "tomb-raider-sleep",
+    "transaction-max-ms",
+    "transaction-retry-ms",
+    "xdr-digestlog-iowait-ms",
+    "xdr-hotkey-time-ms",
+    "xdr-info-timeout",
+    "xdr-write-timeout",
+]
 
 # confings differs in configuration file and asinfo output
 # Format: (Name in config file, name expected in asinfo output)
 xdr_dc_config_name_changes = [
     ("dc-node-address-port", "Nodes"),
     ("dc-node-address-port", "nodes"),
-    ("dc-int-ext-ipmap", "int-ext-ipmap")
+    ("dc-int-ext-ipmap", "int-ext-ipmap"),
 ]
 
 # static config
-static_configs = ["access-address", "access-port", "address", "alternate-access-address", "mesh-seed-address-port",
-                  "multicast-group", "port", "tls-access-address", "tls-address", "tls-alternate-access-address",
-                  "tls-mesh-seed-address-port"]
+static_configs = [
+    "access-address",
+    "access-port",
+    "address",
+    "alternate-access-address",
+    "mesh-seed-address-port",
+    "multicast-group",
+    "port",
+    "tls-access-address",
+    "tls-address",
+    "tls-alternate-access-address",
+    "tls-mesh-seed-address-port",
+]
+
 
 def _convert(d, unit_converter):
     if not d or not isinstance(d, str) or len(d) < 2:
@@ -87,11 +126,14 @@ def _convert(d, unit_converter):
 
     return d
 
+
 def _to_bytes(d):
     return _convert(d, space_unit_converter)
 
+
 def _to_seconds(d):
     return _convert(d, time_unit_converter)
+
 
 def _ignore_context(fstream):
     paranthesis_to_find = 1
@@ -102,17 +144,18 @@ def _ignore_context(fstream):
                 break
 
             line = line.strip()
-            if not line or line[0] == '#':
+            if not line or line[0] == "#":
                 continue
 
-            paranthesis_to_find += line.count('{')
-            paranthesis_to_find -= line.count('}')
+            paranthesis_to_find += line.count("{")
+            paranthesis_to_find -= line.count("}")
 
             if paranthesis_to_find < 1:
                 break
 
         except Exception:
             break
+
 
 def _get_kv_from_line(line, key_prefix="", value_separator=None):
     k = None
@@ -127,7 +170,7 @@ def _get_kv_from_line(line, key_prefix="", value_separator=None):
         _k = values[0]
         _values = []
 
-        k = "%s%s"%((key_prefix+".") if key_prefix else "",_k)
+        k = "%s%s" % ((key_prefix + ".") if key_prefix else "", _k)
 
         if _k in static_configs or k in static_configs:
             # ignore
@@ -152,7 +195,10 @@ def _get_kv_from_line(line, key_prefix="", value_separator=None):
 
     return k, v
 
-def _parse_context(parsed_map, fstream, key_prefix="", value_separator=None, value_delimiter=","):
+
+def _parse_context(
+    parsed_map, fstream, key_prefix="", value_separator=None, value_delimiter=","
+):
     while True:
         try:
             line = fstream.readline()
@@ -160,13 +206,15 @@ def _parse_context(parsed_map, fstream, key_prefix="", value_separator=None, val
                 break
 
             line = line.strip()
-            if not line or line[0] == '#':
+            if not line or line[0] == "#":
                 continue
 
-            if line[0] == '}':
+            if line[0] == "}":
                 break
 
-            _k, _v = _get_kv_from_line(line, key_prefix=key_prefix, value_separator=value_separator)
+            _k, _v = _get_kv_from_line(
+                line, key_prefix=key_prefix, value_separator=value_separator
+            )
             if _k:
                 if _k in parsed_map:
                     _v = parsed_map[_k] + value_delimiter + _v
@@ -175,6 +223,7 @@ def _parse_context(parsed_map, fstream, key_prefix="", value_separator=None, val
         except Exception:
             break
 
+
 def _parse_service_context(parsed_map, fstream, line):
     context = "service"
     if context not in parsed_map:
@@ -182,8 +231,15 @@ def _parse_service_context(parsed_map, fstream, line):
     dir_ptr = parsed_map[context]
     _parse_context(parsed_map=dir_ptr, fstream=fstream)
 
+
 def _parse_network_sub_context(parsed_map, fstream, subcontext):
-    _parse_context(parsed_map=parsed_map, fstream=fstream, key_prefix=subcontext, value_separator=':')
+    _parse_context(
+        parsed_map=parsed_map,
+        fstream=fstream,
+        key_prefix=subcontext,
+        value_separator=":",
+    )
+
 
 def _parse_network_context(parsed_output, fstream, line):
     context = "network"
@@ -197,24 +253,25 @@ def _parse_network_context(parsed_output, fstream, line):
                 break
 
             line = line.strip()
-            if not line or line[0] == '#':
+            if not line or line[0] == "#":
                 continue
 
-            if line[0] == '}':
+            if line[0] == "}":
                 break
 
             line = line.split("#")[0].strip()
-            if line[-1] == '{':
+            if line[-1] == "{":
                 sub_context = line[:-1].strip()
                 _parse_network_sub_context(dir_ptr, fstream, sub_context)
 
         except Exception:
             break
 
+
 def _parse_xdr_dc_context(parsed_map, fstream, dc_name):
     if dc_name not in parsed_map:
         parsed_map[dc_name] = {}
-    _parse_context(parsed_map=parsed_map[dc_name], fstream=fstream, value_separator='+')
+    _parse_context(parsed_map=parsed_map[dc_name], fstream=fstream, value_separator="+")
 
     parsed_map[dc_name]["DC_Name"] = dc_name
     parsed_map[dc_name]["dc-name"] = dc_name
@@ -222,7 +279,9 @@ def _parse_xdr_dc_context(parsed_map, fstream, dc_name):
 
     for file_config_name, asinfo_config_name in xdr_dc_config_name_changes:
         if file_config_name in parsed_map[dc_name]:
-            parsed_map[dc_name][asinfo_config_name] = parsed_map[dc_name][file_config_name]
+            parsed_map[dc_name][asinfo_config_name] = parsed_map[dc_name][
+                file_config_name
+            ]
             config_to_remove.append(file_config_name)
 
     for c in set(config_to_remove):
@@ -230,6 +289,7 @@ def _parse_xdr_dc_context(parsed_map, fstream, dc_name):
             parsed_map[dc_name].pop(c)
         except Exception:
             pass
+
 
 def _parse_xdr_context(parsed_output, fstream, line):
     if "xdr" not in parsed_output:
@@ -247,15 +307,15 @@ def _parse_xdr_context(parsed_output, fstream, line):
                 break
 
             line = line.strip()
-            if not line or line[0] == '#':
+            if not line or line[0] == "#":
                 continue
 
-            if line[0] == '}':
+            if line[0] == "}":
                 break
 
             line = line.split("#")[0].strip()
 
-            if line[-1] == '{':
+            if line[-1] == "{":
                 sub_context = line[:-1].strip().split()
                 if sub_context[0] != "datacenter" or len(sub_context) < 2:
                     _ignore_context(fstream)
@@ -267,7 +327,7 @@ def _parse_xdr_context(parsed_output, fstream, line):
 
                 if _k:
 
-                    if _k == "xdr-digestlog-path" and len(_v.split())>1:
+                    if _k == "xdr-digestlog-path" and len(_v.split()) > 1:
                         _v = _v.split()
                         xdr_dir_ptr[_k] = _v[0]
                         xdr_dir_ptr["xdr-digestlog-size"] = _to_bytes(_v[1])
@@ -278,8 +338,10 @@ def _parse_xdr_context(parsed_output, fstream, line):
         except Exception:
             break
 
+
 def _parse_namespace_sub_context(parsed_map, fstream, subcontext):
     _parse_context(parsed_map=parsed_map, fstream=fstream, key_prefix=subcontext)
+
 
 def _parse_namespace_context(parsed_output, fstream, line):
     context = "namespace"
@@ -310,20 +372,22 @@ def _parse_namespace_context(parsed_output, fstream, line):
                 break
 
             line = line.strip()
-            if not line or line[0] == '#':
+            if not line or line[0] == "#":
                 continue
 
-            if line[0] == '}':
+            if line[0] == "}":
                 break
 
             line = line.split("#")[0].strip()
 
-            if line[-1] == '{':
+            if line[-1] == "{":
                 sub_context = line[:-1].strip().split()
                 if sub_context[0] != "storage-engine" or len(sub_context) < 2:
                     _ignore_context(fstream)
                 else:
-                    _parse_namespace_sub_context(namespace_dir_ptr, fstream, sub_context[0])
+                    _parse_namespace_sub_context(
+                        namespace_dir_ptr, fstream, sub_context[0]
+                    )
 
             else:
                 _k, _v = _get_kv_from_line(line)
@@ -336,7 +400,7 @@ def _parse_namespace_context(parsed_output, fstream, line):
                             dc_dir_ptr[_v] = {}
 
                         if "namespaces" in dc_dir_ptr[_v]:
-                            dc_dir_ptr[_v]["namespaces"] += ",%s"%ns_name
+                            dc_dir_ptr[_v]["namespaces"] += ",%s" % ns_name
                         else:
                             dc_dir_ptr[_v]["namespaces"] = ns_name
 
@@ -346,13 +410,15 @@ def _parse_namespace_context(parsed_output, fstream, line):
         except Exception:
             break
 
+
 # Main first level context in conf file
 contexts = {
     "service": _parse_service_context,
     "network": _parse_network_context,
     "xdr": _parse_xdr_context,
-    "namespace": _parse_namespace_context
+    "namespace": _parse_namespace_context,
 }
+
 
 def parse_file(file_path):
     parsed_output = {}
@@ -368,7 +434,7 @@ def parse_file(file_path):
                 break
 
             line = line.strip()
-            if not line or line[0] == '#' or not line[-1] == '{':
+            if not line or line[0] == "#" or not line[-1] == "{":
                 # Ignore empty lines and comments
                 continue
 
@@ -388,4 +454,3 @@ def parse_file(file_path):
 
 # f = "/Users/aerospike/Downloads/tmp 28/collect_info_20171210_050702/20171210_050702_aerospike.conf"
 # print parse_file(f)
-

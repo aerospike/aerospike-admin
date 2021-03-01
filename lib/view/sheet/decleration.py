@@ -22,11 +22,23 @@ from .source import source_lookup, source_root
 
 
 class Sheet(object):
-    def __init__(self, fields, from_source=None, for_each=None, where=None,
-                 group_by=None, order_by=None,
-                 default_style=SheetStyle.columns, title_fill='~',
-                 subtitle_fill='~', subtitle_empty_line='', vertical_separator='|',
-                 horizontal_seperator='-', no_entry='--', error_entry='~~'):
+    def __init__(
+        self,
+        fields,
+        from_source=None,
+        for_each=None,
+        where=None,
+        group_by=None,
+        order_by=None,
+        default_style=SheetStyle.columns,
+        title_fill="~",
+        subtitle_fill="~",
+        subtitle_empty_line="",
+        vertical_separator="|",
+        horizontal_seperator="-",
+        no_entry="--",
+        error_entry="~~",
+    ):
         """ Instantiates a sheet definition.
         Arguments:
         fields -- Sequence of fields to present.
@@ -51,7 +63,8 @@ class Sheet(object):
         self.fields = fields
         # XXX - Support TitleFields in SubGroups?
         self.title_field_keys = set(
-            field.key for field in fields if isinstance(field, TitleField))
+            field.key for field in fields if isinstance(field, TitleField)
+        )
         self.from_sources = self._arg_as_tuple(from_source)
         self.where = where
         self.for_each = self._arg_as_tuple(for_each)
@@ -61,8 +74,12 @@ class Sheet(object):
 
         self.vertical_separator = vertical_separator
         self.horizontal_seperator = horizontal_seperator
-        self.formatted_vertical_separator = terminal.dim() + vertical_separator + terminal.undim()
-        self.formatted_horizontal_seperator = terminal.dim() + horizontal_seperator + terminal.undim()
+        self.formatted_vertical_separator = (
+            terminal.dim() + vertical_separator + terminal.undim()
+        )
+        self.formatted_horizontal_seperator = (
+            terminal.dim() + horizontal_seperator + terminal.undim()
+        )
         self.title_fill = title_fill
         self.subtitle_fill = subtitle_fill
         self.subtitle_empty_line = subtitle_empty_line
@@ -84,24 +101,30 @@ class Sheet(object):
         elif isinstance(arg, str):
             return (arg,)
 
-        raise ValueError('Expected tuple, list or string - instead {}'.format(
-            type(arg)))
+        raise ValueError(
+            "Expected tuple, list or string - instead {}".format(type(arg))
+        )
 
     def _init_sanity_check(self):
         # Ensure 'group_bys' and 'sort_bys' are in 'fields'.
         # NOTE - currently cannot group_by/sort_by a member of a Subgroup.
-        static_fields = [field for field in self.fields
-                         if not isinstance(field, DynamicFields)]
+        static_fields = [
+            field for field in self.fields if not isinstance(field, DynamicFields)
+        ]
         field_set = set(field.key for field in static_fields)
 
         if len(field_set) != len(static_fields):
-            field_keys = ','.join(
-                ('{} appears {} times'.format((key, count))
-                 for count, key in Counter(
-                         field.key for field in static_fields).items()
-                 if count > 1))
+            field_keys = ",".join(
+                (
+                    "{} appears {} times".format((key, count))
+                    for count, key in Counter(
+                        field.key for field in static_fields
+                    ).items()
+                    if count > 1
+                )
+            )
 
-            assert False, 'Field keys are not unique: {}'.format(field_keys)
+            assert False, "Field keys are not unique: {}".format(field_keys)
 
         if self.group_bys:
             group_by_set = set(self.group_bys)
@@ -121,7 +144,7 @@ class Sheet(object):
         assert not error_groups, error_groups
         assert not error_orders, error_orders
 
-        assert self.from_sources, 'require a list of expected field sources'
+        assert self.from_sources, "require a list of expected field sources"
 
         sources_set = set(source_root(s) for s in self.from_sources)
 
@@ -134,16 +157,18 @@ class Sheet(object):
                 if isinstance(field, Subgroup):
                     return populate_seen_sources(field.fields)
 
-                assert not isinstance(field, DynamicFields), \
-                    "DynamicFields cannot be members of Subgroups."
+                assert not isinstance(
+                    field, DynamicFields
+                ), "DynamicFields cannot be members of Subgroups."
 
                 try:
                     sources = field.projector.sources
                 except AttributeError:
                     sources = set([field.projector.source])
 
-                assert sources - sources_set == set(), \
-                    "{} not subset of {}".format(sources, sources_set)
+                assert sources - sources_set == set(), "{} not subset of {}".format(
+                    sources, sources_set
+                )
 
                 seen_sources_set.update(sources)
 
@@ -182,9 +207,18 @@ class Subgroup(object):
 
 
 class Field(object):
-    def __init__(self, title, projector, converter=None, formatters=None,
-                 aggregator=None, align=None, key=None, hidden=None,
-                 dynamic_field_decl=None):
+    def __init__(
+        self,
+        title,
+        projector,
+        converter=None,
+        formatters=None,
+        aggregator=None,
+        align=None,
+        key=None,
+        hidden=None,
+        dynamic_field_decl=None,
+    ):
         """
         Arguments:
         title     -- Name in this Field's heading
@@ -222,25 +256,45 @@ class Field(object):
         self.has_aggregate = self.aggregator is not None
 
         # Pre-compute commonly accessed data.
-        self.title_words = tuple(title.split(' '))
+        self.title_words = tuple(title.split(" "))
         self.min_title_width = max(map(len, self.title_words))
 
 
 class TitleField(Field):
-    def __init__(self, title, projector, converter=None, formatters=None,
-                 aggregator=None, align=None, key=None):
+    def __init__(
+        self,
+        title,
+        projector,
+        converter=None,
+        formatters=None,
+        aggregator=None,
+        align=None,
+        key=None,
+    ):
         if formatters is None:
             formatters = (Formatters.bold(lambda _: True),)
 
         super(TitleField, self).__init__(
-            title, projector, converter=converter, formatters=formatters,
-            aggregator=aggregator, align=align, key=key)
+            title,
+            projector,
+            converter=converter,
+            formatters=formatters,
+            aggregator=aggregator,
+            align=align,
+            key=key,
+        )
 
 
 class DynamicFields(object):
-    def __init__(self, source, infer_projectors=True, required=False,
-                 aggregator_selector=None, projector_selector=None, 
-                 order=DynamicFieldOrder.ascending):
+    def __init__(
+        self,
+        source,
+        infer_projectors=True,
+        required=False,
+        aggregator_selector=None,
+        projector_selector=None,
+        order=DynamicFieldOrder.ascending,
+    ):
         """
         Arguments:
         source -- Data source to project fields from.
@@ -290,23 +344,31 @@ class Aggregator(object):
 class Aggregators(object):
     @staticmethod
     def sum(initializer=0, converter=None):
-        return Aggregator(lambda acc, value: acc + value,
-                          initializer=initializer, converter=converter)
+        return Aggregator(
+            lambda acc, value: acc + value, initializer=initializer, converter=converter
+        )
 
     @staticmethod
     def count(initializer=0, converter=None):
-        return Aggregator(lambda acc, value: acc + 1,
-                          initializer=initializer, converter=converter)
+        return Aggregator(
+            lambda acc, value: acc + 1, initializer=initializer, converter=converter
+        )
 
     @staticmethod
     def min(initializer=None, converter=None):
-        return Aggregator(lambda acc, value: acc if acc <= value else value,
-                          initializer=initializer, converter=converter)
+        return Aggregator(
+            lambda acc, value: acc if acc <= value else value,
+            initializer=initializer,
+            converter=converter,
+        )
 
     @staticmethod
     def max(initializer=None, converter=None):
-        return Aggregator(lambda acc, value: acc if acc >= value else value,
-                          initializer=initializer, converter=converter)
+        return Aggregator(
+            lambda acc, value: acc if acc >= value else value,
+            initializer=initializer,
+            converter=converter,
+        )
 
 
 class BaseProjector(object):
@@ -333,7 +395,7 @@ class BaseProjector(object):
         """
         self.source = source
         self.keys = None if keys[0] is None else tuple(keys)
-        self.for_each_key = kwargs.get('for_each_key', None)
+        self.for_each_key = kwargs.get("for_each_key", None)
 
     def __call__(self, sheet, sources):
         try:
@@ -343,17 +405,15 @@ class BaseProjector(object):
         except Exception as e:
             # XXX - A debug log may be useful.
             # print 'debug - ', e, self.source, self.source
-            raise ErrorEntryException(
-                'unexpected error occurred: {}'.format(e))
+            raise ErrorEntryException("unexpected error occurred: {}".format(e))
 
         if result is None:
-            raise NoEntryException(
-                'No entry found for source {}'.format(self.source))
+            raise NoEntryException("No entry found for source {}".format(self.source))
 
         return result
 
     def do_project(self, sheet, sources):
-        raise NotImplementedError('override do_project')
+        raise NotImplementedError("override do_project")
 
     def project_raw(self, sheet, sources):
         row = source_lookup(sources, self.source)
@@ -364,14 +424,15 @@ class BaseProjector(object):
             else:
                 row = row[-1]
         else:
-            assert self.for_each_key is None, \
-                'for_each_key set where "for_each" is not applied to the source'
+            assert (
+                self.for_each_key is None
+            ), 'for_each_key set where "for_each" is not applied to the source'
 
         if row is None:
-            raise NoEntryException('No entry for this row')
+            raise NoEntryException("No entry for this row")
 
         if isinstance(row, Exception):
-            raise ErrorEntryException('Error occurred fetching row')
+            raise ErrorEntryException("Error occurred fetching row")
 
         if self.keys is None:
             # Setting 'self.keys' to None indicates that the field needs the
@@ -388,8 +449,8 @@ class BaseProjector(object):
                 return next(row[k] for k in self.keys if k in row)
             except (KeyError, StopIteration):
                 raise NoEntryException(
-                    '{} does not contain any key in {}'.format(
-                        self.source, self.keys))
+                    "{} does not contain any key in {}".format(self.source, self.keys)
+                )
 
 
 class Projectors(object):
@@ -420,7 +481,7 @@ class Projectors(object):
             value = super(Projectors.Boolean, self).do_project(sheet, sources)
 
             if isinstance(value, str):
-                return value.lower().strip() != 'false'
+                return value.lower().strip() != "false"
 
             return True if value else False
 
@@ -472,7 +533,7 @@ class Projectors(object):
             """
 
             super(Projectors.Percent, self).__init__(source, *keys, **kwargs)
-            self.invert = kwargs.get('invert', False)
+            self.invert = kwargs.get("invert", False)
 
         def do_project(self, sheet, sources):
             """
@@ -494,8 +555,7 @@ class Projectors(object):
             field_projectors  -- Projectors to be summed.
             """
             self.field_projectors = field_projectors
-            self.sources = set(
-                (field_fn.source for field_fn in field_projectors))
+            self.sources = set((field_fn.source for field_fn in field_projectors))
 
         def do_project(self, sheet, sources):
             """
@@ -519,8 +579,7 @@ class Projectors(object):
                                 to func.
             """
             self.field_type = field_type
-            self.sources = set(
-                (field_fn.source for field_fn in field_projectors))
+            self.sources = set((field_fn.source for field_fn in field_projectors))
             self.func = func
             self.field_projectors = field_projectors
 
@@ -591,7 +650,7 @@ class Converters(object):
         minutes = (time_stamp % 3600) // 60
         seconds = time_stamp % 60
 
-        return '{:02}:{:02}:{:02}'.format(hours, minutes, seconds)
+        return "{:02}:{:02}:{:02}".format(hours, minutes, seconds)
 
     @staticmethod
     def standard(edata):
@@ -608,9 +667,9 @@ class Converters(object):
     @staticmethod
     def list_to_comma_sep_str(edata):
         if len(edata.value):
-            return Converters._list_to_str(edata.value, ', ')
+            return Converters._list_to_str(edata.value, ", ")
 
-        return '--'
+        return "--"
 
 
 class Formatters(object):
@@ -645,27 +704,41 @@ class Formatters(object):
         A tuple containing the string form of the alert and the function to
         apply to formatting to a cell.
         """
-        return 'red-alert', Formatters._should_apply(
-            predicate_fn, terminal.fg_red, terminal.fg_not_red)
+        return (
+            "red-alert",
+            Formatters._should_apply(
+                predicate_fn, terminal.fg_red, terminal.fg_not_red
+            ),
+        )
 
     @staticmethod
     def yellow_alert(predicate_fn):
         """Similar to red_alert but yellow instead of red."""
 
-        return 'yellow-alert', Formatters._should_apply(
-            predicate_fn, terminal.fg_yellow, terminal.fg_not_yellow)
+        return (
+            "yellow-alert",
+            Formatters._should_apply(
+                predicate_fn, terminal.fg_yellow, terminal.fg_not_yellow
+            ),
+        )
 
     @staticmethod
     def green_alert(predicate_fn):
         """Similar to red_alert but green instead of red."""
-        return 'green-alert', Formatters._should_apply(
-            predicate_fn, terminal.fg_green, terminal.fg_not_green)
+        return (
+            "green-alert",
+            Formatters._should_apply(
+                predicate_fn, terminal.fg_green, terminal.fg_not_green
+            ),
+        )
 
     @staticmethod
     def bold(predicate_fn):
         """Applies bold formatting if predicate evaluates to True."""
-        return 'bold', Formatters._should_apply(
-            predicate_fn, terminal.bold, terminal.unbold)
+        return (
+            "bold",
+            Formatters._should_apply(predicate_fn, terminal.bold, terminal.unbold),
+        )
 
 
 class NoEntryException(Exception):

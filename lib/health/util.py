@@ -25,7 +25,7 @@ def deep_merge_dicts(dict_to, dict_from):
     Merge dict_from to dict_to and returns dict_to
     """
 
-    if (not dict_to and not dict_from):
+    if not dict_to and not dict_from:
         return dict_to
 
     if not dict_to:
@@ -101,8 +101,9 @@ def pop_tuple_keys_for_next_level(tuple_key_list):
     return poped_nks, key_level_separator_found
 
 
-def merge_dicts_with_new_tuple_keys(dict_from, main_dict, new_tuple_keys,
-                                    forced_all_new_keys=True):
+def merge_dicts_with_new_tuple_keys(
+    dict_from, main_dict, new_tuple_keys, forced_all_new_keys=True
+):
     if not dict_from and dict_from != 0:
         return
 
@@ -117,8 +118,7 @@ def merge_dicts_with_new_tuple_keys(dict_from, main_dict, new_tuple_keys,
             main_dict = copy.deepcopy(dict_from)
         return
 
-    poped_nks, key_level_separator_found = pop_tuple_keys_for_next_level(
-        new_tuple_keys)
+    poped_nks, key_level_separator_found = pop_tuple_keys_for_next_level(new_tuple_keys)
 
     for _key in dict_from.keys():
         temp_dict = main_dict
@@ -140,15 +140,13 @@ def merge_dicts_with_new_tuple_keys(dict_from, main_dict, new_tuple_keys,
                     # This is valid tuple key requirement, as type is
                     # available.
 
-                    if (not name or isinstance(name, list)
-                            or isinstance(name, dict)):
+                    if not name or isinstance(name, list) or isinstance(name, dict):
                         # _key is the name for type
                         _k = (_key, type)
 
                     elif isinstance(name, tuple):
                         # name of key to fetch is present
-                        _k = (get_value_from_dict(dict_from[_key], name, _key),
-                              type)
+                        _k = (get_value_from_dict(dict_from[_key], name, _key), type)
 
                     else:
                         # static name provided
@@ -167,8 +165,12 @@ def merge_dicts_with_new_tuple_keys(dict_from, main_dict, new_tuple_keys,
         if last_level:
             temp_dict[_k] = copy.deepcopy(dict_from[_key])
         else:
-            merge_dicts_with_new_tuple_keys(dict_from[_key], temp_dict[_k],
-                                            new_tuple_keys, forced_all_new_keys=forced_all_new_keys)
+            merge_dicts_with_new_tuple_keys(
+                dict_from[_key],
+                temp_dict[_k],
+                new_tuple_keys,
+                forced_all_new_keys=forced_all_new_keys,
+            )
 
     # Need to push back all poped tuple keys, as same should go to other
     # siblings
@@ -181,8 +183,13 @@ def merge_dicts_with_new_tuple_keys(dict_from, main_dict, new_tuple_keys,
     return
 
 
-def create_health_input_dict(dict_from, main_dict, new_tuple_keys,
-                             new_component_keys=None, forced_all_new_keys=True):
+def create_health_input_dict(
+    dict_from,
+    main_dict,
+    new_tuple_keys,
+    new_component_keys=None,
+    forced_all_new_keys=True,
+):
     """
     Function takes dictionary of new values, main dictionary, new tuple keys to create, extra components keys to add
 
@@ -196,8 +203,9 @@ def create_health_input_dict(dict_from, main_dict, new_tuple_keys,
         return main_dict
 
     main_dict_ptr = add_component_keys(main_dict, new_component_keys)
-    merge_dicts_with_new_tuple_keys(dict_from, main_dict_ptr, new_tuple_keys,
-                                    forced_all_new_keys)
+    merge_dicts_with_new_tuple_keys(
+        dict_from, main_dict_ptr, new_tuple_keys, forced_all_new_keys
+    )
 
     return main_dict
 
@@ -350,7 +358,9 @@ def _extract_saved_value_list_from_value_vector(v):
     return val_to_save
 
 
-def create_value_list_to_save(save_param=None, key=" ", value=None, op1=None, op2=None, formatting=True):
+def create_value_list_to_save(
+    save_param=None, key=" ", value=None, op1=None, op2=None, formatting=True
+):
     """
     Merge saved value lists of operand/s.
 

@@ -43,13 +43,13 @@ FILE_READ_ENDS = ["tail", "head"]
 
 class LogReader(object):
     server_log_ext = "/aerospike.log"
-    server_log_file_identifier = [
-        "thr_info.c::", "heartbeat_received", "Cluster_size"]
+    server_log_file_identifier = ["thr_info.c::", "heartbeat_received", "Cluster_size"]
     server_log_file_identifier_pattern = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2}(\.\d+){0,3} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \([A-Za-z_\.\[\]]+:{1,2}-?[\d]+\)"
-    logger = logging.getLogger('asadm')
+    logger = logging.getLogger("asadm")
 
-    def get_server_node_id(self, file, fetch_end="tail",
-                           read_block_size=SERVER_ID_FETCH_READ_SIZE):
+    def get_server_node_id(
+        self, file, fetch_end="tail", read_block_size=SERVER_ID_FETCH_READ_SIZE
+    ):
         if not fetch_end or fetch_end not in FILE_READ_ENDS:
             fetch_end = "tail"
         if not read_block_size:
@@ -66,19 +66,20 @@ class LogReader(object):
             return not_found
         try:
             out, err = shell_command(
-                ['%s -n %d "%s"' % (fetch_end, read_block_size, file)])
+                ['%s -n %d "%s"' % (fetch_end, read_block_size, file)]
+            )
         except Exception:
             return not_found
         if err or not out:
             return not_found
-        lines = out.strip().split('\n')
+        lines = out.strip().split("\n")
         try:
             if lines:
                 fetched_line_count = len(lines)
                 end_index = fetched_line_count
-                start_index = end_index - \
-                    (block_to_check if block_to_check <
-                     end_index else end_index)
+                start_index = end_index - (
+                    block_to_check if block_to_check < end_index else end_index
+                )
                 while start_index >= 0 and start_index < end_index:
                     one_string = " ".join(lines[start_index:end_index])
                     if any(id in one_string for id in server_log_node_identifiers):
@@ -87,20 +88,22 @@ class LogReader(object):
                                 if id in line:
                                     try:
                                         node_id = re.search(
-                                            server_node_id_pattern % (id), line.strip()).group(1)
+                                            server_node_id_pattern % (id), line.strip()
+                                        ).group(1)
                                         if node_id:
                                             return node_id
                                     except Exception:
                                         pass
                     end_index = start_index
-                    start_index = end_index - \
-                        (block_to_check if block_to_check <
-                         end_index else end_index)
+                    start_index = end_index - (
+                        block_to_check if block_to_check < end_index else end_index
+                    )
         except Exception:
             pass
         if fetch_end == "tail":
-            return self.get_server_node_id(file=file, fetch_end="head",
-                                           read_block_size=read_block_size)
+            return self.get_server_node_id(
+                file=file, fetch_end="head", read_block_size=read_block_size
+            )
         return not_found
 
     def is_server_log_file(self, file=""):
@@ -112,7 +115,7 @@ class LogReader(object):
             return False
         if err or not out:
             return False
-        lines = out.strip().split('\n')
+        lines = out.strip().split("\n")
         matched_count = 0
         for line in lines:
             try:
@@ -136,13 +139,13 @@ class LogReader(object):
             grep_cmd += "-i "
         g_str = strs[0]
         if is_and:
-            search_str = "%s \"%s\" \"%s\"" % (grep_cmd, g_str, file)
-            for str in strs[1:len(strs)]:
-                search_str += "|" + "%s \"%s\"" % (grep_cmd, str)
+            search_str = '%s "%s" "%s"' % (grep_cmd, g_str, file)
+            for str in strs[1 : len(strs)]:
+                search_str += "|" + '%s "%s"' % (grep_cmd, str)
         else:
-            for str in strs[1:len(strs)]:
+            for str in strs[1 : len(strs)]:
                 g_str += "\\|" + str
-            search_str = "%s \"%s\" \"%s\"" % (grep_cmd, g_str, file)
+            search_str = '%s "%s" "%s"' % (grep_cmd, g_str, file)
         return search_str
 
     def parse_timedelta(self, arg):
@@ -168,25 +171,30 @@ class LogReader(object):
                 init_dt = tail_dt - self.parse_timedelta(arg_from.strip("- "))
             except Exception:
                 self.logger.warning(
-                    "Ignoring relative start time. Can't parse relative start time " + arg_from)
+                    "Ignoring relative start time. Can't parse relative start time "
+                    + arg_from
+                )
                 return 0
         else:
             # Absolute start time:
             try:
-                init_dt = datetime.datetime(
-                    *(time.strptime(arg_from, DT_FMT)[0:6]))
+                init_dt = datetime.datetime(*(time.strptime(arg_from, DT_FMT)[0:6]))
             except Exception as e:
                 self.logger.warning(
-                    "Ignoring absolute start time. Can't parse absolute start time " + arg_from + " " + str(e))
+                    "Ignoring absolute start time. Can't parse absolute start time "
+                    + arg_from
+                    + " "
+                    + str(e)
+                )
                 return 0
         return init_dt
 
     def _get_dt(self, line):
-        return line[0: line.find(" GMT")]
+        return line[0 : line.find(" GMT")]
 
     def parse_dt(self, line, dt_len=6):
         line = bytes_to_str(line)
-        prefix = line[0: line.find(" GMT")].split(",")[0]
+        prefix = line[0 : line.find(" GMT")].split(",")[0]
         # remove milliseconds if available
         prefix = prefix.split(".")[0]
         return datetime.datetime(*(time.strptime(prefix, DT_FMT)[0:dt_len]))
@@ -238,7 +246,7 @@ class LogReader(object):
 
         jump = (max - min) // 2
         f.seek(int(jump) + min, 0)
-        self._seek_to(f, b'\n')
+        self._seek_to(f, b"\n")
         last_read = f.tell()
         ln = self.read_line(f)
         tm = self.parse_dt(ln, dt_len=INDEX_DT_LEN)
@@ -250,7 +258,7 @@ class LogReader(object):
 
     def generate_server_log_indices(self, file_path):
         indices = {}
-        f = open(file_path, 'rb') # binary mode to enable relative seeks in Python3
+        f = open(file_path, "rb")  # binary mode to enable relative seeks in Python3
         start_timestamp = self.parse_dt(self.read_line(f), dt_len=INDEX_DT_LEN)
         indices[start_timestamp.strftime(DT_FMT)] = 0
         min_seek_pos = 0
@@ -266,7 +274,7 @@ class LogReader(object):
             else:
                 ln = self.read_next_line(f)
             current_jump = 1000
-            while(self.parse_dt(ln, dt_len=INDEX_DT_LEN) <= last_timestamp):
+            while self.parse_dt(ln, dt_len=INDEX_DT_LEN) <= last_timestamp:
                 min_seek_pos = f.tell()
                 if last_pos < (min_seek_pos + current_jump):
                     ln = self.read_next_line(f, last_pos, 0)
@@ -280,7 +288,8 @@ class LogReader(object):
 
             max_seek_pos = f.tell()
             pos, tm = self._get_next_timestamp(
-                f, min_seek_pos, max_seek_pos, last_timestamp)
+                f, min_seek_pos, max_seek_pos, last_timestamp
+            )
             if not tm and not pos:
                 break
             indices[tm.strftime(DT_FMT)] = pos
@@ -299,7 +308,9 @@ class LogReader(object):
             try:
                 # checking for valid line with timestamp
                 ln = f.readline()
-                if isinstance(ln, bytes): # need this check for serverlog.py's reading in binary mode
+                if isinstance(
+                    ln, bytes
+                ):  # need this check for serverlog.py's reading in binary mode
                     ln = bytes_to_str(ln)
                 tm = self.parse_dt(ln)
                 break

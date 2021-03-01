@@ -16,6 +16,7 @@ import re
 import sys
 import logging
 from . import section_filter_list
+
 # Assumption - Always a valid number is passed to convert to integer/float
 
 logger = logging.getLogger(__name__)
@@ -24,21 +25,25 @@ logger.setLevel(logging.CRITICAL)
 FILTER_LIST = section_filter_list.FILTER_LIST
 DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
 
+
 def change_key_name_in_map(datamap, old_keys, new_key):
     for key in old_keys:
         if key in datamap:
             datamap[new_key] = datamap[key]
             datamap.pop(key, None)
 
+
 def type_check_raw_all(nodes, section_name, parsed_map):
     for node in nodes:
         if section_name in parsed_map[node]:
             _type_check_field_and_raw_values(parsed_map[node][section_name])
 
+
 # This should check only raw values.
 # Aerospike doesn't send float values
 # pretty print and other cpu stats can send float
 # This will skip list if its first item is not a dict.
+
 
 def type_check_basic_values(section):
     malformedkeys = []
@@ -47,20 +52,28 @@ def type_check_basic_values(section):
         if isinstance(section[key], dict):
             type_check_basic_values(section[key])
 
-        elif isinstance(section[key], list) and len(section[key]) > 0 and isinstance(section[key][0], dict):
+        elif (
+            isinstance(section[key], list)
+            and len(section[key]) > 0
+            and isinstance(section[key][0], dict)
+        ):
             for item in section[key]:
                 type_check_basic_values(item)
 
         else:
-            if '.' in key or ' ' in key:
+            if "." in key or " " in key:
                 malformedkeys.append(key)
-            if isinstance(section[key], list) or isinstance(section[key], int) \
-                    or isinstance(section[key], bool) or isinstance(section[key], float):
+            if (
+                isinstance(section[key], list)
+                or isinstance(section[key], int)
+                or isinstance(section[key], bool)
+                or isinstance(section[key], float)
+            ):
                 continue
             elif section[key] is None:
                 logger.debug("Value for key " + key + " is Null")
                 continue
-            elif section[key] == 'N/E' or section[key] == 'n/e':
+            elif section[key] == "N/E" or section[key] == "n/e":
                 logger.debug("'N/E' for the field.")
                 section[key] = None
                 continue
@@ -81,17 +94,26 @@ def type_check_basic_values(section):
                     section[key] = -1 * number
 
     for key in malformedkeys:
-        newkey = key.replace('.', '_').replace(' ', '_')
+        newkey = key.replace(".", "_").replace(" ", "_")
         val = section[key]
         section.pop(key, None)
         section[newkey] = val
 
 
 def get_section_name_from_id(sec_id):
-    raw_section_name = FILTER_LIST[sec_id]['raw_section_name']
-    final_section_name = FILTER_LIST[sec_id]['final_section_name'] if 'final_section_name' in FILTER_LIST[sec_id] else ''
-    parent_section_name = FILTER_LIST[sec_id]['parent_section_name'] if 'parent_section_name' in FILTER_LIST[sec_id] else ''
+    raw_section_name = FILTER_LIST[sec_id]["raw_section_name"]
+    final_section_name = (
+        FILTER_LIST[sec_id]["final_section_name"]
+        if "final_section_name" in FILTER_LIST[sec_id]
+        else ""
+    )
+    parent_section_name = (
+        FILTER_LIST[sec_id]["parent_section_name"]
+        if "parent_section_name" in FILTER_LIST[sec_id]
+        else ""
+    )
     return raw_section_name, final_section_name, parent_section_name
+
 
 def is_collision_allowed_for_section(sec_id):
     if "collision_allowed" not in FILTER_LIST[sec_id]:
@@ -102,7 +124,10 @@ def is_collision_allowed_for_section(sec_id):
 
     return False
 
-def is_valid_section(imap, raw_section_name, final_section_name, collision_allowed=False):
+
+def is_valid_section(
+    imap, raw_section_name, final_section_name, collision_allowed=False
+):
     if not imap:
         logger.warning("Null section json")
         return False
@@ -113,12 +138,16 @@ def is_valid_section(imap, raw_section_name, final_section_name, collision_allow
 
     if len(imap[raw_section_name]) > 1 and not collision_allowed:
         logger.warning(
-            "More than one entries detected, There is a collision for this section: " + final_section_name)
+            "More than one entries detected, There is a collision for this section: "
+            + final_section_name
+        )
         return False
     return True
 
+
 def is_bool(val):
-    return val.lower() in ['true', 'false', 'yes', 'no']
+    return val.lower() in ["true", "false", "yes", "no"]
+
 
 def _str_to_number(number):
     try:
@@ -129,20 +158,23 @@ def _str_to_number(number):
         except ValueError:
             return number
 
+
 # Bool is represented as 'true' or 'false'
 def _str_to_boolean(val):
     if not is_bool(val):
         logger.warning(
-            "string passed for boolean conversion must be a boolean string true/false/yes/no")
+            "string passed for boolean conversion must be a boolean string true/false/yes/no"
+        )
         return
-    if val.lower() in ['true', 'yes']:
+    if val.lower() in ["true", "yes"]:
         return True
-    elif val.lower() in ['false', 'no']:
+    elif val.lower() in ["false", "no"]:
         return False
 
 
 # Aerospike doesn't send float values
 # pretty print and other cpu stats can send float
+
 
 def _type_check_field_and_raw_values(section):
     keys = []
@@ -150,13 +182,21 @@ def _type_check_field_and_raw_values(section):
     for key in section:
         if isinstance(section[key], dict):
             _type_check_field_and_raw_values(section[key])
-        elif isinstance(section[key], list) and len(section[key]) > 0 and isinstance(section[key][0], dict):
+        elif (
+            isinstance(section[key], list)
+            and len(section[key]) > 0
+            and isinstance(section[key][0], dict)
+        ):
             for item in section[key]:
                 _type_check_field_and_raw_values(item)
 
         else:
-            if isinstance(section[key], list) or isinstance(section[key], int) \
-                    or isinstance(section[key], bool) or isinstance(section[key], float):
+            if (
+                isinstance(section[key], list)
+                or isinstance(section[key], int)
+                or isinstance(section[key], bool)
+                or isinstance(section[key], float)
+            ):
                 continue
 
             if section[key] is None:
@@ -166,14 +206,14 @@ def _type_check_field_and_raw_values(section):
             # So do a defensive check at starting.
             # All type of address stats and config should be string so continue
             # mesh-adderss, service-address.
-            if 'addr' in key:
+            if "addr" in key:
                 continue
 
             # 3.9 config have ns name in some of the field names. {ns_name}-field_name
             # Thease fields are already under ns section, so no need to put ns_name again.
             # Remove ns name and put only filed name.
-            if re.match(r'\{.*\}-.*', key):
-                section[key.split('}-')[1]] = section.pop(key)
+            if re.match(r"\{.*\}-.*", key):
+                section[key.split("}-")[1]] = section.pop(key)
 
             # Handle format like (a,b,c) this is a valid number
             elif section[key].replace(",", "").isdigit():

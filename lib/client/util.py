@@ -21,7 +21,8 @@ import pipes
 
 from lib.utils.util import bytes_to_str
 
-def info_to_dict(value, delimiter=';', ignore_field_without_key_value_delimiter=True):
+
+def info_to_dict(value, delimiter=";", ignore_field_without_key_value_delimiter=True):
     """
     Simple function to convert string to dict
     """
@@ -52,8 +53,7 @@ def info_to_dict(value, delimiter=';', ignore_field_without_key_value_delimiter=
         for _v in _tmp_value_list:
             if delimiter2 not in _v:
                 try:
-                    _value_list[-1] = str(_value_list[-1]) + \
-                        delimiter + str(_v)
+                    _value_list[-1] = str(_value_list[-1]) + delimiter + str(_v)
 
                 except Exception:
                     pass
@@ -78,7 +78,13 @@ def info_to_dict(value, delimiter=';', ignore_field_without_key_value_delimiter=
     return stat_dict
 
 
-def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ignore_field_without_key_value_delimiter=True):
+def info_to_dict_multi_level(
+    value,
+    keyname,
+    delimiter1=";",
+    delimiter2=":",
+    ignore_field_without_key_value_delimiter=True,
+):
     """
     Simple function to convert string to dict where string is format like
     field1_section1=value1<delimiter2>field2_section1=value2<delimiter2>... <delimiter1> field1_section2=value3<delimiter2>field2_section2=value4<delimiter2>...
@@ -99,7 +105,10 @@ def info_to_dict_multi_level(value, keyname, delimiter1=';', delimiter2=':', ign
 
     for v in value_list:
         values = info_to_dict(
-            v, delimiter2, ignore_field_without_key_value_delimiter=ignore_field_without_key_value_delimiter)
+            v,
+            delimiter2,
+            ignore_field_without_key_value_delimiter=ignore_field_without_key_value_delimiter,
+        )
         if not values or isinstance(values, Exception):
             continue
         for _k in keyname:
@@ -113,7 +122,7 @@ def info_colon_to_dict(value):
     """
     Simple function to convert colon separated string to dict
     """
-    return info_to_dict(value, ':')
+    return info_to_dict(value, ":")
 
 
 def info_to_list(value, delimiter=";"):
@@ -127,8 +136,7 @@ def info_to_tuple(value, delimiter=":"):
 
 
 def info_valid(info_command_output):
-    return ("" != info_command_output or
-            "Error" not in info_command_output)
+    return "" != info_command_output or "Error" not in info_command_output
 
 
 def find_dns(endpoints):
@@ -147,7 +155,9 @@ def find_dns(endpoints):
     return None
 
 
-def parse_peers_string(peers_str, delim=",", ignore_chars_start="[", ignore_chars_end="]"):
+def parse_peers_string(
+    peers_str, delim=",", ignore_chars_start="[", ignore_chars_end="]"
+):
     peers_list = []
     if not peers_str or isinstance(peers_str, Exception):
         return peers_list
@@ -212,8 +222,7 @@ def concurrent_map(func, data):
     def task_wrapper(i):
         result[i] = func(data[i])
 
-    threads = [
-        threading.Thread(target=task_wrapper, args=(i,)) for i in range(N)]
+    threads = [threading.Thread(target=task_wrapper, args=(i,)) for i in range(N)]
     for t in threads:
         t.start()
     for t in threads:
@@ -273,7 +282,7 @@ def remove_suffix(input_string, suffix):
         input_string = input_string.strip()
         if not input_string.endswith(suffix):
             return input_string
-        return input_string[0: input_string.rfind(suffix)]
+        return input_string[0 : input_string.rfind(suffix)]
     except Exception:
         return input_string
 

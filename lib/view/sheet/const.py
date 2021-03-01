@@ -14,26 +14,26 @@
 
 
 class FieldType(object):
-    boolean = 'boolean'
-    number = 'number'
-    string = 'string'
-    dynamic = 'dynamic'
-    undefined = 'undefined'
+    boolean = "boolean"
+    number = "number"
+    string = "string"
+    dynamic = "dynamic"
+    undefined = "undefined"
 
 
 class FieldAlignment(object):
-    center = 'center'
-    left = 'left'
-    right = 'right'
+    center = "center"
+    left = "left"
+    right = "right"
 
 
 class SheetStyle(object):
-    columns = 'columns'
-    rows = 'rows'
-    json = 'json'
+    columns = "columns"
+    rows = "rows"
+    json = "json"
 
 
 class DynamicFieldOrder(object):
-    source = 'source'          # preserve source's order
-    ascending = 'ascending'    # ascending key order
-    descending = 'descending'  # descending key order
+    source = "source"  # preserve source's order
+    ascending = "ascending"  # ascending key order
+    descending = "descending"  # descending key order

@@ -56,17 +56,19 @@ def get_sindex_stats(cluster, nodes="all", for_mods=[]):
                 if sindex_key not in sindex_stats:
                     sindex_stats[sindex_key] = {}
                 sindex_stats[sindex_key] = cluster.info_sindex_statistics(
-                    ns, indexname, nodes=nodes)
+                    ns, indexname, nodes=nodes
+                )
                 for node in sindex_stats[sindex_key].keys():
-                    if (not sindex_stats[sindex_key][node]
-                            or isinstance(sindex_stats[sindex_key][node], Exception)):
+                    if not sindex_stats[sindex_key][node] or isinstance(
+                        sindex_stats[sindex_key][node], Exception
+                    ):
                         continue
                     for key, value in stat.items():
                         sindex_stats[sindex_key][node][key] = value
     return sindex_stats
 
 
-class GetDistributionController():
+class GetDistributionController:
     def __init__(self, cluster):
         self.modifiers = set(["with", "for"])
         self.cluster = cluster
@@ -97,7 +99,8 @@ class GetDistributionController():
             builds=builds,
         )
 
-class GetLatenciesController():
+
+class GetLatenciesController:
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -238,7 +241,7 @@ class GetLatenciesController():
         return latencies
 
 
-class GetConfigController():
+class GetConfigController:
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -335,13 +338,11 @@ class GetConfigController():
         ns_configs = {}
 
         for index, namespace in enumerate(namespace_list):
-            node_configs = (
-                    self.cluster.info_get_config(
-                    stanza="namespace",
-                    namespace=namespace,
-                    namespace_id=index,
-                    nodes=nodes,
-                )
+            node_configs = self.cluster.info_get_config(
+                stanza="namespace",
+                namespace=namespace,
+                namespace_id=index,
+                nodes=nodes,
             )
             for node, node_config in list(node_configs.items()):
                 if (
@@ -368,8 +369,7 @@ class GetConfigController():
         for node, build in builds.items():
             if isinstance(build, Exception):
                 continue
-            if (LooseVersion(constants.SERVER_NEW_XDR5_VERSION) <= 
-                LooseVersion(build)):
+            if LooseVersion(constants.SERVER_NEW_XDR5_VERSION) <= LooseVersion(build):
                 xdr5_nodes.append(node)
 
         return xdr5_nodes
@@ -383,7 +383,7 @@ class GetConfigController():
         if not xdr5_nodes:
             return xdr_configs
 
-        xdr5_nodes = [address.split(':')[0] for address in xdr5_nodes]
+        xdr5_nodes = [address.split(":")[0] for address in xdr5_nodes]
 
         return self.get_xdr(nodes=xdr5_nodes)
 
@@ -394,8 +394,7 @@ class GetConfigController():
         for node, build in builds.items():
             if isinstance(build, Exception):
                 continue
-            if (LooseVersion(constants.SERVER_NEW_XDR5_VERSION) > 
-                LooseVersion(build)):
+            if LooseVersion(constants.SERVER_NEW_XDR5_VERSION) > LooseVersion(build):
                 old_xdr_nodes.append(node)
 
         return old_xdr_nodes
@@ -410,7 +409,7 @@ class GetConfigController():
 
         return self.get_xdr(nodes=nodes)
 
-    def get_xdr(self, flip=True, nodes='all'):
+    def get_xdr(self, flip=True, nodes="all"):
         xdr_configs = {}
         configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
@@ -496,7 +495,8 @@ class GetConfigController():
 
         return rack_configs
 
-class GetStatisticsController():
+
+class GetStatisticsController:
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -529,9 +529,15 @@ class GetStatisticsController():
             namespace_set.update(namespace)
 
         namespace_list = util.filter_list(namespace_set, for_mods)
-        futures = [(namespace, util.Future(
-            self.cluster.info_namespace_statistics, namespace, nodes=nodes).start())
-                   for namespace in namespace_list]
+        futures = [
+            (
+                namespace,
+                util.Future(
+                    self.cluster.info_namespace_statistics, namespace, nodes=nodes
+                ).start(),
+            )
+            for namespace in namespace_list
+        ]
         ns_stats = {}
 
         for namespace, stat_future in futures:
@@ -644,7 +650,8 @@ class GetStatisticsController():
                 return True
         return False
 
-class GetFeaturesController():
+
+class GetFeaturesController:
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -678,7 +685,7 @@ class GetFeaturesController():
         )
 
 
-class GetPmapController():
+class GetPmapController:
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -790,7 +797,11 @@ class GetPmapController():
                     working_master = None
 
                 if pid not in range(pid_range):
-                    print("For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(ns, pid))
+                    print(
+                        "For {0} found partition-ID {1} which is beyond legal partitions(0...4096)".format(
+                            ns, pid
+                        )
+                    )
                     continue
 
                 if ns not in node_pmap:
@@ -837,9 +848,9 @@ class GetPmapController():
 
         for _node, _ns_data in pmap_data.items():
             ck = cluster_keys[_node]
-            
+
             for ns, params in _ns_data.items():
-                params['cluster_key'] = ck
+                params["cluster_key"] = ck
 
                 try:
                     params.update(ns_info[ck][ns][_node])
@@ -877,42 +888,46 @@ class GetPmapController():
 
         return pmap_data
 
-class GetUsersController():
+
+class GetUsersController:
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_users(self, nodes='all'):
+    def get_users(self, nodes="all"):
         users_data = self.cluster.admin_query_users(nodes=nodes)
         return users_data
 
-    def get_user(self, username, nodes='all'):
+    def get_user(self, username, nodes="all"):
         user_data = self.cluster.admin_query_user(username, nodes=nodes)
         return user_data
 
-class GetRolesController():
+
+class GetRolesController:
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_roles(self, nodes='all'):
+    def get_roles(self, nodes="all"):
         roles_data = self.cluster.admin_query_roles(nodes=nodes)
         return roles_data
 
-    def get_role(self, role_name, nodes='all'):
+    def get_role(self, role_name, nodes="all"):
         role_data = self.cluster.admin_query_role(role_name, nodes=nodes)
         return role_data
 
-class GetUdfController():
+
+class GetUdfController:
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_udfs(self, nodes='all'):
+    def get_udfs(self, nodes="all"):
         roles_data = self.cluster.info_udf_list(nodes=nodes)
         return roles_data
 
-class GetSIndexController():
+
+class GetSIndexController:
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_sindexs(self, nodes='all'):
+    def get_sindexs(self, nodes="all"):
         sindex_data = self.cluster.info_sindex(nodes=nodes)
         return sindex_data
