@@ -285,25 +285,3 @@ def remove_suffix(input_string, suffix):
         return input_string[0 : input_string.rfind(suffix)]
     except Exception:
         return input_string
-
-
-def get_value_from_dict(d, keys, default_value=None, return_type=None):
-    """
-    Simple function to fetch and return value from dict d for first available key from keys
-    If no key available then it returns default_value
-    If return_type provided then it covnerts and returns fetched value
-    """
-
-    if not isinstance(keys, tuple):
-        keys = (keys,)
-
-    for key in keys:
-        if key in d:
-            val = d[key]
-            if return_type and val:
-                try:
-                    return return_type(val)
-                except:
-                    pass
-            return val
-    return default_value

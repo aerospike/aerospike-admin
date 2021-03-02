@@ -107,18 +107,8 @@ class ControllerTest(unittest.TestCase):
         ssc.do_namespace("namespace")
         ssc.do_xdr("xdr")
 
-    def test_ShowUsersController(self):
-        ssc = ShowStatisticsController()
 
-        ssc.pre_command([""])
-        ssc.do_bins("bins")
-        ssc.do_sets("sets")
-        ssc.do_service("service")
-        ssc.do_namespace("namespace")
-        ssc.do_xdr("xdr")
-
-
-class ShowPmapControllerTest(unittest.TestCase):
+class GetPmapControllerTest(unittest.TestCase):
     def mock_info_call(self, cmd, nodes="all"):
         if cmd == "version":
             return {"10.71.71.169:3000": "3.6.0"}
@@ -204,3 +194,6 @@ class ShowPmapControllerTest(unittest.TestCase):
         expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
         actual_output = self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
+
+
+# class TestShowUsersControllers(unittest.TestCase):

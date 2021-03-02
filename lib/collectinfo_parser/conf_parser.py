@@ -14,7 +14,7 @@
 
 import re
 
-SPACE = re.compile("\s+")
+SPACE = re.compile(r"\s+")
 
 space_unit_converter = {
     # units in capital letters

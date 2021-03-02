@@ -444,13 +444,13 @@ def _compute_license_data_size(
             devices_in_use = util.get_values_from_dict(
                 host_stats,
                 (
-                    "^storage-engine.device$",
-                    "^device$",
-                    "^storage-engine.file$",
-                    "^file$",
-                    "^dev$",
-                    "^storage-engine.device\[[0-9]+\]$",
-                    "^storage-engine.file\[[0-9]+\]$",
+                    r"^storage-engine.device$",
+                    r"^device$",
+                    r"^storage-engine.file$",
+                    r"^file$",
+                    r"^dev$",
+                    r"^storage-engine.device\[[0-9]+\]$",
+                    r"^storage-engine.file\[[0-9]+\]$",
                 ),
                 return_type=str,
             )
@@ -726,13 +726,13 @@ def create_summary(
         device_name_list = util.get_values_from_second_level_of_dict(
             ns_stats,
             (
-                "^storage-engine.device$",
-                "^device$",
-                "^storage-engine.file$",
-                "^file$",
-                "^dev$",
-                "^storage-engine.device\[[0-9]+\]$",
-                "^storage-engine.file\[[0-9]+\]$",
+                r"^storage-engine.device$",
+                r"^device$",
+                r"^storage-engine.file$",
+                r"^file$",
+                r"^dev$",
+                r"^storage-engine.device\[[0-9]+\]$",
+                r"^storage-engine.file\[[0-9]+\]$",
             ),
             return_type=str,
         )
@@ -1904,7 +1904,7 @@ def get_system_commands(port=3000):
         ],
         ['arp -n|grep ether|tr -s [:blank:] | cut -d" " -f5 |sort|uniq -c'],
         [
-            'find /proc/sys/net/ipv4/neigh/default/ -name "gc_thresh*" -print -exec cat {} \;'
+            r'find /proc/sys/net/ipv4/neigh/default/ -name "gc_thresh*" -print -exec cat {} \;'
         ],
     ]
 

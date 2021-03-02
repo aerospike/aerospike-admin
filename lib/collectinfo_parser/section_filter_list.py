@@ -28,39 +28,39 @@ FILTER_LIST = {
     "ID_1": {
         "enable": True,
         "raw_section_name": "Node",
-        "regex_new": "^Node\n",
-        "regex_old": "^Node\n"
+        "regex_new": r"^Node\n",
+        "regex_old": r"^Node\n"
         # 'parser_func'
     },
     "ID_2": {
         "enable": True,
         "raw_section_name": "Namespace",
-        "regex_new": "^Namespace\n|\['namespace'\]",
-        "regex_old": "^Namespace\n"
+        "regex_new": r"^Namespace\n|\['namespace'\]",
+        "regex_old": r"^Namespace\n"
         # 'parser_func'
     },
     "ID_3": {
         "enable": True,
         "raw_section_name": "XDR",
         "final_section_name": "xdr_info",
-        "regex_new": "\['xdr'\]|^XDR\n",
-        "regex_old": "^XDR\n",
+        "regex_new": r"\['xdr'\]|^XDR\n",
+        "regex_old": r"^XDR\n",
         "collision_allowed": True
         # 'parser_func'
     },
     "ID_4": {
         "enable": True,
         "raw_section_name": "SETS",
-        "regex_new": "^SETS\n|\['set'\]",
-        "regex_old": "^SETS\n"
+        "regex_new": r"^SETS\n|\['set'\]",
+        "regex_old": r"^SETS\n"
         # 'parser_func'
     },
     "ID_5": {
         "enable": True,
         "raw_section_name": "printconfig",
         "final_section_name": "config",
-        "regex_new": "printconfig|\['config'\]",
-        "regex_old": "^printconfig\n"
+        "regex_new": r"printconfig|\['config'\]",
+        "regex_old": r"^printconfig\n"
         # 'parser_func'
     },
     "ID_6": {
@@ -68,7 +68,7 @@ FILTER_LIST = {
         "raw_section_name": "config_xdr",
         "final_section_name": "xdr",
         "parent_section_name": "config",
-        "regex_new": "\['config', 'xdr'\]"
+        "regex_new": r"\['config', 'xdr'\]"
         # 'parser_func'
     },
     "ID_7": {
@@ -76,19 +76,19 @@ FILTER_LIST = {
         "raw_section_name": "config_dc",
         "final_section_name": "dc",
         "parent_section_name": "config",
-        "regex_new": "\['config', 'dc'\]",
+        "regex_new": r"\['config', 'dc'\]",
     },
     "ID_8": {
         "enable": True,
         "raw_section_name": "compareconfig",
         "regex_new": "compareconfig",
-        "regex_old": "^compareconfig\n"
+        "regex_old": r"^compareconfig\n"
         # 'parser_func'
     },
     "ID_9": {
         "enable": True,
         "raw_section_name": "config_diff",
-        "regex_new": "\['config', 'diff'\]",
+        "regex_new": r"\['config', 'diff'\]",
         # 'parser_func'
     },
     "ID_10": {
@@ -96,7 +96,7 @@ FILTER_LIST = {
         "raw_section_name": "latency",
         "final_section_name": "latency",
         "regex_new": "latency",
-        "regex_old": "^latency\n"
+        "regex_old": r"^latency\n"
         # 'parser_func'
     },
     "ID_11": {
@@ -104,8 +104,8 @@ FILTER_LIST = {
         "enable": True,
         "raw_section_name": "statistics",
         "final_section_name": "statistics",
-        "regex_new": "^stat\n|\['statistics'\]|\"stat\"",
-        "regex_old": "^stat\n"
+        "regex_new": r"^stat\n|\['statistics'\]|\"stat\"",
+        "regex_old": r"^stat\n"
         # 'parser_func'
     },
     "ID_12": {
@@ -113,7 +113,7 @@ FILTER_LIST = {
         "raw_section_name": "statistics_xdr",
         "final_section_name": "xdr",
         "parent_section_name": "statistics",
-        "regex_new": "\['statistics', 'xdr'\]",
+        "regex_new": r"\['statistics', 'xdr'\]",
         # 'parser_func'
     },
     "ID_13": {
@@ -121,7 +121,7 @@ FILTER_LIST = {
         "raw_section_name": "statistics_dc",
         "final_section_name": "dc",
         "parent_section_name": "statistics",
-        "regex_new": "\['statistics', 'dc'\]",
+        "regex_new": r"\['statistics', 'dc'\]",
         # 'parser_func'
     },
     # Section was inside statistics earlier, check final_section_name.
@@ -132,14 +132,14 @@ FILTER_LIST = {
         "raw_section_name": "statistics_sindex",
         "final_section_name": "sindex",
         "parent_section_name": "statistics",
-        "regex_new": "\['statistics', 'sindex'\]",
+        "regex_new": r"\['statistics', 'sindex'\]",
         # 'parser_func'
     },
     "ID_15": {
         "enable": True,
         "raw_section_name": "objsz",
-        "regex_new": "^objsz\n|-v objsz",
-        "regex_old": "^objsz\n"
+        "regex_new": r"^objsz\n|-v objsz",
+        "regex_old": r"^objsz\n"
         # 'parser_func'
     },
     "ID_16": {
@@ -148,15 +148,15 @@ FILTER_LIST = {
         "raw_section_name": "ttl-distribution_1",
         #'regex_new': 'ttl',
         #'regex_new': "[INFO] Data collection for ['distribution'] in progress..",
-        "regex_new": "^ttl\n|-v ttl",
-        "regex_old": "^ttl\n"
+        "regex_new": r"^ttl\n|-v ttl",
+        "regex_old": r"^ttl\n"
         # 'parser_func'
     },
     "ID_17": {
         "enable": True,
         "raw_section_name": "evict",
-        "regex_new": "^evict\n|-v evict",
-        "regex_old": "^evict\n"
+        "regex_new": r"^evict\n|-v evict",
+        "regex_old": r"^evict\n"
         # 'parser_func'
     },
     "ID_18": {
@@ -411,26 +411,26 @@ FILTER_LIST = {
         "enable": True,
         "raw_section_name": "info_sindex",
         "final_section_name": "sindex_info",
-        "regex_new": "\['sindex'\]",
+        "regex_new": r"\['sindex'\]",
         # 'parser_func':
     },
     # This is technically a ttl section, of different format
     "ID_52": {
         "enable": True,
         "raw_section_name": "info_ttl_distribution_2",
-        "regex_new": "\['distribution'\]",
+        "regex_new": r"\['distribution'\]",
         # 'parser_func':
     },
     "ID_53": {
         "enable": True,
         "raw_section_name": "info_eviction_distribution_2",
-        "regex_new": "\['distribution', 'eviction'\]",
+        "regex_new": r"\['distribution', 'eviction'\]",
         # 'parser_func':
     },
     "ID_54": {
         "enable": True,
         "raw_section_name": "info_objectsz_distribution_2",
-        "regex_new": "\['distribution', 'object_size', '-b'\]",
+        "regex_new": r"\['distribution', 'object_size', '-b'\]",
         # 'parser_func':
     },
     "ID_55": {
@@ -557,7 +557,7 @@ FILTER_LIST = {
     "ID_74": {
         "enable": True,
         "raw_section_name": "ss -pant",
-        "regex_new": "\['ss -pant'\]",
+        "regex_new": r"\['ss -pant'\]",
         # 'parser_func'
     },
     "ID_75": {
@@ -631,7 +631,7 @@ FILTER_LIST = {
     "ID_86": {
         "enable": True,
         "raw_section_name": "DC info",
-        "regex_new": "\['dc'\]",
+        "regex_new": r"\['dc'\]",
         # 'parser_func'
     },
     "ID_87": {
@@ -650,13 +650,13 @@ FILTER_LIST = {
     "ID_89": {
         "enable": True,
         "raw_section_name": "cpuinfo",
-        "regex_new": "\['cpuinfo'\]|^cat /proc/cpuinfo\n"
+        "regex_new": r"\['cpuinfo'\]|^cat /proc/cpuinfo\n"
         # 'parser_func'
     },
     "ID_90": {
         "enable": True,
         "raw_section_name": "ASD stats",
-        "regex_new": "^ASD STATS\n"
+        "regex_new": r"^ASD STATS\n"
         # 'parser_func'
     },
     "ID_91": {
@@ -688,7 +688,7 @@ FILTER_LIST = {
     "ID_95": {
         "enable": True,
         "raw_section_name": "pmap",
-        "regex_new": "\['pmap'\]"
+        "regex_new": r"\['pmap'\]"
         # 'parser_func'
     },
     "ID_96": {
@@ -734,7 +734,7 @@ FILTER_LIST = {
         "raw_section_name": "config_cluster",
         "final_section_name": "cluster",
         "parent_section_name": "config",
-        "regex_new": "\['config', 'cluster'\]"
+        "regex_new": r"\['config', 'cluster'\]"
         # 'parser_func'
     },
     # Leave 102 for merge from pensive
@@ -759,7 +759,7 @@ FILTER_LIST = {
     "ID_106": {
         "enable": True,
         "raw_section_name": "netstat -ant|grep 3000",
-        "regex_new": "netstat -ant[|]grep 3000|^netstat\n",
+        "regex_new": r"netstat -ant[|]grep 3000|^netstat\n",
         "regex_old": CMD_PREFIX + "netstat -ant[|]grep 3000"
         # 'parser_func'
     },
@@ -767,7 +767,7 @@ FILTER_LIST = {
         "enable": True,
         "raw_section_name": "lscpu",
         "final_section_name": "lscpu",
-        "regex_new": "[cpu] lscpu\n"
+        "regex_new": r"[cpu] lscpu\n"
         # 'parser_func'
     },
     "ID_108": {
@@ -810,7 +810,7 @@ FILTER_LIST = {
         "raw_section_name": "roster:",
         "final_section_name": "roster",
         "regex_new": "roster",
-        "regex_old": "^roster\n"
+        "regex_old": r"^roster\n"
         # 'parser_func'
     }
     # {

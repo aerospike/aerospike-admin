@@ -14,6 +14,7 @@
 
 import copy
 import io
+from lib.utils.common import _collect_ip_link_details
 import pipes
 import re
 import socket
@@ -169,7 +170,7 @@ def filter_list(ilist, pattern_list):
     return filter(likes.search, ilist)
 
 
-def clear_val_from_dict(keys, d, val):
+def clear_val_from_list_in_dict(keys, d, val):
     for key in keys:
         if key in d and val in d[key]:
             d[key].remove(val)
@@ -198,8 +199,8 @@ def _fetch_line_clear_dict(line, arg, return_type, default, keys, d):
             val = None
 
         if success and keys and d:
-            clear_val_from_dict(keys, d, arg)
-            clear_val_from_dict(keys, d, _val)
+            clear_val_from_list_in_dict(keys, d, arg)
+            clear_val_from_list_in_dict(keys, d, _val)
 
     except Exception:
         val = default
@@ -228,7 +229,7 @@ def check_arg_and_delete_from_mods(line, arg, default, modifiers, mods):
     try:
         if arg in line:
             val = True
-            clear_val_from_dict(modifiers, mods, arg)
+            clear_val_from_list_in_dict(modifiers, mods, arg)
             line.remove(arg)
         else:
             val = False
@@ -354,7 +355,7 @@ def get_values_from_dict(d, re_keys, return_type=None):
     if not re_keys or not d or not isinstance(d, dict):
         return values
 
-    if not isinstance(re_keys, tuple):
+    if not isinstance(re_keys, tuple) and not isinstance(re_keys, list):
         re_keys = (re_keys,)
 
     keys = filter_list(d.keys(), re_keys)
@@ -375,6 +376,11 @@ def strip_string(search_str):
 
 
 def flip_keys(orig_data):
+    """
+    Flips a two level nested dictionary.
+    Example:
+    {key1: {key2: value, key3: value}} => {key2: {key1: value}, {key3: value}}
+    """
     new_data = {}
     for key1, data1 in orig_data.items():
         if isinstance(data1, Exception):
@@ -524,8 +530,10 @@ def get_values_from_second_level_of_dict(data, re_keys, return_type=None):
     return res_dict
 
 
-# Given a list of keys, returns the nested value in a dict.
 def get_nested_value_from_dict(data, keys, default_value=None, return_type=None):
+    """
+    Given a list of keys, returns the nested value in a dict.
+    """
     ref = data
     for key in keys:
         temp_ref = get_value_from_dict(ref, key)
@@ -540,7 +548,7 @@ def get_nested_value_from_dict(data, keys, default_value=None, return_type=None)
     if success:
         return val
 
-    return ref
+    return default_value
 
 
 def add_dicts(d1, d2):
@@ -641,7 +649,7 @@ def is_valid_ip_port(key):
         # IPv6 address
         l = key.split("]:")
 
-    if len(l) < 2:
+    if len(l) < 2 or ("]" not in key and len(l) != 2):
         return False
 
     address, port = l[0], l[1]

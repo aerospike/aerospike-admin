@@ -27,7 +27,7 @@ from lib.collectinfo_parser import conf_parser
 from lib.collectinfo_parser.full_parser import parse_system_live_command
 from lib.utils import common
 from lib.utils.constants import AuthMode
-from lib.utils.util import shell_command, logthis
+from lib.utils.util import shell_command, logthis, get_value_from_dict
 
 #### Remote Server connection module
 
@@ -50,7 +50,7 @@ except ImportError:
         PEXPECT_VERSION = NO_MODULE
 
 
-def getfqdn(address, timeout=0.5):
+def get_fully_qualified_domain_name(address, timeout=0.5):
     # note: cannot use timeout lib because signal must be run from the
     #       main thread
 
@@ -359,7 +359,7 @@ class Node(object):
                 socket.getaddrinfo(address, port, socket.AF_UNSPEC, socket.SOCK_STREAM)[
                     0
                 ][4][0],
-                getfqdn(address),
+                get_fully_qualified_domain_name(address),
             )
 
         self.ip, self.fqdn = self.dns_cache[address]
@@ -394,7 +394,6 @@ class Node(object):
     def is_feature_present(self, feature):
         if not self.features or isinstance(self.features, Exception):
             return False
-
         return feature in self.features
 
     def has_peers_changed(self):
@@ -935,10 +934,8 @@ class Node(object):
         stats = [util.info_colon_to_dict(stat) for stat in stats]
         sets = {}
         for stat in stats:
-            ns_name = util.get_value_from_dict(
-                d=stat, keys=("ns_name", "namespace", "ns")
-            )
-            set_name = util.get_value_from_dict(d=stat, keys=("set_name", "set"))
+            ns_name = get_value_from_dict(d=stat, keys=("ns_name", "namespace", "ns"))
+            set_name = get_value_from_dict(d=stat, keys=("set_name", "set"))
 
             key = (ns_name, set_name)
             if key not in sets:

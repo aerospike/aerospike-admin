@@ -194,7 +194,7 @@ def _parse_build_version(imap, parsed_map):
     asd_found = False
     build_data = {}
     build_data["edition"] = "EE"
-    ver_regex = "[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}"
+    ver_regex = r"[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}"
 
     for dist in [raw_section_name_1, raw_section_name_2]:
 
@@ -858,7 +858,7 @@ def _get_histogram_keys(latency_line):
         logger.warning("Number of keys in histogram is less than four " + str(keys))
 
 
-time_regex = "\d{2}:\d{2}:\d{2}.*->\d{2}:\d{2}:\d{2}"
+time_regex = r"\d{2}:\d{2}:\d{2}.*->\d{2}:\d{2}:\d{2}"
 
 
 def _get_histogram_values(latency_line):
@@ -1097,7 +1097,9 @@ def _parse_sindex_info_section(nodes, imap, parsed_map):
     for index in range(len(sindex_section)):
         if index < start_index:
             continue
-        l = re.split("\ +", sindex_section[index])
+
+        l = re.split(r"\ +", sindex_section[index])
+
         # End of section
         if len(l) < 5:
             break

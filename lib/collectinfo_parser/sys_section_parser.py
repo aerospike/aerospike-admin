@@ -320,7 +320,7 @@ def _parse_top_section(imap, parsed_map):
             # "26937 root      20   0 59.975g 0.049t 0.048t S 117.6 83.9 164251:27 asd\n"
             if not asd_flag and re.search("asd", line):
                 asd_flag = True
-                l = re.split("\ +", line)
+                l = re.split(r"\ +", line)
                 topdata["asd_process"]["virtual_memory"] = l[4]
                 topdata["asd_process"]["resident_memory"] = l[5]
                 topdata["asd_process"]["shared_memory"] = l[6]
@@ -334,7 +334,7 @@ def _parse_top_section(imap, parsed_map):
                     )
             elif not xdr_flag and re.search("xdr", line):
                 xdr_flag = True
-                l = re.split("\ +", line)
+                l = re.split(r"\ +", line)
                 topdata["xdr_process"]["virtual_memory"] = l[4]
                 topdata["xdr_process"]["resident_memory"] = l[5]
                 topdata["xdr_process"]["shared_memory"] = l[6]
@@ -377,7 +377,7 @@ def _parse_uname_section(imap, parsed_map):
         if re.search("uname -a", line) or line.strip() == "":
             continue
         # "Linux e-asmem-01.ame.admarketplace.net 2.6.32-279.el6.x86_64 #1 SMP Fri Jun 22 12:19:21 UTC 2012 x86_64 x86_64 x86_64 GNU/Linux\n"
-        l = re.split("\ +", (line.split("#")[0]))
+        l = re.split(r"\ +", (line.split("#")[0]))
         unamedata["kernel_name"] = l[0]
         unamedata["nodename"] = l[1]
         unamedata["kernel_release"] = l[2]

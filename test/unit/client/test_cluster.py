@@ -117,17 +117,23 @@ class ClusterTest(unittest.TestCase):
 
     def setUp(self):
         info_cinfo = patch("lib.client.node.Node._info_cinfo")
-        getfqdn = patch("lib.client.node.getfqdn")
+        get_fully_qualified_domain_name = patch(
+            "lib.client.node.get_fully_qualified_domain_name"
+        )
         getaddrinfo = patch("socket.getaddrinfo")
 
         self.addCleanup(patch.stopall)
 
         lib.client.node.Node._info_cinfo = info_cinfo.start()
-        lib.client.node.getfqdn = getfqdn.start()
+        lib.client.node.get_fully_qualified_domain_name = (
+            get_fully_qualified_domain_name.start()
+        )
         socket.getaddrinfo = getaddrinfo.start()
 
         Node._info_cinfo.return_value = ""
-        lib.client.node.getfqdn.return_value = "host.domain.local"
+        lib.client.node.get_fully_qualified_domain_name.return_value = (
+            "host.domain.local"
+        )
 
         def getaddressinfo_side_effect(*args):
             return [(2, 1, 6, "", (args[0], 3000))]

@@ -294,7 +294,7 @@ class ASSocket:
         rsp_code = delete_privileges(self.sock, role, privileges)
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to revoke privileges")
+            raise ASProtocolError(rsp_code, "Failed to revoke privilege")
 
     def set_whitelist(self, role, whitelist):
         rsp_code = set_whitelist(self.sock, role, whitelist)

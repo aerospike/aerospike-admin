@@ -75,12 +75,6 @@ def _unpack_uint8(buf, offset):
     return val[0], offset
 
 
-def _pack_uint32(buf, offset, val):
-    _STRUCT_UINT32.pack_into(buf, offset, val)
-    offset += _STRUCT_UINT32.size
-    return offset
-
-
 def _pack_string(buf, offset, string):
     bytes_field = str_to_bytes(string)
     buf[offset : offset + len(bytes_field)] = bytes_field
@@ -128,6 +122,7 @@ def _receive_data(sock, sz):
         else:
             data += chunk
         pos += len(chunk)
+
     return data
 
 
@@ -264,7 +259,7 @@ class ASResponse(IntEnum):
     NO_CREDENTIAL_OR_BAD_CREDENTIAL = 65
     NO_ROLE_OR_INVALID_ROLE = 70
     ROLE_ALREADY_EXISTS = 71
-    NO_PRIVLEGES_OR_UNRECOGNIZED_PRIVILEGES = 72
+    NO_PRIVILEGES_OR_UNRECOGNIZED_PRIVILEGES = 72
     BAD_WHITELIST = 73
     NOT_AUTHENTICATED = 80
     ROLE_OR_PRIVILEGE_VIOLATION = 81
@@ -517,6 +512,7 @@ def authenticate_new(sock, user, session_token):
     )
 
 
+@logthis("asadm", DEBUG)
 def authenticate_old(sock, user, password):
     return _authenticate(
         sock,
@@ -594,7 +590,7 @@ def set_password(sock, user, password):
     try:
         _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
         return return_code
-    except Exception as e:
+    except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
@@ -623,7 +619,7 @@ def change_password(sock, user, old_password, new_password):
     try:
         _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
         return return_code
-    except Exception as e:
+    except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
@@ -644,8 +640,11 @@ def grant_roles(sock, user, roles):
     offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
     offset = _pack_admin_field(send_buf, offset, ASField.ROLES, roles)
 
-    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
-    return return_code
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
 
 
 # roles is a list of strings representing role names.
@@ -665,9 +664,11 @@ def revoke_roles(sock, user, roles):
     offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
     offset = _pack_admin_field(send_buf, offset, ASField.ROLES, roles)
 
-    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
-
-    return return_code
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
 
 
 def _query_users(sock, user=None):
@@ -786,9 +787,11 @@ def create_role(sock, role, privileges=None, whitelist=None):
     if pack_whitelist:
         offset = _pack_admin_field(send_buf, offset, ASField.WHITELIST, whitelist)
 
-    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
-
-    return return_code
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
 
 
 @logthis("asadm", DEBUG)
@@ -805,9 +808,11 @@ def delete_role(sock, role):
     )
     offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
 
-    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
-
-    return return_code
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
 
 
 @logthis("asadm", DEBUG)
@@ -846,8 +851,11 @@ def delete_privileges(sock, role, privileges):
     offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
     offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
 
-    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
-    return return_code
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
 
 
 def _set_whitelist(sock, role, whitelist=None):
@@ -872,9 +880,11 @@ def _set_whitelist(sock, role, whitelist=None):
     if whitelist is not None:
         offset = _pack_admin_field(send_buf, offset, ASField.WHITELIST, whitelist)
 
-    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
-
-    return return_code
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
 
 
 @logthis("asadm", DEBUG)
@@ -1028,7 +1038,6 @@ def login(sock, user, password, auth_mode):
     try:
         # OpenSSL wrapper doesn't support ctypes
         send_buf = _c_str_to_bytes(send_buf)
-
         sock.sendall(send_buf)
         recv_buff = _receive_data(sock, _PROTOCOL_HEADER_SIZE + _ADMIN_HEADER_SIZE)
         _, _, data_size, offset = _unpack_protocol_header(recv_buff)
