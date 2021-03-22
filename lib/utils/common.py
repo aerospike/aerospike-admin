@@ -22,18 +22,20 @@ import operator
 import os
 import distro
 import socket
-import sys
 import time
-import urllib.request, urllib.error, urllib.parse
+import urllib.request
+import urllib.error
+import urllib.parse
 import zipfile
 from collections import OrderedDict
 from distutils.version import LooseVersion
 
-from lib.utils import constants, filesize, util
-from lib.utils.data import lsof_file_type_desc
+from lib.utils import constants, file_size, util
+from lib.utils import data
 from lib.view import terminal
 
 logger = logging.getLogger("asadm")
+
 ########## Feature ##########
 
 comp_ops = {
@@ -934,12 +936,12 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
         if not host_data or isinstance(host_data, Exception):
             continue
 
-        for host_id, data in host_data.items():
-            if not data or isinstance(data, Exception):
+        for host_id, data_ in host_data.items():
+            if not data_ or isinstance(data_, Exception):
                 continue
 
-            hist = data["data"]
-            width = data["width"]
+            hist = data_["data"]
+            width = data_["width"]
 
             cum_total = 0
             total = sum(hist)
@@ -965,9 +967,9 @@ def _create_histogram_percentiles_output(histogram_name, histogram_data):
                 result = [0] * 10
 
             if histogram_name == "objsz":
-                data["percentiles"] = [(r * width) - 1 if r > 0 else r for r in result]
+                data_["percentiles"] = [(r * width) - 1 if r > 0 else r for r in result]
             else:
-                data["percentiles"] = [r * width for r in result]
+                data_["percentiles"] = [r * width for r in result]
 
     return histogram_data
 
@@ -980,7 +982,7 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
         rblock_size_bytes = 128
         width = 1
 
-        for host_id, data in host_data.items():
+        for host_id, data_ in host_data.items():
 
             try:
                 as_version = builds[host_id]
@@ -993,8 +995,8 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             except Exception:
                 pass
 
-            hist = data["data"]
-            width = data["width"]
+            hist = data_["data"]
+            width = data_["width"]
 
             for i, v in enumerate(hist):
                 if v and v > 0:
@@ -1048,7 +1050,7 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             need_to_show[key] = False
             columns.append(key)
 
-        for host_id, data in host_data.items():
+        for host_id, data_ in host_data.items():
 
             rblock_size_bytes = 128
 
@@ -1064,9 +1066,9 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             except Exception:
                 pass
 
-            hist = data["data"]
-            width = data["width"]
-            data["values"] = {}
+            hist = data_["data"]
+            width = data_["width"]
+            data_["values"] = {}
 
             for i, s in enumerate(start_buckets):
 
@@ -1082,14 +1084,14 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
                 if key not in columns:
                     columns.append(key)
 
-                if key not in data["values"]:
-                    data["values"][key] = 0
+                if key not in data_["values"]:
+                    data_["values"][key] = 0
 
                 while b_index < start_buckets[i + 1]:
-                    data["values"][key] += hist[b_index]
+                    data_["values"][key] += hist[b_index]
                     b_index += 1
 
-                if data["values"][key] > 0:
+                if data_["values"][key] > 0:
                     need_to_show[key] = True
 
                 else:
@@ -1116,13 +1118,13 @@ def _get_bucket_range(current_bucket, next_bucket, width, rblock_size_bytes):
         else:
             last_bucket_last_rblock_end += 1
 
-        s_b = filesize.size(last_bucket_last_rblock_end, filesize.byte)
+        s_b = file_size.size(last_bucket_last_rblock_end, file_size.byte)
 
         if current_bucket == 99 or next_bucket > 99:
             return ">%s" % (s_b.replace(" ", ""))
 
     bucket_last_rblock_end = ((next_bucket * width) - 1) * rblock_size_bytes
-    e_b = filesize.size(bucket_last_rblock_end, filesize.byte)
+    e_b = file_size.size(bucket_last_rblock_end, file_size.byte)
     return _create_range_key(s_b.replace(" ", ""), e_b.replace(" ", ""))
 
 
@@ -1235,8 +1237,8 @@ def _parse_new_log_histogram(histogram, histogram_data):
     datum = histogram_data.split(":")
 
     field = datum.pop(0)
-    l = field.split("=")
-    k, v = l[0], l[1]
+    split = field.split("=")
+    k, v = split[0], split[1]
 
     if k != "units":
         # wrong format
@@ -1649,10 +1651,10 @@ def _collect_lsof(verbose=False):
                         type_ljust = len(t)
 
                     if (
-                        t in lsof_file_type_desc
-                        and len(lsof_file_type_desc[t]) > desc_ljust
+                        t in data.lsof_file_type_desc
+                        and len(data.lsof_file_type_desc[t]) > desc_ljust
                     ):
-                        desc_ljust = len(lsof_file_type_desc[t])
+                        desc_ljust = len(data.lsof_file_type_desc[t])
 
                     o_dict[t] = 1
                 else:
@@ -1674,8 +1676,8 @@ def _collect_lsof(verbose=False):
 
     for ftype in sorted(o_dict.keys()):
         desc = "Unknown"
-        if ftype in lsof_file_type_desc:
-            desc = lsof_file_type_desc[ftype]
+        if ftype in data.lsof_file_type_desc:
+            desc = data.lsof_file_type_desc[ftype]
 
         out += (
             "\n" + ftype.ljust(type_ljust) + desc.ljust(desc_ljust) + str(o_dict[ftype])
@@ -2063,30 +2065,30 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
         '192.168.173.203:3000': {
             'dc_configs': {
                 'DC1': {
-                    'node-address-port': '', 
+                    'node-address-port': '',
                     . . .
-                }, 
+                },
                 'DC2': {
-                    'node-address-port': '', 
+                    'node-address-port': '',
                     . . .
                 }
-            }, 
+            },
             'ns_configs': {
                 'DC1': {
                     'test': {
-                        'enabled': 'true', 
+                        'enabled': 'true',
                         . . .
                     }
-                }, 
+                },
                 'DC2': {
                     'bar': {
-                        'enabled': 'true',  
+                        'enabled': 'true',
                         . . .
                     }
                 }
-            }, 
+            },
             'xdr_configs': {
-                'dcs': 'DC1,DC2', 
+                'dcs': 'DC1,DC2',
                 'trace-fraction': '0'
             }
         }
@@ -2097,21 +2099,21 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
             '192.168.173.203:3000': {
                 'dcs': 'DC1,DC2', 'trace-fraction': '0'
             }
-        }, 
+        },
         'dc_configs': {
             'DC1': {
                 '192.168.173.203:3000': {
-                    'node-address-port': '', 
+                    'node-address-port': '',
                      . . .
                 }
-            }, 
+            },
             'DC2': {
                 '192.168.173.203:3000': {
                     'node-address-port': '',
                      . . .
                 }
             }
-        }, 
+        },
         'ns_configs': {
             'DC1': {
                 '192.168.173.203:3000': {
@@ -2120,7 +2122,7 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
                          . . .
                     }
                 }
-            }, 
+            },
             'DC2': {
                 '192.168.173.203:3000': {
                     'bar': {

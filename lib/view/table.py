@@ -15,7 +15,7 @@
 from enum import Enum, unique
 import re
 
-from lib.utils import filesize
+from lib.utils import file_size
 from lib.view import terminal
 
 
@@ -40,7 +40,7 @@ class Extractors:
             elif system == float:
                 return float(data[column])
             else:
-                return filesize.size(int(data[column]), system)
+                return file_size.size(int(data[column]), system)
 
         return si_extractor
 
@@ -54,15 +54,15 @@ class Extractors:
 
     @staticmethod
     def sif_extractor(columns):
-        return Extractors._num_extractor(columns, filesize.si_float)
+        return Extractors._num_extractor(columns, file_size.si_float)
 
     @staticmethod
     def si_extractor(columns):
-        return Extractors._num_extractor(columns, filesize.si)
+        return Extractors._num_extractor(columns, file_size.si)
 
     @staticmethod
     def byte_extractor(columns):
-        return Extractors._num_extractor(columns, filesize.byte)
+        return Extractors._num_extractor(columns, file_size.byte)
 
     @staticmethod
     def time_extractor(columns):
@@ -191,7 +191,7 @@ class Table:
                 if self._column_widths[i] < max_length:
                     self._column_widths[i] = max_length
                 if not header:
-                    if not filesize.isfilesize(cell):
+                    if not file_size.is_file_size(cell):
                         if cell != self._no_entry:
                             self._column_types[i] = "string"
         elif self._orientation == Orientation.VERTICAL:

@@ -15,16 +15,11 @@
 import copy
 import re
 
-from lib.health.commands import select_keys, do_assert, do_operation, do_assert_if_check
-from lib.health.constants import AssertLevel, HEALTH_PARSER_VAR, MAJORITY
-from lib.health.exceptions import SyntaxException
-from lib.health.operation import do_multiple_group_by
-from lib.health.util import (
-    create_health_internal_tuple,
-    create_snapshot_key,
-    h_eval,
-    is_health_parser_variable,
-)
+from .exceptions import SyntaxException
+from . import commands
+from . import constants
+from . import operation
+from . import util
 
 try:
     from ply import lex, yacc
@@ -38,9 +33,9 @@ class HealthLexer:
     SNAPSHOT_KEY_PATTERN = r"SNAPSHOT(\d+)$"
 
     assert_levels = {
-        "CRITICAL": AssertLevel.CRITICAL,
-        "WARNING": AssertLevel.WARNING,
-        "INFO": AssertLevel.INFO,
+        "CRITICAL": constants.AssertLevel.CRITICAL,
+        "WARNING": constants.AssertLevel.WARNING,
+        "INFO": constants.AssertLevel.INFO,
     }
 
     components = {
@@ -137,7 +132,7 @@ class HealthLexer:
     simple_ops = {"SPLIT": "SPLIT", "UNIQUE": "UNIQUE"}
 
     complex_params = {
-        "MAJORITY": MAJORITY,
+        "MAJORITY": constants.MAJORITY,
     }
 
     assert_ops = {"ASSERT": "ASSERT"}
@@ -216,7 +211,7 @@ class HealthLexer:
             t.type = "BOOL_VAL"
             t.value = HealthLexer.bool_vals.get(t.value.lower())
         elif re.match(HealthLexer.SNAPSHOT_KEY_PATTERN, t.value):
-            t.value = create_snapshot_key(
+            t.value = util.create_snapshot_key(
                 int(re.search(HealthLexer.SNAPSHOT_KEY_PATTERN, t.value).group(1))
             )
             t.type = "COMPONENT"
@@ -246,7 +241,11 @@ class HealthLexer:
             t.type = "ASSERT_LEVEL"
         elif t.value in HealthVars:
             t.type = "VAR"
-            t.value = (HEALTH_PARSER_VAR, t.value, copy.deepcopy(HealthVars[t.value]))
+            t.value = (
+                constants.HEALTH_PARSER_VAR,
+                t.value,
+                copy.deepcopy(HealthVars[t.value]),
+            )
         return t
 
     def t_STRING(self, t):
@@ -316,12 +315,12 @@ class HealthParser:
         if len(p) > 2 and p[2] is not None:
             if isinstance(p[2], Exception):
                 val = None
-            elif is_health_parser_variable(p[2]):
+            elif util.is_health_parser_variable(p[2]):
                 val = p[2][2]
             else:
                 val = p[2]
 
-            if is_health_parser_variable(p[1]):
+            if util.is_health_parser_variable(p[1]):
                 HealthVars[p[1][1]] = val
             else:
                 HealthVars[p[1]] = val
@@ -379,7 +378,7 @@ class HealthParser:
         if len(p) == 1:
             p[0] = None
         else:
-            p[0] = create_health_internal_tuple(p[2], [])
+            p[0] = util.create_health_internal_tuple(p[2], [])
 
     def p_apply_comparison_op(self, p):
         """
@@ -393,11 +392,11 @@ class HealthParser:
         complex_comparison_operand : COMPLEX_PARAM
                    | operand
         """
-        if is_health_parser_variable(p[1]):
+        if util.is_health_parser_variable(p[1]):
             p[0] = p[1][2]
 
         elif not isinstance(p[1], tuple):
-            p[0] = create_health_internal_tuple(p[1], [])
+            p[0] = util.create_health_internal_tuple(p[1], [])
 
         else:
             p[0] = p[1]
@@ -407,10 +406,10 @@ class HealthParser:
         operand : VAR
                    | constant
         """
-        if is_health_parser_variable(p[1]):
+        if util.is_health_parser_variable(p[1]):
             p[0] = p[1][2]
         else:
-            p[0] = create_health_internal_tuple(p[1], [])
+            p[0] = util.create_health_internal_tuple(p[1], [])
 
     def p_value(self, p):
         """
@@ -498,7 +497,7 @@ class HealthParser:
         group_by_statement : group_by_clause VAR
         """
         try:
-            p[0] = do_multiple_group_by(p[2][2], p[1])
+            p[0] = operation.do_multiple_group_by(p[2][2], p[1])
         except Exception as e:
             p[0] = e
 
@@ -535,7 +534,7 @@ class HealthParser:
                         | opt_group_by_clause DO simple_operation opt_save_clause
         """
         try:
-            p[0] = do_operation(
+            p[0] = commands.do_operation(
                 op=p[3][0],
                 arg1=p[3][1],
                 arg2=p[3][2],
@@ -572,7 +571,7 @@ class HealthParser:
                              | ASSERT_OP LPAREN assert_arg COMMA assert_comparison_arg COMMA error_string COMMA assert_category COMMA ASSERT_LEVEL RPAREN
         """
         if len(p) < 14:
-            p[0] = do_assert(
+            p[0] = commands.do_assert(
                 op=p[1],
                 data=p[3],
                 check_val=p[5],
@@ -581,7 +580,7 @@ class HealthParser:
                 level=p[11],
             )
         elif len(p) < 16:
-            p[0] = do_assert(
+            p[0] = commands.do_assert(
                 op=p[1],
                 data=p[3],
                 check_val=p[5],
@@ -591,7 +590,7 @@ class HealthParser:
                 description=p[13],
             )
         elif len(p) < 18:
-            p[0] = do_assert(
+            p[0] = commands.do_assert(
                 op=p[1],
                 data=p[3],
                 check_val=p[5],
@@ -607,10 +606,10 @@ class HealthParser:
                 p[0] = None
             else:
                 if assert_filter_arg is not None:
-                    data = do_operation(op="==", arg1=p[3], arg2=p[5])
+                    data = commands.do_operation(op="==", arg1=p[3], arg2=p[5])
                     try:
                         # If key filtration throws exception (due to non-matching), it just passes that and executes main assert
-                        new_data = do_operation(
+                        new_data = commands.do_operation(
                             op="||",
                             arg1=data,
                             arg2=assert_filter_arg,
@@ -621,10 +620,10 @@ class HealthParser:
                     except Exception:
                         pass
 
-                    p[0] = do_assert(
+                    p[0] = commands.do_assert(
                         op=p[1],
                         data=data,
-                        check_val=create_health_internal_tuple(True, []),
+                        check_val=util.create_health_internal_tuple(True, []),
                         error=p[7],
                         category=p[9],
                         level=p[11],
@@ -632,7 +631,7 @@ class HealthParser:
                         success_msg=p[15],
                     )
                 else:
-                    p[0] = do_assert(
+                    p[0] = commands.do_assert(
                         op=p[1],
                         data=p[3],
                         check_val=p[5],
@@ -647,7 +646,9 @@ class HealthParser:
         """
         assert_if_condition : assert_arg opt_assert_if_arg2
         """
-        skip_assert, assert_filter_arg = do_assert_if_check(p[2][0], p[1], p[2][1])
+        skip_assert, assert_filter_arg = commands.do_assert_if_check(
+            p[2][0], p[1], p[2][1]
+        )
         p[0] = (skip_assert, assert_filter_arg)
 
     def p_opt_assert_if_arg2(self, p):
@@ -670,7 +671,7 @@ class HealthParser:
         """
         assert_comparison_arg : constant
         """
-        p[0] = create_health_internal_tuple(p[1], [])
+        p[0] = util.create_health_internal_tuple(p[1], [])
 
     def p_constant(self, p):
         """
@@ -678,7 +679,7 @@ class HealthParser:
                     | STRING
                     | BOOL_VAL
         """
-        p[0] = h_eval(p[1])
+        p[0] = util.h_eval(p[1])
 
     def p_assert_category(self, p):
         """
@@ -714,7 +715,7 @@ class HealthParser:
         """
         if len(p) > 2:
             try:
-                p[0] = select_keys(
+                p[0] = commands.select_keys(
                     data=self.health_input_data,
                     select_keys=p[2],
                     select_from_keys=p[3],

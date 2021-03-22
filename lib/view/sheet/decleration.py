@@ -14,7 +14,7 @@
 
 from collections import Counter
 
-from lib.utils import filesize
+from lib.utils import file_size
 from lib.view import terminal
 
 from .const import DynamicFieldOrder, FieldType, SheetStyle
@@ -615,9 +615,9 @@ class EntryData(object):
 
 class Converters(object):
     @staticmethod
-    def _filesize(value, unit):
+    def _file_size(value, unit):
         try:
-            return filesize.size(value, unit)
+            return file_size.size(value, unit)
         except Exception:
             return value
 
@@ -627,7 +627,7 @@ class Converters(object):
         Arguments:
         edata -- Take an 'EntryData' and returns the value as byte units.
         """
-        return Converters._filesize(edata.value, filesize.byte)
+        return Converters._file_size(edata.value, file_size.byte)
 
     @staticmethod
     def scientific_units(edata):
@@ -636,7 +636,7 @@ class Converters(object):
         edata -- Take an 'EntryData' and returns the value as floating pint
                  International System Units.
         """
-        return Converters._filesize(edata.value, filesize.si_float)
+        return Converters._file_size(edata.value, file_size.si_float)
 
     @staticmethod
     def time(edata):

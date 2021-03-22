@@ -14,7 +14,6 @@
 
 import copy
 import io
-from lib.utils.common import _collect_ip_link_details
 import pipes
 import re
 import socket
@@ -292,7 +291,7 @@ def set_value_in_dict(d, key, value):
         d is None
         or not isinstance(d, dict)
         or not key
-        or (not value and value != 0 and value != False)
+        or (not value and value != 0 and value is not False)
         or isinstance(value, Exception)
     ):
         return
@@ -644,18 +643,18 @@ def is_valid_ip_port(key):
         return False
 
     key = key.strip()
-    l = key.split(":")
+    split = key.split(":")
     if "]:" in key:
         # IPv6 address
-        l = key.split("]:")
+        split = key.split("]:")
 
-    if len(l) < 2 or ("]" not in key and len(l) != 2):
+    if len(split) < 2 or ("]" not in key and len(split) != 2):
         return False
 
-    address, port = l[0], l[1]
+    address, port = split[0], split[1]
 
     try:
-        p = int(port)
+        int(port)
     except Exception:
         return False
 

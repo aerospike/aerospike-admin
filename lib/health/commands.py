@@ -14,8 +14,9 @@
 
 import re
 
-from lib.health.exceptions import HealthException
-from lib.health.operation import (
+from .exceptions import HealthException
+from . import util
+from .operation import (
     select_keys_from_dict,
     AggOperation,
     ApplyOperation,
@@ -23,11 +24,6 @@ from lib.health.operation import (
     BinaryOperation,
     ComplexOperation,
     SimpleOperation,
-)
-from lib.health.util import (
-    create_health_internal_tuple,
-    create_snapshot_key,
-    get_value_from_health_internal_tuple,
 )
 
 SNAPSHOT_KEY_PREFIX = "SNAPSHOT"
@@ -115,9 +111,9 @@ def select_keys(
         select_from_keys[0] != "ALL"
         and not select_from_keys[0].startswith(SNAPSHOT_KEY_PREFIX)
     ):
-        select_from_keys.insert(0, create_snapshot_key(len(data.keys()) - 1))
+        select_from_keys.insert(0, util.create_snapshot_key(len(data.keys()) - 1))
     elif select_from_keys[0].startswith(SNAPSHOT_KEY_PREFIX):
-        select_from_keys[0] = create_snapshot_key(
+        select_from_keys[0] = util.create_snapshot_key(
             int(re.search(SNAPSHOT_KEY_PATTERN, select_from_keys[0]).group(1))
         )
 
@@ -145,7 +141,7 @@ def select_keys(
 def do_assert(
     op=None,
     data={},
-    check_val=create_health_internal_tuple(True, []),
+    check_val=util.create_health_internal_tuple(True, []),
     error=None,
     category=None,
     level=None,
@@ -166,7 +162,7 @@ def do_assert_if_check(op=None, arg1=None, arg2=None):
     Returns boolean to indicate need to skip assert or not, and argument to OR with actual assert input to filter keys
     """
 
-    if arg1 is None or (not arg1 and arg1 != 0 and arg1 != False):
+    if arg1 is None or (not arg1 and arg1 != 0 and arg1 is not False):
         return False, None
 
     if op and arg2:
@@ -185,7 +181,7 @@ def is_data_true(data):
         return False
 
     if not isinstance(data, dict):
-        if not get_value_from_health_internal_tuple(data):
+        if not util.get_value_from_health_internal_tuple(data):
             return False
         return True
 

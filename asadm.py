@@ -17,6 +17,7 @@
 import cmd
 import copy
 import getpass
+
 import os
 import re
 import shlex
@@ -98,13 +99,15 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("asadm")
 logger.setLevel(logging.INFO)
 
-from lib.controllerlib import ShellException
-from lib.basiccontroller import BasicRootController
-from lib.client import info
-from lib.client.assocket import ASSocket
-from lib.client.ssl_context import SSLContext
-from lib.collectinfocontroller import CollectinfoRootController
-from lib.logcontroller import LogRootController
+from lib.collectinfo_analyzer.collectinfo_root_controller import (
+    CollectinfoRootController,
+)
+from lib.base_controller import ShellException
+from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
+from lib.live_cluster.client import info
+from lib.live_cluster.client.assocket import ASSocket
+from lib.live_cluster.client.ssl_context import SSLContext
+from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
 from lib.view import terminal, view
@@ -168,7 +171,7 @@ class AerospikeShell(cmd.Cmd):
                 if not log_path:
                     log_path = " "
 
-                self.ctrl = LogRootController(admin_version, log_path)
+                self.ctrl = LogAnalyzerRootController(admin_version, log_path)
                 self.prompt = "Log-analyzer> "
 
             elif mode == AdminMode.COLLECTINFO_ANALYZER:
@@ -198,7 +201,7 @@ class AerospikeShell(cmd.Cmd):
                         self.do_exit("")
                         logger.critical("Authentication failed: bcrypt not installed.")
 
-                self.ctrl = BasicRootController(
+                self.ctrl = LiveClusterRootController(
                     seed_nodes=seeds,
                     user=user,
                     password=password,
@@ -428,13 +431,11 @@ class AerospikeShell(cmd.Cmd):
         else:
             cmds = []
 
-        watch = False
         if len(cmds) == 1:
             cmd = cmds[0]
             if cmd == "help":
                 line.pop(0)
             if cmd == "watch":
-                watch = True
                 line.pop(0)
                 try:
                     for _ in (1, 2):
@@ -651,7 +652,7 @@ def main():
         disable_coloring()
 
     if cli_args.pmap:
-        from lib.basiccontroller import CollectinfoController
+        from lib.live_cluster.collectinfo_controller import CollectinfoController
 
         CollectinfoController.get_pmap = True
 
@@ -860,8 +861,6 @@ def parse_commands(file):
 
 def get_version():
     if __version__.startswith("$$"):
-        import string
-
         path = sys.argv[0].split("/")[:-1]
         path.append("version.txt")
         vfile = "/".join(path)

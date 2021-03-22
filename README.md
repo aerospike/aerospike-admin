@@ -40,7 +40,7 @@ Admin> help
 
 
 ## Dependencies
-- python 3.4+
+- python 3.5+
 
 ### Python Modules
 - bcrypt == 3.1.4
@@ -70,8 +70,8 @@ asadm has unit and e2e tests. To setup environment for e2e tests, execute follow
 - Enable security in the aerospike.conf file.
 - Verify that the default user `admin` exists and that is has the default roles: `sys-admin`, `user-admin`, and `read-write`. 
 - Start Aerospike cluster: Test machine should be part of this cluster with 3000 as asinfo port.
-- Write few records to cluster `asbenchmark -h <host> -Uadmin -Padmin`
-- Wait for few seconds so cluster can return histogram output properly.
+- Write a few records to cluster `asbenchmark -h <host> -Uadmin -Padmin`
+- Wait for a few seconds so cluster can return histogram output properly.
 
 ### Running Tests
 - pip install -r requirements.txt
@@ -84,10 +84,3 @@ asadm has unit and e2e tests. To setup environment for e2e tests, execute follow
 ### Run Profiler
 asadm --profile
 Do not exit with 'ctrl+c' exit with the *exit* command
-
-## Style Guide
-
-### Dependencies
-- black
-
-It's simple, just use black.

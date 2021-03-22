@@ -14,8 +14,9 @@
 
 import copy
 
-from lib.health.constants import HEALTH_PARSER_VAR
-from lib.utils.util import get_value_from_dict
+from lib.utils import util
+
+from . import constants
 
 
 def deep_merge_dicts(dict_to, dict_from):
@@ -146,7 +147,10 @@ def merge_dicts_with_new_tuple_keys(
 
                     elif isinstance(name, tuple):
                         # name of key to fetch is present
-                        _k = (get_value_from_dict(dict_from[_key], name, _key), type)
+                        _k = (
+                            util.get_value_from_dict(dict_from[_key], name, _key),
+                            type,
+                        )
 
                     else:
                         # static name provided
@@ -256,17 +260,12 @@ def h_eval(data):
                 pass
 
             try:
-                return long(data)
-            except Exception:
-                pass
-
-            try:
                 return float(data)
             except Exception:
                 pass
 
         return data
-    except:
+    except Exception:
         return data
 
 
@@ -430,7 +429,7 @@ def is_health_parser_variable(var):
     if not var:
         return False
 
-    if isinstance(var, tuple) and var[0] == HEALTH_PARSER_VAR:
+    if isinstance(var, tuple) and var[0] == constants.HEALTH_PARSER_VAR:
         return True
 
     return False

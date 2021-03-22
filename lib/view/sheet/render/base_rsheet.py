@@ -12,18 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib.health.util import print_dict
-import types
 from collections import OrderedDict
 from itertools import groupby
 from operator import itemgetter
 
-from lib.utils.util import compile_likes
+from lib.utils import util
 from lib.view.terminal import get_terminal_size, terminal
 
 from .. import decleration
 from ..const import DynamicFieldOrder
-from ..source import source_hierarchy, source_lookup, source_root
+from ..source import source_lookup
 from .render_utils import Aggregator, ErrorEntry, NoEntry
 
 
@@ -67,7 +65,7 @@ class BaseRSheet(object):
 
         self.common = common
         self.description = description
-        self.selector = compile_likes(selectors)
+        self.selector = util.compile_likes(selectors)
         self.title_repeat = title_repeat
         self.disable_aggregations = disable_aggregations
         self.dynamic_diff = dynamic_diff
@@ -864,7 +862,8 @@ class BaseRSheetCLI(BaseRSheet):
                 lines.append(line)
 
         description = [
-            terminal.dim() + l.center(line_width) + terminal.reset() for l in lines
+            terminal.dim() + line.center(line_width) + terminal.reset()
+            for line in lines
         ]
         description = "\n".join(description)
 

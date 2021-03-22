@@ -1,5 +1,6 @@
-from lib.utils import util
 import unittest2 as unittest
+
+from lib.utils import util
 
 
 class UtilTest(unittest.TestCase):
@@ -20,7 +21,7 @@ class UtilTest(unittest.TestCase):
             util.get_value_from_dict(
                 value, "c", default_value="default", return_type=int
             ),
-            "abc",
+            "default",
             "get_value_from_dict did not return the expected result",
         )
         self.assertEqual(

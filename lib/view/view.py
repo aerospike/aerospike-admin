@@ -16,21 +16,13 @@ import datetime
 import locale
 import sys
 import time
-import types
 from io import StringIO
 from collections import OrderedDict
 from pydoc import pipepager
 
-from lib.health.constants import (
-    AssertLevel,
-    AssertResultKey,
-    HealthResultCounter,
-    HealthResultType,
-)
+from lib.health import constants as health_constants
 from lib.health.util import print_dict
-from lib.utils import filesize
-from lib.utils.constants import DT_FMT
-from lib.utils.util import compile_likes, find_delimiter_in, get_value_from_dict
+from lib.utils import file_size, constants, util
 from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
 from lib.view.table import Orientation, Table, TitleFormats
@@ -262,7 +254,7 @@ class CliView(object):
     def show_distribution(
         title, histogram, unit, hist, cluster, like=None, timestamp="", **mods
     ):
-        likes = compile_likes(like)
+        likes = util.compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = "Percentage of records having {} less than or ".format(
             hist
@@ -307,7 +299,7 @@ class CliView(object):
         **mods
     ):
         prefixes = cluster.get_node_names(mods.get("with", []))
-        likes = compile_likes(like)
+        likes = util.compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = "Number of records having {} in the range ".format(
             hist
@@ -357,7 +349,7 @@ class CliView(object):
     def show_latency(latency, cluster, like=None, timestamp="", **mods):
         # TODO - May not need to converter now that dicts can be nested.
         prefixes = cluster.get_node_names(mods.get("with", []))
-        likes = compile_likes(like)
+        likes = util.compile_likes(like)
         title = "Latency " + CliView._get_timestamp_suffix(timestamp)
         keys = set(filter(likes.search, latency.keys()))
         latency = {k: v for k, v in latency.items() if k in keys}
@@ -598,7 +590,7 @@ class CliView(object):
 
         for key in keys:
             try:
-                dt_list.append(datetime.datetime.strptime(key, DT_FMT))
+                dt_list.append(datetime.datetime.strptime(key, constants.DT_FMT))
                 remove_list.append(key)
             except Exception:
                 pass
@@ -610,7 +602,7 @@ class CliView(object):
             keys = sorted(keys)
 
         if dt_list:
-            dt_list = [k.strftime(DT_FMT) for k in sorted(dt_list)]
+            dt_list = [k.strftime(constants.DT_FMT) for k in sorted(dt_list)]
 
         if keys and not dt_list:
             return keys
@@ -734,7 +726,7 @@ class CliView(object):
             return
 
         if like:
-            likes = compile_likes(like)
+            likes = util.compile_likes(like)
             filtered_keys = set(filter(likes.search, mapping.keys()))
         else:
             filtered_keys = set(mapping.keys())
@@ -778,7 +770,7 @@ class CliView(object):
             return
 
         if like:
-            likes = compile_likes(like)
+            likes = util.compile_likes(like)
             filtered_keys = list(filter(likes.search, users_data.keys()))
         else:
             filtered_keys = users_data.keys()
@@ -799,7 +791,7 @@ class CliView(object):
             return
 
         if like:
-            likes = compile_likes(like)
+            likes = util.compile_likes(like)
             filtered_keys = list(filter(likes.search, roles_data.keys()))
         else:
             filtered_keys = roles_data.keys()
@@ -819,7 +811,7 @@ class CliView(object):
             return
 
         if like:
-            likes = compile_likes(like)
+            likes = util.compile_likes(like)
             filtered_keys = list(filter(likes.search, udfs_data.keys()))
         else:
             filtered_keys = udfs_data.keys()
@@ -842,7 +834,7 @@ class CliView(object):
         filtered_data = []
 
         if like:
-            likes = compile_likes(like)
+            likes = util.compile_likes(like)
             for sindex in sindexes_data:
                 if "indexname" in sindex and likes.search(sindex["indexname"]):
                     filtered_data.append(sindex)
@@ -878,11 +870,11 @@ class CliView(object):
                 print("\n")
             else:
                 if isinstance(value, str):
-                    delimiter = find_delimiter_in(value)
+                    delimiter = util.find_delimiter_in(value)
                     value = value.split(delimiter)
 
                     if like:
-                        likes = compile_likes(like)
+                        likes = util.compile_likes(like)
                         value = list(filter(likes.search, value))
 
                     if line_sep:
@@ -1102,21 +1094,45 @@ class CliView(object):
             "\n"
             + CliView._get_header("Total")
             + CliView._get_msg(
-                [str(status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER])]
+                [
+                    str(
+                        status_counters[
+                            health_constants.HealthResultCounter.ASSERT_QUERY_COUNTER
+                        ]
+                    )
+                ]
             )
         )
         s += CliView._get_header("Passed") + CliView._get_msg(
-            [str(status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER])]
+            [
+                str(
+                    status_counters[
+                        health_constants.HealthResultCounter.ASSERT_PASSED_COUNTER
+                    ]
+                )
+            ]
         )
         s += CliView._get_header("Failed") + CliView._get_msg(
-            [str(status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER])]
+            [
+                str(
+                    status_counters[
+                        health_constants.HealthResultCounter.ASSERT_FAILED_COUNTER
+                    ]
+                )
+            ]
         )
         s += CliView._get_header("Skipped") + CliView._get_msg(
             [
                 str(
-                    status_counters[HealthResultCounter.ASSERT_QUERY_COUNTER]
-                    - status_counters[HealthResultCounter.ASSERT_FAILED_COUNTER]
-                    - status_counters[HealthResultCounter.ASSERT_PASSED_COUNTER]
+                    status_counters[
+                        health_constants.HealthResultCounter.ASSERT_QUERY_COUNTER
+                    ]
+                    - status_counters[
+                        health_constants.HealthResultCounter.ASSERT_FAILED_COUNTER
+                    ]
+                    - status_counters[
+                        health_constants.HealthResultCounter.ASSERT_PASSED_COUNTER
+                    ]
                 )
             ]
         )
@@ -1125,7 +1141,7 @@ class CliView(object):
     @staticmethod
     def _print_debug_messages(ho):
         try:
-            for d in ho[HealthResultType.DEBUG_MESSAGES]:
+            for d in ho[health_constants.HealthResultType.DEBUG_MESSAGES]:
                 try:
                     print("Value of %s:" % (d[1]))
                     CliView._print_data(d[2])
@@ -1137,10 +1153,10 @@ class CliView(object):
     @staticmethod
     def _print_exceptions(ho):
         try:
-            for e in ho[HealthResultType.EXCEPTIONS]:
+            for e in ho[health_constants.HealthResultType.EXCEPTIONS]:
                 try:
                     CliView._print_counter_list(
-                        data=ho[HealthResultType.EXCEPTIONS][e],
+                        data=ho[health_constants.HealthResultType.EXCEPTIONS][e],
                         header="%s Exceptions" % (e.upper()),
                     )
                 except Exception:
@@ -1161,13 +1177,13 @@ class CliView(object):
     @staticmethod
     def _get_msg(msg, level=None):
         if level is not None:
-            if level == AssertLevel.WARNING:
+            if level == health_constants.AssertLevel.WARNING:
                 return (
                     terminal.fg_blue()
                     + ("\n" + " ".rjust(H2_offset)).join(msg)
                     + terminal.fg_clear()
                 )
-            elif level == AssertLevel.INFO:
+            elif level == health_constants.AssertLevel.INFO:
                 return (
                     terminal.fg_green()
                     + ("\n" + " ".rjust(H2_offset)).join(msg)
@@ -1276,7 +1292,9 @@ class CliView(object):
         return res_str
 
     @staticmethod
-    def _get_error_string(data, verbose=False, level=AssertLevel.CRITICAL):
+    def _get_error_string(
+        data, verbose=False, level=health_constants.AssertLevel.CRITICAL
+    ):
         if not data:
             return "", 0
 
@@ -1288,21 +1306,25 @@ class CliView(object):
         for d in data:
             s = ""
 
-            if d[AssertResultKey.LEVEL] == level:
+            if d[health_constants.AssertResultKey.LEVEL] == level:
 
-                if d[AssertResultKey.SUCCESS]:
-                    if d[AssertResultKey.SUCCESS_MSG]:
+                if d[health_constants.AssertResultKey.SUCCESS]:
+                    if d[health_constants.AssertResultKey.SUCCESS_MSG]:
 
                         s_msg_str += CliView._get_header(
-                            d[AssertResultKey.CATEGORY][0]
-                        ) + CliView._get_msg([d[AssertResultKey.SUCCESS_MSG]])
+                            d[health_constants.AssertResultKey.CATEGORY][0]
+                        ) + CliView._get_msg(
+                            [d[health_constants.AssertResultKey.SUCCESS_MSG]]
+                        )
                         s_msg_cnt += 1
 
                     continue
 
                 s += CliView._get_header(
-                    d[AssertResultKey.CATEGORY][0]
-                ) + CliView._get_msg([d[AssertResultKey.FAIL_MSG]], level)
+                    d[health_constants.AssertResultKey.CATEGORY][0]
+                ) + CliView._get_msg(
+                    [d[health_constants.AssertResultKey.FAIL_MSG]], level
+                )
 
                 if verbose:
                     import textwrap
@@ -1311,7 +1333,7 @@ class CliView(object):
                     s += CliView._get_header("Description:")
                     s += CliView._get_msg(
                         textwrap.wrap(
-                            str(d[AssertResultKey.DESCRIPTION]),
+                            str(d[health_constants.AssertResultKey.DESCRIPTION]),
                             H_width - H2_offset,
                             break_long_words=False,
                             break_on_hyphens=False,
@@ -1320,7 +1342,9 @@ class CliView(object):
                     s += "\n"
                     s += CliView._get_header("Keys:")
                     s += CliView._get_msg(
-                        CliView._get_kv_msg_list(d[AssertResultKey.KEYS])
+                        CliView._get_kv_msg_list(
+                            d[health_constants.AssertResultKey.KEYS]
+                        )
                     )
 
                     # Extra new line in case verbose output is printed
@@ -1343,7 +1367,10 @@ class CliView(object):
 
     @staticmethod
     def _get_assert_output_string(
-        assert_out, verbose=False, output_filter_category=[], level=AssertLevel.CRITICAL
+        assert_out,
+        verbose=False,
+        output_filter_category=[],
+        level=health_constants.AssertLevel.CRITICAL,
     ):
         if not assert_out:
             return ""
@@ -1400,21 +1427,21 @@ class CliView(object):
     ):
         if not output_filter_warning_level:
             search_levels = [
-                AssertLevel.INFO,
-                AssertLevel.WARNING,
-                AssertLevel.CRITICAL,
+                health_constants.AssertLevel.INFO,
+                health_constants.AssertLevel.WARNING,
+                health_constants.AssertLevel.CRITICAL,
             ]
         elif output_filter_warning_level == "CRITICAL":
-            search_levels = [AssertLevel.CRITICAL]
+            search_levels = [health_constants.AssertLevel.CRITICAL]
         elif output_filter_warning_level == "WARNING":
-            search_levels = [AssertLevel.WARNING]
+            search_levels = [health_constants.AssertLevel.WARNING]
         elif output_filter_warning_level == "INFO":
-            search_levels = [AssertLevel.INFO]
+            search_levels = [health_constants.AssertLevel.INFO]
         else:
             search_levels = [
-                AssertLevel.INFO,
-                AssertLevel.WARNING,
-                AssertLevel.CRITICAL,
+                health_constants.AssertLevel.INFO,
+                health_constants.AssertLevel.WARNING,
+                health_constants.AssertLevel.CRITICAL,
             ]
 
         all_success_str = ""
@@ -1464,7 +1491,7 @@ class CliView(object):
             if total_fail_msg_cnt > 0:
                 summary_str = ""
 
-                if level == AssertLevel.CRITICAL:
+                if level == health_constants.AssertLevel.CRITICAL:
                     summary_str = (
                         terminal.bold()
                         + terminal.fg_red()
@@ -1472,7 +1499,7 @@ class CliView(object):
                         + terminal.fg_clear()
                         + terminal.unbold()
                     )
-                elif level == AssertLevel.WARNING:
+                elif level == health_constants.AssertLevel.WARNING:
                     summary_str = (
                         terminal.bold()
                         + terminal.fg_blue()
@@ -1480,7 +1507,7 @@ class CliView(object):
                         + terminal.fg_clear()
                         + terminal.unbold()
                     )
-                elif level == AssertLevel.INFO:
+                elif level == health_constants.AssertLevel.INFO:
                     summary_str = (
                         terminal.bold()
                         + terminal.fg_green()
@@ -1542,9 +1569,11 @@ class CliView(object):
         if debug:
             CliView._print_exceptions(ho)
 
-        CliView._print_status(ho[HealthResultType.STATUS_COUNTERS], verbose=verbose)
+        CliView._print_status(
+            ho[health_constants.HealthResultType.STATUS_COUNTERS], verbose=verbose
+        )
         CliView._print_assert_summary(
-            ho[HealthResultType.ASSERT],
+            ho[health_constants.HealthResultType.ASSERT],
             verbose=verbose,
             output_filter_category=output_filter_category,
             output_filter_warning_level=output_filter_warning_level,
@@ -1609,13 +1638,13 @@ class CliView(object):
                 CliView.get_summary_line_prefix(index, "Memory")
                 + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
                 % (
-                    filesize.size(stats[ns]["memory_total"]).strip(),
+                    file_size.size(stats[ns]["memory_total"]).strip(),
                     100.00 - stats[ns]["memory_available_pct"],
-                    filesize.size(
+                    file_size.size(
                         stats[ns]["memory_total"] - stats[ns]["memory_aval"]
                     ).strip(),
                     stats[ns]["memory_available_pct"],
-                    filesize.size(stats[ns]["memory_aval"]).strip(),
+                    file_size.size(stats[ns]["memory_aval"]).strip(),
                 )
             )
             index += 1
@@ -1625,11 +1654,11 @@ class CliView(object):
                     CliView.get_summary_line_prefix(index, "Disk")
                     + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
                     % (
-                        filesize.size(stats[ns]["disk_total"]).strip(),
+                        file_size.size(stats[ns]["disk_total"]).strip(),
                         stats[ns]["disk_used_pct"],
-                        filesize.size(stats[ns]["disk_used"]).strip(),
+                        file_size.size(stats[ns]["disk_used"]).strip(),
                         stats[ns]["disk_available_pct"],
-                        filesize.size(stats[ns]["disk_aval"]).strip(),
+                        file_size.size(stats[ns]["disk_aval"]).strip(),
                     )
                 )
                 index += 1
@@ -1644,7 +1673,7 @@ class CliView(object):
                 print(
                     CliView.get_summary_line_prefix(index, "Post-Write-Queue Hit-Rate")
                     + "%s"
-                    % (filesize.size(stats[ns]["cache_read_pct"], filesize.si_float))
+                    % (file_size.size(stats[ns]["cache_read_pct"], file_size.si_float))
                 )
                 index += 1
 
@@ -1657,7 +1686,8 @@ class CliView(object):
 
             print(
                 CliView.get_summary_line_prefix(index, "Master Objects")
-                + "%s" % (filesize.size(stats[ns]["master_objects"], filesize.si_float))
+                + "%s"
+                % (file_size.size(stats[ns]["master_objects"], file_size.si_float))
             )
             index += 1
             s = ""
@@ -1667,7 +1697,7 @@ class CliView(object):
                 and stats[ns]["license_data_in_memory"]
             ):
                 s += "%s in-memory" % (
-                    filesize.size(stats[ns]["license_data_in_memory"])
+                    file_size.size(stats[ns]["license_data_in_memory"])
                 )
             elif (
                 "license_data_on_disk" in stats[ns]
@@ -1675,7 +1705,9 @@ class CliView(object):
             ):
                 if s:
                     s += ", "
-                s += "%s on-device" % (filesize.size(stats[ns]["license_data_on_disk"]))
+                s += "%s on-device" % (
+                    file_size.size(stats[ns]["license_data_on_disk"])
+                )
             else:
                 s += "None"
             print(CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s)
@@ -1756,14 +1788,14 @@ class CliView(object):
             CliView.get_summary_line_prefix(index, "Memory")
             + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
             % (
-                filesize.size(summary["CLUSTER"]["memory"]["total"]).strip(),
+                file_size.size(summary["CLUSTER"]["memory"]["total"]).strip(),
                 100.00 - summary["CLUSTER"]["memory"]["aval_pct"],
-                filesize.size(
+                file_size.size(
                     summary["CLUSTER"]["memory"]["total"]
                     - summary["CLUSTER"]["memory"]["aval"]
                 ).strip(),
                 summary["CLUSTER"]["memory"]["aval_pct"],
-                filesize.size(summary["CLUSTER"]["memory"]["aval"]).strip(),
+                file_size.size(summary["CLUSTER"]["memory"]["aval"]).strip(),
             )
         )
         index += 1
@@ -1772,11 +1804,11 @@ class CliView(object):
             CliView.get_summary_line_prefix(index, "Disk")
             + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
             % (
-                filesize.size(summary["CLUSTER"]["device"]["total"]).strip(),
+                file_size.size(summary["CLUSTER"]["device"]["total"]).strip(),
                 summary["CLUSTER"]["device"]["used_pct"],
-                filesize.size(summary["CLUSTER"]["device"]["used"]).strip(),
+                file_size.size(summary["CLUSTER"]["device"]["used"]).strip(),
                 summary["CLUSTER"]["device"]["aval_pct"],
-                filesize.size(summary["CLUSTER"]["device"]["aval"]).strip(),
+                file_size.size(summary["CLUSTER"]["device"]["aval"]).strip(),
             )
         )
         index += 1
@@ -1794,7 +1826,7 @@ class CliView(object):
             if uniq_device_used:
                 total += uniq_device_used
 
-            data_summary += "%s" % filesize.size(total)
+            data_summary += "%s" % file_size.size(total)
 
         else:
             data_summary += "None"
