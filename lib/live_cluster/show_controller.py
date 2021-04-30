@@ -162,7 +162,7 @@ class ShowDistributionController(LiveClusterCommandController):
         )
 
 
-@CommandHelp('"show latencies" is used to show server latency histograms')
+@CommandHelp('"show latencies" is used to show the server latency histograms')
 class ShowLatenciesController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like", "for"])
@@ -191,7 +191,7 @@ class ShowLatenciesController(LiveClusterCommandController):
 
     # It would be nice if the  'show latencies' help section could be completely removed for servers prior to 5.1
     @CommandHelp(
-        "Displays latency information for Aerospike cluster.",
+        "Displays latency information for the Aerospike cluster.",
         "  Options:",
         "    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)",
         "                   [default: 3]",
@@ -969,7 +969,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         return futures
 
 
-@CommandHelp('"show pmap" displays partition map analysis of Aerospike cluster.')
+@CommandHelp('"show pmap" displays partition map analysis of the Aerospike cluster.')
 class ShowPmapController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set()
@@ -982,7 +982,8 @@ class ShowPmapController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"show users" displays users and their assigned roles for Aerospike cluster.'
+    '"show users" displays users and their assigned roles, connections, and quota metrics',
+    "for the Aerospike cluster.",
 )
 class ShowUsersController(LiveClusterCommandController):
     def __init__(self):
@@ -995,7 +996,7 @@ class ShowUsersController(LiveClusterCommandController):
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
-            self.logger.error(resp)
+            self.logger.error(resp.message)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -1004,7 +1005,8 @@ class ShowUsersController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"show roles" displays roles and their assigned privileges and allowlist for Aerospike cluster.'
+    '"show roles" displays roles and their assigned privileges, allowlist, and quotas',
+    "for the Aerospike cluster.",
 )
 class ShowRolesController(LiveClusterCommandController):
     def __init__(self):
@@ -1017,7 +1019,7 @@ class ShowRolesController(LiveClusterCommandController):
         resp = list(roles_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
-            self.logger.error(resp)
+            self.logger.error(resp.message)
             return
         elif isinstance(resp, Exception):
             raise resp

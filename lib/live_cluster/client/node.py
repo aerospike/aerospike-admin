@@ -1899,15 +1899,23 @@ class Node(object):
         return self._admin_cadmin(ASSocket.query_user, [user], self.ip)
 
     @return_exceptions
-    def admin_create_role(self, role, privileges, whitelist=None):
+    def admin_create_role(
+        self, role, privileges, whitelist=None, read_quota=None, write_quota=None
+    ):
         """
         Create role with privileges and whitelist.
         role: string
         privileges: list[string]
         whitelist: list[string] (optional)
+        read_quota: (optional)
+        write_quota: (optional)
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.create_role, (role, privileges, whitelist), self.ip)
+        self._admin_cadmin(
+            ASSocket.create_role,
+            (role, privileges, whitelist, read_quota, write_quota),
+            self.ip,
+        )
 
     @return_exceptions
     def admin_delete_role(self, role):
@@ -1956,6 +1964,35 @@ class Node(object):
         Returns: None on success, ASProtocolError on fail
         """
         self._admin_cadmin(ASSocket.delete_whitelist, [role], self.ip)
+
+    @return_exceptions
+    def admin_set_quotas(self, role, read_quota=None, write_quota=None):
+        """
+        Set rate limit for a role. Either read_quota or write_quota should be
+        provided but will be enforced elsewhere.
+        role: string
+        read_quota: int or string that represents and int
+        write_quota: int or string that represents and int
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(
+            ASSocket.set_quotas, (role, read_quota, write_quota), self.ip
+        )
+
+    @return_exceptions
+    def admin_delete_quotas(self, role, read_quota=False, write_quota=False):
+        """
+        NOT IN USE
+        Delete rate limit for a role. Either read_quota or write_quota should be
+        provided but will be enforced elsewhere.
+        role: string
+        read_quota: True to delete, False to leave alone
+        write_quota: True to delete, False to leave alone
+        Returns: None on success, ASProtocolError on fail
+        """
+        self._admin_cadmin(
+            ASSocket.delete_quotas, (role, read_quota, write_quota), self.ip
+        )
 
     @return_exceptions
     def admin_query_roles(self):

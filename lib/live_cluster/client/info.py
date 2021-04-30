@@ -74,6 +74,18 @@ def _unpack_uint8(buf, offset):
     return val[0], offset
 
 
+def _pack_uint32(buf, offset, val):
+    _STRUCT_UINT32.pack_into(buf, offset, val)
+    offset += _STRUCT_UINT32.size
+    return offset
+
+
+def _unpack_uint32(buf, offset):
+    val = _STRUCT_UINT32.unpack_from(buf, offset)
+    offset += _STRUCT_UINT32.size
+    return val[0], offset
+
+
 def _pack_string(buf, offset, string):
     bytes_field = util.str_to_bytes(string)
     buf[offset : offset + len(bytes_field)] = bytes_field
@@ -138,8 +150,7 @@ def _hash_password(password):
     if password is None:
         password = ""
 
-    if len(password) != 60 or password.startswith("$2a$") is False:
-        password = bcrypt.hashpw(password, _ADMIN_SALT)
+    password = bcrypt.hashpw(password, _ADMIN_SALT)
 
     return password
 
@@ -163,6 +174,13 @@ _ADMIN_MSG_TYPE = 2
 _ADMIN_HEADER_SIZE = _STRUCT_ADMIN_HEADER.size
 _TOTAL_HEADER_SIZE = _PROTOCOL_HEADER_SIZE + _ADMIN_HEADER_SIZE
 
+READ_WRITE_INFO_VALUES = [
+    "quota",
+    "single-record-tps",
+    "scan-query-rps-limited",
+    "scan-query-limitless",
+]
+
 
 @unique
 class ASCommand(IntEnum):
@@ -179,6 +197,7 @@ class ASCommand(IntEnum):
     ADD_PRIVLEGES = 12
     DELETE_PRIVLEGES = 13
     SET_WHITELIST = 14
+    SET_RATE_QUOTAS = 15
     QUERY_ROLES = 16
     LOGIN = 20
 
@@ -196,6 +215,11 @@ class ASField(IntEnum):
     ROLE = 11
     PRIVILEGES = 12
     WHITELIST = 13
+    READ_QUOTA = 14
+    WRITE_QUOTA = 15
+    READ_INFO = 16
+    WRITE_INFO = 17
+    CONNECTIONS = 18
 
 
 @unique
@@ -251,17 +275,24 @@ class ASResponse(IntEnum):
     SECURITY_NOT_ENABLED = 52
     INVALID_COMMAND = 54
     UNRECOGNIZED_FIELD_ID = 55
+    VALID_BUT_UNEXPECTED_COMMANDS = 56
     NO_USER_OR_UNRECOGNIZED_USER = 60
     USER_ALREADY_EXISTS = 61
     NO_PASSWORD_OR_BAD_PASSWORD = 62
+    EXPIRED_PASSWORD = 63
+    FORBIDDEN_PASSWORD = 64
     NO_CREDENTIAL_OR_BAD_CREDENTIAL = 65
+    EXPIRED_SESSION = 66
     NO_ROLE_OR_INVALID_ROLE = 70
     ROLE_ALREADY_EXISTS = 71
     NO_PRIVILEGES_OR_UNRECOGNIZED_PRIVILEGES = 72
     BAD_WHITELIST = 73
+    QUOTAS_NOT_ENABLED = 74
+    BAD_RATE_QUOTA = 75
     NOT_AUTHENTICATED = 80
     ROLE_OR_PRIVILEGE_VIOLATION = 81
     NOT_WHITELISTED = 82
+    RATE_QUOTA_EXCEEDED = 83
 
     def __str__(self):
         lower = self.name.lower().split("_")
@@ -287,7 +318,7 @@ def _unpack_admin_header(buf, offset=_PROTOCOL_HEADER_SIZE):
 
 
 def _create_admin_header(sz, command, field_count):
-    # 4B = field size, 1B = fieled type
+    # 4B = field size, 1B = field type
     protocol_data_size = (
         sz + _ADMIN_HEADER_SIZE + (_STRUCT_FIELD_HEADER.size * field_count)
     )
@@ -321,7 +352,21 @@ def _unpack_admin_field_header(buf, offset):
 def _pack_admin_field(buf, offset, as_field, field):
 
     # _pack_string() will convert str to bytes, no need to handle here.
-    if isinstance(field, str) or isinstance(field, bytes):
+    if as_field in {ASField.READ_QUOTA, ASField.WRITE_QUOTA}:
+        if isinstance(field, str):
+            try:
+                field = int(field)
+            except ValueError:
+                raise TypeError(
+                    "_pack_admin_field: Field ID {} could not cast str {} to int".format(
+                        as_field, field
+                    )
+                )
+
+        field_len = _STRUCT_UINT32.size
+        offset = _pack_admin_field_header(buf, offset, field_len, as_field)
+        offset = _pack_uint32(buf, offset, field)
+    elif isinstance(field, str) or isinstance(field, bytes):
         field_len = len(field)
         offset = _pack_admin_field_header(buf, offset, field_len, as_field)
         offset = _pack_string(buf, offset, field)
@@ -332,7 +377,7 @@ def _pack_admin_field(buf, offset, as_field, field):
             offset = _pack_admin_privileges(buf, offset, field)
         else:
             raise TypeError(
-                "_pack_admin_field: Field ID does not accept lists: {}".format(as_field)
+                "_pack_admin_field: Field ID {} does not accept lists".format(as_field)
             )
     else:
         raise TypeError(
@@ -463,6 +508,17 @@ def _unpack_admin_privileges(buf, offset):
     return privileges, offset
 
 
+def _unpack_admin_read_write_info(buf, offset):
+    num_stat, offset = _unpack_uint8(buf, offset)
+    stats = []
+
+    for _ in range(num_stat):
+        stat, offset = _unpack_uint32(buf, offset)
+        stats.append(stat)
+
+    return stats, offset
+
+
 def _c_str_to_bytes(buf):
     return bytes(buf)
 
@@ -483,8 +539,6 @@ def _send_and_get_admin_header(sock, send_buf):
 
 def _authenticate(sock, user, password, password_field_id):
     field_count = 2
-    user = util.str_to_bytes(user)
-    password = util.str_to_bytes(password)
     admin_data_size = len(user) + len(password)
 
     send_buf, offset = _create_admin_header(
@@ -710,10 +764,14 @@ def _query_users(sock, user=None):
                 if result_code != ASResponse.OK:
                     if result_code == ASResponse.QUERY_END:
                         result_code = ASResponse.OK
+
                     return result_code, users_dict
 
                 user_name = None
                 user_roles = []
+                read_info = None
+                write_info = None
+                connections = None
 
                 for _ in range(field_count):
                     field_len, field_type, offset = _unpack_admin_field_header(
@@ -725,18 +783,45 @@ def _query_users(sock, user=None):
                         user_name, offset = _unpack_string(rsp_buf, offset, field_len)
 
                         if user_name not in users_dict:
-                            users_dict[user_name] = users_dict
+                            users_dict[user_name] = {}
 
                     elif field_type == ASField.ROLES:
                         roles, offset = _unpack_admin_roles(rsp_buf, offset)
                         user_roles.extend(roles)
+
+                    elif field_type == ASField.READ_INFO:
+                        read_info, offset = _unpack_admin_read_write_info(
+                            rsp_buf, offset
+                        )
+                    elif field_type == ASField.WRITE_INFO:
+                        write_info, offset = _unpack_admin_read_write_info(
+                            rsp_buf, offset
+                        )
+                    elif field_type == ASField.CONNECTIONS:
+                        connections, offset = _unpack_uint32(rsp_buf, offset)
                     else:
                         offset += field_len
 
                 if user_name is None:
                     continue
 
-                users_dict[user_name] = user_roles
+                users_dict[user_name]["roles"] = user_roles
+
+                if read_info:
+                    # The precedent is for everything returned to be strings
+                    users_dict[user_name]["read-info"] = {}
+
+                    for name, value in zip(READ_WRITE_INFO_VALUES, read_info):
+                        users_dict[user_name]["read-info"][name] = value
+
+                if write_info:
+                    users_dict[user_name]["write-info"] = {}
+
+                    for name, value in zip(READ_WRITE_INFO_VALUES, write_info):
+                        users_dict[user_name]["write-info"][name] = value
+
+                if connections:
+                    users_dict[user_name]["connections"] = connections
 
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
@@ -753,11 +838,16 @@ def query_user(sock, user):
 
 
 @util.logthis("asadm", DEBUG)
-def create_role(sock, role, privileges=None, whitelist=None):
-    """Attempts to create a role in AS with certain privleges and whitelist.
+def create_role(
+    sock, role, privileges=None, whitelist=None, read_quota=None, write_quota=None
+):
+    """Attempts to create a role in AS with certain privleges and whitelist. Either
+    privilege or whitelist should be provided.
     role: string,
     privileges: list[string]
     whitelist: list[string] of addresses
+    read_quota: string or int
+    write_quota: string or int
     Returns: ASResponse
     """
     field_count = 1
@@ -774,6 +864,14 @@ def create_role(sock, role, privileges=None, whitelist=None):
         field_count += 1
         admin_data_size += len(whitelist)
 
+    if read_quota is not None:
+        field_count += 1
+        admin_data_size += _STRUCT_UINT32.size
+
+    if write_quota is not None:
+        field_count += 1
+        admin_data_size += _STRUCT_UINT32.size
+
     send_buf, offset = _create_admin_header(
         admin_data_size, ASCommand.CREATE_ROLE, field_count
     )
@@ -784,6 +882,12 @@ def create_role(sock, role, privileges=None, whitelist=None):
 
     if pack_whitelist:
         offset = _pack_admin_field(send_buf, offset, ASField.WHITELIST, whitelist)
+
+    if read_quota is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.READ_QUOTA, read_quota)
+
+    if write_quota is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.WRITE_QUOTA, write_quota)
 
     try:
         _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
@@ -895,6 +999,64 @@ def delete_whitelist(sock, role):
     return _set_whitelist(sock, role)
 
 
+def _set_quotas(sock, role, read_quota=None, write_quota=None):
+    """Attempts to add a quota to a role in AS.
+    role: string,
+    read_quota: int or str representing an int,
+    write_quota: int or str representing an int,
+    Returns: ASResponse
+    """
+    field_count = 1
+    admin_data_size = len(role)
+
+    if read_quota is not None:
+        field_count += 1
+        admin_data_size += _STRUCT_UINT32.size
+
+    if write_quota is not None:
+        field_count += 1
+        admin_data_size += _STRUCT_UINT32.size
+
+    send_buf, offset = _create_admin_header(
+        admin_data_size, ASCommand.SET_RATE_QUOTAS, field_count
+    )
+    offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
+
+    if read_quota is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.READ_QUOTA, read_quota)
+
+    if write_quota is not None:
+        offset = _pack_admin_field(send_buf, offset, ASField.WRITE_QUOTA, write_quota)
+
+    try:
+        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        return return_code
+    except SocketError as e:
+        raise IOError("Error: %s" % str(e))
+
+
+@util.logthis("asadm", DEBUG)
+def set_quotas(sock, role, read_quota=None, write_quota=None):
+    return _set_quotas(sock, role, read_quota, write_quota)
+
+
+@util.logthis("asadm", DEBUG)
+def delete_quotas(sock, role, read_quota=False, write_quota=False):
+    """
+    NOT IN USE
+    """
+    read = None
+    write = None
+
+    if read_quota:
+        read = 0
+
+    if write_quota:
+        write = 0
+
+    return _set_quotas(sock, role, read, write)
+
+
 def _query_role(sock, role=None):
     """Attempts to query roles and respective privileges from Afield_count: string or None, If none queries all users.
     Returns: ASResponse, {role_name: [privleges: ASPrivilege]}
@@ -941,6 +1103,8 @@ def _query_role(sock, role=None):
                 role_name = None
                 privileges = []
                 whitelist = []
+                read_quota = None
+                write_quota = None
 
                 for _ in range(field_count):
                     field_len, field_type, offset = _unpack_admin_field_header(
@@ -960,6 +1124,10 @@ def _query_role(sock, role=None):
                     elif field_type == ASField.WHITELIST:
                         white, offset = _unpack_string(rsp_buf, offset, field_len)
                         whitelist = white.split(",")
+                    elif field_type == ASField.READ_QUOTA:
+                        read_quota, offset = _unpack_uint32(rsp_buf, offset)
+                    elif field_type == ASField.WRITE_QUOTA:
+                        write_quota, offset = _unpack_uint32(rsp_buf, offset)
                     else:
                         offset += field_len
 
@@ -969,6 +1137,13 @@ def _query_role(sock, role=None):
                 role_dict[role_name] = {}
                 role_dict[role_name]["privileges"] = privileges
                 role_dict[role_name]["whitelist"] = whitelist
+
+                if read_quota:
+                    # The precedent is for everything returned to be strings
+                    role_dict[role_name]["read-quota"] = str(read_quota)
+
+                if write_quota:
+                    role_dict[role_name]["write-quota"] = str(write_quota)
 
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
@@ -1009,8 +1184,6 @@ def _parse_session_info(data, field_count):
 
 
 def login(sock, user, password, auth_mode):
-    user = util.str_to_bytes(user)  # bytes for c_struct packing
-    password = util.str_to_bytes(password)  # bytes for c_struct packing
     credential = _hash_password(password)
 
     if auth_mode == constants.AuthMode.INTERNAL:

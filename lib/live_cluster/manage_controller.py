@@ -2,8 +2,9 @@ import os
 from datetime import datetime
 from getpass import getpass
 from lib.view import terminal
-from lib.utils import util
+from lib.utils import constants, util
 from lib.base_controller import CommandHelp
+from distutils.version import LooseVersion
 
 from .client.info import ASProtocolError
 from .live_cluster_command_controller import LiveClusterCommandController
@@ -65,6 +66,7 @@ class ManageACLController(LiveClusterCommandController):
             "set-password": ManageACLSetPasswordUserController,
             "change-password": ManageACLChangePasswordUserController,
             "allowlist": ManageACLAllowListRoleController,
+            "quotas": ManageACLQuotasRoleController,
         }
 
     def _do_default(self, line):
@@ -121,8 +123,8 @@ class ManageACLRevokeController(LiveClusterCommandController):
 
 @CommandHelp(
     "Usage: create user <username> [password <password>] [roles <role1> <role2> ...]",
-    "   username        - Name of new user.",
-    "   password        - Password for the new user.  User will be prompted if no",
+    "   username        - Name of the new user.",
+    "   password        - Password for the new user. User will be prompted if no",
     "                     password is provided.",
     "   roles           - Roles to be granted to the user.",
     "                     [default: None]",
@@ -138,12 +140,25 @@ class ManageACLCreateUserController(ManageLeafCommandController):
         password = None
         roles = None
 
-        if len(self.mods["password"]):
-            password = self.mods["password"][0]
-        else:
+        password = util.get_arg_and_delete_from_mods(
+            line,
+            arg="password",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        if password is None:
             password = getpass("Enter password for new user {}:".format(username))
 
         roles = self.mods["roles"]
+
+        # Accept "role" instead of "roles", If another modifier is added the logic may
+        #  need to change.
+        if len(roles) == 0 and len(line) != 0 and line[0] == "role":
+            line.pop(0)
+            roles = line
 
         if self.warn and not self.prompt_challenge():
             return
@@ -241,9 +256,9 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
 @CommandHelp(
     "Usage: change-password user <username> [old <old-password>] [new <new-password>]",
     "  username           - User that needs a new password.",
-    "  old                - Current password for user.  User will be",
+    "  old                - Current password for the user. User will be",
     "                       prompted if no password is provided.",
-    "  new                - New password for user.  User will be prompted ",
+    "  new                - New password for the user. User will be prompted ",
     "                       if no password is provided.",
 )
 class ManageACLChangePasswordUserController(ManageLeafCommandController):
@@ -297,7 +312,7 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
 @CommandHelp(
     "Usage: grant user <username> roles <role1> [<role2> [...]]",
     "  username        - User to have roles granted.",
-    "  roles           - Roles to be add to user.",
+    "  roles           - Roles to add to the user.",
 )
 class ManageACLGrantUserController(ManageLeafCommandController):
     def __init__(self):
@@ -329,7 +344,7 @@ class ManageACLGrantUserController(ManageLeafCommandController):
 @CommandHelp(
     "Usage: revoke user <username> roles <role1> [<role2> [...]]",
     "  username        - User to have roles revoked.",
-    "  roles           - Roles to delete from user.",
+    "  roles           - Roles to delete from the user.",
 )
 class ManageACLRevokeUserController(ManageLeafCommandController):
     def __init__(self):
@@ -360,9 +375,20 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
         )
 
 
+class ManageACLRolesLeafCommandController(ManageLeafCommandController):
+    def _supports_quotas(self, nodes):
+        build_resp = self.cluster.info_build_version(nodes=nodes)
+        build = list(build_resp.values())[0]
+
+        if LooseVersion(build) < LooseVersion(constants.SERVER_QUOTAS_FIRST_VERSION):
+            return False
+
+        return True
+
+
 @CommandHelp(
-    "Usage: create role <role-name> priv <privilege> [ns <namespace> [set <set>]]> allow <addr1> [<addr2> [...]]",
-    "  role-name     - Name of new role.",
+    "Usage: create role <role-name> priv <privilege> [ns <namespace> [set <set>]] [allow <addr1> [<addr2> [...]]] [read <read-quota>] [write <write-quota>]",
+    "  role-name     - Name of the new role.",
     "  priv          - Privilege for the new role. Some privileges are not",
     "                  limited to a global scope. Scopes are either global, per",
     "                  namespace, or per namespace and set. For more ",
@@ -376,23 +402,64 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
     "  allow         - Addresses of nodes that a role will be allowed to connect",
     "                  to a cluster from.",
     "                  [default: None]",
+    "  read          - Quota for read transaction (TPS).",
+    "  write         - Quota for write transaction (TPS).",
 )
-class ManageACLCreateRoleController(ManageLeafCommandController):
+class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
     def __init__(self):
-        self.modifiers = set(["ns", "set", "allow"])
+        self.modifiers = set(["ns", "set", "allow", "read", "write"])
         self.required_modifiers = set(["line", "priv"])
         self.controller_map = {}
+
+    # Overridden because of conflict between 'read' privilege and 'read' modifier
+    # causes 'priv read' or 'priv write' to parse incorrectly
+    def parse_modifiers(self, line, duplicates_in_line_allowed=False):
+        line_copy = line[:]
+        groups = super().parse_modifiers(
+            line, duplicates_in_line_allowed=duplicates_in_line_allowed
+        )
+
+        if len(groups["priv"]) == 0 and "priv" in line_copy:
+            priv_index = line_copy.index("priv") + 1
+
+            if len(line_copy) > priv_index and line_copy[priv_index] in {
+                "read",
+                "write",
+            }:
+                groups["priv"].append(line_copy[priv_index])
+
+        return groups
 
     def _do_default(self, line):
         role_name = line.pop(0)
         privilege = None
         allowlist = self.mods["allow"]
+        principal_node = self.cluster.get_expected_principal()
+
+        # Can't use util.get_arg_and_delete_from_mods because of conflict
+        # between read modifier and read privilege
+        read_quota = self.mods["read"][0] if len(self.mods["read"]) else None
+        write_quota = self.mods["write"][0] if len(self.mods["write"]) else None
+
+        if read_quota is not None or write_quota is not None:
+            if not self._supports_quotas([principal_node]):
+                self.logger.warning(
+                    "'read' and 'write' modifiers are not supported on aerospike versions <= 5.5"
+                )
+
+        try:
+            if read_quota is not None:
+                read_quota = int(read_quota)
+            if write_quota is not None:
+                write_quota = int(write_quota)
+        except ValueError:
+            self.logger.error("Quotas must be integers.")
+            return
 
         if len(self.mods["priv"]):
             privilege = self.mods["priv"][0]
 
         if len(self.mods["set"]) and not len(self.mods["ns"]):
-            self.execute_help(line)
             self.logger.error("A set must be accompanied by a namespace.")
             return
 
@@ -408,9 +475,13 @@ class ManageACLCreateRoleController(ManageLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        principal_node = self.cluster.get_expected_principal()
         result = self.cluster.admin_create_role(
-            role_name, privileges=privilege, whitelist=allowlist, nodes=[principal_node]
+            role_name,
+            privileges=privilege,
+            whitelist=allowlist,
+            read_quota=read_quota,
+            write_quota=write_quota,
+            nodes=[principal_node],
         )
         result = list(result.values())[0]
 
@@ -452,8 +523,8 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
 
 @CommandHelp(
     "Usage: grant role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
-    "  role-name     - Role to have privilege granted.",
-    "  priv          - Privilege to be added to role.",
+    "  role-name     - Role to have the privilege granted.",
+    "  priv          - Privilege to be added to the role.",
     "  ns            - Namespace scope of privilege.",
     "                  [default: None]",
     "  set           - Set scope of privilege. Namespace scope is required.",
@@ -503,7 +574,7 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
 @CommandHelp(
     "Usage: revoke role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
     "  role-name     - Role to have privilege revoked.",
-    "  priv          - Privilege to delete from role.",
+    "  priv          - Privilege to delete from the role.",
     "  ns            - Namespace scope of privilege",
     "                  [default: None]",
     "  set           - Set scope of privilege. Namespace scope is required.",
@@ -552,19 +623,18 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
 
 @CommandHelp(
     "Usage: allowlist role <role-name> allow <addr1> [<addr2> [...]]",
-    "  role-name     - Role that will have new allowlist.",
+    "  role-name     - Role that will have the new allowlist.",
     "  allow         - Addresses of nodes that a role will be allowed to connect",
     "                  from. This command erases and re-assigns the allowlist",
     "Usage: allowlist role <role-name> clear",
-    "  role-name     - Role that will have allowlist cleared.",
-    "  clear         - Clears allowlist from role. Either 'allow' or 'clear' is",
+    "  role-name     - Role that will have the allowlist cleared.",
+    "  clear         - Clears allowlist from the role. Either 'allow' or 'clear' is",
     "                  required.",
 )
 class ManageACLAllowListRoleController(ManageLeafCommandController):
     def __init__(self):
         self.modifiers = set(["clear", "allow"])
         self.required_modifiers = set(["role"])
-        self.controller_map = {}
 
     def _do_default(self, line):
         role_name = util.get_arg_and_delete_from_mods(
@@ -622,6 +692,110 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
             self.view.print_result(
                 "Successfully updated allowlist for role {}.".format(role_name)
             )
+
+
+@CommandHelp(
+    "Usage: quotas role <role-name> [read <read-quota>]|[write <write-quota>]",
+    "  role-name     - Role to assign a quota",
+    "  read          - Quota for read transaction (TPS). To give a role",
+    "                  an unlimited quota enter 0",
+    "  write         - Quota for write transaction (TPS).",
+    "  Note: A read or write quota is required. Not providing a quota will",
+    "        leave it unchanged.",
+)
+class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
+    def __init__(self):
+        self.modifiers = set(["write", "read"])
+        self.required_modifiers = set(["role"])
+
+    # Overridden because of conflict between 'read' role and 'read' modifier
+    # causes 'role read' or 'role write' to parse incorrectly
+    def parse_modifiers(self, line, duplicates_in_line_allowed=False):
+        line_copy = line[:]
+        groups = super().parse_modifiers(
+            line, duplicates_in_line_allowed=duplicates_in_line_allowed
+        )
+
+        if len(groups["role"]) == 0 and "role" in line_copy:
+            role_index = line_copy.index("role") + 1
+
+            if len(line_copy) > role_index and line_copy[role_index] in {
+                "read",
+                "write",
+            }:
+                groups["role"].append(line_copy[role_index])
+
+        return groups
+
+    def _do_default(self, line):
+        principal_node = self.cluster.get_expected_principal()
+
+        if not self._supports_quotas([principal_node]):
+            self.logger.error(
+                "'manage quotas' is not supported on aerospike versions <= 5.5"
+            )
+            return
+
+        role = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="role",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        read_quota = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="read",
+            default=None,
+            return_type=str,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        write_quota = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="write",
+            default=None,
+            return_type=str,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        if read_quota is None and write_quota is None:
+            self.logger.error("'read' or 'write' is required.")
+            return
+
+        try:
+            if read_quota is not None:
+                read_quota = int(read_quota)
+            if write_quota is not None:
+                write_quota = int(write_quota)
+        except ValueError:
+            self.logger.error("Quotas must be integers.")
+            return
+
+        if self.warn and not self.prompt_challenge():
+            return
+
+        result = self.cluster.admin_set_quotas(
+            role, read_quota=read_quota, write_quota=write_quota, nodes=[principal_node]
+        )
+
+        result = list(result.values())[0]
+
+        if isinstance(result, ASProtocolError):
+            self.logger.error(result.message)
+            return
+        elif isinstance(result, Exception):
+            raise result
+
+        self.view.print_result(
+            "Successfully set quota{} for role {}.".format(
+                "s" if read_quota is not None and write_quota is not None else "", role
+            )
+        )
 
 
 @CommandHelp('"manage udfs" is used to add and remove user defined functions.')
@@ -748,7 +922,7 @@ class ManageSIndexController(LiveClusterCommandController):
     "Usage: create <bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>]",
     "  bin-type    - The bin type of the provided <bin-name>. Should be one of the following values:",
     "                  numeric, string, or geo2dsphere",
-    "  index-name    - Name of secondary index to be created. Should be 20 charaters",
+    "  index-name    - Name of the secondary index to be created. Should be 20 characters",
     '                  or less and not contain ":" or ";".',
     "  ns            - Name of namespace to create the secondary index on.",
     "  set           - Name of set to create the secondary index on.",
@@ -845,7 +1019,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
 @CommandHelp(
     "Usage: delete <index-name> ns <ns> [set <set>]",
-    "  index-name    - Name of secondary index to be deleted.",
+    "  index-name    - Name of the secondary index to be deleted.",
     "  ns            - Namespace where the sindex resides.",
     "  set           - Set where the sindex resides.",
 )

@@ -290,7 +290,7 @@ class ASSocketTestConnect(unittest.TestCase):
 
     @patch("lib.live_cluster.client.assocket.create_role")
     def test_create_role(self, mock):
-        args = ("bar", ["abc", "cde"], ["3.3.3.3"])
+        args = ("bar", ["abc", "cde"], ["3.3.3.3"], 111, 222)
         self.socket_security_test(
             self.as_socket.create_role,
             args,

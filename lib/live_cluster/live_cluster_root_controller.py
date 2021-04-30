@@ -111,7 +111,7 @@ class LiveClusterRootController(BaseController):
     @CommandHelp(
         "Runs a command for a specified pause and iterations.",
         "Usage: watch [pause] [iterations] [--no-diff] command",
-        "   pause:      the duration between executions.",
+        "   pause:      The duration between executions.",
         "               [default: 2 seconds]",
         "   iterations: Number of iterations to execute command.",
         "               [default: until keyboard interrupt]",

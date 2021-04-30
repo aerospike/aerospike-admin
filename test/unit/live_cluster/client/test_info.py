@@ -21,6 +21,7 @@ from lib.live_cluster.client.info import (
     query_users,
     revoke_roles,
     set_password,
+    set_quotas,
     set_whitelist,
 )
 
@@ -240,18 +241,269 @@ class SecurityTest(unittest.TestCase):
     def test_query_users_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\x10\x00\x00\t\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         self.socket_mock.recv.side_effect = [
-            b"\x02\x02\x00\x00\x00\x00\x01\x10",
-            b'\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\t\x00Bob-Ross\x00\x00\x00\x19\n\x03\x07Painter\x04read\tsys-admin\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x00George\x00\x00\x00\r\n\x01\nnot-a-role\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00admin\x00\x00\x00"\n\x03\nread-write\tsys-admin\nuser-admin\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00d\x00\x00\x00\x02\n\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00nick\x00\x00\x00\x02\n\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0b\x00superwoman\x00\x00\x00\x0c\n\x01\tsys-admin',
+            b"\x02\x02\x00\x00\x00\x00\x07\x04",
+            b"\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00admin\x00\x00\x00\r\n\x01\nuser-admin\x00\x00\x00\x05\x12\xff\xff\xfc\xaa\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x00alpha-reader\x00\x00\x00\x0f\n\x01\x0calpha-reader\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x00alpha-writer\x00\x00\x00\x0f\n\x01\x0calpha-writer\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x00beta-reader\x00\x00\x00\x0e\n\x01\x0bbeta-reader\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x00beta-writer\x00\x00\x00\x0e\n\x01\x0bbeta-writer\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x00delta-reader\x00\x00\x00\x0f\n\x01\x0cdelta-reader\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x00delta-writer\x00\x00\x00\x0f\n\x01\x0cdelta-writer\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x00demo-reader\x00\x00\x00\x0e\n\x01\x0bdemo-reader\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x00demo-writer\x00\x00\x00\x0e\n\x01\x0bdemo-writer\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x00gamma-reader\x00\x00\x00\x0f\n\x01\x0cgamma-reader\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x00gamma-writer\x00\x00\x00\x0f\n\x01\x0cgamma-writer\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x00omega-reader\x00\x00\x004\n\x04\x0calpha-reader\x0bbeta-reader\x0bdemo-reader\x0cgamma-reader\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x00omega-writer\x00\x00\x004\n\x04\x0calpha-writer\x0bbeta-writer\x0bdemo-writer\x0cgamma-writer\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x00reader\x00\x00\x00\t\n\x01\x06reader\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00root\x00\x00\x00\x07\n\x01\x04root\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x00superuser\x00\x00\x00\x0c\n\x01\tsuperuser\x00\x00\x00\x05\x12\x00\x00\x00\x00\x00\x00\x00\x12\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x00writer\x00\x00\x00\t\n\x01\x06writer\x00\x00\x00\x05\x12\xff\xff\xff(\x00\x00\x00\x12\x10\x04\x00\x00\x0f\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x11\x04\x00\x00\x0f\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
             b"\x02\x02\x00\x00\x00\x00\x00\x10",
             b"\x002\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ]
         expected_users = {
-            "Bob-Ross": ["Painter", "read", "sys-admin"],
-            "George": ["not-a-role"],
-            "admin": ["read-write", "sys-admin", "user-admin"],
-            "d": [],
-            "nick": [],
-            "superwoman": ["sys-admin"],
+            "admin": {
+                "roles": ["user-admin"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "connections": 4294966442,
+            },
+            "alpha-reader": {
+                "roles": ["alpha-reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "alpha-writer": {
+                "roles": ["alpha-writer"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "beta-reader": {
+                "roles": ["beta-reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "beta-writer": {
+                "roles": ["beta-writer"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "delta-reader": {
+                "roles": ["delta-reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "delta-writer": {
+                "roles": ["delta-writer"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "demo-reader": {
+                "roles": ["demo-reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "demo-writer": {
+                "roles": ["demo-writer"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "gamma-reader": {
+                "roles": ["gamma-reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "gamma-writer": {
+                "roles": ["gamma-writer"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "omega-reader": {
+                "roles": ["alpha-reader", "beta-reader", "demo-reader", "gamma-reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "omega-writer": {
+                "roles": ["alpha-writer", "beta-writer", "demo-writer", "gamma-writer"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "reader": {
+                "roles": ["reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "root": {
+                "roles": ["root"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "superuser": {
+                "roles": ["superuser"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+            "writer": {
+                "roles": ["writer"],
+                "read-info": {
+                    "quota": 4000,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 4000,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "connections": 4294967080,
+            },
         }
         expected_return_code = ASResponse.OK
 
@@ -290,12 +542,58 @@ class SecurityTest(unittest.TestCase):
         self.socket_mock.sendall.assert_called_with(expected_send_buf)
         self.assertEqual(actual_return_code, expected_return_code)
 
-    def test_create_role_with_scoped_priv(self):
+    def test_create_role_with_global_priv(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\x1f\x00\x00\n\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x0ba\x00\x00\x00\x05\x0c\x01\n\x00\x00"
         self.socket_mock.recv.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         expected_return_code = ASResponse.OK
 
         actual_return_code = create_role(self.socket_mock, "a", ["read"])
+
+        self.socket_mock.sendall.assert_called_with(expected_send_buf)
+        self.assertEqual(actual_return_code, expected_return_code)
+
+    def test_create_role_with_priv_and_quotas(self):
+        expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x004\x00\x00\n\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x0by-role\x00\x00\x00\x03\x0c\x01\x01\x00\x00\x00\x05\x0e\x00\x00\x00o\x00\x00\x00\x05\x0f\x00\x00\x00\xde"
+        self.socket_mock.recv.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        expected_return_code = ASResponse.OK
+
+        actual_return_code = create_role(
+            self.socket_mock, "y-role", ["sys-admin"], read_quota=111, write_quota=222
+        )
+
+        self.socket_mock.sendall.assert_called_with(expected_send_buf)
+        self.assertEqual(actual_return_code, expected_return_code)
+
+        expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00+\x00\x00\n\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x0by-role\x00\x00\x00\x03\x0c\x01\x01\x00\x00\x00\x05\x0e\x00\x00\x00o"
+        self.socket_mock.recv.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        expected_return_code = ASResponse.OK
+
+        actual_return_code = create_role(
+            self.socket_mock, "y-role", ["sys-admin"], read_quota=111
+        )
+
+        self.socket_mock.sendall.assert_called_with(expected_send_buf)
+        self.assertEqual(actual_return_code, expected_return_code)
+
+        expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00+\x00\x00\n\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x0by-role\x00\x00\x00\x03\x0c\x01\x01\x00\x00\x00\x05\x0f\x00\x00\x00\xde"
+        self.socket_mock.recv.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        expected_return_code = ASResponse.OK
+
+        actual_return_code = create_role(
+            self.socket_mock, "y-role", ["sys-admin"], write_quota=222
+        )
+
+        self.socket_mock.sendall.assert_called_with(expected_send_buf)
+        self.assertEqual(actual_return_code, expected_return_code)
+
+    def test_create_role_with_scoped_priv_and_allowlist_and_quotas(self):
+        expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00O\x00\x00\n\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\t\x0bthe-role\x00\x00\x00\x10\x0c\x01\n\x04test\x07testset\x00\x00\x00\x08\r3.3.3.3\x00\x00\x00\x05\x0e\x00\x00\x00o\x00\x00\x00\x05\x0f\x00\x00\x00\xde"
+        self.socket_mock.recv.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        expected_return_code = ASResponse.OK
+
+        actual_return_code = create_role(
+            self.socket_mock, "the-role", ["read.test.testset"], ["3.3.3.3"], 111, 222
+        )
 
         self.socket_mock.sendall.assert_called_with(expected_send_buf)
         self.assertEqual(actual_return_code, expected_return_code)
@@ -370,25 +668,6 @@ class SecurityTest(unittest.TestCase):
             IOError, delete_privileges, self.socket_mock, "test-role", "write"
         )
 
-    def test_delete_privileges_ok(self):
-        expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x002\x00\x00\r\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role\x00\x00\x00\x10\x0c\x01\n\x04test\x07testset"
-        self.socket_mock.recv.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-        expected_return_code = ASResponse.OK
-
-        actual_return_code = delete_privileges(
-            self.socket_mock, "test-role", ["read.test.testset"]
-        )
-
-        self.socket_mock.sendall.assert_called_with(expected_send_buf)
-        self.assertEqual(actual_return_code, expected_return_code)
-
-    def test_delete_privileges_exception(self):
-        self.socket_mock.sendall.side_effect = SocketError("message")
-
-        self.assertRaises(
-            IOError, delete_privileges, self.socket_mock, "test-role", "write"
-        )
-
     def test_set_whitelist(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00*\x00\x00\x0e\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role\x00\x00\x00\x08\r3.3.3.3"
         self.socket_mock.recv.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -416,24 +695,103 @@ class SecurityTest(unittest.TestCase):
         self.socket_mock.sendall.assert_called_with(expected_send_buf)
         self.assertEqual(actual_return_code, expected_return_code)
 
+    def test_delete_whitelist_exception(self):
+        self.socket_mock.sendall.side_effect = SocketError("message")
+
+        self.assertRaises(
+            IOError, set_whitelist, self.socket_mock, "test-role", ["3.3.3.3"]
+        )
+
+    def test_set_quotas(self):
+        expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00-\x00\x00\x0f\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x0bwriter\x00\x00\x00\x05\x0e\x00\x00\x00o\x00\x00\x00\x05\x0f\x00\x00\x00\xde"
+        self.socket_mock.recv.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        expected_return_code = ASResponse.OK
+
+        actual_return_code = set_quotas(
+            self.socket_mock, "writer", read_quota="111", write_quota="222"
+        )
+
+        self.socket_mock.sendall.assert_called_with(expected_send_buf)
+        self.assertEqual(actual_return_code, expected_return_code)
+
+    def test_set_quotas_exception(self):
+        self.socket_mock.sendall.side_effect = SocketError("message")
+
+        self.assertRaises(
+            IOError,
+            set_quotas,
+            self.socket_mock,
+            "test-role",
+            read_quota="111",
+            write_quota="222",
+        )
+
+    # Currently not in use and that is why there is not test yet since we record
+    # input/output on the buffer.
+    # def test_delete_quotas(self)
+
     def test_query_roles_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\x10\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         self.socket_mock.recv.side_effect = [
-            b"\x02\x02\x00\x00\x00\x00\x01m",
-            b"\x00\x00\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08\x0bPainter\x00\x00\x00\x08\r1.1.1.1\x00\x00\x00\x10\x0c\x01\r\x04test\x07testset\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0b\x0bdata-admin\x00\x00\x00\x03\x0c\x01\x02\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x0bread\x00\x00\x00\x05\x0c\x01\n\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0b\x0bread-write\x00\x00\x00\x05\x0c\x01\x0b\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0f\x0bread-write-udf\x00\x00\x00\x05\x0c\x01\x0c\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0bsys-admin\x00\x00\x00\x03\x0c\x01\x01\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role\x00\x00\x00\x05\x0c\x01\r\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0b\x0buser-admin\x00\x00\x00\x03\x0c\x01\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x0bwrite\x00\x00\x00\x05\x0c\x01\r\x00\x00",
+            b"\x02\x02\x00\x00\x00\x00\x03\xef",
+            b"\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x0balpha-reader\x00\x00\x00\x0e\x0c\x01\n\x04test\x05alpha\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x0balpha-writer\x00\x00\x00\x0e\x0c\x01\x0b\x04test\x05alpha\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x0bbeta-reader\x00\x00\x00\r\x0c\x01\n\x04test\x04beta\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x0bbeta-writer\x00\x00\x00\r\x0c\x01\x0b\x04test\x04beta\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0b\x0bdata-admin\x00\x00\x00\x03\x0c\x01\x02\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x0bdelta-reader\x00\x00\x000\x0c\x04\n\x04test\x05alpha\n\x04test\x04beta\n\x04test\x04demo\n\x04test\x05gamma\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x0bdelta-writer\x00\x00\x000\x0c\x04\x0b\x04test\x05alpha\x0b\x04test\x04beta\x0b\x04test\x04demo\x0b\x04test\x05gamma\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x0bdemo-reader\x00\x00\x00\r\x0c\x01\n\x04test\x04demo\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x0bdemo-writer\x00\x00\x00\r\x0c\x01\x0b\x04test\x04demo\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x0bgamma-reader\x00\x00\x00\x0e\x0c\x01\n\x04test\x05gamma\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x0bgamma-writer\x00\x00\x00\x0e\x0c\x01\x0b\x04test\x05gamma\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x0bread\x00\x00\x00\x05\x0c\x01\n\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0b\x0bread-write\x00\x00\x00\x05\x0c\x01\x0b\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0f\x0bread-write-udf\x00\x00\x00\x05\x0c\x01\x0c\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x0breader\x00\x00\x00\x05\x0c\x01\n\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x0broot\x00\x00\x00\x08\x0c\x04\x00\x01\x02\x0b\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0bsuperuser\x00\x00\x00\x08\x0c\x04\x00\x01\x02\x0c\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0bsys-admin\x00\x00\x00\x03\x0c\x01\x01\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0b\x0buser-admin\x00\x00\x00\x03\x0c\x01\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x0bwrite\x00\x00\x00\x05\x0c\x01\r\x00\x00\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x0bwriter\x00\x00\x00\x05\x0e\x00\x00\x0f\xa0\x00\x00\x00\x05\x0f\x00\x00\x0f\xa0\x00\x00\x00\x07\x0c\x03\x01\x02\x0b\x00\x00",
             b"\x02\x02\x00\x00\x00\x00\x00\x10",
             b"\x002\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ]
         expected_roles = {
-            "Painter": {"privileges": ["write.test.testset"], "whitelist": ["1.1.1.1"]},
+            "alpha-reader": {"privileges": ["read.test.alpha"], "whitelist": []},
+            "alpha-writer": {"privileges": ["read-write.test.alpha"], "whitelist": []},
+            "beta-reader": {"privileges": ["read.test.beta"], "whitelist": []},
+            "beta-writer": {"privileges": ["read-write.test.beta"], "whitelist": []},
             "data-admin": {"privileges": ["data-admin"], "whitelist": []},
+            "delta-reader": {
+                "privileges": [
+                    "read.test.alpha",
+                    "read.test.beta",
+                    "read.test.demo",
+                    "read.test.gamma",
+                ],
+                "whitelist": [],
+            },
+            "delta-writer": {
+                "privileges": [
+                    "read-write.test.alpha",
+                    "read-write.test.beta",
+                    "read-write.test.demo",
+                    "read-write.test.gamma",
+                ],
+                "whitelist": [],
+            },
+            "demo-reader": {"privileges": ["read.test.demo"], "whitelist": []},
+            "demo-writer": {"privileges": ["read-write.test.demo"], "whitelist": []},
+            "gamma-reader": {"privileges": ["read.test.gamma"], "whitelist": []},
+            "gamma-writer": {"privileges": ["read-write.test.gamma"], "whitelist": []},
             "read": {"privileges": ["read"], "whitelist": []},
             "read-write": {"privileges": ["read-write"], "whitelist": []},
             "read-write-udf": {"privileges": ["read-write-udf"], "whitelist": []},
+            "reader": {"privileges": ["read"], "whitelist": []},
+            "root": {
+                "privileges": ["user-admin", "sys-admin", "data-admin", "read-write"],
+                "whitelist": [],
+            },
+            "superuser": {
+                "privileges": [
+                    "user-admin",
+                    "sys-admin",
+                    "data-admin",
+                    "read-write-udf",
+                ],
+                "whitelist": [],
+            },
             "sys-admin": {"privileges": ["sys-admin"], "whitelist": []},
-            "test-role": {"privileges": ["write"], "whitelist": []},
             "user-admin": {"privileges": ["user-admin"], "whitelist": []},
             "write": {"privileges": ["write"], "whitelist": []},
+            "writer": {
+                "privileges": ["sys-admin", "data-admin", "read-write"],
+                "whitelist": [],
+                "read-quota": "4000",
+                "write-quota": "4000",
+            },
         }
         expected_return_code = ASResponse.OK
 

@@ -70,7 +70,7 @@ class InfoController(LiveClusterCommandController):
             **self.mods
         )
 
-    @CommandHelp('info set" isplays summary information for each set.')
+    @CommandHelp('"info set" displays summary information for each set.')
     def do_set(self, line):
         stats = self.cluster.info_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)

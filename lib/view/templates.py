@@ -942,6 +942,16 @@ def turn_empty_to_none(ls):
     return ls
 
 
+def extract_value_from_dict(key):
+    def extract_value(dict):
+        if key not in dict:
+            return None
+
+        return dict[key]
+
+    return extract_value
+
+
 show_users = Sheet(
     (
         Field("User", Projectors.String("data", None, for_each_key=True)),
@@ -950,10 +960,91 @@ show_users = Sheet(
             Projectors.Func(
                 FieldType.undefined,
                 turn_empty_to_none,
-                Projectors.Identity("data", None),
+                Projectors.Identity("data", "roles"),
             ),
             Converters.list_to_comma_sep_str,
             align=FieldAlignment.right,
+        ),
+        Field("Connections", Projectors.String("data", "connections"),),
+        Subgroup(
+            "Read",
+            (
+                Field(
+                    "Quota",
+                    Projectors.Func(
+                        FieldType.undefined,
+                        extract_value_from_dict("quota"),
+                        Projectors.Identity("data", "read-info"),
+                    ),
+                ),
+                Field(
+                    "Single Record TPS",
+                    Projectors.Func(
+                        FieldType.undefined,
+                        extract_value_from_dict("single-record-tps"),
+                        Projectors.Identity("data", "read-info"),
+                    ),
+                ),
+                # TODO: Support for Subgroups to have Subgroups to have Scan/Query be a
+                # subgroup of Write
+                Field(
+                    "Scan/Query Limited RPS",
+                    Projectors.Func(
+                        FieldType.undefined,
+                        extract_value_from_dict("scan-query-rps-limited"),
+                        Projectors.Identity("data", "read-info"),
+                    ),
+                ),
+                Field(
+                    "Scan/Query Limitless",
+                    Projectors.Func(
+                        FieldType.undefined,
+                        extract_value_from_dict("scan-query-limitless"),
+                        Projectors.Identity("data", "read-info"),
+                    ),
+                ),
+                #     ),
+                # ),
+            ),
+        ),
+        Subgroup(
+            "Write",
+            (
+                Field(
+                    "Quota",
+                    Projectors.Func(
+                        FieldType.undefined,
+                        extract_value_from_dict("quota"),
+                        Projectors.Identity("data", "write-info"),
+                    ),
+                ),
+                Field(
+                    "Single Record TPS",
+                    Projectors.Func(
+                        FieldType.undefined,
+                        extract_value_from_dict("single-record-tps"),
+                        Projectors.Identity("data", "write-info"),
+                    ),
+                ),
+                # TODO: Support for Subgroups to have Subgroups to have Scan/Query be a
+                # subgroup of Write
+                Field(
+                    "Scan/Query Limited RPS",
+                    Projectors.Func(
+                        FieldType.undefined,
+                        extract_value_from_dict("scan-query-rps-limited"),
+                        Projectors.Identity("data", "write-info"),
+                    ),
+                ),
+                Field(
+                    "Scan/Query Limitless",
+                    Projectors.Func(
+                        FieldType.undefined,
+                        extract_value_from_dict("scan-query-limitless"),
+                        Projectors.Identity("data", "write-info"),
+                    ),
+                ),
+            ),
         ),
     ),
     from_source="data",
@@ -983,6 +1074,13 @@ show_roles = Sheet(
             ),
             Converters.list_to_comma_sep_str,
             align=FieldAlignment.right,
+        ),
+        Subgroup(
+            "Quotas",
+            (
+                Field("Read", Projectors.String("data", "read-quota")),
+                Field("Write", Projectors.String("data", "write-quota")),
+            ),
         ),
     ),
     from_source="data",

@@ -8,7 +8,7 @@ from .live_cluster_command_controller import LiveClusterCommandController
     '"asinfo" provides raw access to the info protocol.',
     "  Options:",
     "    -v <command>   - The command to execute",
-    "    -p <port>      - Port to use in case of XDR info command and XDR is",
+    "    -p <port>      - Port to use in the case of an XDR info command and XDR is",
     "                     not in asd",
     '    -l             - Replace semicolons ";" with newlines. If output does',
     '                     not contain semicolons "-l" will attempt to use',

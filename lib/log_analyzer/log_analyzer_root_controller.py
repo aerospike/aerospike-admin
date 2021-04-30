@@ -195,7 +195,7 @@ class HistogramController(LogAnalyzerCommandController):
 @CommandHelp(
     "Adds server logs.",
     "For log file of server (version >=3.7.1), "
-    "asadm fetches node id from log and set it as a display name. Otherwise uses MD5_<MD5_hash_of_path>.",
+    "asadm fetches node ID from log and set it as a display name. Otherwise uses MD5_<MD5_hash_of_path>.",
     "Format : add 'server log path1' 'server log path2' 'server log directory path' ...",
 )
 class AddController(LogAnalyzerCommandController):

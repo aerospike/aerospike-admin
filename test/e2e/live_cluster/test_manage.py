@@ -302,7 +302,9 @@ class TestManageACLRoles(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.rc = controller.LiveClusterRootController(user="admin", password="admin")
+        cls.rc = controller.LiveClusterRootController(
+            seed_nodes=[("174.22.0.2", 3000, None)], user="admin", password="admin"
+        )
         util.capture_stdout(cls.rc.execute, ["enable"])
 
     @classmethod
@@ -576,6 +578,107 @@ class TestManageACLRoles(unittest.TestCase):
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
             self.rc.execute,
             ["manage", "acl", "allowlist", "role", self.exp_role, "clear"],
+        )
+
+        self.assertEqual(exp_stdout_resp, actual_stdout.strip())
+        self.assertEqual(exp_stderr_resp, actual_stderr.strip())
+
+    # Setting one vs two quotas gives different success and error messages.
+    def test_can_set_quota_to_role(self):
+        exp_stdout_resp = "Successfully set quota for role {}.".format(self.exp_role)
+        exp_stderr_resp = ""
+
+        util.capture_stdout(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "create",
+                "role",
+                self.exp_role,
+                "priv",
+                "read-write",
+                "allow",
+                "1.1.1.1",
+            ],
+        )
+        time.sleep(0.5)
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
+            self.rc.execute,
+            ["manage", "acl", "rate-limit", "role", self.exp_role, "write", "2222"],
+        )
+
+        self.assertEqual(exp_stdout_resp, actual_stdout.strip())
+        self.assertEqual(exp_stderr_resp, actual_stderr.strip())
+
+    def test_can_set_quotas_to_role(self):
+        exp_stdout_resp = "Successfully set quotas for role {}.".format(self.exp_role)
+        exp_stderr_resp = ""
+
+        util.capture_stdout(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "create",
+                "role",
+                self.exp_role,
+                "priv",
+                "read-write",
+                "allow",
+                "1.1.1.1",
+            ],
+        )
+        time.sleep(0.5)
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "rate-limit",
+                "role",
+                self.exp_role,
+                "read",
+                "1111",
+                "write",
+                "2222",
+            ],
+        )
+
+        self.assertEqual(exp_stdout_resp, actual_stdout.strip())
+        self.assertEqual(exp_stderr_resp, actual_stderr.strip())
+
+    def test_fails_to_set_quotas_to_role_if_bad_quota(self):
+        exp_stdout_resp = ""
+        exp_stderr_resp = "Failed to set quotas : No role or invalid role."
+
+        time.sleep(0.5)
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "rate-limit",
+                "role",
+                self.exp_role,
+                "read",
+                "100",
+                "write",
+                "100",
+            ],
+        )
+
+        self.assertEqual(exp_stdout_resp, actual_stdout.strip())
+        self.assertEqual(exp_stderr_resp, actual_stderr.strip())
+
+    def test_fails_to_set_quota_to_role_if_bad_quota(self):
+        exp_stdout_resp = ""
+        exp_stderr_resp = "Failed to set quota : No role or invalid role."
+
+        time.sleep(0.5)
+        actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
+            self.rc.execute,
+            ["manage", "acl", "rate-limit", "role", self.exp_role, "read", "100"],
         )
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())

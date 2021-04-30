@@ -214,7 +214,21 @@ class CollectinfoLogHandler(object):
         return self._fetch_from_cinfo_log(type="config", stanza="namespace_list")
 
     def admin_acl(self, stanza):
-        return self._fetch_from_cinfo_log(type="acl", stanza=stanza)
+        data = self._fetch_from_cinfo_log(type="acl", stanza=stanza)
+
+        """
+        Asadm 2.1 stored user data as {user: [role1, role2, . . .]} which had to be
+        changed to {user: {roles: [role1, role2], connections: int, . . .}} in 
+        Asadm 2.2.  This snippet can be removed when 2.1 is considered old enough :)
+        """
+        if stanza == "users":
+            for nodes_data in data.values():
+                for users_data in nodes_data.values():
+                    for user, user_data in users_data.items():
+                        if isinstance(user_data, list):
+                            users_data[user] = {"roles": user_data}
+
+        return data
 
     def get_sys_data(self, stanza=""):
         res_dict = {}

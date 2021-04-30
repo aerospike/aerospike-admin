@@ -37,6 +37,8 @@ from .info import (
     query_users,
     revoke_roles,
     set_password,
+    set_quotas,
+    delete_quotas,
     set_whitelist,
 )
 
@@ -265,8 +267,12 @@ class ASSocket:
 
         return users_dict
 
-    def create_role(self, role, privileges, whitelist=None):
-        rsp_code = create_role(self.sock, role, privileges, whitelist)
+    def create_role(
+        self, role, privileges, whitelist=None, read_quota=None, write_quota=None
+    ):
+        rsp_code = create_role(
+            self.sock, role, privileges, whitelist, read_quota, write_quota
+        )
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to create role")
@@ -300,6 +306,31 @@ class ASSocket:
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to delete allowlist")
+
+    def set_quotas(self, role, read_quota=None, write_quota=None):
+        rsp_code = set_quotas(self.sock, role, read_quota, write_quota)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(
+                rsp_code,
+                "Failed to set quota{}".format(
+                    "s" if read_quota is not None and write_quota is not None else ""
+                ),
+            )
+
+    def delete_quotas(self, role, read_quota=False, write_quota=False):
+        """
+        NOT IN USE
+        """
+        rsp_code = delete_quotas(self.sock, role, read_quota, write_quota)
+
+        if rsp_code != ASResponse.OK:
+            raise ASProtocolError(
+                rsp_code,
+                "Failed to delete quota{}".format(
+                    "s" if read_quota and write_quota else ""
+                ),
+            )
 
     def query_roles(self):
         rsp_code, role_dict = query_roles(self.sock)

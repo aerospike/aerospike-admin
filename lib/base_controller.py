@@ -417,15 +417,16 @@ class CommandController(BaseController):
         if "with" in mods and "all" in groups["with"]:
             groups["with"] = "all"
 
+        return groups
+
+    def _check_required_modifiers(self, line):
         for mod in self.required_modifiers:
-            if not len(groups[mod]):
+            if not len(self.mods[mod]):
                 self.execute_help(line)
                 if mod == "line":
                     raise IOError("Missing required argument")
 
                 raise IOError("{} is required".format(mod))
-
-        return groups
 
     def pre_command(self, line):
         try:
@@ -433,6 +434,8 @@ class CommandController(BaseController):
                 return
         except Exception:
             self.mods = self.parse_modifiers(line)
+            self._check_required_modifiers(line)
+
             if not self.modifiers:
                 self.nodes = "all"
                 return

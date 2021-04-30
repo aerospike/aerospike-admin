@@ -13,7 +13,8 @@ class PagerController(LiveClusterCommandController):
         self.execute_help(line)
 
     @CommandHelp(
-        "Displays output with vertical and horizontal paging for each output table same as linux 'less' command.",
+        "Displays output with vertical and horizontal paging for each output table same as linux 'less'",
+        "command.",
         "Use arrow keys to scroll output and 'q' to end page for table.",
         "All linux less commands can work in this pager option.",
     )

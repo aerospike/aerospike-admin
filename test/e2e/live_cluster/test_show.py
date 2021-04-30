@@ -1684,7 +1684,19 @@ class TestShowUsers(unittest.TestCase):
 
     def test_show_users(self):
         exp_title = "Users"
-        exp_header = ["User", "Roles"]
+        exp_header = [
+            "User",
+            "Roles",
+            "Connections",
+            "Read Quota",
+            "Read Single Record TPS",
+            "Read Scan/Query Limited RPS",
+            "Read Scan/Query Limitless",
+            "Write Quota",
+            "Write Single Record TPS",
+            "Write Scan/Query Limited RPS",
+            "Write Scan/Query Limitless",
+        ]
 
         actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(
             self.rc, ["show", "users"]
@@ -1695,9 +1707,32 @@ class TestShowUsers(unittest.TestCase):
 
     def test_create_user_with_no_roles(self):
         exp_user = "foo"
-        exp_roles = ["--"]
+        exp_data = [
+            "--",
+            "--",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+        ]
         exp_title = "Users"
-        exp_header = ["User", "Roles"]
+        exp_header = [
+            "User",
+            "Roles",
+            "Connections",
+            "Read Quota",
+            "Read Single Record TPS",
+            "Read Scan/Query Limited RPS",
+            "Read Scan/Query Limitless",
+            "Write Quota",
+            "Write Single Record TPS",
+            "Write Scan/Query Limited RPS",
+            "Write Scan/Query Limitless",
+        ]
 
         _, _, _, _, num_records = capture_separate_and_parse_output(
             self.rc, ["show", "users"]
@@ -1723,13 +1758,37 @@ class TestShowUsers(unittest.TestCase):
         self.assertEqual(exp_num_rows, actual_num_records)
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        self.assertListEqual(exp_roles, actual_roles)
+        self.assertListEqual(exp_data, actual_roles)
 
     def test_create_user_with_roles(self):
         exp_user = "foo"
         exp_roles = ["sys-admin", "user-admin"]
+        exp_data = [
+            ", ".join(exp_roles),
+            "--",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+        ]
         exp_title = "Users"
-        exp_header = ["User", "Roles"]
+        exp_header = [
+            "User",
+            "Roles",
+            "Connections",
+            "Read Quota",
+            "Read Single Record TPS",
+            "Read Scan/Query Limited RPS",
+            "Read Scan/Query Limitless",
+            "Write Quota",
+            "Write Single Record TPS",
+            "Write Scan/Query Limited RPS",
+            "Write Scan/Query Limitless",
+        ]
 
         _, _, _, _, num_records = capture_separate_and_parse_output(
             self.rc, ["show", "users"]
@@ -1762,18 +1821,30 @@ class TestShowUsers(unittest.TestCase):
             actual_num_records,
         ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
 
-        actual_roles = get_data(exp_user, actual_data)
+        actual_data = get_data(exp_user, actual_data)
 
         self.assertEqual(exp_num_rows, actual_num_records)
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        self.assertListEqual([", ".join(exp_roles)], actual_roles)
+        self.assertListEqual(exp_data, actual_data)
 
     def test_delete_a_user(self):
         exp_user = "foo"
         exp_roles = ["sys-admin", "user-admin"]
         exp_title = "Users"
-        exp_header = ["User", "Roles"]
+        exp_header = [
+            "User",
+            "Roles",
+            "Connections",
+            "Read Quota",
+            "Read Single Record TPS",
+            "Read Scan/Query Limited RPS",
+            "Read Scan/Query Limitless",
+            "Write Quota",
+            "Write Single Record TPS",
+            "Write Scan/Query Limited RPS",
+            "Write Scan/Query Limitless",
+        ]
 
         _, _, _, _, num_records = capture_separate_and_parse_output(
             self.rc, ["show", "users"]
@@ -1823,7 +1894,19 @@ class TestShowUsers(unittest.TestCase):
         exp_user = "foo"
         exp_roles = ["sys-admin", "user-admin"]
         exp_title = "Users"
-        exp_header = ["User", "Roles"]
+        exp_header = [
+            "User",
+            "Roles",
+            "Connections",
+            "Read Quota",
+            "Read Single Record TPS",
+            "Read Scan/Query Limited RPS",
+            "Read Scan/Query Limitless",
+            "Write Quota",
+            "Write Single Record TPS",
+            "Write Scan/Query Limited RPS",
+            "Write Scan/Query Limitless",
+        ]
 
         util.capture_stdout(
             self.rc.execute,
@@ -1908,6 +1991,8 @@ class TestShowRoles(unittest.TestCase):
             "Role",
             "Privileges",
             "Allowlist",
+            "Quotas Read",
+            "Quotas Write",
         ]
 
         actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(
@@ -1921,9 +2006,10 @@ class TestShowRoles(unittest.TestCase):
         exp_role = "foo"
         exp_privilege = "sys-admin"
         exp_allowlist = ["--"]
-        exp_data = [exp_privilege, ", ".join(exp_allowlist)]
+        exp_quotas = ["--", "--"]
+        exp_data = [exp_privilege, ", ".join(exp_allowlist), *exp_quotas]
         exp_title = "Roles"
-        exp_header = ["Role", "Privileges", "Allowlist"]
+        exp_header = ["Role", "Privileges", "Allowlist", "Quotas Read", "Quotas Write"]
 
         _, _, _, _, num_records = capture_separate_and_parse_output(
             self.rc, ["show", "roles"]
@@ -1956,9 +2042,16 @@ class TestShowRoles(unittest.TestCase):
         exp_role = "foo"
         exp_privileges = "write"
         exp_allowlist = ["1.1.1.1", "2.2.2.2"]
-        exp_data = [exp_privileges, ", ".join(exp_allowlist)]
+        exp_quotas = ["--", "--"]
+        exp_data = [exp_privileges, ", ".join(exp_allowlist), *exp_quotas]
         exp_title = "Roles"
-        exp_header = ["Role", "Privileges", "Allowlist"]
+        exp_header = [
+            "Role",
+            "Privileges",
+            "Allowlist",
+            "Quotas Read",
+            "Quotas Write",
+        ]
 
         _, _, _, _, num_records = capture_separate_and_parse_output(
             self.rc, ["show", "roles"]
@@ -2001,7 +2094,13 @@ class TestShowRoles(unittest.TestCase):
         exp_role = "foo"
         exp_privilege = "sys-admin"
         exp_title = "Roles"
-        exp_header = ["Role", "Privileges", "Allowlist"]
+        exp_header = [
+            "Role",
+            "Privileges",
+            "Allowlist",
+            "Quotas Read",
+            "Quotas Write",
+        ]
 
         _, _, _, _, num_records = capture_separate_and_parse_output(
             self.rc, ["show", "roles"]
@@ -2043,7 +2142,13 @@ class TestShowRoles(unittest.TestCase):
         exp_role = "foo"
         exp_privilege = "read"
         exp_title = "Roles"
-        exp_header = ["Role", "Privileges", "Allowlist"]
+        exp_header = [
+            "Role",
+            "Privileges",
+            "Allowlist",
+            "Quotas Read",
+            "Quotas Write",
+        ]
 
         util.capture_stdout(
             self.rc.execute,
@@ -2073,6 +2178,63 @@ class TestShowRoles(unittest.TestCase):
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_privilege, actual_privileges[0])
+
+    def test_add_quotas(self):
+        exp_role = "foo"
+        exp_privilege = "read"
+        exp_title = "Roles"
+        exp_header = ["Role", "Privileges", "Allowlist", "Quotas Read", "Quotas Write"]
+
+        util.capture_stdout(
+            self.rc.execute,
+            ["manage", "acl", "create", "role", exp_role, "priv", exp_privilege],
+        )
+
+        time.sleep(1)
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            _,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
+
+        actual_data = get_data(exp_role, actual_data)
+        self.assertIn(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertEqual("--", actual_data[2])
+        self.assertEqual("--", actual_data[3])
+
+        util.capture_stdout(
+            self.rc.execute,
+            [
+                "manage",
+                "acl",
+                "rate-limit",
+                "role",
+                exp_role,
+                "read",
+                "1000",
+                "write",
+                "2000",
+            ],
+        )
+        time.sleep(1)
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            _,
+        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
+
+        actual_data = get_data(exp_role, actual_data)
+        self.assertIn(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertEqual("1000", actual_data[2])
+        self.assertEqual("2000", actual_data[3])
 
 
 class TestShowUdfs(unittest.TestCase):

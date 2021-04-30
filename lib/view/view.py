@@ -779,9 +779,11 @@ class CliView(object):
         title = "Users{}".format(title_timestamp)
         # Normally the top level of the dict is used to associate different sources.
         # Since we do not need one here we must artificially create one.
+
         users_data = dict(
             enumerate({k: v} for k, v in users_data.items() if k in filtered_keys)
         )
+
         sources = dict(data=users_data)
         CliView.print_result(sheet.render(templates.show_users, title, sources))
 

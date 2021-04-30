@@ -12,11 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.base_controller import ShellException
 import unittest
 from mock import patch
 
-from lib.live_cluster.show_controller import ShowStatisticsController
+from lib.live_cluster.show_controller import (
+    ShowStatisticsController,
+    ShowUsersController,
+)
 from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
+from lib.live_cluster.client.info import ASProtocolError, ASResponse
+from test.unit import util as test_util
 
 
 @patch("lib.base_controller.BaseController.view")
@@ -279,243 +285,96 @@ class ShowStatisticsControllerTest(unittest.TestCase):
     #         )
 
 
-# class FakeCluster(unittest.TestCase):
-#     def __init__(self, versions):
-#         self.builds = {"10.0.2.15:3000": versions[0], "20.0.2.15:3000": versions[1]}
+class ShowUsersControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ShowUsersController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.show_controller.ShowUsersController.cluster"
+        ).start()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetUsersController"
+        ).start()
+        self.view_mock = patch(
+            "lib.base_controller.BaseController.view.show_users"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.controller.getter = self.getter_mock
+        self.mods = {"like": [], "with": [], "for": [], "line": []}
 
-#     def info_build_version(self, nodes):
-#         return self.builds
+        self.addCleanup(patch.stopall)
 
+    def test_success(self):
+        resp = {
+            "admin": {
+                "roles": ["user-admin"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "connections": 4294966442,
+            },
+            "alpha-reader": {
+                "roles": ["alpha-reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+        }
+        self.cluster_mock.get_expected_principal.return_value = "test-principal"
+        self.getter_mock.get_users.return_value = {"1.1.1.1": resp}
 
-# class FakeGetStatisticsController(GetStatisticsController):
-#     def __init__(self, cluster, xdr_5):
-#         self.cluster = cluster
-#         self.xdr_5 = xdr_5
+        self.controller.execute(["like", "admin"])
 
-#     def get_xdr(self, nodes):
-#         if self.xdr_5:
-#             return {
-#                 "10.0.2.15:3000": {
-#                     "DC1": {
-#                         "in_queue": 21,
-#                         "retry_dest": "3",
-#                         "filtered_out": "3",
-#                         "abandoned": "3",
-#                         "success": "3",
-#                         "in_progress": "3",
-#                         "recoveries": "3",
-#                         "lap_us": "388",
-#                         "retry_conn_reset": "3",
-#                         "uncompressed_pct": "50.000",
-#                         "recoveries_pending": "3",
-#                         "hot_keys": "3",
-#                         "not_found": "3",
-#                         "time_lag": "3",
-#                         "compression_ratio": "1.000",
-#                         "lag": 1,
-#                         "throughput": 21300,
-#                         "latency_ms": 2,
-#                     },
-#                     "DC2": {
-#                         "in_queue": 17,
-#                         "retry_dest": "0",
-#                         "filtered_out": "0",
-#                         "abandoned": "0",
-#                         "success": "0",
-#                         "in_progress": "0",
-#                         "recoveries": "0",
-#                         "lap_us": "388",
-#                         "retry_conn_reset": "0",
-#                         "uncompressed_pct": "0.000",
-#                         "recoveries_pending": "0",
-#                         "hot_keys": "0",
-#                         "not_found": "0",
-#                         "time_lag": "0",
-#                         "compression_ratio": "1.000",
-#                         "lag": 3,
-#                         "throughput": 10200,
-#                         "latency_ms": 6,
-#                     },
-#                 },
-#                 "20.0.2.15:3000": {
-#                     "DC1": {
-#                         "in_queue": 21,
-#                         "retry_dest": "3",
-#                         "filtered_out": "3",
-#                         "abandoned": "3",
-#                         "success": "3",
-#                         "in_progress": "3",
-#                         "recoveries": "3",
-#                         "lap_us": "388",
-#                         "retry_conn_reset": "3",
-#                         "uncompressed_pct": "50.000",
-#                         "recoveries_pending": "3",
-#                         "hot_keys": "3",
-#                         "not_found": "3",
-#                         "time_lag": "3",
-#                         "compression_ratio": "1.000",
-#                         "lag": 1,
-#                         "throughput": 21300,
-#                         "latency_ms": 2,
-#                     },
-#                     "DC2": {
-#                         "in_queue": 17,
-#                         "retry_dest": "0",
-#                         "filtered_out": "0",
-#                         "abandoned": "0",
-#                         "success": "0",
-#                         "in_progress": "0",
-#                         "recoveries": "0",
-#                         "lap_us": "388",
-#                         "retry_conn_reset": "0",
-#                         "uncompressed_pct": "0.000",
-#                         "recoveries_pending": "0",
-#                         "hot_keys": "0",
-#                         "not_found": "0",
-#                         "time_lag": "0",
-#                         "compression_ratio": "1.000",
-#                         "lag": 3,
-#                         "throughput": 10200,
-#                         "latency_ms": 6,
-#                     },
-#                 },
-#             }
-#         else:
-#             # TODO fill in pre 5.0 stats
-#             return {"place_holder": "place_holder"}
+        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
+        self.view_mock.assert_called_with(resp, like=["admin"], line=[])
 
+    def test_logs_error(self):
+        as_error = ASProtocolError(
+            ASResponse.ROLE_OR_PRIVILEGE_VIOLATION, "test-message"
+        )
+        self.cluster_mock.get_expected_principal.return_value = "test-principal"
+        self.getter_mock.get_users.return_value = {"1.1.1.1": as_error}
 
-# class BasicControllerLibTest(unittest.Testcase):
-#     def test_xdr_stats(self):
-#         controller = ShowStatisticsController()
+        self.controller.execute(["like", "admin"])
 
+        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
+        self.logger_mock.error.assert_called_with(
+            "test-message : Role or privilege violation."
+        )
+        self.view_mock.assert_not_called()
 
-# class FakeView:
-#     def __init__(self):
-#         self.result = {}
+    def test_raises_error(self):
+        as_error = IOError("test-message")
+        self.cluster_mock.get_expected_principal.return_value = "test-principal"
+        self.getter_mock.get_users.return_value = {"1.1.1.1": as_error}
 
-#     @staticmethod
-#     def show_stats(
-#         title,
-#         service_configs,
-#         cluster,
-#         like=None,
-#         diff=None,
-#         show_total=False,
-#         title_every_nth=0,
-#         flip_output=False,
-#         timestamp="",
-#         **ignore
-#     ):
-#         return (title, service_configs)
+        test_util.assert_exception(
+            self,
+            ShellException,
+            "test-message",
+            self.controller.execute,
+            ["like", "admin"],
+        )
 
-
-# class FakeShowStatisticsController(ShowStatisticsController):
-#     def __init__(self):
-#         self.modifiers = set(["with", "like", "for"])
-#         self.mods = {"line": [], "with": [], "like": [], "for": []}
-#         self.cluster = FakeCluster(("5.0.0.0-pre-5-gefcbfeb", "5.0.0.0-pre-5-gefcbfeb"))
-#         self.getter = FakeGetStatisticsController(self.cluster, True)
-#         self.nodes = ["10.0.2.15:3000", "20.0.2.15:3000"]
-#         self.view = FakeView()
-
-
-# def test():
-#     s = FakeShowStatisticsController()
-#     # print(s.getter.get_xdr())
-#     f = s.do_xdr("xdr")
-#     res = []
-#     for future in f:
-#         res.append(future.start())
-
-#     expected = {
-#         "10.0.2.15:3000": {
-#             "DC1": {
-#                 "in_queue": 21,
-#                 "retry_dest": "3",
-#                 "filtered_out": "3",
-#                 "abandoned": "3",
-#                 "success": "3",
-#                 "in_progress": "3",
-#                 "recoveries": "3",
-#                 "lap_us": "388",
-#                 "retry_conn_reset": "3",
-#                 "uncompressed_pct": "50.000",
-#                 "recoveries_pending": "3",
-#                 "hot_keys": "3",
-#                 "not_found": "3",
-#                 "time_lag": "3",
-#                 "compression_ratio": "1.000",
-#                 "lag": 1,
-#                 "throughput": 21300,
-#                 "latency_ms": 2,
-#             },
-#             "DC2": {
-#                 "in_queue": 17,
-#                 "retry_dest": "0",
-#                 "filtered_out": "0",
-#                 "abandoned": "0",
-#                 "success": "0",
-#                 "in_progress": "0",
-#                 "recoveries": "0",
-#                 "lap_us": "388",
-#                 "retry_conn_reset": "0",
-#                 "uncompressed_pct": "0.000",
-#                 "recoveries_pending": "0",
-#                 "hot_keys": "0",
-#                 "not_found": "0",
-#                 "time_lag": "0",
-#                 "compression_ratio": "1.000",
-#                 "lag": 3,
-#                 "throughput": 10200,
-#                 "latency_ms": 6,
-#             },
-#         },
-#         "20.0.2.15:3000": {
-#             "DC1": {
-#                 "in_queue": 21,
-#                 "retry_dest": "3",
-#                 "filtered_out": "3",
-#                 "abandoned": "3",
-#                 "success": "3",
-#                 "in_progress": "3",
-#                 "recoveries": "3",
-#                 "lap_us": "388",
-#                 "retry_conn_reset": "3",
-#                 "uncompressed_pct": "50.000",
-#                 "recoveries_pending": "3",
-#                 "hot_keys": "3",
-#                 "not_found": "3",
-#                 "time_lag": "3",
-#                 "compression_ratio": "1.000",
-#                 "lag": 1,
-#                 "throughput": 21300,
-#                 "latency_ms": 2,
-#             },
-#             "DC2": {
-#                 "in_queue": 17,
-#                 "retry_dest": "0",
-#                 "filtered_out": "0",
-#                 "abandoned": "0",
-#                 "success": "0",
-#                 "in_progress": "0",
-#                 "recoveries": "0",
-#                 "lap_us": "388",
-#                 "retry_conn_reset": "0",
-#                 "uncompressed_pct": "0.000",
-#                 "recoveries_pending": "0",
-#                 "hot_keys": "0",
-#                 "not_found": "0",
-#                 "time_lag": "0",
-#                 "compression_ratio": "1.000",
-#                 "lag": 3,
-#                 "throughput": 10200,
-#                 "latency_ms": 6,
-#             },
-#         },
-#     }
-
-#     # for x in res:
-#     #     print(x.result())
-#     # TODO verify against real output
+        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
+        self.view_mock.assert_not_called()
 
