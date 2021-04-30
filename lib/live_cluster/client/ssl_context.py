@@ -22,12 +22,6 @@ from lib.utils import util
 try:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        warnings.filterwarnings(
-            "ignore",
-            message="Python 3.5 support will be dropped in the next release of cryptography. Please upgrade your Python.",
-        )
-        import cryptography
-        from cryptography import utils
 
         from OpenSSL import crypto, SSL
     HAVE_PYOPENSSL = True

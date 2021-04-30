@@ -43,14 +43,6 @@ from .info import (
 try:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        warnings.filterwarnings(
-            "ignore",
-            message="Python 3.5 support will be dropped in the next release of cryptography. Please upgrade your Python.",
-        )
-        import cryptography
-        from cryptography import utils
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
         from OpenSSL import SSL
     HAVE_PYOPENSSL = True
 except ImportError:

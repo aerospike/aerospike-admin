@@ -40,11 +40,11 @@ Admin> help
 
 
 ## Dependencies
-- python 3.5+
+- python 3.6+
 
 ### Python Modules
 - bcrypt == 3.1.4
-- cryptography >= 2.4.2
+- cryptography >= 3.4.7
 - jsonschema >= 2.5.1
 - pexpect: >= 3.0
 - ply: >= 3.4
@@ -54,7 +54,7 @@ Admin> help
 
 
 ### Mac OSX
-Requires Python 3.5+
+Requires Python 3.6+
 Run following command to ensure asadm history works properly:
 ```
 sudo easy_install -a readline
