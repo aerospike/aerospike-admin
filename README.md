@@ -43,14 +43,17 @@ Admin> help
 - python 3.6+
 
 ### Python Modules
-- bcrypt == 3.1.4
-- cryptography >= 3.4.7
-- jsonschema >= 2.5.1
-- pexpect: >= 3.0
-- ply: >= 3.4
-- pyOpenSSL: >= 18.0.0
-- pyasn1: >= 0.3.1
-- toml
+- bcrypt==3.1.4
+- cryptography==3.4.7
+- distro==1.5.0
+- jsonschema==2.5.1
+- pexpect==4.4.0
+- ply==3.11
+- pyasn1==0.4.2
+- pyOpenSSL==18.0.0
+- toml==0.9.4
+- yappi==0.98
+- python-dateutil==2.8.1
 
 
 ### Mac OSX

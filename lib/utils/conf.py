@@ -52,6 +52,7 @@ _confdefault = {
         "password": DEFAULTPASSWORD,
         "auth": AuthMode.INTERNAL,
         "tls-enable": False,
+        "tls-name": "",
         "tls-cafile": "",
         "tls-capath": "",
         "tls-cert-blacklist": "",
@@ -138,10 +139,10 @@ _confspec = """{
                 "password" : { "type" : "string" },
                 "auth" : { "type" : "string" },
                 "tls-enable" : { "type" : "boolean" },
+                "tls-name": { "type" : "string" },
                 "tls-cipher-suite" : { "type" : "string" },
                 "tls-crl-check" : { "type" : "boolean" },
                 "tls-crl-check-all" : { "type" : "boolean" },
-
                 "tls-keyfile" : { "type" : "string" },
                 "tls-keyfile-password" : { "type" : "string" },
                 "tls-cafile" : { "type" : "string" },
@@ -261,11 +262,11 @@ def _merge(dct, merge_dct, ignore_false=False):
 
 def _getseeds(conf):
 
-    re_ipv6host = re.compile("^(\[.*\])$")
-    re_ipv6hostport = re.compile("^(\[.*\]):(.*)$")
-    re_ipv6hostnameport = re.compile("^(\[.*\]):(.*):(.*)$")
-    re_ipv4hostport = re.compile("^(.*):(.*)$")
-    re_ipv4hostnameport = re.compile("^(.*):(.*):(.*)$")
+    re_ipv6host = re.compile(r"^(\[.*\])$")
+    re_ipv6hostport = re.compile(r"^(\[.*\]):(.*)$")
+    re_ipv6hostnameport = re.compile(r"^(\[.*\]):(.*):(.*)$")
+    re_ipv4hostport = re.compile(r"^(.*):(.*)$")
+    re_ipv4hostnameport = re.compile(r"^(.*):(.*):(.*)$")
 
     # Set up default port and tls-name if not specified in
     # host string
@@ -534,6 +535,11 @@ def print_config_file_option():
     # Deprecated
     # print(" --tls-encrypt-only   Disable TLS certificate verification.\n")
     print(
+        " -t --tls-name=name   Default TLS name of host to verify for TLS connection,\n"
+        "                      if not specified in host string. It is required if tls-enable\n"
+        "                      is set."
+    )
+    print(
         " --tls-cafile=path\n"
         "                      Path to a trusted CA certificate file."
     )
@@ -602,11 +608,6 @@ def print_config_file_option():
     )
     print("")
     print("[asadm]")
-    print(
-        " -t --tls-name=name   Default TLS name of host to verify for TLS connection,\n"
-        "                      if not specified in host string. It is required if tls-enable\n"
-        "                      is set."
-    )
     print(
         " -s --services-alumni\n"
         "                      Enable use of services-alumni-list instead of services-list"
