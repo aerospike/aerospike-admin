@@ -58,7 +58,7 @@ class _CollectinfoNode(object):
         self.asd_version = util.convert_edition_to_shortform(asd_version)
 
 
-class _CollectinfoSnapshot(object):
+class _CollectinfoSnapshot:
     def __init__(self, cluster_name, timestamp, cinfo_data, cinfo_file):
         self.cluster_name = cluster_name
         self.timestamp = timestamp
@@ -96,7 +96,7 @@ class _CollectinfoSnapshot(object):
             for node, node_data in value.items():
                 if not node or not node_data:
                     continue
-                if not "as_stat" in node_data:
+                if "as_stat" not in node_data:
                     continue
 
                 if "config" in node_data["as_stat"]:
@@ -170,7 +170,7 @@ class _CollectinfoSnapshot(object):
                     if not node or not node_data:
                         continue
 
-                    if not "as_stat" in node_data or type not in node_data["as_stat"]:
+                    if "as_stat" not in node_data or type not in node_data["as_stat"]:
                         continue
 
                     if node not in data:
@@ -281,7 +281,7 @@ class _CollectinfoSnapshot(object):
                         continue
 
                     if (
-                        not "sys_stat" in node_data
+                        "sys_stat" not in node_data
                         or stanza not in node_data["sys_stat"]
                     ):
                         continue

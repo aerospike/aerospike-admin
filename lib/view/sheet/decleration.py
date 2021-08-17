@@ -39,7 +39,7 @@ class Sheet(object):
         no_entry="--",
         error_entry="~~",
     ):
-        """ Instantiates a sheet definition.
+        """Instantiates a sheet definition.
         Arguments:
         fields -- Sequence of fields to present.
 
@@ -116,7 +116,7 @@ class Sheet(object):
         if len(field_set) != len(static_fields):
             field_keys = ",".join(
                 (
-                    "{} appears {} times".format((key, count))
+                    "{} appears {} times".format(key, count)
                     for count, key in Counter(
                         field.key for field in static_fields
                     ).items()
@@ -478,7 +478,7 @@ class Projectors(object):
             Arguments:
             source -- A set of sources to project a boolean from.
             """
-            value = super(Projectors.Boolean, self).do_project(sheet, sources)
+            value = super().do_project(sheet, sources)
 
             if isinstance(value, str):
                 return value.lower().strip() != "false"
@@ -493,7 +493,7 @@ class Projectors(object):
             Arguments:
             source -- A set of sources to project a float from.
             """
-            value = super(Projectors.Float, self).do_project(sheet, sources)
+            value = super().do_project(sheet, sources)
 
             try:
                 return float(value)
@@ -508,7 +508,7 @@ class Projectors(object):
             Arguments:
             source -- A set of sources to project a number from.
             """
-            value = super(Projectors.Number, self).do_project(sheet, sources)
+            value = super().do_project(sheet, sources)
 
             try:
                 return int(value)
@@ -532,7 +532,7 @@ class Projectors(object):
             invert -- False by default, if True will return 100 - value.
             """
 
-            super(Projectors.Percent, self).__init__(source, *keys, **kwargs)
+            super().__init__(source, *keys, **kwargs)
             self.invert = kwargs.get("invert", False)
 
         def do_project(self, sheet, sources):
@@ -543,7 +543,7 @@ class Projectors(object):
                      'for_each'.
             source -- A set of sources to project a number from.
             """
-            value = super(Projectors.Percent, self).do_project(sheet, sources)
+            value = super().do_project(sheet, sources)
             return value if not self.invert else 100 - value
 
     class Sum(BaseProjector):
@@ -670,6 +670,13 @@ class Converters(object):
             return Converters._list_to_str(edata.value, ", ")
 
         return "--"
+
+    @staticmethod
+    def round(decimal):
+        def fun(edata):
+            return round(float(edata.value), decimal)
+
+        return fun
 
 
 class Formatters(object):

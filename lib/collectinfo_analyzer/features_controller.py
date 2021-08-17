@@ -15,6 +15,7 @@ class FeaturesController(CollectinfoCommandController):
         namespace_stats = self.log_handler.info_statistics(
             stanza=constants.STAT_NAMESPACE
         )
+        xdr_dc_stats = self.log_handler.info_statistics(stanza=constants.STAT_XDR)
         service_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_SERVICE
         )
@@ -29,15 +30,19 @@ class FeaturesController(CollectinfoCommandController):
             features = {}
             s_stats = service_stats[timestamp]
             ns_stats = {}
+            dc_stats = {}
             s_configs = {}
             ns_configs = {}
             cl_configs = {}
 
+            if timestamp in service_configs:
+                s_configs = service_configs[timestamp]
+
             if timestamp in namespace_stats:
                 ns_stats = namespace_stats[timestamp]
 
-            if timestamp in service_configs:
-                s_configs = service_configs[timestamp]
+            if timestamp in xdr_dc_stats:
+                dc_stats = xdr_dc_stats[timestamp]
 
             if timestamp in namespace_configs:
                 ns_configs = namespace_configs[timestamp]
@@ -48,6 +53,7 @@ class FeaturesController(CollectinfoCommandController):
             features = common.find_nodewise_features(
                 service_stats=s_stats,
                 ns_stats=ns_stats,
+                xdr_dc_stats=dc_stats,
                 service_configs=s_configs,
                 ns_configs=ns_configs,
                 cluster_configs=cl_configs,

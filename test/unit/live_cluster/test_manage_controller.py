@@ -1,3 +1,4 @@
+from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoError
 from lib.base_controller import ShellException
 import unittest
 from mock import MagicMock, patch
@@ -7,6 +8,11 @@ from lib.live_cluster.manage_controller import (
     ManageACLCreateRoleController,
     ManageACLCreateUserController,
     ManageACLQuotasRoleController,
+    ManageConfigController,
+    ManageConfigLeafController,
+    ManageQuiesceController,
+    ManageReclusterController,
+    ManageTruncateController,
 )
 from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
 from test.unit import util as test_util
@@ -22,7 +28,6 @@ class ManageACLCreateUserControllerTest(unittest.TestCase):
         ).start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
-        self.mods = {"like": [], "with": [], "for": [], "line": []}
 
         self.addCleanup(patch.stopall)
 
@@ -79,7 +84,6 @@ class ManageACLCreateUserControllerTest(unittest.TestCase):
 
     def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASProtocolError(ASResponse.USER_ALREADY_EXISTS, "test-message")
-        log_message = "test-message : User already exists."
         line = "test-user password pass"
         self.cluster_mock.get_expected_principal.return_value = "principal"
         self.cluster_mock.admin_create_user.return_value = {"principal_ip": as_error}
@@ -89,7 +93,7 @@ class ManageACLCreateUserControllerTest(unittest.TestCase):
         self.cluster_mock.admin_create_user.assert_called_with(
             "test-user", "pass", [], nodes=["principal"]
         )
-        self.logger_mock.error.assert_called_with(log_message)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     def test_raises_exception_when_exception_returned(self):
@@ -118,7 +122,6 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
         ).start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
-        self.mods = {"like": [], "with": [], "for": [], "line": []}
 
         self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
         self.cluster_mock.get_expected_principal.return_value = "principal"
@@ -394,7 +397,6 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
 
     def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASProtocolError(ASResponse.ROLE_ALREADY_EXISTS, "test-message")
-        log_message = "test-message : Role already exists."
         line = "test-role priv sys-admin"
         self.cluster_mock.admin_create_role.return_value = {"principal_ip": as_error}
 
@@ -408,7 +410,7 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             write_quota=None,
             nodes=["principal"],
         )
-        self.logger_mock.error.assert_called_with(log_message)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     def test_raises_exception_when_exception_returned(self):
@@ -431,7 +433,7 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
 
-class ManageACLRateLimitControllerTest(unittest.TestCase):
+class ManageACLQuotasControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
         self.root_controller = LiveClusterRootController()
@@ -441,7 +443,6 @@ class ManageACLRateLimitControllerTest(unittest.TestCase):
         ).start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
-        self.mods = {"like": [], "with": [], "for": [], "line": []}
 
         self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
         self.cluster_mock.get_expected_principal.return_value = "principal"
@@ -569,7 +570,6 @@ class ManageACLRateLimitControllerTest(unittest.TestCase):
 
     def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASProtocolError(ASResponse.RATE_QUOTA_EXCEEDED, "test-message")
-        log_message = "test-message : Rate quota exceeded."
         line = "role test-role write 100 read 100"
         self.cluster_mock.admin_set_quotas.return_value = {"principal_ip": as_error}
 
@@ -578,7 +578,7 @@ class ManageACLRateLimitControllerTest(unittest.TestCase):
         self.cluster_mock.admin_set_quotas.assert_called_with(
             "test-role", read_quota=100, write_quota=100, nodes=["principal"]
         )
-        self.logger_mock.error.assert_called_with(log_message)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     def test_raises_exception_when_exception_returned(self):
@@ -594,3 +594,1047 @@ class ManageACLRateLimitControllerTest(unittest.TestCase):
             "test-role", read_quota=100, write_quota=100, nodes=["principal"]
         )
         self.view_mock.print_result.assert_not_called()
+
+
+class ManageConfigControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageConfigController()
+        ManageConfigLeafController.mods = {}
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageConfigLeafController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageConfigLeafController.prompt_challenge"
+        ).start()
+
+        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+
+        self.addCleanup(patch.stopall)
+
+    def test_logging_prompt(self):
+        line = (
+            "logging file test-file param test-param to test-value with 1.1.1.1 2.2.2.2"
+        )
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change logging context test-param to test-value for file test-file"
+        )
+        self.cluster_mock.info_set_config_logging.assert_not_called()
+
+    def test_logging_success(self):
+        line = (
+            "logging file test-file param test-param to test-value with 1.1.1.1 2.2.2.2"
+        )
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_logging.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_logging.assert_called_once_with(
+            "test-file", "test-param", "test-value", nodes=["1.1.1.1", "2.2.2.2"]
+        )
+        title = "Set Logging Context test-param to test-value"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_service_prompt(self):
+        line = "service param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change service param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_service.assert_not_called()
+
+    def test_service_success(self):
+        line = "service param test-param to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_service.return_value = resp
+        mods = {
+            "with": ["1.1.1.1", "2.2.2.2"],
+            "param": [],
+            "to": [],
+            "line": [],
+        }
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_service.assert_called_once_with(
+            "test-param", "test-value", nodes=["1.1.1.1", "2.2.2.2"]
+        )
+        title = "Set Service Param test-param to test-value"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **mods
+        )
+
+    def test_network_subcontext_required(self):
+        line = "network param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_once_with("Subcontext required.")
+        self.cluster_mock.info_set_config_network.assert_not_called()
+
+    def test_network_prompt(self):
+        line = "network sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change network sub-context param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_network.assert_not_called()
+
+    def test_network_success(self):
+        line = "network sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_network.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_network.assert_called_once_with(
+            "test-param", "test-value", "sub-context", nodes=["1.1.1.1", "2.2.2.2"]
+        )
+        title = "Set Network Param test-param to test-value"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_security_prompt_with_subcontext(self):
+        line = (
+            "security sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
+        )
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change security sub-context param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_security.assert_not_called()
+
+    def test_security_prompt(self):
+        line = "security param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change security param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_security.assert_not_called()
+
+    def test_security_success(self):
+        line = (
+            "security sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
+        )
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_security.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_security.assert_called_once_with(
+            "test-param", "test-value", "sub-context", nodes=["1.1.1.1", "2.2.2.2"]
+        )
+        title = "Set Security Param test-param to test-value"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_namespace_prompt_with_subcontext(self):
+        line = "namespace test-ns sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change namespace test-ns sub-context param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_namespace.assert_not_called()
+
+    def test_namespace_prompt(self):
+        line = "namespace test-ns param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change namespace test-ns param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_namespace.assert_not_called()
+
+    def test_namespace_success(self):
+        line = "namespace test-ns sub-context param rack-id to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_namespace.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_namespace.assert_called_once_with(
+            "rack-id",
+            "test-value",
+            "test-ns",
+            subcontext="sub-context",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Set Namespace Param rack-id to test-value"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            'Run "manage recluster" for your changes to rack-id to take affect.'
+        )
+
+    def test_namespace_success_with_pair(self):
+        line = "namespace test-ns sub-context param compression-level to test-value with 1.1.1.1 2.2.2.2"
+
+        self.controller.execute(line.split())
+
+        self.view_mock.print_result.assert_called_once_with(
+            'The parameter "enable-compression" must also be set.'
+        )
+
+    def test_set_prompt(self):
+        line = "namespace test-ns set test-set param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change namespace test-ns set test-set param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_namespace.assert_not_called()
+
+    def test_set_success(self):
+        line = "namespace test-ns set test-set param test-param to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_namespace.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_namespace.assert_called_once_with(
+            "test-param",
+            "test-value",
+            "test-ns",
+            set_="test-set",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Set Namespace Set Param test-param to test-value"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_XDR_prompt(self):
+        line = "xdr param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change XDR param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_xdr.assert_not_called()
+
+    def test_XDR_success(self):
+        line = "xdr param test-param to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr.assert_called_once_with(
+            "test-param",
+            "test-value",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Set XDR Param test-param to test-value"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_XDR_create_dc_prompt(self):
+        line = "xdr create dc test-dc with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with("Create XDR DC test-dc")
+        self.cluster_mock.info_set_config_xdr_create_dc.assert_not_called()
+
+    def test_XDR_create_dc_success(self):
+        line = "xdr create dc test-dc with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr_create_dc.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr_create_dc.assert_called_once_with(
+            "test-dc",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Create XDR DC test-dc"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_XDR_delete_dc_prompt(self):
+        line = "xdr delete dc test-dc with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with("Delete XDR DC test-dc")
+        self.cluster_mock.info_set_config_xdr_delete_dc.assert_not_called()
+
+    def test_XDR_delete_dc_success(self):
+        line = "xdr delete dc test-dc with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr_delete_dc.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr_delete_dc.assert_called_once_with(
+            "test-dc",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Delete XDR DC test-dc"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_XDR_dc_prompt(self):
+        line = "xdr dc test-dc param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change XDR DC test-dc param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_xdr.assert_not_called()
+
+    def test_XDR_dc_success(self):
+        line = "xdr dc test-dc param auth-user to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr.assert_called_once_with(
+            "auth-user",
+            "test-value",
+            dc="test-dc",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Set XDR DC Param auth-user to test-value"
+        self.view_mock.manage_config(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            'The parameter "auth-password-file" must also be set.'
+        )
+
+    def test_XDR_dc_add_node_prompt(self):
+        line = "xdr dc test-dc add node 3.3.3.3 with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with("Add node 3.3.3.3 to DC test-dc")
+        self.cluster_mock.info_set_config_xdr_add_node.assert_not_called()
+
+    def test_XDR_dc_add_node_success(self):
+        line = "xdr dc test-dc add node 3.3.3.3 with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr_add_node.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr_add_node.assert_called_once_with(
+            "test-dc",
+            "3.3.3.3",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Add XDR Node 3.3.3.3 to DC test-dc"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_XDR_dc_remove_node_prompt(self):
+        line = "xdr dc test-dc remove node 3.3.3.3 with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with("Remove node 3.3.3.3 from DC test-dc")
+        self.cluster_mock.info_set_config_xdr_remove_node.assert_not_called()
+
+    def test_XDR_dc_remove_node_success(self):
+        line = "xdr dc test-dc remove node 3.3.3.3 with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr_remove_node.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr_remove_node.assert_called_once_with(
+            "test-dc",
+            "3.3.3.3",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Remove XDR Node 3.3.3.3 from DC test-dc"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_XDR_dc_add_namespace_prompt(self):
+        line = "xdr dc test-dc add namespace test-env with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with("Add namespace test-env to DC test-dc")
+        self.cluster_mock.info_set_config_xdr_add_namespace.assert_not_called()
+
+    def test_XDR_dc_add_namespace_with_rewind_prompt(self):
+        line = "xdr dc test-dc add namespace test-env rewind all with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Add namespace test-env to DC test-dc with rewind all"
+        )
+        self.cluster_mock.info_set_config_xdr_add_namespace.assert_not_called()
+
+    def test_XDR_dc_add_namespace_success(self):
+        line = "xdr dc test-dc add namespace test-ns with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr_add_namespace.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr_add_namespace.assert_called_once_with(
+            "test-dc",
+            "test-ns",
+            None,
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Add XDR Namespace test-ns to DC test-dc"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_XDR_dc_remove_namespace_prompt(self):
+        line = "xdr dc test-dc remove namespace test-ns with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Remove namespace test-ns from DC test-dc"
+        )
+        self.cluster_mock.info_set_config_xdr_remove_namespace.assert_not_called()
+
+    def test_XDR_dc_remove_namespace_success(self):
+        line = "xdr dc test-dc remove namespace test-ns with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr_remove_namespace.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr_remove_namespace.assert_called_once_with(
+            "test-dc",
+            "test-ns",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Remove XDR Namespace test-ns from DC test-dc"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+    def test_XDR_dc_namespace_prompt(self):
+        line = "xdr dc test-dc namespace test-ns param test-param to test-value with 1.1.1.1 2.2.2.2"
+        self.prompt_mock.return_value = False
+        ManageConfigLeafController.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "Change XDR DC test-dc namespace test-ns param test-param to test-value"
+        )
+        self.cluster_mock.info_set_config_xdr.assert_not_called()
+
+    def test_XDR_dc_namespace_success(self):
+        line = "xdr dc test-dc namespace test-ns param test-param to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
+        self.cluster_mock.info_set_config_xdr.return_value = resp
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_xdr.assert_called_once_with(
+            "test-param",
+            "test-value",
+            dc="test-dc",
+            namespace="test-ns",
+            nodes=["1.1.1.1", "2.2.2.2"],
+        )
+        title = "Set XDR Namespace Param test-param to test-value"
+        self.view_mock.manage_config.assert_called_once_with(
+            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+        )
+
+
+class ManageTruncateControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageTruncateController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageTruncateController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageTruncateController.prompt_challenge"
+        ).start()
+
+        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+
+        self.addCleanup(patch.stopall)
+
+    def test_parse_lut_with_incorrect_before_len(self):
+        self.controller.mods = {"before": ["12344352"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual(
+            'Last update time must be followed by "unix-epoch" or "iso-8601".',
+            error,
+        )
+
+        self.controller.mods = {"before": ["12344352", "unix-epoch", "extra"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual(
+            'Last update time must be followed by "unix-epoch" or "iso-8601".',
+            error,
+        )
+
+    def test_parse_lut_with_incorrect_epoch_format(self):
+        self.controller.mods = {"before": ["12345v6789", "unix-epoch"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual("Invalid unix-epoch format.", error)
+
+    def test_parse_lut_with_date_too_new(self):
+        self.controller.mods = {"before": ["12345678900", "unix-epoch"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNotNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual("Date provided is too far in the future.", error)
+
+        self.controller.mods = {"before": ["2483-05-30T04:26:40Z", "iso-8601"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNotNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual("Date provided is too far in the future.", error)
+
+    def test_parse_lut_with_date_too_old(self):
+        self.controller.mods = {"before": ["123456789", "unix-epoch"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNotNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual("Date provided is too far in the past.", error)
+
+        self.controller.mods = {"before": ["1970-05-30T04:26:40Z", "iso-8601"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNotNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual("Date provided is too far in the past.", error)
+
+    def test_parse_lut_with_incorrect_iso_format(self):
+        self.controller.mods = {"before": ["123", "iso-8601"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual("Invalid iso-8601 format.", error)
+
+    def test_parse_lut_with_iso_without_timezone(self):
+        self.controller.mods = {"before": ["2020-05-04T04:20:40", "iso-8601"]}
+
+        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+        self.assertIsNotNone(lut_datetime)
+        self.assertIsNone(lut_epoch_time)
+        self.assertEqual("iso-8601 format must contain a timezone.", error)
+
+    def test_parse_lut_iso_gives_correct_epoch_time(self):
+        input_output = [
+            ("2021-05-04T22:44:05Z", "1620168245000000000"),
+            ("2021-05-04T22:44:05-07:00", "1620193445000000000"),
+            ("2021-05-04T23:54:30.123456+00:00", "1620172470123456000"),
+            ("2021-05-04T22:54:30.123456-01:00", "1620172470123456000"),
+            ("2021-05-04T00:54:30.123456+01:00", "1620086070123456000"),
+            ("20210503T195430.123456-0400", "1620086070123456000"),
+            ("2021-05-04T11:40:34.100-12:00", "1620171634100000000"),
+        ]
+
+        for input, output in input_output:
+            self.controller.mods = {"before": [input, "iso-8601"]}
+            lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+            self.logger_mock.error.assert_not_called()
+            self.assertEqual(lut_epoch_time, output)
+            self.assertFalse(error)
+
+    def test_parse_lut_epoch_gives_correct_epoch_time(self):
+        input_output = [
+            ("1234567899", "1234567899000000000"),
+            ("1234567899.123456789", "1234567899123456789"),
+            ("1234567899.123", "1234567899123000000"),
+        ]
+
+        for input, output in input_output:
+            self.controller.mods = {"before": [input, "unix-epoch"]}
+            lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+
+            self.logger_mock.error.assert_not_called()
+            self.assertEqual(lut_epoch_time, output)
+            self.assertFalse(error)
+
+    def test_get_namespace_master_objects(self):
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {
+                "a": 1,
+                "b": 12,
+                "c": 23,
+                "d": 34,
+                "e": 45,
+                "f": 56,
+                "master_objects": 33,
+            },
+            "2.2.2.2": {
+                "a": 1,
+                "b": 12,
+                "c": 23,
+                "d": 34,
+                "e": 45,
+                "f": 56,
+                "master_objects": 44,
+            },
+            "3.3.3.3": {
+                "a": 1,
+                "b": 12,
+                "c": 23,
+                "d": 34,
+                "e": 45,
+                "f": 56,
+                "master_objects": 55,
+            },
+            "4.4.4.4": {"a": 1, "b": 12, "c": 23, "d": 34, "e": 45, "f": 56},
+        }
+
+        master_objects = self.controller._get_namespace_master_objects("test-ns")
+
+        self.cluster_mock.info_namespace_statistics.assert_called_with(
+            "test-ns", nodes="all"
+        )
+        self.assertEqual(master_objects, str(33 + 44 + 55))
+
+    def test_get_set_master_objects(self):
+        self.cluster_mock.info_set_statistics.return_value = {
+            "1.1.1.1": {
+                "a": 1,
+                "b": 12,
+                "c": 23,
+                "d": 34,
+                "e": 45,
+                "f": 56,
+                "objects": 11,
+            },
+            "4.4.4.4": {"a": 1, "b": 12, "c": 23, "d": 34, "e": 45, "f": 56},
+            "2.2.2.2": {
+                "a": 1,
+                "b": 12,
+                "c": 23,
+                "d": 34,
+                "e": 45,
+                "f": 56,
+                "objects": 55,
+            },
+            "3.3.3.3": {
+                "a": 1,
+                "b": 12,
+                "c": 23,
+                "d": 34,
+                "e": 45,
+                "f": 56,
+                "objects": 66,
+            },
+        }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"effective_repl_factor": 11}
+        }
+
+        master_objects = self.controller._get_set_master_objects("test-ns", "test-set")
+
+        self.cluster_mock.info_set_statistics.assert_called_with(
+            "test-ns", "test-set", nodes="all"
+        )
+        self.assertEqual(master_objects, str((11 + 55 + 66) // 11))
+
+    def test_returns_on_lut_error(self):
+        line = "ns test before 123456789 unix-epoch"
+
+        self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_with(
+            "Date provided is too far in the past."
+        )
+        self.cluster_mock.info_truncate.assert_not_called()
+
+    @patch(
+        "lib.live_cluster.manage_controller.ManageTruncateController._get_namespace_master_objects"
+    )
+    def test_prompts_error_without_lut(self, _get_namespace_master_objects_mock):
+        _get_namespace_master_objects_mock.return_value = 50
+        self.controller.warn = True
+        self.prompt_mock.side_effect = lambda x: False
+        line = "ns test"
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_with(
+            "You are about to truncate up to 50 records from namespace test"
+        )
+
+    @patch(
+        "lib.live_cluster.manage_controller.ManageTruncateController._get_set_master_objects"
+    )
+    def test_prompts_error_without_lut_or_set(self, _get_set_master_objects_mock):
+        _get_set_master_objects_mock.return_value = 60
+        self.controller.warn = True
+        self.prompt_mock.side_effect = lambda x: False
+
+        line = "ns test set test-set"
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_with(
+            "You are about to truncate up to 60 records from set test-set for namespace test"
+        )
+
+    @patch(
+        "lib.live_cluster.manage_controller.ManageTruncateController._get_set_master_objects"
+    )
+    def test_prompts_error_with_lut(self, _get_set_master_objects_mock):
+        _get_set_master_objects_mock.return_value = 60
+        self.controller.warn = True
+        self.prompt_mock.side_effect = lambda x: False
+
+        line = "ns test set test-set before 1620690614 unix-epoch"
+
+        self.controller.execute(line.split())
+
+        # Fails with pytest when you add -s
+        self.prompt_mock.assert_called_with(
+            "You are about to truncate up to 60 records from set test-set for namespace test with LUT before 23:50:14.000000 UTC on May 10, 2021"
+        )
+
+    def test_success_with_no_set(self):
+        self.cluster_mock.info_truncate.return_value = {"principal": "not an error"}
+        line = "ns test before 1620690614 unix-epoch"
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_truncate.assert_called_with(
+            "test", None, "1620690614000000000", nodes="principal"
+        )
+        self.logger_mock.error.assert_not_called()
+        self.view_mock.print_result.assert_called_with(
+            "Successfully started truncation for namespace test"
+        )
+
+    def test_success_with_set(self):
+        self.cluster_mock.info_truncate.return_value = {"principal": "not an error"}
+        line = "ns test set test-set before 1620690614 unix-epoch"
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_truncate.assert_called_with(
+            "test", "test-set", "1620690614000000000", nodes="principal"
+        )
+        self.logger_mock.error.assert_not_called()
+        self.view_mock.print_result.assert_called_with(
+            "Successfully started truncation for set test-set of namespace test"
+        )
+
+    def test_logs_error_when_asprotocol_error_returned(self):
+        as_error = ASInfoError("An error message", "test-resp")
+        line = "ns test set test-set before 1620690614 unix-epoch"
+        self.cluster_mock.info_truncate.return_value = {"principal_ip": as_error}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_truncate.assert_called_with(
+            "test", "test-set", "1620690614000000000", nodes="principal"
+        )
+        self.logger_mock.error.assert_called_with(as_error)
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_exception_when_exception_returned(self):
+        as_error = IOError("test-message")
+        line = "ns test set test-set before 1620690614 unix-epoch"
+        self.cluster_mock.info_truncate.return_value = {"principal_ip": as_error}
+
+        test_util.assert_exception(
+            self, ShellException, "test-message", self.controller.execute, line.split()
+        )
+
+        self.cluster_mock.info_truncate.assert_called_with(
+            "test", "test-set", "1620690614000000000", nodes="principal"
+        )
+        self.view_mock.print_result.assert_not_called()
+
+
+class ManageTruncateUndoControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageTruncateController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageTruncateController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageTruncateController.prompt_challenge"
+        ).start()
+
+        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+
+        self.addCleanup(patch.stopall)
+
+    def test_warn_prompt_and_return(self):
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        line = "ns test undo"
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with("")
+        self.cluster_mock.info_truncate_undo.assert_not_called()
+
+    def test_success_with_ns(self):
+        line = "undo ns test"
+        self.cluster_mock.info_truncate_undo.return_value = {
+            "principal-ip": ASINFO_RESPONSE_OK
+        }
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_truncate_undo.assert_called_once_with(
+            "test", None, nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully triggered undoing truncation for namespace test on next cold restart"
+        )
+
+    def test_success_with_set(self):
+        line = "undo ns test set test-set"
+        self.cluster_mock.info_truncate_undo.return_value = {
+            "principal-ip": ASINFO_RESPONSE_OK
+        }
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_truncate_undo.assert_called_once_with(
+            "test", "test-set", nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully triggered undoing truncation for set test-set of namespace test on next cold restart"
+        )
+
+    def test_logs_error_when_asprotocol_error_returned(self):
+        as_error = ASInfoError("An error message", "test-resp")
+        line = "ns test set test-set undo"
+        self.cluster_mock.info_truncate_undo.return_value = {"principal_ip": as_error}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_truncate_undo.assert_called_with(
+            "test", "test-set", nodes="principal"
+        )
+        self.logger_mock.error.assert_called_with(as_error)
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_exception_when_exception_returned(self):
+        as_error = IOError("test-message")
+        line = "undo ns test set test-set"
+        self.cluster_mock.info_truncate_undo.return_value = {"principal_ip": as_error}
+
+        test_util.assert_exception(
+            self, ShellException, "test-message", self.controller.execute, line.split()
+        )
+
+        self.cluster_mock.info_truncate_undo.assert_called_with(
+            "test", "test-set", nodes="principal"
+        )
+        self.view_mock.print_result.assert_not_called()
+
+
+class ManageReclusterControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageReclusterController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageReclusterController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+
+        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+
+        self.addCleanup(patch.stopall)
+
+    def test_success(self):
+        line = ""
+        self.cluster_mock.info_recluster.return_value = {
+            "principal-ip": ASINFO_RESPONSE_OK
+        }
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_recluster.assert_called_once_with(nodes="principal")
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully started recluster"
+        )
+
+    def test_logs_error_when_asinfo_error_returned(self):
+        as_error = ASInfoError("An error message", "test-resp")
+        line = ""
+        self.cluster_mock.info_recluster.return_value = {"principal_ip": as_error}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_recluster.assert_called_with(nodes="principal")
+        self.logger_mock.error.assert_called_with(as_error)
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_exception_when_exception_returned(self):
+        as_error = IOError("test-message")
+        line = ""
+        self.cluster_mock.info_recluster.return_value = {"principal_ip": as_error}
+
+        test_util.assert_exception(
+            self, ShellException, "test-message", self.controller.execute, line.split()
+        )
+
+        self.cluster_mock.info_recluster.assert_called_with(nodes="principal")
+        self.view_mock.print_result.assert_not_called()
+
+
+class ManageQuiesceControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageQuiesceController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageQuiesceController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    def test_success(self):
+        line = "with 1.1.1.1"
+        self.cluster_mock.info_quiesce.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        mods = {"with": ["1.1.1.1"], "undo": [], "line": []}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_quiesce.assert_called_once_with(nodes=["1.1.1.1"])
+        self.view_mock.manage_config.assert_called_once_with(
+            "Quiesce Nodes", {"1.1.1.1": ASINFO_RESPONSE_OK}, self.cluster_mock, **mods
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+    def test_success_with_undo(self):
+        line = "with 1.1.1.1 2.2.2.2 undo"
+        self.cluster_mock.info_quiesce_undo.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        mods = {"with": ["1.1.1.1", "2.2.2.2"], "undo": [], "line": []}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_quiesce_undo.assert_called_once_with(
+            nodes=["1.1.1.1", "2.2.2.2"]
+        )
+        self.view_mock.manage_config.assert_called_once_with(
+            "Undo Quiesce for Nodes",
+            {"1.1.1.1": ASINFO_RESPONSE_OK},
+            self.cluster_mock,
+            **mods,
+        )
+        self.view_mock.print_result(
+            'Run "manage recluster for your changes to take affect.'
+        )

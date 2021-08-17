@@ -28,9 +28,8 @@ import urllib.error
 import urllib.parse
 import zipfile
 from collections import OrderedDict
-from distutils.version import LooseVersion
 
-from lib.utils import constants, file_size, util
+from lib.utils import constants, file_size, util, version
 from lib.utils import data
 from lib.view import terminal
 
@@ -47,10 +46,13 @@ comp_ops = {
     "!=": operator.ne,
 }
 
-# Dictionary to contain feature and related stats to identify state of that feature
+# Dictionary to contain feature and related stats to identify state of that feature.
+# xdr/dc stats are not coupled with xdr-dc configs because at this time it is not required.
+# In the future xdr, xdr/dc, and xdr/dc/namespace configs might need to be included.
 # Format : { feature1: ((service stat1/config1 <, comp_op, value> ), (service stat2/config2 <, comp_op, value>), ....),
 #                      ((namespace stat1/config1 <, comp_op, value>), (namespace stat2/config2 <, comp_op, value>), ...),
-#            ...}
+#                      ((xdr/dc stat1 <, comp_op, value>), (xdr/dc stat2 <, comp_op, value>), ...),
+#          }
 FEATURE_KEYS = {
     "KVS": (
         ("stat_read_reqs", "stat_write_reqs"),
@@ -60,12 +62,14 @@ FEATURE_KEYS = {
             "client_write_error",
             "client_write_success",
         ),
+        None,
     ),
     "UDF": (
         ("udf_read_reqs", "udf_write_reqs"),
         ("client_udf_complete", "client_udf_error"),
+        None,
     ),
-    "Batch": (("batch_initiate", "batch_index_initiate"), None),
+    "Batch": (("batch_initiate", "batch_index_initiate"), None, None),
     "Scan": (
         (
             "tscan_initiate",
@@ -84,12 +88,14 @@ FEATURE_KEYS = {
             "scan_udf_bg_complete",
             "scan_udf_bg_error",
         ),
+        None,
     ),
-    "SINDEX": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes")),
-    "Query": (("query_reqs", "query_success"), ("query_reqs", "query_success")),
+    "SINDEX": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes"), None),
+    "Query": (("query_reqs", "query_success"), ("query_reqs", "query_success"), None),
     "Aggregation": (
         ("query_agg", "query_agg_success"),
         ("query_agg", "query_agg_success"),
+        None,
     ),
     "LDT": (
         (
@@ -110,20 +116,26 @@ FEATURE_KEYS = {
             "ldt_reads",
             "ldt_deletes",
         ),
+        None,
     ),
-    "XDR Source": (("stat_read_reqs_xdr", "xdr_read_success", "xdr_read_error"), None),
+    "XDR Source": (
+        ("stat_read_reqs_xdr", "xdr_read_success", "xdr_read_error"),
+        None,
+        ("success"),
+    ),
     "XDR Destination": (
         ("stat_write_reqs_xdr"),
         ("xdr_write_success", "xdr_client_write_success"),
+        None,
     ),
-    "Rack-aware": (("self-group-id"), ("rack-id")),
-    "Security": ((("enable-security", comp_ops["=="], "true"),), None),
-    "TLS (Heartbeat)": (("heartbeat.mesh-seed-address-port"), None),
-    "TLS (Fabric)": (("fabric.tls-port"), None),
-    "TLS (Service)": (("service.tls-port"), None),
-    "SC": (None, (("strong-consistency", comp_ops["=="], "true"),)),
-    "Index-on-device": (None, ("index_flash_used_bytes")),
-    "Index-on-pmem": (None, (("index-type", comp_ops["=="], "pmem"),)),
+    "Rack-aware": (("self-group-id"), ("rack-id"), None),
+    "Security": ((("enable-security", comp_ops["=="], "true"),), None, None),
+    "TLS (Heartbeat)": (("heartbeat.mesh-seed-address-port"), None, None),
+    "TLS (Fabric)": (("fabric.tls-port"), None, None),
+    "TLS (Service)": (("service.tls-port"), None, None),
+    "SC": (None, (("strong-consistency", comp_ops["=="], "true"),), None),
+    "Index-on-device": (None, ("index_flash_used_bytes"), None),
+    "Index-on-pmem": (None, (("index-type", comp_ops["=="], "pmem"),), None),
 }
 
 
@@ -173,9 +185,7 @@ def _check_value(data={}, keys=()):
     return False
 
 
-def _check_feature_by_keys(
-    service_data=None, service_keys=None, ns_data=None, ns_keys=None
-):
+def _check_feature_by_keys(service_data=None, service_keys=None):
     """
     Function takes dictionary of service data, service keys, dictionary of namespace data and namespace keys.
     Returns boolean to indicate service key in service data or namespace key in namespace data has non-zero value or not.
@@ -185,8 +195,12 @@ def _check_feature_by_keys(
         if _check_value(service_data, service_keys):
             return True
 
+    return False
+
+
+def _check_nested_feature_by_keys(ns_data=None, ns_keys=None):
     if ns_data and ns_keys:
-        for ns, nsval in ns_data.items():
+        for _, nsval in ns_data.items():
             if not nsval or isinstance(nsval, Exception):
                 continue
             if _check_value(nsval, ns_keys):
@@ -226,7 +240,12 @@ def _deep_merge_dicts(dict_to, dict_from):
 
 
 def _find_features_for_cluster(
-    service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}
+    service_stats,
+    ns_stats,
+    xdr_dc_stats,
+    service_configs={},
+    ns_configs={},
+    cluster_configs={},
 ):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
@@ -237,18 +256,22 @@ def _find_features_for_cluster(
 
     service_data = _deep_merge_dicts(service_stats, service_configs)
     service_data = _deep_merge_dicts(service_data, cluster_configs)
-
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
+    nodes = list(service_data.keys())
+
     for feature, keys in FEATURE_KEYS.items():
-        for node, d in service_data.items():
+        for node in nodes:
+            ns_d = util.get_value_from_dict(ns_data, node, None, dict)
+            service_d = util.get_value_from_dict(service_data, node, None, dict)
+            xdr_d = util.get_value_from_dict(xdr_dc_stats, node, None, dict)
+            service_keys, ns_keys, xdr_dc_keys = keys
 
-            ns_d = None
-
-            if node in ns_data and not isinstance(ns_data[node], Exception):
-                ns_d = ns_data[node]
-
-            if _check_feature_by_keys(d, keys[0], ns_d, keys[1]):
+            if (
+                _check_feature_by_keys(service_d, service_keys)
+                or _check_nested_feature_by_keys(ns_d, ns_keys)
+                or _check_nested_feature_by_keys(xdr_d, xdr_dc_keys)
+            ):
                 features.append(feature)
                 break
 
@@ -256,7 +279,12 @@ def _find_features_for_cluster(
 
 
 def find_nodewise_features(
-    service_stats, ns_stats, service_configs={}, ns_configs={}, cluster_configs={}
+    service_stats,
+    ns_stats,
+    xdr_dc_stats,
+    service_configs={},
+    ns_configs={},
+    cluster_configs={},
 ):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
@@ -269,19 +297,25 @@ def find_nodewise_features(
     service_data = _deep_merge_dicts(service_data, cluster_configs)
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
+    nodes = list(service_data.keys())
+
     for feature, keys in FEATURE_KEYS.items():
-        for node, s_stats in service_data.items():
+        for node in nodes:
+            ns_d = util.get_value_from_dict(ns_data, node, None, dict)
+            service_d = util.get_value_from_dict(service_data, node, None, dict)
+            xdr_d = util.get_value_from_dict(xdr_dc_stats, node, None, dict)
+            service_keys, ns_keys, xdr_dc_keys = keys
 
             if node not in features:
                 features[node] = {}
 
             features[node][feature.upper()] = "NO"
-            n_stats = None
 
-            if node in ns_data and not isinstance(ns_data[node], Exception):
-                n_stats = ns_data[node]
-
-            if _check_feature_by_keys(s_stats, keys[0], n_stats, keys[1]):
+            if (
+                _check_feature_by_keys(service_d, service_keys)
+                or _check_nested_feature_by_keys(ns_d, ns_keys)
+                or _check_nested_feature_by_keys(xdr_d, xdr_dc_keys)
+            ):
                 features[node][feature.upper()] = "YES"
 
     return features
@@ -297,41 +331,8 @@ def _set_record_overhead(as_version=""):
     if not as_version:
         return overhead
 
-    if LooseVersion(as_version) >= LooseVersion("4.2"):
+    if version.LooseVersion(as_version) >= version.LooseVersion("4.2"):
         return 1
-
-    return overhead
-
-
-def _compute_set_overhead_for_ns(set_stats, ns, node, as_version=""):
-    """
-    Function takes set stat and namespace name.
-    Returns set overhead for input namespace name.
-    """
-
-    if not ns or not set_stats or isinstance(set_stats, Exception):
-        return 0
-
-    overhead = 0
-    for _k, stats in set_stats.items():
-        if not stats or isinstance(stats, Exception) or node not in stats:
-            continue
-
-        ns_name = util.get_value_from_dict(
-            stats[node], ("ns", "ns_name"), default_value=None, return_type=str
-        )
-        if ns_name != ns:
-            continue
-
-        set_name = util.get_value_from_dict(
-            stats[node], ("set", "set_name"), default_value="", return_type=str
-        )
-        objects = util.get_value_from_dict(
-            stats[node], ("objects", "n_objects"), default_value=0, return_type=int
-        )
-        overhead += objects * (
-            _set_record_overhead(as_version=as_version) + len(set_name)
-        )
 
     return overhead
 
@@ -348,62 +349,16 @@ def _round_up(value, rounding_factor):
     return d * rounding_factor
 
 
-def _compute_tombstone_overhead_for_ns(set_stats, ns, node, as_version=""):
-    """
-    Function takes set stat and namespace name.
-    Returns tombstone overhead for input namespace name.
-    """
-
-    if not ns or not set_stats or isinstance(set_stats, Exception):
+def _license_data_usage_adjustment(effective_repl, master_objects, used_bytes):
+    if effective_repl == 0:
         return 0
 
-    overhead = 0
-    set_overhead = _set_record_overhead(as_version=as_version)
+    record_overhead = 35
 
-    record_overhead = 64
-    rounding_factor = 128
-
-    if LooseVersion(as_version) >= LooseVersion("4.2"):
-        record_overhead = 35
-        rounding_factor = 16
-
-    for _k, stats in set_stats.items():
-        if not stats or isinstance(stats, Exception) or node not in stats:
-            continue
-
-        ns_name = util.get_value_from_dict(
-            stats[node], ("ns", "ns_name"), default_value=None, return_type=str
-        )
-        if ns_name != ns:
-            continue
-
-        set_name = util.get_value_from_dict(
-            stats[node], ("set", "set_name"), default_value="", return_type=str
-        )
-        tombstones = util.get_value_from_dict(
-            stats[node], ("tombstones",), default_value=0, return_type=int
-        )
-        overhead += tombstones * _round_up(
-            record_overhead + set_overhead + len(set_name), rounding_factor
-        )
-
-    return overhead
+    return round((used_bytes / effective_repl) - (record_overhead * master_objects))
 
 
-def _device_record_overhead(as_version=""):
-    overhead = 64
-    if not as_version:
-        return overhead
-
-    if LooseVersion(as_version) >= LooseVersion("4.2"):
-        return 35
-
-    return overhead
-
-
-def _compute_license_data_size(
-    namespace_stats, set_stats, cluster_dict, ns_dict, as_versions
-):
+def _compute_license_data_size(namespace_stats, cluster_dict):
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
@@ -414,137 +369,99 @@ def _compute_license_data_size(
     if not namespace_stats:
         return
 
-    cl_memory_data_size = 0
-    cl_device_data_size = 0
+    cl_unique_data = 0.0
 
     for ns, ns_stats in namespace_stats.items():
         if not ns_stats or isinstance(ns_stats, Exception):
             continue
 
-        ns_memory_data_size = 0
-        ns_device_data_size = 0
-        device_compression_ratio = 0.0
+        ns_unique_data = 0.0
+        ns_master_objects = 0
+        ns_repl_factor = 1
 
         for host_id, host_stats in ns_stats.items():
-            master_objects = util.get_value_from_dict(
+            if not host_stats or isinstance(host_stats, Exception):
+                continue
+
+            ns_master_objects += util.get_value_from_dict(
                 host_stats,
                 ("master_objects", "master-objects"),
                 default_value=0,
                 return_type=int,
             )
-            replica_objects = util.get_value_from_dict(
+
+            ns_repl_factor = util.get_value_from_dict(
                 host_stats,
-                (
-                    "prole_objects",
-                    "prole-objects",
-                    "replica_objects",
-                    "replica-objects",
-                ),
+                "effective_replication_factor",
+                default_value=1,
+                return_type=int,
+            )
+
+            host_device_compression_ratio = util.get_value_from_dict(
+                host_stats,
+                "device_compression_ratio",
+                default_value=1.0,
+                return_type=float,
+            )
+
+            host_pmem_compression_ratio = util.get_value_from_dict(
+                host_stats,
+                "pmem_compression_ratio",
+                default_value=1.0,
+                return_type=float,
+            )
+
+            # For data-in-memory, data is in both memory & device. In this case it was
+            # asked that we only count the data stored in memory.
+
+            metrics = [
+                "index_pmem_used_bytes",
+                "index_flash_used_bytes",
+                "memory_used_bytes",
+            ]
+
+            for metric in metrics:
+                bytes = util.get_value_from_dict(
+                    host_stats,
+                    metric,
+                    default_value=0,
+                    return_type=int,
+                )
+
+                ns_unique_data += bytes
+
+            ns_data_in_memory = util.get_value_from_dict(
+                host_stats,
+                "storage-engine.data-in-memory",
+                default_value=False,
+                return_type=bool,
+            )
+
+            if not ns_data_in_memory:
+                bytes = util.get_value_from_dict(
+                    host_stats,
+                    "device_used_bytes",
+                    default_value=0,
+                    return_type=int,
+                )
+                ns_unique_data += bytes / host_device_compression_ratio
+
+            bytes = util.get_value_from_dict(
+                host_stats,
+                "pmem_used_bytes",
                 default_value=0,
                 return_type=int,
             )
-            devices_in_use = util.get_values_from_dict(
-                host_stats,
-                (
-                    r"^storage-engine.device$",
-                    r"^device$",
-                    r"^storage-engine.file$",
-                    r"^file$",
-                    r"^dev$",
-                    r"^storage-engine.device\[[0-9]+\]$",
-                    r"^storage-engine.file\[[0-9]+\]$",
-                ),
-                return_type=str,
-            )
-            total_objects = master_objects + replica_objects
 
-            if not devices_in_use:
-                # Data in memory only
-                memory_data_size = util.get_value_from_dict(
-                    host_stats,
-                    ("memory_used_data_bytes", "data-used-bytes-memory"),
-                    default_value=0,
-                    return_type=int,
-                )
-                if total_objects > 0:
-                    memory_data_size = (
-                        memory_data_size // total_objects
-                    ) * master_objects
-                else:
-                    memory_data_size = 0
+            ns_unique_data += bytes / host_pmem_compression_ratio
 
-                if memory_data_size > 0:
-                    memory_record_overhead = master_objects * 2
-                    ns_memory_data_size += memory_data_size - memory_record_overhead
+        ns_unique_data = _license_data_usage_adjustment(
+            ns_repl_factor, ns_master_objects, ns_unique_data
+        )
 
-            else:
-                # Persistent data
-                as_version = ""
-                if as_versions and host_id in as_versions:
-                    as_version = as_versions[host_id]
+        cl_unique_data += ns_unique_data
 
-                device_data_size = util.get_value_from_dict(
-                    host_stats,
-                    ("device_used_bytes", "used-bytes-disk"),
-                    default_value=0,
-                    return_type=int,
-                )
-
-                device_compression_ratio = util.get_value_from_dict(
-                    host_stats,
-                    ("device_compression_ratio"),
-                    default_value=0.0,
-                    return_type=float,
-                )
-
-                if device_data_size > 0:
-
-                    if device_compression_ratio > 0:
-                        # compute estimated uncompressed size
-                        device_data_size = device_data_size / device_compression_ratio
-
-                if device_data_size > 0:
-                    # remove set overhead
-                    set_overhead = _compute_set_overhead_for_ns(
-                        set_stats, ns, host_id, as_version=as_version
-                    )
-                    device_data_size = device_data_size - set_overhead
-
-                if device_data_size > 0:
-                    # remove tombstone overhead
-                    tombstone_overhead = _compute_tombstone_overhead_for_ns(
-                        set_stats, ns, host_id, as_version=as_version
-                    )
-                    device_data_size = device_data_size - tombstone_overhead
-
-                if total_objects > 0:
-                    device_data_size = (
-                        device_data_size // total_objects
-                    ) * master_objects
-                else:
-                    device_data_size = 0
-
-                if device_data_size > 0:
-                    # remove record overhead
-                    device_record_overhead = master_objects * _device_record_overhead(
-                        as_version=as_version
-                    )
-                    device_data_size = device_data_size - device_record_overhead
-
-                if device_data_size > 0:
-                    ns_device_data_size += device_data_size
-
-        ns_dict[ns]["license_data_in_memory"] = ns_memory_data_size
-        cl_memory_data_size += ns_memory_data_size
-
-        ns_dict[ns]["license_data_on_disk"] = ns_device_data_size
-        cl_device_data_size += ns_device_data_size
-        if device_compression_ratio > 0:
-            ns_dict[ns]["compression_ratio"] = device_compression_ratio
-
-    cluster_dict["license_data"] = {}
-    cluster_dict["license_data"]["memory_size"] = cl_memory_data_size
-    cluster_dict["license_data"]["device_size"] = cl_device_data_size
+    cluster_dict["license_data"] = int(round(cl_unique_data))
 
 
 def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
@@ -593,21 +510,24 @@ def _initialize_summary_output(ns_list):
     summary_dict["CLUSTER"]["device"]["count_same_across_nodes"] = True
     summary_dict["CLUSTER"]["device"]["total"] = 0
     summary_dict["CLUSTER"]["device"]["used"] = 0
-    summary_dict["CLUSTER"]["device"]["aval"] = 0
+    summary_dict["CLUSTER"]["device"]["avail"] = 0
     summary_dict["CLUSTER"]["device"]["used_pct"] = 0
-    summary_dict["CLUSTER"]["device"]["aval_pct"] = 0
+    summary_dict["CLUSTER"]["device"]["avail_pct"] = 0
 
     summary_dict["CLUSTER"]["memory"] = {}
     summary_dict["CLUSTER"]["memory"]["total"] = 0
-    summary_dict["CLUSTER"]["memory"]["aval"] = 0
-    summary_dict["CLUSTER"]["memory"]["aval_pct"] = 0
+    summary_dict["CLUSTER"]["memory"]["used"] = 0
+    summary_dict["CLUSTER"]["memory"]["used_pct"] = 0
+    summary_dict["CLUSTER"]["memory"]["avail"] = 0
+    summary_dict["CLUSTER"]["memory"]["avail_pct"] = 0
+
+    summary_dict["CLUSTER"]["pmem_index"] = {}
+    summary_dict["CLUSTER"]["flash_index"] = {}
 
     summary_dict["CLUSTER"]["active_ns"] = 0
     summary_dict["CLUSTER"]["ns_count"] = 0
 
-    summary_dict["CLUSTER"]["license_data"] = {}
-    summary_dict["CLUSTER"]["license_data"]["memory_size"] = 0
-    summary_dict["CLUSTER"]["license_data"]["device_size"] = 0
+    summary_dict["CLUSTER"]["license_data"] = 0
 
     summary_dict["FEATURES"] = {}
     summary_dict["FEATURES"]["NAMESPACE"] = {}
@@ -622,19 +542,19 @@ def _initialize_summary_output(ns_list):
         ] = True
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_aval"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used_pct"] = 0.0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail_pct"] = 0.0
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_aval"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_available_pct"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_avail"] = 0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = 0.0
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_avail_pct"] = 0.0
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["master_objects"] = 0
-
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["license_data"] = {}
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["migrations_in_progress"] = False
 
@@ -644,7 +564,7 @@ def _initialize_summary_output(ns_list):
 def create_summary(
     service_stats,
     namespace_stats,
-    set_stats,
+    xdr_dc_stats,
     metadata,
     service_configs={},
     ns_configs={},
@@ -658,33 +578,34 @@ def create_summary(
     features = _find_features_for_cluster(
         service_stats,
         namespace_stats,
+        xdr_dc_stats,
         service_configs=service_configs,
         ns_configs=ns_configs,
         cluster_configs=cluster_configs,
     )
 
     namespace_stats = util.flip_keys(namespace_stats)
-    set_stats = util.flip_keys(set_stats)
+    ns_configs = util.flip_keys(ns_configs)
 
     summary_dict = _initialize_summary_output(namespace_stats.keys())
 
     total_nodes = len(service_stats.keys())
 
+    cl_memory_size_total = 0.0
+    cl_memory_size_avail = 0.0
+    cl_pmem_index_size_total = 0.0
+    cl_pmem_index_size_avail = 0.0
+    cl_flash_index_size_total = 0.0
+    cl_flash_index_size_avail = 0.0
+
     cl_nodewise_device_counts = {}
-
-    cl_nodewise_mem_size = {}
-    cl_nodewise_mem_aval = {}
-
     cl_nodewise_device_size = {}
     cl_nodewise_device_used = {}
-    cl_nodewise_device_aval = {}
+    cl_nodewise_device_avail = {}
 
     _compute_license_data_size(
         namespace_stats,
-        set_stats,
         summary_dict["CLUSTER"],
-        summary_dict["FEATURES"]["NAMESPACE"],
-        metadata["server_build"],
     )
     _set_migration_status(
         namespace_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"]
@@ -763,30 +684,139 @@ def create_summary(
                     "devices_count_same_across_nodes"
                 ] = False
 
-        mem_size = util.get_value_from_second_level_of_dict(
-            ns_stats, ("memory-size",), default_value=0, return_type=int
+            device_compression_ratio = max(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats,
+                    ("device_compression_ratio"),
+                    default_value=0.0,
+                    return_type=float,
+                ).values()
+            )
+
+            if device_compression_ratio > 0:
+                summary_dict["FEATURES"]["NAMESPACE"][ns][
+                    "compression_ratio"
+                ] = device_compression_ratio
+
+        # Memory
+        mem_size = sum(
+            util.get_value_from_second_level_of_dict(
+                ns_stats, ("memory-size",), default_value=0, return_type=int
+            ).values()
         )
-        mem_aval_pct = util.get_value_from_second_level_of_dict(
-            ns_stats,
-            ("memory_free_pct", "free-pct-memory"),
-            default_value=0,
-            return_type=int,
+        mem_used = sum(
+            util.get_value_from_second_level_of_dict(
+                ns_stats, ("memory_used_bytes",), default_value=0, return_type=int
+            ).values()
         )
-        mem_aval = util.pct_to_value(mem_size, mem_aval_pct)
-        cl_nodewise_mem_size = util.add_dicts(cl_nodewise_mem_size, mem_size)
-        cl_nodewise_mem_aval = util.add_dicts(cl_nodewise_mem_aval, mem_aval)
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = sum(
-            mem_size.values()
-        )
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_aval"] = sum(
-            mem_aval.values()
-        )
-        if sum(mem_size.values()) == 0:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = 0
-        else:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_available_pct"] = (
-                float(sum(mem_aval.values())) / float(sum(mem_size.values()))
+        mem_avail = mem_size - mem_used
+        cl_memory_size_total += mem_size
+        cl_memory_size_avail += mem_avail
+
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = mem_size
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail"] = mem_avail
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used"] = mem_used
+
+        if mem_size != 0:
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail_pct"] = (
+                mem_avail / mem_size
             ) * 100.0
+
+        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used_pct"] = (
+            100.00 - summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail_pct"]
+        )
+
+        index_type = list(
+            util.get_value_from_second_level_of_dict(
+                ns_stats, ("index-type",), default_value="", return_type=str
+            ).values()
+        )[0]
+
+        # Pmem Index
+        if index_type == "pmem":
+            pmem_index_size = sum(
+                util.get_value_from_second_level_of_dict(
+                    ns_configs[ns],
+                    ("index-type.mounts-size-limit",),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
+            pmem_index_used = sum(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats,
+                    ("index_pmem_used_bytes",),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
+            pmem_index_avail = pmem_index_size - pmem_index_used
+            cl_pmem_index_size_total += pmem_index_size
+            cl_pmem_index_size_avail += pmem_index_avail
+
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "pmem_index_total"
+            ] = pmem_index_size
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "pmem_index_avail"
+            ] = pmem_index_avail
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "pmem_index_used"
+            ] = pmem_index_used
+            pmem_index_avail_pct = 0
+
+            if pmem_index_size != 0:
+                pmem_index_avail_pct = (pmem_index_avail / pmem_index_size) * 100.0
+
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "pmem_index_avail_pct"
+            ] = pmem_index_avail_pct
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_index_used_pct"] = (
+                100.00 - pmem_index_avail_pct
+            )
+
+        # Flash Index
+        elif index_type == "flash":
+            flash_index_size = sum(
+                util.get_value_from_second_level_of_dict(
+                    ns_configs[ns],
+                    ("index-type.mounts-size-limit",),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
+            flash_index_used = sum(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats,
+                    ("index_pmem_used_bytes",),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
+            flash_index_avail = flash_index_size - flash_index_used
+            cl_flash_index_size_total += flash_index_size
+            cl_flash_index_size_avail += flash_index_avail
+
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "flash_index_total"
+            ] = flash_index_size
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "flash_index_used"
+            ] = flash_index_used
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "flash_index_avail"
+            ] = flash_index_avail
+            flash_index_avail_pct = 0
+
+            if flash_index_size != 0:
+                flash_index_avail_pct = (flash_index_avail / flash_index_size) * 100.0
+
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "flash_index_avail_pct"
+            ] = flash_index_avail_pct
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["flash_index_used_pct"] = (
+                100.00 - flash_index_avail_pct
+            )
 
         device_size = util.get_value_from_second_level_of_dict(
             ns_stats,
@@ -800,30 +830,33 @@ def create_summary(
             default_value=0,
             return_type=int,
         )
-        device_aval_pct = util.get_value_from_second_level_of_dict(
+        device_avail_pct = util.get_value_from_second_level_of_dict(
             ns_stats,
             ("device_available_pct", "available_pct"),
             default_value=0,
             return_type=int,
         )
-        device_aval = util.pct_to_value(device_size, device_aval_pct)
+        device_avail = util.pct_to_value(device_size, device_avail_pct)
         cl_nodewise_device_size = util.add_dicts(cl_nodewise_device_size, device_size)
         cl_nodewise_device_used = util.add_dicts(cl_nodewise_device_used, device_used)
-        cl_nodewise_device_aval = util.add_dicts(cl_nodewise_device_aval, device_aval)
+        cl_nodewise_device_avail = util.add_dicts(
+            cl_nodewise_device_avail, device_avail
+        )
         device_size_total = sum(device_size.values())
+
         if device_size_total > 0:
             summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = device_size_total
             summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used"] = sum(
                 device_used.values()
             )
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_aval"] = sum(
-                device_aval.values()
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_avail"] = sum(
+                device_avail.values()
             )
             summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = (
                 float(sum(device_used.values())) / float(device_size_total)
             ) * 100.0
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_available_pct"] = (
-                float(sum(device_aval.values())) / float(device_size_total)
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_avail_pct"] = (
+                float(sum(device_avail.values())) / float(device_size_total)
             ) * 100.0
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = list(
@@ -897,13 +930,50 @@ def create_summary(
         if len(set(cl_nodewise_device_counts.values())) > 1:
             summary_dict["CLUSTER"]["device"]["count_same_across_nodes"] = False
 
-    cl_memory_size_total = sum(cl_nodewise_mem_size.values())
     if cl_memory_size_total > 0:
         summary_dict["CLUSTER"]["memory"]["total"] = cl_memory_size_total
-        summary_dict["CLUSTER"]["memory"]["aval"] = sum(cl_nodewise_mem_aval.values())
-        summary_dict["CLUSTER"]["memory"]["aval_pct"] = (
-            float(sum(cl_nodewise_mem_aval.values())) / float(cl_memory_size_total)
+        summary_dict["CLUSTER"]["memory"]["avail"] = cl_memory_size_avail
+        summary_dict["CLUSTER"]["memory"]["avail_pct"] = (
+            float(cl_memory_size_avail) / float(cl_memory_size_total)
         ) * 100.0
+        summary_dict["CLUSTER"]["memory"]["used"] = (
+            cl_memory_size_total - cl_memory_size_avail
+        )
+        summary_dict["CLUSTER"]["memory"]["used_pct"] = (
+            100.0 - summary_dict["CLUSTER"]["memory"]["avail_pct"]
+        )
+
+    if cl_pmem_index_size_total > 0:
+        cl_pmem_index_size_avail_pct = (
+            float(cl_pmem_index_size_avail) / float(cl_pmem_index_size_total)
+        ) * 100.0
+        summary_dict["CLUSTER"]["pmem_index"]["total"] = cl_pmem_index_size_total
+        summary_dict["CLUSTER"]["pmem_index"]["avail"] = cl_pmem_index_size_avail
+        summary_dict["CLUSTER"]["pmem_index"][
+            "avail_pct"
+        ] = cl_pmem_index_size_avail_pct
+        summary_dict["CLUSTER"]["pmem_index"]["used"] = (
+            cl_pmem_index_size_total - cl_pmem_index_size_avail
+        )
+        summary_dict["CLUSTER"]["pmem_index"]["used_pct"] = (
+            100.0 - cl_pmem_index_size_avail_pct
+        )
+
+    if cl_flash_index_size_total > 0:
+        cl_flash_index_size_avail_pct = (
+            float(cl_flash_index_size_avail) / float(cl_flash_index_size_total)
+        ) * 100.0
+        summary_dict["CLUSTER"]["flash_index"]["total"] = cl_flash_index_size_total
+        summary_dict["CLUSTER"]["flash_index"]["avail"] = cl_flash_index_size_avail
+        summary_dict["CLUSTER"]["flash_index"][
+            "avail_pct"
+        ] = cl_flash_index_size_avail_pct
+        summary_dict["CLUSTER"]["flash_index"]["used"] = (
+            cl_flash_index_size_total - cl_flash_index_size_avail
+        )
+        summary_dict["CLUSTER"]["flash_index"]["used_pct"] = (
+            100.0 - cl_flash_index_size_avail_pct
+        )
 
     cl_device_size_total = sum(cl_nodewise_device_size.values())
     if cl_device_size_total > 0:
@@ -911,14 +981,14 @@ def create_summary(
         summary_dict["CLUSTER"]["device"]["used"] = sum(
             cl_nodewise_device_used.values()
         )
-        summary_dict["CLUSTER"]["device"]["aval"] = sum(
-            cl_nodewise_device_aval.values()
+        summary_dict["CLUSTER"]["device"]["avail"] = sum(
+            cl_nodewise_device_avail.values()
         )
         summary_dict["CLUSTER"]["device"]["used_pct"] = (
             float(sum(cl_nodewise_device_used.values())) / float(cl_device_size_total)
         ) * 100.0
-        summary_dict["CLUSTER"]["device"]["aval_pct"] = (
-            float(sum(cl_nodewise_device_aval.values())) / float(cl_device_size_total)
+        summary_dict["CLUSTER"]["device"]["avail_pct"] = (
+            float(sum(cl_nodewise_device_avail.values())) / float(cl_device_size_total)
         ) * 100.0
 
     return summary_dict
@@ -986,9 +1056,9 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
 
             try:
                 as_version = builds[host_id]
-                if LooseVersion(as_version) < LooseVersion("2.7.0") or (
-                    LooseVersion(as_version) >= LooseVersion("3.0.0")
-                    and LooseVersion(as_version) < LooseVersion("3.1.3")
+                if version.LooseVersion(as_version) < version.LooseVersion("2.7.0") or (
+                    version.LooseVersion(as_version) >= version.LooseVersion("3.0.0")
+                    and version.LooseVersion(as_version) < version.LooseVersion("3.1.3")
                 ):
                     rblock_size_bytes = 512
 
@@ -1057,9 +1127,9 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             try:
                 as_version = builds[host_id]
 
-                if LooseVersion(as_version) < LooseVersion("2.7.0") or (
-                    LooseVersion(as_version) >= LooseVersion("3.0.0")
-                    and LooseVersion(as_version) < LooseVersion("3.1.3")
+                if version.LooseVersion(as_version) < version.LooseVersion("2.7.0") or (
+                    version.LooseVersion(as_version) >= version.LooseVersion("3.0.0")
+                    and version.LooseVersion(as_version) < version.LooseVersion("3.1.3")
                 ):
                     rblock_size_bytes = 512
 
@@ -1335,7 +1405,7 @@ def parse_raw_histogram(
     return _parse_new_linear_histogram(histogram, histogram_data)
 
 
-def is_new_histogram_version(version):
+def is_new_histogram_version(version_):
     """
     Function takes version to check
 
@@ -1343,10 +1413,10 @@ def is_new_histogram_version(version):
     false
     """
 
-    if not version:
+    if not version_:
         return False
 
-    if LooseVersion(version) >= LooseVersion(
+    if version.LooseVersion(version_) >= version.LooseVersion(
         constants.SERVER_NEW_HISTOGRAM_FIRST_VERSION
     ):
         return True
@@ -1357,7 +1427,7 @@ def is_new_histogram_version(version):
 #################################
 
 ########## Latencies ##########
-def is_new_latencies_version(version):
+def is_new_latencies_version(version_):
     """
     Function takes a version to check
 
@@ -1365,10 +1435,10 @@ def is_new_latencies_version(version):
      returns false
     """
 
-    if not version:
+    if not version_:
         return False
 
-    if LooseVersion(version) >= LooseVersion(
+    if version.LooseVersion(version_) >= version.LooseVersion(
         constants.SERVER_NEW_LATENCIES_CMD_FIRST_VERSION
     ):
         return True
@@ -1886,6 +1956,7 @@ def get_system_commands(port=3000):
         ["sar -n EDEV"],
         ["mpstat -P ALL 2 3"],
         ["uptime"],
+        ["netstat"],
         [
             "ss -ant state time-wait sport = :%d or dport = :%d | wc -l" % (port, port),
             "netstat -ant | grep %d | grep TIME_WAIT | wc -l" % (port),
@@ -2056,7 +2127,7 @@ def collect_sys_info(port=3000, timestamp="", outfile=""):
 
 
 def format_xdr5_configs(xdr_configs, for_mods=[]):
-    """ Needed in both collectinfoanalyzer and basiccontroller.  This would not
+    """Needed in both collectinfoanalyzer and basiccontroller.  This would not
     be needed if collectinfo could load this format but it cannot since the "node"
     is not the top level key
 

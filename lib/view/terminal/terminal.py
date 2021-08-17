@@ -257,6 +257,10 @@ def fg_cyan():
     return _add_it(fgcyan)
 
 
+def fg_not_cyan():
+    return _remove_it(fgcyan)
+
+
 def fg_white():
     return _add_it(fgwhite)
 

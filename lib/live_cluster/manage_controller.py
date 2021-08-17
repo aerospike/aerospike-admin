@@ -1,11 +1,20 @@
 import os
 from datetime import datetime
+from dateutil import parser as date_parser
 from getpass import getpass
-from lib.view import terminal
-from lib.utils import constants, util
-from lib.base_controller import CommandHelp
-from distutils.version import LooseVersion
+from functools import reduce
 
+from lib.view import terminal
+from lib.utils import constants, util, version
+from lib.base_controller import CommandHelp
+from lib.utils.lookup_dict import PrefixDict
+from lib.live_cluster.client.node import ASInfoError
+from lib.live_cluster.client.config_handler import (
+    BoolConfigType,
+    EnumConfigType,
+    StringConfigType,
+    IntConfigType,
+)
 from .client.info import ASProtocolError
 from .live_cluster_command_controller import LiveClusterCommandController
 
@@ -41,15 +50,14 @@ class ManageLeafCommandController(LiveClusterCommandController):
 class ManageController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
-            "acl": ManageACLController,
+            "recluster": ManageReclusterController,
+            "quiesce": ManageQuiesceController,
+            "truncate": ManageTruncateController,
             "udfs": ManageUdfsController,
             "sindex": ManageSIndexController,
-            # TODO hopefully next
-            # "config": ManageConfigController,
-            # "truncate": ManageTruncateController,
+            "config": ManageConfigController,
+            "acl": ManageACLController,
         }
-
-        self.modifiers = set()
 
     def _do_default(self, line):
         self.execute_help(line)
@@ -170,7 +178,7 @@ class ManageACLCreateUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -179,7 +187,8 @@ class ManageACLCreateUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: delete user <username>", "  username           - User to delete.",
+    "Usage: delete user <username>",
+    "  username           - User to delete.",
 )
 class ManageACLDeleteUserController(ManageLeafCommandController):
     def __init__(self):
@@ -197,7 +206,7 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -243,7 +252,7 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -299,7 +308,7 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -331,7 +340,7 @@ class ManageACLGrantUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -365,7 +374,7 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -380,7 +389,9 @@ class ManageACLRolesLeafCommandController(ManageLeafCommandController):
         build_resp = self.cluster.info_build_version(nodes=nodes)
         build = list(build_resp.values())[0]
 
-        if LooseVersion(build) < LooseVersion(constants.SERVER_QUOTAS_FIRST_VERSION):
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_QUOTAS_FIRST_VERSION
+        ):
             return False
 
         return True
@@ -391,9 +402,7 @@ class ManageACLRolesLeafCommandController(ManageLeafCommandController):
     "  role-name     - Name of the new role.",
     "  priv          - Privilege for the new role. Some privileges are not",
     "                  limited to a global scope. Scopes are either global, per",
-    "                  namespace, or per namespace and set. For more ",
-    "                  information: ",
-    "                  https://www.aerospike.com/docs/operations/configure/security/access-control/#privileges-permissions-and-scopes",
+    "                  namespace, or per namespace and set.",
     "                  [default: None]",
     "  ns            - Namespace scope of privilege.",
     "                  [default: None]",
@@ -486,7 +495,7 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -495,7 +504,8 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: delete role <role-name>", "  role-name     - Role to delete.",
+    "Usage: delete role <role-name>",
+    "  role-name     - Role to delete.",
 )
 class ManageACLDeleteRoleController(ManageLeafCommandController):
     def __init__(self):
@@ -513,7 +523,7 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -561,7 +571,7 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
             return
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -611,7 +621,7 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -679,7 +689,7 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -786,7 +796,7 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result.message)
+            self.logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -806,7 +816,6 @@ class ManageUdfsController(LiveClusterCommandController):
             "remove": ManageUdfsRemoveController,
         }
 
-    # @util.logthis('asadm', DEBUG)
     def _do_default(self, line):
         self.execute_help(line)
 
@@ -853,12 +862,11 @@ class ManageUdfsAddController(ManageLeafCommandController):
         resp = self.cluster.info_udf_put(udf_name, udf_str, nodes=[principal_node])
         resp = list(resp.values())[0]
 
-        if isinstance(resp, Exception):
-            raise resp
-
-        if resp != "ok":
-            self.logger.error("Failed to add UDF: {}.".format(resp))
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
             return
+        elif isinstance(resp, Exception):
+            raise resp
 
         self.view.print_result("Successfully added UDF {}.".format(udf_name))
 
@@ -873,35 +881,21 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
 
     def _do_default(self, line):
         udf_name = line.pop(0)
-        principal_node = self.cluster.get_expected_principal()
-
-        # Get names of existing udfs
-        existing_udfs = self.cluster.info_udf_list(nodes=[principal_node])
-        existing_udfs = list(existing_udfs.values())[0]
-        existing_names = existing_udfs.keys()
-
-        # The server does not check this as of 5.3 and will return success even
-        # if it does not exist.
-        if udf_name not in existing_names:
-            self.logger.error(
-                "Failed to remove UDF {}: UDF does not exist.".format(udf_name)
-            )
-            return
 
         if self.warn and not self.prompt_challenge(
             "You are about to remove a UDF module that may be in use."
         ):
             return
 
+        principal_node = self.cluster.get_expected_principal()
         resp = self.cluster.info_udf_remove(udf_name, nodes=[principal_node])
         resp = list(resp.values())[0]
 
-        if isinstance(resp, Exception):
-            raise resp
-
-        if resp != "ok":
-            self.logger.error("Failed to remove UDF: {}.".format(resp))
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
             return
+        elif isinstance(resp, Exception):
+            raise resp
 
         self.view.print_result("Successfully removed UDF {}.".format(udf_name))
 
@@ -996,11 +990,11 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         )
         resp = list(resp.values())[0]
 
-        if resp != "ok":
-            self.logger.error(
-                "Failed to create sindex {} : {}.".format(index_name, resp)
-            )
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
             return
+        elif isinstance(resp, Exception):
+            raise resp
 
         self.view.print_result("Successfully created sindex {}.".format(index_name))
 
@@ -1068,10 +1062,1146 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
         )
         resp = list(resp.values())[0]
 
-        if resp != "ok":
-            self.logger.error(
-                "Failed to delete sindex {} : {}".format(index_name, resp)
-            )
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
             return
+        elif isinstance(resp, Exception):
+            raise resp
 
         self.view.print_result("Successfully deleted sindex {}.".format(index_name))
+
+
+class ManageConfigLeafController(ManageLeafCommandController):
+    PARAM = "param"
+    TO = "to"
+
+    def extract_param_value(self, line):
+        param = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg=self.PARAM,
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        value = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg=self.TO,
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        return param, value
+
+    def _complete_subcontext(self, contexts):
+        subcontexts = None
+        current_context = []
+        possible_completions = []
+        to_complete = ""
+
+        for context in contexts:
+            current_context.append(context)
+
+            if subcontexts is not None:
+
+                # If context is not valid subcontext then it is probably a prefix
+                if context not in subcontexts:
+                    self.logger.debug(
+                        "ManageConfigLeafController: Possible completions for %s: %s",
+                        context,
+                        subcontexts,
+                    )
+                    possible_completions = subcontexts
+                    to_complete = context
+                    break
+
+            subcontexts = self.cluster.config_subcontext(current_context[:])
+
+            subcontexts = reduce(
+                lambda x, y: list(set(x) | set(y)), subcontexts.values()
+            )
+
+            # Remove subcontext without dynamic config params
+            for subcontext in subcontexts[:]:
+                subcontext_params = self.cluster.config_params(
+                    current_context + [subcontext]
+                )
+
+                intersection = reduce(
+                    lambda x, y: list(set(x) | set(y)),
+                    subcontext_params.values(),
+                )
+
+                if len(intersection) == 0:
+                    subcontexts.remove(subcontext)
+
+            possible_completions = subcontexts
+
+            self.logger.debug(
+                "ManageConfigLeafController: Possible sub-contexts %s",
+                possible_completions,
+            )
+
+        return to_complete, possible_completions
+
+    def _complete_params(self, contexts):
+        cluster_params = self.cluster.config_params(contexts)
+        intersection = reduce(
+            lambda x, y: list(set(x) | set(y)), cluster_params.values()
+        )
+
+        self.logger.debug(
+            "ManageConfigLeafController: Possible params {}".format(intersection)
+        )
+
+        return intersection
+
+    def _complete_values(self, contexts, param):
+        config_type = self.cluster.config_type(contexts, param)
+        possible_completions = []
+
+        if config_type:
+            config_type = list(config_type.values())[0]
+
+            if config_type.dynamic:
+                if isinstance(config_type, EnumConfigType):
+                    possible_completions = config_type.enum
+                elif isinstance(config_type, BoolConfigType):
+                    possible_completions = ["true", "false"]
+                elif isinstance(config_type, IntConfigType):
+                    possible_completions = ["<int>"]
+                elif isinstance(config_type, StringConfigType):
+                    possible_completions = ["<string>"]
+
+        self.logger.debug(
+            "ManageConfigLeafController: Possible value {}".format(possible_completions)
+        )
+
+        return possible_completions
+
+    def complete(self, line):
+        self.logger.debug(
+            "ManageConfigLeafController: Complete context {} and line {}".format(
+                self.context, line
+            )
+        )
+
+        # They typed a top level context with no space.
+        if len(line) == 0:
+            return [self.context[-1]]
+
+        # They type a modifier with no space.
+        if line[-1] in {self.PARAM, self.TO}:
+            return [line[-1]]
+
+        self._init()
+        contexts = self.context[:]
+        arg = None
+
+        # hack to remove unwanted contexts
+        contexts.remove("manage")
+        contexts.remove("config")
+
+        if self.controller_arg is not None:
+            arg = line.pop(0)
+
+            # They likely forgot to type argument after the cmd. i.e
+            # manage config namespace <NS> <---- forgot <NS>
+            if arg in self.required_modifiers | self.modifiers | {
+                self.controller_arg,
+            }:
+                return []
+
+            # Give hint like namespace <NS>
+            if arg == "":
+                return ["<{}>".format(self.controller_arg)]
+
+            # They are still typing the name of the namespace, set, etc.
+            if len(line) == 0:
+                return []
+
+        if len(line) != 0 and line[0] in self.controller_map:
+            self.logger.debug(
+                "ManageConfigLeafController: Found context {} with own controller".format(
+                    line[0]
+                )
+            )
+            cmd = line.pop(0)
+            return self.commands.get(cmd)[0].complete(line)
+
+        # Get contexts and subcontext.
+        while len(line) != 0:
+            val = line[0]
+
+            # Once modifer is found that is the end of contexts
+            if val in self.required_modifiers | self.modifiers:
+                break
+
+            line.pop(0)
+
+            if val:
+                contexts.append(val)
+
+        self.logger.debug(
+            "ManageConfigLeafController: context to complete {}".format(contexts)
+        )
+
+        p_success, param = util.fetch_argument(line, self.PARAM, "")
+        v_success, value = util.fetch_argument(line, self.TO, "")
+
+        if p_success:
+            line.remove(param)
+
+        if v_success:
+            line.remove(value)
+
+        p_success = p_success or self.PARAM in line
+        v_success = v_success or self.TO in line
+        possible_completions = []
+        to_complete = ""
+        next_token = None
+
+        # Complete a sub-context
+        if not p_success and not v_success:
+            to_complete, possible_completions = self._complete_subcontext(contexts)
+
+        # Complete a config parameter
+        elif p_success and not v_success:
+            line.remove(self.PARAM)
+            to_complete = param
+            possible_completions = self._complete_params(contexts)
+            next_token = self.TO
+
+        # Complete a parameter value
+        elif p_success and v_success:
+            line.remove(self.TO)
+            to_complete = value
+            possible_completions = self._complete_values(contexts, param)
+
+        # What the user entered is not a prefix for completions.
+        if len(possible_completions) == 0:
+            return []
+
+        completions = PrefixDict()
+
+        for possible in possible_completions:
+            completions.add(possible, possible)
+
+        possible_completions = completions.get_key(to_complete)
+
+        if len(possible_completions) == 1:
+            # They either typed a space or some garbage value
+            if possible_completions[0] == to_complete:
+                # Auto complete self.TO
+                if next_token is not None:
+                    if len(line) == 0:
+                        return ["{} {}".format(possible_completions[0], next_token)]
+                    if line[-1] == "":
+                        return [next_token]
+
+                if len(line):
+                    return []
+
+        return possible_completions
+
+    def prompt_challenge(self, message):
+        if self.nodes == "all":
+            message = "{} on all nodes".format(message)
+
+        else:
+            nodes = self.cluster.get_nodes(self.nodes)
+            nodes = map(lambda x: x.ip, nodes)
+            nodes_str = ", ".join(nodes)
+            message = "{} on nodes: {}".format(message, nodes_str)
+
+        return super().prompt_challenge(message=message)
+
+
+@CommandHelp('"manage config" is used to change dynamic configuration')
+class ManageConfigController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "logging": ManageConfigLoggingController,
+            "service": ManageConfigServiceController,
+            "network": ManageConfigNetworkController,
+            "security": ManageConfigSecurityController,
+            "namespace": ManageConfigNamespaceController,
+            "xdr": ManageConfigXDRController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+
+@CommandHelp(
+    "Usage: logging file <log-file-name> param <parameter> to <value>",
+    "  file          - Name of log file as shown in the aerospike.conf.",
+    "  param         - The logging context.",
+    "  to            - The logging level to assign.",
+)
+class ManageConfigLoggingController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set(["file", self.PARAM, self.TO])
+        self.modifiers = set(["with"])
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+        file = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="file",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if self.warn and not self.prompt_challenge(
+            "Change logging context {} to {} for file {}".format(param, value, file)
+        ):
+            return
+
+        resp = self.cluster.info_set_config_logging(
+            file, param, value, nodes=self.nodes
+        )
+
+        title = "Set Logging Context {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: service param <parameter> to <value>",
+    "  param         - The service configuration parameter.",
+    "  to            - The value to assign to the parameter.",
+)
+class ManageConfigServiceController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set([self.PARAM, self.TO])
+        self.modifiers = set(["with"])
+        self.require_recluster = set(["cluster-name"])
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+
+        if self.warn and not self.prompt_challenge(
+            "Change service param {} to {}".format(param, value)
+        ):
+            return
+
+        resp = self.cluster.info_set_config_service(param, value, nodes=self.nodes)
+
+        title = "Set Service Param {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+        if param in self.require_recluster:
+            self.view.print_result(
+                'Run "manage recluster" for your changes to {} to take affect.'.format(
+                    param
+                )
+            )
+
+
+@CommandHelp(
+    "Usage: network <subcontext> param <parameter> to <value>",
+    "  subcontext    - The network subcontext where the parameter is located.",
+    "  param         - The network configuration parameter.",
+    "  to            - The value to assign to the parameter.",
+)
+class ManageConfigNetworkController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set([self.PARAM, self.TO])
+        self.modifiers = set(["with"])
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+
+        if len(line) == 0 or line[0] in self.required_modifiers | self.modifiers:
+            self.execute_help(line)
+            self.logger.error("Subcontext required.")
+            return
+
+        subcontext = line.pop(0)
+
+        if self.warn and not self.prompt_challenge(
+            "Change network {} param {} to {}".format(subcontext, param, value)
+        ):
+            return
+
+        resp = self.cluster.info_set_config_network(
+            param, value, subcontext, nodes=self.nodes
+        )
+
+        title = "Set Network Param {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: security [<subcontext>] param <parameter> to <value>",
+    "  subcontext    - The security subcontext where the parameter is located.",
+    "                  [default: None]",
+    "  param         - The security configuration parameter.",
+    "  to            - The value to assign to the parameter.",
+)
+class ManageConfigSecurityController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set([self.PARAM, self.TO])
+        self.modifiers = set(["with"])
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+        subcontext = None
+
+        # Handles new sub-contexts so they run even without auto-complete
+        if len(line) and line[0] not in self.required_modifiers | self.modifiers:
+            subcontext = line.pop(0)
+
+        if self.warn and not self.prompt_challenge(
+            "Change security{} param {} to {}".format(
+                " " + subcontext if subcontext else "", param, value
+            )
+        ):
+            return
+
+        resp = self.cluster.info_set_config_security(
+            param, value, subcontext, nodes=self.nodes
+        )
+
+        title = "Set Security Param {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: namespace <ns> [<subcontext>] param <parameter> to <value>",
+    "  ns            - The name of the namespace you would like to configure.",
+    "  subcontext    - The namespace subcontext where the parameter is located.",
+    "                  [default: None]",
+    "  param         - The namespace configuration parameter.",
+    "  to            - The value to assign to the parameter.",
+)
+class ManageConfigNamespaceController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set([self.PARAM, self.TO])
+        self.modifiers = set(["with"])
+        self.controller_arg = "ns"
+        self.controller_map = {
+            "set": ManageConfigNamespaceSetController,
+        }
+        self.require_recluster = set(["prefer-uniform-balance", "rack-id"])
+
+        # Config params that require another to be set.
+        self.param_pairs = {
+            "compression-level": "enable-compression",
+            "ship-sets": "ship-only-specified-sets",
+        }
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+        namespace = self.mods["namespace"][0]
+        subcontext = None
+
+        if len(line) and line[0] not in self.required_modifiers | self.modifiers:
+            subcontext = line.pop(0)
+
+        if self.warn and not self.prompt_challenge(
+            "Change namespace {}{} param {} to {}".format(
+                namespace, " " + subcontext if subcontext else "", param, value
+            )
+        ):
+            return
+
+        resp = self.cluster.info_set_config_namespace(
+            param, value, namespace, subcontext=subcontext, nodes=self.nodes
+        )
+
+        title = "Set Namespace Param {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+        if param in self.require_recluster:
+            self.view.print_result(
+                'Run "manage recluster" for your changes to {} to take affect.'.format(
+                    param
+                )
+            )
+
+        if param in self.param_pairs.keys():
+            self.view.print_result(
+                'The parameter "{}" must also be set.'.format(self.param_pairs[param])
+            )
+
+
+@CommandHelp(
+    "Usage: namespace <ns> set <set> param <parameter> to <value>",
+    "  ns            - The namespace you would like to configure.",
+    "  set           - The set subcontext you would like to configure.",
+    "  param         - The namespace configuration parameter.",
+    "  to            - The value to assign to the parameter.",
+)
+class ManageConfigNamespaceSetController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set([self.PARAM, self.TO])
+        self.modifiers = set(["with"])
+        self.controller_arg = "set"
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+        namespace = self.mods["namespace"][0]
+        set_ = self.mods["set"][0]
+
+        if self.warn and not self.prompt_challenge(
+            "Change namespace {} set {} param {} to {}".format(
+                namespace, set_, param, value
+            )
+        ):
+            return
+
+        resp = self.cluster.info_set_config_namespace(
+            param, value, namespace, set_=set_, nodes=self.nodes
+        )
+
+        title = "Set Namespace Set Param {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: xdr param <parameter> to <value>",
+    "  param         - The XDR configuration parameter.",
+    "  to         - The value to assign to the parameter.",
+)
+class ManageConfigXDRController(ManageConfigLeafController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+        self.required_modifiers = set([self.PARAM, self.TO])
+        self.controller_map = {
+            "dc": ManageConfigXDRDCController,
+            "create": ManageConfigXDRCreateController,
+            "delete": ManageConfigXDRDeleteController,
+        }
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+
+        if self.warn and not self.prompt_challenge(
+            "Change XDR param {} to {}".format(param, value)
+        ):
+            return
+
+        resp = self.cluster.info_set_config_xdr(param, value, nodes=self.nodes)
+
+        title = "Set XDR Param {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: xdr create dc <dc>",
+    "  dc            - The name of the XDR datacenter you would like to create.",
+)
+class ManageConfigXDRCreateController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set(["dc"])
+        self.modifiers = set(["with"])
+
+    def _do_default(self, line):
+        dc = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="dc",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if self.warn and not self.prompt_challenge("Create XDR DC {}".format(dc)):
+            return
+
+        resp = self.cluster.info_set_config_xdr_create_dc(dc, nodes=self.nodes)
+
+        title = "Create XDR DC {}".format(dc)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: xdr delete dc <dc>",
+    "  dc            - The name of the XDR datacenter you would like to delete.",
+)
+class ManageConfigXDRDeleteController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set(["dc"])
+        self.modifiers = set(["with"])
+
+    def _do_default(self, line):
+        dc = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="dc",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if self.warn and not self.prompt_challenge("Delete XDR DC {}".format(dc)):
+            return
+
+        resp = self.cluster.info_set_config_xdr_delete_dc(dc, nodes=self.nodes)
+
+        title = "Delete XDR DC {}".format(dc)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: xdr dc <dc> param <parameter> to <value>",
+    "  dc            - The XDR datacenter you would like to configure.",
+    "  param         - The XDR configuration parameter.",
+    "  to         - The value to assign to the parameter.",
+)
+class ManageConfigXDRDCController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set([self.PARAM, self.TO])
+        self.modifiers = set(["with"])
+        self.controller_arg = "dc"
+        self.controller_map = {
+            "namespace": ManageConfigXDRDCNamespaceController,
+            "add": ManageConfigXDRDCAddController,
+            "remove": ManageConfigXDRDCRemoveController,
+        }
+        self.param_pairs = {
+            "auth-user": "auth-password-file",
+            "auth-password-file": "auth-user",
+        }
+
+    def execute_help(self, line, indent=0, method=None):
+        return super().execute_help(
+            line, indent=indent, method=method, print_modifiers=False
+        )
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+        dc = self.mods["dc"][0]
+
+        if self.warn and not self.prompt_challenge(
+            "Change XDR DC {} param {} to {}".format(dc, param, value)
+        ):
+            return
+
+        resp = self.cluster.info_set_config_xdr(param, value, dc=dc, nodes=self.nodes)
+
+        title = "Set XDR DC param {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+        if param in self.param_pairs.keys():
+            self.view.print_result(
+                'The parameter "{}" must also be set.'.format(self.param_pairs[param])
+            )
+
+
+@CommandHelp("")
+class ManageConfigXDRDCAddController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "node": ManageConfigXDRDCAddNodeController,
+            "namespace": ManageConfigXDRDCAddNamespaceController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+
+@CommandHelp(
+    "Usage: xdr dc <dc> add node <ip:port>",
+    "  dc            - The XDR datacenter you would like to configure.",
+    "  node          - The node address to add to the datacenter.",
+)
+class ManageConfigXDRDCAddNodeController(ManageConfigLeafController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+        self.controller_arg = "ip:port"
+
+    def _do_default(self, line):
+        dc = self.mods["dc"][0]
+        node = self.mods["node"][0]
+
+        if self.warn and not self.prompt_challenge(
+            "Add node {} to DC {}".format(node, dc)
+        ):
+            return
+
+        resp = self.cluster.info_set_config_xdr_add_node(dc, node, nodes=self.nodes)
+
+        title = "Add XDR Node {} to DC {}".format(node, dc)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: xdr dc <dc> add namespace <ns> [rewind <seconds>|all]",
+    "  dc            - The XDR datacenter you would like to configure.",
+    "  namespace     - The namespace to add to the datacenter.",
+    "  rewind        - Number of seconds to rewind a namespace's shipment of records.",
+    "                  Use 'all' to restart shipment completely.",
+    "  Note: When you are rewinding, the namespace to rewind must already have been",
+    "        configured.",
+)
+class ManageConfigXDRDCAddNamespaceController(ManageConfigLeafController):
+    def __init__(self):
+        self.modifiers = set(["with", "rewind"])
+        self.controller_arg = "ns"
+
+    def _do_default(self, line):
+        dc = self.mods["dc"][0]
+        namespace = self.mods["namespace"][0]
+        rewind = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="rewind",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if self.warn:
+            if rewind is not None and not self.prompt_challenge(
+                "Add namespace {} to DC {} with rewind {}".format(namespace, dc, rewind)
+            ):
+                return
+            elif not self.prompt_challenge(
+                "Add namespace {} to DC {}".format(namespace, dc)
+            ):
+                return
+
+        resp = self.cluster.info_set_config_xdr_add_namespace(
+            dc, namespace, rewind, nodes=self.nodes
+        )
+
+        title = "Add XDR Namespace {} to DC {}".format(namespace, dc)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp("")
+class ManageConfigXDRDCRemoveController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "node": ManageConfigXDRDCRemoveNodeController,
+            "namespace": ManageConfigXDRDCRemoveNamespaceController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+
+@CommandHelp(
+    "Usage: xdr dc <dc> remove node <ip:port>",
+    "  dc            - The XDR datacenter you would like to configure.",
+    "  node          - The node address to remove from the datacenter.",
+)
+class ManageConfigXDRDCRemoveNodeController(ManageConfigLeafController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+        self.controller_arg = "node:port"
+
+    def _do_default(self, line):
+        dc = self.mods["dc"][0]
+        node = self.mods["node"][0]
+
+        if self.warn and not self.prompt_challenge(
+            "Remove node {} from DC {}".format(node, dc)
+        ):
+            return
+
+        resp = self.cluster.info_set_config_xdr_remove_node(dc, node, nodes=self.nodes)
+
+        title = "Remove XDR Node {} from DC {}".format(node, dc)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: xdr dc <dc> remove namespace <ns>",
+    "  dc            - The XDR datacenter you would like to configure.",
+    "  namespace     - The namespace to remove from the datacenter.",
+)
+class ManageConfigXDRDCRemoveNamespaceController(ManageConfigLeafController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+        self.controller_arg = "ns"
+
+    def _do_default(self, line):
+        dc = self.mods["dc"][0]
+        namespace = self.mods["namespace"][0]
+
+        if self.warn and not self.prompt_challenge(
+            "Remove namespace {} from DC {}".format(namespace, dc)
+        ):
+            return
+
+        resp = self.cluster.info_set_config_xdr_remove_namespace(
+            dc, namespace, nodes=self.nodes
+        )
+
+        title = "Remove XDR Namespace {} from DC {}".format(namespace, dc)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Usage: xdr dc <dc> namespace <ns> param <parameter> to <value>",
+    "  dc            - The XDR datacenter you would like to configure.",
+    "  namespace     - The datacenter namespace you would like to configure.",
+    "  param         - The security configuration parameter.",
+    "  to            - The value to assign to the parameter.",
+)
+class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
+    def __init__(self):
+        self.required_modifiers = set([self.PARAM, self.TO])
+        self.modifiers = set(["with"])
+        self.controller_arg = "ns"
+
+    def _do_default(self, line):
+        param, value = self.extract_param_value(line)
+        dc = self.mods["dc"][0]
+        namespace = self.mods["namespace"][0]
+
+        if self.warn and not self.prompt_challenge(
+            "Change XDR DC {} namespace {} param {} to {}".format(
+                dc, namespace, param, value
+            )
+        ):
+            return
+
+        resp = self.cluster.info_set_config_xdr(
+            param, value, dc=dc, namespace=namespace, nodes=self.nodes
+        )
+
+        title = "Set XDR Namespace Param {} to {}".format(param, value)
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    '"manage truncate" is used to delete multiple records in the Aerospike cluster.',
+    'It is advised to use the "manage truncate" command with the --warn flag on.',
+    "Usage: truncate ns <ns> [set <set>] [undo]|[before <iso-8601-or-unix-epoch> iso-8601|unix-epoch]",
+    "  namespace     - The namespace you would like to truncate or undo truncation.",
+    "  set           - The set you would like to truncate or undo truncation",
+    "                  [default: None]",
+    "  undo          - Remove the associated SMD (System Meta Data) files entry and",
+    "                  allow (some) previously truncated records to be resurrected on",
+    "                  the next cold restart.",
+    "                  [default: false]",
+    "  before        - Deletes every record in the given namespace or set whose lut is",
+    "                  older than the given time. Time can be either an iso-8601 formatted",
+    '                  datetime followed by the literal "iso-8601" or unix-epoch',
+    '                  followed by the literal "unix-epoch".',
+    "                  [default: Now]",
+)
+class ManageTruncateController(ManageLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = {"ns"}
+        self.modifiers = {"set", "before", "undo"}
+
+    def _parse_lut(self):
+        lut_datetime = None  # datetime object
+        lut_epoch_time = None  #
+        error = None
+        before = self.mods["before"]
+
+        if len(before):
+            seconds = None
+            nanoseconds = None
+
+            if len(before) != 2:
+                error = (
+                    'Last update time must be followed by "unix-epoch" or "iso-8601".'
+                )
+                return lut_datetime, lut_epoch_time, error
+
+            if "unix-epoch" in before:
+                before.remove("unix-epoch")
+                lut_time = before[0]
+
+                try:
+                    # Create a naive datetime object.
+                    lut_datetime = datetime.utcfromtimestamp(float(lut_time))
+                except ValueError:
+                    error = "Invalid unix-epoch format."
+                    return lut_datetime, lut_epoch_time, error
+
+                lut_time = lut_time.split(".")
+                seconds = lut_time[0]
+                nanoseconds = []
+
+            elif "iso-8601" in before:
+                before.remove("iso-8601")
+                lut_time = before[0]
+
+                try:
+                    lut_datetime = date_parser.isoparse(lut_time)
+                except ValueError:
+                    error = "Invalid iso-8601 format."
+                    return lut_datetime, lut_epoch_time, error
+
+                if lut_datetime.tzinfo is None:
+                    error = "iso-8601 format must contain a timezone."
+                    return lut_datetime, lut_epoch_time, error
+
+                lut_time = str(lut_datetime.timestamp())
+                lut_time = lut_time.split(".")
+                seconds = lut_time[0]
+
+            else:
+                # They used something besides "unix-epoch" or "iso-8601"
+                error = (
+                    'Last update time must be followed by "unix-epoch" or "iso-8601".'
+                )
+                return lut_datetime, lut_epoch_time, error
+
+            # server gives ambiguous error when not exactly the right num of digits.
+            if len(seconds) > 10:
+                error = "Date provided is too far in the future."
+                return lut_datetime, lut_epoch_time, error
+
+            if len(seconds) < 10:
+                error = "Date provided is too far in the past."
+                return lut_datetime, lut_epoch_time, error
+
+            if len(lut_time) == 2:
+                nanoseconds = list(lut_time[1])
+
+            while len(nanoseconds) < 9:
+                nanoseconds.append("0")
+
+            lut_epoch_time = "".join(seconds) + "".join(nanoseconds[0:9])
+
+            self.logger.debug("ManageTruncate epoch time %s", lut_epoch_time)
+
+        return lut_datetime, lut_epoch_time, error
+
+    def _get_namespace_master_objects(self, namespace):
+        """
+        Get total number of unique objects in a namespace accross the cluster.
+        Calculated as the
+        sum(all master objects in namespace for each node)
+        """
+        namespace_stats = self.cluster.info_namespace_statistics(namespace, nodes="all")
+        namespace_stats = list(namespace_stats.values())
+        master_objects_per_node = map(
+            lambda x: int(x.get("master_objects", "0")), namespace_stats
+        )
+        total_num_master_objects = reduce(
+            lambda x, y: x + y, master_objects_per_node, 0
+        )
+        return str(total_num_master_objects)
+
+    def _get_set_master_objects(self, namespace, set_):
+        """
+        Get total number of unique objects in a set accross the cluster.
+        Calculated as the
+        sum(all objects in set for each node) // effective_repl_factor
+        """
+        set_stats = self.cluster.info_set_statistics(namespace, set_, nodes="all")
+        set_stats = set_stats.values()
+        namespace_stats = self.cluster.info_namespace_statistics(
+            namespace, nodes="random"
+        )
+        namespace_stats = list(namespace_stats.values())[0]
+
+        # effective_repl_factor added 3.15.3
+        effective_repl_factor = int(namespace_stats.get("effective_repl_factor", "1"))
+        objects_per_node = map(lambda x: int(x.get("objects", "0")), set_stats)
+        total_num_objects = reduce(lambda x, y: x + y, objects_per_node, 0)
+        total_num_master_objects = total_num_objects // effective_repl_factor
+
+        return str(total_num_master_objects)
+
+    def _format_date(self, lut_datetime):
+        timezone_str = lut_datetime.strftime("%Z")
+
+        if timezone_str == "":
+            timezone_str = lut_datetime.strftime("%z")
+            if timezone_str == "":
+                # The user likely gave an epoch time.
+                timezone_str = "UTC"
+            else:
+                timezone_str = "UTC" + timezone_str[0:3] + ":" + timezone_str[3:]
+
+        formatted = lut_datetime.strftime(
+            "%H:%M:%S.%f {} on %B %d, %Y".format(timezone_str)
+        )
+        formatted = terminal.fg_green() + formatted + terminal.fg_not_green()
+
+        return formatted
+
+    def _generate_warn_prompt(self, namespace, set_, master_objects, lut_datetime):
+        prompt_str = "You are about to truncate up to {} records from".format(
+            master_objects
+        )
+
+        if set_ is not None:
+            prompt_str += " set {} for".format(set_)
+
+        prompt_str += " namespace {}".format(namespace)
+
+        if lut_datetime is not None:
+            formatted_date = self._format_date(lut_datetime)
+            prompt_str += " with LUT before {}".format(formatted_date)
+
+        return prompt_str
+
+    def _do_default(self, line):
+        unrecognized = None
+
+        # TODO: Build an option into the controller that strictly checks modifiers.
+        # This is especially important with truncate.
+        if self.mods["line"]:
+            unrecognized = self.mods["line"]
+        if len(self.mods["ns"]) > 1:  # required
+            unrecognized = self.mods["ns"]
+        if len(self.mods["set"]) != 1 and "set" in line:
+            unrecognized = self.mods["set"]
+        if len(self.mods["before"]) != 2 and "before" in line:
+            unrecognized = self.mods["before"]
+
+        if unrecognized is not None:
+            self.logger.error("Unrecognized input: {}".format(" ".join(unrecognized)))
+            return
+
+        namespace = self.mods["ns"][0]
+        set_ = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="set",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        undo = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="undo",
+            default=False,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if self.mods["before"] and undo:
+            self.execute_help(line)
+            self.logger.error('"undo" and "before" are mutually exclusive.')
+            return
+
+        lut_datetime, lut_epoch_time, error = self._parse_lut()
+
+        if error is not None:
+            self.logger.error(error)
+            return
+
+        if self.warn:
+            prompt = None
+
+            if undo:
+                prompt = ""
+            else:
+                total_num_master_objects = None
+
+                if set_ is None:
+                    total_num_master_objects = self._get_namespace_master_objects(
+                        namespace
+                    )
+
+                else:
+                    total_num_master_objects = self._get_set_master_objects(
+                        namespace, set_
+                    )
+
+                prompt = self._generate_warn_prompt(
+                    namespace, set_, total_num_master_objects, lut_datetime
+                )
+
+            if not self.prompt_challenge(prompt):
+                return
+
+        if undo:
+            resp = self.cluster.info_truncate_undo(namespace, set_, nodes="principal")
+        else:
+            resp = self.cluster.info_truncate(
+                namespace, set_, lut_epoch_time, nodes="principal"
+            )
+
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        if undo:
+            if set_ is None:
+                self.view.print_result(
+                    "Successfully triggered undoing truncation for namespace {} on next cold restart".format(
+                        namespace
+                    )
+                )
+            else:
+                self.view.print_result(
+                    "Successfully triggered undoing truncation for set {} of namespace {} on next cold restart".format(
+                        set_, namespace
+                    )
+                )
+        else:
+            if set_ is None:
+                self.view.print_result(
+                    "Successfully started truncation for namespace {}".format(namespace)
+                )
+            else:
+                self.view.print_result(
+                    "Successfully started truncation for set {} of namespace {}".format(
+                        set_, namespace
+                    )
+                )
+
+
+@CommandHelp(
+    '"manage recluster" is used to recluster an Aerospike cluster. This is',
+    "necessary for certain configuration changes to take effect.",
+    "Usage: recluster",
+)
+class ManageReclusterController(ManageLeafCommandController):
+    def __init__(self):
+        pass
+
+    def _do_default(self, line):
+        resp = self.cluster.info_recluster(nodes="principal")
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result("Successfully started recluster")
+
+
+@CommandHelp(
+    '"manage quiesce" is used to stop nodes from participating as a replica in an Aerospike cluster.',
+    "Usage: quiesce with node1 [node2 [...]] [undo]",
+    "  with          - The nodes(s) to quiesce.",
+    "  undo          - Revert the effects of the quiesce on the next recluster event.",
+    "                  [default: false]",
+)
+class ManageQuiesceController(ManageLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = {"with"}
+        self.modifiers = {"undo"}
+
+    def _do_default(self, line):
+        undo = util.check_arg_and_delete_from_mods(
+            line, arg="undo", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+        resp = None
+        title = None
+
+        if undo:
+            title = "Undo Quiesce for Nodes"
+            resp = self.cluster.info_quiesce_undo(nodes=self.nodes)
+        else:
+            title = "Quiesce Nodes"
+            resp = self.cluster.info_quiesce(nodes=self.nodes)
+
+        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_result(
+            'Run "manage recluster" for your changes to take affect.'
+        )

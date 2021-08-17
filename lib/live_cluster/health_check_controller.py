@@ -27,7 +27,7 @@ class HealthCheckController(LiveClusterCommandController):
         elif stanza == "namespace":
             return self.cluster.info_all_namespace_statistics(nodes=self.nodes)
         elif stanza == "sets":
-            return self.cluster.info_set_statistics(nodes=self.nodes)
+            return self.cluster.info_all_set_statistics(nodes=self.nodes)
         elif stanza == "bins":
             return self.cluster.info_bin_statistics(nodes=self.nodes)
         elif stanza == "xdr":

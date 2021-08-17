@@ -1,13 +1,13 @@
 import copy
 import json
 import shutil
-from distutils.version import LooseVersion
+
 import time
 from os import sys
 
 from lib.view.sheet.render import get_style_json, set_style_json
 from lib.view.terminal import terminal
-from lib.utils import common, constants, util
+from lib.utils import common, constants, util, version
 from lib.base_controller import CommandHelp
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
@@ -579,7 +579,7 @@ class CollectinfoController(LiveClusterCommandController):
         hist_dump_info_str = "histogram:namespace=%s;type=%s"
 
         try:
-            if LooseVersion(as_version) < LooseVersion("4.2.0"):
+            if version.LooseVersion(as_version) < version.LooseVersion("4.2.0"):
                 # histogram command introduced in 4.2.0
                 # use hist-dump command for older versions
                 hist_list = ["ttl", "objsz"]
@@ -699,7 +699,7 @@ class CollectinfoController(LiveClusterCommandController):
             # Comparing with this version because prior to this it was
             # citrusleaf.conf
             try:
-                if LooseVersion(as_version) <= LooseVersion("3.0.0"):
+                if version.LooseVersion(as_version) <= version.LooseVersion("3.0.0"):
                     conf_path = "/etc/citrusleaf/citrusleaf.conf"
                     self.aslogfile = as_logfile_prefix + "citrusleaf.conf"
             except Exception:  # probably failed to get build version, node may be down

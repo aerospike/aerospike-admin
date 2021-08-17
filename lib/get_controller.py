@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import copy
-from distutils.version import LooseVersion
-from lib.utils import common, util, constants
+
+from lib.utils import common, util, constants, version
 
 
 def get_sindex_stats(cluster, nodes="all", for_mods=[]):
@@ -367,7 +367,7 @@ class GetConfigController:
         for node, build in builds.items():
             if isinstance(build, Exception):
                 continue
-            if LooseVersion(constants.SERVER_NEW_XDR5_VERSION) <= LooseVersion(build):
+            if version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION) <= version.LooseVersion(build):
                 xdr5_nodes.append(node)
 
         return xdr5_nodes
@@ -381,8 +381,6 @@ class GetConfigController:
         if not xdr5_nodes:
             return xdr_configs
 
-        xdr5_nodes = [address.split(":")[0] for address in xdr5_nodes]
-
         return self.get_xdr(nodes=xdr5_nodes)
 
     def get_old_xdr_nodes(self, nodes="all"):
@@ -392,7 +390,7 @@ class GetConfigController:
         for node, build in builds.items():
             if isinstance(build, Exception):
                 continue
-            if LooseVersion(constants.SERVER_NEW_XDR5_VERSION) > LooseVersion(build):
+            if version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION) > version.LooseVersion(build):
                 old_xdr_nodes.append(node)
 
         return old_xdr_nodes
@@ -552,7 +550,7 @@ class GetStatisticsController:
         return sindex_stats
 
     def get_sets(self, nodes="all", for_mods=[]):
-        sets = self.cluster.info_set_statistics(nodes=nodes)
+        sets = self.cluster.info_all_set_statistics(nodes=nodes)
 
         set_stats = {}
         for host_id, key_values in sets.items():
@@ -658,6 +656,9 @@ class GetFeaturesController:
         ns_stats = util.Future(
             self.cluster.info_all_namespace_statistics, nodes=nodes
         ).start()
+        xdr_dc_stats = util.Future(
+            self.cluster.info_all_dc_statistics, nodes=nodes
+        ).start()
         service_configs = util.Future(
             self.cluster.info_get_config, stanza="service", nodes=nodes
         ).start()
@@ -670,6 +671,7 @@ class GetFeaturesController:
 
         service_stats = service_stats.result()
         ns_stats = ns_stats.result()
+        xdr_dc_stats = xdr_dc_stats.result()
         service_configs = service_configs.result()
         ns_configs = ns_configs.result()
         cl_configs = cl_configs.result()
@@ -677,6 +679,7 @@ class GetFeaturesController:
         return common.find_nodewise_features(
             service_stats=service_stats,
             ns_stats=ns_stats,
+            xdr_dc_stats=xdr_dc_stats,
             service_configs=service_configs,
             ns_configs=ns_configs,
             cluster_configs=cl_configs,

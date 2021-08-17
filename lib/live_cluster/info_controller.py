@@ -12,7 +12,6 @@ from .live_cluster_command_controller import LiveClusterCommandController
 class InfoController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "for"])
-
         self.controller_map = dict(namespace=InfoNamespaceController)
         self.config_getter = GetConfigController(self.cluster)
 
@@ -72,7 +71,7 @@ class InfoController(LiveClusterCommandController):
 
     @CommandHelp('"info set" displays summary information for each set.')
     def do_set(self, line):
-        stats = self.cluster.info_set_statistics(nodes=self.nodes)
+        stats = self.cluster.info_all_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
 
     # pre 5.0

@@ -55,6 +55,11 @@ class ControllerTest(unittest.TestCase):
             }
         )
 
+        self.info_build_version_mock = patch(
+            "lib.live_cluster.client.node.Node.info_build_version"
+        ).start()
+        self.info_build_version_mock.return_value = "5.5.0.0"
+
         n = Node("172.99.99.99")
         self.MockCluster._crawl.get_node = classmethod(lambda self, key: [n])
 

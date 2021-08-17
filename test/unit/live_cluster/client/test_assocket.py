@@ -1,25 +1,14 @@
 import socket
 import unittest2 as unittest
-from mock import Mock, patch
-from socket import error as SocketError
+from mock import patch
 
+from test.unit import util
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.info import ASProtocolError, ASResponse
 from lib.utils.constants import AuthMode
 
 
 class ASSocketTestConnect(unittest.TestCase):
-    def assert_exception(self, exception, message, func, *args):
-        exc = None
-
-        try:
-            func(*args)
-        except Exception as e:
-            exc = e
-
-        self.assertIsInstance(exc, exception, "Wrong exception type")
-        self.assertEqual(str(exc), message, "Correct exception but wrong message")
-
     def setUp(self) -> None:
         self.as_socket = ASSocket(
             "1.2.3.4",
@@ -184,7 +173,7 @@ class ASSocketTestConnect(unittest.TestCase):
 
         mock.return_value = error_response
 
-        self.assert_exception(ASProtocolError, expected_message, func, *args)
+        util.assert_exception(self, ASProtocolError, expected_message, func, *args)
 
     @patch("lib.live_cluster.client.assocket.create_user")
     def test_create_user(self, mock):
@@ -263,7 +252,8 @@ class ASSocketTestConnect(unittest.TestCase):
 
         mock.return_value = ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, {"a": 1234}
 
-        self.assert_exception(
+        util.assert_exception(
+            self,
             ASProtocolError,
             "Failed to query users : No credential or bad credential.",
             self.as_socket.query_users,
@@ -281,7 +271,8 @@ class ASSocketTestConnect(unittest.TestCase):
 
         mock.return_value = ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, {"a": 1234}
 
-        self.assert_exception(
+        util.assert_exception(
+            self,
             ASProtocolError,
             "Failed to query user : No credential or bad credential.",
             self.as_socket.query_user,
@@ -365,7 +356,8 @@ class ASSocketTestConnect(unittest.TestCase):
 
         mock.return_value = ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, {"a": 1234}
 
-        self.assert_exception(
+        util.assert_exception(
+            self,
             ASProtocolError,
             "Failed to query roles : No credential or bad credential.",
             self.as_socket.query_roles,
@@ -383,7 +375,8 @@ class ASSocketTestConnect(unittest.TestCase):
 
         mock.return_value = ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, {"a": 1234}
 
-        self.assert_exception(
+        util.assert_exception(
+            self,
             ASProtocolError,
             "Failed to query role : No credential or bad credential.",
             self.as_socket.query_role,

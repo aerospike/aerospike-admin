@@ -15,6 +15,9 @@ import os
 
 ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 
+# For "manage config". Directory is relative to live_cluster/client
+CONFIG_SCHEMAS_HOME = "config-schemas"
+
 CONFIG_SERVICE = "service"
 CONFIG_NETWORK = "network"
 CONFIG_NAMESPACE = "namespace"
@@ -100,3 +103,11 @@ SERVER_QUOTAS_FIRST_VERSION = "5.6"
 SERVER_NEW_LATENCIES_CMD_FIRST_VERSION = "5.1"
 SERVER_NEW_XDR5_VERSION = "5.0"
 SERVER_NEW_HISTOGRAM_FIRST_VERSION = "4.2"
+
+# (inclusive, exclusive)
+SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS = [
+    ("4.3.1.11", "4.3.2.0"),
+    ("4.4.0.11", "4.4.1.0"),
+    ("4.5.0.6", "4.5.1.0"),
+    ("4.5.1.5", None),
+]

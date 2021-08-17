@@ -96,8 +96,8 @@ class SummaryController(LiveClusterCommandController):
         namespace_stats = util.Future(
             self.cluster.info_all_namespace_statistics, nodes=self.nodes
         ).start()
-        set_stats = util.Future(
-            self.cluster.info_set_statistics, nodes=self.nodes
+        xdr_dc_stats = util.Future(
+            self.cluster.info_all_dc_statistics, nodes=self.nodes
         ).start()
 
         service_configs = util.Future(
@@ -144,7 +144,7 @@ class SummaryController(LiveClusterCommandController):
 
         service_stats = service_stats.result()
         namespace_stats = namespace_stats.result()
-        set_stats = set_stats.result()
+        xdr_dc_stats = xdr_dc_stats.result()
         service_configs = service_configs.result()
         namespace_configs = namespace_configs.result()
         cluster_configs = cluster_configs.result()
@@ -222,7 +222,7 @@ class SummaryController(LiveClusterCommandController):
             common.create_summary(
                 service_stats=service_stats,
                 namespace_stats=namespace_stats,
-                set_stats=set_stats,
+                xdr_dc_stats=xdr_dc_stats,
                 metadata=metadata,
                 service_configs=service_configs,
                 ns_configs=namespace_configs,

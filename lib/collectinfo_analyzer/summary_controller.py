@@ -22,7 +22,6 @@ class SummaryController(CollectinfoCommandController):
         namespace_stats = self.log_handler.info_statistics(
             stanza=constants.STAT_NAMESPACE
         )
-        set_stats = self.log_handler.info_statistics(stanza=constants.STAT_SETS)
 
         service_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_SERVICE
@@ -33,6 +32,7 @@ class SummaryController(CollectinfoCommandController):
         cluster_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_CLUSTER
         )
+        xdr_dc_stats = self.log_handler.info_statistics(stanza=constants.STAT_XDR)
 
         os_version = self.log_handler.get_sys_data(stanza="lsb")
         kernel_version = self.log_handler.get_sys_data(stanza="uname")
@@ -121,7 +121,7 @@ class SummaryController(CollectinfoCommandController):
             common.create_summary(
                 service_stats=service_stats[last_timestamp],
                 namespace_stats=namespace_stats[last_timestamp],
-                set_stats=set_stats[last_timestamp],
+                xdr_dc_stats=xdr_dc_stats[last_timestamp],
                 metadata=metadata,
                 service_configs=service_configs[last_timestamp],
                 ns_configs=namespace_configs[last_timestamp],

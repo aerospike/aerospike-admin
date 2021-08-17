@@ -11,11 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import traceback
-
+from ctypes import ArgumentError
 import copy
 import logging
-import os
 import re
 import socket
 import threading
@@ -24,30 +22,23 @@ import base64
 
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import conf_parser
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import full_parser
-from lib.utils import common, constants, util
+from lib.utils import common, constants, util, version
 
 from .assocket import ASSocket
+from .config_handler import JsonDynamicConfigHandler
 from . import client_util
 
 #### Remote Server connection module
 
-NO_MODULE = 0
-OLD_MODULE = 1
-NEW_MODULE = 2
+PXSSH_NO_MODULE = 0  # Non-linux
+PXSSH_NEW_MODULE = 1
 
 try:
     from pexpect import pxssh
 
-    PEXPECT_VERSION = NEW_MODULE
+    PEXPECT_VERSION = PXSSH_NEW_MODULE
 except ImportError:
-    try:
-        # For old versions of pexpect ( < 3.0)
-        import pexpect
-        import pxssh
-
-        PEXPECT_VERSION = OLD_MODULE
-    except ImportError:
-        PEXPECT_VERSION = NO_MODULE
+    PEXPECT_VERSION = PXSSH_NO_MODULE
 
 
 def get_fully_qualified_domain_name(address, timeout=0.5):
@@ -78,6 +69,85 @@ def return_exceptions(func):
             return e
 
     return wrapper
+
+
+ASINFO_RESPONSE_OK = "ok"
+
+
+class ASInfoError(Exception):
+    generic_error = "Unknown error occurred"
+
+    def __init__(self, message, response):
+        self.message = message
+
+        # Success can either be "ok", "OK", or "" :(
+        if response.lower() in {ASINFO_RESPONSE_OK, ""}:
+            raise ValueError('info() returned value "ok" which is not an error.')
+
+        try:
+            # sometimes there is a message with 'error' and sometimes not. i.e. set-config, udf-put
+            if response.startswith("error") or response.startswith("ERROR"):
+                try:
+                    response = response.split("=")[1]
+                except IndexError:
+                    response = response.split(":")[2]
+
+            elif response.startswith("fail") or response.startswith("FAIL"):
+                response = response.split(":")[2]
+
+            self.response = response.strip(" .")
+
+        except IndexError:
+            self.response = self.generic_error
+
+    def __str__(self):
+        return "{} : {}.".format(self.message, self.response)
+
+
+class ASInfoConfigError(ASInfoError):
+    def __init__(self, message, resp, node, context, param, value):
+        self.message = message
+        self.response = super().generic_error
+        self.logger = logging.getLogger("asadm")
+
+        is_valid_context, invalid_context = self._check_context(node, context[:])
+
+        if not is_valid_context:
+            self.response = "Invalid subcontext {}".format(invalid_context)
+            return
+
+        config_type = node.config_type(context[:], param)
+
+        self.logger.debug("Found config type %s for param %s", str(config_type), param)
+
+        if config_type is None:
+            self.response = "Invalid parameter"
+            return
+
+        if not config_type.dynamic:
+            self.response = "Parameter is not dynamically configurable"
+            return
+
+        if not config_type.validate(value):
+            self.response = "Invalid value for {}".format(str(config_type))
+            return
+
+        super().__init__(message, resp)
+
+    def _check_context(self, node, subcontexts):
+        current_context = []
+
+        while subcontexts:
+            next_subcontext = subcontexts.pop(0)
+
+            valid_subcontexts = node.config_subcontext(current_context[:])
+
+            if next_subcontext not in valid_subcontexts:
+                return False, next_subcontext
+
+            current_context.append(next_subcontext)
+
+        return True, ""
 
 
 class Node(object):
@@ -211,7 +281,12 @@ class Node(object):
             pass
 
         # configurations from conf file
-        self.conf_data = {}
+        self.as_conf_data = {}
+
+        # TODO: Put json files in a submodule
+        self.conf_schema_handler = JsonDynamicConfigHandler(
+            constants.CONFIG_SCHEMAS_HOME, self.info_build_version()
+        )
 
     def _initialize_socket_pool(self):
         self.socket_pool = {}
@@ -260,14 +335,16 @@ class Node(object):
 
             for s in self.service_addresses:
                 try:
-                    address = s[0]
                     # calling update ip again because info_service may have provided a
-                    # different IP than what was seeded.
-                    self.ip = address
+                    # different IP than what was seeded. This can happen with if a load
+                    # balancer is used as a seed.
+
+                    self.ip = s[0]
+                    self.port = s[1]
                     self.node_id = self.info_node()
 
                     if not isinstance(self.node_id, Exception):
-                        self._update_IP(address, self.port)
+                        self._update_IP(self.ip, self.port)
                         break
                 except Exception:
                     # Sometime unavailable address might be present in service
@@ -377,6 +454,7 @@ class Node(object):
 
     def is_XDR_enabled(self):
         config = self.info_get_config("xdr")
+
         if isinstance(config, Exception):
             return False
 
@@ -533,6 +611,7 @@ class Node(object):
             raise ex
 
     @return_exceptions
+    @util.logthis
     def info(self, command):
         """
         asinfo function equivalent
@@ -543,7 +622,6 @@ class Node(object):
         return self._info_cinfo(command, self.ip)
 
     @return_exceptions
-    @client_util.cached
     def xdr_info(self, command):
         """
         asinfo -p [xdr-port] equivalent
@@ -925,7 +1003,18 @@ class Node(object):
         return stats
 
     @return_exceptions
-    def info_set_statistics(self):
+    def info_set_statistics(self, namespace, set_):
+        set_stat = self.info("sets/{}/{}".format(namespace, set_))
+
+        if set_stat[-1] == ";":
+            set_stat = client_util.info_colon_to_dict(set_stat[0:-1])
+        else:
+            set_stat = client_util.info_colon_to_dict(set_stat)
+
+        return set_stat
+
+    @return_exceptions
+    def info_all_set_statistics(self):
         stats = self.info("sets")
         stats = client_util.info_to_list(stats)
         if not stats:
@@ -988,15 +1077,349 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
+        build = self.info_build_version()
+
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
-        if int(self.info_build_version()[0]) < 5:
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
             if self.is_feature_present("xdr"):
                 return client_util.info_to_dict(self.info("statistics/xdr"))
 
             return client_util.info_to_dict(self.xdr_info("statistics"))
         else:
             return self.info_all_dc_statistics()
+
+    @return_exceptions
+    def info_set_config_xdr_create_dc(self, dc):
+        dcs = self.info_dcs()
+        error_message = "Failed to create XDR datacenter"
+
+        if dc in dcs:
+            raise ASInfoError(error_message, "DC already exists")
+
+        build = self.info_build_version()
+        req = "set-config:context=xdr;dc={};action=create"
+
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            req = req.replace("dc", "datacenter")
+
+        req = req.format(dc)
+        resp = self.info(req)
+
+        if resp != ASINFO_RESPONSE_OK:
+            raise ASInfoError(error_message, resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_xdr_delete_dc(self, dc):
+        dcs = self.info_dcs()
+        error_message = "Failed to delete XDR datacenter"
+
+        self.logger.debug("Found dcs: %s", dcs)
+
+        if dc not in dcs:
+            raise ASInfoError(error_message, "DC does not exist")
+
+        build = self.info_build_version()
+        req = "set-config:context=xdr;dc={};action=delete"
+
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            req = req.replace("dc", "datacenter")
+
+        req = req.format(dc)
+        resp = self.info(req)
+
+        if resp != ASINFO_RESPONSE_OK:
+            raise ASInfoError(error_message, resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_xdr_add_namespace(self, dc, namespace, rewind=None):
+        error_message = "Failed to add namespace to XDR datacenter"
+
+        build = self.info_build_version()
+        req = "set-config:context=xdr;dc={};namespace={};action=add"
+
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            req = req.replace("dc", "datacenter")
+
+        req = req.format(dc, namespace)
+
+        if rewind:
+            if rewind != "all":
+                try:
+                    int(rewind)
+                except ValueError:
+                    raise ASInfoError(
+                        error_message,
+                        'Invalid rewind. Must be int or "all"',
+                    )
+            req += ";rewind={}".format(rewind)
+
+        resp = self.info(req)
+
+        if resp != ASINFO_RESPONSE_OK:
+            raise ASInfoError(error_message, resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_xdr_remove_namespace(self, dc, namespace):
+        build = self.info_build_version()
+        req = "set-config:context=xdr;dc={};namespace={};action=remove"
+
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            req = req.replace("dc", "datacenter")
+
+        req = req.format(dc, namespace)
+        resp = self.info(req)
+
+        if resp != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to remove namespace from XDR datacenter", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_xdr_add_node(self, dc, node):
+        build = self.info_build_version()
+        req = "set-config:context=xdr;dc={};node-address-port={};action=add"
+
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            req = req.replace("dc", "datacenter")
+
+        req = req.format(dc, node)
+        resp = self.info(req)
+
+        if resp != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to add node to XDR datacenter", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_xdr_remove_node(self, dc, node):
+        build = self.info_build_version()
+        req = "set-config:context=xdr;dc={};node-address-port={};action=remove"
+
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            req = req.replace("dc", "datacenter")
+
+        req = req.format(dc, node)
+        resp = self.info(req)
+
+        if resp != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to remove node from XDR datacenter", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_xdr(self, param, value, dc=None, namespace=None):
+        if namespace and not dc:
+            raise ArgumentError("Namespace must be accompanied by a dc.")
+
+        req = "set-config:context=xdr;{}={}".format(param, value)
+
+        if dc:
+            build = self.info_build_version()
+
+            if version.LooseVersion(build) < version.LooseVersion(
+                constants.SERVER_NEW_XDR5_VERSION
+            ):
+                req += ";datacenter={}".format(dc)
+            else:
+                req += ";dc={}".format(dc)
+
+        if namespace:
+            req += ";namespace={}".format(namespace)
+
+        resp = self.info(req)
+
+        if resp != ASINFO_RESPONSE_OK:
+            context = ["xdr"]
+
+            if dc is not None:
+                context.append("dc")
+
+            if namespace is not None:
+                context.append("namespace")
+
+            raise ASInfoConfigError(
+                "Failed to set XDR configuration parameter {} to {}".format(
+                    param, value
+                ),
+                resp,
+                self,
+                context,
+                param,
+                value,
+            )
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_logs(self):
+        id_file_dict = {}
+        ls = client_util.info_to_list(self.info("logs"))
+
+        for pair in ls:
+            id, file = pair.split(":")
+            id_file_dict[file] = id
+
+        return id_file_dict
+
+    @return_exceptions
+    def info_set_config_logging(self, file, param, value):
+        logs = self.info_logs()
+        error_message = "Failed to set logging configuration parameter {} to {}"
+
+        if file not in logs:
+            raise ASInfoError(
+                error_message.format(param, value),
+                "{} does not exist".format(file),
+            )
+
+        resp = self.info("log-set:id={};{}={}".format(logs[file], param, value))
+
+        if resp != ASINFO_RESPONSE_OK:
+            raise ASInfoConfigError(
+                error_message.format(param, value),
+                resp,
+                self,
+                ["logging"],
+                param,
+                value,
+            )
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_service(self, param, value):
+        resp = self.info("set-config:context=service;{}={}".format(param, value))
+
+        if resp != ASINFO_RESPONSE_OK:
+            raise ASInfoConfigError(
+                "Failed to set service configuration parameter {} to {}".format(
+                    param, value
+                ),
+                resp,
+                self,
+                ["service"],
+                param,
+                value,
+            )
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    @util.logthis
+    def info_set_config_namespace(
+        self, param, value, namespace, set_=None, subcontext=None
+    ):
+        new_param = param
+        if subcontext and subcontext != "storage-engine":
+            delimiter = "."
+
+            if subcontext == "geo2dsphere-within":
+                delimiter = "-"
+
+            new_param = delimiter.join([subcontext, param])
+
+        req = "set-config:context=namespace;id={};{}={}".format(
+            namespace, new_param, value
+        )
+
+        if set_:
+            req += ";set={}".format(set_)
+
+        resp = self.info(req)
+
+        if resp != ASINFO_RESPONSE_OK:
+            context = ["namespace"]
+
+            if set_ is not None:
+                context.append("set")
+
+            if subcontext is not None:
+                context.append(subcontext)
+
+            raise ASInfoConfigError(
+                "Failed to set namespace configuration parameter {} to {}".format(
+                    param, value
+                ),
+                resp,
+                self,
+                context,
+                param,
+                value,
+            )
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_network(self, param, value, subcontext):
+        new_param = ".".join([subcontext, param])
+        resp = self.info("set-config:context=network;{}={}".format(new_param, value))
+
+        if resp != ASINFO_RESPONSE_OK:
+            context = ["network"]
+
+            if subcontext is not None:
+                context.append(subcontext)
+
+            raise ASInfoConfigError(
+                "Failed to set network configuration parameter {} to {}".format(
+                    param, value
+                ),
+                resp,
+                self,
+                context,
+                param,
+                value,
+            )
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_set_config_security(self, param, value, subcontext=None):
+        new_param = param
+        if subcontext:
+            new_param = ".".join([subcontext, param])
+
+        resp = self.info("set-config:context=security;{}={}".format(new_param, value))
+
+        if resp != ASINFO_RESPONSE_OK:
+            context = ["security"]
+
+            if subcontext is not None:
+                context.append(subcontext)
+
+            raise ASInfoConfigError(
+                "Failed to set security configuration parameter {} to {}".format(
+                    param, value
+                ),
+                resp,
+                self,
+                context,
+                param,
+                value,
+            )
+
+        return ASINFO_RESPONSE_OK
 
     @return_exceptions
     def info_get_config(self, stanza="", namespace="", namespace_id=""):
@@ -1008,7 +1431,7 @@ class Node(object):
         Returns:
         dict -- stanza --> [namespace] --> param --> value
         """
-        xdr_major_version = int(self.info_build_version()[0])
+        build = self.info_build_version()
         config = {}
         if stanza == "namespace":
             if namespace != "":
@@ -1036,7 +1459,9 @@ class Node(object):
 
         elif stanza == "" or stanza == "service":
             config = client_util.info_to_dict(self.info("get-config:"))
-        elif stanza == "xdr" and xdr_major_version >= 5:
+        elif stanza == "xdr" and version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
             xdr_config = {}
             xdr_config["dc_configs"] = {}
             xdr_config["ns_configs"] = {}
@@ -1088,18 +1513,18 @@ class Node(object):
         if not self.localhost:
             return config
 
-        if not self.conf_data:
+        if not self.as_conf_data:
             conf_path = "/etc/aerospike/aerospike.conf"
-            self.conf_data = conf_parser.parse_file(conf_path)
-            if "namespace" in self.conf_data:
-                for ns in self.conf_data["namespace"].keys():
-                    if "service" in self.conf_data["namespace"][ns]:
-                        self.conf_data["namespace"][ns] = self.conf_data["namespace"][
-                            ns
-                        ]["service"]
+            self.as_conf_data = conf_parser.parse_file(conf_path)
+            if "namespace" in self.as_conf_data:
+                for ns in self.as_conf_data["namespace"].keys():
+                    if "service" in self.as_conf_data["namespace"][ns]:
+                        self.as_conf_data["namespace"][ns] = self.as_conf_data[
+                            "namespace"
+                        ][ns]["service"]
 
         try:
-            config = self.conf_data[stanza]
+            config = self.as_conf_data[stanza]
 
         except Exception:
             pass
@@ -1191,7 +1616,7 @@ class Node(object):
         ns = None
         start_time = None
         columns = []
-        ns_hist_pattern = "{([A-Za-z_\d-]+)}-([A-Za-z_-]+)"
+        ns_hist_pattern = r"{([A-Za-z_\d-]+)}-([A-Za-z_-]+)"
         total_key = "total"
 
         while tdata != []:
@@ -1431,10 +1856,13 @@ class Node(object):
                     self.xdr_info("get-config:context=xdr")
                 )
 
-            dcs = []
+            if xdr_data is None:
+                return []
 
-            if xdr_data:
-                dcs = xdr_data.get("dcs", "")
+            dcs = xdr_data.get("dcs", "")
+
+            if dcs == "":
+                return []
 
             return dcs.split(",")
 
@@ -1490,6 +1918,7 @@ class Node(object):
         return stats
 
     @return_exceptions
+    @util.logthis
     def info_udf_list(self):
         """
         Get list of UDFs stored on the node.
@@ -1524,22 +1953,28 @@ class Node(object):
         )
         resp = self.info(command)
 
-        if "error" in resp:
-            message = resp.split("=")[1]
-            return message
+        if resp.lower() not in {ASINFO_RESPONSE_OK, ""}:
+            raise ASInfoError("Failed to add UDF", resp)
 
-        return "ok"
+        return ASINFO_RESPONSE_OK
 
     @return_exceptions
     def info_udf_remove(self, udf_file_name):
+        existing_udfs = self.info_udf_list()
+        existing_names = existing_udfs.keys()
+
+        # Server does not check if udf exists
+        if udf_file_name not in existing_names:
+            raise ASInfoError(
+                "Failed to remove UDF {}".format(udf_file_name), "UDF does not exist"
+            )
         command = "udf-remove:filename=" + udf_file_name + ";"
         resp = self.info(command)
 
-        if "error" in resp:
-            message = resp.split("=")[1]
-            return message
+        if resp.lower() not in {ASINFO_RESPONSE_OK, ""}:
+            raise ASInfoError("Failed to remove UDF {}".format(udf_file_name), resp)
 
-        return "ok"
+        return ASINFO_RESPONSE_OK
 
     @return_exceptions
     def info_roster(self):
@@ -1743,11 +2178,10 @@ class Node(object):
         command += "indexdata={},{}".format(bin_name, bin_type)
         resp = self.info(command)
 
-        if "FAIL" in resp:
-            message = resp.split(":")[-1]
-            return message.strip()
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to create sindex {}".format(index_name), resp)
 
-        return "ok"
+        return ASINFO_RESPONSE_OK
 
     @return_exceptions
     def info_sindex_delete(self, index_name, namespace, set_=None):
@@ -1762,11 +2196,10 @@ class Node(object):
 
         resp = self.info(command)
 
-        if "FAIL" in resp:
-            message = resp.split(":")[-1]
-            return message.strip()
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to delete sindex {}".format(index_name), resp)
 
-        return "ok"
+        return ASINFO_RESPONSE_OK
 
     @return_exceptions
     def info_build_version(self):
@@ -1778,13 +2211,141 @@ class Node(object):
         """
         return self.info("build")
 
+    def _use_new_truncate_command(self):
+        """
+        A new truncate-namespace and truncate-namespace-undo was added to some
+        4.3.x, 4.4.x, and 4.5.x but not all
+        """
+        build = self.info_build_version()
+
+        for version_ in constants.SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS:
+            if version_[1] is not None:
+                if version.LooseVersion(version_[0]) <= version.LooseVersion(
+                    build
+                ) and version.LooseVersion(build) < version.LooseVersion(version_[1]):
+                    return True
+            else:
+                if version.LooseVersion(version_[0]) <= version.LooseVersion(build):
+                    return True
+
+        return False
+
+    @return_exceptions
+    def info_truncate(self, namespace, set_=None, lut=None):
+        """
+        Truncate a namespace or set. If namespace and set are provided a set will be
+        truncated. Deletes every record in the namespace/set whose last update time (lut)
+        is older than the given time.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        req = None
+        error_message = None
+
+        if set_ is not None:
+            req = "truncate:namespace={};set={}".format(namespace, set_)
+            error_message = "Failed to truncate namespace {} set {}".format(
+                namespace, set_
+            )
+        else:
+            error_message = "Failed to truncate namespace {}".format(namespace)
+            if self._use_new_truncate_command():
+                req = "truncate-namespace:namespace={}".format(namespace)
+            else:
+                req = "truncate:namespace={}".format(namespace)
+
+        if lut is not None:
+            req += ";lut={}".format(lut)
+
+        resp = self.info(req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError(error_message, resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_truncate_undo(self, namespace, set_=None):
+        """
+        Undo truncation of a namespace or set.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        req = None
+        error_message = None
+
+        if set_ is not None:
+            req = "truncate-undo:namespace={};set={}".format(namespace, set_)
+            error_message = "Failed to undo truncation of namespace {} set {}".format(
+                namespace, set_
+            )
+        else:
+            error_message = "Failed to undo truncation of namespace {}".format(
+                namespace
+            )
+            if self._use_new_truncate_command():
+                req = "truncate-namespace-undo:namespace={}".format(namespace)
+            else:
+                req = "truncate-undo:namespace={}".format(namespace)
+
+        resp = self.info(req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError(error_message, resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_recluster(self):
+        """
+        Force the cluster to advance the cluster key and rebalance.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        resp = self.info("recluster:")
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to recluster", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_quiesce(self):
+        """
+        Cause a node to avoid participating as a replica after the next recluster event.
+        Quiescing and reclustering before removing a node from the cluster prevents
+        client timeouts that may otherwise happen when a node drops from the cluster.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        resp = self.info("quiesce:")
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to quiesce", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_quiesce_undo(self):
+        """
+        Revert the effects of the quiesce on the next recluster event.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        resp = self.info("quiesce-undo:")
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to undo quiesce", resp)
+
+        return ASINFO_RESPONSE_OK
+
     ############################################################################
     #
     #                      Admin (Security Protocol) API
     #
     ############################################################################
 
-    @util.logthis("asadm", logging.DEBUG)
+    @util.logthis
     def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port
@@ -1822,9 +2383,11 @@ class Node(object):
         password: string (un-hashed)
         roles: list[string]
 
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.create_user, (user, password, roles), self.ip)
+        return self._admin_cadmin(
+            ASSocket.create_user, (user, password, roles), self.ip
+        )
 
     @return_exceptions
     def admin_delete_user(self, user):
@@ -1832,9 +2395,9 @@ class Node(object):
         Delete user.
         user: string
 
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.delete_user, [user], self.ip)
+        return self._admin_cadmin(ASSocket.delete_user, [user], self.ip)
 
     @return_exceptions
     def admin_set_password(self, user, password):
@@ -1842,9 +2405,9 @@ class Node(object):
         Set user password.
         user: string
         password: string (un-hashed)
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.set_password, (user, password), self.ip)
+        return self._admin_cadmin(ASSocket.set_password, (user, password), self.ip)
 
     @return_exceptions
     def admin_change_password(self, user, old_password, new_password):
@@ -1853,9 +2416,9 @@ class Node(object):
         user: string
         old_password: string (un-hashed)
         new_password: string (un-hashed)
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(
+        return self._admin_cadmin(
             ASSocket.change_password, (user, old_password, new_password), self.ip
         )
 
@@ -1865,9 +2428,9 @@ class Node(object):
         Grant roles to user.
         user: string
         roles: list[string]
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.grant_roles, (user, roles), self.ip)
+        return self._admin_cadmin(ASSocket.grant_roles, (user, roles), self.ip)
 
     @return_exceptions
     def admin_revoke_roles(self, user, roles):
@@ -1875,9 +2438,9 @@ class Node(object):
         Remove roles from user.
         user: string
         roles: list[string]
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.revoke_roles, (user, roles), self.ip)
+        return self._admin_cadmin(ASSocket.revoke_roles, (user, roles), self.ip)
 
     @return_exceptions
     def admin_query_users(self):
@@ -1922,9 +2485,9 @@ class Node(object):
         """
         Delete role.
         role: string
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
+        return self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
 
     @return_exceptions
     def admin_add_privileges(self, role, privileges):
@@ -1932,9 +2495,9 @@ class Node(object):
         Add privileges to role.
         role: string
         privileges: list[string]
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.add_privileges, (role, privileges), self.ip)
+        return self._admin_cadmin(ASSocket.add_privileges, (role, privileges), self.ip)
 
     @return_exceptions
     def admin_delete_privileges(self, role, privileges):
@@ -1942,9 +2505,11 @@ class Node(object):
         Delete privileges from role.
         role: string
         privileges: list[string]
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.delete_privileges, (role, privileges), self.ip)
+        return self._admin_cadmin(
+            ASSocket.delete_privileges, (role, privileges), self.ip
+        )
 
     @return_exceptions
     def admin_set_whitelist(self, role, whitelist):
@@ -1952,18 +2517,18 @@ class Node(object):
         Set whitelist for a role.
         role: string
         whitelist: list[string]
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.set_whitelist, (role, whitelist), self.ip)
+        return self._admin_cadmin(ASSocket.set_whitelist, (role, whitelist), self.ip)
 
     @return_exceptions
     def admin_delete_whitelist(self, role):
         """
         Delete whitelist for a role.
         role: string
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(ASSocket.delete_whitelist, [role], self.ip)
+        return self._admin_cadmin(ASSocket.delete_whitelist, [role], self.ip)
 
     @return_exceptions
     def admin_set_quotas(self, role, read_quota=None, write_quota=None):
@@ -2146,7 +2711,11 @@ class Node(object):
         sys_stats = {}
 
         self.logger.debug(
-            ("{}._get_localhost_system_statistics cmds={}").format(self.ip, commands,),
+            ("%s._get_localhost_system_statistics cmds=%s"),
+            (
+                self.ip,
+                commands,
+            ),
             stackinfo=True,
         )
 
@@ -2156,8 +2725,10 @@ class Node(object):
 
             for cmd in cmds:
                 self.logger.debug(
-                    ("{}._get_localhost_system_statistics running cmd={}").format(
-                        self.ip, cmd,
+                    ("%s._get_localhost_system_statistics running cmd=%s"),
+                    (
+                        self.ip,
+                        cmd,
                     ),
                     stackinfo=True,
                 )
@@ -2183,164 +2754,23 @@ class Node(object):
         return s
 
     @return_exceptions
-    def _spawn_remote_system(self, ip, user, pwd, ssh_key=None, port=None):
-
-        terminal_prompt_msg = "(?i)terminal type"
-        ssh_newkey_msg = "(?i)are you sure you want to continue connecting"
-        connection_closed_msg = "(?i)connection closed by remote host"
-        permission_denied_msg = "(?i)permission denied"
-        pwd_passphrase_msg = "(?i)(?:password)|(?:passphrase for key)"
-
-        terminal_type = "vt100"
-
-        ssh_options = "-o 'NumberOfPasswordPrompts=1' "
-
-        if port:
-            ssh_options += " -p %s" % (str(port))
-
-        if ssh_key is not None:
-            try:
-                os.path.isfile(ssh_key)
-            except Exception:
-                raise Exception("private ssh key %s does not exist" % (str(ssh_key)))
-
-            ssh_options += " -i %s" % (ssh_key)
-
-        s = pexpect.spawn("ssh %s -l %s %s" % (ssh_options, str(user), str(ip)))
-        i = s.expect(
-            [
-                ssh_newkey_msg,
-                self.remote_system_command_prompt,
-                pwd_passphrase_msg,
-                permission_denied_msg,
-                terminal_prompt_msg,
-                pexpect.TIMEOUT,
-                connection_closed_msg,
-                pexpect.EOF,
-            ],
-            timeout=10,
-        )
-
-        if i == 0:
-            # In this case SSH does not have the public key cached.
-            s.sendline("yes")
-            i = s.expect(
-                [
-                    ssh_newkey_msg,
-                    self.remote_system_command_prompt,
-                    pwd_passphrase_msg,
-                    permission_denied_msg,
-                    terminal_prompt_msg,
-                    pexpect.TIMEOUT,
-                ]
-            )
-        if i == 2:
-            # password or passphrase
-            if pwd is None:
-                raise Exception("Wrong SSH Password None.")
-
-            s.sendline(pwd)
-            i = s.expect(
-                [
-                    ssh_newkey_msg,
-                    self.remote_system_command_prompt,
-                    pwd_passphrase_msg,
-                    permission_denied_msg,
-                    terminal_prompt_msg,
-                    pexpect.TIMEOUT,
-                ]
-            )
-        if i == 4:
-            s.sendline(terminal_type)
-            i = s.expect(
-                [
-                    ssh_newkey_msg,
-                    self.remote_system_command_prompt,
-                    pwd_passphrase_msg,
-                    permission_denied_msg,
-                    terminal_prompt_msg,
-                    pexpect.TIMEOUT,
-                ]
-            )
-        if i == 7:
-            s.close()
-            return None
-
-        if i == 0:
-            # twice not expected
-            s.close()
-            return None
-        elif i == 1:
-            pass
-        elif i == 2:
-            # password prompt again means input password is wrong
-            s.close()
-            return None
-        elif i == 3:
-            # permission denied means input password is wrong
-            s.close()
-            return None
-        elif i == 4:
-            # twice not expected
-            s.close()
-            return None
-        elif i == 5:
-            # timeout
-            # Two possibilities
-            # 1. couldn't login
-            # 2. couldn't match shell prompt
-            # safe option is to pass
-            pass
-        elif i == 6:
-            # connection closed by remote host
-            s.close()
-            return None
-        else:
-            # unexpected
-            s.close()
-            return None
-
-        self.remote_system_command_prompt = r"\[PEXPECT\][\$\#] "
-        s.sendline("unset PROMPT_COMMAND")
-
-        # sh style
-        s.sendline(r"PS1='[PEXPECT]\$ '")
-        i = s.expect([pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10)
-        if i == 0:
-            # csh-style.
-            s.sendline(r"set prompt='[PEXPECT]\$ '")
-            i = s.expect(
-                [pexpect.TIMEOUT, self.remote_system_command_prompt], timeout=10
-            )
-
-            if i == 0:
-                return None
-
-        return s
-
-    @return_exceptions
     def _create_ssh_connection(self, ip, user, pwd, ssh_key=None, port=None):
         if user is None and pwd is None and ssh_key is None:
             raise Exception("Insufficient credentials to connect.")
 
-        if PEXPECT_VERSION == NEW_MODULE:
+        if PEXPECT_VERSION == PXSSH_NEW_MODULE:
             return self._login_remote_system(ip, user, pwd, ssh_key, port)
-
-        if PEXPECT_VERSION == OLD_MODULE:
-            return self._spawn_remote_system(ip, user, pwd, ssh_key, port)
 
         return None
 
     @return_exceptions
     def _execute_remote_system_command(self, conn, cmd):
-        if not conn or not cmd or PEXPECT_VERSION == NO_MODULE:
+        if not conn or not cmd or PEXPECT_VERSION == PXSSH_NO_MODULE:
             return None
 
         conn.sendline(cmd)
-        if PEXPECT_VERSION == NEW_MODULE:
+        if PEXPECT_VERSION == PXSSH_NEW_MODULE:
             conn.prompt()
-        elif PEXPECT_VERSION == OLD_MODULE:
-            conn.expect(self.remote_system_command_prompt)
         else:
             return None
         return conn.before
@@ -2360,19 +2790,11 @@ class Node(object):
 
     @return_exceptions
     def _stop_ssh_connection(self, conn):
-        if not conn or PEXPECT_VERSION == NO_MODULE:
+        if not conn or PEXPECT_VERSION == PXSSH_NO_MODULE:
             return
 
-        if PEXPECT_VERSION == NEW_MODULE:
+        if PEXPECT_VERSION == PXSSH_NEW_MODULE:
             conn.logout()
-            if conn:
-                conn.close()
-        elif PEXPECT_VERSION == OLD_MODULE:
-            conn.sendline("exit")
-            i = conn.expect([pexpect.EOF, "(?i)there are stopped jobs"])
-            if i == 1:
-                conn.sendline("exit")
-                conn.expect(pexpect.EOF)
             if conn:
                 conn.close()
 
@@ -2382,7 +2804,7 @@ class Node(object):
     def _get_remote_host_system_statistics(self, commands):
         sys_stats = {}
 
-        if PEXPECT_VERSION == NO_MODULE:
+        if PEXPECT_VERSION == PXSSH_NO_MODULE:
             self.logger.warning(
                 "Ignoring system statistics collection from node %s. No module named pexpect."
                 % (str(self.ip))
@@ -2484,10 +2906,11 @@ class Node(object):
         """
         self.logger.debug(
             (
-                "{}.info_system_statistics default_user={} default_pws={}"
-                "default_ssh_key={} default_ssh_port={} credential_file={}"
-                "commands={} collect_remote_data={}"
-            ).format(
+                "%s.info_system_statistics default_user=%s default_pws=%s"
+                "default_ssh_key=%s default_ssh_port=%s credential_file=%s"
+                "commands=%s collect_remote_data=%s"
+            ),
+            (
                 self.ip,
                 default_user,
                 default_pwd,
@@ -2519,3 +2942,26 @@ class Node(object):
             return self._get_remote_host_system_statistics(cmd_list)
 
         return {}
+
+    ############################################################################
+    #
+    #                            Configuration
+    #
+    ############################################################################
+    @return_exceptions
+    def config_subcontext(self, context, dynamic=True):
+        return self.conf_schema_handler.get_subcontext(context)
+
+    @return_exceptions
+    def config_params(self, context, dynamic=True):
+        return self.conf_schema_handler.get_params(context, dynamic=dynamic)
+
+    @return_exceptions
+    def config_types(self, context, params):
+        return self.conf_schema_handler.get_types(context, params)
+
+    @return_exceptions
+    def config_type(self, context, param):
+        param_dict = self.conf_schema_handler.get_types(context, param)
+
+        return param_dict[param]

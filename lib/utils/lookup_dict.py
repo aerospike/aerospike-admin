@@ -22,7 +22,7 @@ class LookupDict:
     def __init__(self, mode=None):
         self._kv = {}
 
-        if mode == None:
+        if mode is None:
             mode = self.LOOKUP_MODE
 
         self.mode = mode

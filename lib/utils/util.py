@@ -23,26 +23,24 @@ import threading
 import logging
 
 
-def logthis(log, level):
-    logger = logging.getLogger(log)
+def logthis(func):
+    # def _decorator(func):
+    def _decorated(*arg, **kwargs):
+        logger = logging.getLogger("asadm")
+        level = logging.DEBUG
+        logger.log(level, "calling '%s'(%r,%r)", func.__name__, arg, kwargs)
+        ret = func(*arg, **kwargs)
+        logger.log(
+            level,
+            "called '%s', returned value: %r",
+            func.__name__,
+            ret,
+        )
+        return ret
 
-    def _decorator(func):
-        def _decorated(*arg, **kwargs):
-            logger.log(level, "calling '%s'(%r,%r)", func.__name__, arg, kwargs)
-            ret = func(*arg, **kwargs)
-            logger.log(
-                level,
-                "called '%s'(%r,%r) got return value: %r",
-                func.__name__,
-                arg,
-                kwargs,
-                ret,
-            )
-            return ret
+    return _decorated
 
-        return _decorated
-
-    return _decorator
+    # return _decorator
 
 
 class Future:
@@ -216,7 +214,9 @@ def get_arg_and_delete_from_mods(line, arg, return_type, default, modifiers, mod
             keys=modifiers,
             d=mods,
         )
+
         line.remove(arg)
+
         if val:
             line.remove(str(val))
     except Exception:

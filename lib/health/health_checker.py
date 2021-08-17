@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from distutils.version import LooseVersion
+
 import re
 
 from lib.health.constants import (
@@ -27,6 +27,7 @@ from lib.health.parser import HealthParser
 from lib.health.query import QUERIES
 from lib.health.util import is_health_parser_variable
 from lib.utils.util import parse_queries
+from lib.utils import version
 from lib.view import terminal
 
 VERSION_CONSTRAINT_PATTERN = "SET CONSTRAINT VERSION(.+)"
@@ -132,53 +133,53 @@ class HealthChecker:
 
         if re.search(vp_l_e, v_str):
             v = re.search(vp_l_e, v_str).group(1)
-            self.version_checker_fn = lambda x: LooseVersion(x.strip()) <= LooseVersion(
-                v.strip()
-            )
+            self.version_checker_fn = lambda x: version.LooseVersion(
+                x.strip()
+            ) <= version.LooseVersion(v.strip())
 
         elif re.search(vp_l, v_str):
             v = re.search(vp_l, v_str).group(1)
-            self.version_checker_fn = lambda x: LooseVersion(x.strip()) < LooseVersion(
-                v.strip()
-            )
+            self.version_checker_fn = lambda x: version.LooseVersion(
+                x.strip()
+            ) < version.LooseVersion(v.strip())
 
         elif re.search(vp_g_e, v_str):
             v = re.search(vp_g_e, v_str).group(1)
-            self.version_checker_fn = lambda x: LooseVersion(x.strip()) >= LooseVersion(
-                v.strip()
-            )
+            self.version_checker_fn = lambda x: version.LooseVersion(
+                x.strip()
+            ) >= version.LooseVersion(v.strip())
 
         elif re.search(vp_g, v_str):
             v = re.search(vp_g, v_str).group(1)
-            self.version_checker_fn = lambda x: LooseVersion(x.strip()) > LooseVersion(
-                v.strip()
-            )
+            self.version_checker_fn = lambda x: version.LooseVersion(
+                x.strip()
+            ) > version.LooseVersion(v.strip())
 
         elif re.search(vp_e, v_str):
             v = re.search(vp_e, v_str).group(1).strip()
             if v.lower() == "all":
                 self.version_checker_fn = None
             else:
-                self.version_checker_fn = lambda x: LooseVersion(
+                self.version_checker_fn = lambda x: version.LooseVersion(
                     x.strip()
-                ) == LooseVersion(v)
+                ) == version.LooseVersion(v)
         elif re.search(vp_in, v_str):
             v = re.search(vp_in, v_str).group(1).strip()
             v = [i.strip() for i in v.split(",")]
             if "ALL" in v or "all" in v:
                 self.version_checker_fn = None
             else:
-                self.version_checker_fn = lambda x: LooseVersion(x.strip()) in [
-                    LooseVersion(i) for i in v
+                self.version_checker_fn = lambda x: version.LooseVersion(x.strip()) in [
+                    version.LooseVersion(i) for i in v
                 ]
         else:
             v = v_str.strip()
             if v.lower() == "all":
                 self.version_checker_fn = None
             else:
-                self.version_checker_fn = lambda x: LooseVersion(
+                self.version_checker_fn = lambda x: version.LooseVersion(
                     x.strip()
-                ) == LooseVersion(v.strip())
+                ) == version.LooseVersion(v.strip())
 
     def _filter_nodes_to_remove(self, data):
         """

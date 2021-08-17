@@ -33,16 +33,20 @@ class ShowStatisticsControllerTest(unittest.TestCase):
         ).start()
         self.root_controller = LiveClusterRootController()
         self.controller = ShowStatisticsController()
+        self.controller.mods = (
+            {}
+        )  # For some reason they are being polluted from other tests
         self.getter_mock = patch(
             "lib.live_cluster.show_controller.GetStatisticsController"
         ).start()
         self.controller.getter = self.getter_mock
-        self.mods = {"like": [], "with": [], "for": [], "line": []}
+        self.mods = {}
 
         self.addCleanup(patch.stopall)
 
     def test_do_service_default(self, view_mock):
         line = ["service"]
+        mods = {"like": [], "with": [], "for": [], "line": []}
         stats = {"service": "stats"}
         self.getter_mock.get_service.return_value = stats
 
@@ -57,12 +61,12 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             show_total=False,
             title_every_nth=0,
             flip_output=False,
-            **self.mods,
+            **mods,
         )
 
     def test_do_service_modifiers(self, view_mock):
         line = ["service", "with", "1.2.3.4", "like", "foo", "for", "bar"]
-        self.mods.update({"like": ["foo"], "with": ["1.2.3.4"], "for": ["bar"]})
+        mods = {"like": ["foo"], "with": ["1.2.3.4"], "for": ["bar"], "line": []}
         stats = {"service": "stats"}
         self.getter_mock.get_service.return_value = stats
 
@@ -76,12 +80,12 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             show_total=False,
             title_every_nth=0,
             flip_output=False,
-            **self.mods,
+            **mods,
         )
 
     def test_do_service_args(self, view_mock):
         line = ["service", "-t", "-r", "17", "-flip"]
-        self.mods.update({"line": line[1:]})
+        mods = {"like": [], "with": [], "for": [], "line": line[1:]}
         stats = {"service": "stats"}
         self.getter_mock.get_service.return_value = stats
 
@@ -95,7 +99,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             show_total=True,
             title_every_nth=17,
             flip_output=True,
-            **self.mods,
+            **mods,
         )
 
     def test_do_sindex(self, view_mock):
@@ -115,7 +119,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             "17",
             "-flip",
         ]
-        self.mods.update({"like": [like], "with": [node_addr], "for": [for_]})
+        mods = {"like": [like], "with": [node_addr], "for": [for_], "line": []}
         stats = {"sindex1": "stats1", "sindex2": "stats2", "sindex3": "stats3"}
         self.getter_mock.get_sindex.return_value = stats
 
@@ -126,6 +130,8 @@ class ShowStatisticsControllerTest(unittest.TestCase):
         )
         self.assertEqual(view_mock.show_stats.call_count, 3)
 
+        print(self.controller.mods)
+
         for ns_set_sindex in stats:
             view_mock.show_stats.assert_any_call(
                 "{} Sindex Statistics".format(ns_set_sindex),
@@ -134,7 +140,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
                 show_total=True,
                 title_every_nth=17,
                 flip_output=True,
-                **self.mods,
+                **mods,
             )
 
     def test_do_sets(self, view_mock):
@@ -154,7 +160,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             "17",
             "-flip",
         ]
-        self.mods.update({"like": [like], "with": [node_addr], "for": [for_]})
+        mods = {"like": [like], "with": [node_addr], "for": [for_], "line": []}
         stats = {
             ("ns1", "set1"): "stats1",
             ("ns2", "set2"): "stats2",
@@ -175,7 +181,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
                 show_total=True,
                 title_every_nth=17,
                 flip_output=True,
-                **self.mods,
+                **mods,
             )
 
     def test_do_bins(self, view_mock):
@@ -195,7 +201,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             "17",
             "-flip",
         ]
-        self.mods.update({"like": [like], "with": [node_addr], "for": [for_]})
+        mods = {"like": [like], "with": [node_addr], "for": [for_], "line": []}
         stats = {
             "ns1": "stats1",
             "ns2": "stats2",
@@ -216,73 +222,8 @@ class ShowStatisticsControllerTest(unittest.TestCase):
                 show_total=True,
                 title_every_nth=17,
                 flip_output=True,
-                **self.mods,
+                **mods,
             )
-
-    # def test_do_xdr(self, view_mock):
-    #     node_addr = ["1.1.1.1", "2.2.2.2", "4.4.4.4"]
-    #     like = "foo"
-    #     for_ = ["dc2", "dc3"]
-    #     line = [
-    #         "xdr",
-    #         "with",
-    #         *node_addr,
-    #         "like",
-    #         like,
-    #         "for",
-    #         *for_,
-    #         "-t",
-    #         "-r",
-    #         "17",
-    #         "-flip",
-    #     ]
-    #     self.mods.update({"like": [like], "with": [node_addr], "for": [for_]})
-    #     stats = {
-    #         "1.1.1.1": {"dc1": "stats1", "dc2": "stats2", "dc3": "stats3"},
-    #         "2.2.2.2": {"dc1": "stats14", "dc2": "stats5", "dc3": "stats6"},
-    #         "3.3.3.3": {"dc1": "stats7", "dc2": "stats8", "dc3": "stats9"},
-    #         "4.4.4.4": {"dc1": "stats11", "dc2": "stats12", "dc3": "stats15"},
-    #     }
-    #     self.getter_mock.get_bins.return_value = stats
-    #     self.cluster_mock.info_build_version.return_value = {
-    #         "1.1.1.1": "5.0.0",
-    #         "2.2.2.2": "4.9.1",
-    #         "3.3.3.3": "3.2.5",
-    #         "4.4.4.4": "8.10.0",
-    #     }
-    #     expected_xdr_5_stats = {
-    #         "dc1": {"1.1.1.1": {"stat1"}, "4.4.4.4": {"stat11"}},
-    #         "dc2": {"1.1.1.1": {"stat2"}, "4.4.4.4": {"stat12"}},
-    #         "dc3": {"1.1.1.1": {"stat3"}, "4.4.4.4": {"stat15"}},
-    #     }
-    #     expected_old_xdr_stats = {
-    #         "2.2.2.2": {"dc1": "stats14", "dc2": "stats5", "dc3": "stats6"},
-    #         "3.3.3.3": {"dc1": "stats7", "dc2": "stats8", "dc3": "stats9"},
-    #     }
-
-    #     self.controller.execute(line)
-
-    #     self.getter_mock.get_bins.assert_called_with(nodes=[node_addr], for_mods=[for_])
-    #     self.assertEqual(view_mock.show_stats.call_count, 4)
-    #     view_mock.show_stats.assert_any_call(
-    #         "XDR Statistics",
-    #         expected_old_xdr_stats,
-    #         self.root_controller.cluster,
-    #         show_total=True,
-    #         title_every_nth=17,
-    #         flip_output=True,
-    #         **self.mods,
-    #     )
-    #     for dc in expected_xdr_5_stats:
-    #         view_mock.show_stats.assert_any_call(
-    #             "XDR Statistics {}".format(dc),
-    #             expected_xdr_5_stats[dc],
-    #             self.root_controller.cluster,
-    #             show_total=True,
-    #             title_every_nth=17,
-    #             flip_output=True,
-    #             **self.mods,
-    #         )
 
 
 class ShowUsersControllerTest(unittest.TestCase):
@@ -301,7 +242,7 @@ class ShowUsersControllerTest(unittest.TestCase):
         ).start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
-        self.mods = {"like": [], "with": [], "for": [], "line": []}
+        self.controller.mods = {}
 
         self.addCleanup(patch.stopall)
 
@@ -357,9 +298,7 @@ class ShowUsersControllerTest(unittest.TestCase):
         self.controller.execute(["like", "admin"])
 
         self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
-        self.logger_mock.error.assert_called_with(
-            "test-message : Role or privilege violation."
-        )
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.assert_not_called()
 
     def test_raises_error(self):

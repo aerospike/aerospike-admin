@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import cmd
-import copy
 import getpass
 
 import os
@@ -49,7 +48,12 @@ class BaseLogger(logging.Logger, object):
         return super(BaseLogger, self).__init__(name, level=level)
 
     def _handle_exception(self, msg):
-        if isinstance(msg, Exception) and not isinstance(msg, ShellException):
+        if (
+            isinstance(msg, Exception)
+            and not isinstance(msg, ShellException)
+            and not isinstance(msg, info.ASProtocolError)
+            and not isinstance(msg, ASInfoError)
+        ):
             traceback.print_exc()
 
     def _print_message(self, msg, level, red_color=False, *args, **kwargs):
@@ -67,9 +71,7 @@ class BaseLogger(logging.Logger, object):
 
     def debug(self, msg, *args, **kwargs):
         if self.level <= logging.DEBUG:
-            self._print_message(
-                msg=msg, level="DEBUG", red_color=False, *args, **kwargs
-            )
+            self._log(self.level, msg, args, **kwargs)
 
     def info(self, msg, *args, **kwargs):
         if self.level <= logging.INFO:
@@ -93,11 +95,44 @@ class BaseLogger(logging.Logger, object):
         exit(1)
 
 
+class LogFormatter(logging.Formatter):
+    def __init__(self, fmt="%(levelno)s: %(msg)s"):
+        super().__init__(fmt=fmt, datefmt=None, style="%")
+
+    def format(self, record):
+        original_fmt = self._style._fmt
+
+        if record.levelno == logging.DEBUG:
+            path_split = record.pathname.split("lib")
+
+            if len(path_split) > 1:
+                record.pathname = "lib" + record.pathname.split("lib")[1]
+                self._style._fmt = (
+                    "{%(pathname)s:%(lineno)d} %(levelname)s - %(message)s"
+                )
+            else:
+                self._style._fmt = (
+                    "{%(filename)s:%(lineno)d} %(levelname)s - %(message)s"
+                )
+
+        formatter = logging.Formatter(self._style._fmt)
+        result = formatter.format(record)
+
+        self._style._fmt = original_fmt
+
+        return result
+
+
 logging.setLoggerClass(BaseLogger)
 logging.basicConfig(level=logging.WARNING)
-
 logger = logging.getLogger("asadm")
+logger.propagate = False
 logger.setLevel(logging.INFO)
+logging_handler = logging.StreamHandler()
+logging_handler.setLevel(logging.INFO)
+logging_handler.setFormatter(LogFormatter())
+logger.addHandler(logging_handler)
+
 
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
@@ -107,6 +142,7 @@ from lib.live_cluster.live_cluster_root_controller import LiveClusterRootControl
 from lib.live_cluster.client import info
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
+from lib.live_cluster.client.node import ASInfoError
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
@@ -140,7 +176,6 @@ class AerospikeShell(cmd.Cmd):
         execute_only_mode=False,
         timeout=5,
     ):
-
         # indicates shell created successfully and connected to cluster/collectinfo/logfile
         self.connected = True
         self.admin_history = ADMIN_HOME + "admin_" + str(mode).lower() + "_history"
@@ -300,7 +335,7 @@ class AerospikeShell(cmd.Cmd):
 
         command = []
         build_token = ""
-        lexer.wordchars += ".-:/_{}"
+        lexer.wordchars += ".*-:/_{}"
         for token in lexer:
             build_token += token
             if token == "-":
@@ -324,7 +359,6 @@ class AerospikeShell(cmd.Cmd):
     def precmd(
         self, line, max_commands_to_print_header=1, command_index_to_print_from=1
     ):
-
         lines = None
 
         try:
@@ -373,49 +407,6 @@ class AerospikeShell(cmd.Cmd):
                 logger.error(e)
         return ""  # line was handled by execute
 
-    def _listdir(self, root):
-        "List directory 'root' appending the path separator to subdirs."
-        res = []
-        for name in os.listdir(root):
-            path = os.path.join(root, name)
-            if os.path.isdir(path):
-                name += os.sep
-            res.append(name)
-        return res
-
-    def _complete_path(self, path=None):
-        "Perform completion of filesystem path."
-        if not path:
-            return self._listdir(".")
-        dirname, rest = os.path.split(path)
-        tmp = dirname if dirname else "."
-        res = [
-            os.path.join(dirname, p) for p in self._listdir(tmp) if p.startswith(rest)
-        ]
-        # more than one match, or single match which does not exist (typo)
-        if len(res) > 1 or not os.path.exists(path):
-            return res
-        # resolved to a single directory, so return list of files below it
-        if os.path.isdir(path):
-            return [os.path.join(path, p) for p in self._listdir(path)]
-        # exact file match terminates this completion
-        return [path + " "]
-
-    def complete_path(self, args):
-        "Completions for the 'extra' command."
-        if not args:
-            return []
-
-        if args[-1].startswith("'"):
-            names = ["'" + v for v in self._complete_path(args[-1].split("'")[-1])]
-            return names
-        if args[-1].startswith('"'):
-            names = ['"' + v for v in self._complete_path(args[-1].split('"')[-1])]
-            return names
-
-        # treat the last arg as a path and complete it
-        return self._complete_path(args[-1])
-
     def completenames(self, text, line, begidx, endidx):
         origline = line
 
@@ -443,12 +434,8 @@ class AerospikeShell(cmd.Cmd):
                         line.pop(0)
                 except Exception:
                     pass
-        line_copy = copy.deepcopy(line)
-        names = self.ctrl.complete(line)
 
-        if not names:
-            names = self.complete_path(line_copy) + [None]
-            return names
+        names = self.ctrl.complete(line)
 
         return ["%s " % n for n in names]
 
@@ -459,7 +446,7 @@ class AerospikeShell(cmd.Cmd):
         Otherwise try to call complete_<command> to get list of completions.
         """
 
-        if state >= 0:
+        if state <= 0:
             origline = readline.get_line_buffer()
             line = origline.lstrip()
             stripped = len(origline) - len(line)

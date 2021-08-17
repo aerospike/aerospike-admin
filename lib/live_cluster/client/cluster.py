@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import random
 import re
 import threading
 import logging
@@ -76,7 +77,7 @@ class Cluster(object):
 
         # self.node_lookup is a dict of (fqdn, port) -> Node
         # and (ip, port) -> Node, and node.node_id -> Node
-        self.node_lookup = LookupDict()
+        self.node_lookup = LookupDict(LookupDict.PREFIX_MODE)
 
         self._seed_nodes = set(seed_nodes)
         self._live_nodes = set()
@@ -115,7 +116,7 @@ class Cluster(object):
                 node_names[node_key] = k
             else:
                 node_names[node_key] = self.node_lookup.get_shortname(
-                    k, min_prefix_len=20, min_suffix_len=5
+                    k, min_prefix_len=22, min_suffix_len=5
                 )
 
         return node_names
@@ -128,7 +129,10 @@ class Cluster(object):
             with_nodes = set()
 
             for w in selected_nodes:
-                with_nodes.update(self.get_node(w))
+                try:
+                    with_nodes.update(self.get_node(w))
+                except KeyError:
+                    pass
 
             new_nodes = []
 
@@ -272,6 +276,8 @@ class Cluster(object):
         Find all the nodes in the cluster and add them to self.nodes.
         """
         nodes_to_add = self.find_new_nodes()
+
+        self.logger.debug("Nodes to add to cluster: %s", str(nodes_to_add))
         if not nodes_to_add or len(nodes_to_add) == 0:
             return
         try:
@@ -331,7 +337,63 @@ class Cluster(object):
             self.node_lookup[node.node_id] = node
 
     def get_node(self, node):
-        return self.node_lookup[node]
+        """
+        node: str, either a nodes ip, id, fqdn, or a prefix of them.
+        If ends with '*' then do a prefix match which can return multiple nodes.
+        If node 100% matches a known nodes (object) ip, id, or fqdn then return it.
+        If node is an ip or fqdn w/o a port number then check if there is only a single node
+        (object) with that given ip and return it.
+        """
+        if node.endswith("*"):
+            return self.node_lookup[node[0:-1]]
+
+        # Can't use "if not in self.node_lookup" here because we need to check for
+        # exact matches.
+        if node in self.node_lookup.keys():
+            return self.node_lookup[node]
+
+        node_matchs = self.node_lookup[node]
+
+        if len(node_matchs) == 1:
+            match_ip = node_matchs[0].ip
+
+            if match_ip.split(":")[0] == node:
+                return [node_matchs[0]]
+
+            match_id = node_matchs[0].fqdn
+
+            if match_id.split(":")[0] == node:
+                return [node_matchs[0]]
+
+        return []
+
+    def get_nodes(self, nodes):
+        use_nodes = []
+
+        # TODO: Make an enum to store the different nodes values
+        if nodes == "all":
+            use_nodes = list(self.nodes.values())
+        elif nodes == "random":
+            randint = random.randint(0, len(self.nodes) - 1)
+            use_nodes = [list(self.nodes.values())[randint]]
+        elif nodes == "principal":
+            principal = self.get_expected_principal()
+            use_nodes = self.get_node(principal)
+
+        elif isinstance(nodes, list):
+            for node in nodes:
+                try:
+                    node_list = self.get_node(node)
+                    if isinstance(node_list, list):
+                        use_nodes.extend(node_list)
+                    else:
+                        use_nodes.append(node_list)
+                except Exception:  # Ignore ambiguous and key errors
+                    continue
+        else:
+            raise TypeError("nodes should be 'all' or list found %s" % type(nodes))
+
+        return use_nodes
 
     def _register_node(self, addr_port_tls):
         if not addr_port_tls:
@@ -464,21 +526,8 @@ class Cluster(object):
         if self.need_to_refresh_cluster():
             self._refresh_cluster()
 
-        if nodes == "all":
-            use_nodes = list(self.nodes.values())
-        elif isinstance(nodes, list):
-            use_nodes = []
-            for node in nodes:
-                try:
-                    node_list = self.get_node(node)
-                    if isinstance(node_list, list):
-                        use_nodes.extend(self.get_node(node))
-                    else:
-                        use_nodes.append(self.get_node(node))
-                except Exception:  # Ignore ambiguous and key errors
-                    continue
-        else:
-            raise TypeError("nodes should be 'all' or list found %s" % type(nodes))
+        use_nodes = self.get_nodes(nodes)
+
         if len(use_nodes) == 0:
             raise IOError("Unable to find any Aerospike nodes")
         return dict(
@@ -525,7 +574,7 @@ class Cluster(object):
         return ip_map
 
     def __getattr__(self, name):
-        regex = re.compile("^info.*$|^xdr.*$|^admin.*$")
+        regex = re.compile("^info.*$|^xdr.*$|^admin.*$|^config.*$")
         if regex.match(name):
 
             def info_func(*args, **kwargs):

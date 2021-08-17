@@ -14,12 +14,13 @@
 
 import datetime
 import locale
+import logging
 import sys
 import time
 from io import StringIO
-from collections import OrderedDict
 from pydoc import pipepager
 
+from lib.live_cluster.client.node import ASInfoError
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
 from lib.utils import file_size, constants, util
@@ -35,6 +36,7 @@ H_width = 80
 class CliView(object):
     NO_PAGER, LESS, MORE, SCROLL = range(4)
     pager = NO_PAGER
+    logger = logging.getLogger("asadm")
 
     @staticmethod
     def print_result(out):
@@ -335,13 +337,21 @@ class CliView(object):
 
         for hist, nodes_data in orig_latency.items():
             for node, node_data in nodes_data.items():
-                node_latency = latency[node] = latency.get(node, OrderedDict())
+                node_latency = latency[node] = latency.get(node, {})
 
-                for ns, ns_data in node_data["namespace"].items():
-                    for slice_id, values in enumerate(ns_data["values"]):
-                        node_latency[(ns, hist, slice_id)] = OrderedDict(
-                            zip(ns_data["columns"], values)
-                        )
+                if "namespace" in node_data:
+                    for ns, ns_data in node_data["namespace"].items():
+                        for slice_id, values in enumerate(ns_data["values"]):
+                            node_latency[(ns, hist, slice_id)] = dict(
+                                zip(ns_data["columns"], values)
+                            )
+                elif "total" in node_data:
+                    # batch-index is not under 'namespace'
+                    hist_data = node_data["total"]
+                    for slice_id, values in enumerate(hist_data["values"]):
+                        node_latency[
+                            (templates.show_latency_sheet.no_entry, hist, slice_id)
+                        ] = dict(zip(hist_data["columns"], values))
 
         return latency
 
@@ -423,7 +433,9 @@ class CliView(object):
         style = SheetStyle.columns if flip_output else None
 
         sources = dict(
-            prefixes=prefixes, node_ids=node_ids, data=service_configs["xdr_configs"],
+            prefixes=prefixes,
+            node_ids=node_ids,
+            data=service_configs["xdr_configs"],
         )
 
         CliView.print_result(
@@ -1054,6 +1066,24 @@ class CliView(object):
             sys.stdout = real_stdout
             print("")
 
+    @staticmethod
+    def manage_config(title, responses, cluster, **mods):
+
+        # Exceptions are not shown, but we want the message.
+        for ip in responses:
+            if isinstance(responses[ip], ASInfoError):
+                responses[ip] = str(responses[ip].response)
+            elif isinstance(responses[ip], Exception):
+                CliView.logger.debug("Config error response: %s", responses[ip])
+
+        prefixes = cluster.get_node_names(mods.get("with", []))
+        sources = dict(data=responses, prefixes=prefixes)
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(templates.manage_config, title, sources, common=common)
+        )
+
     # ##########################
     # ## Health Print functions
     # ##########################
@@ -1590,8 +1620,8 @@ class CliView(object):
     @staticmethod
     def get_summary_line_prefix(index, key):
         s = " " * 3
-        s += str(index)
-        s += "." + (" " * 3)
+        s += (str(index) + ".").ljust(3)
+        s += " " * 2
         s += key.ljust(19)
         s += ":" + (" " * 2)
         return s
@@ -1641,17 +1671,43 @@ class CliView(object):
                 + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
                 % (
                     file_size.size(stats[ns]["memory_total"]).strip(),
-                    100.00 - stats[ns]["memory_available_pct"],
-                    file_size.size(
-                        stats[ns]["memory_total"] - stats[ns]["memory_aval"]
-                    ).strip(),
-                    stats[ns]["memory_available_pct"],
-                    file_size.size(stats[ns]["memory_aval"]).strip(),
+                    stats[ns]["memory_used_pct"],
+                    file_size.size(stats[ns]["memory_used"]).strip(),
+                    stats[ns]["memory_avail_pct"],
+                    file_size.size(stats[ns]["memory_avail"]).strip(),
                 )
             )
             index += 1
 
-            if stats[ns]["disk_total"]:
+            if "pmem_index_total" in stats[ns]:
+                print(
+                    CliView.get_summary_line_prefix(index, "Pmem Index")
+                    + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                    % (
+                        file_size.size(stats[ns]["pmem_index_total"]).strip(),
+                        stats[ns]["pmem_index_used_pct"],
+                        file_size.size(stats[ns]["pmem_index_used"]).strip(),
+                        stats[ns]["pmem_index_avail_pct"],
+                        file_size.size(stats[ns]["pmem_index_avail"]).strip(),
+                    )
+                )
+                index += 1
+
+            elif "flash_index_total" in stats[ns]:
+                print(
+                    CliView.get_summary_line_prefix(index, "Flash Index")
+                    + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                    % (
+                        file_size.size(stats[ns]["flash_index_total"]).strip(),
+                        stats[ns]["flash_index_used_pct"],
+                        file_size.size(stats[ns]["flash_index_used"]).strip(),
+                        stats[ns]["flash_index_avail_pct"],
+                        file_size.size(stats[ns]["flash_index_avail"]).strip(),
+                    )
+                )
+                index += 1
+
+            if stats[ns]["disk_total"] != 0:
                 print(
                     CliView.get_summary_line_prefix(index, "Disk")
                     + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
@@ -1659,8 +1715,8 @@ class CliView(object):
                         file_size.size(stats[ns]["disk_total"]).strip(),
                         stats[ns]["disk_used_pct"],
                         file_size.size(stats[ns]["disk_used"]).strip(),
-                        stats[ns]["disk_available_pct"],
-                        file_size.size(stats[ns]["disk_aval"]).strip(),
+                        stats[ns]["disk_avail_pct"],
+                        file_size.size(stats[ns]["disk_avail"]).strip(),
                     )
                 )
                 index += 1
@@ -1691,28 +1747,6 @@ class CliView(object):
                 + "%s"
                 % (file_size.size(stats[ns]["master_objects"], file_size.si_float))
             )
-            index += 1
-            s = ""
-
-            if (
-                "license_data_in_memory" in stats[ns]
-                and stats[ns]["license_data_in_memory"]
-            ):
-                s += "%s in-memory" % (
-                    file_size.size(stats[ns]["license_data_in_memory"])
-                )
-            elif (
-                "license_data_on_disk" in stats[ns]
-                and stats[ns]["license_data_on_disk"]
-            ):
-                if s:
-                    s += ", "
-                s += "%s on-device" % (
-                    file_size.size(stats[ns]["license_data_on_disk"])
-                )
-            else:
-                s += "None"
-            print(CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s)
             index += 1
 
             if "compression_ratio" in stats[ns]:
@@ -1791,16 +1825,41 @@ class CliView(object):
             + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
             % (
                 file_size.size(summary["CLUSTER"]["memory"]["total"]).strip(),
-                100.00 - summary["CLUSTER"]["memory"]["aval_pct"],
-                file_size.size(
-                    summary["CLUSTER"]["memory"]["total"]
-                    - summary["CLUSTER"]["memory"]["aval"]
-                ).strip(),
-                summary["CLUSTER"]["memory"]["aval_pct"],
-                file_size.size(summary["CLUSTER"]["memory"]["aval"]).strip(),
+                summary["CLUSTER"]["memory"]["used_pct"],
+                file_size.size(summary["CLUSTER"]["memory"]["used"]).strip(),
+                summary["CLUSTER"]["memory"]["avail_pct"],
+                file_size.size(summary["CLUSTER"]["memory"]["avail"]).strip(),
             )
         )
         index += 1
+
+        if "total" in summary["CLUSTER"]["pmem_index"]:
+            print(
+                CliView.get_summary_line_prefix(index, "Pmem Index")
+                + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                % (
+                    file_size.size(summary["CLUSTER"]["pmem_index"]["total"]).strip(),
+                    summary["CLUSTER"]["pmem_index"]["used_pct"],
+                    file_size.size(summary["CLUSTER"]["pmem_index"]["used"]).strip(),
+                    summary["CLUSTER"]["pmem_index"]["avail_pct"],
+                    file_size.size(summary["CLUSTER"]["pmem_index"]["avail"]).strip(),
+                )
+            )
+            index += 1
+
+        if "total" in summary["CLUSTER"]["flash_index"]:
+            print(
+                CliView.get_summary_line_prefix(index, "Flash Index")
+                + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                % (
+                    file_size.size(summary["CLUSTER"]["flash_index"]["total"]).strip(),
+                    summary["CLUSTER"]["flash_index"]["used_pct"],
+                    file_size.size(summary["CLUSTER"]["flash_index"]["used"]).strip(),
+                    summary["CLUSTER"]["flash_index"]["avail_pct"],
+                    file_size.size(summary["CLUSTER"]["flash_index"]["avail"]).strip(),
+                )
+            )
+            index += 1
 
         print(
             CliView.get_summary_line_prefix(index, "Disk")
@@ -1809,27 +1868,18 @@ class CliView(object):
                 file_size.size(summary["CLUSTER"]["device"]["total"]).strip(),
                 summary["CLUSTER"]["device"]["used_pct"],
                 file_size.size(summary["CLUSTER"]["device"]["used"]).strip(),
-                summary["CLUSTER"]["device"]["aval_pct"],
-                file_size.size(summary["CLUSTER"]["device"]["aval"]).strip(),
+                summary["CLUSTER"]["device"]["avail_pct"],
+                file_size.size(summary["CLUSTER"]["device"]["avail"]).strip(),
             )
         )
         index += 1
 
         data_summary = CliView.get_summary_line_prefix(index, "Usage (Unique Data)")
-        uniq_mem_used = summary["CLUSTER"]["license_data"]["memory_size"]
-        uniq_device_used = summary["CLUSTER"]["license_data"]["device_size"]
 
-        # Sum all "Usage" data whether on disk or in memory.
-        if uniq_mem_used or uniq_device_used:
-            total = 0
+        unique_data_used = summary["CLUSTER"]["license_data"]
 
-            if uniq_mem_used:
-                total += uniq_mem_used
-            if uniq_device_used:
-                total += uniq_device_used
-
-            data_summary += "%s" % file_size.size(total)
-
+        if unique_data_used != 0:
+            data_summary += "%s" % file_size.size(unique_data_used)
         else:
             data_summary += "None"
 

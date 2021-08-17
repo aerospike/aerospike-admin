@@ -996,7 +996,7 @@ class ShowUsersController(LiveClusterCommandController):
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
-            self.logger.error(resp.message)
+            self.logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -1019,7 +1019,7 @@ class ShowRolesController(LiveClusterCommandController):
         resp = list(roles_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
-            self.logger.error(resp.message)
+            self.logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp

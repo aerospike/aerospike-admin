@@ -204,7 +204,7 @@ class BaseRSheet(object):
 
         for dfield in self.decleration.fields:
             if isinstance(dfield, decleration.DynamicFields):
-                keys = OrderedDict()
+                keys = {}
 
                 for sources in self.sources:
                     try:

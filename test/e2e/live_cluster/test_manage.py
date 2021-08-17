@@ -3,7 +3,11 @@ import time
 import unittest2 as unittest
 
 import lib.live_cluster.live_cluster_root_controller as controller
-import lib.utils.util as util
+from test.e2e import util as test_util
+
+from lib.utils import util
+from lib.view.sheet import set_style_json
+from lib.live_cluster.client.node import ASINFO_RESPONSE_OK
 
 
 class TestManageACLUsers(unittest.TestCase):
@@ -104,7 +108,7 @@ class TestManageACLUsers(unittest.TestCase):
         exp_stderr_resp = "Failed to delete user : No user or unrecognized user."
 
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
-            self.rc.execute, ["manage", "acl", "delete", "user", self.exp_user]
+            self.rc.execute, ["manage", "acl", "delete", "user", "dne"]
         )
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
@@ -236,7 +240,7 @@ class TestManageACLUsers(unittest.TestCase):
 
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
             self.rc.execute,
-            ["manage", "acl", "grant", "user", self.exp_user, "roles", "read", "write"],
+            ["manage", "acl", "grant", "user", "DNE", "roles", "read", "write"],
         )
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
@@ -286,7 +290,7 @@ class TestManageACLUsers(unittest.TestCase):
                 "acl",
                 "revoke",
                 "user",
-                self.exp_user,
+                "DNE",
                 "roles",
                 "read",
                 "write",
@@ -605,7 +609,7 @@ class TestManageACLRoles(unittest.TestCase):
         time.sleep(0.5)
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
             self.rc.execute,
-            ["manage", "acl", "rate-limit", "role", self.exp_role, "write", "2222"],
+            ["manage", "acl", "quotas", "role", self.exp_role, "write", "2222"],
         )
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
@@ -635,7 +639,7 @@ class TestManageACLRoles(unittest.TestCase):
             [
                 "manage",
                 "acl",
-                "rate-limit",
+                "quotas",
                 "role",
                 self.exp_role,
                 "read",
@@ -658,7 +662,7 @@ class TestManageACLRoles(unittest.TestCase):
             [
                 "manage",
                 "acl",
-                "rate-limit",
+                "quotas",
                 "role",
                 self.exp_role,
                 "read",
@@ -678,7 +682,7 @@ class TestManageACLRoles(unittest.TestCase):
         time.sleep(0.5)
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
             self.rc.execute,
-            ["manage", "acl", "rate-limit", "role", self.exp_role, "read", "100"],
+            ["manage", "acl", "quotas", "role", self.exp_role, "read", "100"],
         )
 
         self.assertEqual(exp_stdout_resp, actual_stdout.strip())
@@ -795,7 +799,7 @@ class ManageUDFsTest(unittest.TestCase):
     def test_fail_to_remove_module_that_does_not_exist(self):
         exp_module = "other_test.lua"
         exp_stdout_resp = ""
-        exp_stderr_resp = "Failed to remove UDF {}: UDF does not exist.".format(
+        exp_stderr_resp = "Failed to remove UDF {} : UDF does not exist.".format(
             exp_module
         )
 
@@ -1053,8 +1057,10 @@ class ManageSindexTest(unittest.TestCase):
 
     def test_fails_to_delete_sindex_that_does_not_exist(self):
         exp_stdout = ""
-        exp_stderr = "Failed to delete sindex {} : Index does not exist on the system.".format(
-            self.exp_sindex
+        exp_stderr = (
+            "Failed to delete sindex {} : Index does not exist on the system.".format(
+                self.exp_sindex
+            )
         )
 
         actual_stdout, actual_stderr = util.capture_stdout_and_stderr(
@@ -1073,3 +1079,307 @@ class ManageSindexTest(unittest.TestCase):
 
         self.assertEqual(exp_stdout, actual_stdout.strip())
         self.assertEqual(exp_stderr, actual_stderr.strip())
+
+
+class ManageConfigTests(unittest.TestCase):
+    def run_tests(self, exp_title, exp_header, cmd):
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_values,
+            _,
+        ) = test_util.capture_separate_and_parse_output(
+            self.rc,
+            cmd,
+        )
+
+        self.assertEqual(exp_title, actual_title)
+        self.assertEqual(exp_header, actual_header)
+
+        for row in actual_values:
+            entry = row[1]
+            self.assertEqual(entry, ASINFO_RESPONSE_OK)
+
+    @classmethod
+    def setUpClass(cls):
+        set_style_json()
+        cls.dc = "DC4"
+        cls.rc = controller.LiveClusterRootController(user="admin", password="admin")
+        util.capture_stdout(cls.rc.execute, ["enable"])
+        util.capture_stdout(
+            cls.rc.execute, ["manage", "config", "xdr", "delete", "dc", cls.dc]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        util.capture_stdout(
+            cls.rc.execute, ["manage", "config", "xdr", "delete", "dc", cls.dc]
+        )
+
+    def test_manage_config_logging(self):
+        file = "/var/log/aerospike/aerospike.log"
+        param = "misc"
+        value = "info"  # set to default value
+        exp_title = "Set Logging Context {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = ["manage", "config", "logging", "file", file, "param", param, "to", value]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_service(self):
+        param = "batch-max-buffers-per-queue"
+        value = "255"  # set to default value
+        exp_title = "Set Service Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = ["manage", "config", "service", "param", param, "to", value]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_network_fabric(self):
+        param = "channel-ctrl-recv-threads"
+        value = "4"  # set to default value
+        exp_title = "Set Network Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = ["manage", "config", "network", "fabric", "param", param, "to", value]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_network_heartbeat(self):
+        param = "mtu"
+        value = "0"  # set to default value
+        exp_title = "Set Network Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = ["manage", "config", "network", "heartbeat", "param", param, "to", value]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_security(self):
+        param = "privilege-refresh-period"
+        value = "300"  # set to default value
+        exp_title = "Set Security Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = ["manage", "config", "security", "param", param, "to", value]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_security_ldap(self):
+        param = "polling-period"
+        value = "300"  # set to default value
+        exp_title = "Set Security Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = ["manage", "config", "security", "ldap", "param", param, "to", value]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_namespace(self):
+        param = "allow-ttl-without-nsup"
+        value = "false"  # set to default value
+        exp_title = "Set Namespace Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = ["manage", "config", "namespace", "test", "param", param, "to", value]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_namespace_storage_engine(self):
+        param = "cache-replica-writes"
+        value = "false"  # set to default value
+        exp_title = "Set Namespace Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = [
+            "manage",
+            "config",
+            "namespace",
+            "test",
+            "storage-engine",
+            "param",
+            param,
+            "to",
+            value,
+        ]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_namespace_geo2dsphere_within(self):
+        param = "max-cells"
+        value = "12"  # set to default value
+        exp_title = "Set Namespace Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = [
+            "manage",
+            "config",
+            "namespace",
+            "test",
+            "geo2dsphere-within",
+            "param",
+            param,
+            "to",
+            value,
+        ]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_namespace_set(self):
+        param = "stop-writes-count"
+        value = "0"  # set to default value
+        exp_title = "Set Namespace Set Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = [
+            "manage",
+            "config",
+            "namespace",
+            "test",
+            "set",
+            "testset",
+            "param",
+            param,
+            "to",
+            value,
+        ]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    """
+    def test_manage_config_namespace_set does not exist because flash or pmem index-type
+    must be configured.
+    """
+
+    def test_manage_config_xdr(self):
+        param = "src-id"
+        value = "1"  # set to default value
+        exp_title = "Set XDR Param {} to {}".format(param, value)
+        exp_header = ["Node", "Response"]
+        cmd = [
+            "manage",
+            "config",
+            "xdr",
+            "param",
+            param,
+            "to",
+            value,
+        ]
+
+        self.run_tests(exp_title, exp_header, cmd)
+
+    def test_manage_config_xdr_actions(self):
+        def test_create_dc():
+            exp_title = "Create XDR DC {}".format(self.dc)
+            exp_header = ["Node", "Response"]
+            cmd = ["manage", "config", "xdr", "create", "dc", self.dc]
+
+            self.run_tests(exp_title, exp_header, cmd)
+
+        def test_change_dc_param():
+            param = "period-ms"
+            value = "100"  # set to default value
+            exp_title = "Set XDR DC param {} to {}".format(param, value)
+            exp_header = ["Node", "Response"]
+            cmd = [
+                "manage",
+                "config",
+                "xdr",
+                "dc",
+                self.dc,
+                "param",
+                param,
+                "to",
+                value,
+            ]
+
+            self.run_tests(exp_title, exp_header, cmd)
+
+        node = "127.0.0.2:3000"
+
+        def test_add_node():
+            exp_title = "Add XDR Node {} to DC {}".format(node, self.dc)
+            exp_header = ["Node", "Response"]
+            cmd = ["manage", "config", "xdr", "dc", self.dc, "add", "node", node]
+
+            self.run_tests(exp_title, exp_header, cmd)
+
+        namespace = "test"
+
+        def test_add_namespace():
+            exp_title = "Add XDR Namespace {} to DC {}".format(namespace, self.dc)
+            exp_header = ["Node", "Response"]
+            cmd = [
+                "manage",
+                "config",
+                "xdr",
+                "dc",
+                self.dc,
+                "add",
+                "namespace",
+                namespace,
+            ]
+
+            self.run_tests(exp_title, exp_header, cmd)
+
+        def test_change_dc_namespace_param():
+            param = "ship-bin-luts"
+            value = "false"
+            exp_title = "Set XDR Namespace Param {} to {}".format(param, value)
+            exp_header = ["Node", "Response"]
+            cmd = [
+                "manage",
+                "config",
+                "xdr",
+                "dc",
+                self.dc,
+                "namespace",
+                namespace,
+                "param",
+                param,
+                "to",
+                value,
+            ]
+
+            self.run_tests(exp_title, exp_header, cmd)
+
+        def test_remove_namespace():
+            exp_title = "Remove XDR Namespace {} from DC {}".format(namespace, self.dc)
+            exp_header = ["Node", "Response"]
+            cmd = [
+                "manage",
+                "config",
+                "xdr",
+                "dc",
+                self.dc,
+                "remove",
+                "namespace",
+                namespace,
+            ]
+
+            self.run_tests(exp_title, exp_header, cmd)
+
+        def test_remove_node():
+            exp_title = "Remove XDR Node {} from DC {}".format(node, self.dc)
+            exp_header = ["Node", "Response"]
+            cmd = ["manage", "config", "xdr", "dc", self.dc, "remove", "node", node]
+
+            self.run_tests(exp_title, exp_header, cmd)
+
+        def test_delete_dc():
+            exp_title = "Delete XDR DC {}".format(self.dc)
+            exp_header = ["Node", "Response"]
+            cmd = ["manage", "config", "xdr", "delete", "dc", self.dc]
+
+            time.sleep(5)
+            self.run_tests(exp_title, exp_header, cmd)
+
+        time.sleep(5)
+        test_create_dc()
+        time.sleep(1)
+        test_change_dc_param()
+        time.sleep(1)
+        test_add_node()
+        time.sleep(5)
+        test_add_namespace()
+        time.sleep(1)
+        test_change_dc_namespace_param()
+        time.sleep(1)
+        test_remove_namespace()
+        time.sleep(1)
+        test_remove_node()
+        time.sleep(1)
+        test_delete_dc()

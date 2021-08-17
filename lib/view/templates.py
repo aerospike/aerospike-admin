@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import itertools
+from lib.live_cluster.client.node import ASINFO_RESPONSE_OK
 from lib.view.sheet import (
     Aggregators,
     Converters,
@@ -749,9 +750,54 @@ summary_namespace_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.Percent("ns_stats", "memory_available_pct", invert=True),
+                    Projectors.Float("ns_stats", "memory_used_pct"),
+                    converter=Converters.round(2),
                 ),
-                Field("Avail%", Projectors.Percent("ns_stats", "memory_available_pct")),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "memory_avail_pct"),
+                    converter=Converters.round(2),
+                ),
+            ),
+        ),
+        Subgroup(
+            "Pmem Index",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number("ns_stats", "pmem_index_total"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Float("ns_stats", "pmem_index_used_pct"),
+                    converter=Converters.round(2),
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "pmem_index_avail_pct"),
+                    converter=Converters.round(2),
+                ),
+            ),
+        ),
+        Subgroup(
+            "Flash Index",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number("ns_stats", "flash_index_total"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Float("ns_stats", "flash_index_used_pct"),
+                    converter=Converters.round(2),
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "flash_index_avail_pct"),
+                    converter=Converters.round(2),
+                ),
             ),
         ),
         Subgroup(
@@ -762,8 +808,16 @@ summary_namespace_sheet = Sheet(
                     Projectors.Number("ns_stats", "disk_total"),
                     converter=Converters.byte,
                 ),
-                Field("Used%", Projectors.Percent("ns_stats", "disk_used_pct")),
-                Field("Avail%", Projectors.Percent("ns_stats", "disk_available_pct")),
+                Field(
+                    "Used%",
+                    Projectors.Float("ns_stats", "disk_used_pct"),
+                    converter=Converters.round(2),
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "disk_avail_pct"),
+                    converter=Converters.round(2),
+                ),
             ),
         ),
         Field(
@@ -780,21 +834,6 @@ summary_namespace_sheet = Sheet(
             "Master Objects",
             Projectors.Number("ns_stats", "master_objects"),
             Converters.scientific_units,
-        ),
-        Subgroup(
-            "Usage (Unique-Data)",
-            (
-                Field(
-                    "In-Memory",
-                    Projectors.Number("ns_stats", "license_data_in_memory"),
-                    Converters.byte,
-                ),
-                Field(
-                    "On-Disk",
-                    Projectors.Number("ns_stats", "license_data_on_disk"),
-                    Converters.byte,
-                ),
-            ),
         ),
         Field("Compression Ratio", Projectors.Float("ns_stats", "compression-ratio")),
     ),
@@ -965,7 +1004,10 @@ show_users = Sheet(
             Converters.list_to_comma_sep_str,
             align=FieldAlignment.right,
         ),
-        Field("Connections", Projectors.String("data", "connections"),),
+        Field(
+            "Connections",
+            Projectors.String("data", "connections"),
+        ),
         Subgroup(
             "Read",
             (
@@ -1091,7 +1133,10 @@ show_roles = Sheet(
 show_udfs = Sheet(
     (
         Field("Filename", Projectors.String("data", None, for_each_key=True)),
-        Field("Hash", Projectors.String("data", "hash"),),
+        Field(
+            "Hash",
+            Projectors.String("data", "hash"),
+        ),
         Field("Type", Projectors.String("data", "type")),
     ),
     from_source="data",
@@ -1136,6 +1181,27 @@ grep_count_sheet = Sheet(
     default_style=SheetStyle.rows,
 )
 
+manage_config = Sheet(
+    (
+        node_field,
+        Field(
+            "Response",
+            Projectors.String(
+                "data",
+                None,
+            ),
+            formatters=(
+                Formatters.green_alert(lambda edata: edata.value == ASINFO_RESPONSE_OK),
+                Formatters.red_alert(lambda edata: edata.value != ASINFO_RESPONSE_OK),
+            ),
+        ),
+    ),
+    from_source=("data", "prefixes"),
+    order_by="Node",
+    default_style=SheetStyle.columns,
+)
+
+# TODO
 # grep_diff_sheet = Sheet(
 #     (TitleField('Node', Projectors.String('node_ids', 'node')),
 #      DynamicFields('data.Total', required=True,
@@ -1146,6 +1212,7 @@ grep_count_sheet = Sheet(
 #     group_by='Node'
 # )
 
+# TODO
 # summary_list_sheet = Sheet(
 #     (Field('No', Projectors.Number('no', 'no')),
 #      Field('Item', Projectors.String('summary', 'item')),
