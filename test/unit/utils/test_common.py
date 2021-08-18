@@ -39,12 +39,11 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         "1.1.1.1": {
                             "master_objects": 100,
                             "effective_replication_factor": 2,
-                            "pmem_used_bytes": 99000,
-                            "device_used_bytes": 3200,
+                            "device_used_bytes": 7200,
                         }
                     }
                 },
-                "exp_cluster_dict": {"license_data": 47600},
+                "exp_cluster_dict": {"license_data": 100},
             },
             {
                 "ns_stats": {
@@ -52,8 +51,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         "1.1.1.1": {
                             "master_objects": 100,
                             "effective_replication_factor": 2,
-                            "pmem_used_bytes": 99000,
-                            "device_used_bytes": 3200,
+                            "pmem_used_bytes": 8000,
                             "memory_used_bytes": 800,
                         }
                     },
@@ -61,13 +59,12 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         "1.1.1.1": {
                             "master_objects": 50,
                             "effective_replication_factor": 3,
-                            "pmem_used_bytes": 50000,
-                            "device_used_bytes": 3800,
+                            "device_used_bytes": 6000,
                             "memory_used_bytes": 3300,
                         }
                     },
                 },
-                "exp_cluster_dict": {"license_data": 65283},
+                "exp_cluster_dict": {"license_data": 500 + 250},
             },
             {
                 "ns_stats": {
@@ -75,13 +72,13 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         "1.1.1.1": {
                             "master_objects": 100,
                             "effective_replication_factor": 2,
-                            "pmem_used_bytes": 99000,
-                            "device_used_bytes": 3200,
+                            "device_used_bytes": 7200,
                             "memory_used_bytes": 800,
                         },
                         "2.2.2.2": {
                             "master_objects": 10,
                             "effective_replication_factor": 2,
+                            "device_used_bytes": 3200,
                             "memory_used_bytes": 10000,
                         },
                     },
@@ -90,17 +87,17 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                             "master_objects": 50,
                             "effective_replication_factor": 3,
                             "pmem_used_bytes": 50000,
-                            "device_used_bytes": 3800,
-                            "memory_used_bytes": 3300,
                         },
                         "2.2.2.2": {
                             "master_objects": 10,
                             "effective_replication_factor": 3,
-                            "memory_used_bytes": 10000,
+                            "pmem_used_bytes": 10000,
                         },
                     },
                 },
-                "exp_cluster_dict": {"license_data": 72917},
+                "exp_cluster_dict": {
+                    "license_data": ((7200 + 3200) / 2) - (110 * 35) + 20000 - (35 * 60)
+                },
             },
         ]
 
