@@ -418,8 +418,8 @@ def _compute_license_data_size(namespace_stats, cluster_dict):
             host_device_bytes = util.get_value_from_dict(
                 host_stats,
                 "device_used_bytes",
-                default_value=0,
-                return_type=int,
+                default_value=0.0,
+                return_type=float,
             )
 
             host_device_bytes /= host_device_compression_ratio
@@ -427,25 +427,25 @@ def _compute_license_data_size(namespace_stats, cluster_dict):
             host_pmem_bytes = util.get_value_from_dict(
                 host_stats,
                 "pmem_used_bytes",
-                default_value=0,
-                return_type=int,
+                default_value=0.0,
+                return_type=float,
             )
 
             host_pmem_bytes /= host_pmem_compression_ratio
 
-            if host_pmem_bytes == 0 and host_device_bytes == 0:
+            if host_pmem_bytes == 0.0 and host_device_bytes == 0.0:
                 host_memory_bytes += util.get_value_from_dict(
                     host_stats,
                     "memory_used_index_bytes",
-                    default_value=0,
-                    return_type=int,
+                    default_value=0.0,
+                    return_type=float,
                 )
 
                 host_memory_bytes += util.get_value_from_dict(
                     host_stats,
                     "memory_used_data_bytes",
-                    default_value=0,
-                    return_type=int,
+                    default_value=0.0,
+                    return_type=float,
                 )
 
             ns_unique_data += host_memory_bytes + host_pmem_bytes + host_device_bytes
