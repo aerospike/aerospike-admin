@@ -380,6 +380,10 @@ def _compute_license_data_size(namespace_stats, cluster_dict):
         ns_repl_factor = 1
 
         for host_id, host_stats in ns_stats.items():
+            host_memory_bytes = 0.0
+            host_device_bytes = 0.0
+            host_pmem_bytes = 0.0
+
             if not host_stats or isinstance(host_stats, Exception):
                 continue
 
@@ -392,7 +396,7 @@ def _compute_license_data_size(namespace_stats, cluster_dict):
 
             ns_repl_factor = util.get_value_from_dict(
                 host_stats,
-                "effective_replication_factor",
+                ("effective_replication_factor", "replication-factor"),
                 default_value=1,
                 return_type=int,
             )
@@ -411,49 +415,40 @@ def _compute_license_data_size(namespace_stats, cluster_dict):
                 return_type=float,
             )
 
-            # For data-in-memory, data is in both memory & device. In this case it was
-            # asked that we only count the data stored in memory.
-
-            metrics = [
-                "index_pmem_used_bytes",
-                "index_flash_used_bytes",
-                "memory_used_bytes",
-            ]
-
-            for metric in metrics:
-                bytes = util.get_value_from_dict(
-                    host_stats,
-                    metric,
-                    default_value=0,
-                    return_type=int,
-                )
-
-                ns_unique_data += bytes
-
-            ns_data_in_memory = util.get_value_from_dict(
+            host_device_bytes = util.get_value_from_dict(
                 host_stats,
-                "storage-engine.data-in-memory",
-                default_value=False,
-                return_type=bool,
+                "device_used_bytes",
+                default_value=0.0,
+                return_type=float,
             )
 
-            if not ns_data_in_memory:
-                bytes = util.get_value_from_dict(
-                    host_stats,
-                    "device_used_bytes",
-                    default_value=0,
-                    return_type=int,
-                )
-                ns_unique_data += bytes / host_device_compression_ratio
+            host_device_bytes /= host_device_compression_ratio
 
-            bytes = util.get_value_from_dict(
+            host_pmem_bytes = util.get_value_from_dict(
                 host_stats,
                 "pmem_used_bytes",
-                default_value=0,
-                return_type=int,
+                default_value=0.0,
+                return_type=float,
             )
 
-            ns_unique_data += bytes / host_pmem_compression_ratio
+            host_pmem_bytes /= host_pmem_compression_ratio
+
+            if host_pmem_bytes == 0.0 and host_device_bytes == 0.0:
+                host_memory_bytes += util.get_value_from_dict(
+                    host_stats,
+                    "memory_used_index_bytes",
+                    default_value=0.0,
+                    return_type=float,
+                )
+
+                host_memory_bytes += util.get_value_from_dict(
+                    host_stats,
+                    "memory_used_data_bytes",
+                    default_value=0.0,
+                    return_type=float,
+                )
+
+            ns_unique_data += host_memory_bytes + host_pmem_bytes + host_device_bytes
 
         ns_unique_data = _license_data_usage_adjustment(
             ns_repl_factor, ns_master_objects, ns_unique_data
