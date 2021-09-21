@@ -539,14 +539,25 @@ def _send_and_get_admin_header(sock, send_buf):
     return rsp_header
 
 
-def _authenticate(sock, user, password, password_field_id):
-    field_count = 2
-    admin_data_size = len(user) + len(password)
+def _authenticate(sock, user, password, password_field_id, auth_mode):
+    if auth_mode != constants.AuthMode.PKI:
+        field_count = 2
+        admin_data_size = len(user) + len(password)
 
-    send_buf, offset = _create_admin_header(
-        admin_data_size, ASCommand.AUTHENTICATE, field_count
-    )
-    offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+        send_buf, offset = _create_admin_header(
+            admin_data_size, ASCommand.AUTHENTICATE, field_count
+        )
+
+        offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
+
+    else:
+        field_count = 1
+        admin_data_size = len(password)
+
+        send_buf, offset = _create_admin_header(
+            admin_data_size, ASCommand.AUTHENTICATE, field_count
+        )
+
     offset = _pack_admin_field(send_buf, offset, password_field_id, password)
 
     try:
@@ -560,9 +571,13 @@ def _authenticate(sock, user, password, password_field_id):
         raise IOError("Error: %s" % str(e))
 
 
-def authenticate_new(sock, user, session_token):
+def authenticate_new(sock, user, session_token, auth_mode):
     return _authenticate(
-        sock, user, password=session_token, password_field_id=ASField.SESSION_TOKEN
+        sock,
+        user,
+        password=session_token,
+        password_field_id=ASField.SESSION_TOKEN,
+        auth_mode=auth_mode,
     )
 
 
@@ -1197,6 +1212,9 @@ def login(sock, user, password, auth_mode):
         )
         offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
         offset = _pack_admin_field(send_buf, offset, ASField.CREDENTIAL, credential)
+    elif auth_mode == constants.AuthMode.PKI:
+        field_count = 0
+        send_buf, offset = _create_admin_header(0, ASCommand.LOGIN, field_count)
     else:
         field_count = 3
         # 4B = field size, 1B = field type

@@ -93,8 +93,8 @@ FEATURE_KEYS = {
     "SINDEX": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes"), None),
     "Query": (("query_reqs", "query_success"), ("query_reqs", "query_success"), None),
     "Aggregation": (
-        ("query_agg", "query_agg_success"),
-        ("query_agg", "query_agg_success"),
+        ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
+        ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
         None,
     ),
     "LDT": (

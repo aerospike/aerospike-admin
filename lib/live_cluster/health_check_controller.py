@@ -286,8 +286,20 @@ class HealthCheckController(LiveClusterCommandController):
                                 ("CLUSTER", cluster_name),
                                 ("NODE", None),
                                 (None, None),
-                                ("NAMESPACE", ("ns_name", "ns",),),
-                                ("SET", ("set_name", "set",),),
+                                (
+                                    "NAMESPACE",
+                                    (
+                                        "ns_name",
+                                        "ns",
+                                    ),
+                                ),
+                                (
+                                    "SET",
+                                    (
+                                        "set_name",
+                                        "set",
+                                    ),
+                                ),
                             ],
                         ),
                         (
@@ -300,7 +312,16 @@ class HealthCheckController(LiveClusterCommandController):
                                 ("NAMESPACE", None),
                             ],
                         ),
-                        ("xdr", "XDR", [("CLUSTER", cluster_name), ("NODE", None)]),
+                        (
+                            "xdr",
+                            "XDR",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("DC", None),
+                            ],
+                        ),
                         (
                             "dc",
                             "DC",

@@ -44,6 +44,8 @@ if "-e" not in sys.argv and "--asinfo" not in sys.argv:
 
 
 class BaseLogger(logging.Logger, object):
+    execute_only_mode = False
+
     def __init__(self, name, level=logging.WARNING):
         return super(BaseLogger, self).__init__(name, level=level)
 
@@ -75,22 +77,23 @@ class BaseLogger(logging.Logger, object):
 
     def info(self, msg, *args, **kwargs):
         if self.level <= logging.INFO:
-            self._print_message(msg=msg, level="INFO", red_color=False, *args, **kwargs)
+            self._print_message(msg, "INFO", False, *args, **kwargs)
 
     def warning(self, msg, *args, **kwargs):
         if self.level <= logging.WARNING:
-            self._print_message(
-                msg=msg, level="WARNING", red_color=True, *args, **kwargs
-            )
+            self._print_message(msg, "WARNING", True, *args, **kwargs)
 
     def error(self, msg, *args, **kwargs):
         if self.level <= logging.ERROR:
-            self._print_message(msg=msg, level="ERROR", red_color=True, *args, **kwargs)
+            self._print_message(msg, "ERROR", True, *args, **kwargs)
             self._handle_exception(msg)
+
+            if self.execute_only_mode:
+                exit(2)
 
     def critical(self, msg, *args, **kwargs):
         if self.level <= logging.CRITICAL:
-            self._print_message(msg=msg, level="ERROR", red_color=True, *args, **kwargs)
+            self._print_message(msg, "ERROR", True, *args, **kwargs)
             self._handle_exception(msg)
         exit(1)
 
@@ -181,7 +184,6 @@ class AerospikeShell(cmd.Cmd):
         self.admin_history = ADMIN_HOME + "admin_" + str(mode).lower() + "_history"
         self.execute_only_mode = execute_only_mode
         self.privileged_mode = False
-
         if mode == AdminMode.LOG_ANALYZER:
             self.name = "Aerospike Log Analyzer Shell"
         elif mode == AdminMode.COLLECTINFO_ANALYZER:
@@ -252,9 +254,6 @@ class AerospikeShell(cmd.Cmd):
                 if not self.ctrl.cluster.get_live_nodes():
                     self.do_exit("")
                     if self.execute_only_mode:
-                        logger.error(
-                            "Not able to connect any cluster with " + str(seeds) + "."
-                        )
                         self.connected = False
                         return
                     else:
@@ -598,12 +597,11 @@ def execute_asinfo_commands(
         logger.critical("Not able to connect any cluster with " + str(seed) + ".")
         return
 
-    if user is not None:
-        if not assock.login():
-            logger.critical(
-                "Not able to login and authenticate any cluster with " + str(seed) + "."
-            )
-            return
+    if not assock.login():
+        logger.critical(
+            "Not able to login and authenticate any cluster with " + str(seed) + "."
+        )
+        return
 
     node_name = "%s:%s" % (seed[0], seed[1])
 
@@ -661,8 +659,10 @@ def main():
         os.makedirs(ADMIN_HOME)
 
     execute_only_mode = False
-    if cli_args.execute:
+
+    if cli_args.execute is not None:
         execute_only_mode = True
+        BaseLogger.execute_only_mode = True
 
     cli_args, seeds = conf.loadconfig(cli_args, logger)
 
@@ -671,8 +671,10 @@ def main():
             "Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate."
         )
 
-    if cli_args.auth == AuthMode.EXTERNAL and not cli_args.tls_enable:
-        logger.critical("TLS is required for authentication mode: EXTERNAL")
+    if not cli_args.tls_enable and (
+        cli_args.auth == AuthMode.EXTERNAL or cli_args.auth == AuthMode.PKI
+    ):
+        logger.critical("TLS is required for authentication mode: " + cli_args.auth)
 
     ssl_context = parse_tls_input(cli_args)
 
@@ -704,7 +706,6 @@ def main():
 
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
-
     shell = AerospikeShell(
         admin_version,
         seeds,
@@ -763,6 +764,14 @@ def main():
             except Exception as e:
                 print(e)
 
+        def cleanup():
+            try:
+                sys.stdout = real_stdout
+                if f:
+                    f.close()
+            except Exception:
+                pass
+
         if shell.connected:
             line = shell.precmd(
                 commands_arg,
@@ -776,13 +785,23 @@ def main():
 
         else:
             if "collectinfo" in commands_arg:
-                logger.info("Collecting only System data")
+                logger.warning(
+                    "Collecting only System data. Not able to connect any cluster with "
+                    + str(seeds)
+                    + "."
+                )
+
                 func = common.collect_sys_info(port=cli_args.port)
 
-            exit(1)
+                cleanup()
+                exit(1)
+
+            cleanup()
+            logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
     cmdloop(shell, func, args, use_yappi, single_command)
     shell.close()
+
     try:
         sys.stdout = real_stdout
         if f:

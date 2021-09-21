@@ -8,15 +8,16 @@ from .collectinfo_command_controller import CollectinfoCommandController
 class ShowController(CollectinfoCommandController):
     def __init__(self):
         self.controller_map = {
-            "config": ShowConfigController,
-            "statistics": ShowStatisticsController,
-            "latencies": ShowLatenciesController,
-            "distribution": ShowDistributionController,
             "pmap": ShowPmapController,
-            "sindex": ShowSIndexController,
+            "distribution": ShowDistributionController,
+            "best-practices": ShowBestPracticesController,
             "udfs": ShowUdfsController,
-            "users": ShowUsersController,
+            "sindex": ShowSIndexController,
+            "config": ShowConfigController,
+            "latencies": ShowLatenciesController,
+            "statistics": ShowStatisticsController,
             "roles": ShowRolesController,
+            "users": ShowUsersController,
         }
         self.modifiers = set()
 
@@ -172,7 +173,7 @@ class ShowConfigController(CollectinfoCommandController):
 
         for timestamp in sorted(xdr_configs.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_xdr_build()
+            builds = cinfo_log.get_asd_build()
 
             for xdr_node in xdr_configs[timestamp]:
                 try:
@@ -251,7 +252,7 @@ class ShowConfigController(CollectinfoCommandController):
 
         for timestamp in sorted(dc_configs.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_xdr_build()
+            builds = cinfo_log.get_asd_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
 
@@ -416,7 +417,9 @@ class ShowLatenciesController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["like", "for"])
 
-    @CommandHelp("Displays latency information for Aerospike cluster.",)
+    @CommandHelp(
+        "Displays latency information for Aerospike cluster.",
+    )
     def _do_default(self, line):
         namespaces = {}
         if self.mods["for"]:
@@ -729,8 +732,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         for timestamp in sorted(xdr_stats.keys()):
 
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_xdr_build()
-            for_mods = self.mods["for"]
+            builds = cinfo_log.get_asd_build()
 
             for xdr_node in xdr_stats[timestamp]:
                 try:
@@ -814,7 +816,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         node_xdr_build_major_version = 5
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_xdr_build()
+            builds = cinfo_log.get_asd_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
 
@@ -1023,4 +1025,29 @@ class ShowSIndexController(CollectinfoCommandController):
 
             return util.Future(
                 self.view.show_sindex, formatted_data, timestamp=timestamp, **self.mods
+            )
+
+
+@CommandHelp(
+    '"show best-practices" displays any of Aerospike\'s violated "best-practices".'
+)
+class ShowBestPracticesController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+
+    def _do_default(self, line):
+        best_practices = self.log_handler.info_statistics(stanza="best_practices")
+
+        for timestamp in sorted(best_practices.keys()):
+            if not best_practices[timestamp]:
+                continue
+
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            return util.Future(
+                self.view.show_best_practices,
+                cinfo_log,
+                best_practices[timestamp],
+                timestamp=timestamp,
+                **self.mods
             )

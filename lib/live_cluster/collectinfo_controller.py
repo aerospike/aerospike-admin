@@ -212,9 +212,6 @@ class CollectinfoController(LiveClusterCommandController):
         getter = GetConfigController(self.cluster)
         config = getter.get_all(nodes=self.nodes, flip=False)
 
-        getter = GetUsersController(self.cluster)
-
-        getter = GetRolesController(self.cluster)
         # All these section have have nodeid in inner level
         # flip keys to get nodeid in upper level.
         # {'namespace': 'test': {'ip1': {}, 'ip2': {}}} -->
@@ -268,9 +265,6 @@ class CollectinfoController(LiveClusterCommandController):
         metamap = {}
         builds = util.Future(self.cluster.info, "build", nodes=self.nodes).start()
         editions = util.Future(self.cluster.info, "version", nodes=self.nodes).start()
-        xdr_builds = util.Future(
-            self.cluster.info_build_version, nodes=self.nodes
-        ).start()
         node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start()
         ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start()
         endpoints = util.Future(
@@ -283,22 +277,24 @@ class CollectinfoController(LiveClusterCommandController):
         health_outliers = util.Future(
             self.cluster.info_health_outliers, nodes=self.nodes
         ).start()
+        best_practices = util.Future(
+            self.cluster.info_best_practices, nodes=self.nodes
+        ).start()
 
         builds = builds.result()
         editions = editions.result()
-        xdr_builds = xdr_builds.result()
         node_ids = node_ids.result()
         ips = ips.result()
         endpoints = endpoints.result()
         services = services.result()
         udf_data = udf_data.result()
         health_outliers = health_outliers.result()
+        best_practices = best_practices.result()
 
         for nodeid in builds:
             metamap[nodeid] = {}
             self._check_for_exception_and_set(builds, "asd_build", nodeid, metamap)
             self._check_for_exception_and_set(editions, "edition", nodeid, metamap)
-            self._check_for_exception_and_set(xdr_builds, "xdr_build", nodeid, metamap)
             self._check_for_exception_and_set(node_ids, "node_id", nodeid, metamap)
             self._check_for_exception_and_set(ips, "ip", nodeid, metamap)
             self._check_for_exception_and_set(endpoints, "endpoints", nodeid, metamap)
@@ -306,6 +302,9 @@ class CollectinfoController(LiveClusterCommandController):
             self._check_for_exception_and_set(udf_data, "udf", nodeid, metamap)
             self._check_for_exception_and_set(
                 health_outliers, "health", nodeid, metamap
+            )
+            self._check_for_exception_and_set(
+                best_practices, "best_practices", nodeid, metamap
             )
 
         return metamap

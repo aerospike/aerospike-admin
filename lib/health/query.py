@@ -570,11 +570,6 @@ ASSERT(r, False, "Different set eviction configuration.", "OPERATIONS", WARNING,
 				"Set eviction configuration difference check.");
 
 
-s = select like ("set-enable-xdr") from SET save;
-r = group by CLUSTER, NAMESPACE, SET do NO_MATCH(s, ==, MAJORITY) save;
-ASSERT(r, False, "Different set xdr configuration.", "OPERATIONS", WARNING,
-				"Listed set[s] have different XDR replication setting across multiple nodes in cluster. Please run 'show statistics set like set-enable-xdr' to check values. Possible operational misconfiguration.",
-				"Set xdr configuration difference check.");
 
 
 s = select "n_objects", "objects" from SET save;
@@ -585,6 +580,12 @@ ASSERT(r, False, "Skewed cluster set object count.", "ANOMALY", WARNING,
 
 /* XDR < 5 */
 SET CONSTRAINT VERSION < 5.0;
+
+s = select like ("set-enable-xdr") from SET save;
+r = group by CLUSTER, NAMESPACE, SET do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different set xdr configuration.", "OPERATIONS", WARNING,
+				"Listed set[s] have different XDR replication setting across multiple nodes in cluster. Please run 'show statistics set like set-enable-xdr' to check values. Possible operational misconfiguration.",
+				"Set xdr configuration difference check.");
 
 s = select * from XDR.CONFIG save;
 r = GROUP by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
@@ -759,9 +760,9 @@ ASSERT(r, False, "XDR queue overflows.", "PERFORMANCE", WARNING,
 				"XDR queue overflow error check.",
 				xdr_enabled);
 
-SET CONSTRAINT VERSION ALL;
 /* XDR > 5 */
 
+SET CONSTRAINT VERSION ALL;
 /* CLUSTER STATE */
 
 r = select "cluster_integrity" from SERVICE.STATISTICS save;
@@ -783,30 +784,6 @@ r = do r == total_nodes;
 ASSERT(r, True, "Unstable Cluster.", "OPERATIONS", CRITICAL,
 				"Listed node[s] have cluster size not matching total number of available nodes. This indicates cluster is not completely wellformed. Please check server logs for more information. Probable cause - issue with network.",
 				"Cluster stability check.");
-
-hp = select "heartbeat.protocol", "heartbeat-protocol" from NETWORK.CONFIG;
-heartbeat_proto_v2 = do hp == "v2";
-heartbeat_proto_v2 = group by CLUSTER, NODE do OR(heartbeat_proto_v2);
-cs = select "cluster_size" from SERVICE.STATISTICS save;
-mcs = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG save;
-cs_without_saved_value = select "cluster_size" from SERVICE.STATISTICS;
-mcs_without_saved_value = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG;
-r = do cs < mcs;
-ASSERT(r, True, "Critical cluster size.", "OPERATIONS", CRITICAL,
-				"Listed node[s] have cluster size higher than configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
-				"Critical cluster size check.",
-				heartbeat_proto_v2);
-
-small_max_configured = do mcs_without_saved_value < 20;
-critical_size = do cs >= mcs;
-correct_size = do mcs_without_saved_value - 10;
-correct_size = do cs_without_saved_value <= correct_size;
-r = do small_max_configured || critical_size;
-r = do r || correct_size;
-ASSERT(r, True, "Cluster size is near the max configured cluster size.", "OPERATIONS", WARNING,
-				"Listed node[s] have cluster size near the configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
-				"Cluster size check.",
-				heartbeat_proto_v2);
 
 paxos_replica_limit = select "paxos-single-replica-limit" from SERVICE.CONFIG save as "paxos-single-replica-limit";
 paxos_replica_limit = group by CLUSTER paxos_replica_limit;
@@ -842,9 +819,11 @@ ASSERT(r, True, "UDF not in sync (not available on all node).", "OPERATIONS", CR
 
 /* SINDEX */
 
-s = select "sync_state" from SINDEX.STATISTICS save;
+s = select "sync_state" as "val", "state" as "val" from SINDEX.STATISTICS save;
 s = group by CLUSTER, NAMESPACE, SET, SINDEX s;
-r = do s == "synced";
+r1 = do s == "synced";
+r2 = do s == "WO";
+r = do r1 || r2;
 ASSERT(r, True, "SINDEX not in sync with primary.", "OPERATIONS", CRITICAL,
 				"Listed sindex[es] are not in sync with primary. This can lead to wrong query results. Consider dropping and recreating secondary index[es].",
 				"SINDEX sync state check.");
@@ -1096,44 +1075,6 @@ ASSERT(r, True, "High client proxy transaction timeouts", "OPERATIONS", WARNING,
 				"High proxy transaction timeouts check");
 
 
-
-// XDR Write statistics
-
-s = select "xdr_write_success" as "cnt", "xdr_client_write_success" as "cnt" from NAMESPACE.STATISTICS;
-t = select "xdr_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
-e = select "xdr_write_error" as "cnt" from NAMESPACE.STATISTICS;
-total_xdr_writes = do s + t;
-total_xdr_writes = do total_xdr_writes + e save as "total xdr writes";
-total_xdr_writes_per_sec = do total_xdr_writes/u;
-total_xdr_writes = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes);
-total_xdr_writes_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes_per_sec);
-
-e = select "xdr_write_error" from NAMESPACE.STATISTICS save;
-e = do e/u save as "errors per second (by using uptime)";
-e = group by CLUSTER, NAMESPACE e;
-p = do e/total_xdr_writes_per_sec;
-p = do p * 100 save as "xdr_write_error % of total xdr writes";
-r = do p <= 5;
-ASSERT(r, True, "High xdr write errors", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal xdr write errors (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
-				"High xdr write error check");
-warning_breached = do p > 5;
-r = do p <= error_pct_threshold;
-r = do r || warning_breached;
-ASSERT(r, True, "Non-zero xdr write errors", "OPERATIONS", INFO,
-				"Listed namespace[s] show non-zero xdr write errors. Please run 'show statistics namespace like xdr_write' to see values.",
-				"Non-zero xdr write error check");
-
-t = select "xdr_write_timeout" from NAMESPACE.STATISTICS save;
-t = group by CLUSTER, NAMESPACE t;
-r = do t/total_xdr_writes;
-r = do r * 100 save as "xdr_write_timeout % of total xdr writes";
-r = do r <= 5;
-ASSERT(r, True, "High xdr write timeouts", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal xdr write timeouts (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
-				"High xdr write timeouts check");
-
-
 // UDF Transaction statistics
 
 s = select "client_udf_complete" as "cnt" from NAMESPACE.STATISTICS;
@@ -1352,16 +1293,18 @@ ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
 
 
 // Query Agg statistics
-
-total_transactions = select "query_agg" from NAMESPACE.STATISTICS save as "total query aggregations";
+s = select "query_aggr_complete" as "val", "query_agg_success" as "val" from NAMESPACE.STATISTICS save;
+e = select "query_aggr_error" as "val", "query_agg_error" as "val" from NAMESPACE.STATISTICS save;
+a = select "query_aggr_abort" as "val", "query_agg_abort" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do s + e; 
+total_transaction = do total_transactions + a save as "total query aggregations";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
-e = select "query_agg_error" from NAMESPACE.STATISTICS save;
 e = do e/u save as "errors per second (by using uptime)";
 e = group by CLUSTER, NAMESPACE e;
 p = do e/total_transactions_per_sec;
-p = do p * 100 save as "query_agg_error % of total query aggregations";
+p = do p * 100 save as "query_aggr_error % of total query aggregations";
 r = do p <= 5;
 ASSERT(r, True, "High query aggregation errors", "OPERATIONS", WARNING,
 				"Listed namespace[s] show higher than normal query aggregation errors (> 5% query aggregations). Please run 'show statistics namespace like query_agg' to see values.",
@@ -1375,25 +1318,27 @@ ASSERT(r, True, "Non-zero query aggregation errors", "OPERATIONS", INFO,
 
 
 // Query Lookup statistics
-
-total_transactions = select "query_lookups" from NAMESPACE.STATISTICS save as "total query lookups";
+c = select "query_basic_complete" as "val", "query_lookup_success" as "val" from NAMESPACE.STATISTICS save;
+e = select "query_basic_error" as "val", "query_lookup_error" as "val" from NAMESPACE.STATISTICS save;
+a = select "query_basic_abort" as "val", "query_lookup_abort" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e;
+total_transactions = do total_transactions + a save as "total query lookups";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
-e = select "query_lookup_error" from NAMESPACE.STATISTICS save;
 e = do e/u save as "errors per second (by using uptime)";
 e = group by CLUSTER, NAMESPACE e;
 p = do e/total_transactions_per_sec;
-p = do p * 100 save as "query_lookup_error % of total query lookups";
+p = do p * 100 save as "query_basic_error % of total query lookups";
 r = do p <= 5;
 ASSERT(r, True, "High query lookup errors", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_lookup' to see values.",
+				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_basic' (=> 5.7) or 'show statistics namespace like query_lookup' (< 5.7) to see values.",
 				"High query lookup error check");
 warning_breached = do p > 5;
 r = do p <= error_pct_threshold;
 r = do r || warning_breached;
 ASSERT(r, True, "Non-zero query lookup errors", "OPERATIONS", INFO,
-				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_lookup' to see values.",
+				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_basic' (=> 5.7) or 'show statistics namespace like query_lookup' (< 5.7) to see values.",
 				"Non-zero query lookup error check");
 
 
@@ -1512,6 +1457,70 @@ ASSERT(r, False, "Skewed Fail Key Busy count.", "ANOMALY", INFO,
 				"fail_key_busy show skew count patterns (for listed node[s]). Please run 'show statistics namespace like fail_key_busy' for details.",
 				"Key Busy  errors count anomaly check.");
 
+// XDR Write statistics
+
+SET CONSTRAINT VERSION < 4.5.1
+
+s = select "xdr_write_success" as "cnt", "xdr_client_write_success" as "cnt" from NAMESPACE.STATISTICS;
+t = select "xdr_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "xdr_write_error" as "cnt" from NAMESPACE.STATISTICS;
+total_xdr_writes = do s + t;
+total_xdr_writes = do total_xdr_writes + e save as "total xdr writes";
+total_xdr_writes_per_sec = do total_xdr_writes/u;
+total_xdr_writes = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes);
+total_xdr_writes_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes_per_sec);
+
+e = select "xdr_write_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_xdr_writes_per_sec;
+p = do p * 100 save as "xdr_write_error % of total xdr writes";
+r = do p <= 5;
+ASSERT(r, True, "High xdr write errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal xdr write errors (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
+				"High xdr write error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero xdr write errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero xdr write errors. Please run 'show statistics namespace like xdr_write' to see values.",
+				"Non-zero xdr write error check");
+
+t = select "xdr_write_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_xdr_writes;
+r = do r * 100 save as "xdr_write_timeout % of total xdr writes";
+r = do r <= 5;
+ASSERT(r, True, "High xdr write timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal xdr write timeouts (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
+				"High xdr write timeouts check");
+
+SET CONSTRAINT VERSION < 3.14;
+/* CLUSTER STATE */
+
+hp = select "heartbeat.protocol", "heartbeat-protocol" from NETWORK.CONFIG;
+heartbeat_proto_v2 = do hp == "v2";
+heartbeat_proto_v2 = group by CLUSTER, NODE do OR(heartbeat_proto_v2);
+cs = select "cluster_size" from SERVICE.STATISTICS save;
+mcs = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG save;
+cs_without_saved_value = select "cluster_size" from SERVICE.STATISTICS;
+mcs_without_saved_value = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG;
+r = do cs < mcs;
+ASSERT(r, True, "Critical cluster size.", "OPERATIONS", CRITICAL,
+				"Listed node[s] have cluster size higher than configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
+				"Critical cluster size check.",
+				heartbeat_proto_v2);
+
+small_max_configured = do mcs_without_saved_value < 20;
+critical_size = do cs >= mcs;
+correct_size = do mcs_without_saved_value - 10;
+correct_size = do cs_without_saved_value <= correct_size;
+r = do small_max_configured || critical_size;
+r = do r || correct_size;
+ASSERT(r, True, "Cluster size is near the max configured cluster size.", "OPERATIONS", WARNING,
+				"Listed node[s] have cluster size near the configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
+				"Cluster size check.",
+				heartbeat_proto_v2);
 
 SET CONSTRAINT VERSION < 3.9;
 

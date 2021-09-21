@@ -118,7 +118,9 @@ class ASSocketTestConnect(unittest.TestCase):
 
         self.assertTrue(self.as_socket.authenticate("token"))
 
-        new_mock.assert_called_with(self.socket_mock, self.as_socket.user, "token")
+        new_mock.assert_called_with(
+            self.socket_mock, self.as_socket.user, "token", "INTERNAL"
+        )
 
         old_mock.return_value = ASResponse.OK
 
@@ -140,7 +142,9 @@ class ASSocketTestConnect(unittest.TestCase):
 
         self.assertFalse(self.as_socket.authenticate("token"))
 
-        new_mock.assert_called_with(self.socket_mock, self.as_socket.user, "token")
+        new_mock.assert_called_with(
+            self.socket_mock, self.as_socket.user, "token", "INTERNAL"
+        )
         self.socket_mock.close.assert_called_once()
 
         old_mock.return_value = ASResponse.NOT_WHITELISTED

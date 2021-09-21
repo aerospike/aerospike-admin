@@ -107,7 +107,7 @@ class GetLatenciesController:
     def get_latencies_and_latency_nodes(self, nodes="all"):
         latencies_nodes = []
         latency_nodes = []
-        builds = self.cluster.info_build_version(nodes=nodes)
+        builds = self.cluster.info_build(nodes=nodes)
 
         for node, build in builds.items():
             if isinstance(build, Exception):
@@ -323,8 +323,11 @@ class GetConfigController:
         return network_configs
 
     def get_namespace(self, flip=True, nodes="all", for_mods=[]):
-        namespaces = self.cluster.info_namespaces(nodes=nodes)
+        namespaces = util.Future(self.cluster.info_namespaces, nodes=nodes).start()
+        # In SC mode effective rack-id is different from that in namespace config.
+        rack_ids = util.Future(self.cluster.info_rack_ids, nodes=nodes).start()
         namespace_set = set()
+        namespaces = namespaces.result()
 
         for namespace in namespaces.values():
             if isinstance(namespace, Exception):
@@ -335,13 +338,29 @@ class GetConfigController:
         namespace_list = util.filter_list(namespace_set, for_mods)
         ns_configs = {}
 
-        for index, namespace in enumerate(namespace_list):
-            node_configs = self.cluster.info_get_config(
-                stanza="namespace",
-                namespace=namespace,
-                namespace_id=index,
-                nodes=nodes,
-            )
+        rack_ids = rack_ids.result()
+
+        if isinstance(rack_ids, Exception):
+            rack_ids = {}
+
+        rack_ids = util.flip_keys(rack_ids)
+
+        ns_node_configs = {}
+
+        for namespace in namespace_list:
+            ns_node_configs[namespace] = util.Future(
+                lambda ns: self.cluster.info_get_config(
+                    stanza="namespace",
+                    namespace=ns,
+                    nodes=nodes,
+                ),
+                namespace,
+            ).start()
+
+        for namespace in namespace_list:
+            node_configs = ns_node_configs[namespace].result()
+            ns_rack_ids = rack_ids.get(namespace, {})
+            # print(node_configs)
             for node, node_config in list(node_configs.items()):
                 if (
                     not node_config
@@ -353,6 +372,9 @@ class GetConfigController:
                 if node not in ns_configs:
                     ns_configs[node] = {}
 
+                if "rack-id" in node_config[namespace] and node in ns_rack_ids:
+                    node_config[namespace]["rack-id"] = ns_rack_ids[node]
+
                 ns_configs[node][namespace] = node_config[namespace]
 
         if flip:
@@ -362,12 +384,14 @@ class GetConfigController:
 
     def get_xdr5_nodes(self, nodes="all"):
         xdr5_nodes = []
-        builds = self.cluster.info_build_version(nodes=nodes)
+        builds = self.cluster.info_build(nodes=nodes)
 
         for node, build in builds.items():
             if isinstance(build, Exception):
                 continue
-            if version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION) <= version.LooseVersion(build):
+            if version.LooseVersion(
+                constants.SERVER_NEW_XDR5_VERSION
+            ) <= version.LooseVersion(build):
                 xdr5_nodes.append(node)
 
         return xdr5_nodes
@@ -385,12 +409,14 @@ class GetConfigController:
 
     def get_old_xdr_nodes(self, nodes="all"):
         old_xdr_nodes = []
-        builds = self.cluster.info_build_version(nodes=nodes)
+        builds = self.cluster.info_build(nodes=nodes)
 
         for node, build in builds.items():
             if isinstance(build, Exception):
                 continue
-            if version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION) > version.LooseVersion(build):
+            if version.LooseVersion(
+                constants.SERVER_NEW_XDR5_VERSION
+            ) > version.LooseVersion(build):
                 old_xdr_nodes.append(node)
 
         return old_xdr_nodes
@@ -473,10 +499,7 @@ class GetConfigController:
         return roster_configs
 
     def get_racks(self, flip=True, nodes="all"):
-
-        configs = util.Future(self.cluster.info_racks, nodes=nodes).start()
-
-        configs = configs.result()
+        configs = self.cluster.info_racks(nodes=nodes)
         rack_configs = {}
 
         if configs:

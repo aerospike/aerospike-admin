@@ -321,7 +321,7 @@ class ClusterTest(unittest.TestCase):
     def test_get_visibility_error_nodes(self):
         cl = self.get_cluster_mock(3)
 
-        expected = ["127.0.0.0:3000"]
+        expected = []
         self.assertEqual(
             cl.get_visibility_error_nodes(),
             expected,
@@ -339,7 +339,7 @@ class ClusterTest(unittest.TestCase):
     def test_get_down_nodes(self):
         cl = self.get_cluster_mock(3)
 
-        expected = ["192.168.123.2:3000", "127.3.0.2:3000"]
+        expected = ["172.17.0.3:3000"]
         self.assertEqual(
             sorted(cl.get_down_nodes()),
             sorted(expected),

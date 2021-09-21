@@ -249,14 +249,49 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         cls.maxDiff = None
         cls.handler = JsonDynamicConfigHandler("config-schemas", "5.5.0")
 
+    def pkgutil_side_effect(self, name, path):
+        if path.endswith("schema_map.json"):
+            return """
+{
+    "4.0.0": "4_0_0.json",
+    "4.1.0": "4_1_0.json",
+    "4.2.0": "4_2_0.json",
+    "4.3.0": "4_3_0.json",
+    "4.3.1": "4_3_1.json",
+    "4.4.0": "4_4_0.json",
+    "4.5.0": "4_5_0.json",
+    "4.5.1": "4_5_1.json",
+    "4.5.2": "4_5_2.json",
+    "4.5.3": "4_5_3.json",
+    "4.6.0": "4_6_0.json",
+    "4.7.0": "4_7_0.json",
+    "4.8.0": "4_8_0.json",
+    "4.9.0": "4_9_0.json",
+    "5.0.0": "5_0_0.json",
+    "5.1.0": "5_1_0.json",
+    "5.2.0": "5_2_0.json",
+    "5.3.0": "5_3_0.json",
+    "5.4.0": "5_4_0.json",
+    "5.5.0": "5_5_0.json",
+    "5.6.0": "5_6_0.json",
+    "5.7.0": "5_7_0.json"
+}
+                """
+
+        return None
+
     def test_loads_correct_file(self):
         isfile_mock = patch("os.path.isfile").start()
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
+        pkgutil_mock.side_effect = self.pkgutil_side_effect
 
         # with patch("builtins.open", mock_open(read_data="{}")) as mock_file:
         JsonDynamicConfigHandler("dir", "0.0.0")
-        pkgutil_mock.assert_called_with(
+        pkgutil_mock.assert_any_call(
+            "lib.live_cluster.client.config_handler", "dir/schema_map.json"
+        )
+        pkgutil_mock.assert_any_call(
             "lib.live_cluster.client.config_handler", "dir/4_0_0.json"
         )
 
@@ -268,7 +303,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         # Will need to change when a new file is created
         JsonDynamicConfigHandler("dir", "10.9.0.1")
         pkgutil_mock.assert_called_with(
-            "lib.live_cluster.client.config_handler", "dir/5_6_0.json"
+            "lib.live_cluster.client.config_handler", "dir/5_7_0.json"
         )
 
         JsonDynamicConfigHandler("dir", "5.4.9")

@@ -182,9 +182,8 @@ class Node(object):
         """
         self.logger = logging.getLogger("asadm")
         self.remote_system_command_prompt = "[#$] "
-        self._update_IP(address, port)
+        self.ip = address
         self.port = port
-        self.xdr_port = 3004  # TODO: Find the xdr port
         self._timeout = timeout
         self.user = user
         self.password = password
@@ -285,13 +284,12 @@ class Node(object):
 
         # TODO: Put json files in a submodule
         self.conf_schema_handler = JsonDynamicConfigHandler(
-            constants.CONFIG_SCHEMAS_HOME, self.info_build_version()
+            constants.CONFIG_SCHEMAS_HOME, self.info_build()
         )
 
     def _initialize_socket_pool(self):
         self.socket_pool = {}
         self.socket_pool[self.port] = set()
-        self.socket_pool[self.xdr_port] = set()
         self.socket_pool_max_size = 3
 
     def _is_any_my_ip(self, ips):
@@ -307,45 +305,59 @@ class Node(object):
             if not self.login():
                 raise IOError("Login Error")
 
-            self.node_id = self.info_node()
+            service_addresses = util.Future(self.info_service_list).start()
+            node_id = util.Future(self.info_node).start()
+            features = util.Future(self.info, "features").start()
+            update_ip = util.Future(self._update_IP, address, port).start()
+            changed = util.Future(self.has_peers_changed).start()
+            peers = util.Future(self.info_peers_list).start()
+            self.node_id = node_id.result()
+
             if isinstance(self.node_id, Exception):
                 # Not able to connect this address
                 raise self.node_id
 
-            self.features = self.info("features")
-            self.use_peers_list = self.is_feature_present(feature="peers")
+            service_addresses = service_addresses.result()
+            self.features = features.result()
 
             # Original address may not be the service address, the
             # following will ensure we have the service address
-            service_addresses = self.info_service_list()
-            if service_addresses and not isinstance(self.service_addresses, Exception):
+            if not isinstance(service_addresses, Exception):
                 self.service_addresses = service_addresses
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
+            update_ip.result()
             self.close()
             self._initialize_socket_pool()
-            _current_host = (self.ip, self.port, self.tls_name)
-            if (
-                not self.service_addresses
-                or _current_host not in self.service_addresses
-            ):
-                # if asd >= 3.10 and node has only IPv6 address
-                self.service_addresses.append(_current_host)
+            current_host = (self.ip, self.port, self.tls_name)
 
-            for s in self.service_addresses:
+            if not self.service_addresses or current_host not in self.service_addresses:
+                # if asd >= 3.10 and node has only IPv6 address
+                self.service_addresses.append(current_host)
+
+            for i, s in enumerate(self.service_addresses):
                 try:
                     # calling update ip again because info_service may have provided a
-                    # different IP than what was seeded. This can happen with if a load
-                    # balancer is used as a seed.
-
+                    # different IP than what was seeded.
                     self.ip = s[0]
                     self.port = s[1]
-                    self.node_id = self.info_node()
+
+                    # Most common case
+                    if s[0] == current_host[0] and s[1] == current_host[1] and i == 0:
+                        # The following info requests were already made
+                        # no need to do again
+                        break
+
+                    # IP address have changed. Not common.
+                    node_id = util.Future(self.info_node).start()
+                    update_ip = util.Future(self._update_IP, self.ip, self.port).start()
+                    peers = util.Future(self.info_peers_list).start()
+                    self.node_id = node_id.result()
 
                     if not isinstance(self.node_id, Exception):
-                        self._update_IP(self.ip, self.port)
                         break
+
                 except Exception:
                     # Sometime unavailable address might be present in service
                     # list, for ex. Down NIC address (server < 3.10).
@@ -355,12 +367,12 @@ class Node(object):
 
             if isinstance(self.node_id, Exception):
                 raise self.node_id
+
             self._service_IP_port = self.create_key(self.ip, self.port)
             self._key = hash(self._service_IP_port)
-            if self.has_peers_changed():
-                self.peers = self.info_peers_list()
             self.new_histogram_version = self._is_new_histogram_version()
             self.alive = True
+            self.peers = peers.result()
 
         except Exception:
             # Node is offline... fake a node
@@ -373,7 +385,6 @@ class Node(object):
             self.node_id = "000000000000000"
             self.service_addresses = [(self.ip, self.port, self.tls_name)]
             self.features = ""
-            self.use_peers_list = False
             self.peers = []
             self.use_new_histogram_format = False
             self.alive = False
@@ -382,7 +393,7 @@ class Node(object):
         self.connect(self.ip, self.port)
 
     def login(self):
-        if self.user is None:
+        if self.auth_mode != constants.AuthMode.PKI and self.user is None:
             return True
 
         if not self.perform_login and (
@@ -410,6 +421,7 @@ class Node(object):
 
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
+
         return True
 
     @property
@@ -476,9 +488,6 @@ class Node(object):
 
     def has_peers_changed(self):
         try:
-            if not self.use_peers_list:
-                # old server code < 3.10
-                return True
             new_generation = self.info("peers-generation")
             if self.peers_generation != new_generation:
                 self.peers_generation = new_generation
@@ -489,7 +498,7 @@ class Node(object):
             return True
 
     def _is_new_histogram_version(self):
-        as_version = self.info_build_version()
+        as_version = self.info_build()
         if isinstance(as_version, Exception):
             return False
 
@@ -547,12 +556,6 @@ class Node(object):
         except Exception:
             pass
 
-        try:
-            while True:
-                sock = self.socket_pool[self.xdr_port].pop()
-                sock.close()
-        except Exception:
-            pass
         self.socket_pool = None
 
     ############################################################################
@@ -603,7 +606,7 @@ class Node(object):
                 return result
 
             else:
-                raise IOError("Error: Invalid command '%s'" % command)
+                raise ASInfoError("Error", "Invalid command '%s'" % command)
 
         except Exception as ex:
             if sock:
@@ -620,17 +623,6 @@ class Node(object):
         command -- the info command to execute on this node
         """
         return self._info_cinfo(command, self.ip)
-
-    @return_exceptions
-    def xdr_info(self, command):
-        """
-        asinfo -p [xdr-port] equivalent
-
-        Arguments:
-        command -- the info command to execute on this node
-        """
-
-        return self._info_cinfo(command, self.ip, self.xdr_port)
 
     @return_exceptions
     def info_node(self):
@@ -655,56 +647,6 @@ class Node(object):
         return self.create_key(self.ip, self.port)
 
     ###### Services ######
-
-    # pre 3.10 services
-
-    @return_exceptions
-    def info_services(self):
-        """
-        Get other services this node knows of that are active
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        return self._info_services_helper(self.info("services"))
-
-    @return_exceptions
-    def info_services_alumni(self):
-        """
-        Get other services this node has ever know of
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        try:
-            return self._info_services_helper(self.info("services-alumni"))
-        except IOError:
-            # Possibly old asd without alumni feature
-            return self.info_services()
-
-    @return_exceptions
-    def info_services_alt(self):
-        """
-        Get other services_alternative this node knows of that are active
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        return self._info_services_helper(self.info("services-alternate"))
-
-    @return_exceptions
-    def _info_services_helper(self, services):
-        """
-        Takes an info services response and returns a list.
-        """
-        if not services or isinstance(services, Exception):
-            return []
-
-        s = map(client_util.info_to_tuple, client_util.info_to_list(services))
-        return [(v[0], int(v[1]), self.tls_name) for v in s]
 
     # post 3.10 services
 
@@ -815,37 +757,24 @@ class Node(object):
 
     @return_exceptions
     def get_alumni_peers(self):
-        if self.use_peers_list:
-            # Unlike services-alumni, info_peers_alumni for server version prior to 4.3.1 gives
-            # only old nodes (which are not part of current cluster), so to get full list we need to
-            # add info_peers
-            alumni_peers = self.get_peers()
-            return list(set(alumni_peers + self.info_peers_alumni()))
-        else:
-            alumni_services = self.info_services_alumni()
-            if alumni_services and not isinstance(alumni_services, Exception):
-                return alumni_services
-            return self.info_services()
+        # info_peers_alumni for server version prior to 4.3.1 gives
+        # only old nodes (which are not part of current cluster), so to get full list we need to
+        # add info_peers
+        alumni_peers = util.Future(self.get_peers).start()
+        peers_alumni = util.Future(self.info_peers_alumni).start()
+        return list(set(alumni_peers.result() + peers_alumni.result()))
 
     @return_exceptions
     def get_peers(self, all=False):
-        if self.use_peers_list:
-            if all:
-                return self.info_peers_alt() + self.info_peers()
+        if all:
+            alt = util.Future(self.info_peers_alt).start()
+            std = util.Future(self.info_peers).start()
+            return alt.result() + std.result()
 
-            if self.use_services_alt:
-                return self.info_peers_alt()
+        if self.use_services_alt:
+            return self.info_peers_alt()
 
-            return self.info_peers()
-
-        else:
-            if all:
-                return self.info_services_alt() + self.info_services()
-
-            if self.use_services_alt:
-                return self.info_services_alt()
-
-            return self.info_services()
+        return self.info_peers()
 
     @return_exceptions
     def info_peers_list(self):
@@ -861,22 +790,7 @@ class Node(object):
     ###### Services End ######
 
     ###### Service ######
-
-    # pre 3.10 service
-
-    @return_exceptions
-    def info_service(self):
-        """
-        Get service endpoints of this node
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        try:
-            return self._info_service_helper(self.info("service"))
-        except Exception:
-            return []
+    # post 3.10 services
 
     @return_exceptions
     def _info_service_helper(self, service, delimiter=";"):
@@ -895,10 +809,8 @@ class Node(object):
             for v in s
         ]
 
-    # post 3.10 services
-
     @return_exceptions
-    def info_service_alt_post310(self):
+    def info_service_alt(self):
         """
         Get service alternate endpoints of this node
 
@@ -915,7 +827,7 @@ class Node(object):
             return []
 
     @return_exceptions
-    def info_service_post310(self):
+    def info_service(self):
         """
         Get service endpoints of this node
 
@@ -933,14 +845,10 @@ class Node(object):
 
     @return_exceptions
     def info_service_list(self):
-        if self.use_peers_list:
-            if self.use_services_alt:
-                return self.info_service_alt_post310()
+        if self.use_services_alt:
+            return self.info_service_alt()
 
-            return self.info_service_post310()
-
-        else:
-            return self.info_service()
+        return self.info_service()
 
     ###### Service End ######
 
@@ -1053,6 +961,26 @@ class Node(object):
         return health_dict
 
     @return_exceptions
+    def info_best_practices(self):
+        failed_practices = []
+        resp = self.info("best-practices")
+
+        if isinstance(resp, ASInfoError):
+            return resp
+
+        resp_dict = client_util.info_to_dict(resp)
+
+        if (
+            "failed_best_practices" in resp_dict
+            and resp_dict["failed_best_practices"] != "none"
+        ):
+            failed_practices = client_util.info_to_list(
+                resp_dict["failed_best_practices"], delimiter=","
+            )
+
+        return failed_practices
+
+    @return_exceptions
     def info_bin_statistics(self):
         stats = client_util.info_to_list(self.info("bins"))
         if not stats:
@@ -1077,19 +1005,16 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        build = self.info_build_version()
+        build = self.info_build()
 
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
         if version.LooseVersion(build) < version.LooseVersion(
             constants.SERVER_NEW_XDR5_VERSION
         ):
-            if self.is_feature_present("xdr"):
-                return client_util.info_to_dict(self.info("statistics/xdr"))
+            return client_util.info_to_dict(self.info("statistics/xdr"))
 
-            return client_util.info_to_dict(self.xdr_info("statistics"))
-        else:
-            return self.info_all_dc_statistics()
+        return self.info_all_dc_statistics()
 
     @return_exceptions
     def info_set_config_xdr_create_dc(self, dc):
@@ -1099,7 +1024,7 @@ class Node(object):
         if dc in dcs:
             raise ASInfoError(error_message, "DC already exists")
 
-        build = self.info_build_version()
+        build = self.info_build()
         req = "set-config:context=xdr;dc={};action=create"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1125,7 +1050,7 @@ class Node(object):
         if dc not in dcs:
             raise ASInfoError(error_message, "DC does not exist")
 
-        build = self.info_build_version()
+        build = self.info_build()
         req = "set-config:context=xdr;dc={};action=delete"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1145,7 +1070,7 @@ class Node(object):
     def info_set_config_xdr_add_namespace(self, dc, namespace, rewind=None):
         error_message = "Failed to add namespace to XDR datacenter"
 
-        build = self.info_build_version()
+        build = self.info_build()
         req = "set-config:context=xdr;dc={};namespace={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1175,7 +1100,7 @@ class Node(object):
 
     @return_exceptions
     def info_set_config_xdr_remove_namespace(self, dc, namespace):
-        build = self.info_build_version()
+        build = self.info_build()
         req = "set-config:context=xdr;dc={};namespace={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1193,7 +1118,7 @@ class Node(object):
 
     @return_exceptions
     def info_set_config_xdr_add_node(self, dc, node):
-        build = self.info_build_version()
+        build = self.info_build()
         req = "set-config:context=xdr;dc={};node-address-port={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1211,7 +1136,7 @@ class Node(object):
 
     @return_exceptions
     def info_set_config_xdr_remove_node(self, dc, node):
-        build = self.info_build_version()
+        build = self.info_build()
         req = "set-config:context=xdr;dc={};node-address-port={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1235,7 +1160,7 @@ class Node(object):
         req = "set-config:context=xdr;{}={}".format(param, value)
 
         if dc:
-            build = self.info_build_version()
+            build = self.info_build()
 
             if version.LooseVersion(build) < version.LooseVersion(
                 constants.SERVER_NEW_XDR5_VERSION
@@ -1422,7 +1347,7 @@ class Node(object):
         return ASINFO_RESPONSE_OK
 
     @return_exceptions
-    def info_get_config(self, stanza="", namespace="", namespace_id=""):
+    def info_get_config(self, stanza="", namespace=""):
         """
         Get the complete config for a node. This should include the following
         stanzas: Service, Network, XDR, and Namespace
@@ -1431,8 +1356,9 @@ class Node(object):
         Returns:
         dict -- stanza --> [namespace] --> param --> value
         """
-        build = self.info_build_version()
+        build = util.Future(self.info_build).start()
         config = {}
+
         if stanza == "namespace":
             if namespace != "":
                 config = {
@@ -1440,28 +1366,20 @@ class Node(object):
                         self.info("get-config:context=namespace;id=%s" % namespace)
                     )
                 }
-                if namespace_id == "":
-                    namespaces = self.info_namespaces()
-                    if namespaces and namespace in namespaces:
-                        namespace_id = namespaces.index(namespace)
-                if namespace_id != "":
-                    config[namespace]["nsid"] = str(namespace_id)
             else:
                 namespace_configs = {}
                 namespaces = self.info_namespaces()
-                for index, namespace in enumerate(namespaces):
-                    namespace_config = self.info_get_config(
-                        "namespace", namespace, namespace_id=index
-                    )
+                for namespace in namespaces:
+                    namespace_config = self.info_get_config("namespace", namespace)
                     namespace_config = namespace_config[namespace]
                     namespace_configs[namespace] = namespace_config
                 config = namespace_configs
 
         elif stanza == "" or stanza == "service":
             config = client_util.info_to_dict(self.info("get-config:"))
-        elif stanza == "xdr" and version.LooseVersion(build) >= version.LooseVersion(
-            constants.SERVER_NEW_XDR5_VERSION
-        ):
+        elif stanza == "xdr" and version.LooseVersion(
+            build.result()
+        ) >= version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION):
             xdr_config = {}
             xdr_config["dc_configs"] = {}
             xdr_config["ns_configs"] = {}
@@ -1843,18 +1761,11 @@ class Node(object):
         Returns:
         list -- list of dcs
         """
-        xdr_major_version = int(self.info_build_version()[0])
+        xdr_major_version = int(self.info_build()[0])
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
-            xdr_data = None
-
-            if self.is_feature_present("xdr"):
-                xdr_data = client_util.info_to_dict(self.info("get-config:context=xdr"))
-            else:
-                xdr_data = client_util.info_to_dict(
-                    self.xdr_info("get-config:context=xdr")
-                )
+            xdr_data = client_util.info_to_dict(self.info("get-config:context=xdr"))
 
             if xdr_data is None:
                 return []
@@ -1866,12 +1777,7 @@ class Node(object):
 
             return dcs.split(",")
 
-        # for older servers/XDRs
-        else:
-            if self.is_feature_present("xdr"):
-                return client_util.info_to_list(self.info("dcs"))
-            else:
-                return client_util.info_to_list(self.xdr_info("dcs"))
+        return client_util.info_to_list(self.info("dcs"))
 
     @return_exceptions
     def info_dc_statistics(self, dc):
@@ -1881,25 +1787,15 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        xdr_major_version = int(self.info_build_version()[0])
+        xdr_major_version = int(self.info_build()[0])
 
         # If xdr version is < XDR5.0 return output of old asinfo command.
         if xdr_major_version < 5:
-
-            if self.is_feature_present("xdr"):
-                return client_util.info_to_dict(self.info("dc/%s" % dc))
-            else:
-                return client_util.info_to_dict(self.xdr_info("dc/%s" % dc))
+            return client_util.info_to_dict(self.info("dc/%s" % dc))
         else:
-
-            if self.is_feature_present("xdr"):
-                return client_util.info_to_dict(
-                    self.info("get-stats:context=xdr;dc=%s" % dc)
-                )
-            else:
-                return client_util.info_to_dict(
-                    self.xdr_info("get-stats:context=xdr;dc=%s" % dc)
-                )
+            return client_util.info_to_dict(
+                self.info("get-stats:context=xdr;dc=%s" % dc)
+            )
 
     @return_exceptions
     def info_all_dc_statistics(self):
@@ -2039,6 +1935,30 @@ class Node(object):
         return rack_dict
 
     @return_exceptions
+    def info_rack_ids(self):
+        """
+        Get rack info.
+
+        Returns:
+        dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
+        """
+        resp = self.info("rack-ids")
+        rack_data = {}
+
+        if not resp:
+            return {}
+
+        resp = client_util.info_to_list(resp)
+
+        for ns_id in resp:
+            ns, id_ = client_util.info_to_tuple(ns_id)
+
+            if id_ != "":
+                rack_data[ns] = id_
+
+        return rack_data
+
+    @return_exceptions
     def info_dc_get_config(self):
         """
         Get config for a datacenter.
@@ -2046,24 +1966,14 @@ class Node(object):
         Returns:
         dict -- {dc_name1:{config_name : config_value, ...}, dc_name2:{config_name : config_value, ...}}
         """
+        configs = self.info("get-dc-config")
 
-        if self.is_feature_present("xdr"):
-            configs = self.info("get-dc-config")
+        if not configs or isinstance(configs, Exception):
+            configs = self.info("get-dc-config:")
 
-            if not configs or isinstance(configs, Exception):
-                configs = self.info("get-dc-config:")
-
-            if not configs or isinstance(configs, Exception):
-                return {}
-            return client_util.info_to_dict_multi_level(
-                configs,
-                ["dc-name", "DC_Name"],
-                ignore_field_without_key_value_delimiter=False,
-            )
-
-        configs = self.xdr_info("get-dc-config")
         if not configs or isinstance(configs, Exception):
             return {}
+
         return client_util.info_to_dict_multi_level(
             configs,
             ["dc-name", "DC_Name"],
@@ -2072,22 +1982,7 @@ class Node(object):
 
     @return_exceptions
     def info_XDR_get_config(self):
-        xdr_configs = self.info_get_config(stanza="xdr")
-        # for new aerospike version (>=3.8) with xdr-in-asd config from service
-        # port is sufficient
-        if self.is_feature_present("xdr"):
-            return xdr_configs
-        # required for old aerospike server versions (<3.8)
-        xdr_configs_xdr = self.xdr_info("get-config")
-        if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
-            xdr_configs_xdr = client_util.info_to_dict(xdr_configs_xdr)
-            if xdr_configs_xdr and not isinstance(xdr_configs_xdr, Exception):
-                if xdr_configs and not isinstance(xdr_configs, Exception):
-                    xdr_configs.update(xdr_configs_xdr)
-                else:
-                    xdr_configs = xdr_configs_xdr
-
-        return xdr_configs
+        return self.info_get_config(stanza="xdr")
 
     def _collect_histogram_data(
         self, histogram, command, logarithmic=False, raw_output=False
@@ -2146,7 +2041,8 @@ class Node(object):
     def info_sindex(self):
         return [
             client_util.info_to_dict(v, ":")
-            for v in client_util.info_to_list(self.info("sindex"))[:-1]
+            for v in client_util.info_to_list(self.info("sindex"))
+            if v != ""
         ]
 
     @return_exceptions
@@ -2202,7 +2098,7 @@ class Node(object):
         return ASINFO_RESPONSE_OK
 
     @return_exceptions
-    def info_build_version(self):
+    def info_build(self):
         """
         Get Build Version
 
@@ -2216,7 +2112,7 @@ class Node(object):
         A new truncate-namespace and truncate-namespace-undo was added to some
         4.3.x, 4.4.x, and 4.5.x but not all
         """
-        build = self.info_build_version()
+        build = self.info_build()
 
         for version_ in constants.SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS:
             if version_[1] is not None:

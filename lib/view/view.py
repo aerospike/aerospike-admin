@@ -864,6 +864,22 @@ class CliView(object):
         )
 
     @staticmethod
+    def show_best_practices(cluster, failed_practices, timestamp="", **mods):
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Best Practices{}".format(title_timestamp)
+        prefixes = cluster.get_node_names(mods.get("with", []))
+        node_ids = dict(((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys()))
+        sources = dict(data=failed_practices, prefixes=node_ids)
+
+        CliView.print_result(
+            sheet.render(templates.show_best_practices, title, sources)
+        )
+        CliView.print_result(
+            "Following Aerospike's best-practices are required for optimal stability and performance.\n"
+            + "Descriptions of each can be found @ https://docs.aerospike.com/docs/operations/install/linux/bestpractices/index.html"
+        )
+
+    @staticmethod
     def asinfo(results, line_sep, show_node_name, cluster, **mods):
         like = set([])
 

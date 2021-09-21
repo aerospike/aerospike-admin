@@ -41,6 +41,7 @@ from .info import (
     delete_quotas,
     set_whitelist,
 )
+from lib.utils.constants import AuthMode
 
 try:
     with warnings.catch_warnings():
@@ -124,7 +125,7 @@ class ASSocket:
         return sock
 
     def login(self):
-        if self.user is None:
+        if self.auth_mode != AuthMode.PKI and self.user is None:
             return True
 
         if not self.sock:
@@ -143,18 +144,19 @@ class ASSocket:
         return True
 
     def authenticate(self, session_token):
-        if self.user is None:
+        if self.auth_mode != AuthMode.PKI and self.user is None:
             return True
 
         if not self.sock:
             return False
-
         if session_token is None:
             # old authentication
             resp_code = authenticate_old(self.sock, self.user, self.password)
         else:
             # new authentication with session_token
-            resp_code = authenticate_new(self.sock, self.user, session_token)
+            resp_code = authenticate_new(
+                self.sock, self.user, session_token, self.auth_mode
+            )
 
         if resp_code != ASResponse.OK:
             # TODO remove print statement and raise an exception like requests

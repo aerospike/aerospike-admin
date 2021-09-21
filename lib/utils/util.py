@@ -384,9 +384,11 @@ def flip_keys(orig_data):
     for key1, data1 in orig_data.items():
         if isinstance(data1, Exception):
             continue
+
         for key2, data2 in data1.items():
             if key2 not in new_data:
                 new_data[key2] = {}
+
             new_data[key2][key1] = data2
 
     return new_data

@@ -17,6 +17,7 @@ import unittest
 from mock import patch
 
 from lib.live_cluster.show_controller import (
+    ShowBestPracticesController,
     ShowStatisticsController,
     ShowUsersController,
 )
@@ -129,8 +130,6 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             nodes=[node_addr], for_mods=[for_]
         )
         self.assertEqual(view_mock.show_stats.call_count, 3)
-
-        print(self.controller.mods)
 
         for ns_set_sindex in stats:
             view_mock.show_stats.assert_any_call(
@@ -317,3 +316,57 @@ class ShowUsersControllerTest(unittest.TestCase):
         self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
         self.view_mock.assert_not_called()
 
+
+class ShowBestPracticesControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ShowBestPracticesController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.show_controller.ShowBestPracticesController.cluster"
+        ).start()
+        self.view_mock = patch(
+            "lib.base_controller.BaseController.view.show_best_practices"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    def test_full_support(self):
+        resp = {
+            "1.1.1.1": [],
+            "2.2.2.2": ["best1", "best2", "best3"],
+        }
+        self.cluster_mock.info_build.return_value = {
+            "1.1.1.1": "5.7.0",
+            "2.2.2.2": "6.7.0",
+        }
+        self.cluster_mock.info_best_practices.return_value = resp
+
+        self.controller.execute([])
+
+        self.logger_mock.warning.assert_not_called()
+        self.view_mock.assert_called_with(
+            self.cluster_mock, resp, **self.controller.mods
+        )
+
+    def test_partial_support(self):
+        resp = {
+            "1.1.1.1": Exception(),
+            "2.2.2.2": ["best1", "best2", "best3"],
+        }
+        self.cluster_mock.info_build.return_value = {
+            "1.1.1.1": "5.6.11",
+            "2.2.2.2": "5.0.0",
+        }
+        self.cluster_mock.info_best_practices.return_value = resp
+
+        self.controller.execute([])
+
+        self.logger_mock.warning.assert_called_with(
+            "'show best-practices' is not supported on aerospike versions < {}", "5.7"
+        )
+        self.view_mock.assert_called_with(
+            self.cluster_mock, resp, **self.controller.mods
+        )

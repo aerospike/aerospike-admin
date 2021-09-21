@@ -27,7 +27,6 @@ class ASInfoController(LiveClusterCommandController):
 
         value = None
         line_sep = False
-        xdr = False
         show_node_name = True
 
         tline = line[:]
@@ -41,8 +40,6 @@ class ASInfoController(LiveClusterCommandController):
                     line_sep = True
                 elif word == "-p":
                     port = tline.pop(0)
-                    if port == "3004":  # ugly Hack
-                        xdr = True
                 elif word == "--no_node_name":
                     show_node_name = False
                 else:
@@ -57,10 +54,7 @@ class ASInfoController(LiveClusterCommandController):
         if value is not None:
             value = value.translate(str.maketrans("", "", "'\""))
 
-        if xdr:
-            results = self.cluster.xdr_info(value, nodes=nodes)
-        else:
-            results = self.cluster.info(value, nodes=nodes)
+        results = self.cluster.info(value, nodes=nodes)
 
         return util.Future(
             self.view.asinfo, results, line_sep, show_node_name, self.cluster, **mods

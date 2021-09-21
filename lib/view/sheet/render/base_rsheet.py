@@ -832,9 +832,11 @@ class BaseRSheetCLI(BaseRSheet):
             if not t.endswith(filler):
                 t += filler
 
+        title_width = len(t)
         t = terminal.bold() + t + terminal.unbold()
-
         render.append(t)
+
+        return title_width
 
     def _do_render_description(self, render, line_width, desc_width):
         # XXX - Same as column.

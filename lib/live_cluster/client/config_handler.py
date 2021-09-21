@@ -226,29 +226,6 @@ class BaseConfigHandler:
 
 
 class JsonDynamicConfigHandler(BaseConfigHandler):
-    file_map = {
-        "4.0.0": "4_0_0.json",
-        "4.1.0": "4_1_0.json",
-        "4.2.0": "4_2_0.json",
-        "4.3.0": "4_3_0.json",
-        "4.3.1": "4_3_1.json",
-        "4.4.0": "4_4_0.json",
-        "4.5.0": "4_5_0.json",
-        "4.5.1": "4_5_1.json",
-        "4.5.2": "4_5_2.json",
-        "4.5.3": "4_5_3.json",
-        "4.6.0": "4_6_0.json",
-        "4.7.0": "4_7_0.json",
-        "4.8.0": "4_8_0.json",
-        "4.9.0": "4_9_0.json",
-        "5.0.0": "5_0_0.json",
-        "5.1.0": "5_1_0.json",
-        "5.2.0": "5_2_0.json",
-        "5.3.0": "5_3_0.json",
-        "5.4.0": "5_4_0.json",
-        "5.5.0": "5_5_0.json",
-        "5.6.0": "5_6_0.json",
-    }
 
     # Some names in the config are wrong
     _param_replace_in = {
@@ -274,7 +251,20 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
             self.logger.debug("JsonConfigHandler: Incorrect format for server version.")
             return
 
-        file_path = self._get_file_path(dir, as_build)
+        try:
+            file_map_path = path.join(dir, "schema_map.json")
+            file_map_json = pkgutil.get_data(__name__, file_map_path)
+        except Exception as e:
+            self.logger.debug("%s", e)
+            return
+
+        try:
+            file_map = json.loads(file_map_json)
+        except Exception as e:
+            self.logger.debug("JsonConfigHandler: Failed to load json: %s", e)
+            return
+
+        file_path = self._get_file_path(dir, as_build, file_map)
 
         if file_path is None:
             return
@@ -294,16 +284,16 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         self.schema = config_schema
         self.init_successful = True
 
-    def _get_file_path(self, dir, as_build):
+    def _get_file_path(self, dir, as_build, file_map):
         # If the build provided is before the lowest supported version (LSV) use LSV
-        file = list(self.file_map.values())[0]
+        file = list(file_map.values())[0]
 
         # Find the closest version to the one provided.
-        for key in self.file_map:
+        for key in file_map:
             if version.LooseVersion(key) > version.LooseVersion(as_build):
                 break
 
-            file = self.file_map[key]
+            file = file_map[key]
 
         self.logger.debug("JsonConfigHandler: Using server config schema %s", file)
 

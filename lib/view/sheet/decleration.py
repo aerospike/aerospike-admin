@@ -432,7 +432,7 @@ class BaseProjector(object):
             raise NoEntryException("No entry for this row")
 
         if isinstance(row, Exception):
-            raise ErrorEntryException("Error occurred fetching row")
+            raise ErrorEntryException(row, "Error occurred fetching row")
 
         if self.keys is None:
             # Setting 'self.keys' to None indicates that the field needs the
@@ -458,7 +458,12 @@ class Projectors(object):
         field_type = FieldType.undefined
 
         def do_project(self, sheet, sources):
-            return self.project_raw(sheet, sources)
+            try:
+                row = self.project_raw(sheet, sources)
+            except ErrorEntryException as e:
+                row = e.exc
+
+            return row
 
     class String(BaseProjector):
         field_type = FieldType.string
@@ -568,6 +573,69 @@ class Projectors(object):
                 result += field_projector(sheet, sources)
 
             return result
+
+    class Div(BaseProjector):
+        field_type = FieldType.number
+
+        def __init__(self, numerator_projector, denominator_projector):
+            """
+            Arguments:
+            field_projectors  -- Projectors to be summed.
+            """
+            self.numerator_projector = numerator_projector
+            self.denominator_projector = denominator_projector
+            self.sources = set(
+                (
+                    field_fn.source
+                    for field_fn in [numerator_projector, denominator_projector]
+                )
+            )
+
+        def do_project(self, sheet, sources):
+            """
+            Arguments:
+            source -- A set of sources to project a sum of fields.
+            """
+
+            result = self.numerator_projector(
+                sheet, sources
+            ) / self.denominator_projector(sheet, sources)
+
+            return result
+
+    class Or(BaseProjector):
+        def __init__(self, field_type, *field_projectors):
+            """
+            Arguments:
+            field_type -- The 'FieldType' for this field.
+            field_projectors -- Projectors to be used. First one to succeed will be returned.
+                                which is useful because non-existent keys cause failure.
+            """
+            self.field_type = field_type
+            self.sources = set()
+            for field_fn in field_projectors:
+
+                if field_fn.source is None:
+                    source = field_fn.sources
+                else:
+                    source = set([field_fn.source])
+
+                self.sources = self.sources.union(source)
+
+            self.field_projectors = field_projectors
+
+        def do_project(self, sheet, sources):
+            """
+            Arguments:
+            source -- A set of sources to project a the result of a function
+                      from.
+            """
+
+            for field_projector in self.field_projectors:
+                try:
+                    return field_projector(sheet, sources)
+                except NoEntryException:
+                    pass
 
     class Func(BaseProjector):
         def __init__(self, field_type, func, *field_projectors):
@@ -753,4 +821,6 @@ class NoEntryException(Exception):
 
 
 class ErrorEntryException(Exception):
-    pass
+    def __init__(self, error, *args):
+        self.exc = error
+        super().__init__(*args)

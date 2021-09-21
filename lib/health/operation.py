@@ -1165,7 +1165,7 @@ def find_kv_vector(key, data, recurse=False, update_saved_list=False):
     Function takes a arbitrary next dictionary and creates
     vector of based level key and value pair in form
 
-    [ {(key, "KEY"): value1}, {(key1: "KEY") : value1} ... ] 
+    [ {(key, "KEY"): value1}, {(key1: "KEY") : value1} ... ]
 
     If recurse is tree key is entire "/" path from root
 

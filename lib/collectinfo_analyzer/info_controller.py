@@ -88,7 +88,7 @@ class InfoController(CollectinfoCommandController):
 
             xdr_enable = {}
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_xdr_build()
+            builds = cinfo_log.get_asd_build()
             old_xdr_stats = {}
             xdr5_stats = {}
 
@@ -153,7 +153,7 @@ class InfoController(CollectinfoCommandController):
         )
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_xdr_build()
+            builds = cinfo_log.get_asd_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
             node_xdr_build_major_version = 5

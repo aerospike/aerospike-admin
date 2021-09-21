@@ -851,7 +851,7 @@ SYS_SECTION_NAME_LIST = [
     "ip_addr",
     "dmesg",
 ]
-# Meta data have all meta info (asd_build, xdr_build, cluster_name)
+# Meta data have all meta info (asd_build, cluster_name)
 DERIVED_SECTION_LIST = ["features"]
 
 # List of histogram dumps (raw)

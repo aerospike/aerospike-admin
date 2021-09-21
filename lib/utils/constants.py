@@ -83,6 +83,10 @@ AuthMode = Enumeration(
         # configured on server.  Send clear password on node login whether or not TLS is defined.
         # This mode should only be used for testing purposes because it is not secure authentication.
         "EXTERNAL_INSECURE",
+        # Authentication and authorization based on a certificate.  No user name or
+        # password needs to be configured. Requires TLS and a client certificate.
+        # Requires server version 5.7.0+
+        "PKI",
     ]
 )
 
@@ -99,6 +103,7 @@ AdminMode = Enumeration(
 
 
 # server versions with critical changes
+SERVER_SHOW_BEST_PRACTICES_FIRST_VERSION = "5.7"
 SERVER_QUOTAS_FIRST_VERSION = "5.6"
 SERVER_NEW_LATENCIES_CMD_FIRST_VERSION = "5.1"
 SERVER_NEW_XDR5_VERSION = "5.0"

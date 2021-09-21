@@ -108,7 +108,7 @@ class CollectinfoLogHandler(object):
         service_data = self.info_statistics(stanza="service")
         principal = None
 
-        if not timestamp in service_data:
+        if timestamp not in service_data:
             return principal
 
         for node_ip in service_data[timestamp]:

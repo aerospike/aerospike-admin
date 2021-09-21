@@ -641,11 +641,11 @@ info_sindex_sheet = Sheet(
         Field("Set", Projectors.String("sindex_stats", "set")),
         node_field,
         hidden_node_id_field,
-        Field("Bins", Projectors.Number("sindex_stats", "bins", "bin")),
+        Field("Bins", Projectors.String("sindex_stats", "bins", "bin")),
         Field("Num Bins", Projectors.Number("sindex_stats", "num_bins")),
         Field("Bin Type", Projectors.String("sindex_stats", "type")),
-        Field("State", Projectors.String("sindex_stats", "state")),
-        Field("Sync State", Projectors.String("sindex_stats", "sync_state")),
+        Field("State", Projectors.String("sindex_stats", "state")),  # new
+        Field("Sync State", Projectors.String("sindex_stats", "sync_state")),  # old
         Field("Keys", Projectors.Number("sindex_stats", "keys")),
         Field(
             "Entries",
@@ -655,7 +655,10 @@ info_sindex_sheet = Sheet(
         ),
         Field(
             "Memory Used",
-            Projectors.Number("sindex_stats", "si_accounted_memory"),
+            Projectors.Sum(
+                Projectors.Number("sindex_stats", "ibtr_memory_used"),
+                Projectors.Number("sindex_stats", "nbtr_memory_used"),
+            ),
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
         ),
@@ -664,13 +667,27 @@ info_sindex_sheet = Sheet(
             (
                 Field(
                     "Requests",
-                    Projectors.Number("sindex_stats", "query_reqs"),
+                    Projectors.Or(
+                        FieldType.number,
+                        # query_basic_* added 5.7
+                        Projectors.Sum(
+                            Projectors.Number("sindex_stats", "query_basic_complete"),
+                            Projectors.Number("sindex_stats", "query_basic_error"),
+                            Projectors.Number("sindex_stats", "query_basic_abort"),
+                        ),
+                        # removed in 5.7
+                        Projectors.Number("sindex_stats", "query_reqs"),
+                    ),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
                 ),
                 Field(
                     "Avg Num Recs",
-                    Projectors.Number("sindex_stats", "query_avg_rec_count"),
+                    Projectors.Number(
+                        "sindex_stats",
+                        "query_basic_avg_rec_count",  # query_basic_* added 5.7
+                        "query_avg_rec_count",  # removed in 5.7
+                    ),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
                 ),
@@ -1157,6 +1174,33 @@ show_sindex = Sheet(
     from_source=("data"),
     group_by=("Namespace", "Set"),
     order_by=("Index Name", "Namespace", "Set"),
+)
+
+
+def ok_or_list(resp):
+    if isinstance(resp, Exception):
+        raise resp
+    if not resp:
+        return ASINFO_RESPONSE_OK
+
+    return ", ".join(resp)
+
+
+show_best_practices = Sheet(
+    (
+        node_field,
+        Field(
+            "Response",
+            Projectors.Func(
+                FieldType.string, ok_or_list, Projectors.Identity("data", None)
+            ),
+            formatters=(
+                Formatters.green_alert(lambda edata: edata.value == ASINFO_RESPONSE_OK),
+                Formatters.red_alert(lambda edata: edata.value != ASINFO_RESPONSE_OK),
+            ),
+        ),
+    ),
+    from_source=("data", "prefixes"),
 )
 
 grep_count_sheet = Sheet(

@@ -25,7 +25,6 @@ class _CollectinfoNode(object):
         self.timestamp = timestamp
         self.node_name = node_name
         self.node_id = node_id
-        self.xdr_build = "N/E"
         self.asd_build = "N/E"
         self.asd_version = "N/E"
         self.cluster_name = "null"
@@ -44,9 +43,6 @@ class _CollectinfoNode(object):
         except Exception:
             pass
         self.node_id = node_id
-
-    def set_xdr_build(self, xdr_build):
-        self.xdr_build = xdr_build
 
     def set_asd_build(self, asd_build):
         self.asd_build = asd_build
@@ -74,7 +70,6 @@ class _CollectinfoSnapshot:
             self._set_nodes(self.get_node_names())
             self._set_node_id()
             self._set_ip()
-            self._set_xdr_build()
             self._set_asd_build()
             self._set_asd_version()
             self._set_cluster_name()
@@ -328,15 +323,6 @@ class _CollectinfoSnapshot:
         except Exception:
             return "UNKNOWN_PRINCIPAL"
 
-    def get_xdr_build(self):
-        xdr_build = {}
-        try:
-            for node in self.nodes:
-                xdr_build[node] = self.nodes[node].xdr_build
-        except Exception:
-            pass
-        return xdr_build
-
     def get_asd_build(self):
         asd_build = {}
         try:
@@ -388,16 +374,6 @@ class _CollectinfoSnapshot:
             try:
                 self.nodes[node].set_ip(
                     self.cinfo_data[node]["as_stat"]["meta_data"]["ip"]
-                )
-            except Exception:
-                pass
-
-    def _set_xdr_build(self):
-
-        for node in self.nodes:
-            try:
-                self.nodes[node].set_xdr_build(
-                    self.cinfo_data[node]["as_stat"]["meta_data"]["xdr_build"]
                 )
             except Exception:
                 pass

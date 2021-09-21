@@ -386,7 +386,7 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
 
 class ManageACLRolesLeafCommandController(ManageLeafCommandController):
     def _supports_quotas(self, nodes):
-        build_resp = self.cluster.info_build_version(nodes=nodes)
+        build_resp = self.cluster.info_build(nodes=nodes)
         build = list(build_resp.values())[0]
 
         if version.LooseVersion(build) < version.LooseVersion(

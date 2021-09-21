@@ -39,19 +39,20 @@ class InfoController(LiveClusterCommandController):
     @CommandHelp('"info network" displays network information for Aerospike.')
     def do_network(self, line):
         stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
-
-        cluster_configs = self.config_getter.get_cluster(nodes=self.nodes)
-
+        cluster_configs = util.Future(
+            self.config_getter.get_cluster, nodes=self.nodes
+        ).start()
         cluster_names = util.Future(
             self.cluster.info, "cluster-name", nodes=self.nodes
         ).start()
         builds = util.Future(self.cluster.info, "build", nodes=self.nodes).start()
         versions = util.Future(self.cluster.info, "version", nodes=self.nodes).start()
 
-        stats = stats.result()
         cluster_names = cluster_names.result()
         builds = builds.result()
         versions = versions.result()
+        cluster_configs.result()
+        stats = stats.result()
 
         for node in stats:
             try:
@@ -83,9 +84,7 @@ class InfoController(LiveClusterCommandController):
         stats = util.Future(
             self.cluster.info_all_dc_statistics, nodes=self.nodes
         ).start()
-        xdr_builds = util.Future(
-            self.cluster.info_build_version, nodes=self.nodes
-        ).start()
+        builds = util.Future(self.cluster.info_build, nodes=self.nodes).start()
 
         configs = self.config_getter.get_dc(flip=False, nodes=self.nodes)
 
@@ -118,14 +117,14 @@ class InfoController(LiveClusterCommandController):
                 except Exception:
                     pass
 
-        xdr_builds = xdr_builds.result()
+        builds = builds.result()
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
         node_xdr_build_major_version = 4
 
         for node in stats:
             try:
-                node_xdr_build_major_version = int(xdr_builds[node][0])
+                node_xdr_build_major_version = int(builds[node][0])
             except Exception:
                 continue
 
@@ -155,22 +154,18 @@ class InfoController(LiveClusterCommandController):
     @CommandHelp('"info xdr" displays summary information for each datacenter.')
     def do_xdr(self, line):
         stats = util.Future(self.cluster.info_XDR_statistics, nodes=self.nodes).start()
-
         xdr_enable = util.Future(self.cluster.is_XDR_enabled, nodes=self.nodes).start()
-
-        xdr_builds = util.Future(
-            self.cluster.info_build_version, nodes=self.nodes
-        ).start()
-
+        builds = util.Future(self.cluster.info_build, nodes=self.nodes).start()
         stats = stats.result()
-        xdr_builds = xdr_builds.result()
+        builds = builds.result()
+
         old_xdr_stats = {}
         xdr5_stats = {}
         node_xdr_build_major_version = 4
 
         for node in stats:
             try:
-                node_xdr_build_major_version = int(xdr_builds[node][0])
+                node_xdr_build_major_version = int(builds[node][0])
             except Exception:
                 continue
 
@@ -214,7 +209,7 @@ class InfoController(LiveClusterCommandController):
                 util.Future(
                     self.view.info_old_XDR,
                     old_xdr_stats,
-                    xdr_builds,
+                    builds,
                     xdr_enable,
                     self.cluster,
                     **self.mods

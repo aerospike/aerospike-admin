@@ -246,9 +246,7 @@ class NodeTest(unittest.TestCase):
     def setUp(self):
         self.maxDiff = None
         self.ip = "192.1.1.1"
-        info_build_version = patch(
-            "lib.live_cluster.client.node.Node.info_build_version"
-        )
+        info_build = patch("lib.live_cluster.client.node.Node.info_build")
         self.get_fully_qualified_domain_name = patch(
             "lib.live_cluster.client.node.get_fully_qualified_domain_name"
         ).start()
@@ -257,12 +255,10 @@ class NodeTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-        lib.live_cluster.client.node.Node.info_build_version = (
-            info_build_version.start()
-        )
+        lib.live_cluster.client.node.Node.info_build = info_build.start()
         socket.getaddrinfo = getaddrinfo.start()
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "5.0.0.11"
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
         self.get_fully_qualified_domain_name.return_value = "host.domain.local"
         socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
 
@@ -283,7 +279,7 @@ class NodeTest(unittest.TestCase):
 
             if cmd == "node":
                 return "A00000000000000"
-            elif cmd == "service":
+            elif cmd == "service-clear-std":
                 return "192.3.3.3:4567"
             else:
                 return "5.0.0.11"
@@ -299,51 +295,6 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(n.node_id, "A00000000000000", "Node Id is not correct")
 
     ###### Services ######
-
-    def test_info_services(self):
-        """
-        Ensure function returns a list of tuples
-        """
-
-        self.info_mock.return_value = "192.168.120.111:3000;127.0.0.1:3000"
-        expected = [("192.168.120.111", 3000, None), ("127.0.0.1", 3000, None)]
-
-        services = self.node.info_services()
-
-        self.info_mock.assert_called_with("services", self.ip)
-        self.assertEqual(
-            services, expected, "info_services did not return the expected result"
-        )
-
-    def test_info_services_alumni(self):
-        """
-        Ensure function returns a list of tuples
-        """
-        self.info_mock.return_value = "192.168.120.113:3000;127.0.0.3:3000"
-        expected = [("192.168.120.113", 3000, None), ("127.0.0.3", 3000, None)]
-
-        services = self.node.info_services_alumni()
-
-        self.info_mock.assert_called_with("services-alumni", self.ip)
-        self.assertEqual(
-            services,
-            expected,
-            "info_services_alumni did not return the expected result",
-        )
-
-    def test_info_services_alternate(self):
-        """
-        Ensure function returns a list of tuples
-        """
-        self.info_mock.return_value = "192.168.120.112:3000;127.0.0.2:3000"
-        expected = [("192.168.120.112", 3000, None), ("127.0.0.2", 3000, None)]
-
-        services = self.node.info_services_alt()
-
-        self.info_mock.assert_called_with("services-alternate", self.ip)
-        self.assertEqual(
-            services, expected, "info_services_alt did not return the expected result"
-        )
 
     def test_info_peers(self):
         """
@@ -437,25 +388,16 @@ class NodeTest(unittest.TestCase):
         )
 
     def test_info_peers_list(self):
-        self.info_mock.return_value = "192.168.120.111:3000;127.0.0.1:3000"
-        expected = [("192.168.120.111", 3000, None), ("127.0.0.1", 3000, None)]
-
-        peers_list = self.node.info_peers_list()
-
-        self.info_mock.assert_called_with("services", "192.1.1.1")
-        self.assertEqual(
-            sorted(peers_list),
-            sorted(expected),
-            "info_peers_list(services) did not return the expected result",
-        )
-
-        self.info_mock.return_value = "192.168.120.112:3000;127.0.0.2:3000"
+        self.info_mock.return_value = "0,3000,[[BB9050011AC4202,,[172.17.0.2]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]]]]"
         self.node.use_services_alt = True
-        expected = [("192.168.120.112", 3000, None), ("127.0.0.2", 3000, None)]
+        expected = [
+            (("172.17.0.2", 3000, None),),
+            (("2001:db8:85a3::8a2e", 3000, None),),
+        ]
 
         peers_list = self.node.info_peers_list()
 
-        self.info_mock.assert_called_with("services-alternate", "192.1.1.1")
+        self.info_mock.assert_called_with("peers-clear-alt", "192.1.1.1")
         self.assertEqual(
             sorted(peers_list),
             sorted(expected),
@@ -463,22 +405,8 @@ class NodeTest(unittest.TestCase):
         )
 
         self.node.use_services_alt = False
-        self.info_mock.return_value = "192.168.120.113:3000;127.0.0.3:3000"
-        self.node.consider_alumni = True
-        expected = [("192.168.120.113", 3000, None), ("127.0.0.3", 3000, None)]
-
-        peers_list = self.node.info_peers_list()
-
-        self.info_mock.assert_called_with("services-alumni", "192.1.1.1")
-        self.assertEqual(
-            sorted(peers_list),
-            sorted(expected),
-            "info_peers_list(services-alt) did not return the expected result",
-        )
-
         self.node.consider_alumni = False
         self.info_mock.return_value = "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]"
-        self.node.use_peers_list = True
         expected = [
             (("172.17.0.1", 3000, None),),
             (("2001:db8:85a3::8a2e", 6666, None),),
@@ -584,23 +512,9 @@ class NodeTest(unittest.TestCase):
 
         self.node.enable_tls = False
         self.node.consider_alumni = False
-        self.node.use_peers_list = False
 
     def test_info_service_list(self):
-        self.info_mock.return_value = "192.168.120.111:3000;127.0.0.1:3000"
-        expected = [("192.168.120.111", 3000, None), ("127.0.0.1", 3000, None)]
-
-        service_list = self.node.info_service_list()
-
-        self.info_mock.assert_called_with("service", "192.1.1.1")
-        self.assertEqual(
-            sorted(service_list),
-            sorted(expected),
-            "info_service_list(service) did not return the expected result",
-        )
-
         self.info_mock.return_value = "172.17.0.1:3000,172.17.1.1:3000"
-        self.node.use_peers_list = True
         expected = [("172.17.0.1", 3000, None), ("172.17.1.1", 3000, None)]
 
         service_list = self.node.info_service_list()
@@ -654,7 +568,6 @@ class NodeTest(unittest.TestCase):
 
         self.node.enable_tls = False
         self.node.use_services_alt = False
-        self.node.use_peers_list = False
 
     def test_info_statistics(self):
         self.info_mock.return_value = "cs=2;ck=71;ci=false;o=5"
@@ -800,8 +713,14 @@ class NodeTest(unittest.TestCase):
             "age;bar:bin_names=5,bin_names_quota=6,age;"
         )
         expected = {
-            "test": {"bin_names": "1", "bin_names_quota": "2"},
-            "bar": {"bin_names": "5", "bin_names_quota": "6"},
+            "test": {
+                "bin_names": "1",
+                "bin_names_quota": "2",
+            },
+            "bar": {
+                "bin_names": "5",
+                "bin_names_quota": "6",
+            },
         }
 
         actual = self.node.info_bin_statistics()
@@ -810,17 +729,8 @@ class NodeTest(unittest.TestCase):
         self.assertDictEqual(actual, expected)
 
     def test_info_XDR_statistics_with_server_before_5(self):
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.9"
-        self.info_mock.side_effect = ["a=b;c=1;2=z"]
-        expected = {"a": "b", "c": "1", "2": "z"}
-        actual = self.node.info_XDR_statistics()
-
-        self.assertEqual(self.info_mock.call_count, 1)
-        self.info_mock.assert_any_call("statistics", self.ip, self.node.xdr_port)
-        self.assertDictEqual(actual, expected)
-
         self.info_mock.reset_mock()
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "2.5.6"
+        lib.live_cluster.client.node.Node.info_build.return_value = "2.5.6"
         self.info_mock.side_effect = ["a=b;c=1;2=z"]
         self.node.features = "xdr"
         expected = {"a": "b", "c": "1", "2": "z"}
@@ -838,9 +748,7 @@ class NodeTest(unittest.TestCase):
 
         actual = self.node.info_XDR_statistics()
 
-        self.assertEqual(
-            lib.live_cluster.client.node.Node.info_build_version.call_count, 2
-        )
+        self.assertEqual(lib.live_cluster.client.node.Node.info_build.call_count, 2)
         self.assertEqual(info_all_dc_statistics_mock.call_count, 1)
         self.assertEqual(actual, expected)
 
@@ -857,7 +765,7 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.9"
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
         info_dcs_mock.return_value = ["DC2", "DC3"]
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
@@ -901,7 +809,7 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.9"
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
         info_dcs_mock.return_value = ["DC1", "DC2"]
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
@@ -953,7 +861,7 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.3.5.8"
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.3.5.8"
         self.info_mock.return_value = "ok"
 
         actual = self.node.info_set_config_xdr_add_namespace(
@@ -996,7 +904,7 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "2.1.1.1"
+        lib.live_cluster.client.node.Node.info_build.return_value = "2.1.1.1"
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
@@ -1029,7 +937,7 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.5.6.9"
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.5.6.9"
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
@@ -1061,7 +969,7 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.9.9.9"
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.9.9.9"
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
@@ -1095,7 +1003,7 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "3.9"
+        lib.live_cluster.client.node.Node.info_build.return_value = "3.9"
         self.info_mock.return_value = "ok"
 
         actual = self.node.info_set_config_xdr("foo", "bar", dc="DC1", namespace="NS")
@@ -1326,7 +1234,7 @@ class NodeTest(unittest.TestCase):
         )
 
     def test_info_get_config_namespace(self):
-        self.node.info_get_config("namespace", "test", 0)
+        self.node.info_get_config("namespace", "test")
         self.info_mock.assert_called_with(
             "get-config:context=namespace;id=test", self.ip
         )
@@ -1356,8 +1264,18 @@ class NodeTest(unittest.TestCase):
         ]
         expected = {
             "dc_configs": {
-                "DC1": {"namespaces": "bar,foo", "a": "1", "b": "2", "c": "3"},
-                "DC2": {"namespaces": "jar", "a": "10", "b": "11", "c": "12"},
+                "DC1": {
+                    "namespaces": "bar,foo",
+                    "a": "1",
+                    "b": "2",
+                    "c": "3",
+                },
+                "DC2": {
+                    "namespaces": "jar",
+                    "a": "10",
+                    "b": "11",
+                    "c": "12",
+                },
             },
             "ns_configs": {
                 "DC1": {
@@ -1395,9 +1313,15 @@ class NodeTest(unittest.TestCase):
         self.node.localhost = True
         parse_file_mock.return_value = {
             "namespace": {
-                "foo": {"service": "config_data_1"},
-                "bar": {"service": "config_data_2"},
-                "tar": {"service": "config_data_3"},
+                "foo": {
+                    "service": "config_data_1",
+                },
+                "bar": {
+                    "service": "config_data_2",
+                },
+                "tar": {
+                    "service": "config_data_3",
+                },
             }
         }
         expected = {
@@ -1412,9 +1336,15 @@ class NodeTest(unittest.TestCase):
 
         parse_file_mock.return_value = {
             "namespace": {
-                "foo": {"service": "config_data_1"},
-                "bar": {"service": "config_data_2"},
-                "tar": {"service": "config_data_3"},
+                "foo": {
+                    "service": "config_data_1",
+                },
+                "bar": {
+                    "service": "config_data_2",
+                },
+                "tar": {
+                    "service": "config_data_3",
+                },
             }
         }
 
@@ -1663,9 +1593,7 @@ class NodeTest(unittest.TestCase):
 
         actual = self.node.info_dcs()
 
-        self.info_mock.assert_called_with(
-            "get-config:context=xdr", self.ip, self.node.xdr_port
-        )
+        self.info_mock.assert_called_with("get-config:context=xdr", self.ip)
         self.assertListEqual(actual, expected)
 
         self.info_mock.return_value = "a=b;c=d;e=f;dcs=DC1,DC2,DC3"
@@ -1678,35 +1606,16 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "DC3;DC4;DC5"
         expected = ["DC3", "DC4", "DC5"]
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.9"
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
 
         actual = self.node.info_dcs()
 
         self.info_mock.assert_called_with("dcs", self.ip)
         self.assertListEqual(actual, expected)
 
-        self.info_mock.return_value = "DC3;DC4;DC5"
-        expected = ["DC3", "DC4", "DC5"]
-        self.node.features = ""
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.9"
-
-        actual = self.node.info_dcs()
-
-        self.info_mock.assert_called_with("dcs", self.ip, self.node.xdr_port)
-        self.assertListEqual(actual, expected)
-
     def test_info_dc_statistics(self):
         expected = {"a": "b", "c": "d", "e": "f"}
         dc = "foo"
-        self.info_mock.return_value = "a=b;c=d;e=f"
-
-        actual = self.node.info_dc_statistics(dc=dc)
-
-        self.info_mock.assert_called_with(
-            "get-stats:context=xdr;dc={}".format(dc), self.ip, self.node.xdr_port
-        )
-        self.assertDictEqual(actual, expected)
-
         self.info_mock.return_value = "a=b;c=d;e=f"
         self.node.features = "xdr"
 
@@ -1717,23 +1626,12 @@ class NodeTest(unittest.TestCase):
         )
         self.assertDictEqual(actual, expected)
 
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.9"
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
         self.info_mock.return_value = "a=b;c=d;e=f"
 
         actual = self.node.info_dc_statistics(dc=dc)
 
         self.info_mock.assert_called_with("dc/{}".format(dc), self.ip)
-        self.assertDictEqual(actual, expected)
-
-        lib.live_cluster.client.node.Node.info_build_version.return_value = "4.9"
-        self.info_mock.return_value = "a=b;c=d;e=f"
-        self.node.features = ""
-
-        actual = self.node.info_dc_statistics(dc=dc)
-
-        self.info_mock.assert_called_with(
-            "dc/{}".format(dc), self.ip, self.node.xdr_port
-        )
         self.assertDictEqual(actual, expected)
 
     def test_info_udf_list(self):
@@ -1864,6 +1762,20 @@ class NodeTest(unittest.TestCase):
             racks_actual, expected, "info_racks did not return the expected result"
         )
 
+    def test_info_rack_ids(self):
+        self.info_mock.return_value = "test:0;bar:1;foo:"
+        expected = {
+            "test": "0",
+            "bar": "1",
+        }
+
+        racks_actual = self.node.info_rack_ids()
+
+        self.info_mock.assert_called_with("rack-ids", self.ip)
+        self.assertEqual(
+            racks_actual, expected, "info_rack_ids did not return the expected result"
+        )
+
     def test_info_dc_get_config(self):
         self.info_mock.return_value = (
             "dc-name=REMOTE_DC:dc-type=aerospike:tls-name=:dc-security-config-file=/private/aerospike/security_credentials_REMOTE_DC.txt:"
@@ -1885,13 +1797,6 @@ class NodeTest(unittest.TestCase):
             }
         }
 
-        dc_config = self.node.info_dc_get_config()
-
-        self.assertEqual(
-            dc_config, expected, "info_dc_get_config did not return the expected result"
-        )
-        self.info_mock.assert_called_with("get-dc-config", self.ip, self.node.xdr_port)
-
         self.node.features = ["xdr"]
 
         xdr_dc_confg = self.node.info_dc_get_config()
@@ -1905,14 +1810,6 @@ class NodeTest(unittest.TestCase):
 
     @patch("lib.live_cluster.client.node.Node.info_get_config")
     def test_info_XDR_get_config(self, info_get_config):
-        info_get_config.return_value = {"a": "1", "b": "2", "c": "3"}
-        self.info_mock.return_value = "b=4;d=5;e=6"
-        expected = {"a": "1", "b": "4", "c": "3", "d": "5", "e": "6"}
-
-        actual = self.node.info_XDR_get_config()
-
-        self.assertDictEqual(actual, expected)
-
         info_get_config.return_value = {"a": "1", "b": "2", "c": "3"}
         self.node.features = "xdr"
         expected = {
@@ -3122,7 +3019,7 @@ class NodeTest(unittest.TestCase):
         ]
 
         for input, output in input_output:
-            lib.live_cluster.client.node.Node.info_build_version.return_value = input
+            lib.live_cluster.client.node.Node.info_build.return_value = input
 
             self.assertEqual(self.node._use_new_truncate_command(), output)
 

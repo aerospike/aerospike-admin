@@ -105,6 +105,7 @@ class SecurityTest(unittest.TestCase):
             self.socket_mock,
             "admin",
             b"B$2a$10$7EqJtq98hPqEX7fNZaFWoO1mVO/4MLpGzsqojz6E9Gef6iXDjXdDa",
+            AuthMode.INTERNAL,
         )
 
         self.socket_mock.sendall.assert_called_with(expected_send_buf)

@@ -249,7 +249,7 @@ class HealthLexer:
         return t
 
     def t_STRING(self, t):
-        r"\".*?\""
+        r"\".*?\" "
         if len(t.value) < 3:
             t.value = None
         else:

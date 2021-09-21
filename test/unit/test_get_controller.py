@@ -1,7 +1,7 @@
 import unittest
 from mock import Mock, patch
 
-from lib.get_controller import GetPmapController
+from lib.get_controller import GetPmapController, GetConfigController
 
 
 class GetPmapControllerTest(unittest.TestCase):
@@ -91,3 +91,74 @@ class GetPmapControllerTest(unittest.TestCase):
         expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
         actual_output = self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
+
+
+class GetConfigControllerTest(unittest.TestCase):
+    def mock_info_call(self, cmd, nodes="all"):
+        if cmd == "version":
+            return {"10.71.71.169:3000": "3.6.0"}
+
+        if cmd == "node":
+            return {"10.71.71.169:3000": "BB93039BC7AC40C"}
+
+        if cmd == "partition-info":
+            return self.partition_info
+
+        return {}
+
+    def setUp(self):
+        self.cluster_mock = patch("lib.live_cluster.client.cluster.Cluster").start()
+        self.controller = GetConfigController(self.cluster_mock)
+        self.addCleanup(patch.stopall)
+
+    def test_get_namespace(self):
+        self.cluster_mock.info_namespaces.return_value = {
+            "10.71.71.169:3000": ["bar", "test"]
+        }
+        self.cluster_mock.info_rack_ids.return_value = {
+            "10.71.71.169:3000": {
+                "test": "88",
+                "bar": "99",
+            }
+        }
+
+        def side_effect(stanza, namespace, nodes):
+            if namespace == "test":
+                return {
+                    "10.71.71.169:3000": {
+                        "test": {
+                            "a": "1",
+                            "b": "2",
+                            "c": "3",
+                        }
+                    }
+                }
+            elif namespace == "bar":
+                return {
+                    "10.71.71.169:3000": {
+                        "bar": {"d": "4", "e": "5", "f": "6", "rack-id": "0"}
+                    }
+                }
+
+        self.cluster_mock.info_get_config.side_effect = side_effect
+
+        expected_output = {
+            "test": {
+                "10.71.71.169:3000": {
+                    "a": "1",
+                    "b": "2",
+                    "c": "3",
+                }
+            },
+            "bar": {
+                "10.71.71.169:3000": {
+                    "d": "4",
+                    "e": "5",
+                    "f": "6",
+                    "rack-id": "99",
+                }
+            },
+        }
+
+        actual_output = self.controller.get_namespace()
+        self.assertDictEqual(expected_output, actual_output)

@@ -123,7 +123,7 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
-        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
         self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
@@ -131,7 +131,7 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
     def test_logs_error_when_server_does_not_support_quotas(self):
         log_message = "'read' and 'write' modifiers are not supported on aerospike versions <= 5.5"
         line = "test-role priv test-priv read 100 write 200"
-        self.cluster_mock.info_build_version.side_effect = [
+        self.cluster_mock.info_build.side_effect = [
             {"principal": "5.5.0.0"},
             {"principal": "5.5.9.9"},
         ]
@@ -444,7 +444,7 @@ class ManageACLQuotasControllerTest(unittest.TestCase):
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
-        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
         self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
@@ -452,7 +452,7 @@ class ManageACLQuotasControllerTest(unittest.TestCase):
     def test_logs_error_when_server_does_not_support_quotas(self):
         log_message = "'manage quotas' is not supported on aerospike versions <= 5.5"
         line = "role test-role read 100 write 200"
-        self.cluster_mock.info_build_version.side_effect = [
+        self.cluster_mock.info_build.side_effect = [
             {"principal": "5.5.0.0"},
             {"principal": "5.5.9.9"},
         ]
@@ -611,7 +611,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             "lib.live_cluster.manage_controller.ManageConfigLeafController.prompt_challenge"
         ).start()
 
-        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
         self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
@@ -1129,7 +1129,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
             "lib.live_cluster.manage_controller.ManageTruncateController.prompt_challenge"
         ).start()
 
-        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
         self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
@@ -1461,7 +1461,7 @@ class ManageTruncateUndoControllerTest(unittest.TestCase):
             "lib.live_cluster.manage_controller.ManageTruncateController.prompt_challenge"
         ).start()
 
-        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
         self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
@@ -1545,7 +1545,7 @@ class ManageReclusterControllerTest(unittest.TestCase):
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
-        self.cluster_mock.info_build_version.return_value = {"principal": "5.6.0.0"}
+        self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
         self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)

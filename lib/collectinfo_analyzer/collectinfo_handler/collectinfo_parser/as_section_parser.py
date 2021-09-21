@@ -1474,14 +1474,36 @@ def _identify_features_from_stats(nodes, imap, parsed_map, section_name):
                         featureobj["QUERY"] = "YES"
                         break
 
-        if _stat_exist_in_statistics(service_map, ["query_agg", "query_agg_success"]):
+        if _stat_exist_in_statistics(
+            service_map,
+            [
+                "query_aggr_complete",
+                "query_aggr_error",
+                "query_aggr_abort",
+                # renamed/removed on 5.7
+                "query_agg_success",
+                "query_agg_error",
+                "query_agg_abort",
+                "query_agg",
+            ],
+        ):
             featureobj["AGGREGATION"] = "YES"
         elif ns_map:
             for namespace in ns_map:
                 if service_sec in ns_map[namespace]:
                     ns_service_map = ns_map[namespace][service_sec]
                     if _stat_exist_in_statistics(
-                        ns_service_map, ["query_agg", "query_agg_success"]
+                        ns_service_map,
+                        [
+                            "query_aggr_complete",
+                            "query_aggr_error",
+                            "query_aggr_abort",
+                            # renamed/removed on 5.7
+                            "query_agg_success",
+                            "query_agg_error",
+                            "query_agg_abort",
+                            "query_agg",
+                        ],
                     ):
                         featureobj["AGGREGATION"] = "YES"
                         break

@@ -1,5 +1,5 @@
 from lib.base_controller import CommandHelp
-from lib.utils import common, util
+from lib.utils import common, util, version, constants
 from lib.get_controller import (
     GetConfigController,
     GetDistributionController,
@@ -20,16 +20,17 @@ from .live_cluster_command_controller import LiveClusterCommandController
 class ShowController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
-            "config": ShowConfigController,
-            "statistics": ShowStatisticsController,
-            "latencies": ShowLatenciesController,
+            "pmap": ShowPmapController,
             "distribution": ShowDistributionController,
             "mapping": ShowMappingController,
-            "pmap": ShowPmapController,
-            "users": ShowUsersController,
-            "roles": ShowRolesController,
+            "best-practices": ShowBestPracticesController,
             "udfs": ShowUdfsController,
             "sindex": ShowSIndexController,
+            "config": ShowConfigController,
+            "latencies": ShowLatenciesController,
+            "statistics": ShowStatisticsController,
+            "roles": ShowRolesController,
+            "users": ShowUsersController,
             # TODO
             # 'rosters': ShowRosterController,
             # 'racks': ShowRacksController,
@@ -249,7 +250,7 @@ class ShowLatenciesController(LiveClusterCommandController):
             latencies,
             self.cluster,
             show_ns_details=True if namespace_set else False,
-            **self.mods
+            **self.mods,
         )
 
 
@@ -304,7 +305,7 @@ class ShowConfigController(LiveClusterCommandController):
             self.cluster,
             title_every_nth=title_every_nth,
             flip_output=flip_output,
-            **self.mods
+            **self.mods,
         )
 
     @CommandHelp("Displays network configuration")
@@ -336,7 +337,7 @@ class ShowConfigController(LiveClusterCommandController):
             self.cluster,
             title_every_nth=title_every_nth,
             flip_output=flip_output,
-            **self.mods
+            **self.mods,
         )
 
     @CommandHelp("Displays namespace configuration")
@@ -371,7 +372,7 @@ class ShowConfigController(LiveClusterCommandController):
                 self.cluster,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
-                **self.mods
+                **self.mods,
             )
             for ns, configs in list(ns_configs.items())
         ]
@@ -413,7 +414,7 @@ class ShowConfigController(LiveClusterCommandController):
                     self.cluster,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
-                    **self.mods
+                    **self.mods,
                 )
             )
         if old_xdr_configs:
@@ -425,7 +426,7 @@ class ShowConfigController(LiveClusterCommandController):
                     self.cluster,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
-                    **self.mods
+                    **self.mods,
                 )
             )
 
@@ -438,9 +439,7 @@ class ShowConfigController(LiveClusterCommandController):
     )
     def do_dc(self, line):
 
-        xdr_builds = util.Future(
-            self.cluster.info_build_version, nodes=self.nodes
-        ).start()
+        builds = util.Future(self.cluster.info_build, nodes=self.nodes).start()
 
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
@@ -462,12 +461,12 @@ class ShowConfigController(LiveClusterCommandController):
         dc_configs = self.getter.get_dc(nodes=self.nodes)
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
-        xdr_builds = xdr_builds.result()
+        builds = builds.result()
         node_xdr_build_major_version = 4
 
-        for xdr_build in xdr_builds.values():
+        for build in builds.values():
             try:
-                node_xdr_build_major_version = int(xdr_build[0])
+                node_xdr_build_major_version = int(build[0])
             except Exception:
                 continue
 
@@ -486,7 +485,7 @@ class ShowConfigController(LiveClusterCommandController):
                     self.cluster,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
-                    **self.mods
+                    **self.mods,
                 )
                 for dc, configs in dc_configs.items()
             ]
@@ -531,7 +530,7 @@ class ShowConfigController(LiveClusterCommandController):
             self.cluster,
             title_every_nth=title_every_nth,
             flip_output=flip_output,
-            **self.mods
+            **self.mods,
         )
 
 
@@ -626,7 +625,7 @@ class ShowStatisticsController(LiveClusterCommandController):
             show_total=show_total,
             title_every_nth=title_every_nth,
             flip_output=flip_output,
-            **self.mods
+            **self.mods,
         )
 
     @CommandHelp("Displays namespace statistics")
@@ -666,7 +665,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                 show_total=show_total,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
-                **self.mods
+                **self.mods,
             )
             for namespace in sorted(ns_stats.keys())
         ]
@@ -708,7 +707,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                 show_total=show_total,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
-                **self.mods
+                **self.mods,
             )
             for ns_set_sindex in sorted(sindex_stats.keys())
         ]
@@ -748,7 +747,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                 show_total=show_total,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
-                **self.mods
+                **self.mods,
             )
             for (namespace, set_name), stats in list(set_stats.items())
         ]
@@ -790,7 +789,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                 show_total=show_total,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
-                **self.mods
+                **self.mods,
             )
             for namespace, new_bin_stat in list(new_bin_stats.items())
         ]
@@ -818,13 +817,11 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        xdr_builds = util.Future(
-            self.cluster.info_build_version, nodes=self.nodes
-        ).start()
+        builds = util.Future(self.cluster.info_build, nodes=self.nodes).start()
 
         xdr_stats = util.Future(self.getter.get_xdr, nodes=self.nodes).start()
 
-        xdr_builds = xdr_builds.result()
+        builds = builds.result()
         xdr_stats = xdr_stats.result()
         old_xdr_stats = {}
         xdr5_stats = {}
@@ -832,7 +829,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         for node in xdr_stats:
             try:
-                node_xdr_build_major_version = int(xdr_builds[node][0])
+                node_xdr_build_major_version = int(builds[node][0])
             except Exception:
                 continue
 
@@ -865,7 +862,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
-                    **self.mods
+                    **self.mods,
                 )
                 for dc in xdr5_stats
                 if not self.mods["for"] or dc in matches
@@ -881,7 +878,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
-                    **self.mods
+                    **self.mods,
                 )
             )
 
@@ -916,13 +913,10 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         dc_stats = util.Future(self.getter.get_dc, nodes=self.nodes).start()
-
-        xdr_builds = util.Future(
-            self.cluster.info_build_version, nodes=self.nodes
-        ).start()
-
+        builds = util.Future(self.cluster.info_build, nodes=self.nodes).start()
         dc_stats = dc_stats.result()
-        xdr_builds = xdr_builds.result()
+        builds = builds.result()
+
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
         node_xdr_build_major_version = 4
@@ -931,7 +925,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
             for node in dc:
                 try:
-                    node_xdr_build_major_version = int(xdr_builds[node][0])
+                    node_xdr_build_major_version = int(builds[node][0])
                 except Exception:
                     continue
 
@@ -952,7 +946,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
-                    **self.mods
+                    **self.mods,
                 )
                 for dc, stats in list(dc_stats.items())
             ]
@@ -1053,3 +1047,42 @@ class ShowSIndexController(LiveClusterCommandController):
         resp = list(sindexes_data.values())[0]
 
         return util.Future(self.view.show_sindex, resp, **self.mods)
+
+
+@CommandHelp(
+    '"show best-practices" displays any of Aerospike\'s violated "best-practices".'
+)
+class ShowBestPracticesController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+
+    def _do_default(self, line):
+        versions = util.Future(self.cluster.info_build).start()
+        best_practices = util.Future(
+            self.cluster.info_best_practices, nodes=self.nodes
+        ).start()
+        versions = versions.result()
+
+        fully_supported = all(
+            [
+                True
+                if version.LooseVersion(v)
+                >= version.LooseVersion(
+                    constants.SERVER_SHOW_BEST_PRACTICES_FIRST_VERSION
+                )
+                else False
+                for v in versions.values()
+            ]
+        )
+
+        if not fully_supported:
+            self.logger.warning(
+                "'show best-practices' is not supported on aerospike versions < {}",
+                constants.SERVER_SHOW_BEST_PRACTICES_FIRST_VERSION,
+            )
+
+        best_practices = best_practices.result()
+
+        return util.Future(
+            self.view.show_best_practices, self.cluster, best_practices, **self.mods
+        )

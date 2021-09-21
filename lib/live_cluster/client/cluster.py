@@ -203,9 +203,12 @@ class Cluster(object):
                     # nodes which can't detect online nodes
                     continue
 
-                alumni_peers = client_util.flatten(node.get_alumni_peers())
-                peers = client_util.flatten(node.get_peers(all=True))
+                alumni_peers = util.Future(node.get_alumni_peers).start()
+                peers = util.Future(node.get_peers, all=True).start()
+                alumni_peers = client_util.flatten(alumni_peers.result())
+                peers = client_util.flatten(peers.result())
                 not_visible = set(alumni_peers) - set(peers)
+
                 if len(not_visible) >= 1:
                     for n in not_visible:
                         _key = Node.create_key(n[0], n[1])
@@ -303,7 +306,13 @@ class Cluster(object):
                     for node, services in zip(live_nodes, services_list):
                         if isinstance(services, Exception):
                             continue
-                        all_services.update(set(services))
+
+                        for service in services:
+                            # service can be a list of tuples. Most likely just
+                            # as single tuple though.
+                            for s in service:
+                                all_services.add(s)
+
                         all_services.add((node.ip, node.port, node.tls_name))
                 unvisited = all_services - visited
             self._refresh_node_liveliness()
@@ -413,7 +422,10 @@ class Cluster(object):
                 continue
             else:
                 break
-        self.update_aliases(self.aliases, addr_port_tls, new_node.key)
+
+        if new_node is not None:
+            self.update_aliases(self.aliases, addr_port_tls, new_node.key)
+
         return new_node
 
     def is_present_as_alias(self, addr, port, aliases=None):
