@@ -1036,7 +1036,7 @@ class ShowBestPracticesController(CollectinfoCommandController):
         self.modifiers = set(["with"])
 
     def _do_default(self, line):
-        best_practices = self.log_handler.info_statistics(stanza="best_practices")
+        best_practices = self.log_handler.info_meta_data(stanza="best_practices")
 
         for timestamp in sorted(best_practices.keys()):
             if not best_practices[timestamp]:
