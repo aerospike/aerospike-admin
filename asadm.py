@@ -89,13 +89,13 @@ class BaseLogger(logging.Logger, object):
             self._handle_exception(msg)
 
             if self.execute_only_mode:
-                exit(2)
+                sys.exit(2)
 
     def critical(self, msg, *args, **kwargs):
         if self.level <= logging.CRITICAL:
             self._print_message(msg, "ERROR", True, *args, **kwargs)
             self._handle_exception(msg)
-        exit(1)
+        sys.exit(1)
 
 
 class LogFormatter(logging.Formatter):
@@ -217,7 +217,7 @@ class AerospikeShell(cmd.Cmd):
                         "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>"
                     )
                     self.do_exit("")
-                    exit(1)
+                    sys.exit(1)
 
                 self.ctrl = CollectinfoRootController(
                     admin_version, clinfo_path=log_path
@@ -561,7 +561,7 @@ def parse_tls_input(cli_args):
 
     except Exception as e:
         logger.error("SSLContext creation Exception: " + str(e))
-        exit(1)
+        sys.exit(1)
 
 
 def execute_asinfo_commands(
@@ -626,12 +626,12 @@ def main():
 
     if cli_args.help:
         conf.print_config_help()
-        exit(0)
+        sys.exit(0)
 
     if cli_args.version:
         print("Aerospike Administration Shell")
         print("Version " + str(admin_version))
-        exit(0)
+        sys.exit(0)
 
     if cli_args.no_color:
         disable_coloring()
@@ -699,10 +699,10 @@ def main():
                 ssl_context=ssl_context,
                 line_separator=cli_args.line_separator,
             )
-            exit(0)
+            sys.exit(0)
         except Exception as e:
             logger.error(e)
-            exit(1)
+            sys.exit(1)
 
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
@@ -732,7 +732,7 @@ def main():
             print("Unable to load profiler")
             print("Yappi Exception:")
             print(str(a))
-            exit(1)
+            sys.exit(1)
 
     func = None
     args = ()
@@ -740,7 +740,7 @@ def main():
     real_stdout = sys.stdout
     if not execute_only_mode:
         if not shell.connected:
-            exit(1)
+            sys.exit(1)
 
         func = shell.cmdloop
         single_command = False
@@ -794,7 +794,7 @@ def main():
                 func = common.collect_sys_info(port=cli_args.port)
 
                 cleanup()
-                exit(1)
+                sys.exit(1)
 
             cleanup()
             logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
@@ -866,16 +866,17 @@ def parse_commands(file):
 
 
 def get_version():
-    if __version__.startswith("$$"):
-        path = sys.argv[0].split("/")[:-1]
-        path.append("version.txt")
-        vfile = "/".join(path)
-        f = open(vfile)
-        version = f.readline()
-        f.close()
-        return str(version)
-    else:
-        return __version__
+    # TODO: Fix this.  Only really needed for local builds
+    # if __version__.startswith("$$"):
+    #     path = sys.argv[0].split("/")[:-1]
+    #     path.append("version.txt")
+    #     vfile = "/".join(path)
+    #     f = open(vfile)
+    #     version = f.readline()
+    #     f.close()
+    #     return str(version)
+    # else:
+    return __version__
 
 
 if __name__ == "__main__":
