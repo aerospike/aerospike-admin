@@ -23,11 +23,6 @@ INSTALL = "install -o aerospike -g aerospike"
 
 REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements.txt
 
-LINUX_VERSION = ""
-ifeq ($(OS),Linux)
-	LINUX_VERSION = $(shell build/os_version)
-endif
-
 SHELL := /bin/bash
 
 define make_build
@@ -38,6 +33,7 @@ define make_build
 	rm -f `find . -type f -name '*.pyc' | xargs`
 	mkdir $(BUILD_ROOT)tmp/asadm
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
+	cp -f *.spec $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
 	$(if $(filter $(OS),Darwin),
@@ -49,8 +45,12 @@ endef
 
 all:
 	$(call make_build)
+	pipenv install
+	(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/)
 
+pex:
 	mkdir -p $(BUILD_ROOT)tmp/wheels
+
 ifneq ($(PYTHONS),)
 	./build_pex.sh
 else
