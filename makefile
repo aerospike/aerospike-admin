@@ -45,8 +45,8 @@ endef
 
 all:
 	$(call make_build)
-	pipenv install
-	(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/)
+	pipenv install --dev
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/)"
 
 pex:
 	mkdir -p $(BUILD_ROOT)tmp/wheels

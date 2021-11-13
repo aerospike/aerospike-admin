@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = []
-hiddenimports = ['pipes', 'json', 'distro', 'dateutil', 'dateutil.parser', 'toml', 'jsonschema']
+hiddenimports = ['pipes', 'json', 'distro', 'dateutil', 'dateutil.parser', 'toml', 'jsonschema', 'fcntl', 'bcrypt']
 tmp_ret = collect_all('lib')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
@@ -27,7 +27,7 @@ a = Analysis(['asadm.py'],
              win_private_assemblies=False,
              cipher=block_cipher,
              noarchive=False)
-             
+
 pyz = PYZ(a.pure, a.zipped_data,
              cipher=block_cipher)
 
