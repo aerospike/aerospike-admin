@@ -151,6 +151,14 @@ from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
 from lib.view import terminal, view
 
+# Do not remove this line.  It mitigates a race condition that occurs when using
+# pyinstaller and socket.getaddrinfo.  For some reason the idna codec is not registered
+# causing a lookup error to occur. Adding this line here makes sure that the proper
+# codec is registered well before it is used in getaddrinfo.
+# see https://bugs.python.org/issue29288, https://github.com/aws/aws-cli/blob/1.16.277/awscli/clidriver.py#L55,
+# and https://github.com/pyinstaller/pyinstaller/issues/1113 for more info :)
+u"".encode("idna")
+
 __version__ = "$$__version__$$"
 CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
 CMD_FILE_MULTI_LINE_COMMENT_START = "/*"
