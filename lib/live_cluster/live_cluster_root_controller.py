@@ -92,12 +92,12 @@ class LiveClusterRootController(BaseController):
         except Exception:
             pass
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
     # This function is a hack for autocomplete
     @CommandHelp("Terminate session")
-    def do_exit(self, line):
+    async def do_exit(self, line):
         return "EXIT"
 
     @CommandHelp(
@@ -105,7 +105,7 @@ class LiveClusterRootController(BaseController):
         "For example, to see the documentation for the 'info' command,",
         "use the command 'help info'.",
     )
-    def do_help(self, line):
+    async def do_help(self, line):
         self.execute_help(line)
 
     @CommandHelp(
@@ -124,7 +124,7 @@ class LiveClusterRootController(BaseController):
         "           watch 5 info namespace",
     )
     @DisableAutoComplete()
-    def do_watch(self, line):
+    async def do_watch(self, line):
         self.view.watch(self, line)
 
     @DisableAutoComplete()
@@ -135,7 +135,7 @@ class LiveClusterRootController(BaseController):
         "    --warn:    Use this option to receive a prompt to confirm",
         "               that you want to run the command.",
     )
-    def do_enable(self, line):
+    async def do_enable(self, line):
         warn = util.check_arg_and_delete_from_mods(
             line=line, arg="--warn", default=False, modifiers={}, mods={}
         )
@@ -145,7 +145,7 @@ class LiveClusterRootController(BaseController):
         )
         return "ENABLE"
 
-    def do_disable(self, line):
+    async def do_disable(self, line):
         self.controller_map.update(
             {
                 "manage": create_disabled_controller(ManageController, "manage"),

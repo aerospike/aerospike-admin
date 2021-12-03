@@ -20,7 +20,7 @@ class ASInfoController(LiveClusterCommandController):
         self.modifiers = set(["with", "like"])
 
     @CommandHelp("Executes an info command.")
-    def _do_default(self, line):
+    async def _do_default(self, line):
         mods = self.parse_modifiers(line)
         line = mods["line"]
         nodes = self.nodes

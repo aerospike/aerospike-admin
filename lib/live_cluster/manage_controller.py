@@ -72,7 +72,7 @@ class ManageController(LiveClusterCommandController):
             "acl": ManageACLController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -90,7 +90,7 @@ class ManageACLController(LiveClusterCommandController):
             "quotas": ManageACLQuotasRoleController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -102,7 +102,7 @@ class ManageACLCreateController(LiveClusterCommandController):
             "role": ManageACLCreateRoleController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -114,7 +114,7 @@ class ManageACLDeleteController(LiveClusterCommandController):
             "role": ManageACLDeleteRoleController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -126,7 +126,7 @@ class ManageACLGrantController(LiveClusterCommandController):
             "role": ManageACLGrantRoleController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -138,7 +138,7 @@ class ManageACLRevokeController(LiveClusterCommandController):
             "role": ManageACLRevokeRoleController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -156,7 +156,7 @@ class ManageACLCreateUserController(ManageLeafCommandController):
         self.required_modifiers = set(["line"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         username = line.pop(0)
         password = None
         roles = None
@@ -208,7 +208,7 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
         self.required_modifiers = set(["line"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         username = line.pop(0)
         principal_node = self.cluster.get_expected_principal()
 
@@ -239,7 +239,7 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
         self.required_modifiers = set(["line"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         username = util.get_arg_and_delete_from_mods(
             line=line,
             arg="user",
@@ -289,7 +289,7 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         self.required_modifiers = set(["user"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         username = util.get_arg_and_delete_from_mods(
             line=line,
             arg="user",
@@ -341,7 +341,7 @@ class ManageACLGrantUserController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "roles"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         username = line.pop(0)
         roles = self.mods["roles"]
         principal_node = self.cluster.get_expected_principal()
@@ -373,7 +373,7 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "roles"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         username = line.pop(0)
         roles = self.mods["roles"]
 
@@ -452,7 +452,7 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
 
         return groups
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         role_name = line.pop(0)
         privilege = None
         allowlist = self.mods["allow"]
@@ -525,7 +525,7 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
         self.required_modifiers = set(["line"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         role_name = line.pop(0)
 
         if self.warn and not self.prompt_challenge():
@@ -559,7 +559,7 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "priv"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         role_name = line.pop(0)
         privilege = self.mods["priv"][0]
 
@@ -609,7 +609,7 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "priv"])
         self.controller_map = {}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         role_name = line.pop(0)
         privilege = self.mods["priv"][0]
 
@@ -659,7 +659,7 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
         self.modifiers = set(["clear", "allow"])
         self.required_modifiers = set(["role"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         role_name = util.get_arg_and_delete_from_mods(
             line=line,
             arg="role",
@@ -750,7 +750,7 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
 
         return groups
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         principal_node = self.cluster.get_expected_principal()
 
         if not self._supports_quotas([principal_node]):
@@ -832,7 +832,7 @@ class ManageUdfsController(LiveClusterCommandController):
             "remove": ManageUdfsRemoveController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -847,7 +847,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["line", "path"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         udf_name = line.pop(0)
         udf_path = self.mods["path"][0]
 
@@ -895,7 +895,7 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["line"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         udf_name = line.pop(0)
 
         if self.warn and not self.prompt_challenge(
@@ -927,7 +927,7 @@ class ManageSIndexController(LiveClusterCommandController):
             "delete": ManageSIndexDeleteController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -951,7 +951,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "ns", "bin"])
         self.modifiers = set(["set", "in"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
     def _do_create(self, line, bin_type):
@@ -1018,15 +1018,15 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         self.view.print_result("Successfully created sindex {}.".format(index_name))
 
     # Hack for auto-complete
-    def do_numeric(self, line):
+    async def do_numeric(self, line):
         self._do_create(line, "numeric")
 
     # Hack for auto-complete
-    def do_string(self, line):
+    async def do_string(self, line):
         self._do_create(line, "string")
 
     # Hack for auto-complete
-    def do_geo2dsphere(self, line):
+    async def do_geo2dsphere(self, line):
         self._do_create(line, "geo2dsphere")
 
 
@@ -1041,7 +1041,7 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "ns"])
         self.modifiers = set(["set"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         index_name = line.pop(0)
         namespace = util.get_arg_and_delete_from_mods(
             line=line,
@@ -1349,7 +1349,7 @@ class ManageConfigController(LiveClusterCommandController):
             "xdr": ManageConfigXDRController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -1364,7 +1364,7 @@ class ManageConfigLoggingController(ManageConfigLeafController):
         self.required_modifiers = set(["file", self.PARAM, self.TO])
         self.modifiers = set(["with"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
         file = util.get_arg_and_delete_from_mods(
             line=line,
@@ -1399,7 +1399,7 @@ class ManageConfigServiceController(ManageConfigLeafController):
         self.modifiers = set(["with"])
         self.require_recluster = set(["cluster-name"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
 
         if self.warn and not self.prompt_challenge(
@@ -1431,7 +1431,7 @@ class ManageConfigNetworkController(ManageConfigLeafController):
         self.required_modifiers = set([self.PARAM, self.TO])
         self.modifiers = set(["with"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
 
         if len(line) == 0 or line[0] in self.required_modifiers | self.modifiers:
@@ -1466,7 +1466,7 @@ class ManageConfigSecurityController(ManageConfigLeafController):
         self.required_modifiers = set([self.PARAM, self.TO])
         self.modifiers = set(["with"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
         subcontext = None
 
@@ -1513,7 +1513,7 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
             "ship-sets": "ship-only-specified-sets",
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
         namespace = self.mods["namespace"][0]
         subcontext = None
@@ -1561,7 +1561,7 @@ class ManageConfigNamespaceSetController(ManageConfigLeafController):
         self.modifiers = set(["with"])
         self.controller_arg = "set"
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
         namespace = self.mods["namespace"][0]
         set_ = self.mods["set"][0]
@@ -1596,7 +1596,7 @@ class ManageConfigXDRController(ManageConfigLeafController):
             "delete": ManageConfigXDRDeleteController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
 
         if self.warn and not self.prompt_challenge(
@@ -1619,7 +1619,7 @@ class ManageConfigXDRCreateController(ManageConfigLeafController):
         self.required_modifiers = set(["dc"])
         self.modifiers = set(["with"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         dc = util.get_arg_and_delete_from_mods(
             line=line,
             arg="dc",
@@ -1647,7 +1647,7 @@ class ManageConfigXDRDeleteController(ManageConfigLeafController):
         self.required_modifiers = set(["dc"])
         self.modifiers = set(["with"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         dc = util.get_arg_and_delete_from_mods(
             line=line,
             arg="dc",
@@ -1692,7 +1692,7 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
             line, indent=indent, method=method, print_modifiers=False
         )
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
         dc = self.mods["dc"][0]
 
@@ -1720,7 +1720,7 @@ class ManageConfigXDRDCAddController(LiveClusterCommandController):
             "namespace": ManageConfigXDRDCAddNamespaceController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -1734,7 +1734,7 @@ class ManageConfigXDRDCAddNodeController(ManageConfigLeafController):
         self.modifiers = set(["with"])
         self.controller_arg = "ip:port"
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         dc = self.mods["dc"][0]
         node = self.mods["node"][0]
 
@@ -1763,7 +1763,7 @@ class ManageConfigXDRDCAddNamespaceController(ManageConfigLeafController):
         self.modifiers = set(["with", "rewind"])
         self.controller_arg = "ns"
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         dc = self.mods["dc"][0]
         namespace = self.mods["namespace"][0]
         rewind = util.get_arg_and_delete_from_mods(
@@ -1801,7 +1801,7 @@ class ManageConfigXDRDCRemoveController(LiveClusterCommandController):
             "namespace": ManageConfigXDRDCRemoveNamespaceController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -1815,7 +1815,7 @@ class ManageConfigXDRDCRemoveNodeController(ManageConfigLeafController):
         self.modifiers = set(["with"])
         self.controller_arg = "node:port"
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         dc = self.mods["dc"][0]
         node = self.mods["node"][0]
 
@@ -1840,7 +1840,7 @@ class ManageConfigXDRDCRemoveNamespaceController(ManageConfigLeafController):
         self.modifiers = set(["with"])
         self.controller_arg = "ns"
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         dc = self.mods["dc"][0]
         namespace = self.mods["namespace"][0]
 
@@ -1870,7 +1870,7 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
         self.modifiers = set(["with"])
         self.controller_arg = "ns"
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         param, value = self.extract_param_value(line)
         dc = self.mods["dc"][0]
         namespace = self.mods["namespace"][0]
@@ -2062,7 +2062,7 @@ class ManageTruncateController(ManageLeafCommandController):
 
         return prompt_str
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         unrecognized = None
 
         warn = not util.check_arg_and_delete_from_mods(
@@ -2191,7 +2191,7 @@ class ManageReclusterController(ManageLeafCommandController):
     def __init__(self):
         pass
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         resp = self.cluster.info_recluster(nodes="principal")
         resp = list(resp.values())[0]
 
@@ -2216,7 +2216,7 @@ class ManageQuiesceController(ManageLeafCommandController):
         self.required_modifiers = {"with"}
         self.modifiers = {"undo"}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         undo = util.check_arg_and_delete_from_mods(
             line, arg="undo", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -2257,7 +2257,7 @@ class ManageReviveController(ManageLeafCommandController):
         self.required_modifiers = {"ns"}
         self.modifiers = {"with"}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         ns = self.mods["ns"][0]
 
         if self.warn and not self.prompt_challenge(
@@ -2321,7 +2321,7 @@ class ManageRosterController(LiveClusterCommandController):
             "stage": ManageRosterStageController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -2339,7 +2339,7 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
         self.required_modifiers = {"nodes", "ns"}
         self.getter = GetConfigController(self.cluster)
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         ns = self.mods["ns"][0]
         warn = not util.check_arg_and_delete_from_mods(
             line=line,
@@ -2411,7 +2411,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
     def __init__(self):
         self.required_modifiers = {"nodes", "ns"}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         ns = self.mods["ns"][0]
         warn = not util.check_arg_and_delete_from_mods(
             line=line,
@@ -2499,7 +2499,7 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
     def __init__(self):
         self.required_modifiers = {"line", "ns"}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         new_roster = self.mods["line"]
         ns = self.mods["ns"][0]
         warn = not util.check_arg_and_delete_from_mods(
@@ -2565,7 +2565,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
     def __init__(self):
         self.required_modifiers = {"ns"}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         ns = self.mods["ns"][0]
         current_roster = util.Future(
             self.cluster.info_roster, ns, nodes="principal"
@@ -2613,7 +2613,7 @@ class ManageJobsController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {"kill": ManageJobsKillController}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -2627,7 +2627,7 @@ class ManageJobsKillController(LiveClusterCommandController):
             "all": ManageJobsKillAllController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -2654,7 +2654,7 @@ class ManageJobsKillTridController(ManageLeafCommandController):
                 nodes=[node],
             )
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         trids = self.mods["line"]
         jobs_data = self.getter.get_all()
         requests_ = []
@@ -2711,7 +2711,7 @@ class ManageJobsKillAllController(LiveClusterCommandController):
             "scans": ManageJobsKillAllScansController,
         }
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -2723,7 +2723,7 @@ class ManageJobsKillAllScansController(ManageLeafCommandController):
     def __init__(self):
         self.modifiers = {"with"}
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         if self.warn:
             if self.nodes == "all":
                 if not self.prompt_challenge(

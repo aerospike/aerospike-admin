@@ -51,7 +51,7 @@ class LogAnalyzerRootController(BaseController):
         }
 
     @CommandHelp("Terminate session")
-    def do_exit(self, line):
+    async def do_exit(self, line):
         # This function is a hack for autocomplete
         return "EXIT"
 
@@ -60,7 +60,7 @@ class LogAnalyzerRootController(BaseController):
         'for example, to retrieve documentation for the "info"',
         'command use "help info".',
     )
-    def do_help(self, line):
+    async def do_help(self, line):
         self.execute_help(line)
 
 
@@ -89,7 +89,7 @@ class GrepController(LogAnalyzerCommandController):
         self.modifiers = set()
         self.grep_file = _GrepFile(self.modifiers)
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.grep_file.do_show(line)
 
 
@@ -122,7 +122,7 @@ class CountController(LogAnalyzerCommandController):
         self.modifiers = set()
         self.grep_file = _GrepFile(self.modifiers)
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.grep_file.do_count(line)
 
 
@@ -160,7 +160,7 @@ class DiffController(LogAnalyzerCommandController):
         self.modifiers = set()
         self.grep_file = _GrepFile(self.modifiers)
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.grep_file.do_diff(line)
 
 
@@ -188,7 +188,7 @@ class HistogramController(LogAnalyzerCommandController):
         self.modifiers = set()
         self.grep_file = _GrepFile(self.modifiers)
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.grep_file.do_latency(line)
 
 
@@ -202,7 +202,7 @@ class AddController(LogAnalyzerCommandController):
     def __init__(self):
         self.modifiers = set()
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         length = len(line)
         if length < 1:
             return
@@ -230,7 +230,7 @@ class ListController(LogAnalyzerCommandController):
         self.controller_map = {}
         self.modifiers = set()
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         print(terminal.bold() + "Added Logs:" + terminal.unbold(), end=" ")
         index = 1
         all_log_files = self.log_handler.get_log_files(all_list=True)
@@ -268,7 +268,7 @@ class SelectController(LogAnalyzerCommandController):
         self.controller_map = {}
         self.modifiers = set()
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.log_handler.select_logs_by_index(line)
 
 
@@ -282,7 +282,7 @@ class RemoveController(LogAnalyzerCommandController):
     def __init__(self):
         self.modifiers = set()
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.log_handler.remove_logs_by_index(line)
 
 
@@ -291,7 +291,7 @@ class PagerController(LogAnalyzerCommandController):
     def __init__(self):
         self.modifiers = set()
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
     @CommandHelp(
@@ -299,13 +299,13 @@ class PagerController(LogAnalyzerCommandController):
         "Use arrow keys to scroll output and 'q' to end page for table.",
         "All linux less commands can work in this pager option.",
     )
-    def do_on(self, line):
+    async def do_on(self, line):
         CliView.pager = CliView.LESS
 
     @CommandHelp("Removes pager and prints output normally")
-    def do_off(self, line):
+    async def do_off(self, line):
         CliView.pager = CliView.NO_PAGER
 
     @CommandHelp("Display output in scrolling mode")
-    def do_scroll(self, line):
+    async def do_scroll(self, line):
         CliView.pager = CliView.SCROLL

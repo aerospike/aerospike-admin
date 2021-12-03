@@ -11,7 +11,7 @@ class FeaturesController(LiveClusterCommandController):
         self.modifiers = set(["with", "like"])
         self.getter = GetFeaturesController(self.cluster)
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
 
         features = self.getter.get_features(nodes=self.nodes)
 

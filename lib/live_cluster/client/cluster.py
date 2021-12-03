@@ -620,7 +620,7 @@ class Cluster(object):
         regex = re.compile("^info.*$|^admin.*$|^config.*$")
         if regex.match(name):
 
-            def info_func(*args, **kwargs):
+            async def info_func(*args, **kwargs):
                 if "nodes" not in kwargs:
                     nodes = "all"
                 else:

@@ -42,27 +42,27 @@ class FakeRoot(BaseController):
 
 
 class FakeCommand1(CommandController):
-    def _do_default(self, line):
+    async def _do_default(self, line):
         return self.do_cmd(line[:])
 
-    def do_cmd(self, line):
+    async def do_cmd(self, line):
         return "fake1", line
 
 
 class FakeCommand2(CommandController):
-    def _do_default(self, line):
+    async def _do_default(self, line):
         return self.do_cmd(line[:])
 
-    def do_cmd(self, line):
+    async def do_cmd(self, line):
         return "fake2", line
 
-    def do_foo(self, line):
+    async def do_foo(self, line):
         return "foo", line
 
-    def do_for(self, line):
+    async def do_for(self, line):
         return "for", line
 
-    def do_zoo(self, line):
+    async def do_zoo(self, line):
         return "zoo", line
 
 

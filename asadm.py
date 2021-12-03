@@ -21,6 +21,7 @@ import os
 import re
 import shlex
 import sys
+import asyncio
 
 if sys.version_info[0] < 3:
     raise Exception(
@@ -276,7 +277,60 @@ class AerospikeShell(cmd.Cmd):
 
         return commands
 
-    def precmd(
+    async def cmdloop(self, intro=None):
+        """Repeatedly issue a prompt, accept input, parse an initial prefix
+        off the received input, and dispatch to action methods, passing them
+        the remainder of the line as argument.
+
+        """
+
+        self.preloop()
+        if self.use_rawinput and self.completekey:
+            try:
+                import readline
+
+                self.old_completer = readline.get_completer()
+                readline.set_completer(self.complete)
+                readline.parse_and_bind(self.completekey + ": complete")
+            except ImportError:
+                pass
+        try:
+            if intro is not None:
+                self.intro = intro
+            if self.intro:
+                self.stdout.write(str(self.intro) + "\n")
+            stop = None
+            while not stop:
+                if self.cmdqueue:
+                    line = self.cmdqueue.pop(0)
+                else:
+                    if self.use_rawinput:
+                        try:
+                            line = input(self.prompt)
+                        except EOFError:
+                            line = "EOF"
+                    else:
+                        self.stdout.write(self.prompt)
+                        self.stdout.flush()
+                        line = self.stdin.readline()
+                        if not len(line):
+                            line = "EOF"
+                        else:
+                            line = line.rstrip("\r\n")
+                line = await self.precmd(line)
+                stop = await self.onecmd(line)
+                stop = self.postcmd(stop, line)
+            self.postloop()
+        finally:
+            if self.use_rawinput and self.completekey:
+                try:
+                    import readline
+
+                    readline.set_completer(self.old_completer)
+                except ImportError:
+                    pass
+
+    async def precmd(
         self, line, max_commands_to_print_header=1, command_index_to_print_from=1
     ):
         lines = None
@@ -312,7 +366,7 @@ class AerospikeShell(cmd.Cmd):
             sys.stdout.write(terminal.reset())
 
             try:
-                response = self.ctrl.execute(line)
+                response = await self.ctrl.execute(line)
 
                 if response == "EXIT":
                     return "exit"
@@ -326,6 +380,9 @@ class AerospikeShell(cmd.Cmd):
             except Exception as e:
                 logger.error(e)
         return ""  # line was handled by execute
+
+    async def onecmd(self, line):
+        return super().onecmd(line)
 
     def completenames(self, text, line, begidx, endidx):
         origline = line
@@ -540,7 +597,7 @@ def execute_asinfo_commands(
     return
 
 
-def main():
+async def main():
     cli_args = conf.get_cli_args()
 
     admin_version = get_version()
@@ -695,13 +752,13 @@ def main():
                 pass
 
         if shell.connected:
-            line = shell.precmd(
+            line = await shell.precmd(
                 commands_arg,
                 max_commands_to_print_header=max_commands_to_print_header,
                 command_index_to_print_from=command_index_to_print_from,
             )
 
-            shell.onecmd(line)
+            await shell.onecmd(line)
             func = shell.onecmd
             args = (line,)
 
@@ -721,7 +778,7 @@ def main():
             cleanup()
             logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
-    cmdloop(shell, func, args, use_yappi, single_command)
+    await cmdloop(shell, func, args, use_yappi, single_command)
     shell.close()
 
     try:
@@ -744,7 +801,7 @@ def output_json():
     set_style_json()
 
 
-def cmdloop(shell, func, args, use_yappi, single_command):
+async def cmdloop(shell, func, args, use_yappi, single_command):
     try:
         if use_yappi:
             import yappi
@@ -753,7 +810,7 @@ def cmdloop(shell, func, args, use_yappi, single_command):
             func(*args)
             yappi.get_func_stats().print_all()
         else:
-            func(*args)
+            await func(*args)
     except (KeyboardInterrupt, SystemExit):
         if not single_command:
             shell.intro = (
@@ -761,7 +818,7 @@ def cmdloop(shell, func, args, use_yappi, single_command):
                 + "\nTo exit asadm utility please run exit command."
                 + terminal.fg_clear()
             )
-        cmdloop(shell, func, args, use_yappi, single_command)
+        await cmdloop(shell, func, args, use_yappi, single_command)
 
 
 def parse_commands(file):
@@ -801,4 +858,4 @@ def get_version():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

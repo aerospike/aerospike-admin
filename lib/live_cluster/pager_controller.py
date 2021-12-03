@@ -9,7 +9,7 @@ class PagerController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set()
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
     @CommandHelp(
@@ -18,13 +18,13 @@ class PagerController(LiveClusterCommandController):
         "Use arrow keys to scroll output and 'q' to end page for table.",
         "All linux less commands can work in this pager option.",
     )
-    def do_on(self, line):
+    async def do_on(self, line):
         CliView.pager = CliView.LESS
 
     @CommandHelp("Removes pager and prints output normally")
-    def do_off(self, line):
+    async def do_off(self, line):
         CliView.pager = CliView.NO_PAGER
 
     @CommandHelp("Display output in scrolling mode")
-    def do_scroll(self, line):
+    async def do_scroll(self, line):
         CliView.pager = CliView.SCROLL

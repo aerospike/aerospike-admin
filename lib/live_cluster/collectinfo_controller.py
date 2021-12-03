@@ -855,7 +855,7 @@ class CollectinfoController(LiveClusterCommandController):
         "    --asconfig-file <string>     - Aerospike config file path to collect.",
         "                                   Default: /etc/aerospike/aerospike.conf",
     )
-    def _do_default(self, line):
+    async def _do_default(self, line):
         snp_count = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-n",

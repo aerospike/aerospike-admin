@@ -23,20 +23,7 @@ class InfoController(CollectinfoCommandController):
     @CommandHelp("Displays network summary information.")
     def do_network(self, line):
         service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
-        cluster_configs = self.log_handler.info_getconfig(
-            stanza=constants.CONFIG_CLUSTER
-        )
         for timestamp in sorted(service_stats.keys()):
-            for node in service_stats[timestamp]:
-                try:
-                    if not isinstance(
-                        cluster_configs[timestamp][node]["mode"], Exception
-                    ):
-                        service_stats[timestamp][node][
-                            "rackaware_mode"
-                        ] = cluster_configs[timestamp][node]["mode"]
-                except Exception:
-                    pass
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_asd_build()
             versions = cinfo_log.get_asd_version()

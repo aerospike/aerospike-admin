@@ -20,7 +20,7 @@ class InfoController(LiveClusterCommandController):
         self.config_getter = GetConfigController(self.cluster)
 
     @CommandHelp("Displays network, namespace, and XDR summary information.")
-    def _do_default(self, line):
+    async def _do_default(self, line):
         actions = [util.Future(self.do_network, line).start()]
         # We are not using line for any of subcommand, but if user enters 'info object' or 'info usage' then it will
         # give error for unexpected format. We can catch this inside InfoNamespaceController but in that case
@@ -41,11 +41,8 @@ class InfoController(LiveClusterCommandController):
         return [action.result() for action in actions]
 
     @CommandHelp('"info network" displays network information for Aerospike.')
-    def do_network(self, line):
+    async def do_network(self, line):
         stats = util.Future(self.cluster.info_statistics, nodes=self.nodes).start()
-        cluster_configs = util.Future(
-            self.config_getter.get_cluster, nodes=self.nodes
-        ).start()
         cluster_names = util.Future(
             self.cluster.info, "cluster-name", nodes=self.nodes
         ).start()
@@ -55,15 +52,8 @@ class InfoController(LiveClusterCommandController):
         cluster_names = cluster_names.result()
         builds = builds.result()
         versions = versions.result()
-        cluster_configs.result()
         stats = stats.result()
 
-        for node in stats:
-            try:
-                if not isinstance(cluster_configs[node]["mode"], Exception):
-                    stats[node]["rackaware_mode"] = cluster_configs[node]["mode"]
-            except Exception:
-                pass
         return util.Future(
             self.view.info_network,
             stats,
@@ -75,7 +65,7 @@ class InfoController(LiveClusterCommandController):
         )
 
     @CommandHelp('"info set" displays summary information for each set.')
-    def do_set(self, line):
+    async def do_set(self, line):
         stats = self.cluster.info_all_set_statistics(nodes=self.nodes)
         return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
 
@@ -84,7 +74,7 @@ class InfoController(LiveClusterCommandController):
         '"info dc" displays summary information for each datacenter.',
         'Replaced by "info xdr" for server >= 5.0.',
     )
-    def do_dc(self, line):
+    async def do_dc(self, line):
         stats = util.Future(
             self.cluster.info_all_dc_statistics, nodes=self.nodes
         ).start()
@@ -156,7 +146,7 @@ class InfoController(LiveClusterCommandController):
         return futures
 
     @CommandHelp('"info xdr" displays summary information for each datacenter.')
-    def do_xdr(self, line):
+    async def do_xdr(self, line):
         stats = util.Future(self.cluster.info_XDR_statistics, nodes=self.nodes).start()
         xdr_enable = util.Future(self.cluster.is_XDR_enabled, nodes=self.nodes).start()
         builds = util.Future(self.cluster.info_build, nodes=self.nodes).start()
@@ -225,7 +215,7 @@ class InfoController(LiveClusterCommandController):
     @CommandHelp(
         '"info sindex" displays summary information for Secondary Indexes (SIndex).'
     )
-    def do_sindex(self, line):
+    async def do_sindex(self, line):
         sindex_stats = get_sindex_stats(self.cluster, self.nodes)
         return util.Future(
             self.view.info_sindex, sindex_stats, self.cluster, **self.mods
@@ -242,7 +232,7 @@ class InfoNamespaceController(LiveClusterCommandController):
         self.get_futures = get_futures
 
     @CommandHelp("Displays usage and objects information for namespaces")
-    def _do_default(self, line):
+    async def _do_default(self, line):
         actions = [
             util.Future(self.do_usage, line).start(),
             util.Future(self.do_object, line).start(),
@@ -255,14 +245,14 @@ class InfoNamespaceController(LiveClusterCommandController):
         return [action.result() for action in actions]
 
     @CommandHelp("Displays usage information for each namespace.")
-    def do_usage(self, line):
+    async def do_usage(self, line):
         stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
         return util.Future(
             self.view.info_namespace_usage, stats, self.cluster, **self.mods
         )
 
     @CommandHelp("Displays object information for each namespace.")
-    def do_object(self, line):
+    async def do_object(self, line):
         # In SC mode effective rack-id is different from that in namespace config.
         config_getter = GetConfigController(self.cluster)
         stat_getter = GetStatisticsController(self.cluster)

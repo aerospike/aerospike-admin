@@ -34,7 +34,7 @@ class SummaryController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         enable_list_view = util.check_arg_and_delete_from_mods(
             line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -126,9 +126,6 @@ class SummaryController(LiveClusterCommandController):
         namespace_configs = util.Future(
             self.cluster.info_get_config, nodes=self.nodes, stanza="namespace"
         ).start()
-        cluster_configs = util.Future(
-            self.cluster.info_get_config, nodes=self.nodes, stanza="cluster"
-        ).start()
 
         os_version = self.cluster.info_system_statistics(
             nodes=self.nodes,
@@ -167,7 +164,6 @@ class SummaryController(LiveClusterCommandController):
         xdr_dc_stats = xdr_dc_stats.result()
         service_configs = service_configs.result()
         namespace_configs = namespace_configs.result()
-        cluster_configs = cluster_configs.result()
         server_version = server_version.result()
         server_edition = server_edition.result()
         cluster_name = cluster_name.result()
@@ -256,7 +252,6 @@ class SummaryController(LiveClusterCommandController):
                 metadata=metadata,
                 service_configs=service_configs,
                 ns_configs=namespace_configs,
-                cluster_configs=cluster_configs,
                 license_data_usage=license_usage,
             ),
             list_view=enable_list_view,

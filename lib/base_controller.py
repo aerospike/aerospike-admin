@@ -324,7 +324,7 @@ class BaseController(object):
                 rv.append(result)
         return rv
 
-    def execute(self, line):
+    async def execute(self, line):
         # Init all command controller objects
         self._init()
 
@@ -340,8 +340,16 @@ class BaseController(object):
 
                 results = method(line)
 
+                if inspect.iscoroutine(results):
+                    results = await results
+
+                # print(method)
+                # print(results)
+
                 if not isinstance(results, list) and not isinstance(results, tuple):
 
+                    # returning futures to display to the console allows multiple do_*
+                    # func to run concurrently but display deterministicely.
                     if isinstance(results, util.Future):
                         results = (results,)
                     else:
@@ -442,7 +450,7 @@ class BaseController(object):
         else:
             raise ShellException("Method was not set? %s" % (line))
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         # Override method to provide default command behavior
         raise ShellException("%s: command not found." % (" ".join(line)))
 

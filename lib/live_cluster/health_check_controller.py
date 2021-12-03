@@ -115,7 +115,7 @@ class HealthCheckController(LiveClusterCommandController):
         "                                          [2001::1234:10],uid,pwd",
         "                                          [2001::1234:10]:3232,uid,,key_path",
     )
-    def _do_default(self, line):
+    async def _do_default(self, line):
 
         output_file = util.get_arg_and_delete_from_mods(
             line=line,

@@ -245,7 +245,6 @@ def _find_features_for_cluster(
     xdr_dc_stats,
     service_configs={},
     ns_configs={},
-    cluster_configs={},
 ):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
@@ -255,7 +254,6 @@ def _find_features_for_cluster(
     features = []
 
     service_data = _deep_merge_dicts(service_stats, service_configs)
-    service_data = _deep_merge_dicts(service_data, cluster_configs)
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
     nodes = list(service_data.keys())
@@ -284,7 +282,6 @@ def find_nodewise_features(
     xdr_dc_stats,
     service_configs={},
     ns_configs={},
-    cluster_configs={},
 ):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
@@ -294,7 +291,6 @@ def find_nodewise_features(
     features = {}
 
     service_data = _deep_merge_dicts(service_stats, service_configs)
-    service_data = _deep_merge_dicts(service_data, cluster_configs)
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
     nodes = list(service_data.keys())
@@ -678,7 +674,6 @@ def create_summary(
     metadata,
     service_configs={},
     ns_configs={},
-    cluster_configs={},
     license_data_usage={},
 ):
     """
@@ -692,7 +687,6 @@ def create_summary(
         xdr_dc_stats,
         service_configs=service_configs,
         ns_configs=ns_configs,
-        cluster_configs=cluster_configs,
     )
 
     namespace_stats = util.flip_keys(namespace_stats)
