@@ -27,6 +27,7 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
+import aiohttp
 import zipfile
 from collections import OrderedDict
 
@@ -504,7 +505,7 @@ def compute_license_data_size(namespace_stats, license_data_usage, cluster_dict)
         return
 
 
-def request_license_usage(agent_host, agent_port):
+async def request_license_usage(agent_host, agent_port):
     json_data = {
         "license_usage": {},
         "agent_health": {},
@@ -515,60 +516,46 @@ def request_license_usage(agent_host, agent_port):
         days=365
     )
     a_year_ago = a_year_ago.isoformat()
-    url_entries = urllib.parse.urlunparse(
-        (
-            "http",
-            agent_host + ":" + str(agent_port),
-            "v1/entries/range/time",
-            "",
-            urllib.parse.urlencode((("start", a_year_ago),)),
-            "",
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        entries_params = {"start", a_year_ago}
+        res_entries = session.get(
+            "http://" + agent_host + ":" + str(agent_port) + "/v1/entries/range/time",
+            params=entries_params,
         )
-    )
-    url_health = urllib.parse.urlunparse(
-        (
-            "http",
-            agent_host + ":" + str(agent_port),
-            "v1/health",
-            "",
-            "",
-            "",
+        res_health = session.get(
+            "http://" + agent_host + ":" + str(agent_port) + "/v1/health",
+            params=entries_params,
         )
-    )
 
-    req_entries = urllib.request.Request(url_entries)
-    req_health = urllib.request.Request(url_health)
+        try:
+            res_health = await res_health
+            res_health = await res_health.json()
 
-    res_health = util.Future(urllib.request.urlopen, req_health, timeout=5).start()
-    res_entries = util.Future(urllib.request.urlopen, req_entries, timeout=5).start()
-
-    try:
-        res_health = res_health.result()
-
-        if res_health is not None:
-            body = res_health.read().decode()
-            json_data["agent_health"] = json.loads(body)
-        else:
-            json_data["agent_health"] = {}
-            error = "Unable to connect"
-    except Exception as e:
-        json_data["agent_health"] = str(e)
-        error = e
-
-    try:
-        res_entries = res_entries.result()
-
-        if res_entries is not None:
-            body = res_entries.read().decode()
-            json_data["license_usage"] = json.loads(body)
-        else:
-            json_data["license_usage"] = {}
-            error = "Unable to connect"
-    except Exception as e:
-        json_data["license_usage"] = str(e)
-
-        if error is None or isinstance(error, str):
+            if res_health is not None:
+                json_data["agent_health"] = res_health
+            else:
+                json_data["agent_health"] = {}
+                error = "Unable to connect"
+        except Exception as e:
+            json_data["agent_health"] = str(e)
             error = e
+
+        try:
+            res_entries = await res_entries
+            res_entries = await res_entries.json()
+
+            if res_entries is not None:
+                json_data["license_usage"] = res_entries
+            else:
+                json_data["license_usage"] = {}
+                error = "Unable to connect"
+        except Exception as e:
+            json_data["license_usage"] = str(e)
+
+            if error is None:
+                error = e
 
     return json_data, error
 

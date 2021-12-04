@@ -937,11 +937,11 @@ class GetJobsController:
 
     async def get_all(self, flip=False, nodes="all"):
         futures = [
-            (constants.JobType.SCAN, util.Future(self.get_scans, nodes=nodes).start()),
-            (constants.JobType.QUERY, util.Future(self.get_query, nodes=nodes).start()),
+            (constants.JobType.SCAN, self.get_scans(nodes=nodes)),
+            (constants.JobType.QUERY, self.get_query(nodes=nodes)),
             (
                 constants.JobType.SINDEX_BUILDER,
-                util.Future(self.get_sindex_builder, nodes=nodes).start(),
+                self.get_sindex_builder(nodes=nodes),
             ),
         ]
         job_map = dict(((k, await f) for k, f in futures))

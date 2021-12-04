@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import inspect
 import io
 import pipes
 import re
@@ -97,7 +98,7 @@ def shell_command(command):
         return bytes_to_str(out), bytes_to_str(err)
 
 
-def capture_stdout(func, line=""):
+async def capture_stdout(func, line=""):
     """
     Redirecting the stdout to use the output elsewhere
     """
@@ -107,7 +108,10 @@ def capture_stdout(func, line=""):
     capturer = io.StringIO()
     sys.stdout = capturer
 
-    func(line)
+    if inspect.iscoroutinefunction(func):
+        await func(line)
+    else:
+        func(line)
 
     output = capturer.getvalue()
     sys.stdout = old
@@ -743,7 +747,7 @@ def find_most_frequent(list_):
 
     return most_freq
 
-  
+
 class cached(object):
     # Doesn't support lists, dicts and other unhashables
     # Also doesn't support kwargs for reason above.
@@ -767,4 +771,3 @@ class cached(object):
 
     def __call__(self, *args):
         return self[args]
-      

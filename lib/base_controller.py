@@ -249,8 +249,8 @@ class BaseController(object):
             # or exact match
             return []
 
-    def __call__(self, line):
-        return self.execute(line)
+    async def __call__(self, line):
+        return await self.execute(line)
 
     def _init_controller_map(self):
         try:  # define controller map if not defined

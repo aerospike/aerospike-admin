@@ -4,7 +4,6 @@ from datetime import datetime
 from dateutil import parser as date_parser
 from getpass import getpass
 from functools import reduce
-from concurrent.futures import ThreadPoolExecutor
 
 from lib.view import terminal
 from lib.utils import constants, util, version
@@ -72,7 +71,7 @@ class ManageController(LiveClusterCommandController):
             "acl": ManageACLController,
         }
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -90,7 +89,7 @@ class ManageACLController(LiveClusterCommandController):
             "quotas": ManageACLQuotasRoleController,
         }
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -102,7 +101,7 @@ class ManageACLCreateController(LiveClusterCommandController):
             "role": ManageACLCreateRoleController,
         }
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -114,7 +113,7 @@ class ManageACLDeleteController(LiveClusterCommandController):
             "role": ManageACLDeleteRoleController,
         }
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -126,7 +125,7 @@ class ManageACLGrantController(LiveClusterCommandController):
             "role": ManageACLGrantRoleController,
         }
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -138,7 +137,7 @@ class ManageACLRevokeController(LiveClusterCommandController):
             "role": ManageACLRevokeRoleController,
         }
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -184,9 +183,8 @@ class ManageACLCreateUserController(ManageLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        principal_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_create_user(
-            username, password, roles, nodes=[principal_node]
+        result = await self.cluster.admin_create_user(
+            username, password, roles, nodes="principal"
         )
         result = list(result.values())[0]
 
@@ -210,12 +208,11 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
 
     async def _do_default(self, line):
         username = line.pop(0)
-        principal_node = self.cluster.get_expected_principal()
 
         if self.warn and not self.prompt_challenge():
             return
 
-        result = self.cluster.admin_delete_user(username, nodes=[principal_node])
+        result = await self.cluster.admin_delete_user(username, nodes="principal")
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -258,9 +255,8 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        principal_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_set_password(
-            username, password, nodes=[principal_node]
+        result = await self.cluster.admin_set_password(
+            username, password, nodes="principal"
         )
         result = list(result.values())[0]
 
@@ -314,9 +310,8 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        principal_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_change_password(
-            username, old_password, new_password, nodes=[principal_node]
+        result = await self.cluster.admin_change_password(
+            username, old_password, new_password, nodes="principal"
         )
         result = list(result.values())[0]
 
@@ -344,12 +339,13 @@ class ManageACLGrantUserController(ManageLeafCommandController):
     async def _do_default(self, line):
         username = line.pop(0)
         roles = self.mods["roles"]
-        principal_node = self.cluster.get_expected_principal()
 
         if self.warn and not self.prompt_challenge():
             return
 
-        result = self.cluster.admin_grant_roles(username, roles, nodes=[principal_node])
+        result = await self.cluster.admin_grant_roles(
+            username, roles, nodes="principal"
+        )
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -380,9 +376,8 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        principal_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_revoke_roles(
-            username, roles, nodes=[principal_node]
+        result = await self.cluster.admin_revoke_roles(
+            username, roles, nodes="principal"
         )
         result = list(result.values())[0]
 
@@ -398,8 +393,8 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
 
 
 class ManageACLRolesLeafCommandController(ManageLeafCommandController):
-    def _supports_quotas(self, nodes):
-        build_resp = self.cluster.info_build(nodes=nodes)
+    async def _supports_quotas(self, nodes):
+        build_resp = await self.cluster.info_build(nodes=nodes)
         build = list(build_resp.values())[0]
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -456,7 +451,6 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
         role_name = line.pop(0)
         privilege = None
         allowlist = self.mods["allow"]
-        principal_node = self.cluster.get_expected_principal()
 
         # Can't use util.get_arg_and_delete_from_mods because of conflict
         # between read modifier and read privilege
@@ -464,7 +458,7 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
         write_quota = self.mods["write"][0] if len(self.mods["write"]) else None
 
         if read_quota is not None or write_quota is not None:
-            if not self._supports_quotas([principal_node]):
+            if not await self._supports_quotas("principal"):
                 self.logger.warning(
                     "'read' and 'write' modifiers are not supported on aerospike versions <= 5.5"
                 )
@@ -497,13 +491,13 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        result = self.cluster.admin_create_role(
+        result = await self.cluster.admin_create_role(
             role_name,
             privileges=privilege,
             whitelist=allowlist,
             read_quota=read_quota,
             write_quota=write_quota,
-            nodes=[principal_node],
+            nodes="principal",
         )
         result = list(result.values())[0]
 
@@ -531,8 +525,7 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        principal_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_delete_role(role_name, nodes=[principal_node])
+        result = await self.cluster.admin_delete_role(role_name, nodes="principal")
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
@@ -574,14 +567,13 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
             if len(self.mods["set"]):
                 privilege += "." + self.mods["set"][0]
 
-        principal_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_add_privileges(
-            role_name, [privilege], nodes=[principal_node]
-        )
-        result = list(result.values())[0]
-
         if self.warn and not self.prompt_challenge():
             return
+
+        result = await self.cluster.admin_add_privileges(
+            role_name, [privilege], nodes="principal"
+        )
+        result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
             self.logger.error(result)
@@ -627,9 +619,8 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        principal_node = self.cluster.get_expected_principal()
-        result = self.cluster.admin_delete_privileges(
-            role_name, [privilege], nodes=[principal_node]
+        result = await self.cluster.admin_delete_privileges(
+            role_name, [privilege], nodes="principal"
         )
         result = list(result.values())[0]
 
@@ -688,15 +679,14 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
             return
 
         result = None
-        principal_node = self.cluster.get_expected_principal()
 
         if clear:
-            result = self.cluster.admin_delete_whitelist(
-                role_name, nodes=[principal_node]
+            result = await self.cluster.admin_delete_whitelist(
+                role_name, nodes="principal"
             )
         else:
-            result = self.cluster.admin_set_whitelist(
-                role_name, allowlist, nodes=[principal_node]
+            result = await self.cluster.admin_set_whitelist(
+                role_name, allowlist, nodes="principal"
             )
 
         result = list(result.values())[0]
@@ -802,8 +792,8 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        result = self.cluster.admin_set_quotas(
-            role, read_quota=read_quota, write_quota=write_quota, nodes=[principal_node]
+        result = await self.cluster.admin_set_quotas(
+            role, read_quota=read_quota, write_quota=write_quota, nodes="principal"
         )
 
         result = list(result.values())[0]
@@ -863,10 +853,8 @@ class ManageUdfsAddController(ManageLeafCommandController):
         with open(udf_path) as udf_file:
             udf_str = udf_file.read()
 
-        principal_node = self.cluster.get_expected_principal()
-
         if self.warn:
-            existing_udfs = self.cluster.info_udf_list(nodes=[principal_node])
+            existing_udfs = await self.cluster.info_udf_list(nodes="principal")
             existing_udfs = list(existing_udfs.values())[0]
             existing_names = existing_udfs.keys()
 
@@ -875,7 +863,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
             ):
                 return
 
-        resp = self.cluster.info_udf_put(udf_name, udf_str, nodes=[principal_node])
+        resp = await self.cluster.info_udf_put(udf_name, udf_str, nodes="principal")
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
@@ -903,8 +891,7 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
         ):
             return
 
-        principal_node = self.cluster.get_expected_principal()
-        resp = self.cluster.info_udf_remove(udf_name, nodes=[principal_node])
+        resp = await self.cluster.info_udf_remove(udf_name, nodes="principal")
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
@@ -927,7 +914,7 @@ class ManageSIndexController(LiveClusterCommandController):
             "delete": ManageSIndexDeleteController,
         }
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -951,10 +938,10 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "ns", "bin"])
         self.modifiers = set(["set", "in"])
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
-    def _do_create(self, line, bin_type):
+    async def _do_create(self, line, bin_type):
         index_name = line.pop(0)
         namespace = util.get_arg_and_delete_from_mods(
             line=line,
@@ -997,15 +984,14 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         ):
             return
 
-        principal_node = self.cluster.get_expected_principal()
-        resp = self.cluster.info_sindex_create(
+        resp = await self.cluster.info_sindex_create(
             index_name,
             namespace,
             bin_name,
             bin_type,
             index_type,
             set_,
-            nodes=[principal_node],
+            nodes="principal",
         )
         resp = list(resp.values())[0]
 
@@ -1019,15 +1005,15 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
     # Hack for auto-complete
     async def do_numeric(self, line):
-        self._do_create(line, "numeric")
+        await self._do_create(line, "numeric")
 
     # Hack for auto-complete
     async def do_string(self, line):
-        self._do_create(line, "string")
+        await self._do_create(line, "string")
 
     # Hack for auto-complete
     async def do_geo2dsphere(self, line):
-        self._do_create(line, "geo2dsphere")
+        await self._do_create(line, "geo2dsphere")
 
 
 @CommandHelp(
@@ -1060,11 +1046,9 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
             mods=self.mods,
         )
 
-        principal_node = self.cluster.get_expected_principal()
-
         if self.warn:
-            sindex_data = self.cluster.info_sindex_statistics(
-                namespace, index_name, nodes=[principal_node]
+            sindex_data = await self.cluster.info_sindex_statistics(
+                namespace, index_name, nodes="principal"
             )
             sindex_data = list(sindex_data.values())[0]
             num_keys = sindex_data.get("keys", 0)
@@ -1076,8 +1060,8 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
             ):
                 return
 
-        resp = self.cluster.info_sindex_delete(
-            index_name, namespace, set_, nodes=[principal_node]
+        resp = await self.cluster.info_sindex_delete(
+            index_name, namespace, set_, nodes="principal"
         )
         resp = list(resp.values())[0]
 
@@ -1113,7 +1097,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
         )
         return param, value
 
-    def _complete_subcontext(self, contexts):
+    async def _complete_subcontext(self, contexts):
         subcontexts = None
         current_context = []
         possible_completions = []
@@ -1135,7 +1119,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
                     to_complete = context
                     break
 
-            subcontexts = self.cluster.config_subcontext(current_context[:])
+            subcontexts = await self.cluster.config_subcontext(current_context[:])
 
             subcontexts = reduce(
                 lambda x, y: list(set(x) | set(y)), subcontexts.values()
@@ -1164,8 +1148,8 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
         return to_complete, possible_completions
 
-    def _complete_params(self, contexts):
-        cluster_params = self.cluster.config_params(contexts)
+    async def _complete_params(self, contexts):
+        cluster_params = await self.cluster.config_params(contexts)
         intersection = reduce(
             lambda x, y: list(set(x) | set(y)), cluster_params.values()
         )
@@ -1176,8 +1160,8 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
         return intersection
 
-    def _complete_values(self, contexts, param):
-        config_type = self.cluster.config_type(contexts, param)
+    async def _complete_values(self, contexts, param):
+        config_type = await self.cluster.config_type(contexts, param)
         possible_completions = []
 
         if config_type:
@@ -1380,7 +1364,7 @@ class ManageConfigLoggingController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_logging(
+        resp = await self.cluster.info_set_config_logging(
             file, param, value, nodes=self.nodes
         )
 
@@ -1407,7 +1391,9 @@ class ManageConfigServiceController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_service(param, value, nodes=self.nodes)
+        resp = await self.cluster.info_set_config_service(
+            param, value, nodes=self.nodes
+        )
 
         title = "Set Service Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
@@ -1446,7 +1432,7 @@ class ManageConfigNetworkController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_network(
+        resp = await self.cluster.info_set_config_network(
             param, value, subcontext, nodes=self.nodes
         )
 
@@ -1481,7 +1467,7 @@ class ManageConfigSecurityController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_security(
+        resp = await self.cluster.info_set_config_security(
             param, value, subcontext, nodes=self.nodes
         )
 
@@ -1528,7 +1514,7 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_namespace(
+        resp = await self.cluster.info_set_config_namespace(
             param, value, namespace, subcontext=subcontext, nodes=self.nodes
         )
 
@@ -1573,7 +1559,7 @@ class ManageConfigNamespaceSetController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_namespace(
+        resp = await self.cluster.info_set_config_namespace(
             param, value, namespace, set_=set_, nodes=self.nodes
         )
 
@@ -1604,7 +1590,7 @@ class ManageConfigXDRController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_xdr(param, value, nodes=self.nodes)
+        resp = await self.cluster.info_set_config_xdr(param, value, nodes=self.nodes)
 
         title = "Set XDR Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
@@ -1632,7 +1618,7 @@ class ManageConfigXDRCreateController(ManageConfigLeafController):
         if self.warn and not self.prompt_challenge("Create XDR DC {}".format(dc)):
             return
 
-        resp = self.cluster.info_set_config_xdr_create_dc(dc, nodes=self.nodes)
+        resp = await self.cluster.info_set_config_xdr_create_dc(dc, nodes=self.nodes)
 
         title = "Create XDR DC {}".format(dc)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
@@ -1660,7 +1646,7 @@ class ManageConfigXDRDeleteController(ManageConfigLeafController):
         if self.warn and not self.prompt_challenge("Delete XDR DC {}".format(dc)):
             return
 
-        resp = self.cluster.info_set_config_xdr_delete_dc(dc, nodes=self.nodes)
+        resp = await self.cluster.info_set_config_xdr_delete_dc(dc, nodes=self.nodes)
 
         title = "Delete XDR DC {}".format(dc)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
@@ -1701,7 +1687,9 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_xdr(param, value, dc=dc, nodes=self.nodes)
+        resp = await self.cluster.info_set_config_xdr(
+            param, value, dc=dc, nodes=self.nodes
+        )
 
         title = "Set XDR DC param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
@@ -1743,7 +1731,9 @@ class ManageConfigXDRDCAddNodeController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_xdr_add_node(dc, node, nodes=self.nodes)
+        resp = await self.cluster.info_set_config_xdr_add_node(
+            dc, node, nodes=self.nodes
+        )
 
         title = "Add XDR Node {} to DC {}".format(node, dc)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
@@ -1785,7 +1775,7 @@ class ManageConfigXDRDCAddNamespaceController(ManageConfigLeafController):
             ):
                 return
 
-        resp = self.cluster.info_set_config_xdr_add_namespace(
+        resp = await self.cluster.info_set_config_xdr_add_namespace(
             dc, namespace, rewind, nodes=self.nodes
         )
 
@@ -1824,7 +1814,9 @@ class ManageConfigXDRDCRemoveNodeController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_xdr_remove_node(dc, node, nodes=self.nodes)
+        resp = await self.cluster.info_set_config_xdr_remove_node(
+            dc, node, nodes=self.nodes
+        )
 
         title = "Remove XDR Node {} from DC {}".format(node, dc)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
@@ -1849,7 +1841,7 @@ class ManageConfigXDRDCRemoveNamespaceController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_xdr_remove_namespace(
+        resp = await self.cluster.info_set_config_xdr_remove_namespace(
             dc, namespace, nodes=self.nodes
         )
 
@@ -1882,7 +1874,7 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
         ):
             return
 
-        resp = self.cluster.info_set_config_xdr(
+        resp = await self.cluster.info_set_config_xdr(
             param, value, dc=dc, namespace=namespace, nodes=self.nodes
         )
 
@@ -1991,13 +1983,15 @@ class ManageTruncateController(ManageLeafCommandController):
 
         return lut_datetime, lut_epoch_time, error
 
-    def _get_namespace_master_objects(self, namespace):
+    async def _get_namespace_master_objects(self, namespace):
         """
         Get total number of unique objects in a namespace accross the cluster.
         Calculated as the
         sum(all master objects in namespace for each node)
         """
-        namespace_stats = self.cluster.info_namespace_statistics(namespace, nodes="all")
+        namespace_stats = await self.cluster.info_namespace_statistics(
+            namespace, nodes="all"
+        )
         namespace_stats = list(namespace_stats.values())
         master_objects_per_node = map(
             lambda x: int(x.get("master_objects", "0")), namespace_stats
@@ -2007,18 +2001,18 @@ class ManageTruncateController(ManageLeafCommandController):
         )
         return str(total_num_master_objects)
 
-    def _get_set_master_objects(self, namespace, set_):
+    async def _get_set_master_objects(self, namespace, set_):
         """
         Get total number of unique objects in a set accross the cluster.
         Calculated as the
         sum(all objects in set for each node) // effective_repl_factor
         """
         set_stats = self.cluster.info_set_statistics(namespace, set_, nodes="all")
-        set_stats = set_stats.values()
         namespace_stats = self.cluster.info_namespace_statistics(
             namespace, nodes="random"
         )
-        namespace_stats = list(namespace_stats.values())[0]
+        set_stats = (await set_stats).values()
+        namespace_stats = list((await namespace_stats).values())[0]
 
         # effective_repl_factor added 3.15.3
         effective_repl_factor = int(namespace_stats.get("effective_repl_factor", "1"))
@@ -2135,16 +2129,18 @@ class ManageTruncateController(ManageLeafCommandController):
                     )
 
                 prompt = self._generate_warn_prompt(
-                    namespace, set_, total_num_master_objects, lut_datetime
+                    namespace, set_, await total_num_master_objects, lut_datetime
                 )
 
             if not self.prompt_challenge(prompt):
                 return
 
         if undo:
-            resp = self.cluster.info_truncate_undo(namespace, set_, nodes="principal")
+            resp = await self.cluster.info_truncate_undo(
+                namespace, set_, nodes="principal"
+            )
         else:
-            resp = self.cluster.info_truncate(
+            resp = await self.cluster.info_truncate(
                 namespace, set_, lut_epoch_time, nodes="principal"
             )
 
@@ -2192,7 +2188,7 @@ class ManageReclusterController(ManageLeafCommandController):
         pass
 
     async def _do_default(self, line):
-        resp = self.cluster.info_recluster(nodes="principal")
+        resp = await self.cluster.info_recluster(nodes="principal")
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
@@ -2235,10 +2231,10 @@ class ManageQuiesceController(ManageLeafCommandController):
 
         if undo:
             title = "Undo Quiesce for Nodes"
-            resp = self.cluster.info_quiesce_undo(nodes=self.nodes)
+            resp = await self.cluster.info_quiesce_undo(nodes=self.nodes)
         else:
             title = "Quiesce Nodes"
-            resp = self.cluster.info_quiesce(nodes=self.nodes)
+            resp = await self.cluster.info_quiesce(nodes=self.nodes)
 
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
         self.view.print_result(
@@ -2265,7 +2261,7 @@ class ManageReviveController(ManageLeafCommandController):
         ):
             return
 
-        resp = self.cluster.info_revive(ns, nodes=self.nodes)
+        resp = await self.cluster.info_revive(ns, nodes=self.nodes)
 
         title = "Revive Namespace Partitions"
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
@@ -2348,16 +2344,10 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
-        current_roster = util.Future(
-            self.cluster.info_roster, ns, nodes="principal"
-        ).start()
-        cluster_stable = util.Future(
-            self.cluster.info_cluster_stable, nodes=self.nodes
-        ).start()
 
-        current_roster = current_roster.result()
-        cluster_stable = cluster_stable.result()
-        current_roster = list(current_roster.values())[0]
+        current_roster = self.cluster.info_roster(ns, nodes="principal")
+        cluster_stable = self.cluster.info_cluster_stable(nodes=self.nodes)
+        current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
             self.logger.error(current_roster)
@@ -2369,7 +2359,7 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
         new_roster.extend(self.mods["nodes"])
 
         if warn:
-            self._check_and_log_cluster_stable(cluster_stable)
+            self._check_and_log_cluster_stable(await cluster_stable)
             self._check_and_log_nodes_in_observed(
                 current_roster["observed_nodes"], self.mods["nodes"]
             )
@@ -2381,7 +2371,7 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
             ):
                 return
 
-        resp = self.cluster.info_roster_set(
+        resp = await self.cluster.info_roster_set(
             self.mods["ns"][0], new_roster, nodes="principal"
         )
         resp = list(resp.values())[0]
@@ -2420,16 +2410,9 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
-        current_roster = util.Future(
-            self.cluster.info_roster, ns, nodes="principal"
-        ).start()
-        cluster_stable = util.Future(
-            self.cluster.info_cluster_stable, nodes=self.nodes
-        ).start()
-
-        current_roster = current_roster.result()
-        cluster_stable = cluster_stable.result()
-        current_roster = list(current_roster.values())[0]
+        current_roster = self.cluster.info_roster(ns, nodes="principal")
+        cluster_stable = self.cluster.info_cluster_stable(nodes=self.nodes)
+        current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
             self.logger.error(current_roster)
@@ -2453,7 +2436,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
                     ", ".join(missing_nodes),
                 )
 
-            self._check_and_log_cluster_stable(cluster_stable)
+            self._check_and_log_cluster_stable(await cluster_stable)
 
             if not self.prompt_challenge(
                 "You are about to set the pending-roster for namespace {} to: {}".format(
@@ -2462,7 +2445,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
             ):
                 return
 
-        resp = self.cluster.info_roster_set(ns, new_roster, nodes="principal")
+        resp = await self.cluster.info_roster_set(ns, new_roster, nodes="principal")
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
@@ -2511,16 +2494,9 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
         )
 
         if warn:
-            cluster_stable = util.Future(
-                self.cluster.info_cluster_stable, nodes=self.nodes
-            ).start()
-            current_roster = util.Future(
-                self.cluster.info_roster, ns, nodes="principal"
-            ).start()
-
-            cluster_stable = cluster_stable.result()
-            current_roster = current_roster.result()
-            current_roster = list(current_roster.values())[0]
+            current_roster = self.cluster.info_roster(ns, nodes="principal")
+            cluster_stable = self.cluster.info_cluster_stable(nodes=self.nodes)
+            current_roster = list((await current_roster).values())[0]
 
             if isinstance(current_roster, ASInfoError):
                 self.logger.error(current_roster)
@@ -2528,7 +2504,7 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
             elif isinstance(current_roster, Exception):
                 raise current_roster
 
-            self._check_and_log_cluster_stable(cluster_stable)
+            self._check_and_log_cluster_stable(await cluster_stable)
             self._check_and_log_nodes_in_observed(
                 current_roster["observed_nodes"], self.mods["line"]
             )
@@ -2540,7 +2516,7 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
             ):
                 return
 
-        resp = self.cluster.info_roster_set(ns, new_roster, nodes="principal")
+        resp = await self.cluster.info_roster_set(ns, new_roster, nodes="principal")
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
@@ -2567,16 +2543,9 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
 
     async def _do_default(self, line):
         ns = self.mods["ns"][0]
-        current_roster = util.Future(
-            self.cluster.info_roster, ns, nodes="principal"
-        ).start()
-        cluster_stable = util.Future(
-            self.cluster.info_cluster_stable, nodes=self.nodes
-        ).start()
-
-        current_roster = current_roster.result()
-        cluster_stable = cluster_stable.result()
-        current_roster = list(current_roster.values())[0]
+        current_roster = self.cluster.info_roster(ns, nodes="principal")
+        cluster_stable = self.cluster.info_cluster_stable(nodes=self.nodes)
+        current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
             self.logger.error(current_roster)
@@ -2586,7 +2555,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
 
         new_roster = current_roster["observed_nodes"]
 
-        if not self._check_and_log_cluster_stable(cluster_stable) or self.warn:
+        if not self._check_and_log_cluster_stable(await cluster_stable) or self.warn:
             if not self.prompt_challenge(
                 "You are about to set the pending-roster for namespace {} to: {}".format(
                     ns, ", ".join(new_roster)
@@ -2594,7 +2563,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
             ):
                 return
 
-        resp = self.cluster.info_roster_set(ns, new_roster, nodes="principal")
+        resp = await self.cluster.info_roster_set(ns, new_roster, nodes="principal")
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
@@ -2641,14 +2610,13 @@ class ManageJobsKillTridController(ManageLeafCommandController):
         self.required_modifiers = {"line"}
         self.getter = GetJobsController(self.cluster)
 
-    def _kill_trid(self, executor, node, module, trid):
+    async def _kill_trid(self, node, module, trid):
         if module == constants.JobType.SCAN:
-            return executor.submit(self.cluster.info_scan_abort, trid, nodes=[node])
+            return await self.cluster.info_scan_abort(trid, nodes=[node])
         elif module == constants.JobType.QUERY:
-            return executor.submit(self.cluster.info_query_abort, trid, nodes=[node])
+            return await self.cluster.info_query_abort(trid, nodes=[node])
         else:
-            return executor.submit(
-                self.cluster.info_jobs_kill,
+            return await self.cluster.info_jobs_kill(
                 module,
                 trid,
                 nodes=[node],
@@ -2669,31 +2637,32 @@ class ManageJobsKillTridController(ManageLeafCommandController):
 
         # Dict key hierarchy is currently module -> host -> trid.
         # We want trid at the top.  i.e. trid -> module -> host for quick lookup
+        jobs_data = await jobs_data
+
         for module, host_data in jobs_data.items():
             jobs_data[module] = util.flip_keys(host_data)
 
         jobs_data = util.flip_keys(jobs_data)
 
-        with ThreadPoolExecutor(max_workers=len(trids)) as executor:
-            for trid in list(trids):
-                if trid in jobs_data:
-                    module, host_data = list(jobs_data[trid].items())[0]
-                    for host, job_data in host_data.items():
-                        requests_.append(
-                            (
-                                host,
-                                trid,
-                                job_data,
-                                self._kill_trid(executor, host, module, trid),
-                            )
+        for trid in list(trids):
+            if trid in jobs_data:
+                module, host_data = list(jobs_data[trid].items())[0]
+                for host, job_data in host_data.items():
+                    requests_.append(
+                        (
+                            host,
+                            trid,
+                            job_data,
+                            self._kill_trid(host, module, trid),
                         )
+                    )
 
         if not requests_:
             self.logger.error("The provided trid(s) could not be found.")
 
         for request in requests_:
             host, trid, job_data, resp = request
-            resp = list(resp.result().values())[0]
+            resp = list((await resp).values())[0]
 
             if host not in responses:
                 responses[host] = {}
@@ -2711,7 +2680,7 @@ class ManageJobsKillAllController(LiveClusterCommandController):
             "scans": ManageJobsKillAllScansController,
         }
 
-    async def _do_default(self, line):
+    def _do_default(self, line):
         self.execute_help(line)
 
 
@@ -2738,6 +2707,6 @@ class ManageJobsKillAllScansController(ManageLeafCommandController):
                 ):
                     return
 
-        resp = self.cluster.info_scan_abort_all(nodes=self.nodes)
+        resp = await self.cluster.info_scan_abort_all(nodes=self.nodes)
 
         self.view.print_info_responses("Kill Jobs", resp, self.cluster, **self.mods)

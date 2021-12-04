@@ -580,7 +580,7 @@ class Cluster(object):
             )
         )
 
-    def is_XDR_enabled(self, nodes="all"):
+    async def is_XDR_enabled(self, nodes="all"):
         return self.call_node_method(nodes, "is_XDR_enabled")
 
     def is_feature_present(self, feature, nodes="all"):

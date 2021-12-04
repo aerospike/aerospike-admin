@@ -493,22 +493,22 @@ class ShowMappingController(LiveClusterCommandController):
 
     @CommandHelp("Displays mapping IPs to Node_id and Node_id to IPs")
     async def _do_default(self, line):
-        actions = (
-            util.Future(self.do_ip, line).start(),
-            util.Future(self.do_node, line).start(),
-        )
-        return [action.result() for action in actions]
+        actions = [
+            self.do_ip(line),
+            self.do_node(line),
+        ]
+        return [await action for action in actions]
 
     @CommandHelp("Displays IP to Node_id mapping")
     async def do_ip(self, line):
-        ip_to_node_map = self.cluster.get_IP_to_node_map()
+        ip_to_node_map = await self.cluster.get_IP_to_node_map()
         return util.Future(
             self.view.show_mapping, "IP", "NODE-ID", ip_to_node_map, **self.mods
         )
 
     @CommandHelp("Displays Node_id to IPs mapping")
     async def do_node(self, line):
-        node_to_ip_map = self.cluster.get_node_to_IP_map()
+        node_to_ip_map = await self.cluster.get_node_to_IP_map()
         return util.Future(
             self.view.show_mapping, "NODE-ID", "IPs", node_to_ip_map, **self.mods
         )

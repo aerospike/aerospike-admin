@@ -110,22 +110,9 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        service_stats = util.Future(
-            self.cluster.info_statistics, nodes=self.nodes
-        ).start()
-        namespace_stats = util.Future(
-            self.cluster.info_all_namespace_statistics, nodes=self.nodes
-        ).start()
-        xdr_dc_stats = util.Future(
-            self.cluster.info_all_dc_statistics, nodes=self.nodes
-        ).start()
-
-        service_configs = util.Future(
-            self.cluster.info_get_config, nodes=self.nodes, stanza="service"
-        ).start()
-        namespace_configs = util.Future(
-            self.cluster.info_get_config, nodes=self.nodes, stanza="namespace"
-        ).start()
+        server_version = self.cluster.info("build", nodes=self.nodes)
+        server_edition = self.cluster.info("version", nodes=self.nodes)
+        cluster_name = self.cluster.info("cluster-name", nodes=self.nodes)
 
         os_version = self.cluster.info_system_statistics(
             nodes=self.nodes,
@@ -147,31 +134,30 @@ class SummaryController(LiveClusterCommandController):
             commands=["uname"],
             collect_remote_data=enable_ssh,
         )
-        server_version = util.Future(
-            self.cluster.info, "build", nodes=self.nodes
-        ).start()
 
-        server_edition = util.Future(
-            self.cluster.info, "version", nodes=self.nodes
-        ).start()
+        license_usage_future = None
 
-        cluster_name = util.Future(
-            self.cluster.info, "cluster-name", nodes=self.nodes
-        ).start()
+        if agent_host is not None:
+            license_usage_future = common.request_license_usage(agent_host, agent_port)
 
-        service_stats = service_stats.result()
-        namespace_stats = namespace_stats.result()
-        xdr_dc_stats = xdr_dc_stats.result()
-        service_configs = service_configs.result()
-        namespace_configs = namespace_configs.result()
-        server_version = server_version.result()
-        server_edition = server_edition.result()
-        cluster_name = cluster_name.result()
+        service_stats = self.cluster.info_statistics(nodes=self.nodes)
+        namespace_stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+        xdr_dc_stats = self.cluster.info_all_dc_statistics(nodes=self.nodes)
+        service_configs = self.cluster.info_get_config(
+            nodes=self.nodes, stanza="service"
+        )
+        namespace_configs = self.cluster.info_get_config(
+            nodes=self.nodes, stanza="namespace"
+        )
 
         metadata = {}
         metadata["server_version"] = {}
         metadata["server_build"] = {}
         metadata["cluster_name"] = {}
+
+        server_version = await server_version
+        server_edition = await server_edition
+        cluster_name = await cluster_name
 
         for node, version in server_version.items():
             if not version or isinstance(version, Exception):
@@ -200,6 +186,9 @@ class SummaryController(LiveClusterCommandController):
                 and not isinstance(cluster_name[node], Exception)
             ):
                 metadata["cluster_name"][node] = cluster_name[node]
+
+        os_version = await os_version
+        kernel_version = await kernel_version
 
         try:
             try:
@@ -234,14 +223,20 @@ class SummaryController(LiveClusterCommandController):
         metadata["os_version"] = os_version
         license_usage = {}
 
-        if agent_host is not None:
-            license_usage, error = common.request_license_usage(agent_host, agent_port)
+        if license_usage_future is not None:
+            license_usage, error = await license_usage_future
 
             if error is not None:
                 self.logger.error(
                     "Failed to retrieve license usage information : {}",
                     str(error),
                 )
+
+        service_stats = await service_stats
+        namespace_stats = await namespace_stats
+        xdr_dc_stats = await xdr_dc_stats
+        service_configs = await service_configs
+        namespace_configs = await namespace_configs
 
         return util.Future(
             self.view.print_summary,
