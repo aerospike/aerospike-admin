@@ -15,9 +15,8 @@
 import socket
 import warnings
 
+from .types import ASResponse, ASProtocolError
 from .info import (
-    ASResponse,
-    ASProtocolError,
     add_privileges,
     authenticate_new,
     authenticate_old,
@@ -136,10 +135,7 @@ class ASSocket:
         )
 
         if resp_code != ASResponse.OK:
-            # TODO remove print statement and raise an exception like requests
-            print("Login failed for", self.user, ":", str(ASResponse(resp_code)) + ".")
-            self.sock.close()
-            return False
+            raise ASProtocolError(resp_code, "Login failed")
 
         return True
 

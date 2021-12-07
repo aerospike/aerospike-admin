@@ -4,7 +4,7 @@ from mock import patch
 
 from test.unit import util
 from lib.live_cluster.client.assocket import ASSocket
-from lib.live_cluster.client.info import ASProtocolError, ASResponse
+from lib.live_cluster.client import ASProtocolError, ASResponse
 from lib.utils.constants import AuthMode
 
 
@@ -95,9 +95,20 @@ class ASSocketTestConnect(unittest.TestCase):
 
     @patch("lib.live_cluster.client.assocket.login")
     def test_login_returns_false(self, login_mock):
-        login_mock.return_value = ASResponse.NOT_AUTHENTICATED, "token", "expiration"
+        self.as_socket.sock = None
 
         self.assertFalse(self.as_socket.login())
+
+    @patch("lib.live_cluster.client.assocket.login")
+    def test_login_raises_exception(self, login_mock):
+        login_mock.return_value = ASResponse.NOT_AUTHENTICATED, "token", "expiration"
+
+        util.assert_exception(
+            self,
+            ASProtocolError,
+            None,
+            self.as_socket.login,
+        )
 
         login_mock.assert_called_with(
             self.socket_mock,
@@ -105,11 +116,6 @@ class ASSocketTestConnect(unittest.TestCase):
             self.as_socket.password,
             self.as_socket.auth_mode,
         )
-        self.socket_mock.close.assert_called_once()
-
-        self.as_socket.sock = None
-
-        self.assertFalse(self.as_socket.login())
 
     @patch("lib.live_cluster.client.assocket.authenticate_old")
     @patch("lib.live_cluster.client.assocket.authenticate_new")

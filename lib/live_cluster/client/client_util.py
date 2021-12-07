@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from concurrent.futures.thread import ThreadPoolExecutor
 import re
 import itertools
-import threading
-from time import time
 
 
 def info_to_dict(value, delimiter=";", ignore_field_without_key_value_delimiter=True):
@@ -204,52 +203,16 @@ def concurrent_map(func, data):
     Similar to the builtin function map(). But spawn a thread for each argument
     and apply 'func' concurrently.
 
-    Note: unlie map(), we cannot take an iterable argument. 'data' should be an
+    Note: unlike map(), we cannot take an iterable argument. 'data' should be an
     indexable sequence.
     """
 
     N = len(data)
-    result = [None] * N
 
-    # Uncomment following line to run single threaded.
-    # return [func(datum) for datum in data]
-
-    # wrapper to dispose the result in the right slot
-    def task_wrapper(i):
-        result[i] = func(data[i])
-
-    threads = [threading.Thread(target=task_wrapper, args=(i,)) for i in range(N)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+    with ThreadPoolExecutor(max_workers=N) as executor:
+        result = executor.map(func, data)
 
     return result
-
-
-class cached(object):
-    # Doesn't support lists, dicts and other unhashables
-    # Also doesn't support kwargs for reason above.
-
-    def __init__(self, func, ttl=0.5):
-        self.func = func
-        self.ttl = ttl
-        self.cache = {}
-
-    def __setitem__(self, key, value):
-        self.cache[key] = (value, time() + self.ttl)
-
-    def __getitem__(self, key):
-        if key in self.cache:
-            value, eol = self.cache[key]
-            if eol > time():
-                return value
-
-        self[key] = self.func(*key)
-        return self.cache[key][0]
-
-    def __call__(self, *args):
-        return self[args]
 
 
 def flatten(list1):

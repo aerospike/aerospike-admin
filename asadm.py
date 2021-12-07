@@ -21,8 +21,6 @@ import os
 import re
 import shlex
 import sys
-import logging
-import traceback
 
 if sys.version_info[0] < 3:
     raise Exception(
@@ -42,110 +40,14 @@ if "-e" not in sys.argv and "--asinfo" not in sys.argv:
 
 # Setup logger before anything
 
-
-class BaseLogger(logging.Logger, object):
-    execute_only_mode = False
-
-    def __init__(self, name, level=logging.WARNING):
-        return super(BaseLogger, self).__init__(name, level=level)
-
-    def _handle_exception(self, msg):
-        if (
-            isinstance(msg, Exception)
-            and not isinstance(msg, ShellException)
-            and not isinstance(msg, info.ASProtocolError)
-            and not isinstance(msg, ASInfoError)
-        ):
-            traceback.print_exc()
-
-    def _print_message(self, msg, level, red_color=False, *args, **kwargs):
-        try:
-            message = str(msg).format(*args, **kwargs)
-        except Exception:
-            message = str(msg)
-
-        message = level + ": " + message
-
-        if red_color:
-            message = terminal.fg_red() + message + terminal.fg_clear()
-
-        print(message)
-
-    def debug(self, msg, *args, **kwargs):
-        if self.level <= logging.DEBUG:
-            self._log(self.level, msg, args, **kwargs)
-
-    def info(self, msg, *args, **kwargs):
-        if self.level <= logging.INFO:
-            self._print_message(msg, "INFO", False, *args, **kwargs)
-
-    def warning(self, msg, *args, **kwargs):
-        if self.level <= logging.WARNING:
-            self._print_message(msg, "WARNING", True, *args, **kwargs)
-
-    def error(self, msg, *args, **kwargs):
-        if self.level <= logging.ERROR:
-            self._print_message(msg, "ERROR", True, *args, **kwargs)
-            self._handle_exception(msg)
-
-            if self.execute_only_mode:
-                exit(2)
-
-    def critical(self, msg, *args, **kwargs):
-        if self.level <= logging.CRITICAL:
-            self._print_message(msg, "ERROR", True, *args, **kwargs)
-            self._handle_exception(msg)
-        exit(1)
-
-
-class LogFormatter(logging.Formatter):
-    def __init__(self, fmt="%(levelno)s: %(msg)s"):
-        super().__init__(fmt=fmt, datefmt=None, style="%")
-
-    def format(self, record):
-        original_fmt = self._style._fmt
-
-        if record.levelno == logging.DEBUG:
-            path_split = record.pathname.split("lib")
-
-            if len(path_split) > 1:
-                record.pathname = "lib" + record.pathname.split("lib")[1]
-                self._style._fmt = (
-                    "{%(pathname)s:%(lineno)d} %(levelname)s - %(message)s"
-                )
-            else:
-                self._style._fmt = (
-                    "{%(filename)s:%(lineno)d} %(levelname)s - %(message)s"
-                )
-
-        formatter = logging.Formatter(self._style._fmt)
-        result = formatter.format(record)
-
-        self._style._fmt = original_fmt
-
-        return result
-
-
-logging.setLoggerClass(BaseLogger)
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger("asadm")
-logger.propagate = False
-logger.setLevel(logging.INFO)
-logging_handler = logging.StreamHandler()
-logging_handler.setLevel(logging.INFO)
-logging_handler.setFormatter(LogFormatter())
-logger.addHandler(logging_handler)
-
-
+from lib.utils.logger import logger
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
-from lib.base_controller import ShellException
 from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
 from lib.live_cluster.client import info
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
-from lib.live_cluster.client.node import ASInfoError
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
@@ -261,7 +163,7 @@ class AerospikeShell(cmd.Cmd):
                             "Not able to connect any cluster with " + str(seeds) + "."
                         )
 
-                self.set_prompt(DEFAULT_PROMPT)
+                self.set_default_prompt()
                 self.intro = ""
                 if not execute_only_mode:
                     self.intro += str(self.ctrl.cluster) + "\n"
@@ -309,14 +211,23 @@ class AerospikeShell(cmd.Cmd):
             if command != "help":
                 self.commands.add(command)
 
-    def set_prompt(self, prompt):
+    def set_prompt(self, prompt, color="green"):
         self.prompt = prompt
 
         if self.use_rawinput:
+            if color == "green":
+                color_func = terminal.fg_green
+            elif color == "red":
+                color_func = terminal.fg_red
+            else:
+
+                def color_func():
+                    return ""
+
             self.prompt = (
                 "\001"
                 + terminal.bold()
-                + terminal.fg_red()
+                + color_func()
                 + "\002"
                 + self.prompt
                 + "\001"
@@ -324,6 +235,12 @@ class AerospikeShell(cmd.Cmd):
                 + terminal.fg_clear()
                 + "\002"
             )
+
+    def set_default_prompt(self):
+        self.set_prompt(DEFAULT_PROMPT, "green")
+
+    def set_privaliged_prompt(self):
+        self.set_prompt(PRIVILEGED_PROMPT, "red")
 
     def clean_line(self, line):
         # get rid of extra whitespace
@@ -334,7 +251,7 @@ class AerospikeShell(cmd.Cmd):
 
         command = []
         build_token = ""
-        lexer.wordchars += ".*-:/_{}"
+        lexer.wordchars += ".*-:/_{}@"
         for token in lexer:
             build_token += token
             if token == "-":
@@ -397,10 +314,10 @@ class AerospikeShell(cmd.Cmd):
                     return "exit"
 
                 elif response == "ENABLE":
-                    self.set_prompt(PRIVILEGED_PROMPT)
+                    self.set_privaliged_prompt()
 
                 elif response == "DISABLE":
-                    self.set_prompt(DEFAULT_PROMPT)
+                    self.set_default_prompt()
 
             except Exception as e:
                 logger.error(e)
@@ -662,7 +579,7 @@ def main():
 
     if cli_args.execute is not None:
         execute_only_mode = True
-        BaseLogger.execute_only_mode = True
+        logger.execute_only_mode = True
 
     cli_args, seeds = conf.loadconfig(cli_args, logger)
 
@@ -725,7 +642,7 @@ def main():
     use_yappi = False
     if cli_args.profile:
         try:
-            import yappi
+            import yappi  # noqa F401
 
             use_yappi = True
         except Exception as a:

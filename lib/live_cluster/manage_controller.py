@@ -1,22 +1,30 @@
 import os
+import logging
 from datetime import datetime
 from dateutil import parser as date_parser
 from getpass import getpass
 from functools import reduce
+from concurrent.futures import ThreadPoolExecutor
 
 from lib.view import terminal
 from lib.utils import constants, util, version
 from lib.base_controller import CommandHelp
+from lib.get_controller import GetConfigController
 from lib.utils.lookup_dict import PrefixDict
-from lib.live_cluster.client.node import ASInfoError
-from lib.live_cluster.client.config_handler import (
+from .client import (
+    ASInfoClusterStableError, 
+    ASInfoError,
+    ASProtocolError,
     BoolConfigType,
     EnumConfigType,
     StringConfigType,
     IntConfigType,
 )
-from .client.info import ASProtocolError
 from .live_cluster_command_controller import LiveClusterCommandController
+from lib.get_controller import GetJobsController
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 
 class ManageLeafCommandController(LiveClusterCommandController):
@@ -45,13 +53,18 @@ class ManageLeafCommandController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"manage" is used for administrative tasks like managing users, roles, udf, and sindexes'
+    '"manage" is used for administrative tasks like managing users, roles, udf, and',
+    'sindexes. It should be used in conjunction with the "show users" and "show roles',
+    "command.",
 )
 class ManageController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
+            "jobs": ManageJobsController,
             "recluster": ManageReclusterController,
             "quiesce": ManageQuiesceController,
+            "revive": ManageReviveController,
+            "roster": ManageRosterController,
             "truncate": ManageTruncateController,
             "udfs": ManageUdfsController,
             "sindex": ManageSIndexController,
@@ -808,7 +821,10 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
         )
 
 
-@CommandHelp('"manage udfs" is used to add and remove user defined functions.')
+@CommandHelp(
+    '"manage udfs" is used to add and remove user defined functions. It should be used',
+    'in conjunction with the "show udfs" command.',
+)
 class ManageUdfsController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
@@ -855,7 +871,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
             existing_names = existing_udfs.keys()
 
             if udf_name in existing_names and not self.prompt_challenge(
-                "You are about to write over an existing UDF module."
+                "You're about to write over an existing UDF module."
             ):
                 return
 
@@ -883,7 +899,7 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
         udf_name = line.pop(0)
 
         if self.warn and not self.prompt_challenge(
-            "You are about to remove a UDF module that may be in use."
+            "You're about to remove a UDF module that may be in use."
         ):
             return
 
@@ -900,7 +916,10 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
         self.view.print_result("Successfully removed UDF {}.".format(udf_name))
 
 
-@CommandHelp('"manage sindex" is used to create and delete secondary indexes.')
+@CommandHelp(
+    '"manage sindex" is used to create and delete secondary indexes. It should be used',
+    'in conjunction with the "show sindex" or "info sindex" command.',
+)
 class ManageSIndexController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
@@ -1107,7 +1126,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
                 # If context is not valid subcontext then it is probably a prefix
                 if context not in subcontexts:
-                    self.logger.debug(
+                    logger.debug(
                         "ManageConfigLeafController: Possible completions for %s: %s",
                         context,
                         subcontexts,
@@ -1138,7 +1157,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
             possible_completions = subcontexts
 
-            self.logger.debug(
+            logger.debug(
                 "ManageConfigLeafController: Possible sub-contexts %s",
                 possible_completions,
             )
@@ -1151,7 +1170,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
             lambda x, y: list(set(x) | set(y)), cluster_params.values()
         )
 
-        self.logger.debug(
+        logger.debug(
             "ManageConfigLeafController: Possible params {}".format(intersection)
         )
 
@@ -1174,14 +1193,14 @@ class ManageConfigLeafController(ManageLeafCommandController):
                 elif isinstance(config_type, StringConfigType):
                     possible_completions = ["<string>"]
 
-        self.logger.debug(
+        logger.debug(
             "ManageConfigLeafController: Possible value {}".format(possible_completions)
         )
 
         return possible_completions
 
     def complete(self, line):
-        self.logger.debug(
+        logger.debug(
             "ManageConfigLeafController: Complete context {} and line {}".format(
                 self.context, line
             )
@@ -1222,7 +1241,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
                 return []
 
         if len(line) != 0 and line[0] in self.controller_map:
-            self.logger.debug(
+            logger.debug(
                 "ManageConfigLeafController: Found context {} with own controller".format(
                     line[0]
                 )
@@ -1243,7 +1262,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
             if val:
                 contexts.append(val)
 
-        self.logger.debug(
+        logger.debug(
             "ManageConfigLeafController: context to complete {}".format(contexts)
         )
 
@@ -1366,7 +1385,7 @@ class ManageConfigLoggingController(ManageConfigLeafController):
         )
 
         title = "Set Logging Context {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1391,7 +1410,7 @@ class ManageConfigServiceController(ManageConfigLeafController):
         resp = self.cluster.info_set_config_service(param, value, nodes=self.nodes)
 
         title = "Set Service Param {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
         if param in self.require_recluster:
             self.view.print_result(
@@ -1432,7 +1451,7 @@ class ManageConfigNetworkController(ManageConfigLeafController):
         )
 
         title = "Set Network Param {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1467,7 +1486,7 @@ class ManageConfigSecurityController(ManageConfigLeafController):
         )
 
         title = "Set Security Param {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1514,7 +1533,7 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
         )
 
         title = "Set Namespace Param {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
         if param in self.require_recluster:
             self.view.print_result(
@@ -1559,7 +1578,7 @@ class ManageConfigNamespaceSetController(ManageConfigLeafController):
         )
 
         title = "Set Namespace Set Param {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1588,7 +1607,7 @@ class ManageConfigXDRController(ManageConfigLeafController):
         resp = self.cluster.info_set_config_xdr(param, value, nodes=self.nodes)
 
         title = "Set XDR Param {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1616,7 +1635,7 @@ class ManageConfigXDRCreateController(ManageConfigLeafController):
         resp = self.cluster.info_set_config_xdr_create_dc(dc, nodes=self.nodes)
 
         title = "Create XDR DC {}".format(dc)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1644,7 +1663,7 @@ class ManageConfigXDRDeleteController(ManageConfigLeafController):
         resp = self.cluster.info_set_config_xdr_delete_dc(dc, nodes=self.nodes)
 
         title = "Delete XDR DC {}".format(dc)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1685,7 +1704,7 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
         resp = self.cluster.info_set_config_xdr(param, value, dc=dc, nodes=self.nodes)
 
         title = "Set XDR DC param {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
         if param in self.param_pairs.keys():
             self.view.print_result(
@@ -1727,7 +1746,7 @@ class ManageConfigXDRDCAddNodeController(ManageConfigLeafController):
         resp = self.cluster.info_set_config_xdr_add_node(dc, node, nodes=self.nodes)
 
         title = "Add XDR Node {} to DC {}".format(node, dc)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1771,7 +1790,7 @@ class ManageConfigXDRDCAddNamespaceController(ManageConfigLeafController):
         )
 
         title = "Add XDR Namespace {} to DC {}".format(namespace, dc)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp("")
@@ -1808,7 +1827,7 @@ class ManageConfigXDRDCRemoveNodeController(ManageConfigLeafController):
         resp = self.cluster.info_set_config_xdr_remove_node(dc, node, nodes=self.nodes)
 
         title = "Remove XDR Node {} from DC {}".format(node, dc)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1835,7 +1854,7 @@ class ManageConfigXDRDCRemoveNamespaceController(ManageConfigLeafController):
         )
 
         title = "Remove XDR Namespace {} from DC {}".format(namespace, dc)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
@@ -1868,12 +1887,12 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
         )
 
         title = "Set XDR Namespace Param {} to {}".format(param, value)
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
 @CommandHelp(
     '"manage truncate" is used to delete multiple records in the Aerospike cluster.',
-    'It is advised to use the "manage truncate" command with the --warn flag on.',
+    'Since the changes performed by this command are critical "--warn" is on by default.',
     "Usage: truncate ns <ns> [set <set>] [undo]|[before <iso-8601-or-unix-epoch> iso-8601|unix-epoch]",
     "  namespace     - The namespace you would like to truncate or undo truncation.",
     "  set           - The set you would like to truncate or undo truncation",
@@ -1887,6 +1906,8 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
     '                  datetime followed by the literal "iso-8601" or unix-epoch',
     '                  followed by the literal "unix-epoch".',
     "                  [default: Now]",
+    "Options:",
+    "  --no-warn     - Turn off --warn mode. This is not advised.",
 )
 class ManageTruncateController(ManageLeafCommandController):
     def __init__(self):
@@ -1966,7 +1987,7 @@ class ManageTruncateController(ManageLeafCommandController):
 
             lut_epoch_time = "".join(seconds) + "".join(nanoseconds[0:9])
 
-            self.logger.debug("ManageTruncate epoch time %s", lut_epoch_time)
+            logger.debug("ManageTruncate epoch time %s", lut_epoch_time)
 
         return lut_datetime, lut_epoch_time, error
 
@@ -2026,7 +2047,7 @@ class ManageTruncateController(ManageLeafCommandController):
         return formatted
 
     def _generate_warn_prompt(self, namespace, set_, master_objects, lut_datetime):
-        prompt_str = "You are about to truncate up to {} records from".format(
+        prompt_str = "You're about to truncate up to {} records from".format(
             master_objects
         )
 
@@ -2043,6 +2064,14 @@ class ManageTruncateController(ManageLeafCommandController):
 
     def _do_default(self, line):
         unrecognized = None
+
+        warn = not util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--no-warn",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
         # TODO: Build an option into the controller that strictly checks modifiers.
         # This is especially important with truncate.
@@ -2087,7 +2116,7 @@ class ManageTruncateController(ManageLeafCommandController):
             self.logger.error(error)
             return
 
-        if self.warn:
+        if warn:
             prompt = None
 
             if undo:
@@ -2176,9 +2205,9 @@ class ManageReclusterController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    '"manage quiesce" is used to stop nodes from participating as a replica in an Aerospike cluster.',
+    '"manage quiesce" causes a node to avoid participating as a replica after the next recluster event.',
     "Usage: quiesce with node1 [node2 [...]] [undo]",
-    "  with          - The nodes(s) to quiesce.",
+    "  with          - The node(s) to quiesce. Exceptable values are ip:port, node-id, or FQDN.",
     "  undo          - Revert the effects of the quiesce on the next recluster event.",
     "                  [default: false]",
 )
@@ -2191,6 +2220,16 @@ class ManageQuiesceController(ManageLeafCommandController):
         undo = util.check_arg_and_delete_from_mods(
             line, arg="undo", default=False, modifiers=self.modifiers, mods=self.mods
         )
+
+        if self.warn:
+            if undo:
+                prompt = "You are about to undo quiescing of node(s): {}"
+            else:
+                prompt = "You are about to quiesce node(s): {}"
+
+            if not self.prompt_challenge(prompt.format(", ".join(self.nodes))):
+                return
+
         resp = None
         title = None
 
@@ -2201,7 +2240,504 @@ class ManageQuiesceController(ManageLeafCommandController):
             title = "Quiesce Nodes"
             resp = self.cluster.info_quiesce(nodes=self.nodes)
 
-        self.view.manage_config(title, resp, self.cluster, **self.mods)
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
         self.view.print_result(
             'Run "manage recluster" for your changes to take affect.'
         )
+
+
+@CommandHelp(
+    '"manage revive" is used to revive dead partitions in a namespace running in strong',
+    "consistency mode.",
+    "Usage: revive ns <ns>",
+    "  ns            - A namespace with dead partitions.",
+)
+class ManageReviveController(ManageLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = {"ns"}
+        self.modifiers = {"with"}
+
+    def _do_default(self, line):
+        ns = self.mods["ns"][0]
+
+        if self.warn and not self.prompt_challenge(
+            "You are about to revive namespace {}".format(ns)
+        ):
+            return
+
+        resp = self.cluster.info_revive(ns, nodes=self.nodes)
+
+        title = "Revive Namespace Partitions"
+        self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+        self.view.print_result(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+
+class ManageRosterLeafCommandController(ManageLeafCommandController):
+    def _check_and_log_cluster_stable(self, stable_data):
+        cluster_key = None
+        warning_str = "The cluster is unstable. It is advised that you do not manage the roster. Run 'info network' for more information."
+
+        for resp in stable_data.values():
+            if isinstance(resp, ASInfoClusterStableError):
+                self.logger.warning(warning_str)
+                return False
+
+            if isinstance(resp, ASInfoError):
+                raise resp
+
+            if cluster_key is not None and cluster_key != resp:
+                self.logger.warning(warning_str)
+                return False
+
+            cluster_key = resp
+
+        return True
+
+    def _check_and_log_nodes_in_observed(self, observed, nodes):
+        diff = set(nodes) - set(observed)
+
+        if len(diff):
+            self.logger.warning(
+                "The following node(s) are not found in the observed list or have a\n"
+                + "different configured rack-id: {}",
+                ", ".join(list(diff)),
+            )
+            return False
+
+        return True
+
+
+@CommandHelp(
+    '"manage roster" is used to modify the clusters roster. It',
+    'should be used in conjunction with the "show roster" command',
+)
+class ManageRosterController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "add": ManageRosterAddController,
+            "remove": ManageRosterRemoveController,
+            "stage": ManageRosterStageController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+
+@CommandHelp(
+    '"manage roster add" is used to add node(s) to the pending-roster. Since the changes',
+    'performed by this command are critical "--warn" is on by default.',
+    "Usage: add nodes node_id1[@rack_id] [node_id2[@rack_id1] [...]] ns <ns>",
+    "  nodes         - The node(s) to add to the pending-roster.",
+    "  ns            - The namespace of the pending-roster.",
+    "Options:",
+    "  --no-warn     - Turn off --warn mode. This is not advised.",
+)
+class ManageRosterAddController(ManageRosterLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = {"nodes", "ns"}
+        self.getter = GetConfigController(self.cluster)
+
+    def _do_default(self, line):
+        ns = self.mods["ns"][0]
+        warn = not util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--no-warn",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+        current_roster = util.Future(
+            self.cluster.info_roster, ns, nodes="principal"
+        ).start()
+        cluster_stable = util.Future(
+            self.cluster.info_cluster_stable, nodes=self.nodes
+        ).start()
+
+        current_roster = current_roster.result()
+        cluster_stable = cluster_stable.result()
+        current_roster = list(current_roster.values())[0]
+
+        if isinstance(current_roster, ASInfoError):
+            self.logger.error(current_roster)
+            return
+        elif isinstance(current_roster, Exception):
+            raise current_roster
+
+        new_roster = list(current_roster["pending_roster"])
+        new_roster.extend(self.mods["nodes"])
+
+        if warn:
+            self._check_and_log_cluster_stable(cluster_stable)
+            self._check_and_log_nodes_in_observed(
+                current_roster["observed_nodes"], self.mods["nodes"]
+            )
+
+            if not self.prompt_challenge(
+                "You are about to set the pending-roster for namespace {} to: {}".format(
+                    ns, ", ".join(new_roster)
+                )
+            ):
+                return
+
+        resp = self.cluster.info_roster_set(
+            self.mods["ns"][0], new_roster, nodes="principal"
+        )
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result("Node(s) successfully added to pending-roster.")
+        self.view.print_result(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+
+@CommandHelp(
+    '"manage roster remove" is used to remove node(s) from the pending-roster. Since the',
+    'changes performed by this command are critical "--warn" is on by default.',
+    "Usage: remove nodes node_id1[@rack_id] [node_id2[@rack_id1] [...]] ns <ns>",
+    "  nodes         - The node(s) to remove from the pending-roster.",
+    "  ns            - The namespace of the pending-roster..",
+    "Options:",
+    "  --no-warn     - Turn off --warn mode. This is not advised.",
+)
+class ManageRosterRemoveController(ManageRosterLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = {"nodes", "ns"}
+
+    def _do_default(self, line):
+        ns = self.mods["ns"][0]
+        warn = not util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--no-warn",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+        current_roster = util.Future(
+            self.cluster.info_roster, ns, nodes="principal"
+        ).start()
+        cluster_stable = util.Future(
+            self.cluster.info_cluster_stable, nodes=self.nodes
+        ).start()
+
+        current_roster = current_roster.result()
+        cluster_stable = cluster_stable.result()
+        current_roster = list(current_roster.values())[0]
+
+        if isinstance(current_roster, ASInfoError):
+            self.logger.error(current_roster)
+            return
+        elif isinstance(current_roster, Exception):
+            raise current_roster
+
+        new_roster = list(current_roster["pending_roster"])
+        missing_nodes = []
+
+        for rm_node in self.mods["nodes"]:
+            try:
+                new_roster.remove(rm_node)
+            except ValueError:
+                missing_nodes.append(rm_node)
+
+        if warn:
+            if len(missing_nodes):
+                self.logger.warning(
+                    "The following nodes are not in the pending-roster: {}",
+                    ", ".join(missing_nodes),
+                )
+
+            self._check_and_log_cluster_stable(cluster_stable)
+
+            if not self.prompt_challenge(
+                "You are about to set the pending-roster for namespace {} to: {}".format(
+                    ns, ", ".join(new_roster)
+                )
+            ):
+                return
+
+        resp = self.cluster.info_roster_set(ns, new_roster, nodes="principal")
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result("Node(s) successfully removed from pending-roster.")
+        self.view.print_result(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+
+@CommandHelp("")
+class ManageRosterStageController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "nodes": ManageRosterStageNodesController,
+            "observed": ManageRosterStageObservedController,
+        }
+
+
+@CommandHelp(
+    '"manage roster stage nodes" is used to overwrite the nodes in the pending-roster.',
+    'Since the changes performed by this command are critical "--warn" is on by default.',
+    "Usage: roster stage nodes node_id1[@rack_id1] [node_id2[@rack_id2] [...]] ns <ns>",
+    "  nodes         - The node(s) to include in the new pending-roster.",
+    "  ns            - The namespace of the pending-roster.",
+    "Options:",
+    "  --no-warn     - Turn off --warn mode. This is not advised.",
+)
+class ManageRosterStageNodesController(ManageRosterLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = {"line", "ns"}
+
+    def _do_default(self, line):
+        new_roster = self.mods["line"]
+        ns = self.mods["ns"][0]
+        warn = not util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--no-warn",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        if warn:
+            cluster_stable = util.Future(
+                self.cluster.info_cluster_stable, nodes=self.nodes
+            ).start()
+            current_roster = util.Future(
+                self.cluster.info_roster, ns, nodes="principal"
+            ).start()
+
+            cluster_stable = cluster_stable.result()
+            current_roster = current_roster.result()
+            current_roster = list(current_roster.values())[0]
+
+            if isinstance(current_roster, ASInfoError):
+                self.logger.error(current_roster)
+                return
+            elif isinstance(current_roster, Exception):
+                raise current_roster
+
+            self._check_and_log_cluster_stable(cluster_stable)
+            self._check_and_log_nodes_in_observed(
+                current_roster["observed_nodes"], self.mods["line"]
+            )
+
+            if not self.prompt_challenge(
+                "You are about to set the pending-roster for namespace {} to: {}".format(
+                    ns, ", ".join(new_roster)
+                )
+            ):
+                return
+
+        resp = self.cluster.info_roster_set(ns, new_roster, nodes="principal")
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result("Pending roster successfully set.")
+        self.view.print_result(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+
+@CommandHelp(
+    '"manage roster stage observed" automatically adds observed-nodes to the',
+    "pending-roster.",
+    "Usage: roster stage observed ns <ns>",
+    "  ns            - The namespace of the pending-roster you would like to set.",
+)
+class ManageRosterStageObservedController(ManageRosterLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = {"ns"}
+
+    def _do_default(self, line):
+        ns = self.mods["ns"][0]
+        current_roster = util.Future(
+            self.cluster.info_roster, ns, nodes="principal"
+        ).start()
+        cluster_stable = util.Future(
+            self.cluster.info_cluster_stable, nodes=self.nodes
+        ).start()
+
+        current_roster = current_roster.result()
+        cluster_stable = cluster_stable.result()
+        current_roster = list(current_roster.values())[0]
+
+        if isinstance(current_roster, ASInfoError):
+            self.logger.error(current_roster)
+            return
+        elif isinstance(current_roster, Exception):
+            raise current_roster
+
+        new_roster = current_roster["observed_nodes"]
+
+        if not self._check_and_log_cluster_stable(cluster_stable) or self.warn:
+            if not self.prompt_challenge(
+                "You are about to set the pending-roster for namespace {} to: {}".format(
+                    ns, ", ".join(new_roster)
+                )
+            ):
+                return
+
+        resp = self.cluster.info_roster_set(ns, new_roster, nodes="principal")
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, ASInfoError):
+            self.logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result("Pending roster now contains observed nodes.")
+        self.view.print_result(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+
+class ManageJobsController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {"kill": ManageJobsKillController}
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+
+@CommandHelp(
+    '"manage jobs kill" is used to abort jobs.',
+)
+class ManageJobsKillController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "trids": ManageJobsKillTridController,
+            "all": ManageJobsKillAllController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+
+@CommandHelp(
+    '"manage jobs kill trids" is used to abort jobs using their transaction ids.',
+    "Usage: kill trids <trid1> [<trid2> [...]]",
+    "  trid          - The transaction ids of the jobs you would like to kill.",
+)
+class ManageJobsKillTridController(ManageLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = {"line"}
+        self.getter = GetJobsController(self.cluster)
+
+    def _kill_trid(self, executor, node, module, trid):
+        if module == constants.JobType.SCAN:
+            return executor.submit(self.cluster.info_scan_abort, trid, nodes=[node])
+        elif module == constants.JobType.QUERY:
+            return executor.submit(self.cluster.info_query_abort, trid, nodes=[node])
+        else:
+            return executor.submit(
+                self.cluster.info_jobs_kill,
+                module,
+                trid,
+                nodes=[node],
+            )
+
+    def _do_default(self, line):
+        trids = self.mods["line"]
+        jobs_data = self.getter.get_all()
+        requests_ = []
+        responses = {}
+
+        if self.warn and not self.prompt_challenge(
+            "You're about to kill the following transactions: {}".format(
+                ", ".join(trids)
+            )
+        ):
+            return
+
+        # Dict key hierarchy is currently module -> host -> trid.
+        # We want trid at the top.  i.e. trid -> module -> host for quick lookup
+        for module, host_data in jobs_data.items():
+            jobs_data[module] = util.flip_keys(host_data)
+
+        jobs_data = util.flip_keys(jobs_data)
+
+        with ThreadPoolExecutor(max_workers=len(trids)) as executor:
+            for trid in list(trids):
+                if trid in jobs_data:
+                    module, host_data = list(jobs_data[trid].items())[0]
+                    for host, job_data in host_data.items():
+                        requests_.append(
+                            (
+                                host,
+                                trid,
+                                job_data,
+                                self._kill_trid(executor, host, module, trid),
+                            )
+                        )
+
+        if not requests_:
+            self.logger.error("The provided trid(s) could not be found.")
+
+        for request in requests_:
+            host, trid, job_data, resp = request
+            resp = list(resp.result().values())[0]
+
+            if host not in responses:
+                responses[host] = {}
+
+            job_data["response"] = resp
+            responses[host][trid] = job_data
+
+        self.view.killed_jobs(self.cluster, responses, **self.mods)
+
+
+@CommandHelp()
+class ManageJobsKillAllController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "scans": ManageJobsKillAllScansController,
+        }
+
+    def _do_default(self, line):
+        self.execute_help(line)
+
+
+@CommandHelp(
+    '"manage jobs kill all scans" is used to abort all scan jobs.',
+    "Usage: kill all scans",
+)
+class ManageJobsKillAllScansController(ManageLeafCommandController):
+    def __init__(self):
+        self.modifiers = {"with"}
+
+    def _do_default(self, line):
+        if self.warn:
+            if self.nodes == "all":
+                if not self.prompt_challenge(
+                    "You're about to kill all scan jobs on all nodes."
+                ):
+                    return
+            else:
+                if not self.prompt_challenge(
+                    "You're about to kill all scan jobs on node(s): {}.".format(
+                        ", ".join(self.nodes)
+                    )
+                ):
+                    return
+
+        resp = self.cluster.info_scan_abort_all(nodes=self.nodes)
+
+        self.view.print_info_responses("Kill Jobs", resp, self.cluster, **self.mods)

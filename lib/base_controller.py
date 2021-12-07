@@ -23,6 +23,9 @@ from lib.view import view, terminal
 
 DEFAULT = "_do_default"
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
+
 
 class CommandHelp:
 
@@ -82,6 +85,28 @@ class CommandHelp:
     def is_hidden(func):
         try:
             return func._hide
+        except Exception:
+            return False
+
+
+class CommandName:
+    def __init__(self, name):
+        self._assigned_name = name
+
+    def __call__(self, func):
+        func._assigned_name = self._assigned_name
+        return func
+
+    @staticmethod
+    def name(func):
+        return func._assigned_name
+
+    @staticmethod
+    def has_name(func):
+        try:
+            if func._assigned_name:
+                return True
+            return False
         except Exception:
             return False
 
@@ -168,7 +193,11 @@ class BaseController(object):
         self.commands = PrefixDict()
 
         for command in commands:
-            self.commands.add(command[1], getattr(self, command[0]))
+            func = getattr(self, command[0])
+            if CommandName.has_name(func):
+                self.commands.add(CommandName.name(func), func)
+            else:
+                self.commands.add(command[1], func)
 
         for command, controller in self.controller_map.items():
             if self.context:
@@ -189,7 +218,7 @@ class BaseController(object):
         command = line.pop(0) if line else ""
         commands = self.commands.get_key(command)
 
-        self.logger.debug("Auto-complete: command {}".format(command))
+        logger.debug("Auto-complete: command {}".format(command))
 
         if not DisableAutoComplete.has_auto_complete(self.commands[commands[0]][0]):
             return []
@@ -197,16 +226,16 @@ class BaseController(object):
         if command != commands[0] and len(line) == 0:
             # if user has full command name and is hitting tab,
             # the user probably wants the next level
-            self.logger.debug("Auto-complete: results {}".format(commands))
+            logger.debug("Auto-complete: results {}".format(commands))
             return sorted(commands)
 
         try:
-            self.logger.debug(
+            logger.debug(
                 "Auto-complete: going to next controller {}".format(commands[0])
             )
             return self.commands.get(commands[0])[0].complete(line)
         except Exception as e:
-            self.logger.debug(
+            logger.debug(
                 "Auto-complete: command is ambiguous or exact match {}, error: {}".format(
                     commands[0], e
                 )
@@ -248,9 +277,9 @@ class BaseController(object):
                 return method
 
         try:
-            self.logger.debug("Looking for {} in command_map".format(command))
+            logger.debug("Looking for {} in command_map".format(command))
             method = self.commands[command]
-            self.logger.debug("Found method {} in command_map".format(method))
+            logger.debug("Found method {} in command_map".format(method))
 
             if len(method) > 1:
                 # handle ambiguos commands
@@ -462,7 +491,7 @@ class CommandController(BaseController):
 
     def _check_required_modifiers(self, line):
         for mod in self.required_modifiers:
-            if not len(self.mods[mod]):
+            if not self.mods[mod]:
                 self.execute_help(line)
                 if mod == "line":
                     raise IOError("Missing required argument")

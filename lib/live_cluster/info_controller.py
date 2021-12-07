@@ -1,4 +1,8 @@
-from lib.get_controller import GetConfigController, get_sindex_stats
+from lib.get_controller import (
+    GetConfigController,
+    GetStatisticsController,
+    get_sindex_stats,
+)
 from lib.utils import util
 from lib.base_controller import CommandHelp
 
@@ -86,7 +90,7 @@ class InfoController(LiveClusterCommandController):
         ).start()
         builds = util.Future(self.cluster.info_build, nodes=self.nodes).start()
 
-        configs = self.config_getter.get_dc(flip=False, nodes=self.nodes)
+        configs = self.config_getter.get_dc(nodes=self.nodes)
 
         stats = stats.result()
 
@@ -259,7 +263,14 @@ class InfoNamespaceController(LiveClusterCommandController):
 
     @CommandHelp("Displays object information for each namespace.")
     def do_object(self, line):
-        stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+        # In SC mode effective rack-id is different from that in namespace config.
+        config_getter = GetConfigController(self.cluster)
+        stat_getter = GetStatisticsController(self.cluster)
+        stats = util.Future(stat_getter.get_namespace, nodes=self.nodes).start()
+        rack_ids = util.Future(config_getter.get_rack_ids, nodes=self.nodes).start()
+        stats = stats.result()
+        rack_ids = rack_ids.result()
+
         return util.Future(
-            self.view.info_namespace_object, stats, self.cluster, **self.mods
+            self.view.info_namespace_object, stats, rack_ids, self.cluster, **self.mods
         )

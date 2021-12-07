@@ -2,7 +2,10 @@ import copy
 import time
 
 from lib.health import util as health_util
-from lib.get_controller import get_sindex_stats
+from lib.get_controller import (
+    GetConfigController,
+    get_sindex_stats,
+)
 from lib.utils import util
 from lib.base_controller import CommandHelp
 
@@ -51,7 +54,8 @@ class HealthCheckController(LiveClusterCommandController):
         elif stanza == "dc":
             return self.cluster.info_dc_get_config(nodes=self.nodes)
         elif stanza == "roster":
-            return self.cluster.info_roster(nodes=self.nodes)
+            getter = GetConfigController(self.cluster)
+            return getter.get_roster(nodes=self.nodes)
         elif stanza == "racks":
             return self.cluster.info_racks(nodes=self.nodes)
         else:

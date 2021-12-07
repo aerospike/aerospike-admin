@@ -18,6 +18,7 @@ from lib.health.health_checker import HealthChecker
 
 
 class HealthcheckerTest(unittest.TestCase):
+    @unittest.skip("This test should be remove.  Keeping here as a reference.  Instead there should be individual tests for each health check not one monolithic test. This is a nightmare to maintain.")
     def test_health_checker(self):
         self.hc = HealthChecker()
         self.maxDiff = None

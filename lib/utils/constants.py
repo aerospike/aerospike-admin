@@ -24,6 +24,9 @@ CONFIG_NAMESPACE = "namespace"
 CONFIG_XDR = "xdr"
 CONFIG_DC = "dc"
 CONFIG_CLUSTER = "cluster"
+CONFIG_RACK_IDS = "rack-ids"
+CONFIG_ROSTER = "roster"
+CONFIG_RACKS = "racks"
 
 STAT_SERVICE = "service"
 STAT_SETS = "set"
@@ -40,6 +43,13 @@ SUMMARY_SETS = "sets"
 SUMMARY_XDR = "xdr"
 SUMMARY_DC = "dc"
 SUMMARY_SINDEX = "sindex"
+
+METADATA_JOBS = "jobs"
+METADATA_PRACTICES = "best_practices"
+METADATA_UDF = "udf"
+
+ADMIN_ROLES = "roles"
+ADMIN_USERS = "users"
 
 
 SHOW_RESULT_KEY = "show_result"
@@ -100,6 +110,12 @@ AdminMode = Enumeration(
         "LOG_ANALYZER",
     ]
 )
+
+
+class JobType:
+    SCAN = "scan"
+    QUERY = "query"
+    SINDEX_BUILDER = "sindex-builder"
 
 
 # server versions with critical changes

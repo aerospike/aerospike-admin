@@ -324,7 +324,7 @@ r1 = do interval < 150;
 r2 = do interval > 250;
 r = do r1 || r2;
 ASSERT(r, False, "Heartbeat interval is not in expected range (150 <= p <= 250)", "OPERATIONS", INFO,
-        "Listed nodes(s) have heartbeat interval value not in expected range (150 <= p <= 250). New node might fail to join cluster.",
+        "Listed node(s) have heartbeat interval value not in expected range (150 <= p <= 250). New node might fail to join cluster.",
         "Heartbeat interval Check (150 <= p <= 250)");
 
 timeout = select "heartbeat.timeout" from NETWORK.CONFIG save;
@@ -332,7 +332,7 @@ r1 = do timeout < 10;
 r2 = do timeout > 15;
 r = do r1 || r2;
 ASSERT(r, False, "Heartbeat timeout is not in expected range (10 <= p <= 15)", "OPERATIONS", INFO,
-        "Listed nodes(s) have heartbeat timeout value not in expected range (10 <= p <= 15). New node might fail to join cluster.",
+        "Listed node(s) have heartbeat timeout value not in expected range (10 <= p <= 15). New node might fail to join cluster.",
         "Heartbeat timeout Check (10 <= p <= 15)");
 
 
@@ -822,7 +822,7 @@ ASSERT(r, True, "UDF not in sync (not available on all node).", "OPERATIONS", CR
 s = select "sync_state" as "val", "state" as "val" from SINDEX.STATISTICS save;
 s = group by CLUSTER, NAMESPACE, SET, SINDEX s;
 r1 = do s == "synced";
-r2 = do s == "WO";
+r2 = do s == "RW";
 r = do r1 || r2;
 ASSERT(r, True, "SINDEX not in sync with primary.", "OPERATIONS", CRITICAL,
 				"Listed sindex[es] are not in sync with primary. This can lead to wrong query results. Consider dropping and recreating secondary index[es].",

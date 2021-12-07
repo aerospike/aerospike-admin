@@ -24,9 +24,29 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import conf
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import full_parser
 from lib.utils import common, constants, util, version
 
+
 from .assocket import ASSocket
 from .config_handler import JsonDynamicConfigHandler
 from . import client_util
+from .types import (
+    ASInfoConfigError,
+    ASInfoError,
+    ASINFO_RESPONSE_OK,
+    ASInfoNotAuthenticatedError,
+    ASInfoClusterStableError,
+    ASProtocolError,
+    ASResponse,
+)
+
+logger = logging.getLogger(__name__)
+logger.propagate = False
+logger.setLevel(logging.CRITICAL)
+logger_handler = logging.StreamHandler()
+# uncomment for better debug logging
+# from lib.utils.logger import DebugFormatter
+# logger_handler.setFormatter(DebugFormatter())
+logger_handler.setLevel(logging.DEBUG)
+logger.addHandler(logger_handler)
 
 #### Remote Server connection module
 
@@ -71,88 +91,10 @@ def return_exceptions(func):
     return wrapper
 
 
-ASINFO_RESPONSE_OK = "ok"
-
-
-class ASInfoError(Exception):
-    generic_error = "Unknown error occurred"
-
-    def __init__(self, message, response):
-        self.message = message
-
-        # Success can either be "ok", "OK", or "" :(
-        if response.lower() in {ASINFO_RESPONSE_OK, ""}:
-            raise ValueError('info() returned value "ok" which is not an error.')
-
-        try:
-            # sometimes there is a message with 'error' and sometimes not. i.e. set-config, udf-put
-            if response.startswith("error") or response.startswith("ERROR"):
-                try:
-                    response = response.split("=")[1]
-                except IndexError:
-                    response = response.split(":")[2]
-
-            elif response.startswith("fail") or response.startswith("FAIL"):
-                response = response.split(":")[2]
-
-            self.response = response.strip(" .")
-
-        except IndexError:
-            self.response = self.generic_error
-
-    def __str__(self):
-        return "{} : {}.".format(self.message, self.response)
-
-
-class ASInfoConfigError(ASInfoError):
-    def __init__(self, message, resp, node, context, param, value):
-        self.message = message
-        self.response = super().generic_error
-        self.logger = logging.getLogger("asadm")
-
-        is_valid_context, invalid_context = self._check_context(node, context[:])
-
-        if not is_valid_context:
-            self.response = "Invalid subcontext {}".format(invalid_context)
-            return
-
-        config_type = node.config_type(context[:], param)
-
-        self.logger.debug("Found config type %s for param %s", str(config_type), param)
-
-        if config_type is None:
-            self.response = "Invalid parameter"
-            return
-
-        if not config_type.dynamic:
-            self.response = "Parameter is not dynamically configurable"
-            return
-
-        if not config_type.validate(value):
-            self.response = "Invalid value for {}".format(str(config_type))
-            return
-
-        super().__init__(message, resp)
-
-    def _check_context(self, node, subcontexts):
-        current_context = []
-
-        while subcontexts:
-            next_subcontext = subcontexts.pop(0)
-
-            valid_subcontexts = node.config_subcontext(current_context[:])
-
-            if next_subcontext not in valid_subcontexts:
-                return False, next_subcontext
-
-            current_context.append(next_subcontext)
-
-        return True, ""
-
-
 class Node(object):
     dns_cache = {}
     pool_lock = threading.Lock()
+    info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
 
     def __init__(
         self,
@@ -283,9 +225,10 @@ class Node(object):
         self.as_conf_data = {}
 
         # TODO: Put json files in a submodule
-        self.conf_schema_handler = JsonDynamicConfigHandler(
-            constants.CONFIG_SCHEMAS_HOME, self.info_build()
-        )
+        if self.alive:
+            self.conf_schema_handler = JsonDynamicConfigHandler(
+                constants.CONFIG_SCHEMAS_HOME, self.info_build()
+            )
 
     def _initialize_socket_pool(self):
         self.socket_pool = {}
@@ -304,12 +247,10 @@ class Node(object):
         try:
             if not self.login():
                 raise IOError("Login Error")
-
             service_addresses = util.Future(self.info_service_list).start()
             node_id = util.Future(self.info_node).start()
             features = util.Future(self.info, "features").start()
             update_ip = util.Future(self._update_IP, address, port).start()
-            changed = util.Future(self.has_peers_changed).start()
             peers = util.Future(self.info_peers_list).start()
             self.node_id = node_id.result()
 
@@ -373,7 +314,8 @@ class Node(object):
             self.new_histogram_version = self._is_new_histogram_version()
             self.alive = True
             self.peers = peers.result()
-
+        except (ASInfoNotAuthenticatedError, ASProtocolError):
+            raise
         except Exception:
             # Node is offline... fake a node
             self.ip = address
@@ -411,13 +353,22 @@ class Node(object):
             self.ssl_context,
             timeout=self._timeout,
         )
+
         if not sock.connect():
             sock.close()
             return False
 
-        if not sock.login():
-            sock.close()
-            return False
+        try:
+            if not sock.login():
+                sock.close()
+                return False
+        except ASProtocolError as e:
+            if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
+                self.logger.warning(e)
+                self.user = None
+            else:
+                sock.close()
+                raise
 
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
@@ -574,7 +525,7 @@ class Node(object):
     # issues in future process.
 
     @return_exceptions
-    @client_util.cached
+    @util.cached
     def _info_cinfo(self, command, ip=None, port=None):
         # TODO: citrusleaf.py does not support passing a timeout default is
         # 0.5s
@@ -606,7 +557,7 @@ class Node(object):
                 return result
 
             else:
-                raise ASInfoError("Error", "Invalid command '%s'" % command)
+                raise IOError("Error: Invalid command '%s'" % command)
 
         except Exception as ex:
             if sock:
@@ -614,7 +565,7 @@ class Node(object):
             raise ex
 
     @return_exceptions
-    @util.logthis
+    @util.logthis(logger)
     def info(self, command):
         """
         asinfo function equivalent
@@ -1045,7 +996,7 @@ class Node(object):
         dcs = self.info_dcs()
         error_message = "Failed to delete XDR datacenter"
 
-        self.logger.debug("Found dcs: %s", dcs)
+        logger.debug("Found dcs: %s", dcs)
 
         if dc not in dcs:
             raise ASInfoError(error_message, "DC does not exist")
@@ -1251,7 +1202,7 @@ class Node(object):
         return ASINFO_RESPONSE_OK
 
     @return_exceptions
-    @util.logthis
+    @util.logthis(logger)
     def info_set_config_namespace(
         self, param, value, namespace, set_=None, subcontext=None
     ):
@@ -1560,7 +1511,7 @@ class Node(object):
                 if ns_set and (not ns or ns not in ns_set):
                     hist_name = None
                     continue
-                columns = [col.replace("u", u"\u03bc") for col in row[1:]]
+                columns = [col.replace("u", "\u03bc") for col in row[1:]]
                 start_time = s2
                 start_time = client_util.remove_suffix(start_time, "-GMT")
                 columns.insert(0, "Time Span")
@@ -1659,7 +1610,7 @@ class Node(object):
         tdata = hist_info.split(";")
         hist_name = None
         ns = None
-        unit_mapping = {"msec": "ms", "usec": u"\u03bcs"}
+        unit_mapping = {"msec": "ms", "usec": "\u03bcs"}
         time_units = None
         columns = [
             ">1",
@@ -1814,7 +1765,7 @@ class Node(object):
         return stats
 
     @return_exceptions
-    @util.logthis
+    @util.logthis(logger)
     def info_udf_list(self):
         """
         Get list of UDFs stored on the node.
@@ -1833,6 +1784,11 @@ class Node(object):
 
     @return_exceptions
     def info_udf_put(self, udf_file_name, udf_str, udf_type="LUA"):
+        """
+        Add a udf module.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
         content = base64.b64encode(udf_str.encode("ascii"))
         content = content.decode("ascii")
         content_len = len(content)
@@ -1856,6 +1812,11 @@ class Node(object):
 
     @return_exceptions
     def info_udf_remove(self, udf_file_name):
+        """
+        Remove a udf module.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
         existing_udfs = self.info_udf_list()
         existing_names = existing_udfs.keys()
 
@@ -1873,37 +1834,121 @@ class Node(object):
         return ASINFO_RESPONSE_OK
 
     @return_exceptions
-    def info_roster(self):
+    def info_roster_namespace(self, namespace):
         """
-        Get roster info.
+        Show roster information (for namespaces running in strong consistency mode). A
+        list with a single element equal to [] indicates an unset roster.
+
+        This is different from info_roster to maintain backwards compatibility with health_check.
+
+        Returns: {"roster": [node_id[@rack_id], ...], "pending_roster": [node_id[@rack_id], ...], "observed_nodes": [node_id[@rack_id], ...]}
+        """
+        req = "roster:namespace={}".format(namespace)
+        resp = self.info(req)
+
+        if resp.startswith("ERROR"):
+            raise ASInfoError("Could not retrieve roster for namespace", resp)
+
+        response = client_util.info_to_dict(resp, delimiter=":")
+
+        for key in response:
+            if key in self.info_roster_list_fields:
+                if response[key] == "null":
+                    response[key] = []
+                else:
+                    response[key] = client_util.info_to_list(
+                        response[key], delimiter=","
+                    )
+
+        return response
+
+    @return_exceptions
+    def info_roster(self, namespace=None):
+        """
+        Get roster info. A key_value of ['null'] indicates an unset roster.
 
         Returns:
         dict -- {ns1:{key_name : key_value, ...}, ns2:{key_name : key_value, ...}}
         """
+        if namespace is not None:
+            return self.info_roster_namespace(namespace)
+
         roster_data = self.info("roster:")
 
         if not roster_data:
             return {}
 
         roster_data = client_util.info_to_dict_multi_level(roster_data, "ns")
-        list_fields = ["roster", "pending_roster", "observed_nodes"]
 
         for ns, ns_roster_data in roster_data.items():
             for k, v in ns_roster_data.items():
-                if k not in list_fields:
-                    continue
-
-                try:
+                if k in self.info_roster_list_fields:
                     ns_roster_data[k] = v.split(",")
-                except Exception:
+                else:
                     ns_roster_data[k] = v
 
         return roster_data
 
     @return_exceptions
+    def info_roster_set(self, namespace, node_ids):
+        """
+        Set the pending roster (for namespaces running in strong consistency mode).
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        req = "roster-set:namespace={};nodes={}".format(namespace, ",".join(node_ids))
+        resp = self.info(req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError(
+                "Failed to set roster for namespace {}".format(namespace), resp
+            )
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_cluster_stable(
+        self, cluster_size=None, namespace=None, ignore_migrations=False
+    ):
+        """
+        Used to check if a nodes cluster-state has stabilized by comparing result with
+        the result returned for other nodes.
+
+        Returns: str key on success and ASInfoError on failure
+        """
+        req = "cluster-stable:"
+        args = []
+
+        if cluster_size is not None:
+            args.append("size={}".format(cluster_size))
+
+        if namespace is not None:
+            args.append("namespace={}".format(namespace))
+
+        if ignore_migrations is not False:
+            args.append("ignore_migrations={}".format(str(ignore_migrations).lower()))
+
+        req += ";".join(args)
+
+        resp = self.info(req)
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        if "error" in resp.lower():
+            if "cluster-not-specified-size" in resp or "unstable-cluster" in resp:
+                raise ASInfoClusterStableError("Cluster is unstable", resp)
+
+            raise ASInfoError("Failed to check cluster stability", resp)
+
+        return resp
+
+    @return_exceptions
     def info_racks(self):
         """
         Get rack info.
+        If roster_rack is returned then that value is used.  Otherwise use rack value.
+        roster_rack is the value returned when the rack_id is set via the roster.
 
         Returns:
         dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
@@ -1917,15 +1962,26 @@ class Node(object):
         rack_dict = {}
 
         for ns, ns_rack_data in rack_data.items():
+            keys = list(ns_rack_data.keys())
+            likes = util.compile_likes(["roster_rack"])
+            roster_keys = list(filter(likes.search, keys))
+
+            if not roster_keys:
+                likes = util.compile_likes(["^rack"])
+                roster_keys = list(filter(likes.search, keys))
+
             rack_dict[ns] = {}
 
-            for k, v in ns_rack_data.items():
+            for k in roster_keys:
+                v = ns_rack_data[k]
+
                 if k == "ns":
                     continue
 
                 try:
-                    rack_id = k.split("_")[1]
+                    rack_id = k.split("_")[-1]
                     nodes = v.split(",")
+
                     rack_dict[ns][rack_id] = {}
                     rack_dict[ns][rack_id]["rack-id"] = rack_id
                     rack_dict[ns][rack_id]["nodes"] = nodes
@@ -1937,10 +1993,10 @@ class Node(object):
     @return_exceptions
     def info_rack_ids(self):
         """
-        Get rack info.
+        Get rack ids for this node for each namespace.
 
         Returns:
-        dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
+        dict -- {ns1: rack_id, ns2: rack_id, ...}
         """
         resp = self.info("rack-ids")
         rack_data = {}
@@ -2061,6 +2117,11 @@ class Node(object):
     def info_sindex_create(
         self, index_name, namespace, bin_name, bin_type, index_type=None, set_=None
     ):
+        """
+        Create a new secondary index. index_type and set are optional.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
         command = "sindex-create:indexname={};".format(index_name)
 
         if index_type:
@@ -2081,6 +2142,11 @@ class Node(object):
 
     @return_exceptions
     def info_sindex_delete(self, index_name, namespace, set_=None):
+        """
+        Delete a secondary index. set_ must be provided if sindex is created on a set.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
         command = ""
 
         if set_ is None:
@@ -2235,13 +2301,209 @@ class Node(object):
 
         return ASINFO_RESPONSE_OK
 
+    # TODO: Deprecated but still needed to support reading old job type removed in
+    # server 5.7.  Should be stripped out at some point.
+    @return_exceptions
+    def info_jobs(self, module):
+        """
+        Get all jobs from a particular module. Exceptable values are scan, query, and
+        sindex-builder.
+
+        Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}},
+        """
+        resp = self.info("jobs:module={}".format(module))
+
+        if resp.startswith("ERROR"):
+            return {}
+
+        jobs = client_util.info_to_dict_multi_level(resp, "trid")
+
+        return jobs
+
+    @return_exceptions
+    def _jobs_helper(self, old_req, new_req):
+        req = None
+
+        if self.is_feature_present("query_show"):
+            req = new_req
+        else:
+            req = old_req
+
+        return self.info(req)
+
+    @return_exceptions
+    def info_query_show(self):
+        """
+        Get all query jobs. Calls "query-show" if supported (5.7).  Calls "jobs" if not.
+
+        Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}}
+        """
+        old_req = "jobs:module=query"
+        new_req = "query-show"
+
+        resp = self._jobs_helper(old_req, new_req)
+        resp = client_util.info_to_dict_multi_level(resp, "trid")
+
+        return resp
+
+    @return_exceptions
+    def info_scan_show(self):
+        """
+        Get all scan jobs. Calls "scan-show" if supported (5.7).  Calls "jobs" if not.
+
+        Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}}
+        """
+        old_req = "jobs:module=scan"
+        new_req = "scan-show"
+
+        resp = self._jobs_helper(old_req, new_req)
+        resp = client_util.info_to_dict_multi_level(resp, "trid")
+
+        return resp
+
+    # TODO: Deprecated but still needed to support killing old job types that have been
+    # removed in server 5.7. Should be stripped out at some point.
+    @return_exceptions
+    def info_jobs_kill(self, module, trid):
+        """
+        Kill a job.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        req = "jobs:module={};cmd=kill-job;trid={}".format(module, trid)
+
+        resp = self.info(req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to kill job", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_scan_abort(self, trid):
+        """
+        Kill a scan job. Calls "scan-abort" if "s-show" features exists. Otherwise,
+        calls "jobs".  "scan-abort" was supported prior but was not documented until
+        server 5.7.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        old_req = "jobs:module=scan;cmd=kill-job;trid={}".format(trid)
+        new_req = "scan-abort:trid={}".format(trid)
+
+        resp = self._jobs_helper(old_req, new_req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to kill job", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def info_query_abort(self, trid):
+        """
+        Kill a query job. Calls "query-abort" if "query-show" features exists. Otherwise,
+        calls "jobs". Unlike "scan-abort", "query-abort" was not supported until 5.7.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        old_req = "jobs:module=query;cmd=kill-job;trid={}".format(trid)
+        new_req = "query-abort:trid={}".format(trid)
+
+        resp = self._jobs_helper(old_req, new_req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to kill job", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @return_exceptions
+    def _async_abort_all_helper(self, show_func, abort_func):
+        """
+        Helper to kill all jobs from a certain module.
+        """
+        queries = show_func()
+
+        if isinstance(queries, ASInfoError):
+            raise queries
+
+        trids = [
+            trid for trid in queries.keys() if "done" not in queries[trid]["status"]
+        ]
+        responses = []
+        abort_count = 0
+
+        if not trids:
+            return 0
+
+        # returns generator
+        responses = client_util.concurrent_map(abort_func, trids)
+
+        for resp in responses:
+            if resp != ASINFO_RESPONSE_OK:
+                raise ASInfoError(resp)
+            abort_count += 1
+
+        return abort_count
+
+    # TODO: Deprecated but still needed to support killing old job types that have been
+    # removed in server 5.7. Should be stripped out at some point.
+    @return_exceptions
+    def info_jobs_kill_all(self, module):
+        """
+        Not used since "scan-abort-all" is supported since 3.5.
+        This will be needed if we add "query-abort-all" in a later version to support
+        backwards compatibility
+        """
+
+        def show_func():
+            return self.info_jobs(module)
+
+        def abort_func(trid):
+            return self.info_jobs_kill(module, trid)
+
+        abort_count = self._async_abort_all_helper(show_func, abort_func)
+
+        if isinstance(abort_count, ASInfoError):
+            raise abort_count
+
+        return "ok - number of {}s killed: {}".format(module, abort_count)
+
+    @return_exceptions
+    def info_scan_abort_all(self):
+        """
+        Abort all scans.  Supported since 3.5 but only documented as of 5.7 :)
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        resp = self.info("scan-abort-all:")
+
+        if resp.startswith("OK - number of scans killed:"):
+            return resp.lower()
+
+        raise ASInfoError("Failed to abort all scans", resp)
+
+    @return_exceptions
+    def info_revive(self, namespace):
+        """
+        Used to revive dead partitions in a namespace running in strong consistency mode.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        req = "revive:namespace={}".format(namespace)
+        resp = self.info(req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoError("Failed to revive", resp)
+
+        return ASINFO_RESPONSE_OK
+
     ############################################################################
     #
     #                      Admin (Security Protocol) API
     #
     ############################################################################
 
-    @util.logthis
+    @util.logthis(logger)
     def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port
@@ -2606,13 +2868,10 @@ class Node(object):
     def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
 
-        self.logger.debug(
+        logger.debug(
             ("%s._get_localhost_system_statistics cmds=%s"),
-            (
-                self.ip,
-                commands,
-            ),
-            stackinfo=True,
+            self.ip,
+            commands,
         )
 
         for _key, ignore_error, cmds in self.sys_cmds:
@@ -2620,13 +2879,10 @@ class Node(object):
                 continue
 
             for cmd in cmds:
-                self.logger.debug(
+                logger.debug(
                     ("%s._get_localhost_system_statistics running cmd=%s"),
-                    (
-                        self.ip,
-                        cmd,
-                    ),
-                    stackinfo=True,
+                    self.ip,
+                    cmd,
                 )
                 o, e = util.shell_command([cmd])
                 if (e and not ignore_error) or not o:
@@ -2800,23 +3056,20 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        self.logger.debug(
+        logger.debug(
             (
                 "%s.info_system_statistics default_user=%s default_pws=%s"
                 "default_ssh_key=%s default_ssh_port=%s credential_file=%s"
                 "commands=%s collect_remote_data=%s"
             ),
-            (
-                self.ip,
-                default_user,
-                default_pwd,
-                default_ssh_key,
-                default_ssh_port,
-                credential_file,
-                commands,
-                collect_remote_data,
-            ),
-            stackinfo=True,
+            self.ip,
+            default_user,
+            default_pwd,
+            default_ssh_key,
+            default_ssh_port,
+            credential_file,
+            commands,
+            collect_remote_data,
         )
 
         if commands:

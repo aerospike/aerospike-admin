@@ -1117,7 +1117,7 @@ class ManageConfigTests(unittest.TestCase):
             cls.rc.execute, ["manage", "config", "xdr", "delete", "dc", cls.dc]
         )
 
-    def test_manage_config_logging(self):
+    def test_print_info_responses_logging(self):
         file = "/var/log/aerospike/aerospike.log"
         param = "misc"
         value = "info"  # set to default value
@@ -1127,7 +1127,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_service(self):
+    def test_print_info_responses_service(self):
         param = "batch-max-buffers-per-queue"
         value = "255"  # set to default value
         exp_title = "Set Service Param {} to {}".format(param, value)
@@ -1136,7 +1136,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_network_fabric(self):
+    def test_print_info_responses_network_fabric(self):
         param = "channel-ctrl-recv-threads"
         value = "4"  # set to default value
         exp_title = "Set Network Param {} to {}".format(param, value)
@@ -1145,7 +1145,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_network_heartbeat(self):
+    def test_print_info_responses_network_heartbeat(self):
         param = "mtu"
         value = "0"  # set to default value
         exp_title = "Set Network Param {} to {}".format(param, value)
@@ -1154,7 +1154,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_security(self):
+    def test_print_info_responses_security(self):
         param = "privilege-refresh-period"
         value = "300"  # set to default value
         exp_title = "Set Security Param {} to {}".format(param, value)
@@ -1163,7 +1163,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_security_ldap(self):
+    def test_print_info_responses_security_ldap(self):
         param = "polling-period"
         value = "300"  # set to default value
         exp_title = "Set Security Param {} to {}".format(param, value)
@@ -1172,7 +1172,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_namespace(self):
+    def test_print_info_responses_namespace(self):
         param = "allow-ttl-without-nsup"
         value = "false"  # set to default value
         exp_title = "Set Namespace Param {} to {}".format(param, value)
@@ -1181,7 +1181,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_namespace_storage_engine(self):
+    def test_print_info_responses_namespace_storage_engine(self):
         param = "cache-replica-writes"
         value = "false"  # set to default value
         exp_title = "Set Namespace Param {} to {}".format(param, value)
@@ -1200,7 +1200,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_namespace_geo2dsphere_within(self):
+    def test_print_info_responses_namespace_geo2dsphere_within(self):
         param = "max-cells"
         value = "12"  # set to default value
         exp_title = "Set Namespace Param {} to {}".format(param, value)
@@ -1219,7 +1219,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_namespace_set(self):
+    def test_print_info_responses_namespace_set(self):
         param = "stop-writes-count"
         value = "0"  # set to default value
         exp_title = "Set Namespace Set Param {} to {}".format(param, value)
@@ -1240,11 +1240,11 @@ class ManageConfigTests(unittest.TestCase):
         self.run_tests(exp_title, exp_header, cmd)
 
     """
-    def test_manage_config_namespace_set does not exist because flash or pmem index-type
+    def test_print_info_responses_namespace_set does not exist because flash or pmem index-type
     must be configured.
     """
 
-    def test_manage_config_xdr(self):
+    def test_print_info_responses_xdr(self):
         param = "src-id"
         value = "1"  # set to default value
         exp_title = "Set XDR Param {} to {}".format(param, value)
@@ -1261,7 +1261,7 @@ class ManageConfigTests(unittest.TestCase):
 
         self.run_tests(exp_title, exp_header, cmd)
 
-    def test_manage_config_xdr_actions(self):
+    def test_print_info_responses_xdr_actions(self):
         def test_create_dc():
             exp_title = "Create XDR DC {}".format(self.dc)
             exp_header = ["Node", "Response"]

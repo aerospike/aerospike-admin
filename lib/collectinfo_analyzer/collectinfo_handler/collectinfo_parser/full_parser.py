@@ -35,7 +35,9 @@ SECTION_FILTER_LIST = section_filter_list.FILTER_LIST
 DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
 
 
-def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
+def parse_collectinfo_files(
+    file_paths, parsed_map, license_usage_map, ignore_exception=False
+):
     UNKNOWN_NODE = "UNKNOWN_NODE"
 
     # Get imap
@@ -47,8 +49,8 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
 
     # IF a valid cinfo json is present in cinfo_paths then append
     # its data in parsed_map.
-    for cinfo_path_name in cinfo_paths:
-        if os.path.splitext(cinfo_path_name)[1] == ".json":
+    for cinfo_path_name in file_paths:
+        if cinfo_path_name.endswith("ascinfo.json"):
             cinfo_map = {}
             try:
                 with open(cinfo_path_name) as cinfo_json:
@@ -65,10 +67,22 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
                 parsed_map.update(cinfo_map)
                 _missing_version = _find_missing_data_version(cinfo_map)
                 json_parsed_timestamps = list(cinfo_map.keys())
-                break
+
+        if cinfo_path_name.endswith("aslicenseusage.json"):
+            license_map = {}
+
+            try:
+                with open(cinfo_path_name) as unique_json:
+                    license_map = json.load(unique_json, object_hook=_stringify)
+            except IOError as e:
+                if not ignore_exception:
+                    logger.error(str(e))
+                    raise
+
+            license_usage_map.update(license_map)
 
     parsed_conf_map = {}
-    for cinfo_path in cinfo_paths:
+    for cinfo_path in file_paths:
         if os.path.splitext(cinfo_path)[1] == ".json":
             continue
 
@@ -209,13 +223,11 @@ def parse_info_all(cinfo_paths, parsed_map, ignore_exception=False):
     # Assume all provided sys_stat belong to same node.
     # if any node has sys_stat and there is 'UNKNOWN' node then put that unknown data
     # in known sys_stat.
-    found_sys_node = False
     for node in nodemap:
         if node == UNKNOWN_NODE:
             continue
         if "sys_stat" in nodemap[node] and UNKNOWN_NODE in nodemap:
             nodemap[node]["sys_stat"].update(nodemap[UNKNOWN_NODE]["sys_stat"])
-            found_sys_node = True
             break
     if UNKNOWN_NODE in nodemap:
         nodemap.pop(UNKNOWN_NODE, None)
@@ -369,7 +381,7 @@ def _create_ip_to_node_map(meta_map):
         return ip_to_node
 
     for node in meta_map:
-        if not meta_map[node] or not "ip" in meta_map[node]:
+        if not meta_map[node] or "ip" not in meta_map[node]:
             continue
 
         ip_to_node[meta_map[node]["ip"]] = node

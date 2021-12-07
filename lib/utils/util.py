@@ -21,26 +21,29 @@ import subprocess
 import sys
 import threading
 import logging
+from time import time
 
 
-def logthis(func):
-    # def _decorator(func):
-    def _decorated(*arg, **kwargs):
-        logger = logging.getLogger("asadm")
-        level = logging.DEBUG
-        logger.log(level, "calling '%s'(%r,%r)", func.__name__, arg, kwargs)
-        ret = func(*arg, **kwargs)
-        logger.log(
-            level,
-            "called '%s', returned value: %r",
-            func.__name__,
-            ret,
-        )
-        return ret
+def logthis(logger):
+    def _decorator(func):
+        def _decorated(*arg, **kwargs):
+            level = logging.DEBUG
+            logger.log(
+                level, "calling '%s'(%r,%r)", func.__name__, arg, kwargs, stacklevel=2
+            )
+            ret = func(*arg, **kwargs)
+            logger.log(
+                level,
+                "called '%s', returned value: %r",
+                func.__name__,
+                ret,
+                stacklevel=2,
+            )
+            return ret
 
-    return _decorated
+        return _decorated
 
-    # return _decorator
+    return _decorator
 
 
 class Future:
@@ -719,3 +722,49 @@ def str_to_bytes(data):
         return str.encode(data, "utf-8")
 
     return data
+
+
+def find_most_frequent(list_):
+    count = {}
+    most_freq = None
+
+    for size in list_:
+        if size not in count:
+            count[size] = 1
+        else:
+            count[size] += 1
+
+    max_count = 0
+
+    for val, count in count.items():
+        if count > max_count:
+            max_count = count
+            most_freq = val
+
+    return most_freq
+
+  
+class cached(object):
+    # Doesn't support lists, dicts and other unhashables
+    # Also doesn't support kwargs for reason above.
+
+    def __init__(self, func, ttl=0.5):
+        self.func = func
+        self.ttl = ttl
+        self.cache = {}
+
+    def __setitem__(self, key, value):
+        self.cache[key] = (value, time() + self.ttl)
+
+    def __getitem__(self, key):
+        if key in self.cache:
+            value, eol = self.cache[key]
+            if eol > time():
+                return value
+
+        self[key] = self.func(*key)
+        return self.cache[key][0]
+
+    def __call__(self, *args):
+        return self[args]
+      

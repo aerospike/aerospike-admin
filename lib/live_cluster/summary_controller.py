@@ -27,6 +27,8 @@ from .live_cluster_command_controller import LiveClusterCommandController
     "                                          1.2.3.4:3232,uid,passphrase,key_path",
     "                                          [2001::1234:10],uid,pwd",
     "                                          [2001::1234:10]:3232,uid,,key_path",
+    "    --agent-host    <host>    - Host IP of the Unique-Data-Agent to collect license data usage.",
+    "    --agent-port    <int>     - Port of the Unique-Data-Agent. Default: 8080",
 )
 class SummaryController(LiveClusterCommandController):
     def __init__(self):
@@ -86,6 +88,24 @@ class SummaryController(LiveClusterCommandController):
             arg="--ssh-cf",
             return_type=str,
             default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        agent_host = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--agent-host",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        agent_port = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--agent-port",
+            return_type=str,
+            default="8080",
             modifiers=self.modifiers,
             mods=self.mods,
         )
@@ -216,6 +236,16 @@ class SummaryController(LiveClusterCommandController):
             pass
 
         metadata["os_version"] = os_version
+        license_usage = {}
+
+        if agent_host is not None:
+            license_usage, error = common.request_license_usage(agent_host, agent_port)
+
+            if error is not None:
+                self.logger.error(
+                    "Failed to retrieve license usage information : {}",
+                    str(error),
+                )
 
         return util.Future(
             self.view.print_summary,
@@ -227,6 +257,7 @@ class SummaryController(LiveClusterCommandController):
                 service_configs=service_configs,
                 ns_configs=namespace_configs,
                 cluster_configs=cluster_configs,
+                license_data_usage=license_usage,
             ),
             list_view=enable_list_view,
         )

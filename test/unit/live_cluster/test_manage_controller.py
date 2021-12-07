@@ -1,17 +1,30 @@
-from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoError
+from lib.live_cluster.client import (
+    ASINFO_RESPONSE_OK,
+    ASInfoClusterStableError,
+    ASInfoError,
+)
 from lib.base_controller import ShellException
 import unittest
 from mock import MagicMock, patch
+from mock.mock import call
 
-from lib.live_cluster.client.info import ASProtocolError, ASResponse
+from lib.live_cluster.client import ASProtocolError, ASResponse
 from lib.live_cluster.manage_controller import (
     ManageACLCreateRoleController,
     ManageACLCreateUserController,
     ManageACLQuotasRoleController,
     ManageConfigController,
     ManageConfigLeafController,
+    ManageJobsKillAllScansController,
+    ManageJobsKillTridController,
     ManageQuiesceController,
     ManageReclusterController,
+    ManageReviveController,
+    ManageRosterAddController,
+    ManageRosterLeafCommandController,
+    ManageRosterRemoveController,
+    ManageRosterStageNodesController,
+    ManageRosterStageObservedController,
     ManageTruncateController,
 )
 from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
@@ -643,7 +656,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             "test-file", "test-param", "test-value", nodes=["1.1.1.1", "2.2.2.2"]
         )
         title = "Set Logging Context test-param to test-value"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -676,7 +689,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             "test-param", "test-value", nodes=["1.1.1.1", "2.2.2.2"]
         )
         title = "Set Service Param test-param to test-value"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **mods
         )
 
@@ -713,7 +726,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             "test-param", "test-value", "sub-context", nodes=["1.1.1.1", "2.2.2.2"]
         )
         title = "Set Network Param test-param to test-value"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -756,7 +769,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             "test-param", "test-value", "sub-context", nodes=["1.1.1.1", "2.2.2.2"]
         )
         title = "Set Security Param test-param to test-value"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -799,7 +812,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Set Namespace Param rack-id to test-value"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -842,7 +855,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Set Namespace Set Param test-param to test-value"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -871,7 +884,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Set XDR Param test-param to test-value"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -897,7 +910,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Create XDR DC test-dc"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -923,7 +936,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Delete XDR DC test-dc"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -953,7 +966,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Set XDR DC Param auth-user to test-value"
-        self.view_mock.manage_config(
+        self.view_mock.print_info_responses(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -983,7 +996,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Add XDR Node 3.3.3.3 to DC test-dc"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -1010,7 +1023,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Remove XDR Node 3.3.3.3 from DC test-dc"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -1050,7 +1063,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Add XDR Namespace test-ns to DC test-dc"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -1079,7 +1092,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Remove XDR Namespace test-ns from DC test-dc"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -1110,7 +1123,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             nodes=["1.1.1.1", "2.2.2.2"],
         )
         title = "Set XDR Namespace Param test-param to test-value"
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
@@ -1355,7 +1368,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_with(
-            "You are about to truncate up to 50 records from namespace test"
+            "You're about to truncate up to 50 records from namespace test"
         )
 
     @patch(
@@ -1371,7 +1384,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_with(
-            "You are about to truncate up to 60 records from set test-set for namespace test"
+            "You're about to truncate up to 60 records from set test-set for namespace test"
         )
 
     @patch(
@@ -1388,7 +1401,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
 
         # Fails with pytest when you add -s
         self.prompt_mock.assert_called_with(
-            "You are about to truncate up to 60 records from set test-set for namespace test with LUT before 23:50:14.000000 UTC on May 10, 2021"
+            "You're about to truncate up to 60 records from set test-set for namespace test with LUT before 23:50:14.000000 UTC on May 10, 2021"
         )
 
     def test_success_with_no_set(self):
@@ -1407,7 +1420,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
 
     def test_success_with_set(self):
         self.cluster_mock.info_truncate.return_value = {"principal": "not an error"}
-        line = "ns test set test-set before 1620690614 unix-epoch"
+        line = "ns test set test-set before 1620690614 unix-epoch --no-warn"
 
         self.controller.execute(line.split())
 
@@ -1421,7 +1434,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
 
     def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASInfoError("An error message", "test-resp")
-        line = "ns test set test-set before 1620690614 unix-epoch"
+        line = "ns test set test-set before 1620690614 unix-epoch --no-warn"
         self.cluster_mock.info_truncate.return_value = {"principal_ip": as_error}
 
         self.controller.execute(line.split())
@@ -1434,7 +1447,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
 
     def test_raises_exception_when_exception_returned(self):
         as_error = IOError("test-message")
-        line = "ns test set test-set before 1620690614 unix-epoch"
+        line = "ns test set test-set before 1620690614 unix-epoch --no-warn"
         self.cluster_mock.info_truncate.return_value = {"principal_ip": as_error}
 
         test_util.assert_exception(
@@ -1610,7 +1623,7 @@ class ManageQuiesceControllerTest(unittest.TestCase):
         self.controller.execute(line.split())
 
         self.cluster_mock.info_quiesce.assert_called_once_with(nodes=["1.1.1.1"])
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             "Quiesce Nodes", {"1.1.1.1": ASINFO_RESPONSE_OK}, self.cluster_mock, **mods
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1629,7 +1642,7 @@ class ManageQuiesceControllerTest(unittest.TestCase):
         self.cluster_mock.info_quiesce_undo.assert_called_once_with(
             nodes=["1.1.1.1", "2.2.2.2"]
         )
-        self.view_mock.manage_config.assert_called_once_with(
+        self.view_mock.print_info_responses.assert_called_once_with(
             "Undo Quiesce for Nodes",
             {"1.1.1.1": ASINFO_RESPONSE_OK},
             self.cluster_mock,
@@ -1638,3 +1651,894 @@ class ManageQuiesceControllerTest(unittest.TestCase):
         self.view_mock.print_result(
             'Run "manage recluster for your changes to take affect.'
         )
+
+
+class ManageReviveControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageReviveController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
+        ).start()
+
+        self.addCleanup(patch.stopall)
+
+    def test_success(self):
+        line = "ns test"
+        self.cluster_mock.info_revive.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_revive.assert_called_once_with(
+            "test", nodes=self.controller.nodes
+        )
+        self.view_mock.print_info_responses.assert_called_once_with(
+            "Revive Namespace Partitions",
+            {"1.1.1.1": ASINFO_RESPONSE_OK},
+            self.cluster_mock,
+            **self.controller.mods,
+        )
+        self.view_mock.print_result.assert_any_call(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+    def test_warn_prompt_returns_false(self):
+        line = "ns test"
+        self.prompt_mock.return_value = False
+        self.controller.warn = True
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "You are about to revive namespace test"
+        )
+
+    def test_warn_prompt_returns_true(self):
+        line = "ns test"
+        self.prompt_mock.return_value = True
+        self.controller.warn = True
+        self.cluster_mock.info_revive.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_once_with(
+            "You are about to revive namespace test"
+        )
+        self.cluster_mock.info_revive.assert_called_once()
+
+
+class ManageJobsKillTridControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageJobsKillTridController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageJobsKillTridController.cluster"
+        ).start()
+        self.getter_mock = patch(
+            "lib.live_cluster.manage_controller.GetJobsController"
+        ).start()
+        self.controller.getter = self.getter_mock
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageJobsKillTridController.prompt_challenge"
+        ).start()
+
+        self.addCleanup(patch.stopall)
+
+    def test_kill_trids(self):
+        trids = ["123", "789", "101", "456"]
+        self.getter_mock.get_all.return_value = {
+            "scan": {
+                "1.1.1.1": {
+                    "123": {"trid": "123"},
+                }
+            },
+            "query": {
+                "2.2.2.2": {
+                    "456": {"trid": "456"},
+                }
+            },
+            "sindex-builder": {
+                "3.3.3.3": {
+                    "789": {"trid": "789"},
+                },
+                "1.1.1.1": {
+                    "101": {"trid": "101"},
+                },
+            },
+        }
+        self.cluster_mock.info_scan_abort.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_query_abort.return_value = {
+            "2.2.2.2": ASINFO_RESPONSE_OK
+        }
+        self.cluster_mock.info_jobs_kill.return_value = {"3.3.3.3": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(trids)
+
+        self.cluster_mock.info_scan_abort.assert_called_with("123", nodes=["1.1.1.1"])
+        self.cluster_mock.info_query_abort.assert_called_with("456", nodes=["2.2.2.2"])
+        self.cluster_mock.info_jobs_kill.assert_has_calls(
+            [
+                call("sindex-builder", "789", nodes=["3.3.3.3"]),
+                call("sindex-builder", "101", nodes=["1.1.1.1"]),
+            ]
+        )
+        self.view_mock.killed_jobs.assert_called_once_with(
+            self.cluster_mock,
+            {
+                "1.1.1.1": {
+                    "123": {"trid": "123", "response": "ok"},
+                    "101": {"trid": "101", "response": "ok"},
+                },
+                "2.2.2.2": {
+                    "456": {"trid": "456", "response": "ok"},
+                },
+                "3.3.3.3": {
+                    "789": {"trid": "789", "response": "ok"},
+                },
+            },
+            **self.controller.mods,
+        )
+
+    def test_kill_same_trid_on_multiple_hosts(self):
+        trids = ["123", "789"]
+        self.getter_mock.get_all.return_value = {
+            "scan": {
+                "1.1.1.1": {
+                    "123": {"trid": "123"},
+                },
+                "2.2.2.2": {
+                    "123": {"trid": "123"},
+                },
+            },
+            "query": {
+                "2.2.2.2": {
+                    "789": {"trid": "789"},
+                },
+                "3.3.3.3": {
+                    "789": {"trid": "789"},
+                },
+            },
+        }
+        self.cluster_mock.info_scan_abort.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_query_abort.return_value = {
+            "2.2.2.2": ASINFO_RESPONSE_OK
+        }
+
+        self.controller.execute(trids)
+
+        self.cluster_mock.info_scan_abort.assert_has_calls(
+            [call("123", nodes=["1.1.1.1"]), call("123", nodes=["2.2.2.2"])]
+        )
+        self.cluster_mock.info_query_abort.assert_has_calls(
+            [call("789", nodes=["2.2.2.2"]), call("789", nodes=["3.3.3.3"])]
+        )
+        self.cluster_mock.info_jobs_kill.assert_not_called()
+        self.view_mock.killed_jobs.assert_called_once_with(
+            self.cluster_mock,
+            {
+                "1.1.1.1": {
+                    "123": {"trid": "123", "response": "ok"},
+                },
+                "2.2.2.2": {
+                    "123": {"trid": "123", "response": "ok"},
+                    "789": {"trid": "789", "response": "ok"},
+                },
+                "3.3.3.3": {
+                    "789": {"trid": "789", "response": "ok"},
+                },
+            },
+            **self.controller.mods,
+        )
+
+    def test_kill_trids_warn(self):
+        trids = ["123", "789", "101", "456"]
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        self.controller._kill_trid = MagicMock()
+        self.getter_mock.get_all.return_value = {
+            "scan": {
+                "1.1.1.1": {
+                    "123": {"trid": "123"},
+                }
+            },
+        }
+
+        self.controller.execute(trids)
+
+        self.prompt_mock.assert_called_with(
+            "You're about to kill the following transactions: 123, 789, 101, 456"
+        )
+        self.controller._kill_trid.assert_not_called()
+
+
+class ManageJobsKillAllControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageJobsKillAllScansController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.cluster"
+        ).start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.prompt_challenge"
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def test_kill_all_scans(self):
+        module = "scan"
+        self.cluster_mock.info_scan_abort_all.return_value = {"1.1.1.1": "ok"}
+
+        self.controller.execute(module.split())
+
+        self.cluster_mock.info_scan_abort_all.assert_called_with(nodes="all")
+
+    def test_kill_all_warn(self):
+        module = "scans"
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+
+        self.controller.execute(module.split())
+
+        self.prompt_mock.assert_called_with(
+            "You're about to kill all scan jobs on all nodes."
+        )
+        self.cluster_mock.info_scan_abort_all.assert_not_called()
+
+
+class ManageRosterLeafCommandControllerTest(unittest.TestCase):
+    def setUp(self):
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.cluster"
+        ).start()
+        self.controller = ManageRosterLeafCommandController(self.cluster_mock)
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+
+        self.addCleanup(patch.stopall)
+
+    def test_check_and_log_cluster_stable(self):
+        class test_case:
+            def __init__(self, input, output):
+                self.input = input
+                self.output = output
+
+        test_cases = [
+            test_case({"1.1.1.1": "ABC", "2.2.2.2": "ABC", "3.3.3.3": "ABC"}, True),
+            test_case({"1.1.1.1": "ABC", "2.2.2.2": "DEF", "3.3.3.3": "ABC"}, False),
+            test_case(
+                {
+                    "1.1.1.1": "ABC",
+                    "2.2.2.2": "ABC",
+                    "3.3.3.3": ASInfoClusterStableError("", "foo"),
+                },
+                False,
+            ),
+        ]
+
+        for tc in test_cases:
+            result = self.controller._check_and_log_cluster_stable(tc.input)
+
+            self.assertEqual(
+                result,
+                tc.output,
+                "Failed with input: {} and output: {}".format(tc.input, tc.output),
+            )
+
+            if tc.output is False:
+                self.logger_mock.warning.assert_called_with(
+                    "The cluster is unstable. It is advised that you do not manage the roster. Run 'info network' for more information."
+                )
+
+        test_util.assert_exception(
+            self,
+            ASInfoError,
+            None,
+            self.controller._check_and_log_cluster_stable,
+            {
+                "1.1.1.1": "ABC",
+                "2.2.2.2": "ABC",
+                "3.3.3.3": ASInfoError("", "foo"),
+            },
+        )
+
+    def test_check_and_log_nodes_in_observed(self):
+        class test_case:
+            def __init__(self, observed, nodes, output, warning=None):
+                self.observed = observed
+                self.nodes = nodes
+                self.output = output
+                self.warning = warning
+
+        test_cases = [
+            test_case(["A", "B", "C"], ["A", "B", "C"], True),
+            test_case(
+                ["A", "B", "C"],
+                ["A", "B", "C", "D"],
+                False,
+            ),
+            test_case(
+                [],
+                ["A", "B"],
+                False,
+            ),
+            test_case(["A", "B"], [], True),
+        ]
+
+        for tc in test_cases:
+            self.logger_mock.reset_mock()
+            result = self.controller._check_and_log_nodes_in_observed(
+                tc.observed, tc.nodes
+            )
+
+            self.assertEqual(
+                tc.output,
+                result,
+                "Failed with observed: {}, nodes: {}".format(tc.observed, tc.nodes),
+            )
+
+            if tc.output is True:
+                self.logger_mock.warning.assert_not_called()
+            else:
+                self.logger_mock.warning.assert_called_once()
+
+
+class ManageRosterAddControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageRosterAddController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.prompt_challenge"
+        ).start()
+        self.check_and_log_cluster_stable_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController._check_and_log_cluster_stable"
+        ).start()
+        self.check_and_log_nodes_in_observed_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController._check_and_log_nodes_in_observed"
+        ).start()
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    def test_success(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_called_once_with(
+            "test", ["GHI", "ABC@rack1", "DEF@rack2"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_any_call(
+            "Node(s) successfully added to pending-roster."
+        )
+        self.view_mock.print_result.assert_any_call(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+    def test_logs_error_from_roster(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        error = ASInfoError("blah", "error::foo")
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
+
+        self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_once_with(error)
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_logs_error_from_roster_set(self):
+        error = ASInfoError("blah", "error::foo")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_once_with(error)
+        self.cluster_mock.info_roster_set.assert_called_once()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_error_from_roster(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
+
+        test_util.assert_exception(
+            self, Exception, "test exception", self.controller.execute, line.split()
+        )
+        self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_error_from_roster_set(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        test_util.assert_exception(
+            self, Exception, "test exception", self.controller.execute, line.split()
+        )
+        self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_roster_set.assert_called_once()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_warn_returns_false(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test"
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": ["foo"]}
+        }
+
+        self.controller.execute(line.split())
+
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "ABCDEF"}
+        )
+        self.check_and_log_nodes_in_observed_mock.assert_called_once_with(
+            ["foo"], ["ABC@rack1", "DEF@rack2"]
+        )
+        self.prompt_mock.assert_called_with(
+            "You are about to set the pending-roster for namespace test to: GHI, ABC@rack1, DEF@rack2"
+        )
+        self.cluster_mock.info_roster_set.assert_not_called()
+
+    def test_warn_returns_true(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test"
+        self.controller.warn = True
+        self.prompt_mock.return_value = True
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": ["bar"]}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "ABCDEF"}
+        )
+        self.check_and_log_nodes_in_observed_mock.assert_called_once_with(
+            ["bar"], ["ABC@rack1", "DEF@rack2"]
+        )
+        self.prompt_mock.assert_called_with(
+            "You are about to set the pending-roster for namespace test to: GHI, ABC@rack1, DEF@rack2"
+        )
+        self.cluster_mock.info_roster_set.assert_called_once()
+
+
+class ManageRosterRemoveControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageRosterRemoveController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
+        ).start()
+        self.check_and_log_cluster_stable_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController._check_and_log_cluster_stable"
+        ).start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+
+    def test_success(self):
+        line = "nodes ABC ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"pending_roster": ["ABC", "DEF"], "observed_nodes": []}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_called_once_with(
+            "test", ["DEF"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_any_call(
+            "Node(s) successfully removed from pending-roster."
+        )
+        self.view_mock.print_result.assert_any_call(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+    def test_logs_error_from_roster(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
+        error = ASInfoError("blah", "error::foo")
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
+
+        self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_once_with(error)
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_logs_error_from_roster_set(self):
+        error = ASInfoError("blah", "error::foo")
+        line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["ABC@rack1", "DEF@rack2", "GHI"],
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_once_with(error)
+        self.cluster_mock.info_roster_set.assert_called_once()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_logs_error_when_node_not_in_pending(self):
+        line = "nodes GHI ns test"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"pending_roster": ["ABC", "DEF"], "observed_nodes": []}
+        }
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "CDEF"}
+        self.prompt_mock.return_value = False
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.logger_mock.warning.assert_any_call(
+            "The following nodes are not in the pending-roster: {}", "GHI"
+        )
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "CDEF"}
+        )
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_error_from_roster(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
+
+        test_util.assert_exception(
+            self, Exception, "test exception", self.controller.execute, line.split()
+        )
+        self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_error_from_roster_set(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["GHI", "ABC@rack1", "DEF@rack2"],
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        test_util.assert_exception(
+            self, Exception, "test exception", self.controller.execute, line.split()
+        )
+        self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_roster_set.assert_called_once()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_warn_returns_false(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test"
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["ABC@rack1", "DEF@rack2", "GHI"],
+                "observed_nodes": [],
+            }
+        }
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_with(
+            "You are about to set the pending-roster for namespace test to: GHI"
+        )
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "ABCDEF"}
+        )
+        self.cluster_mock.info_roster_set.assert_not_called()
+
+    def test_warn_returns_true(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test"
+        self.controller.warn = True
+        self.prompt_mock.return_value = True
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["ABC@rack1", "DEF@rack2", "GHI"],
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_with(
+            "You are about to set the pending-roster for namespace test to: GHI"
+        )
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "ABCDEF"}
+        )
+        self.cluster_mock.info_roster_set.assert_called_once()
+
+
+class ManageRosterStageNodesControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageRosterStageNodesController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
+        ).start()
+        self.check_and_log_cluster_stable_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController._check_and_log_cluster_stable"
+        ).start()
+        self.check_and_log_nodes_in_observed_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController._check_and_log_nodes_in_observed"
+        ).start()
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    def test_success(self):
+        line = "ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_called_once_with(
+            "test", ["ABC@rack1", "DEF@rack2"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_any_call("Pending roster successfully set.")
+        self.view_mock.print_result.assert_any_call(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+    def test_logs_error_from_roster_set(self):
+        line = "ABC@rack1 DEF@rack2 ns test --no-warn"
+        error = ASInfoError("blah", "error::foo")
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_called_once_with(
+            "test", ["ABC@rack1", "DEF@rack2"], nodes="principal"
+        )
+
+        self.logger_mock.error.assert_called_once_with(error)
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_error_from_roster_set(self):
+        error = Exception("test exception")
+        line = "ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        test_util.assert_exception(
+            self, Exception, "test exception", self.controller.execute, line.split()
+        )
+
+        self.cluster_mock.info_roster_set.assert_called_once_with(
+            "test", ["ABC@rack1", "DEF@rack2"], nodes="principal"
+        )
+        self.logger_mock.error.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_warn_returns_false(self):
+        line = "ABC@rack1 DEF@rack2 ns test"
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "observed_nodes": [],
+            }
+        }
+
+        self.controller.execute(line.split())
+
+        self.prompt_mock.assert_called_with(
+            "You are about to set the pending-roster for namespace test to: ABC@rack1, DEF@rack2"
+        )
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "ABCDEF"}
+        )
+        self.check_and_log_nodes_in_observed_mock.assert_called_once_with(
+            [], ["ABC@rack1", "DEF@rack2"]
+        )
+        self.cluster_mock.info_roster_set.assert_not_called()
+
+    def test_warn_returns_true(self):
+        line = "ABC@rack1 DEF@rack2 ns test"
+        self.controller.warn = True
+        self.prompt_mock.return_value = True
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "observed_nodes": ["jar"],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "ABCDEF"}
+        )
+        self.check_and_log_nodes_in_observed_mock.assert_called_once_with(
+            ["jar"], ["ABC@rack1", "DEF@rack2"]
+        )
+        self.prompt_mock.assert_called_with(
+            "You are about to set the pending-roster for namespace test to: ABC@rack1, DEF@rack2"
+        )
+        self.cluster_mock.info_roster_set.assert_called_once()
+
+
+class ManageRosterStageObservedControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ManageRosterStageObservedController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
+        ).start()
+        self.check_and_log_cluster_stable_mock = patch(
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController._check_and_log_cluster_stable"
+        ).start()
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    def test_success(self):
+        line = "ns test"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"observed_nodes": ["ABC", "DEF"]}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_called_once_with(
+            "test", ["ABC", "DEF"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_any_call(
+            "Pending roster now contains observed nodes."
+        )
+        self.view_mock.print_result.assert_any_call(
+            'Run "manage recluster" for your changes to take affect.'
+        )
+
+    def test_logs_error_from_roster(self):
+        line = "ns test"
+        error = ASInfoError("blah", "error::foo")
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
+
+        self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_once_with(error)
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_logs_error_from_roster_set(self):
+        line = "ns test"
+        error = ASInfoError("blah", "error::foo")
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"observed_nodes": ["ABC", "DEF"]}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_called_once_with(
+            "test", ["ABC", "DEF"], nodes="principal"
+        )
+        self.logger_mock.error.assert_called_once_with(error)
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_error_from_roster(self):
+        error = Exception("test exception")
+        line = "ns test"
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
+
+        test_util.assert_exception(
+            self, Exception, "test exception", self.controller.execute, line.split()
+        )
+        self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_raises_error_from_roster_set(self):
+        error = Exception("test exception")
+        line = "ns test"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"observed_nodes": ["GHI", "ABC@rack1", "DEF@rack2"]}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        test_util.assert_exception(
+            self, Exception, "test exception", self.controller.execute, line.split()
+        )
+        self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_roster_set.assert_called_once()
+        self.view_mock.print_result.assert_not_called()
+
+    def test_warn_returns_false(self):
+        line = "ns test"
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"observed_nodes": ["GHI", "ABC@rack1", "DEF@rack2"]}
+        }
+
+        self.controller.execute(line.split())
+
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "ABCDEF"}
+        )
+        self.prompt_mock.assert_called_with(
+            "You are about to set the pending-roster for namespace test to: GHI, ABC@rack1, DEF@rack2"
+        )
+        self.cluster_mock.info_roster_set.assert_not_called()
+
+    def test_warn_returns_true(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test"
+        self.controller.warn = True
+        self.prompt_mock.return_value = True
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {"observed_nodes": ["GHI", "ABC@rack1", "DEF@rack2"]}
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
+
+        self.controller.execute(line.split())
+
+        self.check_and_log_cluster_stable_mock.assert_called_once_with(
+            {"1.1.1.1": "ABCDEF"}
+        )
+        self.prompt_mock.assert_called_with(
+            "You are about to set the pending-roster for namespace test to: GHI, ABC@rack1, DEF@rack2"
+        )
+        self.cluster_mock.info_roster_set.assert_called_once()

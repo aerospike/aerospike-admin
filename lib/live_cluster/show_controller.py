@@ -1,8 +1,9 @@
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, CommandName
 from lib.utils import common, util, version, constants
 from lib.get_controller import (
     GetConfigController,
     GetDistributionController,
+    GetJobsController,
     GetPmapController,
     GetRolesController,
     GetSIndexController,
@@ -12,7 +13,7 @@ from lib.get_controller import (
     GetLatenciesController,
 )
 
-from .client.info import ASProtocolError
+from .client import ASProtocolError
 from .live_cluster_command_controller import LiveClusterCommandController
 
 
@@ -20,21 +21,20 @@ from .live_cluster_command_controller import LiveClusterCommandController
 class ShowController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
-            "pmap": ShowPmapController,
             "distribution": ShowDistributionController,
             "mapping": ShowMappingController,
+            "pmap": ShowPmapController,
             "best-practices": ShowBestPracticesController,
+            "jobs": ShowJobsController,
+            "racks": ShowRacksController,
+            "roster": ShowRosterController,
+            "roles": ShowRolesController,
+            "users": ShowUsersController,
             "udfs": ShowUdfsController,
             "sindex": ShowSIndexController,
             "config": ShowConfigController,
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
-            "roles": ShowRolesController,
-            "users": ShowUsersController,
-            # TODO
-            # 'rosters': ShowRosterController,
-            # 'racks': ShowRacksController,
-            # 'jobs': ShowJobsController,
         }
 
         self.modifiers = set()
@@ -76,9 +76,7 @@ class ShowDistributionController(LiveClusterCommandController):
             like=self.mods["for"],
         )
 
-    @CommandHelp(
-        "Shows the distribution of namespace Eviction TTLs for server version 3.7.5 and below"
-    )
+    @CommandHelp("Shows the distribution of namespace Eviction TTLs prior to v. 3.7.5")
     def do_eviction(self, line):
 
         histogram = self.getter.do_distribution("evict", nodes=self.nodes)
@@ -361,7 +359,7 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
         ns_configs = self.getter.get_namespace(
-            nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
         )
 
         return [
@@ -458,7 +456,7 @@ class ShowConfigController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        dc_configs = self.getter.get_dc(nodes=self.nodes)
+        dc_configs = self.getter.get_dc(flip=True, nodes=self.nodes)
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
         builds = builds.result()
@@ -653,7 +651,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         ns_stats = self.getter.get_namespace(
-            nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
         )
 
         return [
@@ -695,7 +693,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         sindex_stats = self.getter.get_sindex(
-            nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
         )
 
         return [
@@ -736,7 +734,9 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        set_stats = self.getter.get_sets(nodes=self.nodes, for_mods=self.mods["for"])
+        set_stats = self.getter.get_sets(
+            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
+        )
 
         return [
             util.Future(
@@ -777,7 +777,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         new_bin_stats = self.getter.get_bins(
-            nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
         )
 
         return [
@@ -912,7 +912,7 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        dc_stats = util.Future(self.getter.get_dc, nodes=self.nodes).start()
+        dc_stats = util.Future(self.getter.get_dc, flip=True, nodes=self.nodes).start()
         builds = util.Future(self.cluster.info_build, nodes=self.nodes).start()
         dc_stats = dc_stats.result()
         builds = builds.result()
@@ -963,7 +963,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         return futures
 
 
-@CommandHelp('"show pmap" displays partition map analysis of the Aerospike cluster.')
+@CommandHelp("Displays partition map analysis of the Aerospike cluster.")
 class ShowPmapController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set()
@@ -976,7 +976,7 @@ class ShowPmapController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"show users" displays users and their assigned roles, connections, and quota metrics',
+    "Displays users and their assigned roles, connections, and quota metrics",
     "for the Aerospike cluster.",
 )
 class ShowUsersController(LiveClusterCommandController):
@@ -999,7 +999,7 @@ class ShowUsersController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"show roles" displays roles and their assigned privileges, allowlist, and quotas',
+    "Displays roles and their assigned privileges, allowlist, and quotas",
     "for the Aerospike cluster.",
 )
 class ShowRolesController(LiveClusterCommandController):
@@ -1021,10 +1021,10 @@ class ShowRolesController(LiveClusterCommandController):
         return util.Future(self.view.show_roles, resp, **self.mods)
 
 
-@CommandHelp('"show udfs" displays UDF modules along with metadata.')
+@CommandHelp("Displays UDF modules along with metadata.")
 class ShowUdfsController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
+        self.modifiers = set(["like", "for"])
         self.getter = GetUdfController(self.cluster)
 
     def _do_default(self, line):
@@ -1035,7 +1035,7 @@ class ShowUdfsController(LiveClusterCommandController):
         return util.Future(self.view.show_udfs, resp, **self.mods)
 
 
-@CommandHelp('"show sindex" displays secondary indexes and static metadata.')
+@CommandHelp("Displays secondary indexes and static metadata.")
 class ShowSIndexController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["like"])
@@ -1050,8 +1050,37 @@ class ShowSIndexController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"show best-practices" displays any of Aerospike\'s violated "best-practices".'
+    'Displays roster information per node. Use the "diff" modifier to',
+    'to show differences between node rosters. For easier viewing run "page on" first.',
+    "  Options:",
+    "    -flip        - Flip output table to show nodes on X axis and roster on Y axis.",
 )
+class ShowRosterController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["for", "with", "diff"])
+        self.getter = GetConfigController(self.cluster)
+
+    def _do_default(self, line):
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        roster_data = self.getter.get_roster(flip=False, nodes=self.nodes)
+
+        return util.Future(
+            self.view.show_roster,
+            roster_data,
+            self.cluster,
+            flip=flip_output,
+            **self.mods,
+        )
+
+
+@CommandHelp('Displays any of Aerospike\'s violated "best-practices".')
 class ShowBestPracticesController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with"])
@@ -1086,3 +1115,71 @@ class ShowBestPracticesController(LiveClusterCommandController):
         return util.Future(
             self.view.show_best_practices, self.cluster, best_practices, **self.mods
         )
+
+
+@CommandHelp(
+    "Displays jobs and associated metadata.",
+)
+class ShowJobsController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["with", "like", "trid"])
+        self.getter = GetJobsController(self.cluster)
+
+    @CommandHelp(
+        '"show jobs" displays scans, queries, and sindex-builder jobs.',
+    )
+    def _do_default(self, line):
+        actions = (
+            util.Future(self.do_scans, line[:]).start(),
+            util.Future(self.do_queries, line[:]).start(),
+            util.Future(self.do_sindex_builder, line[:]).start(),
+        )
+
+        return [action.result() for action in actions]
+
+    @CommandHelp(
+        'Displays scan jobs. For easier viewing run "page on" first.',
+        "Usage: scans [trid <trid1> [<trid2>]]",
+        "  trid          - List of transaction ids to filter for.",
+    )
+    def do_scans(self, line):
+        jobs = self.getter.get_scans(nodes=self.nodes)
+        return util.Future(
+            self.view.show_jobs, "Scan Jobs", self.cluster, jobs, **self.mods
+        )
+
+    @CommandHelp(
+        "Displays query jobs.",
+        "Usage: queries [trid <trid1> [<trid2>]]",
+        "  trid          - List of transaction ids to filter for.",
+    )
+    def do_queries(self, line):
+        jobs = self.getter.get_query(nodes=self.nodes)
+        return util.Future(
+            self.view.show_jobs, "Query Jobs", self.cluster, jobs, **self.mods
+        )
+
+    # TODO: Should be removed eventually. "sindex-builder" was removed in server 5.7.
+    # So should probably be removed when server 7.0 is supported.
+    @CommandHelp(
+        "Displays sindex-builder jobs. Removed in server v. 5.7 and later.",
+        "Usage: sindex-builder [trid <trid1> [<trid2>]]",
+        "  trid          - List of transaction ids to filter for.",
+    )
+    @CommandName("sindex-builder")
+    def do_sindex_builder(self, line):
+        jobs = self.getter.get_sindex_builder(nodes=self.nodes)
+        return util.Future(
+            self.view.show_jobs, "SIndex Builder Jobs", self.cluster, jobs, **self.mods
+        )
+
+
+@CommandHelp('Displays rack information for a rack-aware cluster".')
+class ShowRacksController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+        self.getter = GetConfigController(self.cluster)
+
+    def _do_default(self, line):
+        racks_data = self.getter.get_racks(nodes="principal", flip=False)
+        return util.Future(self.view.show_racks, racks_data, **self.mods)

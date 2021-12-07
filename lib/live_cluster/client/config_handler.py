@@ -6,6 +6,9 @@ import re
 
 from lib.utils import version
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
+
 
 class BaseConfigType:
     def __init__(self, dynamic, default):
@@ -248,20 +251,20 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         try:
             as_build = ".".join(as_build.split(".")[0:3])
         except IndexError:
-            self.logger.debug("JsonConfigHandler: Incorrect format for server version.")
+            logger.debug("JsonConfigHandler: Incorrect format for server version.")
             return
 
         try:
             file_map_path = path.join(dir, "schema_map.json")
             file_map_json = pkgutil.get_data(__name__, file_map_path)
         except Exception as e:
-            self.logger.debug("%s", e)
+            logger.debug("%s", e)
             return
 
         try:
             file_map = json.loads(file_map_json)
         except Exception as e:
-            self.logger.debug("JsonConfigHandler: Failed to load json: %s", e)
+            logger.debug("JsonConfigHandler: Failed to load json: %s", e)
             return
 
         file_path = self._get_file_path(dir, as_build, file_map)
@@ -272,13 +275,13 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         try:
             data = pkgutil.get_data(__name__, file_path)
         except Exception as e:
-            self.logger.debug("%s", e)
+            logger.debug("%s", e)
             return
 
         try:
             config_schema = json.loads(data)
         except Exception as e:
-            self.logger.debug("JsonConfigHandler: Failed to load json: %s", e)
+            logger.debug("JsonConfigHandler: Failed to load json: %s", e)
             return
 
         self.schema = config_schema
@@ -295,7 +298,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
 
             file = file_map[key]
 
-        self.logger.debug("JsonConfigHandler: Using server config schema %s", file)
+        logger.debug("JsonConfigHandler: Using server config schema %s", file)
 
         file_path = path.join(dir, file)
 
@@ -350,14 +353,14 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         """
         next_context = self._replace_context_in([next_context])[0]
 
-        self.logger.debug(
+        logger.debug(
             "JsonConfigHandler: Looking up next context %s in keys %s",
             next_context,
             object_.keys(),
         )
 
         if next_context not in object_:
-            self.logger.debug(
+            logger.debug(
                 "JsonConfigHandler: Cant find context {} in keys {}".format(
                     next_context, object_.keys()
                 )
@@ -382,7 +385,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         try:
             param_objects = self._get_objects(top_level_contexts, context)
         except Exception as e:
-            self.logger.debug(
+            logger.debug(
                 "JsonConfigHandler: Failed to find objects and context {}, {}".format(
                     context, e
                 )
@@ -407,7 +410,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
             )
         ]
 
-        self.logger.debug(
+        logger.debug(
             "JsonConfigHandler: unwanted-keys: {}".format(
                 set(param_objects.keys()) - set(filtered_keys)
             )
@@ -427,7 +430,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         try:
             param_objects = self._get_objects(top_level_contexts, context)
         except Exception as e:
-            self.logger.debug(
+            logger.debug(
                 "JsonConfigHandler: Failed to find objects and context {}, {}".format(
                     context, e
                 )
@@ -440,7 +443,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
             if (not dynamic or ("dynamic" in value and value["dynamic"] is True))
         ]
 
-        self.logger.debug(
+        logger.debug(
             "JsonConfigHandler: unwanted-keys: {}".format(
                 set(param_objects.keys()) - set(filtered_keys)
             )

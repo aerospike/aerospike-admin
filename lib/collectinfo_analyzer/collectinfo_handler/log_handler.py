@@ -104,6 +104,9 @@ class CollectinfoLogHandler(object):
 
         return self.all_cinfo_logs[timestamp]
 
+    def get_unique_data_usage(self):
+        return self.license_data_usage
+
     def get_principal(self, timestamp):
         service_data = self.info_statistics(stanza="service")
         principal = None
@@ -324,6 +327,7 @@ class CollectinfoLogHandler(object):
         cinfo_log = CollectinfoLog(cinfo_path, files, self.reader)
         self.selected_cinfo_logs = cinfo_log.snapshots
         self.all_cinfo_logs = cinfo_log.snapshots
+        self.license_data_usage = cinfo_log.license_data_usage
         snapshots_added = len(self.all_cinfo_logs)
         if not snapshots_added:
             raise Exception("Multiple snapshots available without JSON dump.")

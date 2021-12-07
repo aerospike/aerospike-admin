@@ -17,6 +17,20 @@ from lib.view import terminal
 from ..const import FieldAlignment
 from .base_rsheet import BaseRField, BaseRSheetCLI
 
+# ~~~~~~~~~~~~~~~~~~~TITLE~~~~~~~~~~~~~~~~~~~~~~
+# FIELD-NAME-1|          |          |
+# FIELD-NAME-2| Entry-1  | Entry-2  | Entry-3    <---- group 1
+# FIELD-NAME-3|          |          |
+# ----------------------------------------------
+# FIELD-NAME-1|          |          |
+# FIELD-NAME-2| Entry-4  | Entry-5  | Entry-6    <---- group 2
+# FIELD-NAME-3|          |          |
+
+# Fields are constant between groups because each entry should have the same data points
+# displayed.
+# Groups do not have to have the same number of entries. And each entry is only displayed
+# once. (If that was not obvious already)
+
 
 class RowRSheet(BaseRSheetCLI):
     # =========================================================================
@@ -34,12 +48,39 @@ class RowRSheet(BaseRSheetCLI):
         if not render_fields:
             return None
 
-        n_records = self.n_records
         row_title_width = max(rfield.title_width for rfield in render_fields)
         row_aggr_width = max(rfield.aggregate_widths[0] + 1 for rfield in render_fields)
-        column_widths = [
-            max(rfield.widths[i] for rfield in render_fields) for i in range(n_records)
-        ]
+        column_widths = []
+        num_groups = 0 if not render_fields else render_fields[0].n_groups
+        group_widths = []
+        max_entries = 0
+
+        # For each group find the max width of each column. This will result in
+        # an list(list(int)) of different lengths
+        for group_ix in range(num_groups):
+            num_entries = render_fields[0].n_entries_in_group(group_ix)
+            max_entries = max(max_entries, num_entries)
+            group_widths.append([0] * num_entries)
+
+            for entry_ix in range(num_entries):
+                group_widths[group_ix][entry_ix] = max(
+                    [
+                        len(render_field.groups_converted[group_ix][entry_ix])
+                        for render_field in render_fields
+                    ]
+                )
+
+        column_widths = [0] * max_entries
+
+        # For each column find the max length accross groups. This will be the resulting
+        # column width for a given entry_ix accross all groups.
+        for group_ix in range(num_groups):
+            num_entries = render_fields[0].n_entries_in_group(group_ix)
+            for entry_ix in range(num_entries):
+                column_widths[entry_ix] = max(
+                    column_widths[entry_ix], group_widths[group_ix][entry_ix]
+                )
+
         has_aggregate = any(rfield.has_aggregate() for rfield in render_fields)
         title_indices = set([0])
 
@@ -50,13 +91,13 @@ class RowRSheet(BaseRSheetCLI):
             n_repeats = 1
             need_column = True
 
-            for i, column_width in enumerate(column_widths):
-                if need_column or cur_pos + column_width < terminal_width:
-                    cur_pos += column_width
+            for entry_ix, column_widths in enumerate(column_widths):
+                if need_column or cur_pos + column_widths < terminal_width:
+                    cur_pos += column_widths
                     need_column = False
                 else:
-                    title_indices.add(i)
-                    cur_pos = title_incr + column_width
+                    title_indices.add(entry_ix)
+                    cur_pos = title_incr + column_widths
                     n_repeats += 1
 
             if has_aggregate:
@@ -70,11 +111,10 @@ class RowRSheet(BaseRSheetCLI):
                 self.decleration.vertical_separator
             )
 
-        num_groups = 0 if not render_fields else render_fields[0].n_groups
         title_width = (
             total_row_title_width
-            + (sum(column_widths) // num_groups)
-            + ((n_records - 1) // num_groups) * len(self.decleration.vertical_separator)
+            + (sum(column_widths))
+            + (max_entries) * len(self.decleration.vertical_separator)
             + row_aggr_width
         )
         render = []
@@ -102,20 +142,18 @@ class RowRSheet(BaseRSheetCLI):
             ]
             repeated_rfields = []
 
-            for i, rfield in enumerate(
+            for entry_ix, rfield in enumerate(
                 rfield
                 for rfield in render_fields
                 if rfield.decleration.key not in title_field_keys
             ):
-                if i % (terminal_height - 2) == 0:
+                if entry_ix % (terminal_height - 2) == 0:
                     repeated_rfields.extend(title_lines)
 
                 repeated_rfields.append(rfield)
 
             render_fields = repeated_rfields
 
-        num_groups = 0 if not render_fields else render_fields[0].n_groups
-        has_aggregates = any(rfield.has_aggregate() for rfield in render_fields)
         hidden_count = 0
 
         for group_ix in range(num_groups):
@@ -131,14 +169,13 @@ class RowRSheet(BaseRSheetCLI):
                 for entry_ix in range(num_entries):
                     if entry_ix in title_indices:
                         row.append(render_field.get_title(row_title_width))
-
                     row.append(
                         render_field.entry_cell(
                             group_ix, entry_ix, column_widths[entry_ix]
                         )
                     )
 
-                if has_aggregates:
+                if has_aggregate:
                     row.append(render_field.aggregate_cell(group_ix))
 
                 render.append(self.decleration.formatted_vertical_separator.join(row))
@@ -152,6 +189,7 @@ class RowRSheet(BaseRSheetCLI):
         self._do_render_n_rows(render, num_rows)
 
         return "\n".join(render) + "\n"
+        # return ""
 
     # =========================================================================
     # Other methods.

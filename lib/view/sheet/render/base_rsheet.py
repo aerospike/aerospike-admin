@@ -22,7 +22,7 @@ from lib.view.terminal import get_terminal_size, terminal
 from .. import decleration
 from ..const import DynamicFieldOrder
 from ..source import source_lookup
-from .render_utils import Aggregator, ErrorEntry, NoEntry
+from .render_utils import ErrorEntry, NoEntry
 
 
 class BaseRSheet(object):
@@ -201,6 +201,7 @@ class BaseRSheet(object):
 
     def get_dfields(self):
         dfields = []
+        ignore_keys = set()
 
         for dfield in self.decleration.fields:
             if isinstance(dfield, decleration.DynamicFields):
@@ -242,9 +243,18 @@ class BaseRSheet(object):
                     keys.sort(reverse=True)
 
                 for key in keys:
+                    if key in ignore_keys:
+                        continue
+
+                    if dfield.converter_selector:
+                        conv_func = dfield.converter_selector(key)
+                    else:
+                        conv_func = None
+
                     if dfield.projector_selector:
                         proj_func = dfield.projector_selector(key)
                         proj = proj_func(dfield.source, key)
+
                     else:
                         proj = self._infer_projector(dfield, key)
 
@@ -260,11 +270,18 @@ class BaseRSheet(object):
 
                     dfields.append(
                         decleration.Field(
-                            key, proj, aggregator=aggr, dynamic_field_decl=dfield
+                            key, proj, aggregator=aggr, dynamic_field_decl=dfield, converter=conv_func
                         )
                     )
             else:
                 dfields.append(dfield)
+
+                # To keep data displayed in a Field from being displayed in a DynamicFields
+                if (
+                    isinstance(dfield, decleration.Field)
+                    and dfield.projector.keys is not None
+                ):
+                    ignore_keys.update(dfield.projector.keys)
 
         return dfields
 
@@ -301,14 +318,14 @@ class BaseRSheet(object):
                 int(entry)
                 has_int = True
                 continue
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
 
             try:
                 float(entry)
                 has_float = True
                 continue
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
 
             has_string = True
@@ -395,6 +412,7 @@ class BaseRSheet(object):
             dfield
             for dfield in self.dfields
             if isinstance(dfield.dynamic_field_decl, decleration.DynamicFields)
+            or dfield.allow_diff
         ]
         drop_dfields_groups = []
 
@@ -622,9 +640,6 @@ class BaseRField(object):
 
         self._init_load_groups(raw_groups)
 
-        for group in self.groups:
-            self._init_aggregate_group(group)
-
     def _init_load_groups(self, raw_groups):
         field_key = self.decleration.key
 
@@ -646,50 +661,15 @@ class BaseRField(object):
         else:
             self.hidden = self.decleration.hidden
 
-    def _init_aggregate_group(self, group):
-        if self.hidden:
-            # Do not need to aggregate hidden fields.
-            self.aggregates.append(None)
-            self.aggregates_converted.append("")
-            return
-
-        if self.rsheet.disable_aggregations or self.decleration.aggregator is None:
-            if self.is_grouped_by and self.rsheet.decleration.has_aggregates:
-                # If a grouped field doesn't have an aggregator then the grouped
-                # value will appear in the aggregates line.
-                self.aggregates.append(group[0])
-
-                if group[0] is ErrorEntry:
-                    self.aggregates_converted.append(
-                        self.rsheet.decleration.error_entry
-                    )
-                elif group[0] is NoEntry:
-                    self.aggregates_converted.append(self.rsheet.decleration.no_entry)
-                else:
-                    self.aggregates_converted.append(str(group[0]))
-            else:
-                self.aggregates.append(None)
-                self.aggregates_converted.append("")
-            return
-
-        if any(e is ErrorEntry for e in group):
-            aggregate_value = ErrorEntry
-        else:
-            group_entries = [e for e in group if e is not NoEntry]
-            aggregate_value = Aggregator(
-                self.decleration.aggregator, group_entries
-            ).result
-
-            if aggregate_value is None:
-                aggregate_value = NoEntry
-
-        self.aggregates.append(aggregate_value)
-
     def prepare(self):
         if self.hidden:
             return
 
         self._prepare_entry_data()
+
+        for entry_group in self.groups_entry_data:
+            self._prepare_aggregate_group(entry_group)
+
         self._prepare_convert()
         self.do_prepare()
 
@@ -700,7 +680,6 @@ class BaseRField(object):
             entry_edata = []
             self.groups_entry_data.append(entry_edata)
             entries = [self.entry_value(e) for e in group]
-
             for entry_ix, entry in enumerate(entries):
                 record = dict(
                     (
@@ -716,8 +695,47 @@ class BaseRField(object):
                         record=record,
                         common=self.rsheet.common,
                         is_error=group[entry_ix] is ErrorEntry,
+                        is_no_entry=group[entry_ix] is NoEntry,
                     )
                 )
+
+    def _prepare_aggregate_group(self, group):
+        if self.hidden:
+            # Do not need to aggregate hidden fields.
+            self.aggregates.append(None)
+            self.aggregates_converted.append("")
+            return
+
+        if self.rsheet.disable_aggregations or self.decleration.aggregator is None:
+            if self.is_grouped_by and self.rsheet.decleration.has_aggregates:
+                # If a grouped field doesn't have an aggregator then the grouped
+                # value will appear in the aggregates line.
+                entry = group[0].value
+                self.aggregates.append(entry)
+
+                if group[0].is_error:
+                    self.aggregates_converted.append(
+                        self.rsheet.decleration.error_entry
+                    )
+                elif group[0].is_no_entry:
+                    self.aggregates_converted.append(self.rsheet.decleration.no_entry)
+                else:
+                    self.aggregates_converted.append(str(entry))
+            else:
+                self.aggregates.append(None)
+                self.aggregates_converted.append("")
+            return
+
+        if any(e.is_error for e in group):
+            aggregate_value = ErrorEntry
+        else:
+            group_entries = [e for e in group if not e.is_no_entry]
+            aggregate_value = self.decleration.aggregator.compute(group_entries)
+
+            if aggregate_value is None:
+                aggregate_value = NoEntry
+
+        self.aggregates.append(aggregate_value)
 
     def _prepare_convert(self):
         self._prepare_convert_groups()
@@ -759,7 +777,7 @@ class BaseRField(object):
                 self.aggregates_converted.append(self.rsheet.decleration.error_entry)
             else:
                 self.aggregates_converted.append(
-                    converter(decleration.EntryData(value=aggregate))
+                    str(converter(decleration.EntryData(value=aggregate)))
                 )
 
     def entry_value(self, entry):

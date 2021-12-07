@@ -16,13 +16,20 @@
 #
 ####
 
+import logging
 import sys
 import struct
 from ctypes import create_string_buffer  # gives us pre-allocated bufs
 from time import time
-from enum import IntEnum, unique
 from socket import error as SocketError
 
+from .types import (
+    ASField,
+    ASInfoNotAuthenticatedError,
+    ASResponse,
+    ASCommand,
+    ASPrivilege,
+)
 from lib.utils import util, constants
 
 try:
@@ -33,6 +40,9 @@ except Exception:
     # bcrypt not installed. This should only be
     # fatal when authentication is required.
     hasbcrypt = False
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 
 # There are three different headers referenced here in the code. I am adding
@@ -159,16 +169,6 @@ def _hash_password(password):
 
 ########### Security ##########
 
-
-class ASProtocolError(Exception):
-    def __init__(self, as_response, message):
-        self.message = message + " : " + str(ASResponse(as_response)) + "."
-        super().__init__(self.message)
-
-    def __str__(self) -> str:
-        return self.message
-
-
 _ADMIN_SALT = b"$2a$10$7EqJtq98hPqEX7fNZaFWoO"
 _ADMIN_MSG_VERSION = 0
 _ADMIN_MSG_TYPE = 2
@@ -182,125 +182,6 @@ READ_WRITE_INFO_VALUES = [
     "scan-query-rps-limited",
     "scan-query-limitless",
 ]
-
-
-@unique
-class ASCommand(IntEnum):
-    AUTHENTICATE = 0
-    CREATE_USER = 1
-    DROP_USER = 2
-    SET_PASSWORD = 3
-    CHANGE_PASSWORD = 4
-    GRANT_ROLES = 5
-    REVOKE_ROLES = 6
-    QUERY_USERS = 9
-    CREATE_ROLE = 10
-    DELETE_ROLE = 11
-    ADD_PRIVLEGES = 12
-    DELETE_PRIVLEGES = 13
-    SET_WHITELIST = 14
-    SET_RATE_QUOTAS = 15
-    QUERY_ROLES = 16
-    LOGIN = 20
-
-
-@unique
-class ASField(IntEnum):
-    USER = 0
-    PASSWORD = 1
-    OLD_PASSWORD = 2
-    CREDENTIAL = 3
-    CLEAR_PASSWORD = 4
-    SESSION_TOKEN = 5
-    SESSION_TTL = 6
-    ROLES = 10
-    ROLE = 11
-    PRIVILEGES = 12
-    WHITELIST = 13
-    READ_QUOTA = 14
-    WRITE_QUOTA = 15
-    READ_INFO = 16
-    WRITE_INFO = 17
-    CONNECTIONS = 18
-
-
-@unique
-class ASPrivilege(IntEnum):
-    USER_ADMIN = 0
-    SYS_ADMIN = 1
-    DATA_ADMIN = 2
-    READ = 10
-    READ_WRITE = 11
-    READ_WRITE_UDF = 12
-    WRITE = 13
-    ERROR = 255
-
-    @classmethod
-    def str_to_enum(cls, privilege_str):
-        privilege_str = privilege_str.lower()
-        privilege_str = privilege_str.replace("_", "-")
-
-        str_to_enum_map = {
-            "user-admin": cls.USER_ADMIN,
-            "sys-admin": cls.SYS_ADMIN,
-            "data-admin": cls.DATA_ADMIN,
-            "read": cls.READ,
-            "read-write": cls.READ_WRITE,
-            "read-write-udf": cls.READ_WRITE_UDF,
-            "write": cls.WRITE,
-        }
-
-        if privilege_str in str_to_enum_map:
-            return str_to_enum_map[privilege_str]
-        else:
-            return cls.ERROR
-
-    def is_global_only_scope(self):
-        return (
-            self == ASPrivilege.DATA_ADMIN
-            or self == ASPrivilege.SYS_ADMIN
-            or self == ASPrivilege.USER_ADMIN
-        )
-
-    def __str__(self):
-        name = self.name.lower()
-        name = name.replace("_", "-")
-        return name
-
-
-@unique
-class ASResponse(IntEnum):
-    OK = 0
-    UNKNOWN_SERVER_ERROR = 1
-    QUERY_END = 50  # Signal end of a query response. Is OK
-    SECURITY_NOT_SUPPORTED = 51
-    SECURITY_NOT_ENABLED = 52
-    INVALID_COMMAND = 54
-    UNRECOGNIZED_FIELD_ID = 55
-    VALID_BUT_UNEXPECTED_COMMANDS = 56
-    NO_USER_OR_UNRECOGNIZED_USER = 60
-    USER_ALREADY_EXISTS = 61
-    NO_PASSWORD_OR_BAD_PASSWORD = 62
-    EXPIRED_PASSWORD = 63
-    FORBIDDEN_PASSWORD = 64
-    NO_CREDENTIAL_OR_BAD_CREDENTIAL = 65
-    EXPIRED_SESSION = 66
-    NO_ROLE_OR_INVALID_ROLE = 70
-    ROLE_ALREADY_EXISTS = 71
-    NO_PRIVILEGES_OR_UNRECOGNIZED_PRIVILEGES = 72
-    BAD_WHITELIST = 73
-    QUOTAS_NOT_ENABLED = 74
-    BAD_RATE_QUOTA = 75
-    NOT_AUTHENTICATED = 80
-    ROLE_OR_PRIVILEGE_VIOLATION = 81
-    NOT_WHITELISTED = 82
-    RATE_QUOTA_EXCEEDED = 83
-
-    def __str__(self):
-        lower = self.name.lower().split("_")
-        lower = " ".join(lower)
-        lower = lower[0].upper() + lower[1:]
-        return lower
 
 
 def _pack_admin_header(buf, offset, scheme, result, command, n_fields):
@@ -581,7 +462,7 @@ def authenticate_new(sock, user, session_token, auth_mode):
     )
 
 
-@util.logthis
+@util.logthis(logger)
 def authenticate_old(sock, user, password):
     return _authenticate(
         sock,
@@ -592,7 +473,7 @@ def authenticate_old(sock, user, password):
 
 
 # roles is a list of strings representing role names.
-@util.logthis
+@util.logthis(logger)
 def create_user(sock, user, password, roles):
     """Attempts to create a user in AS.
     user: string,
@@ -618,7 +499,7 @@ def create_user(sock, user, password, roles):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def drop_user(sock, user):
     """Attempts to delete a user in AS.
     user: string,
@@ -639,7 +520,7 @@ def drop_user(sock, user):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def set_password(sock, user, password):
     """Attempts to set a user password in AS.
     user: string,
@@ -663,7 +544,7 @@ def set_password(sock, user, password):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def change_password(sock, user, old_password, new_password):
     """Attempts to change a users passowrd in AS.
     user: string,
@@ -693,7 +574,7 @@ def change_password(sock, user, old_password, new_password):
 
 
 # roles is a list of strings representing role names.
-@util.logthis
+@util.logthis(logger)
 def grant_roles(sock, user, roles):
     """Attempts to grant roles to user in AS.
     user: string,
@@ -717,7 +598,7 @@ def grant_roles(sock, user, roles):
 
 
 # roles is a list of strings representing role names.
-@util.logthis
+@util.logthis(logger)
 def revoke_roles(sock, user, roles):
     """Attempts to remove roles from a user in AS.
     user: string,
@@ -844,17 +725,17 @@ def _query_users(sock, user=None):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def query_users(sock):
     return _query_users(sock)
 
 
-@util.logthis
+@util.logthis(logger)
 def query_user(sock, user):
     return _query_users(sock, user)
 
 
-@util.logthis
+@util.logthis(logger)
 def create_role(
     sock, role, privileges=None, whitelist=None, read_quota=None, write_quota=None
 ):
@@ -913,7 +794,7 @@ def create_role(
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def delete_role(sock, role):
     """Attempts to delete a role in AS.
     role: string,
@@ -934,7 +815,7 @@ def delete_role(sock, role):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def add_privileges(sock, role, privileges):
     """Attempts to add privleges to a role in AS.
     role: string,
@@ -954,7 +835,7 @@ def add_privileges(sock, role, privileges):
     return return_code
 
 
-@util.logthis
+@util.logthis(logger)
 def delete_privileges(sock, role, privileges):
     """Attempts to remove privleges to a role in AS.
     role: string,
@@ -1006,12 +887,12 @@ def _set_whitelist(sock, role, whitelist=None):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def set_whitelist(sock, role, whitelist):
     return _set_whitelist(sock, role, whitelist)
 
 
-@util.logthis
+@util.logthis(logger)
 def delete_whitelist(sock, role):
     return _set_whitelist(sock, role)
 
@@ -1052,12 +933,12 @@ def _set_quotas(sock, role, read_quota=None, write_quota=None):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def set_quotas(sock, role, read_quota=None, write_quota=None):
     return _set_quotas(sock, role, read_quota, write_quota)
 
 
-@util.logthis
+@util.logthis(logger)
 def delete_quotas(sock, role, read_quota=False, write_quota=False):
     """
     NOT IN USE
@@ -1166,12 +1047,12 @@ def _query_role(sock, role=None):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis
+@util.logthis(logger)
 def query_roles(sock):
     return _query_role(sock)
 
 
-@util.logthis
+@util.logthis(logger)
 def query_role(sock, role):
     return _query_role(sock, role)
 
@@ -1342,8 +1223,8 @@ def info(sock, names=None):
         name, sep, value = lines[0].partition("\t")
 
         if name != names:
-            print(" problem: requested name ", names, " got name ", name)
-            return -1
+            if "not authenticated" in name.lower():
+                return ASInfoNotAuthenticatedError("Connection failed", name)
         return value
 
     else:
