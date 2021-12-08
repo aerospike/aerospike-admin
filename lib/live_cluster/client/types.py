@@ -47,10 +47,13 @@ class ASPrivilege(IntEnum):
     USER_ADMIN = 0
     SYS_ADMIN = 1
     DATA_ADMIN = 2
+    UDF_ADMIN = 3
+    SINDEX_ADMIN = 4
     READ = 10
     READ_WRITE = 11
     READ_WRITE_UDF = 12
     WRITE = 13
+    TRUNCATE = 14
     ERROR = 255
 
     @classmethod
@@ -62,10 +65,13 @@ class ASPrivilege(IntEnum):
             "user-admin": cls.USER_ADMIN,
             "sys-admin": cls.SYS_ADMIN,
             "data-admin": cls.DATA_ADMIN,
+            "udf-admin": cls.UDF_ADMIN,
+            "sindex-admin": cls.SINDEX_ADMIN,
             "read": cls.READ,
             "read-write": cls.READ_WRITE,
             "read-write-udf": cls.READ_WRITE_UDF,
             "write": cls.WRITE,
+            "truncate": cls.TRUNCATE,
         }
 
         if privilege_str in str_to_enum_map:
@@ -78,6 +84,8 @@ class ASPrivilege(IntEnum):
             self == ASPrivilege.DATA_ADMIN
             or self == ASPrivilege.SYS_ADMIN
             or self == ASPrivilege.USER_ADMIN
+            or self == ASPrivilege.UDF_ADMIN
+            or self == ASPrivilege.SINDEX_ADMIN
         )
 
     def __str__(self):
