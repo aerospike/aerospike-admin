@@ -39,18 +39,24 @@ class ASPrivilegeTest(unittest.TestCase):
     def test_is_global_only_scope(self):
         self.assertTrue(ASPrivilege.is_global_only_scope(ASPrivilege.DATA_ADMIN))
         self.assertTrue(ASPrivilege.is_global_only_scope(ASPrivilege.SYS_ADMIN))
+        self.assertTrue(ASPrivilege.is_global_only_scope(ASPrivilege.UDF_ADMIN))
         self.assertTrue(ASPrivilege.is_global_only_scope(ASPrivilege.USER_ADMIN))
+        self.assertTrue(ASPrivilege.is_global_only_scope(ASPrivilege.SINDEX_ADMIN))
         self.assertFalse(ASPrivilege.is_global_only_scope(ASPrivilege.READ))
         self.assertFalse(ASPrivilege.is_global_only_scope(ASPrivilege.READ_WRITE_UDF))
         self.assertFalse(ASPrivilege.is_global_only_scope(ASPrivilege.READ_WRITE))
+        self.assertFalse(ASPrivilege.is_global_only_scope(ASPrivilege.TRUNCATE))
 
     def test__str__(self):
         self.assertEqual(str(ASPrivilege.SYS_ADMIN), "sys-admin")
         self.assertEqual(str(ASPrivilege.DATA_ADMIN), "data-admin")
         self.assertEqual(str(ASPrivilege.USER_ADMIN), "user-admin")
+        self.assertEqual(str(ASPrivilege.UDF_ADMIN), "udf-admin")
+        self.assertEqual(str(ASPrivilege.SINDEX_ADMIN), "sindex-admin")
         self.assertEqual(str(ASPrivilege.READ_WRITE_UDF), "read-write-udf")
         self.assertEqual(str(ASPrivilege.READ), "read")
         self.assertEqual(str(ASPrivilege.WRITE), "write")
+        self.assertEqual(str(ASPrivilege.TRUNCATE), "truncate")
 
 
 class ASResponseTest(unittest.TestCase):
