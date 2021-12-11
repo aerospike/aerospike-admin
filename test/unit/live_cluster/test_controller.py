@@ -41,7 +41,7 @@ class ControllerTest(unittest.TestCase):
             "lib.live_cluster.live_cluster_root_controller.Cluster"
         )
         self.MockCluster = self.cluster_patch.start()
-        self.rc = LiveClusterRootController()
+        self.rc = await LiveClusterRootController()
 
         sys.stdout = StringIO()
 

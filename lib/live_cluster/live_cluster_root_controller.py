@@ -19,6 +19,7 @@ from lib.base_controller import (
     CommandHelp,
     create_disabled_controller,
 )
+from lib.utils.async_object import AsyncObject
 
 from .live_cluster_command_controller import LiveClusterCommandController
 from .client.cluster import Cluster
@@ -37,12 +38,12 @@ from .manage_controller import (
 
 
 @CommandHelp("Aerospike Admin")
-class LiveClusterRootController(BaseController):
+class LiveClusterRootController(BaseController, AsyncObject):
 
     cluster = None
     command = None
 
-    def __init__(
+    async def __init__(
         self,
         seed_nodes=[("127.0.0.1", 3000, None)],
         user=None,
@@ -59,7 +60,7 @@ class LiveClusterRootController(BaseController):
         super().__init__(asadm_version)
 
         # Create static instance of cluster
-        LiveClusterRootController.cluster = Cluster(
+        LiveClusterRootController.cluster = await Cluster(
             seed_nodes,
             user,
             password,
@@ -86,9 +87,9 @@ class LiveClusterRootController(BaseController):
             "info": InfoController,
         }
 
-    def close(self):
+    async def close(self):
         try:
-            self.cluster.close()
+            await self.cluster.close()
         except Exception:
             pass
 

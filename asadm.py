@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import cmd
 import getpass
 
@@ -22,6 +23,7 @@ import re
 import shlex
 import sys
 import asyncio
+from lib.utils.async_object import AsyncObject
 
 if sys.version_info[0] < 3:
     raise Exception(
@@ -65,8 +67,8 @@ DEFAULT_PROMPT = "Admin> "
 PRIVILEGED_PROMPT = "Admin+> "
 
 
-class AerospikeShell(cmd.Cmd):
-    def __init__(
+class AerospikeShell(cmd.Cmd, AsyncObject):
+    async def __init__(
         self,
         admin_version,
         seeds,
@@ -120,7 +122,7 @@ class AerospikeShell(cmd.Cmd):
                     logger.error(
                         "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>"
                     )
-                    self.do_exit("")
+                    await self.do_exit("")
                     exit(1)
 
                 self.ctrl = CollectinfoRootController(
@@ -139,10 +141,10 @@ class AerospikeShell(cmd.Cmd):
                             password = sys.stdin.readline().strip()
 
                     if not info.hasbcrypt:
-                        self.do_exit("")
+                        await self.do_exit("")
                         logger.critical("Authentication failed: bcrypt not installed.")
 
-                self.ctrl = LiveClusterRootController(
+                self.ctrl = await LiveClusterRootController(
                     seed_nodes=seeds,
                     user=user,
                     password=password,
@@ -156,7 +158,7 @@ class AerospikeShell(cmd.Cmd):
                 )
 
                 if not self.ctrl.cluster.get_live_nodes():
-                    self.do_exit("")
+                    await self.do_exit("")
                     if self.execute_only_mode:
                         self.connected = False
                         return
@@ -185,7 +187,7 @@ class AerospikeShell(cmd.Cmd):
                             + "\n"
                         )
 
-                    cluster_down_nodes = self.ctrl.cluster.get_down_nodes()
+                    cluster_down_nodes = await self.ctrl.cluster.get_down_nodes()
 
                     if cluster_down_nodes:
                         self.intro += (
@@ -197,7 +199,7 @@ class AerospikeShell(cmd.Cmd):
                         )
 
         except Exception as e:
-            self.do_exit("")
+            await self.do_exit("")
             logger.critical(str(e))
 
         if not execute_only_mode:
@@ -382,7 +384,12 @@ class AerospikeShell(cmd.Cmd):
         return ""  # line was handled by execute
 
     async def onecmd(self, line):
-        return super().onecmd(line)
+        result = super().onecmd(line)
+
+        if inspect.iscoroutine(result):
+            result = await result
+
+        return result
 
     def completenames(self, text, line, begidx, endidx):
         origline = line
@@ -441,22 +448,22 @@ class AerospikeShell(cmd.Cmd):
         # do nothing
         return
 
-    def close(self):
+    async def close(self):
         try:
-            self.ctrl.close()
+            await self.ctrl.close()
         except Exception:
             pass
 
     # Other
-    def do_exit(self, line):
-        self.close()
+    async def do_exit(self, line):
+        await self.close()
         if not self.execute_only_mode and readline.get_current_history_length() > 0:
             readline.write_history_file(self.admin_history)
 
         return True
 
-    def do_EOF(self, line):
-        return self.do_exit(line)
+    async def do_EOF(self, line):
+        return await self.do_exit(line)
 
     def do_cake(self, line):
         msg = """
@@ -684,7 +691,7 @@ async def main():
 
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
-    shell = AerospikeShell(
+    shell = await AerospikeShell(
         admin_version,
         seeds,
         user=cli_args.user,
@@ -779,7 +786,7 @@ async def main():
             logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
     await cmdloop(shell, func, args, use_yappi, single_command)
-    shell.close()
+    await shell.close()
 
     try:
         sys.stdout = real_stdout

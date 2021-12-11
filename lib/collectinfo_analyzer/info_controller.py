@@ -15,9 +15,10 @@ class InfoController(CollectinfoCommandController):
         self.controller_map = dict(namespace=InfoNamespaceController)
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.do_network(line)
-        self.controller_map["namespace"]()(line[:])
+        # needs to be awaited since the base class is async
+        await self.controller_map["namespace"]()(line[:])
         self.do_xdr(line)
 
     @CommandHelp("Displays network summary information.")

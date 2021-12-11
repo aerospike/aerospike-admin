@@ -22,8 +22,8 @@ from lib.live_cluster.client.node import Node
 
 
 class ClusterTest(unittest.TestCase):
-    def get_cluster_mock(self, node_count, return_key_value={}):
-        cl = Cluster([("127.0.0.0", 3000, None)])
+    async def get_cluster_mock(self, node_count, return_key_value={}):
+        cl = await Cluster([("127.0.0.0", 3000, None)])
         cl.clear_node_list()
 
         for i in range(node_count):
@@ -336,12 +336,12 @@ class ClusterTest(unittest.TestCase):
             "get_visibility_error_nodes did not return the expected result",
         )
 
-    def test_get_down_nodes(self):
+    async def test_get_down_nodes(self):
         cl = self.get_cluster_mock(3)
 
         expected = ["172.17.0.3:3000"]
         self.assertEqual(
-            sorted(cl.get_down_nodes()),
+            sorted(await cl.get_down_nodes()),
             sorted(expected),
             "get_down_nodes did not return the expected result",
         )
@@ -466,7 +466,7 @@ class ClusterTest(unittest.TestCase):
             "is_feature_present did not return the expected result",
         )
 
-    def test_get_IP_to_node_map(self):
+    async def test_get_IP_to_node_map(self):
         cl = self.get_cluster_mock(3)
         aliases = cl.aliases
         cl.aliases = {
@@ -480,13 +480,13 @@ class ClusterTest(unittest.TestCase):
             "127.0.0.0:3000": "A00000000000000",
         }
         self.assertEqual(
-            cl.get_IP_to_node_map(),
+            await cl.get_IP_to_node_map(),
             expected,
             "get_IP_to_node_map did not return the expected result",
         )
         cl.aliases = aliases
 
-    def test_get_node_to_IP_map(self):
+    async def test_get_node_to_IP_map(self):
         cl = self.get_cluster_mock(3)
         aliases = cl.aliases
         cl.aliases = {
@@ -499,7 +499,7 @@ class ClusterTest(unittest.TestCase):
             "A00000000000000": "127.0.0.0:3000",
         }
         self.assertEqual(
-            cl.get_node_to_IP_map(),
+            await cl.get_node_to_IP_map(),
             expected,
             "get_node_to_IP_map did not return the expected result",
         )

@@ -8,8 +8,6 @@ from .live_cluster_command_controller import LiveClusterCommandController
     '"asinfo" provides raw access to the info protocol.',
     "  Options:",
     "    -v <command>   - The command to execute",
-    "    -p <port>      - Port to use in the case of an XDR info command and XDR is",
-    "                     not in asd",
     '    -l             - Replace semicolons ";" with newlines. If output does',
     '                     not contain semicolons "-l" will attempt to use',
     '                     colons ":" followed by commas ",".',
@@ -38,8 +36,6 @@ class ASInfoController(LiveClusterCommandController):
                     value = tline.pop(0)
                 elif word == "-l":
                     line_sep = True
-                elif word == "-p":
-                    port = tline.pop(0)
                 elif word == "--no_node_name":
                     show_node_name = False
                 else:

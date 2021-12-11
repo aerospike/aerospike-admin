@@ -166,30 +166,30 @@ class InfoController(LiveClusterCommandController):
             if self.mods["for"]:
                 matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
 
-            futures = [
-                util.Future(
-                    self.view.info_XDR,
-                    xdr5_stats[dc],
-                    xdr_enable,
-                    self.cluster,
-                    title="XDR Information %s" % dc,
-                    **self.mods
-                )
-                for dc in xdr5_stats
-                if not self.mods["for"] or dc in matches
-            ]
+            # futures = [
+            #     util.Future(
+            #         self.view.info_XDR,
+            #         xdr5_stats[dc],
+            #         xdr_enable,
+            #         self.cluster,
+            #         title="XDR Information %s" % dc,
+            #         **self.mods
+            #     )
+            #     for dc in xdr5_stats
+            #     if not self.mods["for"] or dc in matches
+            # ]
 
-        if old_xdr_stats:
-            futures.append(
-                util.Future(
-                    self.view.info_old_XDR,
-                    old_xdr_stats,
-                    builds,
-                    xdr_enable,
-                    self.cluster,
-                    **self.mods
-                )
-            )
+        # if old_xdr_stats:
+        #     futures.append(
+        #         util.Future(
+        #             self.view.info_old_XDR,
+        #             old_xdr_stats,
+        #             builds,
+        #             xdr_enable,
+        #             self.cluster,
+        #             **self.mods
+        #         )
+        #     )
 
         return futures
 

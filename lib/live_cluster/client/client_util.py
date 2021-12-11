@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from concurrent.futures.thread import ThreadPoolExecutor
 import re
 import itertools
+import asyncio
 
 
 def info_to_dict(value, delimiter=";", ignore_field_without_key_value_delimiter=True):
@@ -198,7 +198,7 @@ def parse_peers_string(
     return peers_list
 
 
-def concurrent_map(func, data):
+async def concurrent_map(func, data):
     """
     Similar to the builtin function map(). But spawn a thread for each argument
     and apply 'func' concurrently.
@@ -207,12 +207,7 @@ def concurrent_map(func, data):
     indexable sequence.
     """
 
-    N = len(data)
-
-    with ThreadPoolExecutor(max_workers=N) as executor:
-        result = executor.map(func, data)
-
-    return result
+    return await asyncio.gather(*(func(d) for d in data))
 
 
 def flatten(list1):

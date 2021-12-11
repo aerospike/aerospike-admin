@@ -36,7 +36,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
         self.cluster_mock = patch(
             "lib.live_cluster.live_cluster_root_controller.Cluster"
         ).start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ShowStatisticsController()
         self.controller.mods = (
             {}
@@ -236,7 +236,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
 class ShowUsersControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ShowUsersController()
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowUsersController.cluster"
@@ -328,7 +328,7 @@ class ShowUsersControllerTest(unittest.TestCase):
 class ShowBestPracticesControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ShowBestPracticesController()
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowBestPracticesController.cluster"
@@ -380,7 +380,7 @@ class ShowBestPracticesControllerTest(unittest.TestCase):
 class ShowJobsControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ShowJobsController()
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowJobsController.cluster"
@@ -420,7 +420,7 @@ class ShowJobsControllerTest(unittest.TestCase):
 class ShowRosterControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ShowRosterController()
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowRosterController.cluster"
@@ -495,7 +495,7 @@ class ShowRosterControllerTest(unittest.TestCase):
 class ShowRacksControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ShowRacksController()
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowRacksController.cluster"

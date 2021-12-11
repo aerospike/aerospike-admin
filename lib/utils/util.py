@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import copy
 import inspect
 import io
@@ -111,7 +112,10 @@ async def capture_stdout(func, line=""):
     if inspect.iscoroutinefunction(func):
         await func(line)
     else:
-        func(line)
+        output = func(line)
+
+        if inspect.iscoroutine(output):
+            output = await output
 
     output = capturer.getvalue()
     sys.stdout = old
@@ -767,6 +771,45 @@ class cached(object):
                 return value
 
         self[key] = self.func(*key)
+        return self.cache[key][0]
+
+    def __call__(self, *args):
+        return self[args]
+
+
+class async_cached(object):
+    # Doesn't support lists, dicts and other unhashables
+    # Also doesn't support kwargs for reason above.
+    class _CacheableCoroutine:
+        def __init__(self, co):
+            self.co = co
+            self.done = False
+            self.result = None
+            self.lock = asyncio.Lock()
+
+        def __await__(self):
+            with (yield from self.lock):
+                if self.done:
+                    return self.result
+                self.result = yield from self.co.__await__()
+                self.done = True
+                return self.result
+
+    def __init__(self, func, ttl=0.5):
+        self.func = func
+        self.ttl = ttl
+        self.cache = {}
+
+    def __setitem__(self, key, value):
+        self.cache[key] = (value, time() + self.ttl)
+
+    def __getitem__(self, key):
+        if key in self.cache:
+            value, eol = self.cache[key]
+            if eol > time():
+                return value
+
+        self[key] = self._CacheableCoroutine(self.func(*key))
         return self.cache[key][0]
 
     def __call__(self, *args):

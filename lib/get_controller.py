@@ -15,6 +15,7 @@
 import copy
 
 from lib.utils import common, util, constants, version
+from .live_cluster.client import Cluster
 
 
 async def get_sindex_stats(cluster, nodes="all", for_mods=[]):
@@ -215,12 +216,12 @@ class GetLatenciesController:
                 buckets=buckets,
                 exponent_increment=exponent_increment,
                 verbose=verbose,
-                ns_set=ns_set,
+                ns_set=await ns_set,
             )
         # No nodes support "show latencies"
         elif len(latencies_nodes) == 0:
             latencies = await self.cluster.info_latency(
-                nodes=latency_nodes, ns_set=ns_set
+                nodes=latency_nodes, ns_set=await ns_set
             )
         # Some nodes support latencies and some do not
         else:
@@ -230,7 +231,7 @@ class GetLatenciesController:
                 buckets=buckets,
                 exponent_increment=exponent_increment,
                 verbose=verbose,
-                ns_set=ns_set,
+                ns_set=await ns_set,
             )
             latencies = self.merge_latencies_and_latency_tables(
                 await latencies, await latency
@@ -266,7 +267,7 @@ class GetConfigController:
                 self.get_rack_ids(nodes=nodes),
             ),
         ]
-        config_map = dict(((k, await f) for k, f in futures))
+        config_map = dict([(k, await f) for k, f in futures])
 
         return config_map
 
@@ -512,7 +513,8 @@ class GetStatisticsController:
             ("xdr", self.get_xdr(nodes=nodes)),
             ("dc", self.get_dc(nodes=nodes)),
         ]
-        stat_map = dict(((k, await f) for k, f in futures))
+
+        stat_map = dict([(k, await f) for k, f in futures])
 
         return stat_map
 
@@ -894,7 +896,7 @@ class GetPmapController:
 
 
 class GetUsersController:
-    def __init__(self, cluster):
+    def __init__(self, cluster: Cluster):
         self.cluster = cluster
 
     async def get_users(self, nodes="all"):
@@ -944,7 +946,7 @@ class GetJobsController:
                 self.get_sindex_builder(nodes=nodes),
             ),
         ]
-        job_map = dict(((k, await f) for k, f in futures))
+        job_map = dict([(k, await f) for k, f in futures])
 
         if flip:
             job_map = util.flip_keys(job_map)

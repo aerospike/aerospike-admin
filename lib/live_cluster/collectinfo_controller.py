@@ -195,8 +195,11 @@ class CollectinfoController(LiveClusterCommandController):
         getter = GetConfigController(self.cluster)
         config = getter.get_all(nodes=self.nodes)
 
-        self._remove_exception_from_section_output(await stats)
-        self._remove_exception_from_section_output(await config)
+        stats = await stats
+        config = await config
+
+        self._remove_exception_from_section_output(stats)
+        self._remove_exception_from_section_output(config)
 
         # flip key to get node ids in upper level and sections inside them.
         # {'namespace': {'ip1': {'test': {}}, 'ip2': {'test': {}}}} -->
@@ -568,7 +571,6 @@ class CollectinfoController(LiveClusterCommandController):
         namespaces = self.cluster.info("namespaces")
 
         # find version
-        as_version = None
         try:
             as_version = await as_version
             as_version = as_version.popitem()[1]
@@ -653,14 +655,14 @@ class CollectinfoController(LiveClusterCommandController):
         util.write_to_file(self.aslogfile, collect_output)
 
         try:
-            self._collectinfo_content(self._write_version)
+            await self._collectinfo_content(self._write_version)
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
             for summary_param in summary_params:
-                self._collectinfo_content(
+                await self._collectinfo_content(
                     collectinfo_root_controller.execute, [summary_param]
                 )
         except Exception as e:
@@ -670,7 +672,7 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             info_controller = InfoController()
             for info_param in summary_info_params:
-                self._collectinfo_content(info_controller, [info_param])
+                await self._collectinfo_content(info_controller, [info_param])
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
@@ -682,7 +684,7 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             for health_param in health_params:
-                self._collectinfo_content(
+                await self._collectinfo_content(
                     collectinfo_root_controller.execute, health_param.split()
                 )
         except Exception as e:

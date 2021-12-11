@@ -34,7 +34,7 @@ from test.unit import util as test_util
 class ManageACLCreateUserControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageACLCreateUserController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageACLCreateUserController.cluster"
@@ -128,7 +128,7 @@ class ManageACLCreateUserControllerTest(unittest.TestCase):
 class ManageACLCreateRoleControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageACLCreateRoleController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageACLCreateRoleController.cluster"
@@ -449,7 +449,7 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
 class ManageACLQuotasControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageACLQuotasRoleController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageACLQuotasRoleController.cluster"
@@ -612,7 +612,7 @@ class ManageACLQuotasControllerTest(unittest.TestCase):
 class ManageConfigControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageConfigController()
         ManageConfigLeafController.mods = {}
         self.cluster_mock = patch(
@@ -1131,7 +1131,7 @@ class ManageConfigControllerTest(unittest.TestCase):
 class ManageTruncateControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageTruncateController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageTruncateController.cluster"
@@ -1463,7 +1463,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
 class ManageTruncateUndoControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageTruncateController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageTruncateController.cluster"
@@ -1550,7 +1550,7 @@ class ManageTruncateUndoControllerTest(unittest.TestCase):
 class ManageReclusterControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageReclusterController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageReclusterController.cluster"
@@ -1603,7 +1603,7 @@ class ManageReclusterControllerTest(unittest.TestCase):
 class ManageQuiesceControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageQuiesceController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageQuiesceController.cluster"
@@ -1656,7 +1656,7 @@ class ManageQuiesceControllerTest(unittest.TestCase):
 class ManageReviveControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageReviveController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
@@ -1716,7 +1716,7 @@ class ManageReviveControllerTest(unittest.TestCase):
 class ManageJobsKillTridControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageJobsKillTridController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillTridController.cluster"
@@ -1862,7 +1862,7 @@ class ManageJobsKillTridControllerTest(unittest.TestCase):
 class ManageJobsKillAllControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageJobsKillAllScansController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.cluster"
@@ -1992,7 +1992,7 @@ class ManageRosterLeafCommandControllerTest(unittest.TestCase):
 class ManageRosterAddControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageRosterAddController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.cluster"
@@ -2132,7 +2132,7 @@ class ManageRosterAddControllerTest(unittest.TestCase):
 class ManageRosterRemoveControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageRosterRemoveController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
@@ -2292,7 +2292,7 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
 class ManageRosterStageNodesControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageRosterStageNodesController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
@@ -2414,7 +2414,7 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
 class ManageRosterStageObservedControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        self.root_controller = await LiveClusterRootController()
         self.controller = ManageRosterStageObservedController()
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
