@@ -1,7 +1,7 @@
 import unittest
 from mock import Mock, patch
 
-from lib.get_controller import GetPmapController, GetConfigController
+from lib.get_controller import GetJobsController, GetPmapController, GetConfigController
 
 
 class GetPmapControllerTest(unittest.TestCase):
@@ -115,12 +115,6 @@ class GetConfigControllerTest(unittest.TestCase):
         self.cluster_mock.info_namespaces.return_value = {
             "10.71.71.169:3000": ["bar", "test"]
         }
-        self.cluster_mock.info_rack_ids.return_value = {
-            "10.71.71.169:3000": {
-                "test": "88",
-                "bar": "99",
-            }
-        }
 
         def side_effect(stanza, namespace, nodes):
             if namespace == "test":
@@ -134,11 +128,7 @@ class GetConfigControllerTest(unittest.TestCase):
                     }
                 }
             elif namespace == "bar":
-                return {
-                    "10.71.71.169:3000": {
-                        "bar": {"d": "4", "e": "5", "f": "6", "rack-id": "0"}
-                    }
-                }
+                return {"10.71.71.169:3000": {"bar": {"d": "4", "e": "5", "f": "6"}}}
 
         self.cluster_mock.info_get_config.side_effect = side_effect
 
@@ -155,10 +145,56 @@ class GetConfigControllerTest(unittest.TestCase):
                     "d": "4",
                     "e": "5",
                     "f": "6",
-                    "rack-id": "99",
                 }
             },
         }
 
-        actual_output = self.controller.get_namespace()
+        actual_output = self.controller.get_namespace(flip=True)
         self.assertDictEqual(expected_output, actual_output)
+
+
+class GetJobsControllerTest(unittest.TestCase):
+    def setUp(self):
+        self.cluster_mock = patch("lib.live_cluster.client.cluster.Cluster").start()
+        self.controller = GetJobsController(self.cluster_mock)
+        self.addCleanup(patch.stopall)
+
+    def test_get_all(self):
+        expected = {
+            "scan": {"inside-scan": "val"},
+            "query": {"inside-query": "val"},
+            "sindex-builder": {"inside-sindex-builder": "val"},
+        }
+        self.cluster_mock.info_scan_show.return_value = {"inside-scan": "val"}
+        self.cluster_mock.info_query_show.return_value = {"inside-query": "val"}
+        self.cluster_mock.info_jobs.return_value = {"inside-sindex-builder": "val"}
+
+        actual = self.controller.get_all()
+
+        self.cluster_mock.info_scan_show.assert_called_with(nodes="all")
+        self.cluster_mock.info_query_show.assert_called_with(nodes="all")
+        self.cluster_mock.info_jobs.assert_called_with(
+            module="sindex-builder", nodes="all"
+        )
+
+        self.assertDictEqual(actual, expected)
+
+    def test_get_all_flip(self):
+        expected = {
+            "inside-scan": {"scan": "val"},
+            "inside-query": {"query": "val"},
+            "inside-sindex-builder": {"sindex-builder": "val"},
+        }
+        self.cluster_mock.info_scan_show.return_value = {"inside-scan": "val"}
+        self.cluster_mock.info_query_show.return_value = {"inside-query": "val"}
+        self.cluster_mock.info_jobs.return_value = {"inside-sindex-builder": "val"}
+
+        actual = self.controller.get_all(flip=True)
+
+        self.cluster_mock.info_scan_show.assert_called_with(nodes="all")
+        self.cluster_mock.info_query_show.assert_called_with(nodes="all")
+        self.cluster_mock.info_jobs.assert_called_with(
+            module="sindex-builder", nodes="all"
+        )
+
+        self.assertDictEqual(actual, expected)

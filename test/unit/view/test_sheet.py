@@ -28,6 +28,7 @@ from lib.view.sheet import (
     SheetStyle,
     Subgroup,
 )
+from lib.view.sheet.decleration import ComplexAggregator
 
 
 def do_render(*args, **kwargs):
@@ -291,9 +292,33 @@ class SheetTest(unittest.TestCase):
 
         self.assertEqual(record["F"]["raw"], "success")
 
-    def test_sheet_aggregation(self):
+    def test_sheet_reduce_aggregation(self):
         test_sheet = Sheet(
             (Field("F", Projectors.Number("d", "f"), aggregator=Aggregators.sum()),),
+            from_source=("d",),
+        )
+        sources = dict(d=dict(n0=dict(f="1"), n1=dict(f="1"), n2=dict(f="1")))
+        render = do_render(test_sheet, "test", sources)
+        group = render["groups"][0]
+
+        self.assertIn("aggregates", group)
+
+        value = group["aggregates"]["F"]
+
+        self.assertEqual(value["raw"], 3)
+
+    def test_sheet_complex_aggregation(self):
+        def func(edatas):
+            sum = 0
+            for edata in edatas:
+                sum += edata.value
+
+            return sum
+
+        aggregator = ComplexAggregator(func)
+
+        test_sheet = Sheet(
+            (Field("F", Projectors.Number("d", "f"), aggregator=aggregator),),
             from_source=("d",),
         )
         sources = dict(d=dict(n0=dict(f="1"), n1=dict(f="1"), n2=dict(f="1")))
@@ -639,7 +664,11 @@ class SheetTest(unittest.TestCase):
             from_source="ed",
             for_each="ed",
         )
-        sources = dict(ed=dict(n0=dict(a=dict()),))
+        sources = dict(
+            ed=dict(
+                n0=dict(a=dict()),
+            )
+        )
         render = do_render(test_sheet, "test", sources)
         record = render["groups"][0]["records"][0]
 
@@ -753,8 +782,14 @@ class SheetTest(unittest.TestCase):
             ),
             from_source="d",
         )
-        sources = dict(d=dict(n0=dict(f=1, g=1), n2=dict(f=1), n3=dict(f=1)))
-        render = do_render(test_sheet, "test", sources, selectors=["f"])
+        sources = {
+            "d": {
+                "n0": {"f": 1, "g": 1},
+                "n2": {"f": 1, "g": 1},
+                "n3": {"f": 1, "g": 1},
+            }
+        }
+        render = do_render(test_sheet, "test", sources, selectors=["g"])
         records = render["groups"][0]["records"]
 
         self.assertEqual(len(records), 3)
@@ -847,7 +882,10 @@ class SheetTest(unittest.TestCase):
 
     def test_sheet_dynamic_field_diff_and_group_by(self):
         test_sheet = Sheet(
-            (Field("group", Projectors.String("group", None)), DynamicFields("d"),),
+            (
+                Field("group", Projectors.String("group", None)),
+                DynamicFields("d"),
+            ),
             from_source=("d", "group"),
             group_by="group",
         )

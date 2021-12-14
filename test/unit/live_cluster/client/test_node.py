@@ -13,233 +13,25 @@
 # limitations under the License.
 
 from ctypes import ArgumentError
-from lib.live_cluster.client.config_handler import BoolConfigType, IntConfigType
+import time
 from mock import MagicMock, patch
 import socket
 import unittest
 
+from mock.mock import Mock
+
 import lib
+from lib.live_cluster.client.types import ASProtocolError, ASResponse
 from test.unit import util
+from lib.utils import constants
 from lib.live_cluster.client.assocket import ASSocket
-from lib.live_cluster.client.node import (
+from lib.live_cluster.client.node import Node
+from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
+    ASInfoClusterStableError,
     ASInfoConfigError,
     ASInfoError,
-    Node,
 )
-
-
-class ASInfoErrorTest(unittest.TestCase):
-    def test_raises_exception_with_ok(self):
-        util.assert_exception(
-            self,
-            ValueError,
-            'info() returned value "ok" which is not an error.',
-            ASInfoError,
-            "message",
-            "ok",
-        )
-
-        util.assert_exception(
-            self,
-            ValueError,
-            'info() returned value "ok" which is not an error.',
-            ASInfoError,
-            "message",
-            "OK",
-        )
-
-        util.assert_exception(
-            self,
-            ValueError,
-            'info() returned value "ok" which is not an error.',
-            ASInfoError,
-            "message",
-            "",
-        )
-
-    def test_creates_str(self):
-        message = "test message"
-        responses = [
-            "error=a-white-whale",
-            "ERROR=a-white-whale.",
-            "ERROR:1234:a-white-whale",
-            "ERROR::a-white-whale",
-            "error:1234:a-white-whale.",
-            "error::a-white-whale",
-            "fail:1234:a-white-whale.",
-            "FAIL::a-white-whale",
-            "error:1234:a-white-whale.",
-            "error::a-white-whale",
-        ]
-        exp_string = "test message : a-white-whale."
-
-        for response in responses:
-            error = ASInfoError(message, response)
-            self.assertEqual(
-                str(error), exp_string, "Fail caused by {}".format(response)
-            )
-
-    def test_create_unknow_error_str(self):
-        message = "test message"
-        responses = [
-            "error",
-            "ERROR",
-            "fail",
-            "FAIL",
-        ]
-        exp_string = "test message : Unknown error occurred."
-
-        for response in responses:
-            error = ASInfoError(message, response)
-            self.assertEqual(
-                str(error), exp_string, "Fail caused by {}".format(response)
-            )
-
-
-class ASInfoConfigErrorTest(unittest.TestCase):
-    def setUp(self):
-        self.node_mock = MagicMock()
-        self.test_message = "this is a test message"
-
-    def test_invalid_subcontext(self):
-        self.node_mock.config_subcontext.side_effect = [
-            ["foo1", "foo2", "foo3"],
-            ["blah1", "blah2", "blah3"],
-            ["bar1", "bar2", "bar3"],
-        ]
-        expected = "this is a test message : Invalid subcontext bar4."
-
-        actual = ASInfoConfigError(
-            self.test_message,
-            "irrelevant",
-            self.node_mock,
-            ["foo2", "blah1", "bar4"],
-            "irrelevant",
-            "irrelevant",
-        )
-
-        self.assertEqual(str(actual), expected)
-
-    def test_invalid_param(self):
-        self.node_mock.config_subcontext.side_effect = [
-            ["foo1", "foo2", "foo3"],
-            ["blah1", "blah2", "blah3"],
-            ["bar1", "bar2", "bar3"],
-        ]
-        self.node_mock.config_type.return_value = None
-        expected = "this is a test message : Invalid parameter."
-
-        actual = ASInfoConfigError(
-            self.test_message,
-            "irrelevant",
-            self.node_mock,
-            ["foo2", "blah1", "bar3"],
-            "bad-param",
-            "irrelevant",
-        )
-
-        self.assertEqual(str(actual), expected)
-
-    def test_param_is_not_dynamic(self):
-        self.node_mock.config_subcontext.side_effect = [
-            ["foo1", "foo2", "foo3"],
-            ["blah1", "blah2", "blah3"],
-            ["bar1", "bar2", "bar3"],
-        ]
-        self.node_mock.config_type.return_value = BoolConfigType(False)
-        expected = "this is a test message : Parameter is not dynamically configurable."
-
-        actual = ASInfoConfigError(
-            self.test_message,
-            "irrelevant",
-            self.node_mock,
-            ["foo2", "blah1", "bar3"],
-            "bad-param",
-            "irrelevant",
-        )
-
-        self.assertEqual(str(actual), expected)
-
-    def test_invalid_value(self):
-        self.node_mock.config_subcontext.side_effect = [
-            ["foo1", "foo2", "foo3"],
-            ["blah1", "blah2", "blah3"],
-            ["bar1", "bar2", "bar3"],
-        ]
-        self.node_mock.config_type.return_value = IntConfigType(
-            0,
-            10,
-            True,
-        )
-        expected = "this is a test message : Invalid value for Int(min: 0, max: 10)."
-
-        actual = ASInfoConfigError(
-            self.test_message,
-            "irrelevant",
-            self.node_mock,
-            ["foo2", "blah1", "bar3"],
-            "good-param",
-            -2,
-        )
-
-        self.assertEqual(str(actual), expected)
-
-    def test_unknown_error(self):
-        """
-        This is when the server sends back ambiguous error message but a problem could not
-        be found with context, param, or value.
-        """
-        self.node_mock.config_subcontext.side_effect = [
-            ["foo1", "foo2", "foo3"],
-            ["blah1", "blah2", "blah3"],
-            ["bar1", "bar2", "bar3"],
-        ]
-        self.node_mock.config_type.return_value = IntConfigType(
-            0,
-            10,
-            True,
-        )
-        expected = "this is a test message : this-is-the-reason."
-
-        actual = ASInfoConfigError(
-            self.test_message,
-            "error::this-is-the-reason",
-            self.node_mock,
-            ["foo2", "blah1", "bar3"],
-            "good-param",
-            5,
-        )
-
-        self.assertEqual(str(actual), expected)
-
-    def test_error_with_message(self):
-        """
-        This is when the server sends back error message with a reason AND a problem
-        could not be found with context, param, or value.
-        """
-        self.node_mock.config_subcontext.side_effect = [
-            ["foo1", "foo2", "foo3"],
-            ["blah1", "blah2", "blah3"],
-            ["bar1", "bar2", "bar3"],
-        ]
-        self.node_mock.config_type.return_value = IntConfigType(
-            0,
-            10,
-            True,
-        )
-        expected = "this is a test message : Unknown error occurred."
-
-        actual = ASInfoConfigError(
-            self.test_message,
-            "error",
-            self.node_mock,
-            ["foo2", "blah1", "bar3"],
-            "good-param",
-            5,
-        )
-
-        self.assertEqual(str(actual), expected)
 
 
 class NodeTest(unittest.TestCase):
@@ -293,6 +85,68 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(n.fqdn, "host.domain.local", "FQDN is not correct")
         self.assertEqual(n.port, 4567, "Port is not correct")
         self.assertEqual(n.node_id, "A00000000000000", "Node Id is not correct")
+
+    def test_login_returns_true_if_user_is_none(self):
+        self.node.user = None
+        self.node.auth_mode = constants.AuthMode.INTERNAL
+
+        self.assertTrue(self.node.login())
+
+    def test_login_returns_true_if_session_has_not_expired(self):
+        self.node.auth_mode = constants.AuthMode.PKI
+        self.node.perform_login = False
+        self.node.session_expiration = time.time() + 60
+
+        self.assertTrue(self.node.login())
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    def test_login_returns_false_if_socket_cant_connect(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+        self.node.user = True
+        as_socket_mock.connect.return_value = False
+
+        self.assertFalse(self.node.login())
+
+        as_socket_mock.connect.assert_called_once()
+        as_socket_mock.close.assert_called_once()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    def test_login_raises_except_if_socket_returns_unexpected_error(
+        self, as_socket_mock
+    ):
+        as_socket_mock = as_socket_mock.return_value
+        self.node.user = True
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.side_effect = Mock(
+            side_effect=ASProtocolError(ASResponse.BAD_RATE_QUOTA, "")
+        )
+
+        util.assert_exception(self, ASProtocolError, None, self.node.login)
+
+        as_socket_mock.close.assert_called_once()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    def test_login_logs_warning_when_socket_raises_security_not_enabled(
+        self, as_socket_mock
+    ):
+        self.node.logger.warning = MagicMock()
+        as_socket_mock = as_socket_mock.return_value
+        self.node.user = True
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.side_effect = Mock(
+            side_effect=ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
+        )
+        as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
+
+        self.assertTrue(self.node.login())
+        self.node.logger.warning.assert_called_with(
+            ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
+        )
+        as_socket_mock.close.assert_not_called()
+        self.assertIsNone(self.node.user)
+        self.assertFalse(self.node.perform_login)
+        self.assertEqual(self.node.session_token, "token")
+        self.assertEqual(self.node.session_expiration, "session-ttl")
 
     ###### Services ######
 
@@ -707,6 +561,23 @@ class NodeTest(unittest.TestCase):
         self.info_mock.assert_called_with("health-outliers", self.ip)
         self.assertDictEqual(actual, expected)
 
+    def test_info_best_practices(self):
+        self.info_mock.return_value = "failed_best_practices=none"
+        expected = []
+
+        actual = self.node.info_best_practices()
+
+        self.info_mock.assert_called_with("best-practices", self.ip)
+        self.assertListEqual(actual, expected)
+
+        self.info_mock.return_value = "failed_best_practices=foo,bar,jar"
+        expected = ["foo", "bar", "jar"]
+
+        actual = self.node.info_best_practices()
+
+        self.info_mock.assert_called_with("best-practices", self.ip)
+        self.assertListEqual(actual, expected)
+
     def test_info_bin_statistics(self):
         self.info_mock.return_value = (
             "test:bin_names=1,bin_names_quota=2,3,name,"
@@ -748,7 +619,7 @@ class NodeTest(unittest.TestCase):
 
         actual = self.node.info_XDR_statistics()
 
-        self.assertEqual(lib.live_cluster.client.node.Node.info_build.call_count, 2)
+        self.assertEqual(lib.live_cluster.client.node.Node.info_build.call_count, 1)
         self.assertEqual(info_all_dc_statistics_mock.call_count, 1)
         self.assertEqual(actual, expected)
 
@@ -1647,7 +1518,7 @@ class NodeTest(unittest.TestCase):
         udf_actual = self.node.info_udf_list()
 
         self.assertEqual(
-            udf_actual, expected, "info_roster did not return the expected result"
+            udf_actual, expected, "info_udf_list did not return the expected result"
         )
         self.info_mock.assert_called_with("udf-list", self.ip)
 
@@ -1741,26 +1612,175 @@ class NodeTest(unittest.TestCase):
 
         roster_actual = self.node.info_roster()
 
-        self.assertEqual(
+        self.assertDictEqual(
             roster_actual, expected, "info_roster did not return the expected result"
         )
         self.info_mock.assert_called_with("roster:", self.ip)
 
-    def test_info_racks(self):
-        self.info_mock.return_value = "ns=test:rack_1=BCD10DFA9290C00,BB910DFA9290C00:rack_2=BD710DFA9290C00,BC310DFA9290C00"
+    def test_info_roster_namespace(self):
+        self.info_mock.return_value = "roster=null:pending_roster=null:observed_nodes=BB9070016AE4202,BB9060016AE4202,BB9050016AE4202,BB9040016AE4202,BB9020016AE4202"
         expected = {
-            "test": {
-                "1": {"rack-id": "1", "nodes": ["BCD10DFA9290C00", "BB910DFA9290C00"]},
-                "2": {"rack-id": "2", "nodes": ["BD710DFA9290C00", "BC310DFA9290C00"]},
-            }
+            "observed_nodes": [
+                "BB9070016AE4202",
+                "BB9060016AE4202",
+                "BB9050016AE4202",
+                "BB9040016AE4202",
+                "BB9020016AE4202",
+            ],
+            "pending_roster": [],
+            "roster": [],
         }
 
-        racks_actual = self.node.info_racks()
+        roster_actual = self.node.info_roster_namespace("test")
 
-        self.info_mock.assert_called_with("racks:", self.ip)
-        self.assertEqual(
-            racks_actual, expected, "info_racks did not return the expected result"
+        self.assertDictEqual(
+            roster_actual, expected, "info_roster did not return the expected result"
         )
+        self.info_mock.assert_called_with("roster:namespace=test", self.ip)
+
+    def test_info_cluster_stable(self):
+        self.info_mock.return_value = "ABCDEFG"
+        expected = "ABCDEFG"
+
+        actual = self.node.info_cluster_stable(
+            cluster_size=3, namespace="bar", ignore_migrations=True
+        )
+
+        self.info_mock.assert_called_with(
+            "cluster-stable:size=3;namespace=bar;ignore_migrations=true", self.ip
+        )
+        self.assertEqual(
+            actual,
+            expected,
+            "info_cluster_stable did not return the expected result",
+        )
+
+    def test_info_cluster_stable_with_errors(self):
+        self.info_mock.return_value = "ERROR::cluster-not-specified-size"
+        expected = ASInfoClusterStableError(
+            "Cluster is unstable", "ERROR::cluster-not-specified-size"
+        )
+
+        actual = self.node.info_cluster_stable(cluster_size=3, namespace="bar")
+
+        self.info_mock.assert_called_with(
+            "cluster-stable:size=3;namespace=bar", self.ip
+        )
+        self.assertEqual(
+            actual,
+            expected,
+            "info_cluster_stable did not return the expected result",
+        )
+
+        self.info_mock.return_value = "ERROR::unstable-cluster"
+        expected = ASInfoClusterStableError(
+            "Cluster is unstable", "ERROR::unstable-cluster"
+        )
+
+        actual = self.node.info_cluster_stable(cluster_size=3, namespace="bar")
+
+        self.info_mock.assert_called_with(
+            "cluster-stable:size=3;namespace=bar", self.ip
+        )
+        self.assertEqual(
+            actual,
+            expected,
+            "info_cluster_stable did not return the expected result",
+        )
+
+        self.info_mock.return_value = "ERROR::foo"
+        expected = ASInfoError("Failed to check cluster stability", "ERROR::foo")
+
+        actual = self.node.info_cluster_stable(namespace="bar")
+
+        self.info_mock.assert_called_with("cluster-stable:namespace=bar", self.ip)
+        self.assertEqual(
+            actual,
+            expected,
+            "info_cluster_stable did not return the expected result",
+        )
+
+    def test_info_racks(self):
+        class TestCase:
+            def __init__(self, return_val, expected):
+                self.return_val = return_val
+                self.expected = expected
+
+        test_cases = [
+            TestCase(
+                "ns=test:rack_1=BCD10DFA9290C00,BB910DFA9290C00:rack_2=BD710DFA9290C00,BC310DFA9290C00",
+                {
+                    "test": {
+                        "1": {
+                            "rack-id": "1",
+                            "nodes": ["BCD10DFA9290C00", "BB910DFA9290C00"],
+                        },
+                        "2": {
+                            "rack-id": "2",
+                            "nodes": ["BD710DFA9290C00", "BC310DFA9290C00"],
+                        },
+                    }
+                },
+            ),
+            TestCase(
+                "ns=test:roster_rack_1=BCD10DFA9290C00,BB910DFA9290C00:roster_rack_2=BD710DFA9290C00,BC310DFA9290C00",
+                {
+                    "test": {
+                        "1": {
+                            "rack-id": "1",
+                            "nodes": ["BCD10DFA9290C00", "BB910DFA9290C00"],
+                        },
+                        "2": {
+                            "rack-id": "2",
+                            "nodes": ["BD710DFA9290C00", "BC310DFA9290C00"],
+                        },
+                    }
+                },
+            ),
+            TestCase(
+                "ns=test:roster_rack_1=BCD10DFA9290C00,BB910DFA9290C00:roster_rack_2=BD710DFA9290C00,BC310DFA9290C00:rack_1=BCD10DFA9290C00,BB910DFA9290C00:rack_2=BD710DFA9290C00,BC310DFA9290C00",
+                {
+                    "test": {
+                        "1": {
+                            "rack-id": "1",
+                            "nodes": ["BCD10DFA9290C00", "BB910DFA9290C00"],
+                        },
+                        "2": {
+                            "rack-id": "2",
+                            "nodes": ["BD710DFA9290C00", "BC310DFA9290C00"],
+                        },
+                    }
+                },
+            ),
+            TestCase(
+                "ns=test:rack_1=BCD10DFA9290C00,BB910DFA9290C00:roster_rack_2=BD710DFA9290C00,BC310DFA9290C00;ns=bar:roster_rack_1=BCD10DFA9290C00,BB910DFA9290C00:rack_2=BD710DFA9290C00,BC310DFA9290C00",
+                {
+                    "test": {
+                        "2": {
+                            "rack-id": "2",
+                            "nodes": ["BD710DFA9290C00", "BC310DFA9290C00"],
+                        },
+                    },
+                    "bar": {
+                        "1": {
+                            "rack-id": "1",
+                            "nodes": ["BCD10DFA9290C00", "BB910DFA9290C00"],
+                        },
+                    },
+                },
+            ),
+        ]
+
+        for tc in test_cases:
+            with self.subTest(return_val=tc.return_val):
+                self.info_mock.return_value = tc.return_val
+                racks_actual = self.node.info_racks()
+                self.info_mock.assert_called_with("racks:", self.ip)
+                self.assertDictEqual(
+                    racks_actual,
+                    tc.expected,
+                    "info_racks did not return the expected result",
+                )
 
     def test_info_rack_ids(self):
         self.info_mock.return_value = "test:0;bar:1;foo:"
@@ -3235,6 +3255,188 @@ class NodeTest(unittest.TestCase):
             str(actual),
             "Failed to undo quiesce : Unknown error occurred.",
         )
+
+    def test_info_jobs(self):
+        self.info_mock.return_value = (
+            "module=scan:trid=123:ns=test;module=query:trid=456:ns=bar"
+        )
+        expected = {
+            "123": {"trid": "123", "module": "scan", "ns": "test"},
+            "456": {"trid": "456", "module": "query", "ns": "bar"},
+        }
+
+        actual = self.node.info_jobs("scan")
+
+        self.info_mock.assert_called_with("jobs:module=scan", self.ip)
+        self.assertDictEqual(actual, expected)
+
+    def test_jobs_helper_uses_new(self):
+        self.node.features = ["query_show"]
+        self.info_mock.return_value = "foo"
+        old = "old"
+        new = "new"
+
+        actual = self.node._jobs_helper(old, new)
+
+        self.info_mock.assert_called_with("new", self.ip)
+        self.assertEqual(actual, "foo")
+
+    def test_jobs_helper_uses_old(self):
+        self.info_mock.return_value = "foo"
+        old = "old"
+        new = "new"
+
+        actual = self.node._jobs_helper(old, new)
+
+        self.info_mock.assert_called_with("old", self.ip)
+        self.assertEqual(actual, "foo")
+
+    def test_info_query_show(self):
+        self.node._jobs_helper = MagicMock()
+        self.node._jobs_helper.return_value = (
+            "module=query:trid=123:ns=test;module=query:trid=456:ns=bar"
+        )
+        expected = {
+            "123": {"trid": "123", "module": "query", "ns": "test"},
+            "456": {"trid": "456", "module": "query", "ns": "bar"},
+        }
+
+        actual = self.node.info_query_show()
+
+        self.node._jobs_helper.assert_called_with("jobs:module=query", "query-show")
+        self.assertDictEqual(actual, expected)
+
+    def test_info_scan_show(self):
+        self.node._jobs_helper = MagicMock()
+        self.node._jobs_helper.return_value = (
+            "module=scan:trid=123:ns=test;module=scan:trid=456:ns=bar"
+        )
+        expected = {
+            "123": {"trid": "123", "module": "scan", "ns": "test"},
+            "456": {"trid": "456", "module": "scan", "ns": "bar"},
+        }
+
+        actual = self.node.info_scan_show()
+
+        self.node._jobs_helper.assert_called_with("jobs:module=scan", "scan-show")
+        self.assertDictEqual(actual, expected)
+
+    def test_info_jobs_kill(self):
+        self.info_mock.return_value = "OK"
+
+        actual = self.node.info_jobs_kill("foo", "123")
+
+        self.info_mock.assert_called_with(
+            "jobs:module=foo;cmd=kill-job;trid=123", self.ip
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    def test_info_jobs_kill_returns_error(self):
+        self.info_mock.return_value = "not Ok"
+        expected = ASInfoError("Failed to kill job", "not Ok")
+
+        actual = self.node.info_jobs_kill("foo", "123")
+
+        self.info_mock.assert_called_with(
+            "jobs:module=foo;cmd=kill-job;trid=123", self.ip
+        )
+        self.assertEqual(actual, expected)
+
+    def test_info_scan_abort(self):
+        self.node._jobs_helper = MagicMock()
+        self.node._jobs_helper.return_value = "OK"
+        expected = ASINFO_RESPONSE_OK
+
+        actual = self.node.info_scan_abort("123")
+
+        self.node._jobs_helper.assert_called_with(
+            "jobs:module=scan;cmd=kill-job;trid=123", "scan-abort:trid=123"
+        )
+        self.assertEqual(actual, expected)
+
+    def test_info_scan_abort_returns_error(self):
+        self.node._jobs_helper = MagicMock()
+        self.node._jobs_helper.return_value = "not Ok"
+        expected = ASInfoError("Failed to kill job", "not Ok")
+
+        actual = self.node.info_scan_abort("123")
+
+        self.node._jobs_helper.assert_called_with(
+            "jobs:module=scan;cmd=kill-job;trid=123", "scan-abort:trid=123"
+        )
+        self.assertEqual(actual, expected)
+
+    def test_info_query_abort(self):
+        self.node._jobs_helper = MagicMock()
+        self.node._jobs_helper.return_value = "OK"
+        expected = ASINFO_RESPONSE_OK
+
+        actual = self.node.info_query_abort("123")
+
+        self.node._jobs_helper.assert_called_with(
+            "jobs:module=query;cmd=kill-job;trid=123", "query-abort:trid=123"
+        )
+        self.assertEqual(actual, expected)
+
+    def test_info_query_abort_returns_error(self):
+        self.node._jobs_helper = MagicMock()
+        self.node._jobs_helper.return_value = "not Ok"
+        expected = ASInfoError("Failed to kill job", "not Ok")
+
+        actual = self.node.info_query_abort("123")
+
+        self.node._jobs_helper.assert_called_with(
+            "jobs:module=query;cmd=kill-job;trid=123", "query-abort:trid=123"
+        )
+        self.assertEqual(actual, expected)
+
+    def test_async_abort_all_helper(self):
+        def show_func():
+            return {
+                "123": {"trid": "123", "module": "query", "status": "done"},
+                "456": {"trid": "456", "module": "query", "status": "running"},
+                "789": {"trid": "456", "module": "query", "status": "running"},
+            }
+
+        def abort_func(trid):
+            if trid == 456:
+                time.sleep(0.5)
+
+            return ASINFO_RESPONSE_OK
+
+        expected = 2
+
+        actual = self.node._async_abort_all_helper(show_func, abort_func)
+
+        self.assertEqual(actual, expected)
+
+    def test_info_jobs_kill_all(self):
+        self.node._async_abort_all_helper = MagicMock()
+        self.node._async_abort_all_helper.return_value = 5
+        expected = "ok - number of sindex-builders killed: 5"
+
+        actual = self.node.info_jobs_kill_all("sindex-builder")
+
+        self.assertEqual(actual, expected)
+
+    def test_info_scan_abort_all_with_feature_present(self):
+        self.node.features = ["query-show"]
+        self.info_mock.return_value = "OK - number of scans killed: 7"
+        expected = "ok - number of scans killed: 7"
+
+        actual = self.node.info_scan_abort_all()
+
+        self.info_mock.assert_called_with("scan-abort-all:", self.ip)
+        self.assertEqual(actual, expected)
+
+    def test_info_scan_abort_all_with_feature_present_and_error(self):
+        self.node.features = ["query-show"]
+        self.info_mock.return_value = "error"
+        expected = ASInfoError("Failed to abort all scans", "error")
+
+        actual = self.node.info_scan_abort_all()
+
+        self.assertEqual(actual, expected)
 
     @patch("lib.live_cluster.client.assocket.ASSocket.create_user")
     @patch("lib.live_cluster.client.node.Node._get_connection")

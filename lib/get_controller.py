@@ -243,34 +243,38 @@ class GetConfigController:
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_all(self, flip=True, nodes="all"):
+    def get_all(self, nodes="all"):
         futures = [
             (
                 "service",
-                (util.Future(self.get_service, flip=flip, nodes=nodes).start()),
+                (util.Future(self.get_service, nodes=nodes).start()),
             ),
             (
                 "namespace",
-                (util.Future(self.get_namespace, flip=flip, nodes=nodes).start()),
+                (util.Future(self.get_namespace, nodes=nodes).start()),
             ),
             (
                 "network",
-                (util.Future(self.get_network, flip=flip, nodes=nodes).start()),
+                (util.Future(self.get_network, nodes=nodes).start()),
             ),
-            ("xdr", (util.Future(self.get_xdr, flip=flip, nodes=nodes).start())),
-            ("dc", (util.Future(self.get_dc, flip=flip, nodes=nodes).start())),
+            ("xdr", (util.Future(self.get_xdr, nodes=nodes).start())),
+            ("dc", (util.Future(self.get_dc, nodes=nodes).start())),
             (
                 "cluster",
-                (util.Future(self.get_cluster, flip=flip, nodes=nodes).start()),
+                (util.Future(self.get_cluster, nodes=nodes).start()),
             ),
-            ("roster", (util.Future(self.get_roster, flip=flip, nodes=nodes).start())),
-            ("racks", (util.Future(self.get_racks, flip=flip, nodes=nodes).start())),
+            ("roster", (util.Future(self.get_roster, nodes=nodes).start())),
+            ("racks", (util.Future(self.get_racks, nodes=nodes).start())),
+            (
+                "rack-ids",
+                (util.Future(self.get_rack_ids, nodes=nodes).start()),
+            ),
         ]
         config_map = dict(((k, f.result()) for k, f in futures))
 
         return config_map
 
-    def get_service(self, flip=True, nodes="all"):
+    def get_service(self, nodes="all"):
         service_configs = self.cluster.info_get_config(nodes=nodes, stanza="service")
         for node in service_configs:
             if isinstance(service_configs[node], Exception):
@@ -278,7 +282,7 @@ class GetConfigController:
 
         return service_configs
 
-    def get_network(self, flip=True, nodes="all"):
+    def get_network(self, nodes="all"):
         hb_configs = util.Future(
             self.cluster.info_get_config, nodes=nodes, stanza="network.heartbeat"
         ).start()
@@ -322,12 +326,9 @@ class GetConfigController:
 
         return network_configs
 
-    def get_namespace(self, flip=True, nodes="all", for_mods=[]):
-        namespaces = util.Future(self.cluster.info_namespaces, nodes=nodes).start()
-        # In SC mode effective rack-id is different from that in namespace config.
-        rack_ids = util.Future(self.cluster.info_rack_ids, nodes=nodes).start()
+    def get_namespace(self, flip=False, nodes="all", for_mods=[]):
+        namespaces = self.cluster.info_namespaces(nodes=nodes)
         namespace_set = set()
-        namespaces = namespaces.result()
 
         for namespace in namespaces.values():
             if isinstance(namespace, Exception):
@@ -337,14 +338,6 @@ class GetConfigController:
 
         namespace_list = util.filter_list(namespace_set, for_mods)
         ns_configs = {}
-
-        rack_ids = rack_ids.result()
-
-        if isinstance(rack_ids, Exception):
-            rack_ids = {}
-
-        rack_ids = util.flip_keys(rack_ids)
-
         ns_node_configs = {}
 
         for namespace in namespace_list:
@@ -359,21 +352,18 @@ class GetConfigController:
 
         for namespace in namespace_list:
             node_configs = ns_node_configs[namespace].result()
-            ns_rack_ids = rack_ids.get(namespace, {})
-            # print(node_configs)
+
             for node, node_config in list(node_configs.items()):
                 if (
                     not node_config
                     or isinstance(node_config, Exception)
                     or namespace not in node_config
+                    or isinstance(node_config[namespace], Exception)
                 ):
                     continue
 
                 if node not in ns_configs:
                     ns_configs[node] = {}
-
-                if "rack-id" in node_config[namespace] and node in ns_rack_ids:
-                    node_config[namespace]["rack-id"] = ns_rack_ids[node]
 
                 ns_configs[node][namespace] = node_config[namespace]
 
@@ -397,7 +387,7 @@ class GetConfigController:
         return xdr5_nodes
 
     # XDR configs >= AS Server 5.0
-    def get_xdr5(self, flip=True, nodes="all"):
+    def get_xdr5(self, nodes="all"):
         # get xdr5 nodes and remote port
         xdr_configs = {}
         xdr5_nodes = self.get_xdr5_nodes(nodes)
@@ -422,7 +412,7 @@ class GetConfigController:
         return old_xdr_nodes
 
     # XDR configs < AS Server 5.0
-    def get_old_xdr(self, flip=True, nodes="all"):
+    def get_old_xdr(self, nodes="all"):
         xdr_configs = {}
         nodes = self.get_old_xdr_nodes(nodes)
 
@@ -431,7 +421,7 @@ class GetConfigController:
 
         return self.get_xdr(nodes=nodes)
 
-    def get_xdr(self, flip=True, nodes="all"):
+    def get_xdr(self, nodes="all"):
         xdr_configs = {}
         configs = self.cluster.info_XDR_get_config(nodes=nodes)
 
@@ -444,7 +434,7 @@ class GetConfigController:
 
         return xdr_configs
 
-    def get_dc(self, flip=True, nodes="all"):
+    def get_dc(self, flip=False, nodes="all"):
         configs = self.cluster.info_dc_get_config(nodes=nodes)
         for node in configs:
             if isinstance(configs[node], Exception):
@@ -463,7 +453,7 @@ class GetConfigController:
 
         return dc_configs
 
-    def get_cluster(self, flip=True, nodes="all"):
+    def get_cluster(self, nodes="all"):
 
         configs = util.Future(
             self.cluster.info_get_config, nodes=nodes, stanza="cluster"
@@ -480,12 +470,10 @@ class GetConfigController:
 
         return cl_configs
 
-    def get_roster(self, flip=True, nodes="all"):
-
-        configs = util.Future(self.cluster.info_roster, nodes=nodes).start()
-
-        configs = configs.result()
+    def get_roster(self, flip=False, nodes="all"):
+        configs = self.cluster.info_roster(nodes=nodes)
         roster_configs = {}
+
         if configs:
             for node, config in configs.items():
                 if not config or isinstance(config, Exception):
@@ -493,26 +481,42 @@ class GetConfigController:
 
                 roster_configs[node] = config
 
-            if flip:
-                roster_configs = util.flip_keys(roster_configs)
+        if flip:
+            roster_configs = util.flip_keys(roster_configs)
 
         return roster_configs
 
-    def get_racks(self, flip=True, nodes="all"):
+    def get_racks(self, flip=False, nodes="all"):
         configs = self.cluster.info_racks(nodes=nodes)
         rack_configs = {}
+
+        if configs:
+            for node, config in configs.items():
+                if isinstance(config, Exception):
+                    continue
+
+                rack_configs[node] = config
+
+        if flip:
+            rack_configs = util.flip_keys(rack_configs)
+
+        return rack_configs
+
+    def get_rack_ids(self, flip=False, nodes="all"):
+        configs = self.cluster.info_rack_ids(nodes=nodes)
+        rack_ids = {}
 
         if configs:
             for node, config in configs.items():
                 if not config or isinstance(config, Exception):
                     continue
 
-                rack_configs[node] = config
+                rack_ids[node] = config
 
-            if flip:
-                rack_configs = util.flip_keys(rack_configs)
+        if flip:
+            rack_ids = util.flip_keys(rack_ids)
 
-        return rack_configs
+        return rack_ids
 
 
 class GetStatisticsController:
@@ -521,8 +525,14 @@ class GetStatisticsController:
 
     def get_all(self, nodes="all"):
         futures = [
-            ("service", (util.Future(self.get_service, nodes=nodes).start())),
-            ("namespace", (util.Future(self.get_namespace, nodes=nodes).start())),
+            (
+                "service",
+                (util.Future(self.get_service, nodes=nodes).start()),
+            ),
+            (
+                "namespace",
+                (util.Future(self.get_namespace, nodes=nodes).start()),
+            ),
             ("set", (util.Future(self.get_sets, nodes=nodes).start())),
             ("bin", (util.Future(self.get_bins, nodes=nodes).start())),
             ("sindex", (util.Future(self.get_sindex, nodes=nodes).start())),
@@ -537,7 +547,7 @@ class GetStatisticsController:
         service_stats = self.cluster.info_statistics(nodes=nodes)
         return service_stats
 
-    def get_namespace(self, nodes="all", for_mods=[]):
+    def get_namespace(self, flip=False, nodes="all", for_mods=[]):
         namespaces = self.cluster.info_namespaces(nodes=nodes)
         namespace_set = set()
 
@@ -562,17 +572,28 @@ class GetStatisticsController:
         for namespace, stat_future in futures:
             ns_stats[namespace] = stat_future.result()
 
-            for _k in list(ns_stats[namespace].keys()):
-                if not ns_stats[namespace][_k]:
-                    ns_stats[namespace].pop(_k)
+            for node in list(ns_stats[namespace].keys()):
+                if not ns_stats[namespace][node] or isinstance(
+                    ns_stats[namespace][node], Exception
+                ):
+                    ns_stats[namespace].pop(node)
+
+        # Inverted match common structure of other getters, i.e. host is top level key
+        if not flip:
+            return util.flip_keys(ns_stats)
 
         return ns_stats
 
-    def get_sindex(self, nodes="all", for_mods=[]):
+    def get_sindex(self, flip=False, nodes="all", for_mods=[]):
         sindex_stats = get_sindex_stats(self.cluster, nodes, for_mods)
+
+        # Inverted match common structure of other getters, i.e. host is top level key
+        if not flip:
+            return util.flip_keys(sindex_stats)
+
         return sindex_stats
 
-    def get_sets(self, nodes="all", for_mods=[]):
+    def get_sets(self, flip=False, nodes="all", for_mods=[]):
         sets = self.cluster.info_all_set_statistics(nodes=nodes)
 
         set_stats = {}
@@ -607,9 +628,13 @@ class GetStatisticsController:
                 hv = host_vals[host_id]
                 hv.update(values)
 
+        # Inverted match common structure of other getters, i.e. host is top level key
+        if not flip:
+            return util.flip_keys(set_stats)
+
         return set_stats
 
-    def get_bins(self, nodes="all", for_mods=[]):
+    def get_bins(self, flip=False, nodes="all", for_mods=[]):
         bin_stats = self.cluster.info_bin_statistics(nodes=nodes)
         new_bin_stats = {}
 
@@ -632,13 +657,17 @@ class GetStatisticsController:
 
                 node_stats.update(stats)
 
+        # Inverted match common structure of other getters, i.e. host is top level key
+        if not flip:
+            return util.flip_keys(new_bin_stats)
+
         return new_bin_stats
 
     def get_xdr(self, nodes="all"):
         xdr_stats = self.cluster.info_XDR_statistics(nodes=nodes)
         return xdr_stats
 
-    def get_dc(self, nodes="all"):
+    def get_dc(self, flip=False, nodes="all"):
         all_dc_stats = self.cluster.info_all_dc_statistics(nodes=nodes)
         dc_stats = {}
         for host, stats in all_dc_stats.items():
@@ -652,6 +681,11 @@ class GetStatisticsController:
                     dc_stats[dc][host].update(stat)
                 except KeyError:
                     dc_stats[dc][host] = stat
+
+        # Inverted match common structure of other getters, i.e. host is top level key
+        if not flip:
+            return util.flip_keys(dc_stats)
+
         return dc_stats
 
     def _check_key_for_gt(self, d={}, keys=(), v=0, is_and=False, type_check=int):
@@ -890,7 +924,9 @@ class GetPmapController:
             self.cluster.info, "partition-info", nodes=nodes
         ).start()
         service_stats = util.Future(getter.get_service, nodes=nodes).start()
-        namespace_stats = util.Future(getter.get_namespace, nodes=nodes).start()
+        namespace_stats = util.Future(
+            getter.get_namespace, flip=True, nodes=nodes
+        ).start()
 
         service_stats = service_stats.result()
 
@@ -955,3 +991,63 @@ class GetSIndexController:
     def get_sindexs(self, nodes="all"):
         sindex_data = self.cluster.info_sindex(nodes=nodes)
         return sindex_data
+
+
+class GetJobsController:
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_all(self, flip=False, nodes="all"):
+        futures = [
+            (constants.JobType.SCAN, util.Future(self.get_scans, nodes=nodes).start()),
+            (constants.JobType.QUERY, util.Future(self.get_query, nodes=nodes).start()),
+            (
+                constants.JobType.SINDEX_BUILDER,
+                util.Future(self.get_sindex_builder, nodes=nodes).start(),
+            ),
+        ]
+        job_map = dict(((k, f.result()) for k, f in futures))
+
+        if flip:
+            job_map = util.flip_keys(job_map)
+
+        return job_map
+
+    def get_scans(self, nodes="all"):
+        scan_data = self.cluster.info_scan_show(nodes=nodes)
+
+        for host, data in list(scan_data.items()):
+            if isinstance(data, Exception):
+                del scan_data[host]
+
+        return scan_data
+
+    def get_query(self, nodes="all"):
+        query_data = self.cluster.info_query_show(nodes=nodes)
+
+        for host, data in list(query_data.items()):
+            if isinstance(data, Exception):
+                del query_data[host]
+
+        return query_data
+
+    def get_sindex_builder(self, nodes="all"):
+        sindex_builder_data = self.cluster.info_jobs(
+            module="sindex-builder", nodes=nodes
+        )
+
+        for host, data in list(sindex_builder_data.items()):
+            if isinstance(data, Exception):
+                del sindex_builder_data[host]
+
+        return sindex_builder_data
+
+
+# TODO: Use the GetConfigController instead.
+class GetRosterController:
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_roster(self, nodes="all"):
+        roster_data = self.cluster.info_roster(nodes=nodes)
+        return roster_data

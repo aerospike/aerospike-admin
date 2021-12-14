@@ -12,17 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from mock.mock import MagicMock, call
 from lib.base_controller import ShellException
 import unittest
 from mock import patch
 
 from lib.live_cluster.show_controller import (
     ShowBestPracticesController,
+    ShowJobsController,
+    ShowRacksController,
+    ShowRosterController,
     ShowStatisticsController,
     ShowUsersController,
 )
 from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
-from lib.live_cluster.client.info import ASProtocolError, ASResponse
+from lib.live_cluster.client import ASProtocolError, ASResponse
 from test.unit import util as test_util
 
 
@@ -127,7 +131,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
         self.controller.execute(line)
 
         self.getter_mock.get_sindex.assert_called_with(
-            nodes=[node_addr], for_mods=[for_]
+            flip=True, nodes=[node_addr], for_mods=[for_]
         )
         self.assertEqual(view_mock.show_stats.call_count, 3)
 
@@ -169,7 +173,9 @@ class ShowStatisticsControllerTest(unittest.TestCase):
 
         self.controller.execute(line)
 
-        self.getter_mock.get_sets.assert_called_with(nodes=[node_addr], for_mods=[for_])
+        self.getter_mock.get_sets.assert_called_with(
+            flip=True, nodes=[node_addr], for_mods=[for_]
+        )
         self.assertEqual(view_mock.show_stats.call_count, 3)
 
         for namespace, set_ in stats:
@@ -210,7 +216,9 @@ class ShowStatisticsControllerTest(unittest.TestCase):
 
         self.controller.execute(line)
 
-        self.getter_mock.get_bins.assert_called_with(nodes=[node_addr], for_mods=[for_])
+        self.getter_mock.get_bins.assert_called_with(
+            flip=True, nodes=[node_addr], for_mods=[for_]
+        )
         self.assertEqual(view_mock.show_stats.call_count, 3)
 
         for namespace in stats:
@@ -329,9 +337,6 @@ class ShowBestPracticesControllerTest(unittest.TestCase):
             "lib.base_controller.BaseController.view.show_best_practices"
         ).start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
-        self.controller.mods = {}
-
-        self.addCleanup(patch.stopall)
 
     def test_full_support(self):
         resp = {
@@ -370,3 +375,149 @@ class ShowBestPracticesControllerTest(unittest.TestCase):
         self.view_mock.assert_called_with(
             self.cluster_mock, resp, **self.controller.mods
         )
+
+
+class ShowJobsControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ShowJobsController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.show_controller.ShowJobsController.cluster"
+        ).start()
+        self.view_mock = patch(
+            "lib.base_controller.BaseController.view.show_jobs"
+        ).start()
+        self.controller.getter = MagicMock()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+
+    def test_default(self):
+        self.controller.getter.get_scans.return_value = "scans"
+        self.controller.getter.get_query.return_value = "queries"
+        self.controller.getter.get_sindex_builder.return_value = "sindex-builder"
+
+        self.controller.execute([])
+
+        self.controller.getter.get_scans.assert_called_with(nodes="all")
+        self.controller.getter.get_query.assert_called_with(nodes="all")
+        self.controller.getter.get_sindex_builder.assert_called_with(nodes="all")
+        self.view_mock.assert_has_calls(
+            [
+                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+                call(
+                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                ),
+                call(
+                    "SIndex Builder Jobs",
+                    self.cluster_mock,
+                    "sindex-builder",
+                    **self.controller.mods,
+                ),
+            ]
+        )
+
+
+class ShowRosterControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ShowRosterController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.show_controller.ShowRosterController.cluster"
+        ).start()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetConfigController"
+        ).start()
+        self.view_mock = patch(
+            "lib.base_controller.BaseController.view.show_roster"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.controller.getter = self.getter_mock
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    def test_no_mods(self):
+        resp = {
+            "1.1.1.1": {
+                "test": {
+                    "observed_nodes": [
+                        "BB9070016AE4202",
+                        "BB9060016AE4202",
+                        "BB9050016AE4202",
+                        "BB9040016AE4202",
+                        "BB9020016AE4202",
+                    ],
+                    "ns": "test",
+                    "pending_roster": ["null"],
+                    "roster": ["null"],
+                }
+            }
+        }
+
+        self.getter_mock.get_roster.return_value = resp
+
+        self.controller.execute([])
+
+        self.getter_mock.get_roster.assert_called_with(flip=False, nodes="all")
+        self.view_mock.assert_called_with(
+            resp, self.cluster_mock, flip=False, **self.controller.mods
+        )
+
+    def test_with_flip(self):
+        resp = {
+            "1.1.1.1": {
+                "test": {
+                    "observed_nodes": [
+                        "BB9070016AE4202",
+                        "BB9060016AE4202",
+                        "BB9050016AE4202",
+                        "BB9040016AE4202",
+                        "BB9020016AE4202",
+                    ],
+                    "ns": "test",
+                    "pending_roster": ["null"],
+                    "roster": ["null"],
+                }
+            }
+        }
+
+        self.getter_mock.get_roster.return_value = resp
+
+        self.controller.execute(["-flip"])
+
+        self.getter_mock.get_roster.assert_called_with(flip=False, nodes="all")
+        self.view_mock.assert_called_with(
+            resp, self.cluster_mock, flip=True, **self.controller.mods
+        )
+
+
+class ShowRacksControllerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
+        self.root_controller = LiveClusterRootController()
+        self.controller = ShowRacksController()
+        self.cluster_mock = patch(
+            "lib.live_cluster.show_controller.ShowRacksController.cluster"
+        ).start()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetConfigController"
+        ).start()
+        self.view_mock = patch(
+            "lib.base_controller.BaseController.view.show_racks"
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.controller.getter = self.getter_mock
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    def test_default(self):
+        resp = {"1.1.1.1": "FOO"}
+
+        self.getter_mock.get_racks.return_value = resp
+
+        self.controller.execute([])
+
+        self.getter_mock.get_racks.assert_called_with(nodes="principal", flip=False)
+        self.view_mock.assert_called_with(resp, **self.controller.mods)

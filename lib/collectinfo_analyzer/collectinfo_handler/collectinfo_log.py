@@ -60,6 +60,7 @@ class _CollectinfoSnapshot:
         self.timestamp = timestamp
         self.nodes = {}
         self.node_names = {}
+        self.node_ids = {}
         self.cinfo_data = self.ns_name_fault_check(cinfo_data)
         self.cinfo_file = cinfo_file
         self.node_lookup = LookupDict()
@@ -151,6 +152,16 @@ class _CollectinfoSnapshot:
             for node_name in node_names:
                 self.node_names[node_name] = node_name
         return copy.deepcopy(self.node_names)
+
+    def get_node_ids(self, nodes=None):
+        if not self.node_ids:
+            if not self.nodes:
+                return {}
+
+            for key, node in self.nodes.items():
+                self.node_ids[key] = node.node_id
+
+        return copy.deepcopy(self.node_ids)
 
     def get_data(self, type="", stanza=""):
         data = {}
@@ -413,7 +424,10 @@ class CollectinfoLog(object):
         self.reader = reader
         self.snapshots = {}
         self.data = {}
-        full_parser.parse_info_all(files, self.data, True)
+        self.license_data_usage = {}
+        full_parser.parse_collectinfo_files(
+            files, self.data, self.license_data_usage, True
+        )
 
         if self.data:
             for ts in sorted(self.data.keys(), reverse=True):

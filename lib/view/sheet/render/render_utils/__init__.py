@@ -13,31 +13,6 @@
 # limitations under the License.
 
 
-class Aggregator(object):
-    def __init__(self, aggregator, values):
-        self.decleration = aggregator
-        self.initialized = False
-        self.result = None
-
-        for value in values:
-            self.update(value)
-
-    def update(self, value):
-        if value is None:
-            return
-
-        if not self.initialized:
-            self.initialized = True
-
-            if self.decleration.initializer is None:
-                self.result = value
-                return
-
-            self.result = self.decleration.initializer
-
-        self.result = self.decleration.func(self.result, value)
-
-
 class ErrorEntry(object):
     def __lt__(self, other):
         return False

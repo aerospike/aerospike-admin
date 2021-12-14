@@ -218,6 +218,7 @@ class Field(object):
         key=None,
         hidden=None,
         dynamic_field_decl=None,
+        allow_diff=False,
     ):
         """
         Arguments:
@@ -242,6 +243,11 @@ class Field(object):
                       False: Always hidden.
         dynamic_field_decl -- None if not from DynamicFields.
                               Otherwise DynamicFields instance.
+        allow_diff -- A non dynamic field by default does not allow diff and is always
+                      displayed. This is mutally exclusive with dynamic_field_decl.
+                      True: Allow diff.
+                      False: Don't diff.
+                      Default: False
         """
         self.title = title
         self.projector = projector
@@ -252,6 +258,7 @@ class Field(object):
         self.key = title if key is None else key
         self.hidden = hidden
         self.dynamic_field_decl = dynamic_field_decl
+        self.allow_diff = allow_diff
 
         self.has_aggregate = self.aggregator is not None
 
@@ -293,6 +300,7 @@ class DynamicFields(object):
         required=False,
         aggregator_selector=None,
         projector_selector=None,
+        converter_selector=None,
         order=DynamicFieldOrder.ascending,
     ):
         """
@@ -312,51 +320,110 @@ class DynamicFields(object):
         projector_selector -- None: Function used to select a projector. Function
                               will take the form (key) -> Projector.  If none and
                               infer_projector is false String projection is used.
+
+        Note: If a preceding non-dynamic Field uses the same key it will not be rendered
+              by a proceding DynamicField.
         """
         self.source = source
         self.infer_projectors = infer_projectors
         self.required = required
         self.projector_selector = projector_selector
         self.aggregator_selector = aggregator_selector
+        self.converter_selector = converter_selector
         self.order = order
 
         self.has_aggregate = False  # XXX - hack
 
 
 class Aggregator(object):
-    def __init__(self, aggregate_func, initializer=None, converter=None):
+    def __init__(self, aggregate_func, converter=None):
         """
         Arguments:
-        aggregate_func -- function accepts 2 arguments and returns a value.
+        aggregate_func -- aggregate function. Type determined by subclass
 
         Keyword Arguments:
-        initializer -- None : Initial value will be the first cell.
-                       Other: Initial value becomes initializer.
         converter   -- None    : Use the field's converter (if defined).
                     -- Function: Use this function to convert the result.
         """
 
         self.func = aggregate_func
-        self.initializer = initializer
         self.converter = converter
+
+    def compute(self, values):
+        raise NotImplementedError("override compute")
+
+
+class ReduceAggregator(Aggregator):
+    def __init__(self, aggregate_func, initializer=None, converter=None):
+        """
+        Arguments:
+        aggregate_func -- function accepts 2 arguments and returns a value.
+        """
+        self.initializer = initializer
+        super().__init__(aggregate_func, converter=converter)
+
+    def compute(self, values):
+        return self.reduce(values)
+
+    def reduce(self, edatas):
+        initialized = False
+        result = None
+
+        for edata in edatas:
+            edata = edata.value
+
+            if edata is None:
+                return
+
+            if not initialized:
+                initialized = True
+
+                if self.initializer is None:
+                    result = edata
+                    return
+
+                result = self.initializer
+
+            result = self.func(result, edata)
+
+        return result
+
+
+class ComplexAggregator(Aggregator):
+    def __init__(self, aggregate_func, converter=None):
+        """
+        An aggregator that takes all the entires in a group for a more complex calculation.
+
+        Arguments:
+        aggregate_func -- function accepts 1 argument of type list(EntryData) and
+        returns a value.
+        """
+        super().__init__(aggregate_func, converter=converter)
+
+    def compute(self, edatas):
+        return self.func(edatas)
 
 
 class Aggregators(object):
     @staticmethod
     def sum(initializer=0, converter=None):
-        return Aggregator(
-            lambda acc, value: acc + value, initializer=initializer, converter=converter
+        return ReduceAggregator(
+            lambda acc, value: acc + value,
+            initializer=initializer,
+            converter=converter,
         )
 
     @staticmethod
     def count(initializer=0, converter=None):
-        return Aggregator(
-            lambda acc, value: acc + 1, initializer=initializer, converter=converter
+        return ReduceAggregator(
+            lambda acc, value: acc + 1,
+            initializer=initializer,
+            converter=converter,
         )
 
     @staticmethod
     def min(initializer=None, converter=None):
-        return Aggregator(
+        return ReduceAggregator(
             lambda acc, value: acc if acc <= value else value,
             initializer=initializer,
             converter=converter,
@@ -364,7 +431,7 @@ class Aggregators(object):
 
     @staticmethod
     def max(initializer=None, converter=None):
-        return Aggregator(
+        return ReduceAggregator(
             lambda acc, value: acc if acc >= value else value,
             initializer=initializer,
             converter=converter,
@@ -374,6 +441,7 @@ class Aggregators(object):
 class BaseProjector(object):
     field_type = None  # required override
     source = None  # optional override
+    keys = None  # optional override
 
     def __init__(self, source, *keys, **kwargs):
         """
@@ -415,7 +483,7 @@ class BaseProjector(object):
     def do_project(self, sheet, sources):
         raise NotImplementedError("override do_project")
 
-    def project_raw(self, sheet, sources):
+    def project_raw(self, sheet, sources, ignore_exception=False):
         row = source_lookup(sources, self.source)
 
         if self.source in sheet.for_each:
@@ -431,7 +499,7 @@ class BaseProjector(object):
         if row is None:
             raise NoEntryException("No entry for this row")
 
-        if isinstance(row, Exception):
+        if not ignore_exception and isinstance(row, Exception):
             raise ErrorEntryException(row, "Error occurred fetching row")
 
         if self.keys is None:
@@ -603,7 +671,7 @@ class Projectors(object):
 
             return result
 
-    class Or(BaseProjector):
+    class Any(BaseProjector):
         def __init__(self, field_type, *field_projectors):
             """
             Arguments:
@@ -667,6 +735,30 @@ class Projectors(object):
 
             return self.func(*values)
 
+    class Exception(BaseProjector):
+        def __init__(self, source, *keys, **kwargs):
+            """
+            Arguments:
+            See 'BaseProjector'
+
+            Keyword Arguments:
+            filter_exc -- List of exception types to convert to strings.
+            """
+
+            super().__init__(source, *keys, **kwargs)
+            self.filter_exc = kwargs.get("filter_exc", [])
+
+        def do_project(self, sheet, sources):
+            row = self.project_raw(sheet, sources, ignore_exception=True)
+            for exc_type in self.filter_exc:
+                if isinstance(row, exc_type):
+                    return str(row)
+
+            if isinstance(row, Exception):
+                raise ErrorEntryException(row, "Error occurred fetching row")
+
+            return row
+
 
 class EntryData(object):
     def __init__(self, **kwargs):
@@ -707,7 +799,7 @@ class Converters(object):
         return Converters._file_size(edata.value, file_size.si_float)
 
     @staticmethod
-    def time(edata):
+    def time_seconds(edata):
         """
         Arguments:
         edata -- Take an 'EntryData' and returns the value as time with format
@@ -719,6 +811,16 @@ class Converters(object):
         seconds = time_stamp % 60
 
         return "{:02}:{:02}:{:02}".format(hours, minutes, seconds)
+
+    @staticmethod
+    def time_milliseconds(edata):
+        """
+        Arguments:
+        edata -- Take an 'EntryData' and returns the value as time with format
+                 HH:MM:SS.
+        """
+        edata.value = int(edata.value) / 1000
+        return Converters.time_seconds(edata)
 
     @staticmethod
     def standard(edata):

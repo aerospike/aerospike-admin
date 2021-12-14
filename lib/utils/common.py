@@ -16,6 +16,7 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyser / log-analyser)
 #############################################################################################################
 
+import datetime
 import json
 import logging
 import operator
@@ -29,8 +30,7 @@ import urllib.parse
 import zipfile
 from collections import OrderedDict
 
-from lib.utils import constants, file_size, util, version
-from lib.utils import data
+from lib.utils import constants, file_size, util, version, data
 from lib.view import terminal
 
 logger = logging.getLogger("asadm")
@@ -90,7 +90,7 @@ FEATURE_KEYS = {
         ),
         None,
     ),
-    "SINDEX": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes"), None),
+    "SIndex": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes"), None),
     "Query": (("query_reqs", "query_success"), ("query_reqs", "query_success"), None),
     "Aggregation": (
         ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
@@ -358,7 +358,7 @@ def _license_data_usage_adjustment(effective_repl, master_objects, used_bytes):
     return round((used_bytes / effective_repl) - (record_overhead * master_objects))
 
 
-def _compute_license_data_size(namespace_stats, cluster_dict):
+def _manually_compute_license_data_size(namespace_stats, cluster_dict):
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
@@ -456,7 +456,128 @@ def _compute_license_data_size(namespace_stats, cluster_dict):
 
         cl_unique_data += ns_unique_data
 
-    cluster_dict["license_data"] = int(round(cl_unique_data))
+    cluster_dict["license_data"] = {}
+    cluster_dict["license_data"]["latest"] = int(round(cl_unique_data))
+
+
+def _parse_agent_response(license_usage, cluster_dict):
+    entries = license_usage["entries"]
+    count = 0
+    avg_usage = 0
+    min_usage = float("inf")
+    max_usage = 0
+    latest_usage = 0
+
+    for entry in entries:
+        if entry["level"] == "info":
+            count += 1
+            data_bytes = entry["unique_data_bytes"]
+            avg_usage += data_bytes
+            min_usage = min(data_bytes, min_usage)
+            max_usage = max(data_bytes, max_usage)
+            latest_usage = data_bytes
+
+    if count != 0:
+        avg_usage /= count
+    else:
+        latest_usage = None
+        avg_usage = None
+        min_usage = None
+        max_usage = None
+
+    cluster_dict["license_data"] = {}
+    cluster_dict["license_data"]["latest"] = latest_usage
+    cluster_dict["license_data"]["avg"] = avg_usage
+    cluster_dict["license_data"]["min"] = min_usage
+    cluster_dict["license_data"]["max"] = max_usage
+
+
+def compute_license_data_size(namespace_stats, license_data_usage, cluster_dict):
+    try:
+        license_usage = license_data_usage["license_usage"]
+
+        if license_usage["count"] != 0:
+            _parse_agent_response(license_usage, cluster_dict)
+        else:
+            _manually_compute_license_data_size(namespace_stats, cluster_dict)
+            return
+
+    # KeyError if unique_data_usage == {} or an error was returned from request
+    except (KeyError, TypeError):
+        _manually_compute_license_data_size(namespace_stats, cluster_dict)
+        return
+
+
+def request_license_usage(agent_host, agent_port):
+    json_data = {
+        "license_usage": {},
+        "agent_health": {},
+    }
+    error = None
+
+    a_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        days=365
+    )
+    a_year_ago = a_year_ago.isoformat()
+    url_entries = urllib.parse.urlunparse(
+        (
+            "http",
+            agent_host + ":" + str(agent_port),
+            "v1/entries/range/time",
+            "",
+            urllib.parse.urlencode((("start", a_year_ago),)),
+            "",
+        )
+    )
+    url_health = urllib.parse.urlunparse(
+        (
+            "http",
+            agent_host + ":" + str(agent_port),
+            "v1/health",
+            "",
+            "",
+            "",
+        )
+    )
+
+    req_entries = urllib.request.Request(url_entries)
+    req_health = urllib.request.Request(url_health)
+
+    res_health = util.Future(urllib.request.urlopen, req_health, timeout=5).start()
+    res_entries = util.Future(urllib.request.urlopen, req_entries, timeout=5).start()
+
+    try:
+        res_health = res_health.result()
+
+        if res_health is not None:
+            body = res_health.read().decode()
+            json_data["agent_health"] = json.loads(body)
+        else:
+            json_data["agent_health"] = {}
+            error = "Unable to connect"
+    except Exception as e:
+        json_data["agent_health"] = str(e)
+        error = e
+
+    try:
+        res_entries = res_entries.result()
+
+        if res_entries is not None:
+            body = res_entries.read().decode()
+            json_data["license_usage"] = json.loads(body)
+        else:
+            json_data["license_usage"] = {}
+            error = "Unable to connect"
+    except Exception as e:
+        json_data["license_usage"] = str(e)
+
+        if error is None or isinstance(error, str):
+            error = e
+
+    return json_data, error
+
+
+request_license_usage = util.cached(request_license_usage, ttl=30)
 
 
 def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
@@ -499,15 +620,14 @@ def _initialize_summary_output(ns_list):
     summary_dict["CLUSTER"]["active_features"] = []
     summary_dict["CLUSTER"]["migrations_in_progress"] = False
 
+    # Could be pmem or ssd devices
+    summary_dict["CLUSTER"]["device_count"] = 0
+    summary_dict["CLUSTER"]["device_count_per_node"] = 0
+    summary_dict["CLUSTER"]["device_count_same_across_nodes"] = True
+
     summary_dict["CLUSTER"]["device"] = {}
-    summary_dict["CLUSTER"]["device"]["count"] = 0
-    summary_dict["CLUSTER"]["device"]["count_per_node"] = 0
-    summary_dict["CLUSTER"]["device"]["count_same_across_nodes"] = True
-    summary_dict["CLUSTER"]["device"]["total"] = 0
-    summary_dict["CLUSTER"]["device"]["used"] = 0
-    summary_dict["CLUSTER"]["device"]["avail"] = 0
-    summary_dict["CLUSTER"]["device"]["used_pct"] = 0
-    summary_dict["CLUSTER"]["device"]["avail_pct"] = 0
+
+    summary_dict["CLUSTER"]["pmem"] = {}
 
     summary_dict["CLUSTER"]["memory"] = {}
     summary_dict["CLUSTER"]["memory"]["total"] = 0
@@ -533,20 +653,15 @@ def _initialize_summary_output(ns_list):
         summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns][
-            "devices_count_same_across_nodes"
+            "device_count_same_across_nodes"
         ] = True
 
+        # Memory is always used regardless of configuration
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used_pct"] = 0.0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail_pct"] = 0.0
-
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_avail"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = 0.0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_avail_pct"] = 0.0
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = 0
         summary_dict["FEATURES"]["NAMESPACE"][ns]["master_objects"] = 0
@@ -564,6 +679,7 @@ def create_summary(
     service_configs={},
     ns_configs={},
     cluster_configs={},
+    license_data_usage={},
 ):
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
@@ -594,12 +710,18 @@ def create_summary(
     cl_flash_index_size_avail = 0.0
 
     cl_nodewise_device_counts = {}
+
     cl_nodewise_device_size = {}
     cl_nodewise_device_used = {}
     cl_nodewise_device_avail = {}
 
-    _compute_license_data_size(
+    cl_nodewise_pmem_size = {}
+    cl_nodewise_pmem_used = {}
+    cl_nodewise_pmem_avail = {}
+
+    compute_license_data_size(
         namespace_stats,
+        license_data_usage,
         summary_dict["CLUSTER"],
     )
     _set_migration_status(
@@ -671,27 +793,13 @@ def create_summary(
             summary_dict["FEATURES"]["NAMESPACE"][ns][
                 "devices_total"
             ] = ns_total_devices
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = int(
-                (float(ns_total_devices) / float(ns_total_nodes)) + 0.5
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = round(
+                ns_total_devices / ns_total_nodes
             )
             if len(set(device_counts.values())) > 1:
                 summary_dict["FEATURES"]["NAMESPACE"][ns][
-                    "devices_count_same_across_nodes"
+                    "device_count_same_across_nodes"
                 ] = False
-
-            device_compression_ratio = max(
-                util.get_value_from_second_level_of_dict(
-                    ns_stats,
-                    ("device_compression_ratio"),
-                    default_value=0.0,
-                    return_type=float,
-                ).values()
-            )
-
-            if device_compression_ratio > 0:
-                summary_dict["FEATURES"]["NAMESPACE"][ns][
-                    "compression_ratio"
-                ] = device_compression_ratio
 
         # Memory
         mem_size = sum(
@@ -813,46 +921,111 @@ def create_summary(
                 100.00 - flash_index_avail_pct
             )
 
-        device_size = util.get_value_from_second_level_of_dict(
-            ns_stats,
-            ("device_total_bytes", "total-bytes-disk"),
-            default_value=0,
-            return_type=int,
-        )
-        device_used = util.get_value_from_second_level_of_dict(
-            ns_stats,
-            ("device_used_bytes", "used-bytes-disk"),
-            default_value=0,
-            return_type=int,
-        )
-        device_avail_pct = util.get_value_from_second_level_of_dict(
-            ns_stats,
-            ("device_available_pct", "available_pct"),
-            default_value=0,
-            return_type=int,
-        )
-        device_avail = util.pct_to_value(device_size, device_avail_pct)
-        cl_nodewise_device_size = util.add_dicts(cl_nodewise_device_size, device_size)
-        cl_nodewise_device_used = util.add_dicts(cl_nodewise_device_used, device_used)
-        cl_nodewise_device_avail = util.add_dicts(
-            cl_nodewise_device_avail, device_avail
-        )
-        device_size_total = sum(device_size.values())
+        storage_engine_type = list(
+            util.get_value_from_second_level_of_dict(
+                ns_stats, ("storage-engine",), default_value="", return_type=str
+            ).values()
+        )[0]
 
-        if device_size_total > 0:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_total"] = device_size_total
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used"] = sum(
+        if storage_engine_type == "device":
+            device_size = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("device_total_bytes", "total-bytes-disk"),
+                default_value=0,
+                return_type=int,
+            )
+            device_used = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("device_used_bytes", "used-bytes-disk"),
+                default_value=0,
+                return_type=int,
+            )
+            device_avail_pct = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("device_available_pct", "available_pct"),
+                default_value=0,
+                return_type=int,
+            )
+            device_avail = util.pct_to_value(device_size, device_avail_pct)
+            cl_nodewise_device_size = util.add_dicts(
+                cl_nodewise_device_size, device_size
+            )
+            cl_nodewise_device_used = util.add_dicts(
+                cl_nodewise_device_used, device_used
+            )
+            cl_nodewise_device_avail = util.add_dicts(
+                cl_nodewise_device_avail, device_avail
+            )
+            device_size_total = sum(device_size.values())
+
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "device_total"
+            ] = device_size_total
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["device_used"] = sum(
                 device_used.values()
             )
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_avail"] = sum(
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["device_avail"] = sum(
                 device_avail.values()
             )
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_used_pct"] = (
-                float(sum(device_used.values())) / float(device_size_total)
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["device_used_pct"] = (
+                sum(device_used.values()) / device_size_total
             ) * 100.0
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["disk_avail_pct"] = (
-                float(sum(device_avail.values())) / float(device_size_total)
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["device_avail_pct"] = (
+                sum(device_avail.values()) / device_size_total
             ) * 100.0
+
+        elif storage_engine_type == "pmem":
+            pmem_size = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("pmem_total_bytes",),
+                default_value=0,
+                return_type=int,
+            )
+            pmem_used = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("pmem_used_bytes"),
+                default_value=0,
+                return_type=int,
+            )
+            pmem_avail_pct = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("pmem_available_pct"),
+                default_value=0,
+                return_type=int,
+            )
+            pmem_avail = util.pct_to_value(pmem_size, pmem_avail_pct)
+            cl_nodewise_pmem_size = util.add_dicts(cl_nodewise_pmem_size, pmem_size)
+            cl_nodewise_pmem_used = util.add_dicts(cl_nodewise_pmem_used, pmem_used)
+            cl_nodewise_pmem_avail = util.add_dicts(cl_nodewise_pmem_avail, pmem_avail)
+            pmem_size_total = sum(pmem_size.values())
+
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_total"] = pmem_size_total
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_used"] = sum(
+                pmem_used.values()
+            )
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_avail"] = sum(
+                pmem_avail.values()
+            )
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_used_pct"] = (
+                sum(pmem_used.values()) / pmem_size_total
+            ) * 100.0
+            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_avail_pct"] = (
+                sum(pmem_avail.values()) / pmem_size_total
+            ) * 100.0
+
+        compression_ratio = max(
+            util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("device_compression_ratio", "pmem_compression_ratio"),
+                default_value=0.0,
+                return_type=float,
+            ).values()
+        )
+
+        if compression_ratio > 0:
+            summary_dict["FEATURES"]["NAMESPACE"][ns][
+                "compression_ratio"
+            ] = compression_ratio
 
         summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = list(
             set(
@@ -918,18 +1091,18 @@ def create_summary(
 
     cl_device_counts = sum(cl_nodewise_device_counts.values())
     if cl_device_counts:
-        summary_dict["CLUSTER"]["device"]["count"] = cl_device_counts
-        summary_dict["CLUSTER"]["device"]["count_per_node"] = int(
-            (float(cl_device_counts) / float(total_nodes)) + 0.5
+        summary_dict["CLUSTER"]["device_count"] = cl_device_counts
+        summary_dict["CLUSTER"]["device_count_per_node"] = round(
+            cl_device_counts / total_nodes
         )
         if len(set(cl_nodewise_device_counts.values())) > 1:
-            summary_dict["CLUSTER"]["device"]["count_same_across_nodes"] = False
+            summary_dict["CLUSTER"]["device_count_same_across_nodes"] = False
 
     if cl_memory_size_total > 0:
         summary_dict["CLUSTER"]["memory"]["total"] = cl_memory_size_total
         summary_dict["CLUSTER"]["memory"]["avail"] = cl_memory_size_avail
         summary_dict["CLUSTER"]["memory"]["avail_pct"] = (
-            float(cl_memory_size_avail) / float(cl_memory_size_total)
+            cl_memory_size_avail / cl_memory_size_total
         ) * 100.0
         summary_dict["CLUSTER"]["memory"]["used"] = (
             cl_memory_size_total - cl_memory_size_avail
@@ -940,7 +1113,7 @@ def create_summary(
 
     if cl_pmem_index_size_total > 0:
         cl_pmem_index_size_avail_pct = (
-            float(cl_pmem_index_size_avail) / float(cl_pmem_index_size_total)
+            cl_pmem_index_size_avail / cl_pmem_index_size_total
         ) * 100.0
         summary_dict["CLUSTER"]["pmem_index"]["total"] = cl_pmem_index_size_total
         summary_dict["CLUSTER"]["pmem_index"]["avail"] = cl_pmem_index_size_avail
@@ -956,7 +1129,7 @@ def create_summary(
 
     if cl_flash_index_size_total > 0:
         cl_flash_index_size_avail_pct = (
-            float(cl_flash_index_size_avail) / float(cl_flash_index_size_total)
+            cl_flash_index_size_avail / cl_flash_index_size_total
         ) * 100.0
         summary_dict["CLUSTER"]["flash_index"]["total"] = cl_flash_index_size_total
         summary_dict["CLUSTER"]["flash_index"]["avail"] = cl_flash_index_size_avail
@@ -980,10 +1153,22 @@ def create_summary(
             cl_nodewise_device_avail.values()
         )
         summary_dict["CLUSTER"]["device"]["used_pct"] = (
-            float(sum(cl_nodewise_device_used.values())) / float(cl_device_size_total)
+            sum(cl_nodewise_device_used.values()) / cl_device_size_total
         ) * 100.0
         summary_dict["CLUSTER"]["device"]["avail_pct"] = (
-            float(sum(cl_nodewise_device_avail.values())) / float(cl_device_size_total)
+            sum(cl_nodewise_device_avail.values()) / cl_device_size_total
+        ) * 100.0
+
+    cl_pmem_size_total = sum(cl_nodewise_pmem_size.values())
+    if cl_pmem_size_total > 0:
+        summary_dict["CLUSTER"]["pmem"]["total"] = cl_pmem_size_total
+        summary_dict["CLUSTER"]["pmem"]["used"] = sum(cl_nodewise_pmem_used.values())
+        summary_dict["CLUSTER"]["pmem"]["avail"] = sum(cl_nodewise_pmem_avail.values())
+        summary_dict["CLUSTER"]["pmem"]["used_pct"] = (
+            sum(cl_nodewise_pmem_used.values()) / cl_pmem_size_total
+        ) * 100.0
+        summary_dict["CLUSTER"]["pmem"]["avail_pct"] = (
+            sum(cl_nodewise_pmem_avail.values()) / cl_pmem_size_total
         ) * 100.0
 
     return summary_dict
@@ -2025,7 +2210,7 @@ def archive_log(logdir):
     logger.info("Files in " + logdir + " and " + logdir + ".tgz saved.")
 
 
-def print_collecinto_summary(logdir, failed_cmds):
+def print_collectinfo_summary(logdir, failed_cmds):
     if failed_cmds:
         logger.warning(
             "Following commands are either unavailable or giving runtime error..."
@@ -2113,7 +2298,7 @@ def collect_sys_info(port=3000, timestamp="", outfile=""):
     if not cluster_online:
         # Cluster is offline so collecting only system info and archiving files
         archive_log(aslogdir)
-        print_collecinto_summary(aslogdir, failed_cmds=failed_cmds)
+        print_collectinfo_summary(aslogdir, failed_cmds=failed_cmds)
 
     return failed_cmds
 

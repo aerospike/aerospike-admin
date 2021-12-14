@@ -250,16 +250,14 @@ class InfoNamespaceController(CollectinfoCommandController):
 
     @CommandHelp("Displays usage information for each namespace.")
     def do_usage(self, line):
-        ns_stats = self.log_handler.info_statistics(
-            stanza=constants.STAT_NAMESPACE, flip=True
-        )
+        ns_stats = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
                 continue
 
             self.view.info_namespace_usage(
-                util.flip_keys(ns_stats[timestamp]),
+                ns_stats[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
@@ -267,16 +265,17 @@ class InfoNamespaceController(CollectinfoCommandController):
 
     @CommandHelp("Displays object information for each namespace.")
     def do_object(self, line):
-        ns_stats = self.log_handler.info_statistics(
-            stanza=constants.STAT_NAMESPACE, flip=True
-        )
+        # In SC mode effective rack-id is different from that in namespace config.
+        ns_stats = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+        rack_ids = self.log_handler.info_getconfig(stanza=constants.CONFIG_RACK_IDS)
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
                 continue
 
             self.view.info_namespace_object(
-                util.flip_keys(ns_stats[timestamp]),
+                ns_stats[timestamp],
+                rack_ids.get(timestamp, {}),
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods

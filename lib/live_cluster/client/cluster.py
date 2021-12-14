@@ -18,12 +18,16 @@ import re
 import threading
 import logging
 from time import time
+from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
 
 from lib.utils.lookup_dict import LookupDict
 from lib.utils import util, constants
 
 from . import client_util
 from .node import Node
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 
 # interval time in second for cluster refreshing
@@ -160,6 +164,23 @@ class Cluster(object):
 
         return node_names
 
+    def get_node_ids(self, nodes=None):
+        selected_nodes = set()
+        node_ids = {}
+
+        if nodes:
+            for w in nodes:
+                try:
+                    selected_nodes.update(self.get_node(w))
+                except KeyError:
+                    pass
+
+        for node_key, node in self.nodes.items():
+            if not nodes or node in selected_nodes:
+                node_ids[node_key] = node.node_id
+
+        return node_ids
+
     def get_expected_principal(self):
         try:
             principal = "0"
@@ -280,7 +301,8 @@ class Cluster(object):
         """
         nodes_to_add = self.find_new_nodes()
 
-        self.logger.debug("Nodes to add to cluster: %s", str(nodes_to_add))
+        logger.debug("Nodes to add to cluster: %s", str(nodes_to_add))
+
         if not nodes_to_add or len(nodes_to_add) == 0:
             return
         try:
@@ -491,6 +513,12 @@ class Cluster(object):
                 ssl_context=self.ssl_context,
             )
 
+            # If a username and password is provided but security is disabled a nodes
+            # user will be set to None to disable login/authentication. Set cluster.user
+            # to do the same for future nodes.
+            if self.user is not None and new_node.user is None:
+                self.user = None
+
             if not new_node:
                 return new_node
             if not new_node.alive:
@@ -501,8 +529,11 @@ class Cluster(object):
             self.update_node(new_node)
             self.update_aliases(self.aliases, new_node.service_addresses, new_node.key)
             return new_node
+        except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
+            self.logger.error(e)
         except Exception:
-            return None
+            pass
+        return None
 
     @staticmethod
     def _get_services(node):
@@ -586,7 +617,7 @@ class Cluster(object):
         return ip_map
 
     def __getattr__(self, name):
-        regex = re.compile("^info.*$|^xdr.*$|^admin.*$|^config.*$")
+        regex = re.compile("^info.*$|^admin.*$|^config.*$")
         if regex.match(name):
 
             def info_func(*args, **kwargs):
@@ -600,7 +631,7 @@ class Cluster(object):
 
             return info_func
         else:
-            raise AttributeError("Cluster has not attribute '%s'" % (name))
+            raise AttributeError("Cluster has no attribute '%s'" % (name))
 
     def close(self):
         for node_key in self.nodes.keys():

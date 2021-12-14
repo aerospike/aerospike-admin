@@ -1,5 +1,5 @@
 from lib.utils import common, constants, util
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, CommandName
 
 from .collectinfo_command_controller import CollectinfoCommandController
 
@@ -8,16 +8,19 @@ from .collectinfo_command_controller import CollectinfoCommandController
 class ShowController(CollectinfoCommandController):
     def __init__(self):
         self.controller_map = {
-            "pmap": ShowPmapController,
             "distribution": ShowDistributionController,
+            "pmap": ShowPmapController,
             "best-practices": ShowBestPracticesController,
+            "jobs": ShowJobsController,
+            "racks": ShowRacksController,
+            "roster": ShowRosterController,
+            "roles": ShowRolesController,
+            "users": ShowUsersController,
             "udfs": ShowUdfsController,
             "sindex": ShowSIndexController,
             "config": ShowConfigController,
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
-            "roles": ShowRolesController,
-            "users": ShowUsersController,
         }
         self.modifiers = set()
 
@@ -322,7 +325,7 @@ class ShowConfigController(CollectinfoCommandController):
 
 
 @CommandHelp(
-    '"distribution" is used to show the distribution of object sizes',
+    "Displays distribution of object sizes",
     "and time to live for node and a namespace.",
 )
 class ShowDistributionController(CollectinfoCommandController):
@@ -947,17 +950,14 @@ class ShowUsersController(CollectinfoCommandController):
         self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        users_data = self.log_handler.admin_acl(stanza="users")
+        users_data = self.log_handler.admin_acl(stanza=constants.ADMIN_USERS)
 
         for timestamp in sorted(users_data.keys()):
             if not users_data[timestamp]:
                 continue
 
             data = list(users_data[timestamp].values())[0]
-
-            return util.Future(
-                self.view.show_users, data, timestamp=timestamp, **self.mods
-            )
+            self.view.show_users(data, timestamp=timestamp, **self.mods)
 
 
 @CommandHelp(
@@ -968,17 +968,14 @@ class ShowRolesController(CollectinfoCommandController):
         self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        roles_data = self.log_handler.admin_acl(stanza="roles")
+        roles_data = self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES)
 
         for timestamp in sorted(roles_data.keys()):
             if not roles_data[timestamp]:
                 continue
 
             data = list(roles_data[timestamp].values())[0]
-
-            return util.Future(
-                self.view.show_roles, data, timestamp=timestamp, **self.mods
-            )
+            self.view.show_roles(data, timestamp=timestamp, **self.mods)
 
 
 @CommandHelp("Displays UDF modules along with metadata.")
@@ -987,7 +984,7 @@ class ShowUdfsController(CollectinfoCommandController):
         self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        udf_data = self.log_handler.info_meta_data(stanza="udf")
+        udf_data = self.log_handler.info_meta_data(stanza=constants.METADATA_UDF)
 
         for timestamp in sorted(udf_data.keys()):
             if not udf_data[timestamp]:
@@ -997,9 +994,7 @@ class ShowUdfsController(CollectinfoCommandController):
             principal_id = self.log_handler.get_principal(timestamp)
             principal_ip = node_id_to_ip[principal_id]
             data = udf_data[timestamp][principal_ip]
-            return util.Future(
-                self.view.show_udfs, data, timestamp=timestamp, **self.mods
-            )
+            self.view.show_udfs(data, timestamp=timestamp, **self.mods)
 
 
 @CommandHelp("Displays secondary indexes and static metadata.")
@@ -1008,7 +1003,7 @@ class ShowSIndexController(CollectinfoCommandController):
         self.modifiers = set(["like"])
 
     def _do_default(self, line):
-        sindexes_data = self.log_handler.info_statistics(stanza="sindex")
+        sindexes_data = self.log_handler.info_statistics(stanza=constants.STAT_SINDEX)
 
         for timestamp in sorted(sindexes_data.keys()):
             if not sindexes_data[timestamp]:
@@ -1022,21 +1017,43 @@ class ShowSIndexController(CollectinfoCommandController):
             # Re-format data since key = "<ns> <set> <sindex>" and it should be
             # a list of dictionaries where each dict hold meta for a singel sindex.
             formatted_data = list(data_to_process.values())
+            self.view.show_sindex(formatted_data, timestamp=timestamp, **self.mods)
 
-            return util.Future(
-                self.view.show_sindex, formatted_data, timestamp=timestamp, **self.mods
+
+@CommandHelp("Displays roster information a node its namespaces.")
+class ShowRosterController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["like", "diff"])
+
+    def _do_default(self, line):
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        roster_configs = self.log_handler.info_getconfig(stanza=constants.CONFIG_ROSTER)
+
+        for timestamp in roster_configs:
+            self.view.show_roster(
+                roster_configs[timestamp],
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
+                flip=flip_output,
+                **self.mods
             )
 
 
-@CommandHelp(
-    '"show best-practices" displays any of Aerospike\'s violated "best-practices".'
-)
+@CommandHelp('Displays any of Aerospike\'s violated "best-practices".')
 class ShowBestPracticesController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["with"])
 
     def _do_default(self, line):
-        best_practices = self.log_handler.info_meta_data(stanza="best_practices")
+        best_practices = self.log_handler.info_meta_data(
+            stanza=constants.METADATA_PRACTICES
+        )
 
         for timestamp in sorted(best_practices.keys()):
             if not best_practices[timestamp]:
@@ -1044,10 +1061,83 @@ class ShowBestPracticesController(CollectinfoCommandController):
 
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
-            return util.Future(
-                self.view.show_best_practices,
-                cinfo_log,
-                best_practices[timestamp],
-                timestamp=timestamp,
-                **self.mods
+            self.view.show_best_practices(
+                cinfo_log, best_practices[timestamp], timestamp=timestamp, **self.mods
             )
+
+
+@CommandHelp(
+    "Displays jobs and associated metadata.",
+)
+class ShowJobsController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["like", "trid"])
+
+    @CommandHelp(
+        "Displays scans, queries, and sindex-builder jobs.",
+    )
+    def _do_default(self, line):
+        actions = (
+            util.Future(self.do_scans, line[:]).start(),
+            util.Future(self.do_queries, line[:]).start(),
+            util.Future(self.do_sindex_builder, line[:]).start(),
+        )
+
+        return [action.result() for action in actions]
+
+    def _job_helper(self, module, title):
+        jobs_data = self.log_handler.info_meta_data(stanza=constants.METADATA_JOBS)
+
+        for timestamp in sorted(jobs_data.keys()):
+            if not jobs_data[timestamp]:
+                continue
+
+            jobs_data = util.flip_keys(jobs_data[timestamp])
+            scan_data = jobs_data.get(module)
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            self.view.show_jobs(title, cinfo_log, scan_data, **self.mods)
+
+    @CommandHelp(
+        "Displays scan jobs.",
+        "Usage: scans [trid <trid1> [<trid2>]]",
+        "  trid          - List of transaction ids to filter for.",
+    )
+    def do_scans(self, line):
+        self._job_helper(constants.JobType.SCAN, "Scan Jobs")
+
+    @CommandHelp(
+        "Displays query jobs.",
+        "Usage: queries [trid <trid1> [<trid2>]]",
+        "  trid          - List of transaction ids to filter for.",
+    )
+    def do_queries(self, line):
+        self._job_helper(constants.JobType.QUERY, "Query Jobs")
+
+    # TODO: Should be removed eventually. "sindex-builder" was removed in server 5.7.
+    # So should probably be removed when server 7.0 is supported.
+    @CommandHelp(
+        "Displays sindex-builder jobs. Removed in server v. 5.7 and later.",
+        "Usage: sindex-builder [trid <trid1> [<trid2>]]",
+        "  trid          - List of transaction ids to filter for.",
+    )
+    @CommandName("sindex-builder")
+    def do_sindex_builder(self, line):
+        self._job_helper(constants.JobType.SINDEX_BUILDER, "SIndex Builder Jobs")
+
+
+@CommandHelp('Displays rack information for a rack-aware cluster".')
+class ShowRacksController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+
+    def _do_default(self, line):
+        racks_data = self.log_handler.info_getconfig(stanza=constants.CONFIG_RACKS)
+
+        for timestamp, data in racks_data.items():
+            node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
+            principal_id = self.log_handler.get_principal(timestamp)
+            principal_ip = node_id_to_ip[principal_id]
+            data = {principal_ip: data[principal_ip]}
+
+            self.view.show_racks(data, timestamp=timestamp, **self.mods)

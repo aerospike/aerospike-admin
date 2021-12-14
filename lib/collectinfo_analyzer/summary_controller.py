@@ -47,6 +47,8 @@ class SummaryController(CollectinfoCommandController):
             cluster_configs = {}
 
         cluster_name = {}
+        license_data_usage = {}
+
         try:
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=last_timestamp)
             cluster_name = cinfo_log.get_cluster_name()
@@ -117,6 +119,11 @@ class SummaryController(CollectinfoCommandController):
 
         metadata["os_version"] = os_version
 
+        try:
+            license_data_usage = self.log_handler.get_unique_data_usage()
+        except Exception:
+            pass
+
         self.view.print_summary(
             common.create_summary(
                 service_stats=service_stats[last_timestamp],
@@ -126,6 +133,7 @@ class SummaryController(CollectinfoCommandController):
                 service_configs=service_configs[last_timestamp],
                 ns_configs=namespace_configs[last_timestamp],
                 cluster_configs=cluster_configs,
+                license_data_usage=license_data_usage,
             ),
             list_view=enable_list_view,
         )
