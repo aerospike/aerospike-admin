@@ -1,4 +1,5 @@
 import asyncio
+from asyncio import futures
 from lib.get_controller import (
     GetConfigController,
     GetStatisticsController,
@@ -22,11 +23,15 @@ class InfoController(LiveClusterCommandController):
 
     @CommandHelp("Displays network, namespace, and XDR summary information.")
     async def _do_default(self, line):
-        return await asyncio.gather(
+        results = await asyncio.gather(
             self.do_network(line),
-            self.controller_map["namespace"]()(line),
+            self.controller_map["namespace"](get_futures=True)(line),
             self.do_xdr(line),
         )
+
+        results[1] = results[1]["futures"]
+
+        return results
 
     @CommandHelp('"info network" displays network information for Aerospike.')
     async def do_network(self, line):
@@ -166,30 +171,30 @@ class InfoController(LiveClusterCommandController):
             if self.mods["for"]:
                 matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
 
-            # futures = [
-            #     util.Future(
-            #         self.view.info_XDR,
-            #         xdr5_stats[dc],
-            #         xdr_enable,
-            #         self.cluster,
-            #         title="XDR Information %s" % dc,
-            #         **self.mods
-            #     )
-            #     for dc in xdr5_stats
-            #     if not self.mods["for"] or dc in matches
-            # ]
+            futures = [
+                util.Future(
+                    self.view.info_XDR,
+                    xdr5_stats[dc],
+                    xdr_enable,
+                    self.cluster,
+                    title="XDR Information %s" % dc,
+                    **self.mods
+                )
+                for dc in xdr5_stats
+                if not self.mods["for"] or dc in matches
+            ]
 
-        # if old_xdr_stats:
-        #     futures.append(
-        #         util.Future(
-        #             self.view.info_old_XDR,
-        #             old_xdr_stats,
-        #             builds,
-        #             xdr_enable,
-        #             self.cluster,
-        #             **self.mods
-        #         )
-        #     )
+        if old_xdr_stats:
+            futures.append(
+                util.Future(
+                    self.view.info_old_XDR,
+                    old_xdr_stats,
+                    builds,
+                    xdr_enable,
+                    self.cluster,
+                    **self.mods
+                )
+            )
 
         return futures
 
@@ -214,10 +219,13 @@ class InfoNamespaceController(LiveClusterCommandController):
 
     @CommandHelp("Displays usage and objects information for namespaces")
     async def _do_default(self, line):
-        return await asyncio.gather(
+        tasks = await asyncio.gather(
             self.do_usage(line),
             self.do_object(line),
         )
+        if self.get_futures:
+            # Wrapped to prevent base class from calling result.
+            return dict(futures=tasks)
 
     @CommandHelp("Displays usage information for each namespace.")
     async def do_usage(self, line):

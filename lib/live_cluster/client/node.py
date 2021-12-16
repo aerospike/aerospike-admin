@@ -265,10 +265,10 @@ class Node(AsyncObject):
                 raise IOError("Login Error")
 
             node_id = self.info_node()
-            service_addresses = self.info_service_list()
-            features = self.info("features")
-            update_ip = self._update_IP(address, port)
-            peers = self.info_peers_list()
+            service_addresses = asyncio.create_task(self.info_service_list())
+            features = asyncio.create_task(self.info("features"))
+            update_ip = asyncio.create_task(self._update_IP(address, port))
+            peers = asyncio.create_task(self.info_peers_list())
 
             self.node_id = await node_id
 
@@ -310,11 +310,9 @@ class Node(AsyncObject):
 
                     # IP address have changed. Not common.
                     node_id = self.info_node()
-                    update_ip = self._update_IP(self.ip, self.port)
-                    await peers
-                    peers = self.info_peers_list()
+                    update_ip = asyncio.create_task(self._update_IP(self.ip, self.port))
+                    peers = asyncio.create_task(self.info_peers_list())
                     self.node_id = await node_id
-                    await update_ip
 
                     if not isinstance(self.node_id, Exception):
                         break
@@ -329,6 +327,7 @@ class Node(AsyncObject):
             if isinstance(self.node_id, Exception):
                 raise self.node_id
 
+            await update_ip
             self._service_IP_port = self.create_key(self.ip, self.port)
             self._key = hash(self._service_IP_port)
             self.new_histogram_version = await self._is_new_histogram_version()
