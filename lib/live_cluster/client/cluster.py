@@ -19,6 +19,7 @@ import re
 import logging
 import inspect
 from time import time
+from typing import List
 from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
 from lib.utils.async_object import AsyncObject
 
@@ -371,7 +372,7 @@ class Cluster(AsyncObject):
         if node.alive:
             self.node_lookup[node.node_id] = node
 
-    def get_node(self, node):
+    def get_node(self, node) -> List[Node]:
         """
         node: str, either a nodes ip, id, fqdn, or a prefix of them.
         If ends with '*' then do a prefix match which can return multiple nodes.
@@ -581,7 +582,12 @@ class Cluster(AsyncObject):
             raise IOError("Unable to find any Aerospike nodes")
 
         async def key_to_method(node):
-            return (node.key, await getattr(node, method_name)(*args, **kwargs))
+            node_result = getattr(node, method_name)(*args, **kwargs)
+
+            if inspect.iscoroutine(node_result):
+                return (node.key, await node_result)
+
+            return (node.key, node_result)
 
         return dict(
             await client_util.concurrent_map(

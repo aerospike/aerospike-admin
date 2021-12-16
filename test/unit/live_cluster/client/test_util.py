@@ -12,13 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
+import asyncio
+import warnings
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
 
 from lib.live_cluster.client import client_util
-import time
 
 
-class UtilTest(unittest.TestCase):
+class UtilTest(asynctest.TestCase):
     def test_info_to_dict(self):
         value = "a=1;b=@;c=c;d=1@"
         expected = {"a": "1", "b": "@", "c": "c", "d": "1@"}
@@ -194,15 +198,15 @@ class UtilTest(unittest.TestCase):
             result, expected, "parse_peers_string did not return the expected result"
         )
 
-    def test_concurrent_map(self):
+    async def test_concurrent_map(self):
         value = range(10)
         expected = [v * v for v in value]
 
-        def wait(v):
-            time.sleep((11 - v) / 10)
+        async def wait(v):
+            await asyncio.sleep((11 - v) / 10)
             return v * v
 
-        result = client_util.concurrent_map(wait, value)
+        result = await client_util.concurrent_map(wait, value)
         self.assertEqual(
             list(result), expected, "concurrent_map did not return the expected result"
         )

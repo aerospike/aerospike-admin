@@ -154,7 +154,7 @@ class ASSocket:
         else:
             # new authentication with session_token
             resp_code = await authenticate_new(
-                self.sock, self.user, session_token, self.auth_mode
+                self.reader, self.writer, self.user, session_token, self.auth_mode
             )
 
         if resp_code != ASResponse.OK:
@@ -276,7 +276,13 @@ class ASSocket:
         self, role, privileges, whitelist=None, read_quota=None, write_quota=None
     ):
         rsp_code = await create_role(
-            self.sock, role, privileges, whitelist, read_quota, write_quota
+            self.reader,
+            self.writer,
+            role,
+            privileges,
+            whitelist,
+            read_quota,
+            write_quota,
         )
 
         if rsp_code != ASResponse.OK:

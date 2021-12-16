@@ -161,6 +161,28 @@ def capture_stdout_and_stderr(func, line=""):
     return stdout_output, stderr_output
 
 
+async def capture_stdout_and_stderr_async(func, line=""):
+    sys.stdout.flush()
+    stdout_old = sys.stdout
+    stdout_capturer = io.StringIO()
+    sys.stdout = stdout_capturer
+
+    sys.stderr.flush()
+    stderr_old = sys.stderr
+    stderr_capturer = io.StringIO()
+    sys.stderr = stderr_capturer
+
+    await func(line)
+
+    stdout_output = stdout_capturer.getvalue()
+    sys.stdout = stdout_old
+
+    stderr_output = stderr_capturer.getvalue()
+    sys.stderr = stderr_old
+
+    return stdout_output, stderr_output
+
+
 def compile_likes(likes):
     if likes is None:
         likes = []
@@ -750,31 +772,6 @@ def find_most_frequent(list_):
             most_freq = val
 
     return most_freq
-
-
-class cached(object):
-    # Doesn't support lists, dicts and other unhashables
-    # Also doesn't support kwargs for reason above.
-
-    def __init__(self, func, ttl=0.5):
-        self.func = func
-        self.ttl = ttl
-        self.cache = {}
-
-    def __setitem__(self, key, value):
-        self.cache[key] = (value, time() + self.ttl)
-
-    def __getitem__(self, key):
-        if key in self.cache:
-            value, eol = self.cache[key]
-            if eol > time():
-                return value
-
-        self[key] = self.func(*key)
-        return self.cache[key][0]
-
-    def __call__(self, *args):
-        return self[args]
 
 
 class async_cached(object):

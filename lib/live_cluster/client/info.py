@@ -961,14 +961,14 @@ async def _set_whitelist(
 async def set_whitelist(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role, whitelist
 ):
-    return _set_whitelist(reader, writer, role, whitelist)
+    return await _set_whitelist(reader, writer, role, whitelist)
 
 
 @util.logthis(logger)
 async def delete_whitelist(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role
 ):
-    return _set_whitelist(reader, writer, role)
+    return await _set_whitelist(reader, writer, role)
 
 
 async def _set_quotas(
@@ -1023,7 +1023,7 @@ async def set_quotas(
     read_quota=None,
     write_quota=None,
 ):
-    return _set_quotas(reader, writer, role, read_quota, write_quota)
+    return await _set_quotas(reader, writer, role, read_quota, write_quota)
 
 
 @util.logthis(logger)
@@ -1046,7 +1046,7 @@ async def delete_quotas(
     if write_quota:
         write = 0
 
-    return _set_quotas(reader, writer, role, read, write)
+    return await _set_quotas(reader, writer, role, read, write)
 
 
 async def _query_role(

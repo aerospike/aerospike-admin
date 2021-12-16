@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import unittest
+import warnings
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
 
 from lib.base_controller import (
     BaseController,
@@ -43,7 +48,7 @@ class FakeRoot(BaseController):
 
 class FakeCommand1(CommandController):
     async def _do_default(self, line):
-        return self.do_cmd(line[:])
+        return await self.do_cmd(line[:])
 
     async def do_cmd(self, line):
         return "fake1", line
@@ -51,7 +56,7 @@ class FakeCommand1(CommandController):
 
 class FakeCommand2(CommandController):
     async def _do_default(self, line):
-        return self.do_cmd(line[:])
+        return await self.do_cmd(line[:])
 
     async def do_cmd(self, line):
         return "fake2", line
@@ -66,7 +71,7 @@ class FakeCommand2(CommandController):
         return "zoo", line
 
 
-class BaseControllerTest(unittest.TestCase):
+class BaseControllerTest(asynctest.TestCase):
     def test_complete(self):
         test_lines = [
             ([], ["fakea1", "fakeb2"]),
@@ -119,7 +124,7 @@ class BaseControllerTest(unittest.TestCase):
             except ShellException:
                 self.assertEqual("ShellException", expected_method)
 
-    def test_execute(self):
+    async def test_execute(self):
         test_lines = [
             ([], "ShellException"),
             (["fake"], "ShellException"),
@@ -134,7 +139,9 @@ class BaseControllerTest(unittest.TestCase):
 
         for line, expected_result in test_lines:
             try:
-                actual_result = r(line)[0]
+                actual_result = await r(line)
+                # actual_result =  actual_result
+                actual_result = actual_result[0]
             except ShellException:
                 self.assertEqual(expected_result, "ShellException")
             else:

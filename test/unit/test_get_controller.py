@@ -1,10 +1,16 @@
-import unittest
-from mock import Mock, patch
+import warnings
+from pytest import PytestUnraisableExceptionWarning
+from mock import patch
+from mock.mock import AsyncMock
 
 from lib.get_controller import GetJobsController, GetPmapController, GetConfigController
 
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
 
-class GetPmapControllerTest(unittest.TestCase):
+
+class GetPmapControllerTest(asynctest.TestCase):
     def mock_info_call(self, cmd, nodes="all"):
         if cmd == "version":
             return {"10.71.71.169:3000": "3.6.0"}
@@ -18,8 +24,12 @@ class GetPmapControllerTest(unittest.TestCase):
         return {}
 
     def setUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         # cluster = Cluster(("10.71.71.169", "3000", None))
-        cluster_mock = patch("lib.live_cluster.client.cluster.Cluster").start()
+        cluster_mock = patch(
+            "lib.live_cluster.client.cluster.Cluster", AsyncMock()
+        ).start()
         # cluster.info_statistics = Mock()
         cluster_mock.info_statistics.return_value = {
             "10.71.71.169:3000": {"cluster_key": "ck"}
@@ -33,11 +43,11 @@ class GetPmapControllerTest(unittest.TestCase):
                 "unavailable_partitions": "0",
             }
         }
-        cluster_mock.info = Mock()
+        cluster_mock.info = AsyncMock()
         cluster_mock.info.side_effect = self.mock_info_call
         self.controller = GetPmapController(cluster_mock)
 
-    def test_get_pmap_data(self):
+    async def test_get_pmap_data(self):
         self.partition_info = {
             "10.71.71.169:3000": "test:0:A:2:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;"
             "test:2:A:2:0:0:0:0:0:0:0:0;test:3:S:1:0:0:0:0:207069:3001:0:0;"
@@ -52,10 +62,10 @@ class GetPmapControllerTest(unittest.TestCase):
         expected_output["10.71.71.169:3000"]["test"]["prole_partition_count"] = 1
         expected_output["10.71.71.169:3000"]["test"]["dead_partitions"] = "2000"
         expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
-        actual_output = self.controller.get_pmap()
+        actual_output = await self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
 
-    def test_get_pmap_data_with_migrations(self):
+    async def test_get_pmap_data_with_migrations(self):
         self.partition_info = {
             "10.71.71.169:3000": "test:0:D:1:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;"
             "test:2:D:1:0:BB93039BC7AC40C:0:0:0:0:0:0;"
@@ -70,10 +80,10 @@ class GetPmapControllerTest(unittest.TestCase):
         expected_output["10.71.71.169:3000"]["test"]["prole_partition_count"] = 3
         expected_output["10.71.71.169:3000"]["test"]["dead_partitions"] = "2000"
         expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
-        actual_output = self.controller.get_pmap()
+        actual_output = await self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
 
-    def test_get_pmap_data_with_working_master(self):
+    async def test_get_pmap_data_with_working_master(self):
         self.partition_info = {
             "10.71.71.169:3000": "namespace:partition:state:replica:n_dupl:working_master:emigrates:immigrates:records:tombstones:version:final_version;"
             "test:0:D:1:0:0:0:0:0:0:0:0;test:1:A:2:0:0:0:0:0:0:0:0;"
@@ -89,11 +99,11 @@ class GetPmapControllerTest(unittest.TestCase):
         expected_output["10.71.71.169:3000"]["test"]["prole_partition_count"] = 5
         expected_output["10.71.71.169:3000"]["test"]["dead_partitions"] = "2000"
         expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
-        actual_output = self.controller.get_pmap()
+        actual_output = await self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
 
 
-class GetConfigControllerTest(unittest.TestCase):
+class GetConfigControllerTest(asynctest.TestCase):
     def mock_info_call(self, cmd, nodes="all"):
         if cmd == "version":
             return {"10.71.71.169:3000": "3.6.0"}
@@ -110,8 +120,10 @@ class GetConfigControllerTest(unittest.TestCase):
         self.cluster_mock = patch("lib.live_cluster.client.cluster.Cluster").start()
         self.controller = GetConfigController(self.cluster_mock)
         self.addCleanup(patch.stopall)
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
-    def test_get_namespace(self):
+    async def test_get_namespace(self):
         self.cluster_mock.info_namespaces.return_value = {
             "10.71.71.169:3000": ["bar", "test"]
         }
@@ -149,17 +161,21 @@ class GetConfigControllerTest(unittest.TestCase):
             },
         }
 
-        actual_output = self.controller.get_namespace(flip=True)
+        actual_output = await self.controller.get_namespace(flip=True)
         self.assertDictEqual(expected_output, actual_output)
 
 
-class GetJobsControllerTest(unittest.TestCase):
+class GetJobsControllerTest(asynctest.TestCase):
     def setUp(self):
-        self.cluster_mock = patch("lib.live_cluster.client.cluster.Cluster").start()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = patch(
+            "lib.live_cluster.client.cluster.Cluster", AsyncMock()
+        ).start()
         self.controller = GetJobsController(self.cluster_mock)
         self.addCleanup(patch.stopall)
 
-    def test_get_all(self):
+    async def test_get_all(self):
         expected = {
             "scan": {"inside-scan": "val"},
             "query": {"inside-query": "val"},
@@ -169,7 +185,7 @@ class GetJobsControllerTest(unittest.TestCase):
         self.cluster_mock.info_query_show.return_value = {"inside-query": "val"}
         self.cluster_mock.info_jobs.return_value = {"inside-sindex-builder": "val"}
 
-        actual = self.controller.get_all()
+        actual = await self.controller.get_all()
 
         self.cluster_mock.info_scan_show.assert_called_with(nodes="all")
         self.cluster_mock.info_query_show.assert_called_with(nodes="all")
@@ -179,7 +195,7 @@ class GetJobsControllerTest(unittest.TestCase):
 
         self.assertDictEqual(actual, expected)
 
-    def test_get_all_flip(self):
+    async def test_get_all_flip(self):
         expected = {
             "inside-scan": {"scan": "val"},
             "inside-query": {"query": "val"},
@@ -189,7 +205,7 @@ class GetJobsControllerTest(unittest.TestCase):
         self.cluster_mock.info_query_show.return_value = {"inside-query": "val"}
         self.cluster_mock.info_jobs.return_value = {"inside-sindex-builder": "val"}
 
-        actual = self.controller.get_all(flip=True)
+        actual = await self.controller.get_all(flip=True)
 
         self.cluster_mock.info_scan_show.assert_called_with(nodes="all")
         self.cluster_mock.info_query_show.assert_called_with(nodes="all")

@@ -64,6 +64,7 @@ except ImportError:
 
 
 def get_fully_qualified_domain_name(address, timeout=0.5):
+    # TODO: make async
     # note: cannot use timeout lib because signal must be run from the
     #       main thread
 
@@ -263,8 +264,8 @@ class Node(AsyncObject):
             if not await self.login():
                 raise IOError("Login Error")
 
-            service_addresses = self.info_service_list()
             node_id = self.info_node()
+            service_addresses = self.info_service_list()
             features = self.info("features")
             update_ip = self._update_IP(address, port)
             peers = self.info_peers_list()
@@ -336,6 +337,7 @@ class Node(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception:
+
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -2438,7 +2440,7 @@ class Node(AsyncObject):
         old_req = "jobs:module=query;cmd=kill-job;trid={}".format(trid)
         new_req = "query-abort:trid={}".format(trid)
 
-        resp = self._jobs_helper(old_req, new_req)
+        resp = await self._jobs_helper(old_req, new_req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to kill job", resp)
@@ -2533,7 +2535,6 @@ class Node(AsyncObject):
     ############################################################################
 
     # @util.logthis(logger)
-    @async_return_exceptions
     async def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import logging
 from datetime import datetime
@@ -8,7 +9,6 @@ from functools import reduce
 from lib.view import terminal
 from lib.utils import constants, util, version
 from lib.base_controller import CommandHelp
-from lib.get_controller import GetConfigController
 from lib.utils.lookup_dict import PrefixDict
 from .client import (
     ASInfoClusterStableError,
@@ -741,9 +741,7 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
         return groups
 
     async def _do_default(self, line):
-        principal_node = self.cluster.get_expected_principal()
-
-        if not self._supports_quotas([principal_node]):
+        if not await self._supports_quotas("principal"):
             self.logger.error(
                 "'manage quotas' is not supported on aerospike versions <= 5.5"
             )
@@ -2333,7 +2331,6 @@ class ManageRosterController(LiveClusterCommandController):
 class ManageRosterAddController(ManageRosterLeafCommandController):
     def __init__(self):
         self.required_modifiers = {"nodes", "ns"}
-        self.getter = GetConfigController(self.cluster)
 
     async def _do_default(self, line):
         ns = self.mods["ns"][0]
@@ -2346,7 +2343,9 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
         )
 
         current_roster = self.cluster.info_roster(ns, nodes="principal")
-        cluster_stable = self.cluster.info_cluster_stable(nodes=self.nodes)
+        cluster_stable = asyncio.create_task(
+            self.cluster.info_cluster_stable(nodes=self.nodes)
+        )
         current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
@@ -2359,7 +2358,8 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
         new_roster.extend(self.mods["nodes"])
 
         if warn:
-            self._check_and_log_cluster_stable(await cluster_stable)
+            cluster_stable = await cluster_stable
+            self._check_and_log_cluster_stable(cluster_stable)
             self._check_and_log_nodes_in_observed(
                 current_roster["observed_nodes"], self.mods["nodes"]
             )
@@ -2411,7 +2411,9 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
             mods=self.mods,
         )
         current_roster = self.cluster.info_roster(ns, nodes="principal")
-        cluster_stable = self.cluster.info_cluster_stable(nodes=self.nodes)
+        cluster_stable = asyncio.create_task(
+            self.cluster.info_cluster_stable(nodes=self.nodes)
+        )
         current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
@@ -2436,7 +2438,8 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
                     ", ".join(missing_nodes),
                 )
 
-            self._check_and_log_cluster_stable(await cluster_stable)
+            cluster_stable = await cluster_stable
+            self._check_and_log_cluster_stable(cluster_stable)
 
             if not self.prompt_challenge(
                 "You are about to set the pending-roster for namespace {} to: {}".format(
@@ -2495,7 +2498,9 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
 
         if warn:
             current_roster = self.cluster.info_roster(ns, nodes="principal")
-            cluster_stable = self.cluster.info_cluster_stable(nodes=self.nodes)
+            cluster_stable = asyncio.create_task(
+                self.cluster.info_cluster_stable(nodes=self.nodes)
+            )
             current_roster = list((await current_roster).values())[0]
 
             if isinstance(current_roster, ASInfoError):
@@ -2504,7 +2509,8 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
             elif isinstance(current_roster, Exception):
                 raise current_roster
 
-            self._check_and_log_cluster_stable(await cluster_stable)
+            cluster_stable = await cluster_stable
+            self._check_and_log_cluster_stable(cluster_stable)
             self._check_and_log_nodes_in_observed(
                 current_roster["observed_nodes"], self.mods["line"]
             )
@@ -2544,7 +2550,9 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
     async def _do_default(self, line):
         ns = self.mods["ns"][0]
         current_roster = self.cluster.info_roster(ns, nodes="principal")
-        cluster_stable = self.cluster.info_cluster_stable(nodes=self.nodes)
+        cluster_stable = asyncio.create_task(
+            self.cluster.info_cluster_stable(nodes=self.nodes)
+        )
         current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
@@ -2555,7 +2563,8 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
 
         new_roster = current_roster["observed_nodes"]
 
-        if not self._check_and_log_cluster_stable(await cluster_stable) or self.warn:
+        cluster_stable = await cluster_stable
+        if not self._check_and_log_cluster_stable(cluster_stable) or self.warn:
             if not self.prompt_challenge(
                 "You are about to set the pending-roster for namespace {} to: {}".format(
                     ns, ", ".join(new_roster)
@@ -2624,7 +2633,7 @@ class ManageJobsKillTridController(ManageLeafCommandController):
 
     async def _do_default(self, line):
         trids = self.mods["line"]
-        jobs_data = self.getter.get_all()
+        jobs_data = asyncio.create_task(self.getter.get_all())
         requests_ = []
         responses = {}
 
@@ -2635,9 +2644,9 @@ class ManageJobsKillTridController(ManageLeafCommandController):
         ):
             return
 
+        jobs_data = await jobs_data
         # Dict key hierarchy is currently module -> host -> trid.
         # We want trid at the top.  i.e. trid -> module -> host for quick lookup
-        jobs_data = await jobs_data
 
         for module, host_data in jobs_data.items():
             jobs_data[module] = util.flip_keys(host_data)
