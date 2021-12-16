@@ -560,7 +560,7 @@ async def request_license_usage(agent_host, agent_port):
     return json_data, error
 
 
-request_license_usage = util.cached(request_license_usage, ttl=30)
+request_license_usage = util.async_cached(request_license_usage, ttl=30)
 
 
 def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
