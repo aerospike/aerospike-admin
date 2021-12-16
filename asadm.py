@@ -23,7 +23,6 @@ import re
 import shlex
 import sys
 import asyncio
-from lib.live_cluster.client.cluster import Cluster
 from lib.utils.async_object import AsyncObject
 
 if sys.version_info[0] < 3:
@@ -145,7 +144,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         await self.do_exit("")
                         logger.critical("Authentication failed: bcrypt not installed.")
 
-                cluster = await Cluster(
+                self.ctrl = await LiveClusterRootController(
                     seeds,
                     user,
                     password,
@@ -155,10 +154,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     ssl_context,
                     only_connect_seed,
                     timeout=timeout,
-                )
-
-                self.ctrl = await LiveClusterRootController(
-                    cluster=cluster,
                     asadm_version=admin_version,
                 )
 

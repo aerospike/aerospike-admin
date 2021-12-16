@@ -52,9 +52,9 @@ class LiveClusterRootController(BaseController, AsyncObject):
         use_services_alumni=False,
         use_services_alt=False,
         ssl_context=None,
-        asadm_version="",
         only_connect_seed=False,
         timeout=5,
+        asadm_version="",
     ):
 
         super().__init__(asadm_version)
