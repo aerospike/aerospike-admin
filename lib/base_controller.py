@@ -143,7 +143,7 @@ def create_disabled_controller(controller, command_):
     class DisableController(controller):
 
         # override
-        def execute(self, line):
+        async def execute(self, line):
             self.logger.error(
                 'User must be in privileged mode to issue "{}" commands.\n'
                 '       Type "enable" to enter privileged mode.'.format(command_)
