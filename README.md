@@ -54,6 +54,7 @@ Admin> help
 - toml==0.9.4
 - yappi==0.98
 - python-dateutil==2.8.1
+- aiohttp==3.8.1
 
 
 ### Mac OSX
