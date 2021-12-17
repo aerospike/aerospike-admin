@@ -24,7 +24,7 @@ class InfoController(LiveClusterCommandController):
     async def _do_default(self, line):
         results = await asyncio.gather(
             self.do_network(line),
-            self.controller_map["namespace"](get_futures=True)(line),
+            self.controller_map["namespace"](get_futures=True)([]),
             self.do_xdr(line),
         )
 
@@ -225,7 +225,7 @@ class InfoNamespaceController(LiveClusterCommandController):
         if self.get_futures:
             # Wrapped to prevent base class from calling result.
             return dict(futures=tasks)
-        
+
         return tasks
 
     @CommandHelp("Displays usage information for each namespace.")
