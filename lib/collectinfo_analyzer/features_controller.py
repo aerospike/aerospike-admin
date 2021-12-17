@@ -30,7 +30,6 @@ class FeaturesController(CollectinfoCommandController):
             dc_stats = {}
             s_configs = {}
             ns_configs = {}
-            cl_configs = {}
 
             if timestamp in service_configs:
                 s_configs = service_configs[timestamp]
@@ -50,7 +49,6 @@ class FeaturesController(CollectinfoCommandController):
                 xdr_dc_stats=dc_stats,
                 service_configs=s_configs,
                 ns_configs=ns_configs,
-                cluster_configs=cl_configs,
             )
 
             self.view.show_config(
