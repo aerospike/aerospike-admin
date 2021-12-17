@@ -549,7 +549,7 @@ def parse_tls_input(cli_args):
         exit(1)
 
 
-def execute_asinfo_commands(
+async def execute_asinfo_commands(
     commands_arg,
     seed,
     user=None,
@@ -578,11 +578,11 @@ def execute_asinfo_commands(
             logger.critical("Authentication failed: bcrypt not installed.")
 
     assock = ASSocket(seed[0], seed[1], seed[2], user, password, auth_mode, ssl_context)
-    if not assock.connect():
+    if not await assock.connect():
         logger.critical("Not able to connect any cluster with " + str(seed) + ".")
         return
 
-    if not assock.login():
+    if not await assock.login():
         logger.critical(
             "Not able to login and authenticate any cluster with " + str(seed) + "."
         )
@@ -594,7 +594,7 @@ def execute_asinfo_commands(
         if command:
             command = util.strip_string(command)
 
-        result = assock.info(command)
+        result = await assock.info(command)
 
         if result == -1 or result is None:
             result = IOError("Error: Invalid command '%s'" % command)
@@ -675,7 +675,7 @@ async def main():
             commands_arg = parse_commands(commands_arg)
 
         try:
-            execute_asinfo_commands(
+            await execute_asinfo_commands(
                 commands_arg,
                 seeds[0],
                 user=cli_args.user,
