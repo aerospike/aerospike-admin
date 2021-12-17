@@ -207,8 +207,9 @@ class ShowLatenciesController(LiveClusterCommandController):
 
         namespace_set = self.get_namespace_set()
         nodes = self.latency_getter.get_latencies_and_latency_nodes(self.nodes)
+        namespace_set = await namespace_set
         latencies = self.latency_getter.get_all(
-            self.nodes, buckets, increment, verbose, await namespace_set
+            self.nodes, buckets, increment, verbose, namespace_set
         )
 
         latencies_nodes, latency_nodes = await nodes

@@ -207,7 +207,7 @@ class GetLatenciesController:
         latencies = None
 
         if ns_set is None:
-            ns_set = self.get_namespace_set(nodes)
+            ns_set = await self.get_namespace_set(nodes)
 
         # all nodes support "show latencies"
         if len(latency_nodes) == 0:
@@ -216,12 +216,12 @@ class GetLatenciesController:
                 buckets=buckets,
                 exponent_increment=exponent_increment,
                 verbose=verbose,
-                ns_set=await ns_set,
+                ns_set=ns_set,
             )
         # No nodes support "show latencies"
         elif len(latencies_nodes) == 0:
             latencies = await self.cluster.info_latency(
-                nodes=latency_nodes, ns_set=await ns_set
+                nodes=latency_nodes, ns_set=ns_set
             )
         # Some nodes support latencies and some do not
         else:
@@ -231,7 +231,7 @@ class GetLatenciesController:
                 buckets=buckets,
                 exponent_increment=exponent_increment,
                 verbose=verbose,
-                ns_set=await ns_set,
+                ns_set=ns_set,
             )
             latencies = self.merge_latencies_and_latency_tables(
                 await latencies, await latency
