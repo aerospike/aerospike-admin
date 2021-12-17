@@ -46,33 +46,37 @@ endef
 all:
 	$(call make_build)
 	pipenv install --dev
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/)"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
 
-pex:
-	mkdir -p $(BUILD_ROOT)tmp/wheels
+# mac:
+# 	$(call make_build)
+# 	pipenv install --dev
+# 	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
+# pex:
+# 	mkdir -p $(BUILD_ROOT)tmp/wheels
 
-ifneq ($(PYTHONS),)
-	./build_pex.sh
-else
-	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
-	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)tmp/wheels -r $(REQUIREMENT_FILE)
-	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)tmp/wheels
-	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)tmp/wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
-endif
+# ifneq ($(PYTHONS),)
+# 	./build_pex.sh
+# else
+# 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
+# 	pip wheel --no-cache-dir --wheel-dir=$(BUILD_ROOT)tmp/wheels -r $(REQUIREMENT_FILE)
+# 	cp $(BUILD_ROOT)tmp/asadm/*.whl $(BUILD_ROOT)tmp/wheels
+# 	pex -v -r $(REQUIREMENT_FILE) --repo=$(BUILD_ROOT)tmp/wheels --no-pypi --no-build --disable-cache asadm -c asadm.py -o $(BUILD_ROOT)tmp/asadm/asadm.pex
+# endif
 
-	rm $(BUILD_ROOT)tmp/asadm/*.whl
+# 	rm $(BUILD_ROOT)tmp/asadm/*.whl
 
-	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm
-	chmod ugo+x $(BUILD_ROOT)bin/asadm
+# 	mv $(BUILD_ROOT)tmp/asadm/asadm.pex $(BUILD_ROOT)bin/asadm
+# 	chmod ugo+x $(BUILD_ROOT)bin/asadm
 
-no_pex:
-	$(call make_build)
+# no_pex:
+# 	$(call make_build)
 
-	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
-	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm
-	cat $(BUILD_ROOT)tmp/asadm.zip >> $(BUILD_ROOT)bin/asadm
+# 	cd $(BUILD_ROOT)tmp/asadm && zip -r ../asadm *
+# 	echo "#!/usr/bin/env python" > $(BUILD_ROOT)bin/asadm
+# 	cat $(BUILD_ROOT)tmp/asadm.zip >> $(BUILD_ROOT)bin/asadm
 
-	chmod ugo+x $(BUILD_ROOT)bin/asadm
+# 	chmod ugo+x $(BUILD_ROOT)bin/asadm
 
 install:
 	install -o $(INSTALL_USER) -g $(INSTALL_GROUP) -d -m 755 $(INSTALL_ROOT)
