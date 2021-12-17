@@ -1,5 +1,4 @@
 import asyncio
-from asyncio import futures
 from lib.get_controller import (
     GetConfigController,
     GetStatisticsController,
@@ -226,6 +225,8 @@ class InfoNamespaceController(LiveClusterCommandController):
         if self.get_futures:
             # Wrapped to prevent base class from calling result.
             return dict(futures=tasks)
+        
+        return tasks
 
     @CommandHelp("Displays usage information for each namespace.")
     async def do_usage(self, line):
