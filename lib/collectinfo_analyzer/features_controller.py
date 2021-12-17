@@ -22,9 +22,6 @@ class FeaturesController(CollectinfoCommandController):
         namespace_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_NAMESPACE
         )
-        cluster_configs = self.log_handler.info_getconfig(
-            stanza=constants.CONFIG_CLUSTER
-        )
 
         for timestamp in sorted(service_stats.keys()):
             features = {}
@@ -46,9 +43,6 @@ class FeaturesController(CollectinfoCommandController):
 
             if timestamp in namespace_configs:
                 ns_configs = namespace_configs[timestamp]
-
-            if timestamp in cluster_configs:
-                cl_configs = cluster_configs[timestamp]
 
             features = common.find_nodewise_features(
                 service_stats=s_stats,
