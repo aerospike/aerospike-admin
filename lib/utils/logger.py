@@ -1,5 +1,6 @@
 import logging
 import traceback
+from sys import exit
 
 
 from lib.view import terminal
