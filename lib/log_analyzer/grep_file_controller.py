@@ -11,7 +11,7 @@ class _GrepFile(LogAnalyzerCommandController):
         self.modifiers = modifiers
         self.logger = logging.getLogger("asadm")
 
-    async def do_show(self, line):
+    def do_show(self, line):
         if not line:
             raise ShellException(
                 "Could not understand log request, " + "see 'help log'"
@@ -108,7 +108,7 @@ class _GrepFile(LogAnalyzerCommandController):
                 page_index += 1
         show_results.close()
 
-    async def do_count(self, line):
+    def do_count(self, line):
         if not line:
             raise ShellException(
                 "Could not understand log request, " + "see 'help log'"
@@ -223,7 +223,7 @@ class _GrepFile(LogAnalyzerCommandController):
                 page_index += 1
         count_results.close()
 
-    async def do_diff(self, line):
+    def do_diff(self, line):
         if not line:
             raise ShellException(
                 "Could not understand log request, " + "see 'help log'"
@@ -337,7 +337,7 @@ class _GrepFile(LogAnalyzerCommandController):
                 page_index += 1
         diff_results.close()
 
-    async def do_latency(self, line):
+    def do_latency(self, line):
         if not line:
             raise ShellException(
                 "Could not understand latency request, " + "see 'help log'"
