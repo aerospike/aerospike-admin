@@ -25,6 +25,7 @@ pytest = "*"
 unittest2 = "*"
 mock = "*"
 coverage = "*"
+macholib = {version = "*", sys_platform = "== 'darwin'"}
 
 [requires]
 python_version = "3.9"
