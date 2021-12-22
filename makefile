@@ -37,8 +37,8 @@ define make_build
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
 	$(if $(filter $(OS),Darwin),
-	sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py,
-	sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py
+	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py) || true ,
+	(git describe && sed -i s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py) || true
 	)
 
 endef

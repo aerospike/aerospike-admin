@@ -11,7 +11,7 @@ There are no runtime dependencies.  This is because the python interpreter is no
 bundled with asadm version 2.6 and later.
 
 ### Build Dependencies
-- python 3.8+
+- python 3.9
 - pipenv
 
 ### Build and Install Asadm

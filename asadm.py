@@ -791,16 +791,9 @@ def parse_commands(file):
 
 
 def get_version():
-    # TODO: Fix this.  Only really needed for local builds
-    # if __version__.startswith("$$"):
-    #     path = sys.argv[0].split("/")[:-1]
-    #     path.append("version.txt")
-    #     vfile = "/".join(path)
-    #     f = open(vfile)
-    #     version = f.readline()
-    #     f.close()
-    #     return str(version)
-    # else:
+    if __version__.startswith("$$"):
+        return "development"
+
     return __version__
 
 
