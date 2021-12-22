@@ -79,6 +79,7 @@ class AerospikeShell(cmd.Cmd):
         ssl_context=None,
         only_connect_seed=False,
         execute_only_mode=False,
+        privileged_mode=False,
         timeout=5,
     ):
         # indicates shell created successfully and connected to cluster/collectinfo/logfile
@@ -165,7 +166,10 @@ class AerospikeShell(cmd.Cmd):
 
                 self.set_default_prompt()
                 self.intro = ""
-                if not execute_only_mode:
+                if execute_only_mode:
+                    if privileged_mode:
+                        self.ctrl.do_enable([])
+                else:
                     self.intro += str(self.ctrl.cluster) + "\n"
                     cluster_visibility_error_nodes = (
                         self.ctrl.cluster.get_visibility_error_nodes()
@@ -636,6 +640,7 @@ def main():
         ssl_context=ssl_context,
         only_connect_seed=cli_args.single_node,
         execute_only_mode=execute_only_mode,
+        privileged_mode=cli_args.enable,
         timeout=cli_args.timeout,
     )
 

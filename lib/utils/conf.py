@@ -78,6 +78,7 @@ _confdefault = {
         "asinfo-mode": False,
         "collectinfo": False,
         "execute": False,
+        "enable": False,
         "log-analyser": False,
         "log-path": "",
         "pmap": False,
@@ -123,6 +124,7 @@ _confspec = """{
                 "asinfo-mode": { "type" : "boolean" },
                 "collectinfo": { "type" : "boolean" },
                 "execute": { "type" : "boolean" },
+                "enable": { "type" : "boolean" },
                 "log-analyser": { "type" : "boolean" },
                 "log-path" : { "type" : "string" }
             },
@@ -467,6 +469,10 @@ def print_config_help():
         "                      The input value is either string of ';' separated asadm \n"
         "                      commands or path of file which has asadm commands (ends with ';')."
     )
+    print(
+        " --enable             Run commands in privileged mode.  Must be used with the\n"
+        "                      --execute option. Not allowed in interactive mode."
+    )
     print(" -o --out-file        Path of file to write output of -e command[s].")
     print(" --no-color           Disable colored output.")
     print(
@@ -494,8 +500,7 @@ def print_config_file_option():
     print("----------------------------------\n")
     print("[cluster]")
     print(
-        " -h, --host=HOST\n"
-        '                      HOST is "<host1>[:<tlsname1>][:<port1>],..." \n'
+        ' -h, --host=HOST      HOST is "<host1>[:<tlsname1>][:<port1>],..." \n'
         "                      Server seed hostnames or IP addresses. The tlsname is \n"
         "                      only used when connecting with a secure TLS enabled \n"
         "                      server. Default: localhost:3000\n"
@@ -505,20 +510,15 @@ def print_config_file_option():
         "                        192.168.1.10:cert1:3000,192.168.1.20:cert2:3000"
     )
     print(
-        " --services-alternate \n"
-        "                      Enable use of services-alternate instead of services in\n"
+        " --services-alternate Enable use of services-alternate instead of services in\n"
         "                      info request during cluster tending"
     )
+    print(" -p, --port=PORT      Server default port. Default: 3000")
     print(
-        " -p, --port=PORT \n" "                      Server default port. Default: 3000"
+        " -U, --user=USER      User name used to authenticate with cluster. Default: none"
     )
     print(
-        " -U, --user=USER \n"
-        "                      User name used to authenticate with cluster. Default: none"
-    )
-    print(
-        " -P, --password\n"
-        "                      Password used to authenticate with cluster. Default: none\n"
+        " -P, --password       Password used to authenticate with cluster. Default: none\n"
         "                      User will be prompted on command line if -P specified and no\n"
         "                      password is given."
     )
@@ -532,21 +532,13 @@ def print_config_file_option():
     print(
         " --tls-enable         Enable TLS on connections. By default TLS is disabled."
     )
-    # Deprecated
-    # print(" --tls-encrypt-only   Disable TLS certificate verification.\n")
     print(
         " -t --tls-name=name   Default TLS name of host to verify for TLS connection,\n"
         "                      if not specified in host string. It is required if tls-enable\n"
         "                      is set."
     )
-    print(
-        " --tls-cafile=path\n"
-        "                      Path to a trusted CA certificate file."
-    )
-    print(
-        " --tls-capath=path\n"
-        "                      Path to a directory of trusted CA certificates."
-    )
+    print(" --tls-cafile=path    Path to a trusted CA certificate file.")
+    print(" --tls-capath=path    Path to a directory of trusted CA certificates.")
     print(
         " --tls-protocols=TLS_PROTOCOLS\n"
         "                      Set the TLS protocol selection criteria. This format\n"
@@ -564,9 +556,8 @@ def print_config_file_option():
         "                      html"
     )
     print(
-        " --tls-keyfile=path\n"
-        "                      Path to the key for mutual authentication (if\n"
-        "                      Aerospike Cluster is supporting it)."
+        " --tls-keyfile=path   Path to the key for mutual authentication (if Aerospike\n"
+        "                      Cluster is supporting it)."
     )
     print(
         " --tls-keyfile-password=password\n"
@@ -580,8 +571,7 @@ def print_config_file_option():
         "                      password is given."
     )
     print(
-        " --tls-certfile=path\n"
-        "                      Path to the chain file for mutual authentication (if\n"
+        " --tls-certfile=path  Path to the chain file for mutual authentication (if\n"
         "                      Aerospike Cluster is supporting it)."
     )
     print(
@@ -615,6 +605,10 @@ def print_config_file_option():
     print(
         " --timeout=value      Set timeout value in seconds for node level operations. \n"
         "                      TLS connection does not support timeout. Default: 5 seconds"
+    )
+    print(
+        " --enable             Run commands in privileged mode.  Must be used with the\n"
+        "                      --execute option. Not allowed in interactive mode."
     )
 
 
@@ -664,6 +658,7 @@ def get_cli_args():
     add_fn("-V", "--version", action="store_true")
     add_fn("-E", "--help", action="store_true")
     add_fn("-e", "--execute")
+    add_fn("--enable", action="store_true")
     add_fn("-o", "--out-file")
     add_fn("-c", "--collectinfo", action="store_true")
     add_fn("-l", "--log-analyser", action="store_true")
