@@ -20,7 +20,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
-        apt-get install pipenv
+        sudo apt-get install pipenv -y
         pipenv install --dev
     - name: Test with unittest2
       run: |
