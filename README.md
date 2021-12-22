@@ -6,23 +6,17 @@ a collectinfo file (Collectinfo-Analyzer), or logs (Log-analyser mode).
 Start the tool with *asadm* and run the *help* command to get started.
 
 ## Installing Aerospike Admin
+### Runtime Dependencies
+There are no runtime dependencies.  This is because the python interpreter is now 
+bundled with asadm version 2.6 and later.
 
 ### Build Dependencies
+- python 3.8+
+- pipenv
 
-- pip >= 9.0.3
-- pex == 1.6.1
-- requests == 2.18.4
-
-### Install asadm as PEX
+### Build and Install Asadm
 ```
 sudo make
-sudo make install
-```
-
-### Install asadm without PEX
-```
-sudo pip install -r requirements.txt
-sudo make no_pex
 sudo make install
 ```
 
@@ -39,29 +33,19 @@ asadm -c [-f <location of collectinfo\>]
 Admin> help
 
 
-## Dependencies
-- python 3.6+
-
 ### Python Modules
-- bcrypt==3.1.4
-- cryptography==3.4.7
-- distro==1.5.0
-- jsonschema==2.5.1
-- pexpect==4.4.0
-- ply==3.11
-- pyasn1==0.4.2
-- pyOpenSSL==18.0.0
-- toml==0.9.4
-- yappi==0.98
-- python-dateutil==2.8.1
-
-
-### Mac OSX
-Requires Python 3.6+
-Run following command to ensure asadm history works properly:
-```
-sudo easy_install -a readline
-```
+- bcrypt = "==3.1.4"
+- cryptography = "==3.4.7"
+- distro = "==1.5.0"
+- jsonschema = "==2.5.1"
+- pexpect = "==4.4.0"
+- ply = "==3.11"
+- pyasn1 = "==0.4.2"
+- toml = "==0.9.4"
+- yappi = "==0.98"
+- python-dateutil = "==2.8.1"
+- pyOpenSSL = "==18.0.0"
+- setuptools = "*"
 
 ## Tests
 ### Dependencies
