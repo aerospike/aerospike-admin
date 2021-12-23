@@ -12,7 +12,7 @@ from lib.base_controller import CommandHelp
 from lib.get_controller import GetConfigController
 from lib.utils.lookup_dict import PrefixDict
 from .client import (
-    ASInfoClusterStableError, 
+    ASInfoClusterStableError,
     ASInfoError,
     ASProtocolError,
     BoolConfigType,
@@ -54,7 +54,7 @@ class ManageLeafCommandController(LiveClusterCommandController):
 
 @CommandHelp(
     '"manage" is used for administrative tasks like managing users, roles, udf, and',
-    'sindexes. It should be used in conjunction with the "show users" and "show roles',
+    'sindexes. It should be used in conjunction with the "show users" and "show roles"',
     "command.",
 )
 class ManageController(LiveClusterCommandController):
@@ -2207,7 +2207,7 @@ class ManageReclusterController(ManageLeafCommandController):
 @CommandHelp(
     '"manage quiesce" causes a node to avoid participating as a replica after the next recluster event.',
     "Usage: quiesce with node1 [node2 [...]] [undo]",
-    "  with          - The node(s) to quiesce. Exceptable values are ip:port, node-id, or FQDN.",
+    "  with          - The node(s) to quiesce. Acceptable values are ip:port, node-id, or FQDN.",
     "  undo          - Revert the effects of the quiesce on the next recluster event.",
     "                  [default: false]",
 )

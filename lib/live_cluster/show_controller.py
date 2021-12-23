@@ -1174,7 +1174,7 @@ class ShowJobsController(LiveClusterCommandController):
         )
 
 
-@CommandHelp('Displays rack information for a rack-aware cluster".')
+@CommandHelp("Displays rack information for a rack-aware cluster.")
 class ShowRacksController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with"])
