@@ -302,7 +302,6 @@ class CollectinfoController(LiveClusterCommandController):
         )
 
         for hist, hist_dump in zip(hist_list, hist_dumps):
-            hist_dump = hist_dump
 
             for node in hist_dump:
                 if node not in histogram_map:

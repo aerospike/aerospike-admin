@@ -343,9 +343,6 @@ class BaseController(object):
                 if inspect.iscoroutine(results):
                     results = await results
 
-                # print(method)
-                # print(results)
-
                 if not isinstance(results, list) and not isinstance(results, tuple):
 
                     # returning futures to display to the console allows multiple do_*

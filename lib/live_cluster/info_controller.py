@@ -22,6 +22,12 @@ class InfoController(LiveClusterCommandController):
 
     @CommandHelp("Displays network, namespace, and XDR summary information.")
     async def _do_default(self, line):
+        # We are not using line for any of subcommand, but if user enters 'info object' or 'info usage' then it will
+        # give error for unexpected format. We can catch this inside InfoNamespaceController but in that case
+        # it will show incomplete output, for ex. 'info object' will print output of 'info network', 'info xdr' and
+        # 'info namespace object', but since it is not correct command it should print output for partial correct
+        # command, in this case it should print data for 'info'. To keep consistent output format, we are passing empty
+        # list as line.
         results = await asyncio.gather(
             self.do_network(line),
             self.controller_map["namespace"](get_futures=True)([]),

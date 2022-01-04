@@ -279,6 +279,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
         return commands
 
+    # This was copied from the base class then turned async.
     async def cmdloop(self, intro=None):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
         off the received input, and dispatch to action methods, passing them
@@ -383,6 +384,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 logger.error(e)
         return ""  # line was handled by execute
 
+    # overloaded to support async
     async def onecmd(self, line):
         result = super().onecmd(line)
 

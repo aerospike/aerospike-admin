@@ -200,11 +200,8 @@ def parse_peers_string(
 
 async def concurrent_map(func, data):
     """
-    Similar to the builtin function map(). But spawn a thread for each argument
+    Similar to the builtin function map(). But run a coroutine for each argument
     and apply 'func' concurrently.
-
-    Note: unlike map(), we cannot take an iterable argument. 'data' should be an
-    indexable sequence.
     """
 
     return await asyncio.gather(*(func(d) for d in data))

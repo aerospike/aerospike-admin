@@ -2544,27 +2544,6 @@ class Node(AsyncObject):
         if not sock:
             raise IOError("Error: Could not connect to node %s" % ip)
 
-        # sock = await self._get_connection(ip, port)
-        # if not sock:
-        #     raise IOError("Error: Could not connect to node %s" % ip)
-
-        # try:
-        #     if sock:
-        #         result = await sock.info(command)
-        #         try:
-        #             if len(self.socket_pool[port]) < self.socket_pool_max_size:
-        #                 sock.settimeout(None)
-        #                 self.socket_pool[port].add(sock)
-
-        #             else:
-        #                 await sock.close()
-
-        #         except Exception:
-        #             await sock.close()
-
-        #     if result != -1 and result is not None:
-        #         return result
-
         try:
             result = await admin_func(sock, *args)
 
@@ -2574,8 +2553,6 @@ class Node(AsyncObject):
                 self.socket_pool[port].add(sock)
             else:
                 sock.close()
-
-            # result = await result
 
         except Exception:
             if sock:
