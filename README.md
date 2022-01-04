@@ -15,25 +15,35 @@ bundled with asadm version 2.6 and later.
 - pipenv
 
 ### Build and Install Asadm
+1. Install python 3.9
+2. Install [pipenv](https://pypi.org/project/pipenv/)
+3. Run
 ```
 sudo make
 sudo make install
 ```
 
 ## Running Aerospike Admin in Live Cluster Mode.
+```
 asadm -h <Aerospike Server Address\>
 Admin> help
+```
 
 ## Running Aerospike Admin in Log-analyser Mode.
+```
 asadm -l [-f <location of logs\>]
 Admin> help
+```
 
 ## Running Aerospike Admin in Collectinfo Mode.
+```
 asadm -c [-f <location of collectinfo\>]
 Admin> help
+```
 
 
 ### Python Modules
+#### Runtime
 - bcrypt = "==3.1.4"
 - cryptography = "==3.4.7"
 - distro = "==1.5.0"
@@ -47,10 +57,20 @@ Admin> help
 - pyOpenSSL = "==18.0.0"
 - setuptools = "*"
 
+#### Build
+- pyinstaller = "==4.7"
+- macholib = * **for mac build only**
+
+#### Test
+- pytest = "*"
+- unittest2 = "*"
+- mock = "*"
+
+#### Dev
+black = "*"
+flake8 = "*"
+
 ## Tests
-### Dependencies
-- unittest2: 0.5.1
-- Mock: 1.0.1
 
 ### Setting Test Environment
 asadm has unit and e2e tests. To setup environment for e2e tests, execute following steps:
@@ -61,8 +81,10 @@ asadm has unit and e2e tests. To setup environment for e2e tests, execute follow
 - Wait for a few seconds so cluster can return histogram output properly.
 
 ### Running Tests
-- pip install -r requirements.txt
-- ./run_tests.sh
+```
+pipenv
+./run_tests.sh
+```
 
 ## Profiling
 ### Dependencies
