@@ -775,9 +775,17 @@ def find_most_frequent(list_):
 
 
 class async_cached(object):
-    # Doesn't support lists, dicts and other unhashables
-    # Also doesn't support kwargs for reason above.
+    """
+    Doesn't support lists, dicts and other unhashables
+    Also doesn't support kwargs for reasons above.
+    """
+
     class _CacheableCoroutine:
+        """
+        Allow a coroutine to be awaited multipul times. The lock makes sure multiple
+        methods do not call await on the coroutine.
+        """
+
         def __init__(self, co):
             self.co = co
             self.done = False
