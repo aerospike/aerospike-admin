@@ -785,7 +785,7 @@ class async_cached(object):
             self.lock = asyncio.Lock()
 
         def __await__(self):
-            with (yield from self.lock):
+            with (yield from self.lock.__await__()):
                 if self.done:
                     return self.result
                 self.result = yield from self.co.__await__()
