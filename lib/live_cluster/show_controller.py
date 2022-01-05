@@ -981,12 +981,22 @@ class ShowPmapController(LiveClusterCommandController):
 )
 class ShowUsersController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
         self.getter = GetUsersController(self.cluster)
 
     def _do_default(self, line):
+        user = None
+
+        if line:
+            user = line.pop(0)
+
         principal_node = self.cluster.get_expected_principal()
-        users_data = self.getter.get_users(nodes=[principal_node])
+        users_data = None
+
+        if user is None:
+            users_data = self.getter.get_users(nodes=[principal_node])
+        else:
+            users_data = self.getter.get_user(user, nodes=[principal_node])
+
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
@@ -995,7 +1005,7 @@ class ShowUsersController(LiveClusterCommandController):
         elif isinstance(resp, Exception):
             raise resp
 
-        return util.Future(self.view.show_users, resp, **self.mods)
+        return util.Future(self.view.show_users, resp, None, **self.mods)
 
 
 @CommandHelp(
@@ -1004,12 +1014,21 @@ class ShowUsersController(LiveClusterCommandController):
 )
 class ShowRolesController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
         self.getter = GetRolesController(self.cluster)
 
     def _do_default(self, line):
+        role = None
+
+        if line:
+            role = line.pop(0)
+
         principal_node = self.cluster.get_expected_principal()
-        roles_data = self.getter.get_roles(nodes=[principal_node])
+
+        if role is None:
+            roles_data = self.getter.get_roles(nodes=[principal_node])
+        else:
+            roles_data = self.getter.get_role(role, nodes=[principal_node])
+
         resp = list(roles_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
@@ -1018,7 +1037,7 @@ class ShowRolesController(LiveClusterCommandController):
         elif isinstance(resp, Exception):
             raise resp
 
-        return util.Future(self.view.show_roles, resp, **self.mods)
+        return util.Future(self.view.show_roles, resp, None, **self.mods)
 
 
 @CommandHelp("Displays UDF modules along with metadata.")

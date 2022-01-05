@@ -851,7 +851,7 @@ class CliView(object):
         )
 
     @staticmethod
-    def show_users(users_data, like, timestamp="", **ignore):
+    def show_users(users_data, like=None, timestamp="", **ignore):
         if not users_data:
             return
 
@@ -874,7 +874,7 @@ class CliView(object):
         CliView.print_result(sheet.render(templates.show_users, title, sources))
 
     @staticmethod
-    def show_roles(roles_data, like, timestamp="", **ignore):
+    def show_roles(roles_data, like=None, timestamp="", **ignore):
         if not roles_data:
             return
 
