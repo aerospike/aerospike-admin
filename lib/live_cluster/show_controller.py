@@ -978,6 +978,8 @@ class ShowPmapController(LiveClusterCommandController):
 @CommandHelp(
     "Displays users and their assigned roles, connections, and quota metrics",
     "for the Aerospike cluster.",
+    "Usage: users [user]",
+    "  user          - Display output for a single user.",
 )
 class ShowUsersController(LiveClusterCommandController):
     def __init__(self):
@@ -1011,6 +1013,8 @@ class ShowUsersController(LiveClusterCommandController):
 @CommandHelp(
     "Displays roles and their assigned privileges, allowlist, and quotas",
     "for the Aerospike cluster.",
+    "Usage: roles [role]",
+    "  role          - Display output for a single role.",
 )
 class ShowRolesController(LiveClusterCommandController):
     def __init__(self):
