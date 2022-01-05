@@ -21,11 +21,12 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest coverage mock unittest2
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        python -m pip install pipenv
+        pipenv install --dev
     - name: Test with unittest2
       run: |
         coverage run -m pytest test/unit
+        pipenv run bash -c "coverage run -m pytest test/unit"
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1
       with:

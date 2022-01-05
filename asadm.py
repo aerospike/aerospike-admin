@@ -56,6 +56,14 @@ from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
 from lib.view import terminal, view
 
+# Do not remove this line.  It mitigates a race condition that occurs when using
+# pyinstaller and socket.getaddrinfo.  For some reason the idna codec is not registered
+# causing a lookup error to occur. Adding this line here makes sure that the proper
+# codec is registered well before it is used in getaddrinfo.
+# see https://bugs.python.org/issue29288, https://github.com/aws/aws-cli/blob/1.16.277/awscli/clidriver.py#L55,
+# and https://github.com/pyinstaller/pyinstaller/issues/1113 for more info :)
+u"".encode("idna")
+
 __version__ = "$$__version__$$"
 CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
 CMD_FILE_MULTI_LINE_COMMENT_START = "/*"
@@ -123,7 +131,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>"
                     )
                     await self.do_exit("")
-                    exit(1)
+                    sys.exit(1)
 
                 self.ctrl = CollectinfoRootController(
                     admin_version, clinfo_path=log_path
@@ -548,7 +556,7 @@ def parse_tls_input(cli_args):
 
     except Exception as e:
         logger.error("SSLContext creation Exception: " + str(e))
-        exit(1)
+        sys.exit(1)
 
 
 async def execute_asinfo_commands(
@@ -613,12 +621,12 @@ async def main():
 
     if cli_args.help:
         conf.print_config_help()
-        exit(0)
+        sys.exit(0)
 
     if cli_args.version:
         print("Aerospike Administration Shell")
         print("Version " + str(admin_version))
-        exit(0)
+        sys.exit(0)
 
     if cli_args.no_color:
         disable_coloring()
@@ -686,10 +694,10 @@ async def main():
                 ssl_context=ssl_context,
                 line_separator=cli_args.line_separator,
             )
-            exit(0)
+            sys.exit(0)
         except Exception as e:
             logger.error(e)
-            exit(1)
+            sys.exit(1)
 
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
@@ -720,7 +728,7 @@ async def main():
             print("Unable to load profiler")
             print("Yappi Exception:")
             print(str(a))
-            exit(1)
+            sys.exit(1)
 
     func = None
     args = ()
@@ -728,7 +736,7 @@ async def main():
     real_stdout = sys.stdout
     if not execute_only_mode:
         if not shell.connected:
-            exit(1)
+            sys.exit(1)
 
         func = shell.cmdloop
         single_command = False
@@ -782,7 +790,7 @@ async def main():
                 func = common.collect_sys_info(port=cli_args.port)
 
                 cleanup()
-                exit(1)
+                sys.exit(1)
 
             cleanup()
             logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
@@ -855,15 +863,9 @@ def parse_commands(file):
 
 def get_version():
     if __version__.startswith("$$"):
-        path = sys.argv[0].split("/")[:-1]
-        path.append("version.txt")
-        vfile = "/".join(path)
-        f = open(vfile)
-        version = f.readline()
-        f.close()
-        return str(version)
-    else:
-        return __version__
+        return "development"
+
+    return __version__
 
 
 if __name__ == "__main__":
