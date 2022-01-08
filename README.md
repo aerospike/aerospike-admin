@@ -72,7 +72,6 @@ Admin> help
 #### Dev
 black = "*"
 flake8 = "*"
->>>>>>> test-ready
 
 ## Tests
 

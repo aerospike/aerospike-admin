@@ -21,66 +21,15 @@ import re
 import socket
 import subprocess
 import sys
-import threading
 import logging
 from time import time
 
 
-def logthis(logger):
-    def _decorator(func):
-        def _decorated(*arg, **kwargs):
-            level = logging.DEBUG
-            logger.log(
-                level, "calling '%s'(%r,%r)", func.__name__, arg, kwargs, stacklevel=2
-            )
-            ret = func(*arg, **kwargs)
-            logger.log(
-                level,
-                "called '%s', returned value: %r",
-                func.__name__,
-                ret,
-                stacklevel=2,
-            )
-            return ret
-
-        return _decorated
-
-    return _decorator
-
-
-class Future:
-
+def closure(func, *args, **kwargs):
     """
-    Very basic implementation of a async future.
+    Save a function call for later. Useful for saving functions that store output.
     """
-
-    def __init__(self, func, *args, **kwargs):
-        self._result = None
-
-        args = list(args)
-        args.insert(0, func)
-        self.exc = None
-
-        def wrapper(func, *args, **kwargs):
-            self.exc = None
-            try:
-                self._result = func(*args, **kwargs)
-            except Exception as e:
-                # Store original stack trace/exception to be re-thrown later.
-                self.exc = e
-
-        self._worker = threading.Thread(target=wrapper, args=args, kwargs=kwargs)
-
-    def start(self):
-        self._worker.start()
-        return self
-
-    def result(self):
-        if self.exc:
-            raise (self.exc)
-
-        self._worker.join()
-        return self._result
+    return lambda: func(*args, **kwargs)
 
 
 def shell_command(command):
@@ -112,10 +61,10 @@ async def capture_stdout(func, line=""):
     if inspect.iscoroutinefunction(func):
         await func(line)
     else:
-        output = func(line)
+        tmp_output = func(line)
 
-        if inspect.iscoroutine(output):
-            output = await output
+        if inspect.iscoroutine(tmp_output):
+            tmp_output = await tmp_output
 
     output = capturer.getvalue()
     sys.stdout = old

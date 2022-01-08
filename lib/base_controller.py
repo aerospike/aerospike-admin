@@ -315,9 +315,8 @@ class BaseController(object):
     def _run_results(self, results):
         rv = []
         for result in results:
-            if isinstance(result, util.Future):
-                result.start()
-                rv.append(result.result())
+            if inspect.isfunction(result):
+                rv.append(result())
             elif isinstance(result, list) or isinstance(result, tuple):
                 rv.append(self._run_results(result))
             else:
@@ -344,14 +343,16 @@ class BaseController(object):
                     results = await results
 
                 if not isinstance(results, list) and not isinstance(results, tuple):
-
-                    # returning futures to display to the console allows multiple do_*
-                    # func to run concurrently but display deterministicely.
-                    if isinstance(results, util.Future):
+                    """
+                    returning view functions wrapped in coroutines to display allows
+                    multiple do_* func to run concurrently but display deterministicely.
+                    """
+                    if inspect.isfunction(results):
                         results = (results,)
                     else:
                         return results
 
+                # results is a tuple or list of coroutines
                 return self._run_results(results)
 
             except IOError as e:

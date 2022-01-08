@@ -228,10 +228,11 @@ class Cluster(AsyncObject):
                     # nodes which can't detect online nodes
                     continue
 
-                alumni_peers = node.get_alumni_peers()
-                peers = node.get_peers(all=True)
-                alumni_peers = client_util.flatten(await alumni_peers)
-                peers = client_util.flatten(await peers)
+                alumni_peers, peers = await asyncio.gather(
+                    node.get_alumni_peers(), node.get_peers(all=True)
+                )
+                alumni_peers = client_util.flatten(alumni_peers)
+                peers = client_util.flatten(peers)
                 not_visible = set(alumni_peers) - set(peers)
 
                 if len(not_visible) >= 1:
@@ -599,8 +600,8 @@ class Cluster(AsyncObject):
     async def is_XDR_enabled(self, nodes="all"):
         return await self.call_node_method(nodes, "is_XDR_enabled")
 
-    def is_feature_present(self, feature, nodes="all"):
-        return self.call_node_method(nodes, "is_feature_present", feature)
+    async def is_feature_present(self, feature, nodes="all"):
+        return await self.call_node_method(nodes, "is_feature_present", feature)
 
     async def get_IP_to_node_map(self):
         if self.need_to_refresh_cluster():

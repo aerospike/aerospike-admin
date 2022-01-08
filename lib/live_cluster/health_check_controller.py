@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import time
 
@@ -706,23 +707,27 @@ class HealthCheckController(LiveClusterCommandController):
             while sn_ct < snap_count:
                 fetched_as_val = {}
 
-                # Collecting data
-                sys_stats = self.cluster.info_system_statistics(
-                    nodes=self.nodes,
-                    default_user=default_user,
-                    default_pwd=default_pwd,
-                    default_ssh_key=default_ssh_key,
-                    default_ssh_port=default_ssh_port,
-                    credential_file=credential_file,
-                    collect_remote_data=enable_ssh,
-                )
-
                 for _key, (info_function, stanza_list) in stanza_dict.items():
 
                     for stanza_item in stanza_list:
 
                         stanza = stanza_item[0]
-                        fetched_as_val[(_key, stanza)] = info_function(stanza)
+                        fetched_as_val[(_key, stanza)] = asyncio.create_task(
+                            info_function(stanza)
+                        )
+
+                # Collecting data
+                sys_stats = asyncio.create_task(
+                    self.cluster.info_system_statistics(
+                        nodes=self.nodes,
+                        default_user=default_user,
+                        default_pwd=default_pwd,
+                        default_ssh_key=default_ssh_key,
+                        default_ssh_port=default_ssh_port,
+                        credential_file=credential_file,
+                        collect_remote_data=enable_ssh,
+                    )
+                )
 
                 # Creating health input model
                 for _key, (info_function, stanza_list) in stanza_dict.items():

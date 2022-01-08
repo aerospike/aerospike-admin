@@ -16,6 +16,7 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyser / log-analyser)
 #############################################################################################################
 
+import asyncio
 import datetime
 import json
 import logging
@@ -520,17 +521,22 @@ async def request_license_usage(agent_host, agent_port):
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         entries_params = {"start", a_year_ago}
-        res_entries = session.get(
-            "http://" + agent_host + ":" + str(agent_port) + "/v1/entries/range/time",
-            params=entries_params,
-        )
-        res_health = session.get(
-            "http://" + agent_host + ":" + str(agent_port) + "/v1/health",
-            params=entries_params,
+        res_entries, res_health = await asyncio.gather(
+            session.get(
+                "http://"
+                + agent_host
+                + ":"
+                + str(agent_port)
+                + "/v1/entries/range/time",
+                params=entries_params,
+            ),
+            session.get(
+                "http://" + agent_host + ":" + str(agent_port) + "/v1/health",
+                params=entries_params,
+            ),
         )
 
         try:
-            res_health = await res_health
             res_health = await res_health.json()
 
             if res_health is not None:
@@ -543,7 +549,6 @@ async def request_license_usage(agent_host, agent_port):
             error = e
 
         try:
-            res_entries = await res_entries
             res_entries = await res_entries.json()
 
             if res_entries is not None:

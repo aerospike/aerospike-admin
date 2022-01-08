@@ -65,7 +65,7 @@ class ShowDistributionController(LiveClusterCommandController):
 
         histogram = await self.getter.do_distribution("ttl", nodes=self.nodes)
 
-        return util.Future(
+        return util.closure(
             self.view.show_distribution,
             "TTL Distribution",
             histogram,
@@ -113,7 +113,7 @@ class ShowDistributionController(LiveClusterCommandController):
                 self.logger.error(e)
                 return
 
-            return util.Future(
+            return util.closure(
                 self.view.show_distribution,
                 "Object Size Distribution",
                 histogram,
@@ -132,7 +132,7 @@ class ShowDistributionController(LiveClusterCommandController):
         unit = "Bytes"
         set_bucket_count = True
 
-        return util.Future(
+        return util.closure(
             self.view.show_object_distribution,
             title,
             await histogram,
@@ -205,14 +205,13 @@ class ShowLatenciesController(LiveClusterCommandController):
             line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods
         )
 
-        namespace_set = self.get_namespace_set()
-        nodes = self.latency_getter.get_latencies_and_latency_nodes(self.nodes)
-        namespace_set = await namespace_set
-        latencies = self.latency_getter.get_all(
-            self.nodes, buckets, increment, verbose, namespace_set
+        namespace_set = await self.get_namespace_set()
+        latencies, (latencies_nodes, latency_nodes) = await asyncio.gather(
+            self.latency_getter.get_all(
+                self.nodes, buckets, increment, verbose, namespace_set
+            ),
+            self.latency_getter.get_latencies_and_latency_nodes(self.nodes),
         )
-
-        latencies_nodes, latency_nodes = await nodes
 
         # No nodes support "show latencies"
         if len(latencies_nodes) == 0:
@@ -226,7 +225,7 @@ class ShowLatenciesController(LiveClusterCommandController):
             )
 
         # TODO: This format should probably be returned from get controller
-        latencies = self.sort_data_by_histogram_name(await latencies)
+        latencies = self.sort_data_by_histogram_name(latencies)
 
         self.view.show_latency(
             latencies,
@@ -278,7 +277,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         service_configs = await self.getter.get_service(nodes=self.nodes)
 
-        return util.Future(
+        return util.closure(
             self.view.show_config,
             "Service Configuration",
             service_configs,
@@ -310,7 +309,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         network_configs = await self.getter.get_network(nodes=self.nodes)
 
-        return util.Future(
+        return util.closure(
             self.view.show_config,
             "Network Configuration",
             network_configs,
@@ -345,7 +344,7 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
         return [
-            util.Future(
+            util.closure(
                 self.view.show_config,
                 "%s Namespace Configuration" % (ns),
                 configs,
@@ -377,10 +376,10 @@ class ShowConfigController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        xdr5_configs = self.getter.get_xdr5(nodes=self.nodes)
-        old_xdr_configs = self.getter.get_old_xdr(nodes=self.nodes)
-        xdr5_configs = await xdr5_configs
-        old_xdr_configs = await old_xdr_configs
+        xdr5_configs, old_xdr_configs = asyncio.gather(
+            self.getter.get_xdr5(nodes=self.nodes),
+            self.getter.get_old_xdr(nodes=self.nodes),
+        )
         futures = []
 
         if xdr5_configs:
@@ -388,7 +387,7 @@ class ShowConfigController(LiveClusterCommandController):
                 xdr5_configs, self.mods.get("for", [])
             )
             futures.append(
-                util.Future(
+                util.closure(
                     self.view.show_xdr5_config,
                     "XDR Configuration",
                     formatted_configs,
@@ -400,7 +399,7 @@ class ShowConfigController(LiveClusterCommandController):
             )
         if old_xdr_configs:
             futures.append(
-                util.Future(
+                util.closure(
                     self.view.show_config,
                     "XDR Configuration",
                     old_xdr_configs,
@@ -419,8 +418,10 @@ class ShowConfigController(LiveClusterCommandController):
         'Replaced by "show config xdr" for server >= 5.0.',
     )
     async def do_dc(self, line):
-
-        builds = self.cluster.info_build(nodes=self.nodes)
+        builds = asyncio.create_task(self.cluster.info_build(nodes=self.nodes))
+        dc_configs = asyncio.create_task(
+            self.getter.get_dc(flip=True, nodes=self.nodes)
+        )
 
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
@@ -439,7 +440,6 @@ class ShowConfigController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        dc_configs = self.getter.get_dc(flip=True, nodes=self.nodes)
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
         node_xdr_build_major_version = 4
@@ -461,7 +461,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         if nodes_running_v49_or_lower:
             futures = [
-                util.Future(
+                util.closure(
                     self.view.show_config,
                     "%s DC Configuration" % (dc),
                     configs,
@@ -475,7 +475,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         if nodes_running_v5_or_higher:
             futures.append(
-                util.Future(
+                util.closure(
                     self.logger.warning,
                     "Detected nodes running aerospike version >= 5.0. "
                     + "Please use 'asadm -e \"show config xdr\"' for versions 5.0 and up.",
@@ -494,23 +494,22 @@ class ShowMappingController(LiveClusterCommandController):
 
     @CommandHelp("Displays mapping IPs to Node_id and Node_id to IPs")
     async def _do_default(self, line):
-        actions = [
+        return await asyncio.gather(
             self.do_ip(line),
             self.do_node(line),
-        ]
-        return [await action for action in actions]
+        )
 
     @CommandHelp("Displays IP to Node_id mapping")
     async def do_ip(self, line):
         ip_to_node_map = await self.cluster.get_IP_to_node_map()
-        return util.Future(
+        return util.closure(
             self.view.show_mapping, "IP", "NODE-ID", ip_to_node_map, **self.mods
         )
 
     @CommandHelp("Displays Node_id to IPs mapping")
     async def do_node(self, line):
         node_to_ip_map = await self.cluster.get_node_to_IP_map()
-        return util.Future(
+        return util.closure(
             self.view.show_mapping, "NODE-ID", "IPs", node_to_ip_map, **self.mods
         )
 
@@ -565,7 +564,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         service_stats = await self.getter.get_service(nodes=self.nodes)
 
-        return util.Future(
+        return util.closure(
             self.view.show_stats,
             "Service Statistics",
             service_stats,
@@ -604,7 +603,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         return [
-            util.Future(
+            util.closure(
                 self.view.show_stats,
                 "%s Namespace Statistics" % (namespace),
                 ns_stats[namespace],
@@ -645,7 +644,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         return [
-            util.Future(
+            util.closure(
                 self.view.show_stats,
                 "%s Sindex Statistics" % (ns_set_sindex),
                 sindex_stats[ns_set_sindex],
@@ -686,7 +685,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         return [
-            util.Future(
+            util.closure(
                 self.view.show_stats,
                 "%s %s Set Statistics" % (namespace, set_name),
                 stats,
@@ -727,8 +726,8 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         return [
-            util.Future(
-                self.view.show_stats,
+            util.closure(
+                self.view.showstats,
                 "%s Bin Statistics" % (namespace),
                 new_bin_stat,
                 self.cluster,
@@ -763,11 +762,11 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        builds = self.cluster.info_build(nodes=self.nodes)
-        xdr_stats = self.getter.get_xdr(nodes=self.nodes)
+        builds, xdr_stats = await asyncio.gather(
+            self.cluster.info_build(nodes=self.nodes),
+            self.getter.get_xdr(nodes=self.nodes),
+        )
 
-        builds = await builds
-        xdr_stats = await xdr_stats
         old_xdr_stats = {}
         xdr5_stats = {}
         node_xdr_build_major_version = 4
@@ -799,7 +798,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                 matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
 
             futures = [
-                util.Future(
+                util.closure(
                     self.view.show_stats,
                     "XDR Statistics %s" % dc,
                     xdr5_stats[dc],
@@ -815,7 +814,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         if old_xdr_stats:
             futures.append(
-                util.Future(
+                util.closure(
                     self.view.show_stats,
                     "XDR Statistics",
                     old_xdr_stats,
@@ -857,15 +856,14 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        dc_stats = self.getter.get_dc(flip=True, nodes=self.nodes)
-        builds = self.cluster.info_build(nodes=self.nodes)
+        dc_stats, builds = await asyncio.gather(
+            self.getter.get_dc(flip=True, nodes=self.nodes),
+            self.cluster.info_build(nodes=self.nodes),
+        )
 
         nodes_running_v5_or_higher = False
         nodes_running_v49_or_lower = False
         node_xdr_build_major_version = 4
-
-        dc_stats = await dc_stats
-        builds = await builds
 
         for dc in dc_stats.values():
 
@@ -884,7 +882,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         if nodes_running_v49_or_lower:
             futures = [
-                util.Future(
+                util.closure(
                     self.view.show_config,
                     "%s DC Statistics" % (dc),
                     stats,
@@ -899,7 +897,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         if nodes_running_v5_or_higher:
             futures.append(
-                util.Future(
+                util.closure(
                     self.logger.warning,
                     "'show statistics dc' is deprecated on aerospike versions >= 5.0. \n"
                     + "Use 'show statistics xdr' instead.",
@@ -931,8 +929,7 @@ class ShowUsersController(LiveClusterCommandController):
         self.getter = GetUsersController(self.cluster)
 
     async def _do_default(self, line):
-        principal_node = self.cluster.get_expected_principal()
-        users_data = await self.getter.get_users(nodes=[principal_node])
+        users_data = await self.getter.get_users(nodes="principal")
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
@@ -954,8 +951,7 @@ class ShowRolesController(LiveClusterCommandController):
         self.getter = GetRolesController(self.cluster)
 
     async def _do_default(self, line):
-        principal_node = self.cluster.get_expected_principal()
-        roles_data = await self.getter.get_roles(nodes=[principal_node])
+        roles_data = await self.getter.get_roles(nodes="principal")
         resp = list(roles_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
@@ -974,8 +970,7 @@ class ShowUdfsController(LiveClusterCommandController):
         self.getter = GetUdfController(self.cluster)
 
     async def _do_default(self, line):
-        principal_node = self.cluster.get_expected_principal()
-        udfs_data = await self.getter.get_udfs(nodes=[principal_node])
+        udfs_data = await self.getter.get_udfs(nodes="principal")
         resp = list(udfs_data.values())[0]
 
         return self.view.show_udfs(resp, **self.mods)
@@ -988,8 +983,7 @@ class ShowSIndexController(LiveClusterCommandController):
         self.getter = GetSIndexController(self.cluster)
 
     async def _do_default(self, line):
-        principal_node = self.cluster.get_expected_principal()
-        sindexes_data = await self.getter.get_sindexs(nodes=[principal_node])
+        sindexes_data = await self.getter.get_sindexs(nodes="principal")
         resp = list(sindexes_data.values())[0]
 
         self.view.show_sindex(resp, **self.mods)
@@ -1031,8 +1025,11 @@ class ShowBestPracticesController(LiveClusterCommandController):
         self.modifiers = set(["with"])
 
     async def _do_default(self, line):
-        best_practices = self.cluster.info_best_practices(nodes=self.nodes)
-        versions = await self.cluster.info_build()
+        versions = asyncio.create_task(self.cluster.info_build())
+        best_practices = asyncio.create_task(
+            self.cluster.info_best_practices(nodes=self.nodes)
+        )
+        versions = await versions
 
         fully_supported = all(
             [
@@ -1082,7 +1079,7 @@ class ShowJobsController(LiveClusterCommandController):
     )
     async def do_scans(self, line):
         jobs = await self.getter.get_scans(nodes=self.nodes)
-        return util.Future(
+        return util.closure(
             self.view.show_jobs, "Scan Jobs", self.cluster, jobs, **self.mods
         )
 
@@ -1093,7 +1090,7 @@ class ShowJobsController(LiveClusterCommandController):
     )
     async def do_queries(self, line):
         jobs = await self.getter.get_query(nodes=self.nodes)
-        return util.Future(
+        return util.closure(
             self.view.show_jobs, "Query Jobs", self.cluster, jobs, **self.mods
         )
 
@@ -1107,7 +1104,7 @@ class ShowJobsController(LiveClusterCommandController):
     @CommandName("sindex-builder")
     async def do_sindex_builder(self, line):
         jobs = await self.getter.get_sindex_builder(nodes=self.nodes)
-        return util.Future(
+        return util.closure(
             self.view.show_jobs, "SIndex Builder Jobs", self.cluster, jobs, **self.mods
         )
 

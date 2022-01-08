@@ -52,6 +52,4 @@ class ASInfoController(LiveClusterCommandController):
 
         results = await self.cluster.info(value, nodes=nodes)
 
-        return util.Future(
-            self.view.asinfo, results, line_sep, show_node_name, self.cluster, **mods
-        )
+        return self.view.asinfo(results, line_sep, show_node_name, self.cluster, **mods)

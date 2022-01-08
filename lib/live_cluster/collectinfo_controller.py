@@ -189,14 +189,13 @@ class CollectinfoController(LiveClusterCommandController):
 
     async def _get_as_data_json(self):
         as_map = {}
-        getter = GetStatisticsController(self.cluster)
-        stats = getter.get_all(nodes=self.nodes)
+        stat_getter = GetStatisticsController(self.cluster)
+        config_getter = GetConfigController(self.cluster)
 
-        getter = GetConfigController(self.cluster)
-        config = getter.get_all(nodes=self.nodes)
-
-        stats = await stats
-        config = await config
+        stats, config = await asyncio.gather(
+            stat_getter.get_all(nodes=self.nodes),
+            config_getter.get_all(nodes=self.nodes),
+        )
 
         self._remove_exception_from_section_output(stats)
         self._remove_exception_from_section_output(config)
@@ -338,16 +337,12 @@ class CollectinfoController(LiveClusterCommandController):
 
     async def _get_as_access_control_list(self):
         acl_map = {}
-        principal_node = self.cluster.get_expected_principal()
-
-        getter = GetUsersController(self.cluster)
-        users_map = getter.get_users(nodes=[principal_node])
-
-        getter = GetRolesController(self.cluster)
-        roles_map = getter.get_roles(nodes=[principal_node])
-
-        users_map = await users_map
-        roles_map = await roles_map
+        users_getter = GetUsersController(self.cluster)
+        roles_getter = GetRolesController(self.cluster)
+        users_map, roles_map = await asyncio.gather(
+            users_getter.get_users(nodes="principal"),
+            roles_getter.get_roles(nodes="principal"),
+        )
 
         for node in users_map:
             acl_map[node] = {}
@@ -407,7 +402,7 @@ class CollectinfoController(LiveClusterCommandController):
             ),
         )
 
-        cluster_names = self.cluster.info("cluster-name")
+        cluster_names = asyncio.create_task(self.cluster.info("cluster-name"))
 
         if CollectinfoController.get_pmap:
             pmap_map = await self._get_as_pmap()
@@ -566,8 +561,8 @@ class CollectinfoController(LiveClusterCommandController):
         summary_info_params = ["network", "namespace", "set", "xdr", "dc", "sindex"]
         health_params = ["health -v"]
 
-        as_version = self.cluster.info("build")
-        namespaces = self.cluster.info("namespaces")
+        as_version = asyncio.create_task(self.cluster.info("build"))
+        namespaces = asyncio.create_task(self.cluster.info("namespaces"))
 
         # find version
         try:
@@ -607,6 +602,8 @@ class CollectinfoController(LiveClusterCommandController):
 
         util.write_to_file(self.aslogfile, collect_output)
 
+        # All these calls to collectinfo_content must happen synchronously because they
+        # capture std output.
         try:
             await self._collectinfo_content(self._write_version)
         except Exception as e:

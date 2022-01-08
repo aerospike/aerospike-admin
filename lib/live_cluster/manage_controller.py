@@ -2005,12 +2005,12 @@ class ManageTruncateController(ManageLeafCommandController):
         Calculated as the
         sum(all objects in set for each node) // effective_repl_factor
         """
-        set_stats = self.cluster.info_set_statistics(namespace, set_, nodes="all")
-        namespace_stats = self.cluster.info_namespace_statistics(
-            namespace, nodes="random"
+        set_stats, namespace_stats = await asyncio.gather(
+            self.cluster.info_set_statistics(namespace, set_, nodes="all"),
+            self.cluster.info_namespace_statistics(namespace, nodes="random"),
         )
-        set_stats = (await set_stats).values()
-        namespace_stats = list((await namespace_stats).values())[0]
+        set_stats = set_stats.values()
+        namespace_stats = list(namespace_stats.values())[0]
 
         # effective_repl_factor added 3.15.3
         effective_repl_factor = int(namespace_stats.get("effective_repl_factor", "1"))
@@ -2117,17 +2117,17 @@ class ManageTruncateController(ManageLeafCommandController):
                 total_num_master_objects = None
 
                 if set_ is None:
-                    total_num_master_objects = self._get_namespace_master_objects(
+                    total_num_master_objects = await self._get_namespace_master_objects(
                         namespace
                     )
 
                 else:
-                    total_num_master_objects = self._get_set_master_objects(
+                    total_num_master_objects = await self._get_set_master_objects(
                         namespace, set_
                     )
 
                 prompt = self._generate_warn_prompt(
-                    namespace, set_, await total_num_master_objects, lut_datetime
+                    namespace, set_, total_num_master_objects, lut_datetime
                 )
 
             if not self.prompt_challenge(prompt):
@@ -2342,7 +2342,9 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
             mods=self.mods,
         )
 
-        current_roster = self.cluster.info_roster(ns, nodes="principal")
+        current_roster = asyncio.create_task(
+            self.cluster.info_roster(ns, nodes="principal")
+        )
         cluster_stable = asyncio.create_task(
             self.cluster.info_cluster_stable(nodes=self.nodes)
         )
@@ -2410,7 +2412,9 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
-        current_roster = self.cluster.info_roster(ns, nodes="principal")
+        current_roster = asyncio.create_task(
+            self.cluster.info_roster(ns, nodes="principal")
+        )
         cluster_stable = asyncio.create_task(
             self.cluster.info_cluster_stable(nodes=self.nodes)
         )
@@ -2497,7 +2501,9 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
         )
 
         if warn:
-            current_roster = self.cluster.info_roster(ns, nodes="principal")
+            current_roster = asyncio.create_task(
+                self.cluster.info_roster(ns, nodes="principal")
+            )
             cluster_stable = asyncio.create_task(
                 self.cluster.info_cluster_stable(nodes=self.nodes)
             )
@@ -2549,7 +2555,9 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
 
     async def _do_default(self, line):
         ns = self.mods["ns"][0]
-        current_roster = self.cluster.info_roster(ns, nodes="principal")
+        current_roster = asyncio.create_task(
+            self.cluster.info_roster(ns, nodes="principal")
+        )
         cluster_stable = asyncio.create_task(
             self.cluster.info_cluster_stable(nodes=self.nodes)
         )

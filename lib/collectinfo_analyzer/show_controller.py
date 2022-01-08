@@ -1044,13 +1044,9 @@ class ShowJobsController(CollectinfoCommandController):
         "Displays scans, queries, and sindex-builder jobs.",
     )
     def _do_default(self, line):
-        actions = (
-            util.Future(self.do_scans, line[:]).start(),
-            util.Future(self.do_queries, line[:]).start(),
-            util.Future(self.do_sindex_builder, line[:]).start(),
-        )
-
-        return [action.result() for action in actions]
+        self.do_scans(line[:])
+        self.do_queries(line[:]),
+        self.do_sindex_builder(line[:])
 
     def _job_helper(self, module, title):
         jobs_data = self.log_handler.info_meta_data(stanza=constants.METADATA_JOBS)

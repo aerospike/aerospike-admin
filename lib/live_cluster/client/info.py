@@ -482,7 +482,6 @@ async def authenticate_new(
     )
 
 
-@util.logthis(logger)
 async def authenticate_old(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user, password
 ):
@@ -496,7 +495,6 @@ async def authenticate_old(
 
 
 # roles is a list of strings representing role names.
-@util.logthis(logger)
 async def create_user(reader, writer, user, password, roles):
     """Attempts to create a user in AS.
     user: string,
@@ -524,7 +522,6 @@ async def create_user(reader, writer, user, password, roles):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def drop_user(reader, writer, user):
     """Attempts to delete a user in AS.
     user: string,
@@ -547,7 +544,6 @@ async def drop_user(reader, writer, user):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def set_password(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user, password
 ):
@@ -575,7 +571,6 @@ async def set_password(
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def change_password(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -613,7 +608,6 @@ async def change_password(
 
 
 # roles is a list of strings representing role names.
-@util.logthis(logger)
 async def grant_roles(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user, roles
 ):
@@ -641,7 +635,6 @@ async def grant_roles(
 
 
 # roles is a list of strings representing role names.
-@util.logthis(logger)
 async def revoke_roles(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user, roles
 ):
@@ -775,17 +768,14 @@ async def _query_users(
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def query_users(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     return await _query_users(reader, writer)
 
 
-@util.logthis(logger)
 async def query_user(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user):
     return await _query_users(reader, writer, user)
 
 
-@util.logthis(logger)
 async def create_role(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -852,7 +842,6 @@ async def create_role(
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def delete_role(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role):
     """Attempts to delete a role in AS.
     role: string,
@@ -875,7 +864,6 @@ async def delete_role(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def add_privileges(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role, privileges
 ):
@@ -897,7 +885,6 @@ async def add_privileges(
     return return_code
 
 
-@util.logthis(logger)
 async def delete_privileges(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role, privileges
 ):
@@ -957,14 +944,12 @@ async def _set_whitelist(
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def set_whitelist(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role, whitelist
 ):
     return await _set_whitelist(reader, writer, role, whitelist)
 
 
-@util.logthis(logger)
 async def delete_whitelist(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role
 ):
@@ -1015,7 +1000,6 @@ async def _set_quotas(
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def set_quotas(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -1026,7 +1010,6 @@ async def set_quotas(
     return await _set_quotas(reader, writer, role, read_quota, write_quota)
 
 
-@util.logthis(logger)
 async def delete_quotas(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -1144,12 +1127,10 @@ async def _query_role(
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
 async def query_roles(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     return await _query_role(reader, writer)
 
 
-@util.logthis(logger)
 async def query_role(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role):
     return await _query_role(reader, writer, role)
 

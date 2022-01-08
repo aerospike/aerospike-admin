@@ -249,7 +249,7 @@ class Node(AsyncObject):
     def _initialize_socket_pool(self):
         self.socket_pool: dict[str, ASSocket] = {}
         self.socket_pool[self.port] = set()
-        self.socket_pool_max_size = 3
+        self.socket_pool_max_size = 5
 
     def _is_any_my_ip(self, ips):
         if not ips:
@@ -264,24 +264,27 @@ class Node(AsyncObject):
             if not await self.login():
                 raise IOError("Login Error")
 
-            node_id = self.info_node()
-            service_addresses = self.info_service_list()
-            features = self.info("features")
-            update_ip = self._update_IP(address, port)
-            peers = self.info_peers_list()
+            node_id = asyncio.create_task(self.info_node())
+            service_addresses = asyncio.create_task(self.info_service_list())
+            features = asyncio.create_task(self.info("features"))
+            update_ip = asyncio.create_task(self._update_IP(address, port))
+            peers = asyncio.create_task(self.info_peers_list())
 
             self.node_id = await node_id
 
             if isinstance(self.node_id, Exception):
                 # Not able to connect this address
-                await service_addresses
-                await features
-                await update_ip
-                await peers
+                asyncio.gather(
+                    service_addresses,
+                    features,
+                    update_ip,
+                    peers,
+                )
                 raise self.node_id
 
-            service_addresses = await service_addresses
-            self.features = await features
+            service_addresses, self.features = await asyncio.gather(
+                service_addresses, features
+            )
 
             # Original address may not be the service address, the
             # following will ensure we have the service address
@@ -290,8 +293,9 @@ class Node(AsyncObject):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            await update_ip
-            await self.close()
+            update_ip, _, self.peers = await asyncio.gather(
+                update_ip, self.close(), peers
+            )
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
@@ -313,12 +317,13 @@ class Node(AsyncObject):
                         break
 
                     # IP address have changed. Not common.
-                    node_id = self.info_node()
-                    update_ip = self._update_IP(self.ip, self.port)
-                    await peers
-                    peers = self.info_peers_list()
-                    self.node_id = await node_id
-                    await update_ip
+                    self.node_id, update_ip, self.peers = await asyncio.gather(
+                        *[
+                            self.info_node(),
+                            self._update_IP(self.ip, self.port),
+                            self.info_peers_list(),
+                        ]
+                    )
 
                     if not isinstance(self.node_id, Exception):
                         break
@@ -337,7 +342,6 @@ class Node(AsyncObject):
             self._key = hash(self._service_IP_port)
             self.new_histogram_version = await self._is_new_histogram_version()
             self.alive = True
-            self.peers = await peers
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception:
@@ -588,7 +592,6 @@ class Node(AsyncObject):
             raise ex
 
     @async_return_exceptions
-    @util.logthis(logger)
     async def info(self, command):
         """
         asinfo function equivalent
@@ -733,16 +736,16 @@ class Node(AsyncObject):
         # info_peers_alumni for server version prior to 4.3.1 gives
         # only old nodes (which are not part of current cluster), so to get full list we need to
         # add info_peers
-        alumni_peers = await self.get_peers()
-        peers_alumni = await self.info_peers_alumni()
+        alumni_peers, peers_alumni = await asyncio.gather(
+            self.get_peers(), self.info_peers_alumni()
+        )
         return list(set(alumni_peers + peers_alumni))
 
     @async_return_exceptions
     async def get_peers(self, all=False):
         if all:
-            alt = self.info_peers_alt()
-            std = self.info_peers()
-            return await alt + await std
+            alt, std = await asyncio.gather(self.info_peers_alt(), self.info_peers())
+            return alt + std
 
         if self.use_services_alt:
             return await self.info_peers_alt()
@@ -1228,7 +1231,6 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    @util.logthis(logger)
     async def info_set_config_namespace(
         self, param, value, namespace, set_=None, subcontext=None
     ):
@@ -1327,6 +1329,32 @@ class Node(AsyncObject):
 
         return ASINFO_RESPONSE_OK
 
+    async def xdr_namespace_config_helper(self, xdr_configs, dc, namespace):
+        namespace_config = await self.info(
+            "get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace)
+        )
+        xdr_configs["ns_configs"][dc][namespace] = client_util.info_to_dict(
+            namespace_config
+        )
+
+    async def xdr_config_helper(self, xdr_configs, dc):
+        dc_config = await self.info("get-config:context=xdr;dc=%s" % dc)
+        xdr_configs["ns_configs"][dc] = {}
+        xdr_configs["dc_configs"][dc] = client_util.info_to_dict(dc_config)
+
+        start_namespaces = dc_config.find("namespaces=") + len("namespaces=")
+        end_namespaces = dc_config.find(";", start_namespaces)
+        namespaces = (
+            ns for ns in dc_config[start_namespaces:end_namespaces].split(",")
+        )
+
+        await asyncio.gather(
+            *[
+                self.xdr_namespace_config_helper(xdr_configs, dc, namespace)
+                for namespace in namespaces
+            ]
+        )
+
     @async_return_exceptions
     async def info_get_config(self, stanza="", namespace=""):
         """
@@ -1351,12 +1379,13 @@ class Node(AsyncObject):
             else:
                 namespace_configs = {}
                 namespaces = await self.info_namespaces()
-                for namespace in namespaces:
-                    namespace_config = await self.info_get_config(
-                        "namespace", namespace
-                    )
-                    namespace_config = namespace_config[namespace]
-                    namespace_configs[namespace] = namespace_config
+                config_list = await client_util.concurrent_map(
+                    lambda ns: self.info_get_config("namespace", ns), namespaces
+                )
+
+                for namespace, namespace_config in zip(namespaces, config_list):
+                    # info_get_config returns a dict that must be unpacked.
+                    namespace_configs[namespace] = namespace_config[namespace]
                 config = namespace_configs
 
         elif stanza == "" or stanza == "service":
@@ -1371,24 +1400,11 @@ class Node(AsyncObject):
                 await self.info("get-config:context=xdr")
             )
 
-            for dc in xdr_config["xdr_configs"]["dcs"].split(","):
-                dc_config = await self.info("get-config:context=xdr;dc=%s" % dc)
-                xdr_config["ns_configs"][dc] = {}
-                xdr_config["dc_configs"][dc] = client_util.info_to_dict(dc_config)
+            dcs = xdr_config["xdr_configs"]["dcs"].split(",")
 
-                start_namespaces = dc_config.find("namespaces=") + len("namespaces=")
-                end_namespaces = dc_config.find(";", start_namespaces)
-                namespaces = (
-                    ns for ns in dc_config[start_namespaces:end_namespaces].split(",")
-                )
-
-                for namespace in namespaces:
-                    namespace_config = await self.info(
-                        "get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace)
-                    )
-                    xdr_config["ns_configs"][dc][namespace] = client_util.info_to_dict(
-                        namespace_config
-                    )
+            await asyncio.gather(
+                *[self.xdr_config_helper(xdr_config, dc) for dc in dcs]
+            )
 
             config = xdr_config
         elif stanza != "all":
@@ -1396,8 +1412,9 @@ class Node(AsyncObject):
                 await self.info("get-config:context=%s" % stanza)
             )
         elif stanza == "all":
-            config["namespace"] = await self.info_get_config("namespace")
-            config["service"] = await self.info_get_config("service")
+            config["namespace"], config["service"] = await asyncio.gather(
+                self.info_get_config("namespace"), self.info_get_config("service")
+            )
             # Server lumps this with service
             # config["network"] = await self.info_get_config("network")
         return config
@@ -1790,17 +1807,18 @@ class Node(AsyncObject):
         if isinstance(dcs, Exception):
             return {}
 
-        stats = {}
-        for dc in dcs:
-            stat = await self.info_dc_statistics(dc)
+        result_stats = {}
+
+        stat_list = await asyncio.gather(*[self.info_dc_statistics(dc) for dc in dcs])
+
+        for dc, stat in zip(dcs, stat_list):
             if not stat or isinstance(stat, Exception):
                 stat = {}
-            stats[dc] = stat
+            result_stats[dc] = stat
 
-        return stats
+        return result_stats
 
     @async_return_exceptions
-    @util.logthis(logger)
     async def info_udf_list(self):
         """
         Get list of UDFs stored on the node.
@@ -2081,9 +2099,12 @@ class Node(AsyncObject):
         namespaces = await self.info_namespaces()
 
         data = {}
-        for namespace in namespaces:
+        datums = await asyncio.gather(
+            *[self.info(command % (namespace, histogram)) for namespace in namespaces]
+        )
+
+        for namespace, datum in zip(namespaces, datums):
             try:
-                datum = await self.info(command % (namespace, histogram))
                 if not datum or isinstance(datum, Exception):
                     continue
 
@@ -2538,7 +2559,6 @@ class Node(AsyncObject):
     #
     ############################################################################
 
-    # @util.logthis(logger)
     async def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port

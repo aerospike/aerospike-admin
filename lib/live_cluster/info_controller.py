@@ -47,7 +47,7 @@ class InfoController(LiveClusterCommandController):
             self.cluster.info("version", nodes=self.nodes),
         )
 
-        return util.Future(
+        return util.closure(
             self.view.info_network,
             stats,
             cluster_names,
@@ -60,7 +60,7 @@ class InfoController(LiveClusterCommandController):
     @CommandHelp('"info set" displays summary information for each set.')
     async def do_set(self, line):
         stats = await self.cluster.info_all_set_statistics(nodes=self.nodes)
-        return util.Future(self.view.info_set, stats, self.cluster, **self.mods)
+        return util.closure(self.view.info_set, stats, self.cluster, **self.mods)
 
     # pre 5.0
     @CommandHelp(
@@ -68,11 +68,11 @@ class InfoController(LiveClusterCommandController):
         'Replaced by "info xdr" for server >= 5.0.',
     )
     async def do_dc(self, line):
-        stats = self.cluster.info_all_dc_statistics(nodes=self.nodes)
-        configs = self.config_getter.get_dc(nodes=self.nodes)
-        builds = self.cluster.info_build(nodes=self.nodes)
-        configs = await configs
-        stats = await stats
+        stats, configs = await asyncio.gather(
+            self.cluster.info_all_dc_statistics(nodes=self.nodes),
+            self.config_getter.get_dc(nodes=self.nodes),
+        )
+        builds = asyncio.create_task(self.cluster.info_build(nodes=self.nodes))
 
         for node in stats.keys():
 
@@ -121,12 +121,12 @@ class InfoController(LiveClusterCommandController):
 
         if nodes_running_v49_or_lower:
             futures.append(
-                util.Future(self.view.info_dc, stats, self.cluster, **self.mods)
+                util.closure(self.view.info_dc, stats, self.cluster, **self.mods)
             )
 
         if nodes_running_v5_or_higher:
             futures.append(
-                util.Future(
+                util.closure(
                     self.logger.warning,
                     "'info dc' is deprecated on aerospike versions >= 5.0. "
                     + "Use 'info xdr' instead.",
@@ -137,16 +137,15 @@ class InfoController(LiveClusterCommandController):
 
     @CommandHelp('"info xdr" displays summary information for each datacenter.')
     async def do_xdr(self, line):
-        stats = self.cluster.info_XDR_statistics(nodes=self.nodes)
-        builds = self.cluster.info_build(nodes=self.nodes)
-        xdr_enable = self.cluster.is_XDR_enabled(nodes=self.nodes)
+        stats, builds = await asyncio.gather(
+            self.cluster.info_XDR_statistics(nodes=self.nodes),
+            self.cluster.info_build(nodes=self.nodes),
+        )
+        xdr_enable = asyncio.create_task(self.cluster.is_XDR_enabled(nodes=self.nodes))
 
         old_xdr_stats = {}
         xdr5_stats = {}
         node_xdr_build_major_version = 4
-
-        stats = await stats
-        builds = await builds
 
         for node in stats:
             try:
@@ -177,7 +176,7 @@ class InfoController(LiveClusterCommandController):
                 matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
 
             futures = [
-                util.Future(
+                util.closure(
                     self.view.info_XDR,
                     xdr5_stats[dc],
                     xdr_enable,
@@ -191,7 +190,7 @@ class InfoController(LiveClusterCommandController):
 
         if old_xdr_stats:
             futures.append(
-                util.Future(
+                util.closure(
                     self.view.info_old_XDR,
                     old_xdr_stats,
                     builds,
@@ -208,7 +207,7 @@ class InfoController(LiveClusterCommandController):
     )
     async def do_sindex(self, line):
         sindex_stats = await get_sindex_stats(self.cluster, self.nodes)
-        return util.Future(
+        return util.closure(
             self.view.info_sindex, sindex_stats, self.cluster, **self.mods
         )
 
@@ -237,7 +236,7 @@ class InfoNamespaceController(LiveClusterCommandController):
     @CommandHelp("Displays usage information for each namespace.")
     async def do_usage(self, line):
         stats = await self.cluster.info_all_namespace_statistics(nodes=self.nodes)
-        return util.Future(
+        return util.closure(
             self.view.info_namespace_usage, stats, self.cluster, **self.mods
         )
 
@@ -246,13 +245,11 @@ class InfoNamespaceController(LiveClusterCommandController):
         # In SC mode effective rack-id is different from that in namespace config.
         config_getter = GetConfigController(self.cluster)
         stat_getter = GetStatisticsController(self.cluster)
-        stats = stat_getter.get_namespace(nodes=self.nodes)
-        rack_ids = config_getter.get_rack_ids(nodes=self.nodes)
+        stats, rack_ids = await asyncio.gather(
+            stat_getter.get_namespace(nodes=self.nodes),
+            config_getter.get_rack_ids(nodes=self.nodes),
+        )
 
-        return util.Future(
-            self.view.info_namespace_object,
-            await stats,
-            await rack_ids,
-            self.cluster,
-            **self.mods
+        return util.closure(
+            self.view.info_namespace_object, stats, rack_ids, self.cluster, **self.mods
         )

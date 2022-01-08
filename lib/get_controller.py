@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import copy
 
 from lib.utils import common, util, constants, version
@@ -84,12 +85,10 @@ class GetDistributionController:
         if not byte_distribution:
             return await self.do_distribution(histogram_name, nodes=nodes)
 
-        histogram = self.cluster.info_histogram(
-            histogram_name, logarithmic=True, nodes=nodes
+        histogram, builds = await asyncio.gather(
+            self.cluster.info_histogram(histogram_name, logarithmic=True, nodes=nodes),
+            self.cluster.info("build", nodes=nodes),
         )
-        builds = self.cluster.info("build", nodes=nodes)
-        histogram = await histogram
-        builds = await builds
 
         return common.create_histogram_output(
             histogram_name,
@@ -225,17 +224,17 @@ class GetLatenciesController:
             )
         # Some nodes support latencies and some do not
         else:
-            latency = self.cluster.info_latency(nodes=latency_nodes, ns_set=ns_set)
-            latencies = self.cluster.info_latencies(
-                nodes=latencies_nodes,
-                buckets=buckets,
-                exponent_increment=exponent_increment,
-                verbose=verbose,
-                ns_set=ns_set,
+            latency, latencies = await asyncio.gather(
+                self.cluster.info_latency(nodes=latency_nodes, ns_set=ns_set),
+                self.cluster.info_latencies(
+                    nodes=latencies_nodes,
+                    buckets=buckets,
+                    exponent_increment=exponent_increment,
+                    verbose=verbose,
+                    ns_set=ns_set,
+                ),
             )
-            latencies = self.merge_latencies_and_latency_tables(
-                await latencies, await latency
-            )
+            latencies = self.merge_latencies_and_latency_tables(latencies, latency)
 
         return latencies
 
@@ -248,23 +247,23 @@ class GetConfigController:
         futures = [
             (
                 "service",
-                self.get_service(nodes=nodes),
+                asyncio.create_task(self.get_service(nodes=nodes)),
             ),
             (
                 "namespace",
-                self.get_namespace(nodes=nodes),
+                asyncio.create_task(self.get_namespace(nodes=nodes)),
             ),
             (
                 "network",
-                self.get_network(nodes=nodes),
+                asyncio.create_task(self.get_network(nodes=nodes)),
             ),
-            ("xdr", self.get_xdr(nodes=nodes)),
-            ("dc", self.get_dc(nodes=nodes)),
-            ("roster", self.get_roster(nodes=nodes)),
-            ("racks", self.get_racks(nodes=nodes)),
+            ("xdr", asyncio.create_task(self.get_xdr(nodes=nodes))),
+            ("dc", asyncio.create_task(self.get_dc(nodes=nodes))),
+            ("roster", asyncio.create_task(self.get_roster(nodes=nodes))),
+            ("racks", asyncio.create_task(self.get_racks(nodes=nodes))),
             (
                 "rack-ids",
-                self.get_rack_ids(nodes=nodes),
+                asyncio.create_task(self.get_rack_ids(nodes=nodes)),
             ),
         ]
         config_map = dict([(k, await f) for k, f in futures])
@@ -283,11 +282,15 @@ class GetConfigController:
 
     async def get_network(self, nodes="all"):
         network_configs = {}
-        hb_configs = self.cluster.info_get_config(
-            nodes=nodes, stanza="network.heartbeat"
+        hb_configs = asyncio.create_task(
+            self.cluster.info_get_config(nodes=nodes, stanza="network.heartbeat")
         )
-        info_configs = self.cluster.info_get_config(nodes=nodes, stanza="network.info")
-        nw_configs = self.cluster.info_get_config(nodes=nodes, stanza="network")
+        info_configs = asyncio.create_task(
+            self.cluster.info_get_config(nodes=nodes, stanza="network.info")
+        )
+        nw_configs = asyncio.create_task(
+            self.cluster.info_get_config(nodes=nodes, stanza="network")
+        )
         hb_configs = await hb_configs
 
         for node in hb_configs:
@@ -333,15 +336,19 @@ class GetConfigController:
 
         namespace_list = util.filter_list(namespace_set, for_mods)
         ns_configs = {}
-        ns_node_configs = {}
+        ns_node_configs = []
 
-        for namespace in namespace_list:
-            ns_node_configs[namespace] = self.cluster.info_get_config(
-                stanza="namespace", namespace=namespace, nodes=nodes
+        ns_node_configs = [
+            asyncio.create_task(
+                self.cluster.info_get_config(
+                    stanza="namespace", namespace=namespace, nodes=nodes
+                )
             )
+            for namespace in namespace_list
+        ]
 
-        for namespace in namespace_list:
-            node_configs = await ns_node_configs[namespace]
+        for namespace, node_configs in zip(namespace_list, ns_node_configs):
+            node_configs = await node_configs
 
             for node, node_config in list(node_configs.items()):
                 if (
@@ -501,17 +508,17 @@ class GetStatisticsController:
         futures = [
             (
                 "service",
-                self.get_service(nodes=nodes),
+                asyncio.create_task(self.get_service(nodes=nodes)),
             ),
             (
                 "namespace",
-                self.get_namespace(nodes=nodes),
+                asyncio.create_task(self.get_namespace(nodes=nodes)),
             ),
-            ("set", self.get_sets(nodes=nodes)),
-            ("bin", self.get_bins(nodes=nodes)),
-            ("sindex", self.get_sindex(nodes=nodes)),
-            ("xdr", self.get_xdr(nodes=nodes)),
-            ("dc", self.get_dc(nodes=nodes)),
+            ("set", asyncio.create_task(self.get_sets(nodes=nodes))),
+            ("bin", asyncio.create_task(self.get_bins(nodes=nodes))),
+            ("sindex", asyncio.create_task(self.get_sindex(nodes=nodes))),
+            ("xdr", asyncio.create_task(self.get_xdr(nodes=nodes))),
+            ("dc", asyncio.create_task(self.get_dc(nodes=nodes))),
         ]
 
         stat_map = dict([(k, await f) for k, f in futures])
@@ -532,17 +539,16 @@ class GetStatisticsController:
             namespace_set.update(namespace)
 
         namespace_list = util.filter_list(namespace_set, for_mods)
-        futures = [
-            (
-                namespace,
-                self.cluster.info_namespace_statistics(namespace, nodes=nodes),
+        tasks = [
+            asyncio.create_task(
+                self.cluster.info_namespace_statistics(namespace, nodes=nodes)
             )
             for namespace in namespace_list
         ]
         ns_stats = {}
 
-        for namespace, stat_future in futures:
-            ns_stats[namespace] = await stat_future
+        for namespace, stat_task in zip(namespace_list, tasks):
+            ns_stats[namespace] = await stat_task
 
             for node in list(ns_stats[namespace].keys()):
                 if not ns_stats[namespace][node] or isinstance(
@@ -681,18 +687,26 @@ class GetFeaturesController:
         self.cluster = cluster
 
     async def get_features(self, nodes="all"):
-        service_stats = self.cluster.info_statistics(nodes=nodes)
-        ns_stats = self.cluster.info_all_namespace_statistics(nodes=nodes)
-        xdr_dc_stats = self.cluster.info_all_dc_statistics(nodes=nodes)
-        service_configs = self.cluster.info_get_config(stanza="service", nodes=nodes)
-        ns_configs = self.cluster.info_get_config(stanza="namespace", nodes=nodes)
+        (
+            service_stats,
+            ns_stats,
+            xdr_dc_stats,
+            service_configs,
+            ns_configs,
+        ) = await asyncio.gather(
+            self.cluster.info_statistics(nodes=nodes),
+            self.cluster.info_all_namespace_statistics(nodes=nodes),
+            self.cluster.info_all_dc_statistics(nodes=nodes),
+            self.cluster.info_get_config(stanza="service", nodes=nodes),
+            self.cluster.info_get_config(stanza="namespace", nodes=nodes),
+        )
 
         return common.find_nodewise_features(
-            service_stats=await service_stats,
-            ns_stats=await ns_stats,
-            xdr_dc_stats=await xdr_dc_stats,
-            service_configs=await service_configs,
-            ns_configs=await ns_configs,
+            service_stats=service_stats,
+            ns_stats=ns_stats,
+            xdr_dc_stats=xdr_dc_stats,
+            service_configs=service_configs,
+            ns_configs=ns_configs,
         )
 
 
@@ -872,10 +886,14 @@ class GetPmapController:
 
     async def get_pmap(self, nodes="all"):
         getter = GetStatisticsController(self.cluster)
-        service_stats = getter.get_service(nodes=nodes)
-        namespace_stats = getter.get_namespace(flip=True, nodes=nodes)
-        node_ids = self.cluster.info("node", nodes=nodes)
-        pmap_info = self.cluster.info("partition-info", nodes=nodes)
+        service_stats = asyncio.create_task(getter.get_service(nodes=nodes))
+        namespace_stats = asyncio.create_task(
+            getter.get_namespace(flip=True, nodes=nodes)
+        )
+        node_ids = asyncio.create_task(self.cluster.info("node", nodes=nodes))
+        pmap_info = asyncio.create_task(
+            self.cluster.info("partition-info", nodes=nodes)
+        )
         service_stats = await service_stats
 
         cluster_keys = {}
@@ -939,11 +957,11 @@ class GetJobsController:
 
     async def get_all(self, flip=False, nodes="all"):
         futures = [
-            (constants.JobType.SCAN, self.get_scans(nodes=nodes)),
-            (constants.JobType.QUERY, self.get_query(nodes=nodes)),
+            (constants.JobType.SCAN, asyncio.create_task(self.get_scans(nodes=nodes))),
+            (constants.JobType.QUERY, asyncio.create_task(self.get_query(nodes=nodes))),
             (
                 constants.JobType.SINDEX_BUILDER,
-                self.get_sindex_builder(nodes=nodes),
+                asyncio.create_task(self.get_sindex_builder(nodes=nodes)),
             ),
         ]
         job_map = dict([(k, await f) for k, f in futures])

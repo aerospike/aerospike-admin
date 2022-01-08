@@ -1,3 +1,4 @@
+import asyncio
 from lib.utils import common, util
 from lib.base_controller import CommandHelp
 
@@ -110,9 +111,15 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        server_version = self.cluster.info("build", nodes=self.nodes)
-        server_edition = self.cluster.info("version", nodes=self.nodes)
-        cluster_name = self.cluster.info("cluster-name", nodes=self.nodes)
+        server_version = asyncio.create_task(
+            self.cluster.info("build", nodes=self.nodes)
+        )
+        server_edition = asyncio.create_task(
+            self.cluster.info("version", nodes=self.nodes)
+        )
+        cluster_name = asyncio.create_task(
+            self.cluster.info("cluster-name", nodes=self.nodes)
+        )
 
         os_version = self.cluster.info_system_statistics(
             nodes=self.nodes,
@@ -138,16 +145,25 @@ class SummaryController(LiveClusterCommandController):
         license_usage_future = None
 
         if agent_host is not None:
-            license_usage_future = common.request_license_usage(agent_host, agent_port)
+            # Should happen synchronously so that we can cancel an notify in case of error.
+            license_usage_future = asyncio.create_task(
+                common.request_license_usage(agent_host, agent_port)
+            )
 
-        service_stats = self.cluster.info_statistics(nodes=self.nodes)
-        namespace_stats = self.cluster.info_all_namespace_statistics(nodes=self.nodes)
-        xdr_dc_stats = self.cluster.info_all_dc_statistics(nodes=self.nodes)
-        service_configs = self.cluster.info_get_config(
-            nodes=self.nodes, stanza="service"
+        service_stats = asyncio.create_task(
+            self.cluster.info_statistics(nodes=self.nodes)
         )
-        namespace_configs = self.cluster.info_get_config(
-            nodes=self.nodes, stanza="namespace"
+        namespace_stats = asyncio.create_task(
+            self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+        )
+        xdr_dc_stats = asyncio.create_task(
+            self.cluster.info_all_dc_statistics(nodes=self.nodes)
+        )
+        service_configs = asyncio.create_task(
+            self.cluster.info_get_config(nodes=self.nodes, stanza="service")
+        )
+        namespace_configs = asyncio.create_task(
+            self.cluster.info_get_config(nodes=self.nodes, stanza="namespace")
         )
 
         metadata = {}
@@ -238,8 +254,7 @@ class SummaryController(LiveClusterCommandController):
         service_configs = await service_configs
         namespace_configs = await namespace_configs
 
-        return util.Future(
-            self.view.print_summary,
+        return self.view.print_summary(
             common.create_summary(
                 service_stats=service_stats,
                 namespace_stats=namespace_stats,
