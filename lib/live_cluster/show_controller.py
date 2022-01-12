@@ -727,7 +727,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         return [
             util.closure(
-                self.view.showstats,
+                self.view.show_stats,
                 "%s Bin Statistics" % (namespace),
                 new_bin_stat,
                 self.cluster,
