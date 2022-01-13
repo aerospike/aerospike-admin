@@ -295,30 +295,27 @@ class ShowUsersControllerTest(asynctest.TestCase):
                 },
             },
         }
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_users.return_value = {"1.1.1.1": resp}
 
         await self.controller.execute(["like", "admin"])
 
-        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
+        self.getter_mock.get_users.assert_called_with(nodes="principal")
         self.view_mock.show_users.assert_called_with(resp, like=["admin"], line=[])
 
     async def test_logs_error(self):
         as_error = ASProtocolError(
             ASResponse.ROLE_OR_PRIVILEGE_VIOLATION, "test-message"
         )
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_users.return_value = {"1.1.1.1": as_error}
 
         await self.controller.execute(["like", "admin"])
 
-        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
+        self.getter_mock.get_users.assert_called_with(nodes="principal")
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.show_users.assert_not_called()
 
     async def test_raises_error(self):
         as_error = IOError("test-message")
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_users.return_value = {"1.1.1.1": as_error}
 
         await test_util.assert_exception_async(
@@ -329,7 +326,7 @@ class ShowUsersControllerTest(asynctest.TestCase):
             ["like", "admin"],
         )
 
-        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
+        self.getter_mock.get_users.assert_called_with(nodes="principal")
         self.view_mock.show_users.assert_not_called()
 
 

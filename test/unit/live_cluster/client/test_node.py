@@ -1148,14 +1148,23 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_any_call("get-config:", self.ip)
 
     async def test_info_get_config_xdr(self):
-        self.info_mock.side_effect = [
-            "dcs=DC1,DC2;src-id=0;trace-sample=0",
-            "namespaces=bar,foo;a=1;b=2;c=3",
-            "d=4;e=5;f=6",
-            "d=7;e=8;f=9",
-            "namespaces=jar;a=10;b=11;c=12",
-            "d=13;e=14;f=15",
-        ]
+        def side_effect(req, ip):
+            if req == "get-config:context=xdr":
+                return "dcs=DC1,DC2;src-id=0;trace-sample=0"
+            elif req == "get-config:context=xdr;dc=DC1":
+                return "namespaces=bar,foo;a=1;b=2;c=3"
+            elif req == "get-config:context=xdr;dc=DC1;namespace=bar":
+                return "d=4;e=5;f=6"
+            elif req == "get-config:context=xdr;dc=DC1;namespace=foo":
+                return "d=7;e=8;f=9"
+            elif req == "get-config:context=xdr;dc=DC2":
+                return "namespaces=jar;a=10;b=11;c=12"
+            elif req == "get-config:context=xdr;dc=DC2;namespace=jar":
+                return "d=13;e=14;f=15"
+            else:
+                raise Exception("Unexpected info call: " + req)
+
+        self.info_mock.side_effect = side_effect
         expected = {
             "dc_configs": {
                 "DC1": {
@@ -1183,7 +1192,6 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_get_config("xdr")
 
-        self.assertEqual(self.info_mock.call_count, 6)
         self.info_mock.assert_any_call("get-config:context=xdr", self.ip)
         self.info_mock.assert_any_call("get-config:context=xdr;dc=DC1", self.ip)
         self.info_mock.assert_any_call(
