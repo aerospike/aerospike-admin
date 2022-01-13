@@ -116,7 +116,7 @@ class Node(AsyncObject):
         address,
         port=3000,
         tls_name=None,
-        timeout=5,
+        timeout=1,
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,

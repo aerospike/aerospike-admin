@@ -91,7 +91,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         only_connect_seed=False,
         execute_only_mode=False,
         privileged_mode=False,
-        timeout=5,
+        timeout=1,
     ):
         # indicates shell created successfully and connected to cluster/collectinfo/logfile
         self.connected = True

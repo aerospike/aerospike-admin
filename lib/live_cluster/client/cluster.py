@@ -55,7 +55,7 @@ class Cluster(AsyncObject):
         use_services_alt=False,
         ssl_context=None,
         only_connect_seed=False,
-        timeout=5,
+        timeout=1,
     ):
         """
         Want to be able to support multiple nodes on one box (for testing)

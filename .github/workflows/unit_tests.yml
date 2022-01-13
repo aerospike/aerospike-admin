@@ -25,7 +25,6 @@ jobs:
         pipenv install --dev
     - name: Test with unittest2
       run: |
-        coverage run -m pytest test/unit
         pipenv run bash -c "coverage run -m pytest test/unit"
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1

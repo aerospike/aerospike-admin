@@ -27,7 +27,7 @@ from time import time
 
 def closure(func, *args, **kwargs):
     """
-    Save a function call for later. Useful for saving functions that store output.
+    Save a function call for later. Useful for saving functions that print output.
     """
     return lambda: func(*args, **kwargs)
 
