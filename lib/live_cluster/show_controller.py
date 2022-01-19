@@ -65,7 +65,7 @@ class ShowDistributionController(LiveClusterCommandController):
 
         histogram = await self.getter.do_distribution("ttl", nodes=self.nodes)
 
-        return util.closure(
+        return util.callable(
             self.view.show_distribution,
             "TTL Distribution",
             histogram,
@@ -113,7 +113,7 @@ class ShowDistributionController(LiveClusterCommandController):
                 self.logger.error(e)
                 return
 
-            return util.closure(
+            return util.callable(
                 self.view.show_distribution,
                 "Object Size Distribution",
                 histogram,
@@ -132,7 +132,7 @@ class ShowDistributionController(LiveClusterCommandController):
         unit = "Bytes"
         set_bucket_count = True
 
-        return util.closure(
+        return util.callable(
             self.view.show_object_distribution,
             title,
             await histogram,
@@ -277,7 +277,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         service_configs = await self.getter.get_service(nodes=self.nodes)
 
-        return util.closure(
+        return util.callable(
             self.view.show_config,
             "Service Configuration",
             service_configs,
@@ -309,7 +309,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         network_configs = await self.getter.get_network(nodes=self.nodes)
 
-        return util.closure(
+        return util.callable(
             self.view.show_config,
             "Network Configuration",
             network_configs,
@@ -344,7 +344,7 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
         return [
-            util.closure(
+            util.callable(
                 self.view.show_config,
                 "%s Namespace Configuration" % (ns),
                 configs,
@@ -387,7 +387,7 @@ class ShowConfigController(LiveClusterCommandController):
                 xdr5_configs, self.mods.get("for", [])
             )
             futures.append(
-                util.closure(
+                util.callable(
                     self.view.show_xdr5_config,
                     "XDR Configuration",
                     formatted_configs,
@@ -399,7 +399,7 @@ class ShowConfigController(LiveClusterCommandController):
             )
         if old_xdr_configs:
             futures.append(
-                util.closure(
+                util.callable(
                     self.view.show_config,
                     "XDR Configuration",
                     old_xdr_configs,
@@ -461,7 +461,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         if nodes_running_v49_or_lower:
             futures = [
-                util.closure(
+                util.callable(
                     self.view.show_config,
                     "%s DC Configuration" % (dc),
                     configs,
@@ -475,7 +475,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         if nodes_running_v5_or_higher:
             futures.append(
-                util.closure(
+                util.callable(
                     self.logger.warning,
                     "Detected nodes running aerospike version >= 5.0. "
                     + "Please use 'asadm -e \"show config xdr\"' for versions 5.0 and up.",
@@ -502,14 +502,14 @@ class ShowMappingController(LiveClusterCommandController):
     @CommandHelp("Displays IP to Node_id mapping")
     async def do_ip(self, line):
         ip_to_node_map = await self.cluster.get_IP_to_node_map()
-        return util.closure(
+        return util.callable(
             self.view.show_mapping, "IP", "NODE-ID", ip_to_node_map, **self.mods
         )
 
     @CommandHelp("Displays Node_id to IPs mapping")
     async def do_node(self, line):
         node_to_ip_map = await self.cluster.get_node_to_IP_map()
-        return util.closure(
+        return util.callable(
             self.view.show_mapping, "NODE-ID", "IPs", node_to_ip_map, **self.mods
         )
 
@@ -564,7 +564,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         service_stats = await self.getter.get_service(nodes=self.nodes)
 
-        return util.closure(
+        return util.callable(
             self.view.show_stats,
             "Service Statistics",
             service_stats,
@@ -603,7 +603,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         return [
-            util.closure(
+            util.callable(
                 self.view.show_stats,
                 "%s Namespace Statistics" % (namespace),
                 ns_stats[namespace],
@@ -644,7 +644,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         return [
-            util.closure(
+            util.callable(
                 self.view.show_stats,
                 "%s Sindex Statistics" % (ns_set_sindex),
                 sindex_stats[ns_set_sindex],
@@ -685,7 +685,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         return [
-            util.closure(
+            util.callable(
                 self.view.show_stats,
                 "%s %s Set Statistics" % (namespace, set_name),
                 stats,
@@ -726,7 +726,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         return [
-            util.closure(
+            util.callable(
                 self.view.show_stats,
                 "%s Bin Statistics" % (namespace),
                 new_bin_stat,
@@ -798,7 +798,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                 matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
 
             futures = [
-                util.closure(
+                util.callable(
                     self.view.show_stats,
                     "XDR Statistics %s" % dc,
                     xdr5_stats[dc],
@@ -814,7 +814,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         if old_xdr_stats:
             futures.append(
-                util.closure(
+                util.callable(
                     self.view.show_stats,
                     "XDR Statistics",
                     old_xdr_stats,
@@ -882,7 +882,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         if nodes_running_v49_or_lower:
             futures = [
-                util.closure(
+                util.callable(
                     self.view.show_config,
                     "%s DC Statistics" % (dc),
                     stats,
@@ -897,7 +897,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         if nodes_running_v5_or_higher:
             futures.append(
-                util.closure(
+                util.callable(
                     self.logger.warning,
                     "'show statistics dc' is deprecated on aerospike versions >= 5.0. \n"
                     + "Use 'show statistics xdr' instead.",
@@ -1079,7 +1079,7 @@ class ShowJobsController(LiveClusterCommandController):
     )
     async def do_scans(self, line):
         jobs = await self.getter.get_scans(nodes=self.nodes)
-        return util.closure(
+        return util.callable(
             self.view.show_jobs, "Scan Jobs", self.cluster, jobs, **self.mods
         )
 
@@ -1090,7 +1090,7 @@ class ShowJobsController(LiveClusterCommandController):
     )
     async def do_queries(self, line):
         jobs = await self.getter.get_query(nodes=self.nodes)
-        return util.closure(
+        return util.callable(
             self.view.show_jobs, "Query Jobs", self.cluster, jobs, **self.mods
         )
 
@@ -1104,7 +1104,7 @@ class ShowJobsController(LiveClusterCommandController):
     @CommandName("sindex-builder")
     async def do_sindex_builder(self, line):
         jobs = await self.getter.get_sindex_builder(nodes=self.nodes)
-        return util.closure(
+        return util.callable(
             self.view.show_jobs, "SIndex Builder Jobs", self.cluster, jobs, **self.mods
         )
 

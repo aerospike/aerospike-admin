@@ -47,7 +47,7 @@ class InfoController(LiveClusterCommandController):
             self.cluster.info("version", nodes=self.nodes),
         )
 
-        return util.closure(
+        return util.callable(
             self.view.info_network,
             stats,
             cluster_names,
@@ -60,7 +60,7 @@ class InfoController(LiveClusterCommandController):
     @CommandHelp('"info set" displays summary information for each set.')
     async def do_set(self, line):
         stats = await self.cluster.info_all_set_statistics(nodes=self.nodes)
-        return util.closure(self.view.info_set, stats, self.cluster, **self.mods)
+        return util.callable(self.view.info_set, stats, self.cluster, **self.mods)
 
     # pre 5.0
     @CommandHelp(
@@ -121,12 +121,12 @@ class InfoController(LiveClusterCommandController):
 
         if nodes_running_v49_or_lower:
             futures.append(
-                util.closure(self.view.info_dc, stats, self.cluster, **self.mods)
+                util.callable(self.view.info_dc, stats, self.cluster, **self.mods)
             )
 
         if nodes_running_v5_or_higher:
             futures.append(
-                util.closure(
+                util.callable(
                     self.logger.warning,
                     "'info dc' is deprecated on aerospike versions >= 5.0. "
                     + "Use 'info xdr' instead.",
@@ -176,7 +176,7 @@ class InfoController(LiveClusterCommandController):
                 matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
 
             futures = [
-                util.closure(
+                util.callable(
                     self.view.info_XDR,
                     xdr5_stats[dc],
                     xdr_enable,
@@ -190,7 +190,7 @@ class InfoController(LiveClusterCommandController):
 
         if old_xdr_stats:
             futures.append(
-                util.closure(
+                util.callable(
                     self.view.info_old_XDR,
                     old_xdr_stats,
                     builds,
@@ -207,7 +207,7 @@ class InfoController(LiveClusterCommandController):
     )
     async def do_sindex(self, line):
         sindex_stats = await get_sindex_stats(self.cluster, self.nodes)
-        return util.closure(
+        return util.callable(
             self.view.info_sindex, sindex_stats, self.cluster, **self.mods
         )
 
@@ -236,7 +236,7 @@ class InfoNamespaceController(LiveClusterCommandController):
     @CommandHelp("Displays usage information for each namespace.")
     async def do_usage(self, line):
         stats = await self.cluster.info_all_namespace_statistics(nodes=self.nodes)
-        return util.closure(
+        return util.callable(
             self.view.info_namespace_usage, stats, self.cluster, **self.mods
         )
 
@@ -250,6 +250,6 @@ class InfoNamespaceController(LiveClusterCommandController):
             config_getter.get_rack_ids(nodes=self.nodes),
         )
 
-        return util.closure(
+        return util.callable(
             self.view.info_namespace_object, stats, rack_ids, self.cluster, **self.mods
         )

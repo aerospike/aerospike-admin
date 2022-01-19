@@ -25,7 +25,7 @@ import logging
 from time import time
 
 
-def closure(func, *args, **kwargs):
+def callable(func, *args, **kwargs):
     """
     Save a function call for later. Useful for saving functions that print output.
     """
