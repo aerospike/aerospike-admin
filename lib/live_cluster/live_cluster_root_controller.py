@@ -19,6 +19,7 @@ from lib.base_controller import (
     CommandHelp,
     create_disabled_controller,
 )
+from lib.utils.async_object import AsyncObject
 
 from .live_cluster_command_controller import LiveClusterCommandController
 from .client.cluster import Cluster
@@ -37,12 +38,12 @@ from .manage_controller import (
 
 
 @CommandHelp("Aerospike Admin")
-class LiveClusterRootController(BaseController):
+class LiveClusterRootController(BaseController, AsyncObject):
 
     cluster = None
     command = None
 
-    def __init__(
+    async def __init__(
         self,
         seed_nodes=[("127.0.0.1", 3000, None)],
         user=None,
@@ -51,15 +52,15 @@ class LiveClusterRootController(BaseController):
         use_services_alumni=False,
         use_services_alt=False,
         ssl_context=None,
-        asadm_version="",
         only_connect_seed=False,
         timeout=5,
+        asadm_version="",
     ):
 
         super().__init__(asadm_version)
 
         # Create static instance of cluster
-        LiveClusterRootController.cluster = Cluster(
+        LiveClusterRootController.cluster = await Cluster(
             seed_nodes,
             user,
             password,
@@ -86,18 +87,18 @@ class LiveClusterRootController(BaseController):
             "info": InfoController,
         }
 
-    def close(self):
+    async def close(self):
         try:
-            self.cluster.close()
+            await self.cluster.close()
         except Exception:
             pass
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.execute_help(line)
 
     # This function is a hack for autocomplete
     @CommandHelp("Terminate session")
-    def do_exit(self, line):
+    async def do_exit(self, line):
         return "EXIT"
 
     @CommandHelp(
@@ -105,7 +106,7 @@ class LiveClusterRootController(BaseController):
         "For example, to see the documentation for the 'info' command,",
         "use the command 'help info'.",
     )
-    def do_help(self, line):
+    async def do_help(self, line):
         self.execute_help(line)
 
     @CommandHelp(
@@ -124,7 +125,7 @@ class LiveClusterRootController(BaseController):
         "           watch 5 info namespace",
     )
     @DisableAutoComplete()
-    def do_watch(self, line):
+    async def do_watch(self, line):
         self.view.watch(self, line)
 
     @DisableAutoComplete()
@@ -135,7 +136,7 @@ class LiveClusterRootController(BaseController):
         "    --warn:    Use this option to receive a prompt to confirm",
         "               that you want to run the command.",
     )
-    def do_enable(self, line):
+    async def do_enable(self, line):
         warn = util.check_arg_and_delete_from_mods(
             line=line, arg="--warn", default=False, modifiers={}, mods={}
         )
@@ -145,7 +146,7 @@ class LiveClusterRootController(BaseController):
         )
         return "ENABLE"
 
-    def do_disable(self, line):
+    async def do_disable(self, line):
         self.controller_map.update(
             {
                 "manage": create_disabled_controller(ManageController, "manage"),

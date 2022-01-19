@@ -1,12 +1,12 @@
+from pytest import PytestUnraisableExceptionWarning
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoClusterStableError,
     ASInfoError,
 )
 from lib.base_controller import ShellException
-import unittest
 from mock import MagicMock, patch
-from mock.mock import call
+from mock.mock import AsyncMock, call
 
 from lib.live_cluster.client import ASProtocolError, ASResponse
 from lib.live_cluster.manage_controller import (
@@ -27,144 +27,149 @@ from lib.live_cluster.manage_controller import (
     ManageRosterStageObservedController,
     ManageTruncateController,
 )
-from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
 from test.unit import util as test_util
 
+import warnings
 
-class ManageACLCreateUserControllerTest(unittest.TestCase):
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
+
+
+@asynctest.fail_on(active_handles=True)
+class ManageACLCreateUserControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageACLCreateUserController()
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageACLCreateUserController.cluster"
+            "lib.live_cluster.manage_controller.ManageACLCreateUserController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageACLCreateUserController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         self.addCleanup(patch.stopall)
 
-    def test_no_roles_and_no_password(self):
+    async def test_no_roles_and_no_password(self):
         getpass_mock = patch("lib.live_cluster.manage_controller.getpass").start()
         getpass_mock.return_value = "pass"
-        self.cluster_mock.get_expected_principal.return_value = "principal"
         self.cluster_mock.admin_create_user.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(["test-user"])
+        await self.controller.execute(["test-user"])
 
         self.cluster_mock.admin_create_user.assert_called_with(
-            "test-user", "pass", [], nodes=["principal"]
+            "test-user", "pass", [], nodes="principal"
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created user test-user."
         )
 
-    def test_with_roles_and_password(self):
+    async def test_with_roles_and_password(self):
         self.cluster_mock.get_expected_principal.return_value = "principal"
         self.cluster_mock.admin_create_user.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(
+        await self.controller.execute(
             ["test-user", "password", "pass", "roles", "role1", "role2", "role3"]
         )
 
         self.cluster_mock.admin_create_user.assert_called_with(
-            "test-user", "pass", ["role1", "role2", "role3"], nodes=["principal"]
+            "test-user", "pass", ["role1", "role2", "role3"], nodes="principal"
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created user test-user."
         )
 
-    def test_with_role_and_password(self):
+    async def test_with_role_and_password(self):
         self.cluster_mock.get_expected_principal.return_value = "principal"
         self.cluster_mock.admin_create_user.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(
+        await self.controller.execute(
             ["test-user", "password", "pass", "role", "role1", "role2", "role3"]
         )
 
         self.cluster_mock.admin_create_user.assert_called_with(
-            "test-user", "pass", ["role1", "role2", "role3"], nodes=["principal"]
+            "test-user", "pass", ["role1", "role2", "role3"], nodes="principal"
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created user test-user."
         )
 
-    def test_logs_error_when_asprotocol_error_returned(self):
+    async def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASProtocolError(ASResponse.USER_ALREADY_EXISTS, "test-message")
         line = "test-user password pass"
         self.cluster_mock.get_expected_principal.return_value = "principal"
         self.cluster_mock.admin_create_user.return_value = {"principal_ip": as_error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_user.assert_called_with(
-            "test-user", "pass", [], nodes=["principal"]
+            "test-user", "pass", [], nodes="principal"
         )
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_exception_when_exception_returned(self):
+    async def test_raises_exception_when_exception_returned(self):
         as_error = IOError("test-message")
         line = "test-user password pass"
         self.cluster_mock.get_expected_principal.return_value = "principal"
         self.cluster_mock.admin_create_user.return_value = {"principal_ip": as_error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, ShellException, "test-message", self.controller.execute, line.split()
         )
 
         self.cluster_mock.admin_create_user.assert_called_with(
-            "test-user", "pass", [], nodes=["principal"]
+            "test-user", "pass", [], nodes="principal"
         )
         self.view_mock.print_result.assert_not_called()
 
 
-class ManageACLCreateRoleControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageACLCreateRoleControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageACLCreateRoleController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageACLCreateRoleController.cluster"
+            "lib.live_cluster.manage_controller.ManageACLCreateRoleController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageACLCreateRoleController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
-        self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
 
-    def test_logs_error_when_server_does_not_support_quotas(self):
+    async def test_logs_error_when_server_does_not_support_quotas(self):
         log_message = "'read' and 'write' modifiers are not supported on aerospike versions <= 5.5"
         line = "test-role priv test-priv read 100 write 200"
         self.cluster_mock.info_build.side_effect = [
             {"principal": "5.5.0.0"},
             {"principal": "5.5.9.9"},
         ]
-        self.cluster_mock.get_expected_principal.side_effect = ["principal"] * 2
         self.cluster_mock.admin_create_role.side_effect = [
             {"principal_ip": ASResponse.OK}
         ] * 2
 
         for _ in range(2):
-            self.controller.execute(line.split())
+            await self.controller.execute(line.split())
             self.logger_mock.warning.assert_called_with(log_message)
 
-    def test_with_only_privilege(self):
-        self.cluster_mock.get_expected_principal.return_value = "principal"
+    async def test_with_only_privilege(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv test-priv"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -172,19 +177,19 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_privilege_with_namespace(self):
+    async def test_with_privilege_with_namespace(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv test-priv ns test-ns"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -192,19 +197,19 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_privilege_and_namespace_and_set(self):
+    async def test_with_privilege_and_namespace_and_set(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv test-priv ns test-ns set test-set"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -212,29 +217,29 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_privilege_and_set_logs_error(self):
+    async def test_with_privilege_and_set_logs_error(self):
         self.controller.execute_help = MagicMock()
         line = "test-role priv test-priv set test-set"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.error.assert_called_with(
             "A set must be accompanied by a namespace."
         )
 
-    def test_with_privilege_and_allowlist(self):
+    async def test_with_privilege_and_allowlist(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv test-priv ns test-ns set test-set allow 3.3.3.3 4.4.4.4"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -242,19 +247,19 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=["3.3.3.3", "4.4.4.4"],
             read_quota=None,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_privilege_and_read_and_write_quota(self):
+    async def test_with_privilege_and_read_and_write_quota(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv test-priv ns test-ns set test-set read 111 write 222"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -262,19 +267,19 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=111,
             write_quota=222,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_privilege_and_allowlist_and_read_and_write_quota(self):
+    async def test_with_privilege_and_allowlist_and_read_and_write_quota(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv test-priv ns test-ns set test-set allow 3.3.3.3 4.4.4.4 read 111 write 222"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -282,20 +287,20 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=["3.3.3.3", "4.4.4.4"],
             read_quota=111,
             write_quota=222,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_read_privilege_only(self):
+    async def test_with_read_privilege_only(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
 
         line = "test-role priv read"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -303,20 +308,20 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_write_privilege_only(self):
+    async def test_with_write_privilege_only(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
 
         line = "test-role priv write"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -324,19 +329,19 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_conflicting_write_privilege_and_write_quota(self):
+    async def test_with_conflicting_write_privilege_and_write_quota(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv write write 111"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -344,19 +349,19 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=111,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_conflicting_read_privilege_and_read_quota(self):
+    async def test_with_conflicting_read_privilege_and_read_quota(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv read read 111"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -364,19 +369,19 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=111,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_with_conflicting_read_privilege_and_write_quota(self):
+    async def test_with_conflicting_read_privilege_and_write_quota(self):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
         line = "test-role priv read write 111"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -384,17 +389,17 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=111,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
 
-    def test_logs_error_when_quotas_are_not_int(self):
+    async def test_logs_error_when_quotas_are_not_int(self):
         log_message = "Quotas must be integers."
         line = "test-role priv write write 100a read 100"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_not_called()
         self.logger_mock.error.assert_called_with(log_message)
@@ -402,18 +407,18 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
 
         line = "test-role priv write write 100 read 100a"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_not_called()
         self.logger_mock.error.assert_called_with(log_message)
         self.view_mock.print_result.assert_not_called()
 
-    def test_logs_error_when_asprotocol_error_returned(self):
+    async def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASProtocolError(ASResponse.ROLE_ALREADY_EXISTS, "test-message")
         line = "test-role priv sys-admin"
         self.cluster_mock.admin_create_role.return_value = {"principal_ip": as_error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
@@ -421,17 +426,17 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_exception_when_exception_returned(self):
+    async def test_raises_exception_when_exception_returned(self):
         as_error = IOError("test-message")
         line = "test-role priv sys-admin"
         self.cluster_mock.admin_create_role.return_value = {"principal_ip": as_error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, ShellException, "test-message", self.controller.execute, line.split()
         )
 
@@ -441,133 +446,133 @@ class ManageACLCreateRoleControllerTest(unittest.TestCase):
             whitelist=[],
             read_quota=None,
             write_quota=None,
-            nodes=["principal"],
+            nodes="principal",
         )
         self.view_mock.print_result.assert_not_called()
 
 
-class ManageACLQuotasControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageACLQuotasControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageACLQuotasRoleController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageACLQuotasRoleController.cluster"
+            "lib.live_cluster.manage_controller.ManageACLQuotasRoleController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageACLQuotasRoleController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
-        self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
 
-    def test_logs_error_when_server_does_not_support_quotas(self):
+    async def test_logs_error_when_server_does_not_support_quotas(self):
         log_message = "'manage quotas' is not supported on aerospike versions <= 5.5"
         line = "role test-role read 100 write 200"
         self.cluster_mock.info_build.side_effect = [
             {"principal": "5.5.0.0"},
             {"principal": "5.5.9.9"},
         ]
-        self.cluster_mock.get_expected_principal.side_effect = ["principal"] * 2
         self.cluster_mock.admin_set_quotas.side_effect = [
             {"principal_ip": ASResponse.OK}
         ] * 2
 
         for _ in range(2):
-            self.controller.execute(line.split())
+            await self.controller.execute(line.split())
             self.logger_mock.error.assert_called_with(log_message)
 
-    def test_logs_error_with_read_and_write_not_provided(self):
+    async def test_logs_error_with_read_and_write_not_provided(self):
         log_message = "'read' or 'write' is required."
 
-        self.controller.execute(["role", "test-role"])
+        await self.controller.execute(["role", "test-role"])
 
         self.logger_mock.error.assert_called_with(log_message)
 
-    def test_success_with_read_and_write(self):
+    async def test_success_with_read_and_write(self):
         log_message = "Successfully set quotas for role test-role."
         line = "role test-role read 100 write 200"
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_called_with(
-            "test-role", read_quota=100, write_quota=200, nodes=["principal"]
+            "test-role", read_quota=100, write_quota=200, nodes="principal"
         )
         self.view_mock.print_result.assert_called_with(log_message)
 
-    def test_success_with_just_read(self):
+    async def test_success_with_just_read(self):
         log_message = "Successfully set quota for role test-role."
         line = "role test-role read 100"
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_called_with(
-            "test-role", read_quota=100, write_quota=None, nodes=["principal"]
+            "test-role", read_quota=100, write_quota=None, nodes="principal"
         )
         self.view_mock.print_result.assert_called_with(log_message)
 
-    def test_success_with_just_write(self):
+    async def test_success_with_just_write(self):
         log_message = "Successfully set quota for role test-role."
         line = "role test-role write 100"
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_called_with(
-            "test-role", read_quota=None, write_quota=100, nodes=["principal"]
+            "test-role", read_quota=None, write_quota=100, nodes="principal"
         )
         self.view_mock.print_result.assert_called_with(log_message)
 
-    def test_correct_call_with_conflicting_read_role_and_read_quota(self):
+    async def test_correct_call_with_conflicting_read_role_and_read_quota(self):
         line = "role read read 100"
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_called_with(
-            "read", read_quota=100, write_quota=None, nodes=["principal"]
+            "read", read_quota=100, write_quota=None, nodes="principal"
         )
 
-    def test_correct_call_with_conflicting_write_role_and_write_quota(self):
+    async def test_correct_call_with_conflicting_write_role_and_write_quota(self):
         line = "role write write 100"
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_called_with(
-            "write", read_quota=None, write_quota=100, nodes=["principal"]
+            "write", read_quota=None, write_quota=100, nodes="principal"
         )
 
-    def test_correct_call_with_conflicting_write_role_and_read_quota(self):
+    async def test_correct_call_with_conflicting_write_role_and_read_quota(self):
         line = "role write read 100"
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_called_with(
-            "write", read_quota=100, write_quota=None, nodes=["principal"]
+            "write", read_quota=100, write_quota=None, nodes="principal"
         )
 
-    def test_logs_error_when_quotas_are_not_int(self):
+    async def test_logs_error_when_quotas_are_not_int(self):
         log_message = "Quotas must be integers."
         line = "role test-role write 100a read 100"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_not_called()
         self.logger_mock.error.assert_called_with(log_message)
@@ -575,49 +580,51 @@ class ManageACLQuotasControllerTest(unittest.TestCase):
 
         line = "role test-role write 100 read 100a"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_not_called()
         self.logger_mock.error.assert_called_with(log_message)
         self.view_mock.print_result.assert_not_called()
 
-    def test_logs_error_when_asprotocol_error_returned(self):
+    async def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASProtocolError(ASResponse.RATE_QUOTA_EXCEEDED, "test-message")
         line = "role test-role write 100 read 100"
         self.cluster_mock.admin_set_quotas.return_value = {"principal_ip": as_error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_called_with(
-            "test-role", read_quota=100, write_quota=100, nodes=["principal"]
+            "test-role", read_quota=100, write_quota=100, nodes="principal"
         )
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_exception_when_exception_returned(self):
+    async def test_raises_exception_when_exception_returned(self):
         as_error = IOError("test-message")
         line = "role test-role write 100 read 100"
         self.cluster_mock.admin_set_quotas.return_value = {"principal_ip": as_error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, ShellException, "test-message", self.controller.execute, line.split()
         )
 
         self.cluster_mock.admin_set_quotas.assert_called_with(
-            "test-role", read_quota=100, write_quota=100, nodes=["principal"]
+            "test-role", read_quota=100, write_quota=100, nodes="principal"
         )
         self.view_mock.print_result.assert_not_called()
 
 
-class ManageConfigControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageConfigControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageConfigLeafController.cluster",
+            AsyncMock(),
+        ).start()
         self.controller = ManageConfigController()
         ManageConfigLeafController.mods = {}
-        self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageConfigLeafController.cluster"
-        ).start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
@@ -629,28 +636,28 @@ class ManageConfigControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_logging_prompt(self):
+    async def test_logging_prompt(self):
         line = (
             "logging file test-file param test-param to test-value with 1.1.1.1 2.2.2.2"
         )
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change logging context test-param to test-value for file test-file"
         )
         self.cluster_mock.info_set_config_logging.assert_not_called()
 
-    def test_logging_success(self):
+    async def test_logging_success(self):
         line = (
             "logging file test-file param test-param to test-value with 1.1.1.1 2.2.2.2"
         )
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_logging.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_logging.assert_called_once_with(
             "test-file", "test-param", "test-value", nodes=["1.1.1.1", "2.2.2.2"]
@@ -660,19 +667,19 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_service_prompt(self):
+    async def test_service_prompt(self):
         line = "service param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change service param test-param to test-value"
         )
         self.cluster_mock.info_set_config_service.assert_not_called()
 
-    def test_service_success(self):
+    async def test_service_success(self):
         line = "service param test-param to test-value with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_service.return_value = resp
@@ -683,7 +690,7 @@ class ManageConfigControllerTest(unittest.TestCase):
             "line": [],
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_service.assert_called_once_with(
             "test-param", "test-value", nodes=["1.1.1.1", "2.2.2.2"]
@@ -693,34 +700,34 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **mods
         )
 
-    def test_network_subcontext_required(self):
+    async def test_network_subcontext_required(self):
         line = "network param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.error.assert_called_once_with("Subcontext required.")
         self.cluster_mock.info_set_config_network.assert_not_called()
 
-    def test_network_prompt(self):
+    async def test_network_prompt(self):
         line = "network sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change network sub-context param test-param to test-value"
         )
         self.cluster_mock.info_set_config_network.assert_not_called()
 
-    def test_network_success(self):
+    async def test_network_success(self):
         line = "network sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_network.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_network.assert_called_once_with(
             "test-param", "test-value", "sub-context", nodes=["1.1.1.1", "2.2.2.2"]
@@ -730,40 +737,40 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_security_prompt_with_subcontext(self):
+    async def test_security_prompt_with_subcontext(self):
         line = (
             "security sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
         )
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change security sub-context param test-param to test-value"
         )
         self.cluster_mock.info_set_config_security.assert_not_called()
 
-    def test_security_prompt(self):
+    async def test_security_prompt(self):
         line = "security param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change security param test-param to test-value"
         )
         self.cluster_mock.info_set_config_security.assert_not_called()
 
-    def test_security_success(self):
+    async def test_security_success(self):
         line = (
             "security sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
         )
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_security.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_security.assert_called_once_with(
             "test-param", "test-value", "sub-context", nodes=["1.1.1.1", "2.2.2.2"]
@@ -773,36 +780,36 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_namespace_prompt_with_subcontext(self):
+    async def test_namespace_prompt_with_subcontext(self):
         line = "namespace test-ns sub-context param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change namespace test-ns sub-context param test-param to test-value"
         )
         self.cluster_mock.info_set_config_namespace.assert_not_called()
 
-    def test_namespace_prompt(self):
+    async def test_namespace_prompt(self):
         line = "namespace test-ns param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change namespace test-ns param test-param to test-value"
         )
         self.cluster_mock.info_set_config_namespace.assert_not_called()
 
-    def test_namespace_success(self):
+    async def test_namespace_success(self):
         line = "namespace test-ns sub-context param rack-id to test-value with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_namespace.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_namespace.assert_called_once_with(
             "rack-id",
@@ -819,33 +826,33 @@ class ManageConfigControllerTest(unittest.TestCase):
             'Run "manage recluster" for your changes to rack-id to take affect.'
         )
 
-    def test_namespace_success_with_pair(self):
+    async def test_namespace_success_with_pair(self):
         line = "namespace test-ns sub-context param compression-level to test-value with 1.1.1.1 2.2.2.2"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.view_mock.print_result.assert_called_once_with(
             'The parameter "enable-compression" must also be set.'
         )
 
-    def test_set_prompt(self):
+    async def test_set_prompt(self):
         line = "namespace test-ns set test-set param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change namespace test-ns set test-set param test-param to test-value"
         )
         self.cluster_mock.info_set_config_namespace.assert_not_called()
 
-    def test_set_success(self):
+    async def test_set_success(self):
         line = "namespace test-ns set test-set param test-param to test-value with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_namespace.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_namespace.assert_called_once_with(
             "test-param",
@@ -859,24 +866,24 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_XDR_prompt(self):
+    async def test_XDR_prompt(self):
         line = "xdr param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change XDR param test-param to test-value"
         )
         self.cluster_mock.info_set_config_xdr.assert_not_called()
 
-    def test_XDR_success(self):
+    async def test_XDR_success(self):
         line = "xdr param test-param to test-value with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr.assert_called_once_with(
             "test-param",
@@ -888,22 +895,22 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_XDR_create_dc_prompt(self):
+    async def test_XDR_create_dc_prompt(self):
         line = "xdr create dc test-dc with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with("Create XDR DC test-dc")
         self.cluster_mock.info_set_config_xdr_create_dc.assert_not_called()
 
-    def test_XDR_create_dc_success(self):
+    async def test_XDR_create_dc_success(self):
         line = "xdr create dc test-dc with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr_create_dc.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr_create_dc.assert_called_once_with(
             "test-dc",
@@ -914,22 +921,22 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_XDR_delete_dc_prompt(self):
+    async def test_XDR_delete_dc_prompt(self):
         line = "xdr delete dc test-dc with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with("Delete XDR DC test-dc")
         self.cluster_mock.info_set_config_xdr_delete_dc.assert_not_called()
 
-    def test_XDR_delete_dc_success(self):
+    async def test_XDR_delete_dc_success(self):
         line = "xdr delete dc test-dc with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr_delete_dc.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr_delete_dc.assert_called_once_with(
             "test-dc",
@@ -940,24 +947,24 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_XDR_dc_prompt(self):
+    async def test_XDR_dc_prompt(self):
         line = "xdr dc test-dc param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change XDR DC test-dc param test-param to test-value"
         )
         self.cluster_mock.info_set_config_xdr.assert_not_called()
 
-    def test_XDR_dc_success(self):
+    async def test_XDR_dc_success(self):
         line = "xdr dc test-dc param auth-user to test-value with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr.assert_called_once_with(
             "auth-user",
@@ -973,22 +980,22 @@ class ManageConfigControllerTest(unittest.TestCase):
             'The parameter "auth-password-file" must also be set.'
         )
 
-    def test_XDR_dc_add_node_prompt(self):
+    async def test_XDR_dc_add_node_prompt(self):
         line = "xdr dc test-dc add node 3.3.3.3 with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with("Add node 3.3.3.3 to DC test-dc")
         self.cluster_mock.info_set_config_xdr_add_node.assert_not_called()
 
-    def test_XDR_dc_add_node_success(self):
+    async def test_XDR_dc_add_node_success(self):
         line = "xdr dc test-dc add node 3.3.3.3 with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr_add_node.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr_add_node.assert_called_once_with(
             "test-dc",
@@ -1000,22 +1007,22 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_XDR_dc_remove_node_prompt(self):
+    async def test_XDR_dc_remove_node_prompt(self):
         line = "xdr dc test-dc remove node 3.3.3.3 with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with("Remove node 3.3.3.3 from DC test-dc")
         self.cluster_mock.info_set_config_xdr_remove_node.assert_not_called()
 
-    def test_XDR_dc_remove_node_success(self):
+    async def test_XDR_dc_remove_node_success(self):
         line = "xdr dc test-dc remove node 3.3.3.3 with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr_remove_node.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr_remove_node.assert_called_once_with(
             "test-dc",
@@ -1027,34 +1034,34 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_XDR_dc_add_namespace_prompt(self):
+    async def test_XDR_dc_add_namespace_prompt(self):
         line = "xdr dc test-dc add namespace test-env with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with("Add namespace test-env to DC test-dc")
         self.cluster_mock.info_set_config_xdr_add_namespace.assert_not_called()
 
-    def test_XDR_dc_add_namespace_with_rewind_prompt(self):
+    async def test_XDR_dc_add_namespace_with_rewind_prompt(self):
         line = "xdr dc test-dc add namespace test-env rewind all with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Add namespace test-env to DC test-dc with rewind all"
         )
         self.cluster_mock.info_set_config_xdr_add_namespace.assert_not_called()
 
-    def test_XDR_dc_add_namespace_success(self):
+    async def test_XDR_dc_add_namespace_success(self):
         line = "xdr dc test-dc add namespace test-ns with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr_add_namespace.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr_add_namespace.assert_called_once_with(
             "test-dc",
@@ -1067,24 +1074,24 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_XDR_dc_remove_namespace_prompt(self):
+    async def test_XDR_dc_remove_namespace_prompt(self):
         line = "xdr dc test-dc remove namespace test-ns with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Remove namespace test-ns from DC test-dc"
         )
         self.cluster_mock.info_set_config_xdr_remove_namespace.assert_not_called()
 
-    def test_XDR_dc_remove_namespace_success(self):
+    async def test_XDR_dc_remove_namespace_success(self):
         line = "xdr dc test-dc remove namespace test-ns with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr_remove_namespace.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr_remove_namespace.assert_called_once_with(
             "test-dc",
@@ -1096,24 +1103,24 @@ class ManageConfigControllerTest(unittest.TestCase):
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
 
-    def test_XDR_dc_namespace_prompt(self):
+    async def test_XDR_dc_namespace_prompt(self):
         line = "xdr dc test-dc namespace test-ns param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
         ManageConfigLeafController.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "Change XDR DC test-dc namespace test-ns param test-param to test-value"
         )
         self.cluster_mock.info_set_config_xdr.assert_not_called()
 
-    def test_XDR_dc_namespace_success(self):
+    async def test_XDR_dc_namespace_success(self):
         line = "xdr dc test-dc namespace test-ns param test-param to test-value with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr.return_value = resp
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr.assert_called_once_with(
             "test-param",
@@ -1128,14 +1135,16 @@ class ManageConfigControllerTest(unittest.TestCase):
         )
 
 
-class ManageTruncateControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageTruncateControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageTruncateController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageTruncateController.cluster"
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageTruncateController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
@@ -1143,11 +1152,10 @@ class ManageTruncateControllerTest(unittest.TestCase):
         ).start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
-        self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
 
-    def test_parse_lut_with_incorrect_before_len(self):
+    async def test_parse_lut_with_incorrect_before_len(self):
         self.controller.mods = {"before": ["12344352"]}
 
         lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
@@ -1170,7 +1178,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
             error,
         )
 
-    def test_parse_lut_with_incorrect_epoch_format(self):
+    async def test_parse_lut_with_incorrect_epoch_format(self):
         self.controller.mods = {"before": ["12345v6789", "unix-epoch"]}
 
         lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
@@ -1179,7 +1187,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.assertIsNone(lut_epoch_time)
         self.assertEqual("Invalid unix-epoch format.", error)
 
-    def test_parse_lut_with_date_too_new(self):
+    async def test_parse_lut_with_date_too_new(self):
         self.controller.mods = {"before": ["12345678900", "unix-epoch"]}
 
         lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
@@ -1196,7 +1204,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.assertIsNone(lut_epoch_time)
         self.assertEqual("Date provided is too far in the future.", error)
 
-    def test_parse_lut_with_date_too_old(self):
+    async def test_parse_lut_with_date_too_old(self):
         self.controller.mods = {"before": ["123456789", "unix-epoch"]}
 
         lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
@@ -1213,7 +1221,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.assertIsNone(lut_epoch_time)
         self.assertEqual("Date provided is too far in the past.", error)
 
-    def test_parse_lut_with_incorrect_iso_format(self):
+    async def test_parse_lut_with_incorrect_iso_format(self):
         self.controller.mods = {"before": ["123", "iso-8601"]}
 
         lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
@@ -1222,7 +1230,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.assertIsNone(lut_epoch_time)
         self.assertEqual("Invalid iso-8601 format.", error)
 
-    def test_parse_lut_with_iso_without_timezone(self):
+    async def test_parse_lut_with_iso_without_timezone(self):
         self.controller.mods = {"before": ["2020-05-04T04:20:40", "iso-8601"]}
 
         lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
@@ -1231,7 +1239,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.assertIsNone(lut_epoch_time)
         self.assertEqual("iso-8601 format must contain a timezone.", error)
 
-    def test_parse_lut_iso_gives_correct_epoch_time(self):
+    async def test_parse_lut_iso_gives_correct_epoch_time(self):
         input_output = [
             ("2021-05-04T22:44:05Z", "1620168245000000000"),
             ("2021-05-04T22:44:05-07:00", "1620193445000000000"),
@@ -1250,7 +1258,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
             self.assertEqual(lut_epoch_time, output)
             self.assertFalse(error)
 
-    def test_parse_lut_epoch_gives_correct_epoch_time(self):
+    async def test_parse_lut_epoch_gives_correct_epoch_time(self):
         input_output = [
             ("1234567899", "1234567899000000000"),
             ("1234567899.123456789", "1234567899123456789"),
@@ -1265,7 +1273,7 @@ class ManageTruncateControllerTest(unittest.TestCase):
             self.assertEqual(lut_epoch_time, output)
             self.assertFalse(error)
 
-    def test_get_namespace_master_objects(self):
+    async def test_get_namespace_master_objects(self):
         self.cluster_mock.info_namespace_statistics.return_value = {
             "1.1.1.1": {
                 "a": 1,
@@ -1297,14 +1305,14 @@ class ManageTruncateControllerTest(unittest.TestCase):
             "4.4.4.4": {"a": 1, "b": 12, "c": 23, "d": 34, "e": 45, "f": 56},
         }
 
-        master_objects = self.controller._get_namespace_master_objects("test-ns")
+        master_objects = await self.controller._get_namespace_master_objects("test-ns")
 
         self.cluster_mock.info_namespace_statistics.assert_called_with(
             "test-ns", nodes="all"
         )
         self.assertEqual(master_objects, str(33 + 44 + 55))
 
-    def test_get_set_master_objects(self):
+    async def test_get_set_master_objects(self):
         self.cluster_mock.info_set_statistics.return_value = {
             "1.1.1.1": {
                 "a": 1,
@@ -1339,17 +1347,19 @@ class ManageTruncateControllerTest(unittest.TestCase):
             "1.1.1.1": {"effective_repl_factor": 11}
         }
 
-        master_objects = self.controller._get_set_master_objects("test-ns", "test-set")
+        master_objects = await self.controller._get_set_master_objects(
+            "test-ns", "test-set"
+        )
 
         self.cluster_mock.info_set_statistics.assert_called_with(
             "test-ns", "test-set", nodes="all"
         )
         self.assertEqual(master_objects, str((11 + 55 + 66) // 11))
 
-    def test_returns_on_lut_error(self):
+    async def test_returns_on_lut_error(self):
         line = "ns test before 123456789 unix-epoch"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.error.assert_called_with(
             "Date provided is too far in the past."
@@ -1359,56 +1369,54 @@ class ManageTruncateControllerTest(unittest.TestCase):
     @patch(
         "lib.live_cluster.manage_controller.ManageTruncateController._get_namespace_master_objects"
     )
-    def test_prompts_error_without_lut(self, _get_namespace_master_objects_mock):
+    async def test_prompts_error_without_lut(self, _get_namespace_master_objects_mock):
         _get_namespace_master_objects_mock.return_value = 50
         self.controller.warn = True
         self.prompt_mock.side_effect = lambda x: False
         line = "ns test"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_with(
             "You're about to truncate up to 50 records from namespace test"
         )
 
-    @patch(
-        "lib.live_cluster.manage_controller.ManageTruncateController._get_set_master_objects"
-    )
-    def test_prompts_error_without_lut_or_set(self, _get_set_master_objects_mock):
-        _get_set_master_objects_mock.return_value = 60
+    async def test_prompts_error_without_lut_or_set(self):
+        self.controller._get_set_master_objects = AsyncMock()
+        self.controller._get_set_master_objects.return_value = 60
         self.controller.warn = True
         self.prompt_mock.side_effect = lambda x: False
 
         line = "ns test set test-set"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_with(
             "You're about to truncate up to 60 records from set test-set for namespace test"
         )
 
-    @patch(
-        "lib.live_cluster.manage_controller.ManageTruncateController._get_set_master_objects"
-    )
-    def test_prompts_error_with_lut(self, _get_set_master_objects_mock):
-        _get_set_master_objects_mock.return_value = 60
+    async def test_prompts_error_with_lut(self):
+        self.controller._get_set_master_objects = AsyncMock()
+        self.controller._get_set_master_objects.return_value = 60
         self.controller.warn = True
         self.prompt_mock.side_effect = lambda x: False
 
         line = "ns test set test-set before 1620690614 unix-epoch"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         # Fails with pytest when you add -s
         self.prompt_mock.assert_called_with(
             "You're about to truncate up to 60 records from set test-set for namespace test with LUT before 23:50:14.000000 UTC on May 10, 2021"
         )
 
-    def test_success_with_no_set(self):
+    async def test_success_with_no_set(self):
+        self.controller._get_namespace_master_objects = AsyncMock()
+        self.controller._get_namespace_master_objects.return_value = 10
         self.cluster_mock.info_truncate.return_value = {"principal": "not an error"}
         line = "ns test before 1620690614 unix-epoch"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_truncate.assert_called_with(
             "test", None, "1620690614000000000", nodes="principal"
@@ -1418,11 +1426,11 @@ class ManageTruncateControllerTest(unittest.TestCase):
             "Successfully started truncation for namespace test"
         )
 
-    def test_success_with_set(self):
+    async def test_success_with_set(self):
         self.cluster_mock.info_truncate.return_value = {"principal": "not an error"}
         line = "ns test set test-set before 1620690614 unix-epoch --no-warn"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_truncate.assert_called_with(
             "test", "test-set", "1620690614000000000", nodes="principal"
@@ -1432,12 +1440,12 @@ class ManageTruncateControllerTest(unittest.TestCase):
             "Successfully started truncation for set test-set of namespace test"
         )
 
-    def test_logs_error_when_asprotocol_error_returned(self):
+    async def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASInfoError("An error message", "test-resp")
         line = "ns test set test-set before 1620690614 unix-epoch --no-warn"
         self.cluster_mock.info_truncate.return_value = {"principal_ip": as_error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_truncate.assert_called_with(
             "test", "test-set", "1620690614000000000", nodes="principal"
@@ -1445,12 +1453,12 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_exception_when_exception_returned(self):
+    async def test_raises_exception_when_exception_returned(self):
         as_error = IOError("test-message")
         line = "ns test set test-set before 1620690614 unix-epoch --no-warn"
         self.cluster_mock.info_truncate.return_value = {"principal_ip": as_error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, ShellException, "test-message", self.controller.execute, line.split()
         )
 
@@ -1460,14 +1468,16 @@ class ManageTruncateControllerTest(unittest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
 
-class ManageTruncateUndoControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageTruncateUndoControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageTruncateController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageTruncateController.cluster"
+            "lib.live_cluster.manage_controller.ManageTruncateController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageTruncateController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
@@ -1479,23 +1489,23 @@ class ManageTruncateUndoControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_warn_prompt_and_return(self):
+    async def test_warn_prompt_and_return(self):
         self.controller.warn = True
         self.prompt_mock.return_value = False
         line = "ns test undo"
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with("")
         self.cluster_mock.info_truncate_undo.assert_not_called()
 
-    def test_success_with_ns(self):
+    async def test_success_with_ns(self):
         line = "undo ns test"
         self.cluster_mock.info_truncate_undo.return_value = {
             "principal-ip": ASINFO_RESPONSE_OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_truncate_undo.assert_called_once_with(
             "test", None, nodes="principal"
@@ -1504,13 +1514,13 @@ class ManageTruncateUndoControllerTest(unittest.TestCase):
             "Successfully triggered undoing truncation for namespace test on next cold restart"
         )
 
-    def test_success_with_set(self):
+    async def test_success_with_set(self):
         line = "undo ns test set test-set"
         self.cluster_mock.info_truncate_undo.return_value = {
             "principal-ip": ASINFO_RESPONSE_OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_truncate_undo.assert_called_once_with(
             "test", "test-set", nodes="principal"
@@ -1519,12 +1529,12 @@ class ManageTruncateUndoControllerTest(unittest.TestCase):
             "Successfully triggered undoing truncation for set test-set of namespace test on next cold restart"
         )
 
-    def test_logs_error_when_asprotocol_error_returned(self):
+    async def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASInfoError("An error message", "test-resp")
         line = "ns test set test-set undo"
         self.cluster_mock.info_truncate_undo.return_value = {"principal_ip": as_error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_truncate_undo.assert_called_with(
             "test", "test-set", nodes="principal"
@@ -1532,12 +1542,12 @@ class ManageTruncateUndoControllerTest(unittest.TestCase):
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_exception_when_exception_returned(self):
+    async def test_raises_exception_when_exception_returned(self):
         as_error = IOError("test-message")
         line = "undo ns test set test-set"
         self.cluster_mock.info_truncate_undo.return_value = {"principal_ip": as_error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, ShellException, "test-message", self.controller.execute, line.split()
         )
 
@@ -1547,52 +1557,53 @@ class ManageTruncateUndoControllerTest(unittest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
 
-class ManageReclusterControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageReclusterControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageReclusterController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageReclusterController.cluster"
+            "lib.live_cluster.manage_controller.ManageReclusterController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageReclusterController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
-        self.cluster_mock.get_expected_principal.return_value = "principal"
 
         self.addCleanup(patch.stopall)
 
-    def test_success(self):
+    async def test_success(self):
         line = ""
         self.cluster_mock.info_recluster.return_value = {
             "principal-ip": ASINFO_RESPONSE_OK
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_recluster.assert_called_once_with(nodes="principal")
         self.view_mock.print_result.assert_called_once_with(
             "Successfully started recluster"
         )
 
-    def test_logs_error_when_asinfo_error_returned(self):
+    async def test_logs_error_when_asinfo_error_returned(self):
         as_error = ASInfoError("An error message", "test-resp")
         line = ""
         self.cluster_mock.info_recluster.return_value = {"principal_ip": as_error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_recluster.assert_called_with(nodes="principal")
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_exception_when_exception_returned(self):
+    async def test_raises_exception_when_exception_returned(self):
         as_error = IOError("test-message")
         line = ""
         self.cluster_mock.info_recluster.return_value = {"principal_ip": as_error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, ShellException, "test-message", self.controller.execute, line.split()
         )
 
@@ -1600,14 +1611,16 @@ class ManageReclusterControllerTest(unittest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
 
-class ManageQuiesceControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageQuiesceControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageQuiesceController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageQuiesceController.cluster"
+            "lib.live_cluster.manage_controller.ManageQuiesceController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageQuiesceController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
@@ -1615,12 +1628,12 @@ class ManageQuiesceControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_success(self):
+    async def test_success(self):
         line = "with 1.1.1.1"
         self.cluster_mock.info_quiesce.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
         mods = {"with": ["1.1.1.1"], "undo": [], "line": []}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_quiesce.assert_called_once_with(nodes=["1.1.1.1"])
         self.view_mock.print_info_responses.assert_called_once_with(
@@ -1630,14 +1643,14 @@ class ManageQuiesceControllerTest(unittest.TestCase):
             'Run "manage recluster" for your changes to take affect.'
         )
 
-    def test_success_with_undo(self):
+    async def test_success_with_undo(self):
         line = "with 1.1.1.1 2.2.2.2 undo"
         self.cluster_mock.info_quiesce_undo.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
         mods = {"with": ["1.1.1.1", "2.2.2.2"], "undo": [], "line": []}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_quiesce_undo.assert_called_once_with(
             nodes=["1.1.1.1", "2.2.2.2"]
@@ -1653,14 +1666,16 @@ class ManageQuiesceControllerTest(unittest.TestCase):
         )
 
 
-class ManageReviveControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageReviveControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageReviveController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageReviveController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
@@ -1669,11 +1684,11 @@ class ManageReviveControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_success(self):
+    async def test_success(self):
         line = "ns test"
         self.cluster_mock.info_revive.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_revive.assert_called_once_with(
             "test", nodes=self.controller.nodes
@@ -1688,24 +1703,24 @@ class ManageReviveControllerTest(unittest.TestCase):
             'Run "manage recluster" for your changes to take affect.'
         )
 
-    def test_warn_prompt_returns_false(self):
+    async def test_warn_prompt_returns_false(self):
         line = "ns test"
         self.prompt_mock.return_value = False
         self.controller.warn = True
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "You are about to revive namespace test"
         )
 
-    def test_warn_prompt_returns_true(self):
+    async def test_warn_prompt_returns_true(self):
         line = "ns test"
         self.prompt_mock.return_value = True
         self.controller.warn = True
         self.cluster_mock.info_revive.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_once_with(
             "You are about to revive namespace test"
@@ -1713,16 +1728,18 @@ class ManageReviveControllerTest(unittest.TestCase):
         self.cluster_mock.info_revive.assert_called_once()
 
 
-class ManageJobsKillTridControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageJobsKillTridControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageJobsKillTridController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageJobsKillTridController.cluster"
+            "lib.live_cluster.manage_controller.ManageJobsKillTridController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageJobsKillTridController()
         self.getter_mock = patch(
-            "lib.live_cluster.manage_controller.GetJobsController"
+            "lib.live_cluster.manage_controller.GetJobsController", AsyncMock()
         ).start()
         self.controller.getter = self.getter_mock
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
@@ -1732,7 +1749,7 @@ class ManageJobsKillTridControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_kill_trids(self):
+    async def test_kill_trids(self):
         trids = ["123", "789", "101", "456"]
         self.getter_mock.get_all.return_value = {
             "scan": {
@@ -1760,7 +1777,7 @@ class ManageJobsKillTridControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_jobs_kill.return_value = {"3.3.3.3": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(trids)
+        await self.controller.execute(trids)
 
         self.cluster_mock.info_scan_abort.assert_called_with("123", nodes=["1.1.1.1"])
         self.cluster_mock.info_query_abort.assert_called_with("456", nodes=["2.2.2.2"])
@@ -1787,7 +1804,7 @@ class ManageJobsKillTridControllerTest(unittest.TestCase):
             **self.controller.mods,
         )
 
-    def test_kill_same_trid_on_multiple_hosts(self):
+    async def test_kill_same_trid_on_multiple_hosts(self):
         trids = ["123", "789"]
         self.getter_mock.get_all.return_value = {
             "scan": {
@@ -1812,7 +1829,7 @@ class ManageJobsKillTridControllerTest(unittest.TestCase):
             "2.2.2.2": ASINFO_RESPONSE_OK
         }
 
-        self.controller.execute(trids)
+        await self.controller.execute(trids)
 
         self.cluster_mock.info_scan_abort.assert_has_calls(
             [call("123", nodes=["1.1.1.1"]), call("123", nodes=["2.2.2.2"])]
@@ -1838,11 +1855,11 @@ class ManageJobsKillTridControllerTest(unittest.TestCase):
             **self.controller.mods,
         )
 
-    def test_kill_trids_warn(self):
+    async def test_kill_trids_warn(self):
         trids = ["123", "789", "101", "456"]
         self.controller.warn = True
         self.prompt_mock.return_value = False
-        self.controller._kill_trid = MagicMock()
+        self.controller._kill_trid = AsyncMock()
         self.getter_mock.get_all.return_value = {
             "scan": {
                 "1.1.1.1": {
@@ -1851,7 +1868,7 @@ class ManageJobsKillTridControllerTest(unittest.TestCase):
             },
         }
 
-        self.controller.execute(trids)
+        await self.controller.execute(trids)
 
         self.prompt_mock.assert_called_with(
             "You're about to kill the following transactions: 123, 789, 101, 456"
@@ -1859,33 +1876,36 @@ class ManageJobsKillTridControllerTest(unittest.TestCase):
         self.controller._kill_trid.assert_not_called()
 
 
-class ManageJobsKillAllControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageJobsKillAllControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageJobsKillAllScansController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.cluster"
+            "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageJobsKillAllScansController()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.prompt_challenge"
         ).start()
         self.addCleanup(patch.stopall)
 
-    def test_kill_all_scans(self):
+    async def test_kill_all_scans(self):
         module = "scan"
         self.cluster_mock.info_scan_abort_all.return_value = {"1.1.1.1": "ok"}
 
-        self.controller.execute(module.split())
+        await self.controller.execute(module.split())
 
         self.cluster_mock.info_scan_abort_all.assert_called_with(nodes="all")
 
-    def test_kill_all_warn(self):
+    async def test_kill_all_warn(self):
         module = "scans"
         self.controller.warn = True
         self.prompt_mock.return_value = False
 
-        self.controller.execute(module.split())
+        await self.controller.execute(module.split())
 
         self.prompt_mock.assert_called_with(
             "You're about to kill all scan jobs on all nodes."
@@ -1893,10 +1913,14 @@ class ManageJobsKillAllControllerTest(unittest.TestCase):
         self.cluster_mock.info_scan_abort_all.assert_not_called()
 
 
-class ManageRosterLeafCommandControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
     def setUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.cluster"
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.cluster",
+            AsyncMock,
         ).start()
         self.controller = ManageRosterLeafCommandController(self.cluster_mock)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
@@ -1936,10 +1960,8 @@ class ManageRosterLeafCommandControllerTest(unittest.TestCase):
                     "The cluster is unstable. It is advised that you do not manage the roster. Run 'info network' for more information."
                 )
 
-        test_util.assert_exception(
-            self,
+        self.assertRaises(
             ASInfoError,
-            None,
             self.controller._check_and_log_cluster_stable,
             {
                 "1.1.1.1": "ABC",
@@ -1989,14 +2011,16 @@ class ManageRosterLeafCommandControllerTest(unittest.TestCase):
                 self.logger_mock.warning.assert_called_once()
 
 
-class ManageRosterAddControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageRosterAddControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageRosterAddController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.cluster"
+            "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageRosterAddController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
@@ -2012,14 +2036,14 @@ class ManageRosterAddControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_success(self):
+    async def test_success(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_roster_set.assert_called_once_with(
             "test", ["GHI", "ABC@rack1", "DEF@rack2"], nodes="principal"
@@ -2031,18 +2055,18 @@ class ManageRosterAddControllerTest(unittest.TestCase):
             'Run "manage recluster" for your changes to take affect.'
         )
 
-    def test_logs_error_from_roster(self):
+    async def test_logs_error_from_roster(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         error = ASInfoError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
-    def test_logs_error_from_roster_set(self):
+    async def test_logs_error_from_roster_set(self):
         error = ASInfoError("blah", "error::foo")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {
@@ -2050,25 +2074,25 @@ class ManageRosterAddControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_error_from_roster(self):
+    async def test_raises_error_from_roster(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_error_from_roster_set(self):
+    async def test_raises_error_from_roster_set(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {
@@ -2076,14 +2100,14 @@ class ManageRosterAddControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
-    def test_warn_returns_false(self):
+    async def test_warn_returns_false(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test"
         self.controller.warn = True
         self.prompt_mock.return_value = False
@@ -2092,7 +2116,7 @@ class ManageRosterAddControllerTest(unittest.TestCase):
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": ["foo"]}
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.check_and_log_cluster_stable_mock.assert_called_once_with(
             {"1.1.1.1": "ABCDEF"}
@@ -2105,7 +2129,7 @@ class ManageRosterAddControllerTest(unittest.TestCase):
         )
         self.cluster_mock.info_roster_set.assert_not_called()
 
-    def test_warn_returns_true(self):
+    async def test_warn_returns_true(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test"
         self.controller.warn = True
         self.prompt_mock.return_value = True
@@ -2115,7 +2139,7 @@ class ManageRosterAddControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.check_and_log_cluster_stable_mock.assert_called_once_with(
             {"1.1.1.1": "ABCDEF"}
@@ -2129,14 +2153,16 @@ class ManageRosterAddControllerTest(unittest.TestCase):
         self.cluster_mock.info_roster_set.assert_called_once()
 
 
-class ManageRosterRemoveControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageRosterRemoveControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageRosterRemoveController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageRosterRemoveController()
         self.check_and_log_cluster_stable_mock = patch(
             "lib.live_cluster.manage_controller.ManageRosterLeafCommandController._check_and_log_cluster_stable"
         ).start()
@@ -2146,14 +2172,14 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
-    def test_success(self):
+    async def test_success(self):
         line = "nodes ABC ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["ABC", "DEF"], "observed_nodes": []}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_roster_set.assert_called_once_with(
             "test", ["DEF"], nodes="principal"
@@ -2165,18 +2191,18 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
             'Run "manage recluster" for your changes to take affect.'
         )
 
-    def test_logs_error_from_roster(self):
+    async def test_logs_error_from_roster(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
         error = ASInfoError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
-    def test_logs_error_from_roster_set(self):
+    async def test_logs_error_from_roster_set(self):
         error = ASInfoError("blah", "error::foo")
         line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
         self.cluster_mock.info_roster.return_value = {
@@ -2187,13 +2213,13 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
-    def test_logs_error_when_node_not_in_pending(self):
+    async def test_logs_error_when_node_not_in_pending(self):
         line = "nodes GHI ns test"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["ABC", "DEF"], "observed_nodes": []}
@@ -2202,7 +2228,7 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
         self.prompt_mock.return_value = False
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.warning.assert_any_call(
             "The following nodes are not in the pending-roster: {}", "GHI"
@@ -2213,19 +2239,19 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_error_from_roster(self):
+    async def test_raises_error_from_roster(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_error_from_roster_set(self):
+    async def test_raises_error_from_roster_set(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {
@@ -2236,14 +2262,14 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
-    def test_warn_returns_false(self):
+    async def test_warn_returns_false(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test"
         self.controller.warn = True
         self.prompt_mock.return_value = False
@@ -2255,7 +2281,7 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
             }
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_with(
             "You are about to set the pending-roster for namespace test to: GHI"
@@ -2265,7 +2291,7 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
         )
         self.cluster_mock.info_roster_set.assert_not_called()
 
-    def test_warn_returns_true(self):
+    async def test_warn_returns_true(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test"
         self.controller.warn = True
         self.prompt_mock.return_value = True
@@ -2278,7 +2304,7 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_with(
             "You are about to set the pending-roster for namespace test to: GHI"
@@ -2289,14 +2315,16 @@ class ManageRosterRemoveControllerTest(unittest.TestCase):
         self.cluster_mock.info_roster_set.assert_called_once()
 
 
-class ManageRosterStageNodesControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageRosterStageNodesControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageRosterStageNodesController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageRosterStageNodesController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
@@ -2312,11 +2340,11 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_success(self):
+    async def test_success(self):
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_roster_set.assert_called_once_with(
             "test", ["ABC@rack1", "DEF@rack2"], nodes="principal"
@@ -2326,12 +2354,12 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
             'Run "manage recluster" for your changes to take affect.'
         )
 
-    def test_logs_error_from_roster_set(self):
+    async def test_logs_error_from_roster_set(self):
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
         error = ASInfoError("blah", "error::foo")
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_roster_set.assert_called_once_with(
             "test", ["ABC@rack1", "DEF@rack2"], nodes="principal"
@@ -2340,7 +2368,7 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
         self.logger_mock.error.assert_called_once_with(error)
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_error_from_roster_set(self):
+    async def test_raises_error_from_roster_set(self):
         error = Exception("test exception")
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
@@ -2351,7 +2379,7 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
 
@@ -2361,7 +2389,7 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
         self.logger_mock.error.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
-    def test_warn_returns_false(self):
+    async def test_warn_returns_false(self):
         line = "ABC@rack1 DEF@rack2 ns test"
         self.controller.warn = True
         self.prompt_mock.return_value = False
@@ -2372,7 +2400,7 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
             }
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.prompt_mock.assert_called_with(
             "You are about to set the pending-roster for namespace test to: ABC@rack1, DEF@rack2"
@@ -2385,7 +2413,7 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
         )
         self.cluster_mock.info_roster_set.assert_not_called()
 
-    def test_warn_returns_true(self):
+    async def test_warn_returns_true(self):
         line = "ABC@rack1 DEF@rack2 ns test"
         self.controller.warn = True
         self.prompt_mock.return_value = True
@@ -2397,7 +2425,7 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.check_and_log_cluster_stable_mock.assert_called_once_with(
             {"1.1.1.1": "ABCDEF"}
@@ -2411,14 +2439,16 @@ class ManageRosterStageNodesControllerTest(unittest.TestCase):
         self.cluster_mock.info_roster_set.assert_called_once()
 
 
-class ManageRosterStageObservedControllerTest(unittest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ManageRosterStageObservedControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ManageRosterStageObservedController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster"
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
         ).start()
+        self.controller = ManageRosterStageObservedController()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
@@ -2431,14 +2461,14 @@ class ManageRosterStageObservedControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_success(self):
+    async def test_success(self):
         line = "ns test"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"observed_nodes": ["ABC", "DEF"]}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_roster_set.assert_called_once_with(
             "test", ["ABC", "DEF"], nodes="principal"
@@ -2450,18 +2480,18 @@ class ManageRosterStageObservedControllerTest(unittest.TestCase):
             'Run "manage recluster" for your changes to take affect.'
         )
 
-    def test_logs_error_from_roster(self):
+    async def test_logs_error_from_roster(self):
         line = "ns test"
         error = ASInfoError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
-    def test_logs_error_from_roster_set(self):
+    async def test_logs_error_from_roster_set(self):
         line = "ns test"
         error = ASInfoError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {
@@ -2469,7 +2499,7 @@ class ManageRosterStageObservedControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.cluster_mock.info_roster_set.assert_called_once_with(
             "test", ["ABC", "DEF"], nodes="principal"
@@ -2477,19 +2507,19 @@ class ManageRosterStageObservedControllerTest(unittest.TestCase):
         self.logger_mock.error.assert_called_once_with(error)
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_error_from_roster(self):
+    async def test_raises_error_from_roster(self):
         error = Exception("test exception")
         line = "ns test"
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
-    def test_raises_error_from_roster_set(self):
+    async def test_raises_error_from_roster_set(self):
         error = Exception("test exception")
         line = "ns test"
         self.cluster_mock.info_roster.return_value = {
@@ -2497,14 +2527,14 @@ class ManageRosterStageObservedControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
-    def test_warn_returns_false(self):
+    async def test_warn_returns_false(self):
         line = "ns test"
         self.controller.warn = True
         self.prompt_mock.return_value = False
@@ -2513,7 +2543,7 @@ class ManageRosterStageObservedControllerTest(unittest.TestCase):
             "1.1.1.1": {"observed_nodes": ["GHI", "ABC@rack1", "DEF@rack2"]}
         }
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.check_and_log_cluster_stable_mock.assert_called_once_with(
             {"1.1.1.1": "ABCDEF"}
@@ -2523,7 +2553,7 @@ class ManageRosterStageObservedControllerTest(unittest.TestCase):
         )
         self.cluster_mock.info_roster_set.assert_not_called()
 
-    def test_warn_returns_true(self):
+    async def test_warn_returns_true(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test"
         self.controller.warn = True
         self.prompt_mock.return_value = True
@@ -2533,7 +2563,7 @@ class ManageRosterStageObservedControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
-        self.controller.execute(line.split())
+        await self.controller.execute(line.split())
 
         self.check_and_log_cluster_stable_mock.assert_called_once_with(
             {"1.1.1.1": "ABCDEF"}

@@ -137,8 +137,20 @@ class HealthCheckController(CollectinfoCommandController):
                                 ("CLUSTER", cluster_name),
                                 ("NODE", None),
                                 (None, None),
-                                ("NAMESPACE", ("ns_name", "ns",),),
-                                ("SET", ("set_name", "set",),),
+                                (
+                                    "NAMESPACE",
+                                    (
+                                        "ns_name",
+                                        "ns",
+                                    ),
+                                ),
+                                (
+                                    "SET",
+                                    (
+                                        "set_name",
+                                        "set",
+                                    ),
+                                ),
                             ],
                         ),
                         (

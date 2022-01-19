@@ -1,6 +1,10 @@
 import os
 import time
-import unittest2 as unittest
+import warnings
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import unittest2 as unittest
 
 import lib.live_cluster.live_cluster_root_controller as controller
 from test.e2e import util as test_util

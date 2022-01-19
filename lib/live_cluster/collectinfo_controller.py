@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 import logging
@@ -48,7 +49,7 @@ class CollectinfoController(LiveClusterCommandController):
         except Exception as e:
             raise e
 
-    def _collectinfo_content(self, func, parm="", alt_parms=""):
+    async def _collectinfo_content(self, func, parm="", alt_parms=""):
         name = ""
         capture_stdout = util.capture_stdout
         sep = constants.COLLECTINFO_SEPERATOR
@@ -70,11 +71,11 @@ class CollectinfoController(LiveClusterCommandController):
             sep += str(parm) + "\n"
 
         if func == "cluster":
-            o = self.cluster.info(parm)
+            o = await self.cluster.info(parm)
         else:
             if self.nodes and isinstance(self.nodes, list):
                 parm += ["with"] + self.nodes
-            o = capture_stdout(func, parm)
+            o = await capture_stdout(func, parm)
         util.write_to_file(self.aslogfile, sep + str(o))
 
         set_style_json(old_style_json)
@@ -186,13 +187,15 @@ class CollectinfoController(LiveClusterCommandController):
                 if isinstance(data[section][node], Exception):
                     data[section][node] = {}
 
-    def _get_as_data_json(self):
+    async def _get_as_data_json(self):
         as_map = {}
-        getter = GetStatisticsController(self.cluster)
-        stats = getter.get_all(nodes=self.nodes)
+        stat_getter = GetStatisticsController(self.cluster)
+        config_getter = GetConfigController(self.cluster)
 
-        getter = GetConfigController(self.cluster)
-        config = getter.get_all(nodes=self.nodes)
+        stats, config = await asyncio.gather(
+            stat_getter.get_all(nodes=self.nodes),
+            config_getter.get_all(nodes=self.nodes),
+        )
 
         self._remove_exception_from_section_output(stats)
         self._remove_exception_from_section_output(config)
@@ -233,39 +236,31 @@ class CollectinfoController(LiveClusterCommandController):
             else:
                 result_map[nodeid][section_name] = ""
 
-    def _get_as_metadata(self):
+    async def _get_as_metadata(self):
         metamap = {}
-        builds = util.Future(self.cluster.info, "build", nodes=self.nodes).start()
-        editions = util.Future(self.cluster.info, "version", nodes=self.nodes).start()
-        node_ids = util.Future(self.cluster.info_node, nodes=self.nodes).start()
-        ips = util.Future(self.cluster.info_ip_port, nodes=self.nodes).start()
-        endpoints = util.Future(
-            self.cluster.info_service_list, nodes=self.nodes
-        ).start()
-        services = util.Future(
-            self.cluster.info_peers_flat_list, nodes=self.nodes
-        ).start()
-        udf_data = util.Future(self.cluster.info_udf_list, nodes=self.nodes).start()
-        health_outliers = util.Future(
-            self.cluster.info_health_outliers, nodes=self.nodes
-        ).start()
-        best_practices = util.Future(
-            self.cluster.info_best_practices, nodes=self.nodes
-        ).start()
-        jobs = util.Future(
-            GetJobsController(self.cluster).get_all, flip=True, nodes=self.nodes
-        ).start()
-
-        builds = builds.result()
-        editions = editions.result()
-        node_ids = node_ids.result()
-        ips = ips.result()
-        endpoints = endpoints.result()
-        services = services.result()
-        udf_data = udf_data.result()
-        health_outliers = health_outliers.result()
-        best_practices = best_practices.result()
-        jobs = jobs.result()
+        (
+            builds,
+            editions,
+            node_ids,
+            ips,
+            endpoints,
+            services,
+            udf_data,
+            health_outliers,
+            best_practices,
+            jobs,
+        ) = await asyncio.gather(
+            self.cluster.info("build", nodes=self.nodes),
+            self.cluster.info("version", nodes=self.nodes),
+            self.cluster.info_node(nodes=self.nodes),
+            self.cluster.info_ip_port(nodes=self.nodes),
+            self.cluster.info_service_list(nodes=self.nodes),
+            self.cluster.info_peers_flat_list(nodes=self.nodes),
+            self.cluster.info_udf_list(nodes=self.nodes),
+            self.cluster.info_health_outliers(nodes=self.nodes),
+            self.cluster.info_best_practices(nodes=self.nodes),
+            GetJobsController(self.cluster).get_all(flip=True, nodes=self.nodes),
+        )
 
         for nodeid in builds:
             metamap[nodeid] = {}
@@ -286,26 +281,26 @@ class CollectinfoController(LiveClusterCommandController):
 
         return metamap
 
-    def _get_as_histograms(self):
+    async def _get_as_histograms(self):
         histogram_map = {}
         hist_list = [
             ("ttl", "ttl", False),
             ("objsz", "objsz", False),
             ("objsz", "object-size", True),
         ]
-        hist_dumps = [
-            util.Future(
-                self.cluster.info_histogram,
-                hist[0],
-                logarithmic=hist[2],
-                raw_output=True,
-                nodes=self.nodes,
-            ).start()
-            for hist in hist_list
-        ]
+        hist_dumps = await asyncio.gather(
+            *[
+                self.cluster.info_histogram(
+                    hist[0],
+                    logarithmic=hist[2],
+                    raw_output=True,
+                    nodes=self.nodes,
+                )
+                for hist in hist_list
+            ]
+        )
 
         for hist, hist_dump in zip(hist_list, hist_dumps):
-            hist_dump = hist_dump.result()
 
             for node in hist_dump:
                 if node not in histogram_map:
@@ -318,9 +313,9 @@ class CollectinfoController(LiveClusterCommandController):
 
         return histogram_map
 
-    def _get_as_latency(self):
+    async def _get_as_latency(self):
         latency_getter = GetLatenciesController(self.cluster)
-        latencies_data = latency_getter.get_all(
+        latencies_data = await latency_getter.get_all(
             self.nodes, buckets=17, exponent_increment=1, verbose=1
         )
         latency_map = {}
@@ -336,19 +331,18 @@ class CollectinfoController(LiveClusterCommandController):
 
         return latency_map
 
-    def _get_as_pmap(self):
+    async def _get_as_pmap(self):
         getter = GetPmapController(self.cluster)
-        return getter.get_pmap(nodes=self.nodes)
+        return await getter.get_pmap(nodes=self.nodes)
 
-    def _get_as_access_control_list(self):
+    async def _get_as_access_control_list(self):
         acl_map = {}
-        principal_node = self.cluster.get_expected_principal()
-
-        getter = GetUsersController(self.cluster)
-        users_map = getter.get_users(nodes=[principal_node])
-
-        getter = GetRolesController(self.cluster)
-        roles_map = getter.get_roles(nodes=[principal_node])
+        users_getter = GetUsersController(self.cluster)
+        roles_getter = GetRolesController(self.cluster)
+        users_map, roles_map = await asyncio.gather(
+            users_getter.get_users(nodes="principal"),
+            roles_getter.get_roles(nodes="principal"),
+        )
 
         for node in users_map:
             acl_map[node] = {}
@@ -371,7 +365,7 @@ class CollectinfoController(LiveClusterCommandController):
             self.logger.debug(pretty_json)
             raise
 
-    def _get_collectinfo_data_json(
+    async def _get_collectinfo_data_json(
         self,
         default_user,
         default_pwd,
@@ -384,30 +378,34 @@ class CollectinfoController(LiveClusterCommandController):
 
         dump_map = {}
 
-        meta_map = self._get_as_metadata()
-
-        histogram_map = self._get_as_histograms()
-
-        latency_map = self._get_as_latency()
-
-        acl_map = self._get_as_access_control_list()
-
-        if CollectinfoController.get_pmap:
-            pmap_map = self._get_as_pmap()
-
-        sys_map = self.cluster.info_system_statistics(
-            default_user=default_user,
-            default_pwd=default_pwd,
-            default_ssh_key=default_ssh_key,
-            default_ssh_port=default_ssh_port,
-            credential_file=credential_file,
-            nodes=self.nodes,
-            collect_remote_data=enable_ssh,
+        (
+            as_map,
+            meta_map,
+            histogram_map,
+            latency_map,
+            acl_map,
+            sys_map,
+        ) = await asyncio.gather(
+            self._get_as_data_json(),
+            self._get_as_metadata(),
+            self._get_as_histograms(),
+            self._get_as_latency(),
+            self._get_as_access_control_list(),
+            self.cluster.info_system_statistics(
+                default_user=default_user,
+                default_pwd=default_pwd,
+                default_ssh_key=default_ssh_key,
+                default_ssh_port=default_ssh_port,
+                credential_file=credential_file,
+                nodes=self.nodes,
+                collect_remote_data=enable_ssh,
+            ),
         )
 
-        cluster_names = util.Future(self.cluster.info, "cluster-name").start()
+        cluster_names = asyncio.create_task(self.cluster.info("cluster-name"))
 
-        as_map = self._get_as_data_json()
+        if CollectinfoController.get_pmap:
+            pmap_map = await self._get_as_pmap()
 
         for node in as_map:
             dump_map[node] = {}
@@ -433,7 +431,7 @@ class CollectinfoController(LiveClusterCommandController):
 
         # Get the cluster name and add one more level in map
         cluster_name = "null"
-        cluster_names = cluster_names.result()
+        cluster_names = await cluster_names
 
         # Cluster name.
         for node in cluster_names:
@@ -447,7 +445,7 @@ class CollectinfoController(LiveClusterCommandController):
         snp_map[cluster_name] = dump_map
         return snp_map
 
-    def _dump_collectinfo_json(
+    async def _dump_collectinfo_json(
         self,
         timestamp,
         as_logfile_prefix,
@@ -470,7 +468,7 @@ class CollectinfoController(LiveClusterCommandController):
                 "Data collection for Snapshot: " + str(i + 1) + " in progress..."
             )
 
-            snpshots[snp_timestamp] = self._get_collectinfo_data_json(
+            snpshots[snp_timestamp] = await self._get_collectinfo_data_json(
                 default_user,
                 default_pwd,
                 default_ssh_port,
@@ -485,14 +483,14 @@ class CollectinfoController(LiveClusterCommandController):
             as_logfile_prefix, "ascinfo.json", snpshots, ignore_errors
         )
 
-    def _dump_collectinfo_license_json(
+    async def _dump_collectinfo_license_json(
         self, as_logfile_prefix, agent_host, agent_port, ignore_errors
     ):
         self.logger.info("Data collection license usage in progress...")
         self.logger.info("Requesting data usage for past 365 days...")
         self.aslogfile = as_logfile_prefix + "aslicenseusage.json"
 
-        resp, error = common.request_license_usage(agent_host, agent_port)
+        resp, error = await common.request_license_usage(agent_host, agent_port)
 
         if error is not None:
             self.logger.error(
@@ -509,7 +507,7 @@ class CollectinfoController(LiveClusterCommandController):
     ###########################################################################
     # Functions for dumping pretty print files
 
-    def _dump_collectinfo_pretty_print(
+    async def _dump_collectinfo_pretty_print(
         self, timestamp, as_logfile_prefix, config_path=""
     ):
         ####### Dignostic info ########
@@ -563,10 +561,13 @@ class CollectinfoController(LiveClusterCommandController):
         summary_info_params = ["network", "namespace", "set", "xdr", "dc", "sindex"]
         health_params = ["health -v"]
 
+        as_version = asyncio.create_task(self.cluster.info("build"))
+        namespaces = asyncio.create_task(self.cluster.info("namespaces"))
+
         # find version
-        as_version = None
         try:
-            as_version = self.cluster.info("build").popitem()[1]
+            as_version = await as_version
+            as_version = as_version.popitem()[1]
         except Exception:
             as_version = None
 
@@ -575,7 +576,7 @@ class CollectinfoController(LiveClusterCommandController):
 
         # find all namespaces
         try:
-            namespaces = self._parse_namespace(self.cluster.info("namespaces"))
+            namespaces = self._parse_namespace(await namespaces)
         except Exception:
             namespaces = []
 
@@ -601,8 +602,10 @@ class CollectinfoController(LiveClusterCommandController):
 
         util.write_to_file(self.aslogfile, collect_output)
 
+        # All these calls to collectinfo_content must happen synchronously because they
+        # capture std output.
         try:
-            self._collectinfo_content(self._write_version)
+            await self._collectinfo_content(self._write_version)
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
@@ -610,7 +613,7 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             info_controller = InfoController()
             for info_param in dignostic_info_params:
-                self._collectinfo_content(info_controller, [info_param])
+                await self._collectinfo_content(info_controller, [info_param])
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
@@ -618,7 +621,7 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             show_controller = ShowController()
             for show_param in dignostic_show_params:
-                self._collectinfo_content(show_controller, show_param.split())
+                await self._collectinfo_content(show_controller, show_param.split())
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
@@ -626,14 +629,14 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             features_controller = FeaturesController()
             for cmd in dignostic_features_params:
-                self._collectinfo_content(features_controller, [cmd])
+                await self._collectinfo_content(features_controller, [cmd])
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
             for cmd in dignostic_aerospike_info_commands:
-                self._collectinfo_content("cluster", cmd)
+                await self._collectinfo_content("cluster", cmd)
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
@@ -648,14 +651,14 @@ class CollectinfoController(LiveClusterCommandController):
         util.write_to_file(self.aslogfile, collect_output)
 
         try:
-            self._collectinfo_content(self._write_version)
+            await self._collectinfo_content(self._write_version)
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
 
         try:
             for summary_param in summary_params:
-                self._collectinfo_content(
+                await self._collectinfo_content(
                     collectinfo_root_controller.execute, [summary_param]
                 )
         except Exception as e:
@@ -665,7 +668,7 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             info_controller = InfoController()
             for info_param in summary_info_params:
-                self._collectinfo_content(info_controller, [info_param])
+                await self._collectinfo_content(info_controller, [info_param])
         except Exception as e:
             util.write_to_file(self.aslogfile, str(e))
             sys.stdout = sys.__stdout__
@@ -677,7 +680,7 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             for health_param in health_params:
-                self._collectinfo_content(
+                await self._collectinfo_content(
                     collectinfo_root_controller.execute, health_param.split()
                 )
         except Exception as e:
@@ -718,7 +721,7 @@ class CollectinfoController(LiveClusterCommandController):
     ###########################################################################
     # Collectinfo caller functions
 
-    def _run_collectinfo(
+    async def _run_collectinfo(
         self,
         default_user,
         default_pwd,
@@ -759,7 +762,7 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             # JSON collectinfo
-            self._dump_collectinfo_json(
+            await self._dump_collectinfo_json(
                 timestamp,
                 as_logfile_prefix,
                 default_user,
@@ -784,7 +787,7 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             if agent_host is not None:
-                if not self._dump_collectinfo_license_json(
+                if not await self._dump_collectinfo_license_json(
                     as_logfile_prefix, agent_host, agent_port, ignore_errors
                 ):
                     return
@@ -800,7 +803,7 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             # Pretty print collectinfo
-            self._dump_collectinfo_pretty_print(
+            await self._dump_collectinfo_pretty_print(
                 timestamp, as_logfile_prefix, config_path=config_path
             )
         except Exception:
@@ -855,7 +858,7 @@ class CollectinfoController(LiveClusterCommandController):
         "    --asconfig-file <string>     - Aerospike config file path to collect.",
         "                                   Default: /etc/aerospike/aerospike.conf",
     )
-    def _do_default(self, line):
+    async def _do_default(self, line):
         snp_count = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-n",
@@ -976,7 +979,7 @@ class CollectinfoController(LiveClusterCommandController):
         if line:
             self.logger.error("Unrecognized option(s): {}".format(", ".join(line)))
 
-        self._run_collectinfo(
+        await self._run_collectinfo(
             default_user,
             default_pwd,
             default_ssh_port,

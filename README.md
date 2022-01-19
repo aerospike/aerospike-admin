@@ -56,6 +56,8 @@ Admin> help
 - python-dateutil = "==2.8.1"
 - pyOpenSSL = "==18.0.0"
 - setuptools = "*"
+- aiohttp = "==3.8.1"
+
 
 #### Build
 - pyinstaller = "==4.7"
@@ -65,6 +67,7 @@ Admin> help
 - pytest = "*"
 - unittest2 = "*"
 - mock = "*"
+- asynctest = "*"
 
 #### Dev
 black = "*"

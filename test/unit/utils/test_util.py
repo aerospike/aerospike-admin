@@ -1,10 +1,14 @@
-import time
-import unittest2 as unittest
+import asyncio
+import warnings
 
-from lib.utils import timeout, util
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
+
+from lib.utils import util
 
 
-class UtilTest(unittest.TestCase):
+class UtilTest(asynctest.TestCase):
     def test_get_value_from_dict(self):
         value = {"a": 123, "b": "8.9", "c": "abc"}
 
@@ -38,19 +42,20 @@ class UtilTest(unittest.TestCase):
             "get_value_from_dict did not return the expected result",
         )
 
-    def test_cached(self):
-        def tester(arg1, arg2, sleep):
-            time.sleep(sleep)
+    async def test_async_cached(self):
+        async def tester(arg1, arg2, sleep):
+            await asyncio.sleep(sleep)
             return arg1 + arg2
 
-        tester = util.cached(tester, ttl=5.0)
+        tester = util.async_cached(tester, ttl=5.0)
 
-        tester(1, 2, 0.2)
-        tester(2, 2, 0.2)
-        tester(3, 2, 0.2)
+        await tester(1, 2, 0.2)
+        await tester(2, 2, 0.2)
+        await tester(3, 2, 0.2)
 
-        tester = timeout.call_with_timeout(tester, 0.1)
-        self.assertEqual(3, tester(1, 2, 0.2))
-        self.assertEqual(4, tester(2, 2, 0.2))
-        self.assertEqual(5, tester(3, 2, 0.2))
-        self.assertRaises(timeout.TimeoutException, tester, 1, 2, 5)
+        self.assertEqual(3, await asyncio.wait_for(tester(1, 2, 0.2), 0.1))
+        self.assertEqual(4, await asyncio.wait_for(tester(2, 2, 0.2), 0.1))
+        self.assertEqual(5, await asyncio.wait_for(tester(3, 2, 0.2), 0.1))
+        await self.assertAsyncRaises(
+            asyncio.TimeoutError, asyncio.wait_for(tester(1, 2, 5), 0.1)
+        )
