@@ -1396,11 +1396,10 @@ class Node(AsyncObject):
             xdr_config = {}
             xdr_config["dc_configs"] = {}
             xdr_config["ns_configs"] = {}
-            xdr_config["xdr_configs"] = client_util.info_to_dict(
-                await self.info("get-config:context=xdr")
+            tmp_xdr_config, dcs = await asyncio.gather(
+                self.info("get-config:context=xdr"), self.info_dcs()
             )
-
-            dcs = xdr_config["xdr_configs"]["dcs"].split(",")
+            xdr_config["xdr_configs"] = client_util.info_to_dict(tmp_xdr_config)
 
             await asyncio.gather(
                 *[self.xdr_config_helper(xdr_config, dc) for dc in dcs]
