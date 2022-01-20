@@ -1095,7 +1095,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
         )
         return param, value
 
-    async def _complete_subcontext(self, contexts):
+    def _complete_subcontext(self, contexts):
         subcontexts = None
         current_context = []
         possible_completions = []
@@ -1117,7 +1117,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
                     to_complete = context
                     break
 
-            subcontexts = await self.cluster.config_subcontext(current_context[:])
+            subcontexts = self.cluster.config_subcontext(current_context[:])
 
             subcontexts = reduce(
                 lambda x, y: list(set(x) | set(y)), subcontexts.values()
@@ -1146,8 +1146,8 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
         return to_complete, possible_completions
 
-    async def _complete_params(self, contexts):
-        cluster_params = await self.cluster.config_params(contexts)
+    def _complete_params(self, contexts):
+        cluster_params = self.cluster.config_params(contexts)
         intersection = reduce(
             lambda x, y: list(set(x) | set(y)), cluster_params.values()
         )
@@ -1158,8 +1158,8 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
         return intersection
 
-    async def _complete_values(self, contexts, param):
-        config_type = await self.cluster.config_type(contexts, param)
+    def _complete_values(self, contexts, param):
+        config_type = self.cluster.config_type(contexts, param)
         possible_completions = []
 
         if config_type:

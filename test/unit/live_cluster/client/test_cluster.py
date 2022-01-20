@@ -400,22 +400,26 @@ class ClusterTest(asynctest.TestCase):
     async def test_call_node_method(self):
         cl = await self.get_cluster_mock(2)
 
-        await cl.call_node_method(nodes="all", method_name="info_peers")
+        await cl.call_node_method_async(nodes="all", method_name="info_peers")
         for n in cl.nodes.values():
             n._info_cinfo.assert_any_call("peers-clear-std", n.ip)
 
         key = "127.0.0.1:3000"
-        await cl.call_node_method(nodes=[key], method_name="info", command="build")
+        await cl.call_node_method_async(
+            nodes=[key], method_name="info", command="build"
+        )
         n = cl.get_node(key)[0]
         n._info_cinfo.assert_called_with("build", n.ip)
 
         key = "127.0.0.1"
-        await cl.call_node_method(nodes=[key], method_name="info", command="build")
+        await cl.call_node_method_async(
+            nodes=[key], method_name="info", command="build"
+        )
         n = cl.get_node(key)[0]
         n._info_cinfo.assert_called_with("build", n.ip)
 
         keys = ["127.0.0*"]
-        await cl.call_node_method(nodes=keys, method_name="info", command="build")
+        await cl.call_node_method_async(nodes=keys, method_name="info", command="build")
         n = cl.get_node(keys[0])[0]
         n._info_cinfo.assert_any_call("build", n.ip)
         n = cl.get_node(keys[0])[1]

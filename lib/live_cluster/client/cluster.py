@@ -568,7 +568,7 @@ class Cluster(AsyncObject):
 
         return
 
-    async def call_node_method(self, nodes, method_name, *args, **kwargs):
+    async def call_node_method_async(self, nodes, method_name, *args, **kwargs):
         """
         Run a particular method command across a set of nodes
         nodes is a list of nodes to to run the command against.
@@ -597,11 +597,34 @@ class Cluster(AsyncObject):
             )
         )
 
+    def call_node_method(self, nodes, method_name, *args, **kwargs):
+        """
+        Run a particular method command across a set of nodes.
+        "nodes" is a list of nodes to to run the command against.
+        if nodes is None then we run on all nodes.
+        """
+        use_nodes = self.get_nodes(nodes)
+
+        if len(use_nodes) == 0:
+            raise IOError("Unable to find any Aerospike nodes")
+
+        def key_to_method(node):
+            node_result = getattr(node, method_name)(*args, **kwargs)
+
+            return (node.key, node_result)
+
+        return dict(
+            map(
+                key_to_method,
+                use_nodes,
+            )
+        )
+
     async def is_XDR_enabled(self, nodes="all"):
-        return await self.call_node_method(nodes, "is_XDR_enabled")
+        return await self.call_node_method_async(nodes, "is_XDR_enabled")
 
     async def is_feature_present(self, feature, nodes="all"):
-        return await self.call_node_method(nodes, "is_feature_present", feature)
+        return await self.call_node_method_async(nodes, "is_feature_present", feature)
 
     async def get_IP_to_node_map(self):
         if self.need_to_refresh_cluster():
@@ -634,10 +657,29 @@ class Cluster(AsyncObject):
         return ip_map
 
     def __getattr__(self, name):
-        regex = re.compile("^info.*$|^admin.*$|^config.*$")
-        if regex.match(name):
+        regex_async = re.compile("^info.*$|^admin.*$")
+        regex_sync = re.compile("^config.*$")
 
-            async def info_func(*args, **kwargs):
+        if regex_async.match(name):
+
+            async def call_nodes(*args, **kwargs):
+                if "nodes" not in kwargs:
+                    nodes = "all"
+                else:
+                    nodes = kwargs["nodes"]
+                    del kwargs["nodes"]
+
+                result = self.call_node_method_async(nodes, name, *args, **kwargs)
+
+                if inspect.iscoroutine(result):
+                    result = await result
+
+                return result
+
+            return call_nodes
+        elif regex_sync.match(name):
+
+            def call_nodes(*args, **kwargs):
                 if "nodes" not in kwargs:
                     nodes = "all"
                 else:
@@ -646,12 +688,9 @@ class Cluster(AsyncObject):
 
                 result = self.call_node_method(nodes, name, *args, **kwargs)
 
-                if inspect.iscoroutine(result):
-                    result = await result
-
                 return result
 
-            return info_func
+            return call_nodes
         else:
             raise AttributeError("Cluster has no attribute '%s'" % (name))
 
