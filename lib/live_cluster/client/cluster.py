@@ -63,10 +63,6 @@ class Cluster(AsyncObject):
         """
         Cluster.crawl_lock = asyncio.Lock()
 
-        self.__dict__ = self.cluster_state
-        if self.cluster_state != {}:
-            return
-
         self._timeout = timeout
 
         self.user = user

@@ -2,21 +2,20 @@ from pytest import PytestUnraisableExceptionWarning
 from lib.base_controller import ShellException
 from mock import MagicMock, patch
 from mock.mock import AsyncMock, call
-from lib.live_cluster.live_cluster_command_controller import (
-    LiveClusterCommandController,
-)
 
-from lib.utils import constants
-from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoClusterStableError,
     ASInfoError,
     ASProtocolError,
     ASResponse,
+    Cluster,
 )
 from lib.live_cluster.client.config_handler import JsonDynamicConfigHandler
 from lib.live_cluster.client.node import Node
+from lib.live_cluster.live_cluster_command_controller import (
+    LiveClusterCommandController,
+)
 from lib.live_cluster.manage_controller import (
     ManageACLCreateRoleController,
     ManageACLCreateUserController,
@@ -35,6 +34,7 @@ from lib.live_cluster.manage_controller import (
     ManageRosterStageObservedController,
     ManageTruncateController,
 )
+from lib.utils import constants
 from test.unit import util as test_util
 
 import warnings
@@ -1148,13 +1148,9 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
     async def setUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
-        # self.cluster_mock = patch(
-        #     "lib.live_cluster.manage_controller.ManageConfigLeafController.cluster",
-        #     AsyncMock(),
-        # ).start()
-        self.cluster = await Cluster("1.1.1.1")
+        self.cluster = await Cluster([("1.1.1.1", 3000, None)], timeout=0)
         self.root_controller = LiveClusterCommandController(self.cluster)
-        self.node = await Node("1.1.1.1", 3000, timeout=0)
+        self.node = list(self.cluster.nodes.values())[0]
         self.node.conf_schema_handler = JsonDynamicConfigHandler(
             constants.CONFIG_SCHEMAS_HOME, "5.5"
         )
