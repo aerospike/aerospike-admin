@@ -2595,6 +2595,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
         )
 
 
+@CommandHelp("")
 class ManageJobsController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {"kill": ManageJobsKillController}
@@ -2690,7 +2691,7 @@ class ManageJobsKillTridController(ManageLeafCommandController):
         self.view.killed_jobs(self.cluster, responses, **self.mods)
 
 
-@CommandHelp()
+@CommandHelp("")
 class ManageJobsKillAllController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
