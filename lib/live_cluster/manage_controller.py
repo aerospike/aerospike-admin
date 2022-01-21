@@ -1300,9 +1300,14 @@ class ManageConfigLeafController(ManageLeafCommandController):
                         return ["{} {}".format(possible_completions[0], next_token)]
                     if line[-1] == "":
                         return [next_token]
-
+                return []
+        else:
+            if next_token is not None:
                 if len(line):
-                    return []
+                    if line[-1] == "":
+                        return [next_token]
+                    else:
+                        return []
 
         return possible_completions
 
