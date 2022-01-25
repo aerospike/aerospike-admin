@@ -519,12 +519,6 @@ class Cluster(AsyncObject):
                 ssl_context=self.ssl_context,
             )
 
-            # If a username and password is provided but security is disabled a nodes
-            # user will be set to None to disable login/authentication. Set cluster.user
-            # to do the same for future nodes.
-            if self.user is not None and new_node.user is None:
-                self.user = None
-
             if not new_node:
                 return new_node
             if not new_node.alive:
