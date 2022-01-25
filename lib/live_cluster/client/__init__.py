@@ -29,7 +29,10 @@ from .config_handler import (
     IntConfigType,
 )
 
+from .cluster import Cluster
+
 __all__ = (
+    Cluster,
     ASInfoError,
     ASInfoNotAuthenticatedError,
     ASInfoClusterStableError,

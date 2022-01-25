@@ -29,9 +29,6 @@ class SummaryController(CollectinfoCommandController):
         namespace_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_NAMESPACE
         )
-        cluster_configs = self.log_handler.info_getconfig(
-            stanza=constants.CONFIG_CLUSTER
-        )
         xdr_dc_stats = self.log_handler.info_statistics(stanza=constants.STAT_XDR)
 
         os_version = self.log_handler.get_sys_data(stanza="lsb")
@@ -40,11 +37,6 @@ class SummaryController(CollectinfoCommandController):
         server_edition = self.log_handler.info_meta_data(stanza="edition")
 
         last_timestamp = sorted(service_stats.keys())[-1]
-
-        try:
-            cluster_configs = cluster_configs[last_timestamp]
-        except Exception:
-            cluster_configs = {}
 
         cluster_name = {}
         license_data_usage = {}
@@ -132,7 +124,6 @@ class SummaryController(CollectinfoCommandController):
                 metadata=metadata,
                 service_configs=service_configs[last_timestamp],
                 ns_configs=namespace_configs[last_timestamp],
-                cluster_configs=cluster_configs,
                 license_data_usage=license_data_usage,
             ),
             list_view=enable_list_view,

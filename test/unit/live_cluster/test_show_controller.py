@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from mock.mock import MagicMock, call
+from pytest import PytestUnraisableExceptionWarning
 from lib.base_controller import ShellException
-import unittest
-from mock import patch
+from mock import patch, AsyncMock
+from mock.mock import call
 
 from lib.live_cluster.show_controller import (
     ShowBestPracticesController,
@@ -26,89 +26,98 @@ from lib.live_cluster.show_controller import (
     ShowStatisticsController,
     ShowUsersController,
 )
-from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
 from lib.live_cluster.client import ASProtocolError, ASResponse
 from test.unit import util as test_util
 
+import warnings
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
+
 
 @patch("lib.base_controller.BaseController.view")
-class ShowStatisticsControllerTest(unittest.TestCase):
+class ShowStatisticsControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
         self.cluster_mock = patch(
-            "lib.live_cluster.live_cluster_root_controller.Cluster"
+            "lib.live_cluster.show_controller.ShowStatisticsController.cluster"
         ).start()
-        self.root_controller = LiveClusterRootController()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetStatisticsController"
+        ).start()
+        self.getter_mock.get_service = AsyncMock()
+        self.getter_mock.get_sindex = AsyncMock()
+        self.getter_mock.get_sets = AsyncMock()
+        self.getter_mock.get_bins = AsyncMock()
         self.controller = ShowStatisticsController()
         self.controller.mods = (
             {}
         )  # For some reason they are being polluted from other tests
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetStatisticsController"
-        ).start()
         self.controller.getter = self.getter_mock
         self.mods = {}
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         self.addCleanup(patch.stopall)
 
-    def test_do_service_default(self, view_mock):
+    async def test_do_service_default(self, view_mock):
         line = ["service"]
         mods = {"like": [], "with": [], "for": [], "line": []}
         stats = {"service": "stats"}
         self.getter_mock.get_service.return_value = stats
 
-        # self.controller.pre_command(line[:])
-        self.controller.execute(line)
+        await self.controller.execute(line)
 
         self.getter_mock.get_service.assert_called_with(nodes="all")
         view_mock.show_stats.assert_called_with(
             "Service Statistics",
             stats,
-            self.root_controller.cluster,
+            self.cluster_mock,
             show_total=False,
             title_every_nth=0,
             flip_output=False,
             **mods,
         )
 
-    def test_do_service_modifiers(self, view_mock):
+    async def test_do_service_modifiers(self, view_mock):
         line = ["service", "with", "1.2.3.4", "like", "foo", "for", "bar"]
         mods = {"like": ["foo"], "with": ["1.2.3.4"], "for": ["bar"], "line": []}
         stats = {"service": "stats"}
         self.getter_mock.get_service.return_value = stats
 
-        self.controller.execute(line)
+        await self.controller.execute(line)
 
         self.getter_mock.get_service.assert_called_with(nodes=["1.2.3.4"])
         view_mock.show_stats.assert_called_with(
             "Service Statistics",
             stats,
-            self.root_controller.cluster,
+            self.cluster_mock,
             show_total=False,
             title_every_nth=0,
             flip_output=False,
             **mods,
         )
 
-    def test_do_service_args(self, view_mock):
+    async def test_do_service_args(self, view_mock):
         line = ["service", "-t", "-r", "17", "-flip"]
         mods = {"like": [], "with": [], "for": [], "line": line[1:]}
         stats = {"service": "stats"}
         self.getter_mock.get_service.return_value = stats
 
-        self.controller.execute(line)
+        await self.controller.execute(line)
 
         self.getter_mock.get_service.assert_called_with(nodes="all")
         view_mock.show_stats.assert_called_with(
             "Service Statistics",
             stats,
-            self.root_controller.cluster,
+            self.cluster_mock,
             show_total=True,
             title_every_nth=17,
             flip_output=True,
             **mods,
         )
 
-    def test_do_sindex(self, view_mock):
+    async def test_do_sindex(self, view_mock):
         node_addr = "1.2.3.4"
         like = "foo"
         for_ = "bar"
@@ -129,7 +138,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
         stats = {"sindex1": "stats1", "sindex2": "stats2", "sindex3": "stats3"}
         self.getter_mock.get_sindex.return_value = stats
 
-        self.controller.execute(line)
+        await self.controller.execute(line)
 
         self.getter_mock.get_sindex.assert_called_with(
             flip=True, nodes=[node_addr], for_mods=[for_]
@@ -140,14 +149,14 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             view_mock.show_stats.assert_any_call(
                 "{} Sindex Statistics".format(ns_set_sindex),
                 stats[ns_set_sindex],
-                self.root_controller.cluster,
+                self.cluster_mock,
                 show_total=True,
                 title_every_nth=17,
                 flip_output=True,
                 **mods,
             )
 
-    def test_do_sets(self, view_mock):
+    async def test_do_sets(self, view_mock):
         node_addr = "1.2.3.4"
         like = "foo"
         for_ = "bar"
@@ -172,7 +181,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
         }
         self.getter_mock.get_sets.return_value = stats
 
-        self.controller.execute(line)
+        await self.controller.execute(line)
 
         self.getter_mock.get_sets.assert_called_with(
             flip=True, nodes=[node_addr], for_mods=[for_]
@@ -183,14 +192,14 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             view_mock.show_stats.assert_any_call(
                 "{} {} Set Statistics".format(namespace, set_),
                 stats[(namespace, set_)],
-                self.root_controller.cluster,
+                self.cluster_mock,
                 show_total=True,
                 title_every_nth=17,
                 flip_output=True,
                 **mods,
             )
 
-    def test_do_bins(self, view_mock):
+    async def test_do_bins(self, view_mock):
         node_addr = "1.2.3.4"
         like = "foo"
         for_ = "bar"
@@ -215,7 +224,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
         }
         self.getter_mock.get_bins.return_value = stats
 
-        self.controller.execute(line)
+        await self.controller.execute(line)
 
         self.getter_mock.get_bins.assert_called_with(
             flip=True, nodes=[node_addr], for_mods=[for_]
@@ -226,7 +235,7 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             view_mock.show_stats.assert_any_call(
                 "{} Bin Statistics".format(namespace),
                 stats[namespace],
-                self.root_controller.cluster,
+                self.cluster_mock,
                 show_total=True,
                 title_every_nth=17,
                 flip_output=True,
@@ -234,27 +243,27 @@ class ShowStatisticsControllerTest(unittest.TestCase):
             )
 
 
-class ShowUsersControllerTest(unittest.TestCase):
-    def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ShowUsersController()
+class ShowUsersControllerTest(asynctest.TestCase):
+    async def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowUsersController.cluster"
         ).start()
+        self.controller = ShowUsersController()
         self.getter_mock = patch(
             "lib.live_cluster.show_controller.GetUsersController"
         ).start()
-        self.view_mock = patch(
-            "lib.base_controller.BaseController.view.show_users"
-        ).start()
+        self.getter_mock.get_users = AsyncMock()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
         self.addCleanup(patch.stopall)
 
-    def test_calls_users_successfully(self):
+
+    async def test_calls_users_successfully(self):
         resp = {
             "admin": {
                 "roles": ["user-admin"],
@@ -288,13 +297,12 @@ class ShowUsersControllerTest(unittest.TestCase):
                 },
             },
         }
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_users.return_value = {"1.1.1.1": resp}
 
         self.controller.execute([])
 
-        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
-        self.view_mock.assert_called_with(resp, None, line=[])
+        self.getter_mock.get_users.assert_called_with(nodes="principal")
+        self.view_mock.assert_called_with(resp, line=[])
 
     def test_calls_user_successfully(self):
         resp = {
@@ -315,33 +323,30 @@ class ShowUsersControllerTest(unittest.TestCase):
                 "connections": 4294966442,
             }
         }
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_user.return_value = {"1.1.1.1": resp}
 
-        self.controller.execute(["admin"])
+        await self.controller.execute(["admin"])
 
-        self.getter_mock.get_user.assert_called_with("admin", nodes=["test-principal"])
+        self.getter_mock.get_user.assert_called_with("admin", nodes="principal")
         self.view_mock.assert_called_with(resp, None, **self.controller.mods)
 
-    def test_logs_error(self):
+    async def test_logs_error(self):
         as_error = ASProtocolError(
             ASResponse.ROLE_OR_PRIVILEGE_VIOLATION, "test-message"
         )
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_users.return_value = {"1.1.1.1": as_error}
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
-        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
+        self.getter_mock.get_users.assert_called_with(nodes="principal")
         self.logger_mock.error.assert_called_with(as_error)
-        self.view_mock.assert_not_called()
+        self.view_mock.show_users.assert_not_called()
 
-    def test_raises_error(self):
+    async def test_raises_error(self):
         as_error = IOError("test-message")
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_users.return_value = {"1.1.1.1": as_error}
 
-        test_util.assert_exception(
+        await test_util.assert_exception_async(
             self,
             ShellException,
             "test-message",
@@ -349,8 +354,8 @@ class ShowUsersControllerTest(unittest.TestCase):
             [],
         )
 
-        self.getter_mock.get_users.assert_called_with(nodes=["test-principal"])
-        self.view_mock.assert_not_called()
+        self.getter_mock.get_users.assert_called_with(nodes="principal")
+        self.view_mock.show_users.assert_not_called()
 
 
 class ShowRolesControllerTest(unittest.TestCase):
@@ -373,7 +378,7 @@ class ShowRolesControllerTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_calls_roles_successfully(self):
+    async def test_calls_roles_successfully(self):
         resp = {
             "admin": {
                 "roles": ["user-admin"],
@@ -410,12 +415,12 @@ class ShowRolesControllerTest(unittest.TestCase):
         self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_roles.return_value = {"1.1.1.1": resp}
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
         self.getter_mock.get_roles.assert_called_with(nodes=["test-principal"])
         self.view_mock.assert_called_with(resp, None, line=[])
 
-    def test_calls_role_successfully(self):
+    async def test_calls_role_successfully(self):
         resp = {
             "admin": {
                 "roles": ["user-admin"],
@@ -434,33 +439,30 @@ class ShowRolesControllerTest(unittest.TestCase):
                 "connections": 4294966442,
             }
         }
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_role.return_value = {"1.1.1.1": resp}
 
-        self.controller.execute(["admin"])
+        await self.controller.execute(["admin"])
 
-        self.getter_mock.get_role.assert_called_with("admin", nodes=["test-principal"])
+        self.getter_mock.get_role.assert_called_with("admin", nodes="principal")
         self.view_mock.assert_called_with(resp, None, **self.controller.mods)
 
-    def test_logs_error(self):
+    async def test_logs_error(self):
         as_error = ASProtocolError(
             ASResponse.ROLE_OR_PRIVILEGE_VIOLATION, "test-message"
         )
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_roles.return_value = {"1.1.1.1": as_error}
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
-        self.getter_mock.get_roles.assert_called_with(nodes=["test-principal"])
+        self.getter_mock.get_roles.assert_called_with(nodes=nodes="principal")
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.assert_not_called()
 
-    def test_raises_error(self):
+    async def test_raises_error(self):
         as_error = IOError("test-message")
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_roles.return_value = {"1.1.1.1": as_error}
 
-        test_util.assert_exception(
+        test_util.assert_exception_async(
             self,
             ShellException,
             "test-message",
@@ -468,24 +470,20 @@ class ShowRolesControllerTest(unittest.TestCase):
             [],
         )
 
-        self.getter_mock.get_roles.assert_called_with(nodes=["test-principal"])
+        self.getter_mock.get_roles.assert_called_with(nodes="principal")
         self.view_mock.assert_not_called()
 
 
 class ShowBestPracticesControllerTest(unittest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowBestPracticesController()
-        self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowBestPracticesController.cluster"
-        ).start()
-        self.view_mock = patch(
-            "lib.base_controller.BaseController.view.show_best_practices"
-        ).start()
+        self.controller.cluster = self.cluster_mock = AsyncMock()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
 
-    def test_full_support(self):
+    async def test_full_support(self):
         resp = {
             "1.1.1.1": [],
             "2.2.2.2": ["best1", "best2", "best3"],
@@ -496,14 +494,14 @@ class ShowBestPracticesControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_best_practices.return_value = resp
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
         self.logger_mock.warning.assert_not_called()
-        self.view_mock.assert_called_with(
+        self.view_mock.show_best_practices.assert_called_with(
             self.cluster_mock, resp, **self.controller.mods
         )
 
-    def test_partial_support(self):
+    async def test_partial_support(self):
         resp = {
             "1.1.1.1": Exception(),
             "2.2.2.2": ["best1", "best2", "best3"],
@@ -514,41 +512,45 @@ class ShowBestPracticesControllerTest(unittest.TestCase):
         }
         self.cluster_mock.info_best_practices.return_value = resp
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
         self.logger_mock.warning.assert_called_with(
             "'show best-practices' is not supported on aerospike versions < {}", "5.7"
         )
-        self.view_mock.assert_called_with(
+        self.view_mock.show_best_practices.assert_called_with(
             self.cluster_mock, resp, **self.controller.mods
         )
 
 
-class ShowJobsControllerTest(unittest.TestCase):
-    def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ShowJobsController()
+class ShowJobsControllerTest(asynctest.TestCase):
+    def setUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowJobsController.cluster"
         ).start()
-        self.view_mock = patch(
-            "lib.base_controller.BaseController.view.show_jobs"
+        self.controller = ShowJobsController()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetJobsController"
         ).start()
-        self.controller.getter = MagicMock()
+        self.getter_mock.get_scans = AsyncMock()
+        self.getter_mock.get_query = AsyncMock()
+        self.getter_mock.get_sindex_builder = AsyncMock()
+        self.controller.getter = self.getter_mock
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
 
-    def test_default(self):
-        self.controller.getter.get_scans.return_value = "scans"
-        self.controller.getter.get_query.return_value = "queries"
-        self.controller.getter.get_sindex_builder.return_value = "sindex-builder"
+    async def test_default(self):
+        self.getter_mock.get_scans.return_value = "scans"
+        self.getter_mock.get_query.return_value = "queries"
+        self.getter_mock.get_sindex_builder.return_value = "sindex-builder"
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
-        self.controller.getter.get_scans.assert_called_with(nodes="all")
-        self.controller.getter.get_query.assert_called_with(nodes="all")
-        self.controller.getter.get_sindex_builder.assert_called_with(nodes="all")
-        self.view_mock.assert_has_calls(
+        self.getter_mock.get_scans.assert_called_with(nodes="all")
+        self.getter_mock.get_query.assert_called_with(nodes="all")
+        self.getter_mock.get_sindex_builder.assert_called_with(nodes="all")
+        self.view_mock.show_jobs.assert_has_calls(
             [
                 call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
                 call(
@@ -564,10 +566,10 @@ class ShowJobsControllerTest(unittest.TestCase):
         )
 
 
-class ShowRosterControllerTest(unittest.TestCase):
-    def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+class ShowRosterControllerTest(asynctest.TestCase):
+    async def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRosterController()
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowRosterController.cluster"
@@ -575,16 +577,16 @@ class ShowRosterControllerTest(unittest.TestCase):
         self.getter_mock = patch(
             "lib.live_cluster.show_controller.GetConfigController"
         ).start()
-        self.view_mock = patch(
-            "lib.base_controller.BaseController.view.show_roster"
-        ).start()
+        self.getter_mock.get_roster = AsyncMock()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
         self.addCleanup(patch.stopall)
 
-    def test_no_mods(self):
+    @asynctest.fail_on(active_handles=True)
+    async def test_no_mods(self):
         resp = {
             "1.1.1.1": {
                 "test": {
@@ -601,17 +603,17 @@ class ShowRosterControllerTest(unittest.TestCase):
                 }
             }
         }
-
         self.getter_mock.get_roster.return_value = resp
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
         self.getter_mock.get_roster.assert_called_with(flip=False, nodes="all")
-        self.view_mock.assert_called_with(
+        self.view_mock.show_roster.assert_called_with(
             resp, self.cluster_mock, flip=False, **self.controller.mods
         )
 
-    def test_with_flip(self):
+    @asynctest.fail_on(active_handles=True)
+    async def test_with_flip(self):
         resp = {
             "1.1.1.1": {
                 "test": {
@@ -631,18 +633,18 @@ class ShowRosterControllerTest(unittest.TestCase):
 
         self.getter_mock.get_roster.return_value = resp
 
-        self.controller.execute(["-flip"])
+        await self.controller.execute(["-flip"])
 
         self.getter_mock.get_roster.assert_called_with(flip=False, nodes="all")
-        self.view_mock.assert_called_with(
+        self.view_mock.show_roster.assert_called_with(
             resp, self.cluster_mock, flip=True, **self.controller.mods
         )
 
 
-class ShowRacksControllerTest(unittest.TestCase):
-    def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
+class ShowRacksControllerTest(asynctest.TestCase):
+    async def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRacksController()
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowRacksController.cluster"
@@ -650,21 +652,20 @@ class ShowRacksControllerTest(unittest.TestCase):
         self.getter_mock = patch(
             "lib.live_cluster.show_controller.GetConfigController"
         ).start()
-        self.view_mock = patch(
-            "lib.base_controller.BaseController.view.show_racks"
-        ).start()
+        self.getter_mock.get_racks = AsyncMock()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
         self.addCleanup(patch.stopall)
 
-    def test_default(self):
+    @asynctest.fail_on(active_handles=True)
+    async def test_default(self):
         resp = {"1.1.1.1": "FOO"}
-
         self.getter_mock.get_racks.return_value = resp
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
         self.getter_mock.get_racks.assert_called_with(nodes="principal", flip=False)
-        self.view_mock.assert_called_with(resp, **self.controller.mods)
+        self.view_mock.show_racks.assert_called_with(resp, **self.controller.mods)

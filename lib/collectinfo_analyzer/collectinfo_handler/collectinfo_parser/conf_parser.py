@@ -450,7 +450,3 @@ def parse_file(file_path):
             pass
 
     return parsed_output
-
-
-# f = "/Users/aerospike/Downloads/tmp 28/collect_info_20171210_050702/20171210_050702_aerospike.conf"
-# print parse_file(f)

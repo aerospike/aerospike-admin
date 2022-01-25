@@ -24,10 +24,13 @@ jobs:
         pipenv install --dev
     - name: Test with unittest2
       run: |
-        pipenv run bash -c "coverage run -m unittest2 discover -s test/unit -t ."
+        pipenv run bash -c "coverage run -m pytest test/unit"
+        ls -al
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1
       with:
         token: ${{secrets.CODECOV_TOKEN}}
         flags: unittests
         verbose: false
+        files: .coverage
+        fail_ci_if_error: true
