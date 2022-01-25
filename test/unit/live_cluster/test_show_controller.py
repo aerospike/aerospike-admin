@@ -21,6 +21,7 @@ from lib.live_cluster.show_controller import (
     ShowBestPracticesController,
     ShowJobsController,
     ShowRacksController,
+    ShowRolesController,
     ShowRosterController,
     ShowStatisticsController,
     ShowUsersController,
@@ -41,14 +42,10 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowStatisticsController.cluster"
         ).start()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetStatisticsController"
-        ).start()
-        self.getter_mock.get_service = AsyncMock()
-        self.getter_mock.get_sindex = AsyncMock()
-        self.getter_mock.get_sets = AsyncMock()
-        self.getter_mock.get_bins = AsyncMock()
         self.controller = ShowStatisticsController()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetStatisticsController", AsyncMock()
+        ).start()
         self.controller.mods = (
             {}
         )  # For some reason they are being polluted from other tests
@@ -251,9 +248,8 @@ class ShowUsersControllerTest(asynctest.TestCase):
         ).start()
         self.controller = ShowUsersController()
         self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetUsersController"
+            "lib.live_cluster.show_controller.GetUsersController", AsyncMock()
         ).start()
-        self.getter_mock.get_users = AsyncMock()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
@@ -261,7 +257,7 @@ class ShowUsersControllerTest(asynctest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    async def test_success(self):
+    async def test_calls_users_successfully(self):
         resp = {
             "admin": {
                 "roles": ["user-admin"],
@@ -297,10 +293,36 @@ class ShowUsersControllerTest(asynctest.TestCase):
         }
         self.getter_mock.get_users.return_value = {"1.1.1.1": resp}
 
-        await self.controller.execute(["like", "admin"])
+        await self.controller.execute([])
 
         self.getter_mock.get_users.assert_called_with(nodes="principal")
-        self.view_mock.show_users.assert_called_with(resp, like=["admin"], line=[])
+        self.view_mock.show_users.assert_called_with(resp, line=[])
+
+    async def test_calls_user_successfully(self):
+        resp = {
+            "admin": {
+                "roles": ["user-admin"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "connections": 4294966442,
+            }
+        }
+        self.getter_mock.get_user.return_value = {"1.1.1.1": resp}
+
+        await self.controller.execute(["admin"])
+
+        self.getter_mock.get_user.assert_called_with("admin", nodes="principal")
+        self.view_mock.show_users.assert_called_with(resp, **self.controller.mods)
 
     async def test_logs_error(self):
         as_error = ASProtocolError(
@@ -308,7 +330,7 @@ class ShowUsersControllerTest(asynctest.TestCase):
         )
         self.getter_mock.get_users.return_value = {"1.1.1.1": as_error}
 
-        await self.controller.execute(["like", "admin"])
+        await self.controller.execute([])
 
         self.getter_mock.get_users.assert_called_with(nodes="principal")
         self.logger_mock.error.assert_called_with(as_error)
@@ -323,11 +345,122 @@ class ShowUsersControllerTest(asynctest.TestCase):
             ShellException,
             "test-message",
             self.controller.execute,
-            ["like", "admin"],
+            [],
         )
 
         self.getter_mock.get_users.assert_called_with(nodes="principal")
         self.view_mock.show_users.assert_not_called()
+
+
+class ShowRolesControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.show_controller.ShowRolesController.cluster"
+        ).start()
+        self.controller = ShowRolesController()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetRolesController", AsyncMock()
+        ).start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.controller.getter = self.getter_mock
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    async def test_calls_roles_successfully(self):
+        resp = {
+            "admin": {
+                "roles": ["user-admin"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "connections": 4294966442,
+            },
+            "alpha-reader": {
+                "roles": ["alpha-reader"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+            },
+        }
+        self.getter_mock.get_roles.return_value = {"1.1.1.1": resp}
+
+        await self.controller.execute([])
+
+        self.getter_mock.get_roles.assert_called_with(nodes="principal")
+        self.view_mock.show_roles.assert_called_with(resp, line=[])
+
+    async def test_calls_role_successfully(self):
+        resp = {
+            "admin": {
+                "roles": ["user-admin"],
+                "read-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "write-info": {
+                    "quota": 0,
+                    "single-record-tps": 0,
+                    "scan-query-rps-limited": 0,
+                    "scan-query-limitless": 0,
+                },
+                "connections": 4294966442,
+            }
+        }
+        self.getter_mock.get_role.return_value = {"1.1.1.1": resp}
+
+        await self.controller.execute(["admin"])
+
+        self.getter_mock.get_role.assert_called_with("admin", nodes="principal")
+        self.view_mock.show_roles.assert_called_with(resp, **self.controller.mods)
+
+    async def test_logs_error(self):
+        as_error = ASProtocolError(
+            ASResponse.ROLE_OR_PRIVILEGE_VIOLATION, "test-message"
+        )
+        self.getter_mock.get_roles.return_value = {"1.1.1.1": as_error}
+
+        await self.controller.execute([])
+
+        self.getter_mock.get_roles.assert_called_with(nodes="principal")
+        self.logger_mock.error.assert_called_with(as_error)
+        self.view_mock.assert_not_called()
+
+    async def test_raises_error(self):
+        as_error = IOError("test-message")
+        self.getter_mock.get_roles.return_value = {"1.1.1.1": as_error}
+
+        await test_util.assert_exception_async(
+            self,
+            ShellException,
+            "test-message",
+            self.controller.execute,
+            [],
+        )
+
+        self.getter_mock.get_roles.assert_called_with(nodes="principal")
+        self.view_mock.assert_not_called()
 
 
 class ShowBestPracticesControllerTest(asynctest.TestCase):
