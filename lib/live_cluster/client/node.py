@@ -108,7 +108,6 @@ def return_exceptions(func):
 
 class Node(AsyncObject):
     dns_cache = {}
-    pool_lock = asyncio.Lock()
     info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
 
     async def __init__(
