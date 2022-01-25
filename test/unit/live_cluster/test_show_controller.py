@@ -42,14 +42,10 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowStatisticsController.cluster"
         ).start()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetStatisticsController"
-        ).start()
-        self.getter_mock.get_service = AsyncMock()
-        self.getter_mock.get_sindex = AsyncMock()
-        self.getter_mock.get_sets = AsyncMock()
-        self.getter_mock.get_bins = AsyncMock()
         self.controller = ShowStatisticsController()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetStatisticsController", AsyncMock()
+        ).start()
         self.controller.mods = (
             {}
         )  # For some reason they are being polluted from other tests
@@ -252,16 +248,14 @@ class ShowUsersControllerTest(asynctest.TestCase):
         ).start()
         self.controller = ShowUsersController()
         self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetUsersController"
+            "lib.live_cluster.show_controller.GetUsersController", AsyncMock()
         ).start()
-        self.getter_mock.get_users = AsyncMock()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
         self.addCleanup(patch.stopall)
-
 
     async def test_calls_users_successfully(self):
         resp = {
@@ -299,12 +293,12 @@ class ShowUsersControllerTest(asynctest.TestCase):
         }
         self.getter_mock.get_users.return_value = {"1.1.1.1": resp}
 
-        self.controller.execute([])
+        await self.controller.execute([])
 
         self.getter_mock.get_users.assert_called_with(nodes="principal")
-        self.view_mock.assert_called_with(resp, line=[])
+        self.view_mock.show_users.assert_called_with(resp, line=[])
 
-    def test_calls_user_successfully(self):
+    async def test_calls_user_successfully(self):
         resp = {
             "admin": {
                 "roles": ["user-admin"],
@@ -328,7 +322,7 @@ class ShowUsersControllerTest(asynctest.TestCase):
         await self.controller.execute(["admin"])
 
         self.getter_mock.get_user.assert_called_with("admin", nodes="principal")
-        self.view_mock.assert_called_with(resp, None, **self.controller.mods)
+        self.view_mock.show_users.assert_called_with(resp, **self.controller.mods)
 
     async def test_logs_error(self):
         as_error = ASProtocolError(
@@ -358,20 +352,16 @@ class ShowUsersControllerTest(asynctest.TestCase):
         self.view_mock.show_users.assert_not_called()
 
 
-class ShowRolesControllerTest(unittest.TestCase):
+class ShowRolesControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        patch("lib.live_cluster.live_cluster_root_controller.Cluster").start()
-        self.root_controller = LiveClusterRootController()
-        self.controller = ShowRolesController()
         self.cluster_mock = patch(
             "lib.live_cluster.show_controller.ShowRolesController.cluster"
         ).start()
+        self.controller = ShowRolesController()
         self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetRolesController"
+            "lib.live_cluster.show_controller.GetRolesController", AsyncMock()
         ).start()
-        self.view_mock = patch(
-            "lib.base_controller.BaseController.view.show_roles"
-        ).start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
@@ -412,13 +402,12 @@ class ShowRolesControllerTest(unittest.TestCase):
                 },
             },
         }
-        self.cluster_mock.get_expected_principal.return_value = "test-principal"
         self.getter_mock.get_roles.return_value = {"1.1.1.1": resp}
 
         await self.controller.execute([])
 
-        self.getter_mock.get_roles.assert_called_with(nodes=["test-principal"])
-        self.view_mock.assert_called_with(resp, None, line=[])
+        self.getter_mock.get_roles.assert_called_with(nodes="principal")
+        self.view_mock.show_roles.assert_called_with(resp, line=[])
 
     async def test_calls_role_successfully(self):
         resp = {
@@ -444,7 +433,7 @@ class ShowRolesControllerTest(unittest.TestCase):
         await self.controller.execute(["admin"])
 
         self.getter_mock.get_role.assert_called_with("admin", nodes="principal")
-        self.view_mock.assert_called_with(resp, None, **self.controller.mods)
+        self.view_mock.show_roles.assert_called_with(resp, **self.controller.mods)
 
     async def test_logs_error(self):
         as_error = ASProtocolError(
@@ -454,7 +443,7 @@ class ShowRolesControllerTest(unittest.TestCase):
 
         await self.controller.execute([])
 
-        self.getter_mock.get_roles.assert_called_with(nodes=nodes="principal")
+        self.getter_mock.get_roles.assert_called_with(nodes="principal")
         self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.assert_not_called()
 
@@ -462,7 +451,7 @@ class ShowRolesControllerTest(unittest.TestCase):
         as_error = IOError("test-message")
         self.getter_mock.get_roles.return_value = {"1.1.1.1": as_error}
 
-        test_util.assert_exception_async(
+        await test_util.assert_exception_async(
             self,
             ShellException,
             "test-message",
@@ -474,7 +463,7 @@ class ShowRolesControllerTest(unittest.TestCase):
         self.view_mock.assert_not_called()
 
 
-class ShowBestPracticesControllerTest(unittest.TestCase):
+class ShowBestPracticesControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
