@@ -1,17 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+import logging
 import re
 import math
 import copy
@@ -26,6 +13,34 @@ logger.setLevel(logging.CRITICAL)
 
 FILTER_LIST = section_filter_list.FILTER_LIST
 DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
+
+
+def extract_section_from_live_cmd(command, command_raw_output, imap):
+    """
+    Parse output of live command and convert it into intermediate map form for
+    further processing
+
+    command is system command name string to be used as key for imap
+    command_raw_output is raw string form output of command. To be passed by
+    the caller of the functions.
+    imap is result intermediate map form.
+    """
+
+    sectionName = ""
+    sectionId = "0"
+    for key in FILTER_LIST:
+        section = FILTER_LIST[key]
+        if "final_section_name" in section and section["final_section_name"] == command:
+            sectionName = section["raw_section_name"]
+            sectionId = key
+    if sectionName == "":
+        logger.warning("Cannot find section_name for command: " + command)
+        return
+
+    imap[sectionName] = []
+    outList = command_raw_output.split("\n")
+    imap[sectionName].append(outList)
+    imap["section_ids"] = [sectionId]
 
 
 def parse_sys_section(section_list, imap, parsed_map):
