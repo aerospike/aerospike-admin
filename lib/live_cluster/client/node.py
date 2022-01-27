@@ -21,9 +21,7 @@ import threading
 import time
 import base64
 
-from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import conf_parser
-from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import full_parser
-from lib.utils import common, constants, util, version
+from lib.utils import common, constants, util, version, conf_parser
 from lib.utils.async_object import AsyncObject
 
 from .assocket import ASSocket
