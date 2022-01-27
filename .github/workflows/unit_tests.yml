@@ -26,12 +26,12 @@ jobs:
     - name: Test with unittest2
       run: |
         pipenv run bash -c "coverage run -m pytest test/unit"
-        ls -al
+        pipenv run bash -c "coverage xml"
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1
       with:
         token: ${{secrets.CODECOV_TOKEN}}
         flags: unittests
         verbose: false
-        files: .coverage
+        files: coverage.xml
         fail_ci_if_error: true
