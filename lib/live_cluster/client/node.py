@@ -110,6 +110,7 @@ class Node(AsyncObject):
     dns_cache = {}
     pool_lock = asyncio.Lock()
     info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
+    security_disabled_warning = False  # We only want to warn the user once.
 
     async def __init__(
         self,
@@ -144,6 +145,7 @@ class Node(AsyncObject):
         self._timeout = timeout
         self.user = user
         self.password = password
+        self.auth_state = "init"
         self.auth_mode = auth_mode
         self.tls_name = tls_name
         self.ssl_context = ssl_context
@@ -393,15 +395,14 @@ class Node(AsyncObject):
                 return False
         except ASProtocolError as e:
             if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
-                self.logger.warning(e)
-                self.user = None
-            else:
-                await sock.close()
-                raise
+                self.auth_state = "security_disabled"
+                if not Node.security_disabled_warning:
+                    self.logger.warning(e)
+                    Node.security_disabled_warning = True
 
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
-
+        self.auth_state = "logged_in"
         return True
 
     @property
@@ -518,11 +519,22 @@ class Node(AsyncObject):
         )
 
         if await sock.connect():
-            if await sock.authenticate(self.session_token):
-                return sock
-            elif self.session_token is not None:
-                # login enabled.... might be session_token expired, need to perform login again
-                self.perform_login = True
+            try:
+                if await sock.authenticate(self.session_token):
+                    return sock
+            except ASProtocolError as e:
+                if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
+                    return sock
+                elif (
+                    e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
+                    and self.user
+                ):
+                    self.perform_login = True
+                    await self.login()
+                    if await sock.authenticate(self.session_token):
+                        return sock
+
+                raise
 
         return None
 
