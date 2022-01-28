@@ -145,7 +145,6 @@ class Node(AsyncObject):
         self._timeout = timeout
         self.user = user
         self.password = password
-        self.auth_state = "init"
         self.auth_mode = auth_mode
         self.tls_name = tls_name
         self.ssl_context = ssl_context
@@ -366,6 +365,12 @@ class Node(AsyncObject):
         await self.connect(self.ip, self.port)
 
     async def login(self):
+        """
+        Creates a new socket and gets the session token for authentication. No login
+        is done if a user was not provided and PKI is not being used.
+        First introduced in 0.2.0. Before security only required a user/pass authentication
+        stage rather than a two step login() -> token -> auth().
+        """
         if self.auth_mode != constants.AuthMode.PKI and self.user is None:
             return True
 
@@ -395,14 +400,12 @@ class Node(AsyncObject):
                 return False
         except ASProtocolError as e:
             if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
-                self.auth_state = "security_disabled"
                 if not Node.security_disabled_warning:
                     self.logger.warning(e)
                     Node.security_disabled_warning = True
 
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
-        self.auth_state = "logged_in"
         return True
 
     @property
@@ -524,11 +527,15 @@ class Node(AsyncObject):
                     return sock
             except ASProtocolError as e:
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
+                    # A user/pass was provided and security is disabled. This is OK
+                    # and a warning should have been displayed at login
                     return sock
                 elif (
                     e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
                     and self.user
                 ):
+                    # A node likely switched from security disabled to security enable.
+                    # In which case the error is caused by login never being called.
                     self.perform_login = True
                     await self.login()
                     if await sock.authenticate(self.session_token):

@@ -556,9 +556,8 @@ class Cluster(AsyncObject):
                 if self.need_to_refresh_cluster():
                     await self._crawl()
                     self.last_cluster_refresh_time = time()
-            except Exception as e:
-                print(e)
-                raise e
+            except Exception:
+                raise
 
         return
 
