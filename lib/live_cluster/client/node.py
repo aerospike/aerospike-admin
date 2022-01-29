@@ -248,7 +248,7 @@ class Node(AsyncObject):
             )
 
     def _initialize_socket_pool(self):
-        self.socket_pool: dict[str, ASSocket] = {}
+        self.socket_pool: dict[str, set(ASSocket)] = {}
         self.socket_pool[self.port] = set()
         self.socket_pool_max_size = 5
 
@@ -403,6 +403,9 @@ class Node(AsyncObject):
                 if not Node.security_disabled_warning:
                     self.logger.warning(e)
                     Node.security_disabled_warning = True
+            else:
+                await sock.close()
+                raise
 
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
@@ -573,8 +576,6 @@ class Node(AsyncObject):
     @async_return_exceptions
     @util.async_cached
     async def _info_cinfo(self, command, ip=None, port=None):
-        # TODO: citrusleaf.py does not support passing a timeout default is
-        # 0.5s
         if ip is None:
             ip = self.ip
         if port is None:
@@ -589,6 +590,8 @@ class Node(AsyncObject):
             if sock:
                 result = await sock.info(command)
                 try:
+                    # TODO: same code is in _admin_cadmin. management of socket_pool should
+                    # be abstracted.
                     if len(self.socket_pool[port]) < self.socket_pool_max_size:
                         sock.settimeout(None)
                         self.socket_pool[port].add(sock)

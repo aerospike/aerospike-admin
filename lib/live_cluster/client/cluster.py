@@ -40,7 +40,7 @@ CLUSTER_REFRESH_INTERVAL = 3
 class Cluster(AsyncObject):
     # Kinda like a singleton... All instantiated classes will share the same
     # state.
-    cluster_state = {}
+    # cluster_state = {}
     use_services_alumni = False
     use_services_alt = False
     logger = logging.getLogger("asadm")
@@ -63,9 +63,9 @@ class Cluster(AsyncObject):
         """
         Cluster.crawl_lock = asyncio.Lock()
 
-        self.__dict__ = self.cluster_state
-        if self.cluster_state != {}:
-            return
+        # self.__dict__ = self.cluster_state
+        # if self.cluster_state != {}:
+        #     return
 
         self._timeout = timeout
 
