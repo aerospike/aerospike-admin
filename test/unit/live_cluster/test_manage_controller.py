@@ -1,14 +1,21 @@
 from pytest import PytestUnraisableExceptionWarning
-from lib.live_cluster.client import (
-    ASINFO_RESPONSE_OK,
-    ASInfoClusterStableError,
-    ASInfoError,
-)
 from lib.base_controller import ShellException
 from mock import MagicMock, patch
 from mock.mock import AsyncMock, call
 
-from lib.live_cluster.client import ASProtocolError, ASResponse
+from lib.live_cluster.client import (
+    ASINFO_RESPONSE_OK,
+    ASInfoClusterStableError,
+    ASInfoError,
+    ASProtocolError,
+    ASResponse,
+    Cluster,
+)
+from lib.live_cluster.client.config_handler import JsonDynamicConfigHandler
+from lib.live_cluster.client.node import Node
+from lib.live_cluster.live_cluster_command_controller import (
+    LiveClusterCommandController,
+)
 from lib.live_cluster.manage_controller import (
     ManageACLCreateRoleController,
     ManageACLCreateUserController,
@@ -27,6 +34,7 @@ from lib.live_cluster.manage_controller import (
     ManageRosterStageObservedController,
     ManageTruncateController,
 )
+from lib.utils import constants
 from test.unit import util as test_util
 
 import warnings
@@ -1133,6 +1141,136 @@ class ManageConfigControllerTest(asynctest.TestCase):
         self.view_mock.print_info_responses.assert_called_once_with(
             title, resp, self.cluster_mock, **ManageConfigLeafController.mods
         )
+
+
+@asynctest.fail_on(active_handles=True)
+class ManageConfigAutoCompleteTest(asynctest.TestCase):
+    async def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster = await Cluster([("1.1.1.1", 3000, None)], timeout=0)
+        self.root_controller = LiveClusterCommandController(self.cluster)
+        self.node = list(self.cluster.nodes.values())[0]
+        self.node.conf_schema_handler = JsonDynamicConfigHandler(
+            constants.CONFIG_SCHEMAS_HOME, "5.5"
+        )
+        self.cluster.update_node(self.node)
+        self.controller = ManageConfigController()
+        self.controller.context = ["manage", "config"]
+        ManageConfigLeafController.mods = {}
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageConfigLeafController.prompt_challenge"
+        ).start()
+
+        self.addCleanup(patch.stopall)
+
+    def test_auto_complete(self):
+        class TestCase:
+            def __init__(self, line, possible_completions):
+                self.line = line
+                self.possible_completions = possible_completions
+
+        def run_test(tc: TestCase):
+            actual = self.controller.complete(tc.line.split(" "))
+            self.assertCountEqual(
+                tc.possible_completions,
+                actual,
+                'Failed with input: "{}"'.format(tc.line),
+            )
+
+        test_cases = [
+            TestCase("net", ["network"]),
+            TestCase("network", ["network"]),
+            TestCase("network ", ["fabric", "heartbeat"]),
+            TestCase("network fab", ["fabric"]),
+            TestCase("network fabric", []),
+            TestCase("network fabric ", []),
+            TestCase(
+                "network fabric param",
+                [
+                    "param",
+                ],
+            ),
+            TestCase(
+                "network fabric param ",
+                [
+                    "channel-bulk-recv-threads",
+                    "channel-ctrl-recv-threads",
+                    "channel-meta-recv-threads",
+                    "channel-rw-recv-threads",
+                    "recv-rearm-threshold",
+                ],
+            ),
+            TestCase(
+                "network heartbeat param ",
+                ["connect-timeout-ms", "interval", "mtu", "protocol", "timeout"],
+            ),
+            TestCase(
+                "network heartbeat param protocol",
+                ["protocol to"],
+            ),
+            TestCase(
+                "network heartbeat param protocol ",
+                ["to"],
+            ),
+            TestCase(
+                "network heartbeat param protocol to",
+                ["to"],
+            ),
+            TestCase(
+                "network heartbeat param protocol to none",
+                [],
+            ),
+            TestCase(
+                "namespace",
+                ["namespace"],
+            ),
+            TestCase(
+                "namespace ",
+                ["<ns>"],
+            ),
+            TestCase(
+                "namespace test",
+                [],
+            ),
+            TestCase(
+                "namespace test ",
+                ["geo2dsphere-within", "index-type", "set", "storage-engine"],
+            ),
+            TestCase(
+                "namespace test set ",
+                ["<set>"],
+            ),
+            TestCase(
+                "namespace test storage-engine param co",
+                ["compression", "compression-level"],
+            ),
+            TestCase(
+                "namespace test storage-engine param compression",
+                ["compression", "compression-level"],
+            ),
+            TestCase(
+                "namespace test storage-engine param compression ",
+                ["to"],
+            ),
+            TestCase(
+                "namespace test storage-engine param compression-level to ",
+                ["<int>"],
+            ),
+            TestCase(
+                "namespace test storage-engine param compression-level to <int>",
+                [],
+            ),
+            TestCase(
+                "namespace test storage-engine param compression-level to <int> ",
+                [],
+            ),
+        ]
+
+        for tc in test_cases:
+            run_test(tc)
 
 
 @asynctest.fail_on(active_handles=True)

@@ -1300,9 +1300,14 @@ class ManageConfigLeafController(ManageLeafCommandController):
                         return ["{} {}".format(possible_completions[0], next_token)]
                     if line[-1] == "":
                         return [next_token]
-
+                return []
+        else:
+            if next_token is not None:
                 if len(line):
-                    return []
+                    if line[-1] == "":
+                        return [next_token]
+                    else:
+                        return []
 
         return possible_completions
 
@@ -2595,6 +2600,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
         )
 
 
+@CommandHelp("")
 class ManageJobsController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {"kill": ManageJobsKillController}
@@ -2690,7 +2696,7 @@ class ManageJobsKillTridController(ManageLeafCommandController):
         self.view.killed_jobs(self.cluster, responses, **self.mods)
 
 
-@CommandHelp()
+@CommandHelp("")
 class ManageJobsKillAllController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {

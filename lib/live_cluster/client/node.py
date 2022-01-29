@@ -108,7 +108,6 @@ def return_exceptions(func):
 
 class Node(AsyncObject):
     dns_cache = {}
-    pool_lock = asyncio.Lock()
     info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
     security_disabled_warning = False  # We only want to warn the user once.
 
@@ -1418,11 +1417,10 @@ class Node(AsyncObject):
             xdr_config = {}
             xdr_config["dc_configs"] = {}
             xdr_config["ns_configs"] = {}
-            xdr_config["xdr_configs"] = client_util.info_to_dict(
-                await self.info("get-config:context=xdr")
+            tmp_xdr_config, dcs = await asyncio.gather(
+                self.info("get-config:context=xdr"), self.info_dcs()
             )
-
-            dcs = xdr_config["xdr_configs"]["dcs"].split(",")
+            xdr_config["xdr_configs"] = client_util.info_to_dict(tmp_xdr_config)
 
             await asyncio.gather(
                 *[self.xdr_config_helper(xdr_config, dc) for dc in dcs]

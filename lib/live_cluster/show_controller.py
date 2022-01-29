@@ -922,14 +922,26 @@ class ShowPmapController(LiveClusterCommandController):
 @CommandHelp(
     "Displays users and their assigned roles, connections, and quota metrics",
     "for the Aerospike cluster.",
+    "Usage: users [user]",
+    "  user          - Display output for a single user.",
 )
 class ShowUsersController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
         self.getter = GetUsersController(self.cluster)
 
     async def _do_default(self, line):
-        users_data = await self.getter.get_users(nodes="principal")
+        user = None
+
+        if line:
+            user = line.pop(0)
+
+        users_data = None
+
+        if user is None:
+            users_data = await self.getter.get_users(nodes="principal")
+        else:
+            users_data = await self.getter.get_user(user, nodes="principal")
+
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
@@ -944,14 +956,24 @@ class ShowUsersController(LiveClusterCommandController):
 @CommandHelp(
     "Displays roles and their assigned privileges, allowlist, and quotas",
     "for the Aerospike cluster.",
+    "Usage: roles [role]",
+    "  role          - Display output for a single role.",
 )
 class ShowRolesController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
         self.getter = GetRolesController(self.cluster)
 
     async def _do_default(self, line):
-        roles_data = await self.getter.get_roles(nodes="principal")
+        role = None
+
+        if line:
+            role = line.pop(0)
+
+        if role is None:
+            roles_data = await self.getter.get_roles(nodes="principal")
+        else:
+            roles_data = await self.getter.get_role(role, nodes="principal")
+
         resp = list(roles_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
