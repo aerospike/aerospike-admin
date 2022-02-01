@@ -2577,7 +2577,7 @@ class Node(AsyncObject):
                 sock.settimeout(None)
                 self.socket_pool[port].add(sock)
             else:
-                sock.close()
+                await sock.close()
 
         except Exception:
             if sock:
@@ -2665,7 +2665,7 @@ class Node(AsyncObject):
         ASProtocolError on fail
         """
         try:
-            await self._admin_cadmin(ASSocket.query_users, (), self.ip)
+            return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
         except Exception as e:
             return e
 
