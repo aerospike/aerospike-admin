@@ -22,6 +22,9 @@ class FeaturesController(CollectinfoCommandController):
         namespace_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_NAMESPACE
         )
+        security_configs = self.log_handler.info_getconfig(
+            stanza=constants.CONFIG_SECURITY
+        )
 
         for timestamp in sorted(service_stats.keys()):
             features = {}
@@ -30,6 +33,7 @@ class FeaturesController(CollectinfoCommandController):
             dc_stats = {}
             s_configs = {}
             ns_configs = {}
+            sec_configs = {}
 
             if timestamp in service_configs:
                 s_configs = service_configs[timestamp]
@@ -43,12 +47,16 @@ class FeaturesController(CollectinfoCommandController):
             if timestamp in namespace_configs:
                 ns_configs = namespace_configs[timestamp]
 
+            if timestamp in security_configs:
+                sec_configs = security_configs[timestamp]
+
             features = common.find_nodewise_features(
                 service_stats=s_stats,
                 ns_stats=ns_stats,
                 xdr_dc_stats=dc_stats,
                 service_configs=s_configs,
                 ns_configs=ns_configs,
+                security_configs=sec_configs,
             )
 
             self.view.show_config(

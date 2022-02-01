@@ -359,6 +359,11 @@ class HealthCheckController(LiveClusterCommandController):
                             "SERVICE",
                             [("CLUSTER", cluster_name), ("NODE", None)],
                         ),
+                        (
+                            "security",
+                            "SECURITY",
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
                         ("xdr", "XDR", [("CLUSTER", cluster_name), ("NODE", None)]),
                         (
                             "network",

@@ -312,7 +312,7 @@ ASSERT(r, False, "Different service configurations.", "OPERATIONS", WARNING,
 multicast_mode_enabled = select like(".*mode") from NETWORK.CONFIG;
 multicast_mode_enabled = do multicast_mode_enabled == "multicast";
 multicast_mode_enabled = group by CLUSTER, NODE do OR(multicast_mode_enabled);
-s = select like(".*mtu")  from SERVICE.CONFIG save;
+s = select like(".*mtu")  from NETWORK.CONFIG save;
 r = group by CLUSTER do NO_MATCH(s, ==, MAJORITY) save;
 ASSERT(r, False, "Different heartbeat.mtu.", "OPERATIONS", WARNING,
 				"Listed node[s] have a different heartbeat.mtu configured. A multicast packet can only be as large as the interface mtu. Different mtu values might create cluster stability issue. Please contact Aerospike Support team.",

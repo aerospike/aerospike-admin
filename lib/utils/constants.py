@@ -19,6 +19,7 @@ ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 CONFIG_SCHEMAS_HOME = "config-schemas"
 
 CONFIG_SERVICE = "service"
+CONFIG_SECURITY = "security"
 CONFIG_NETWORK = "network"
 CONFIG_NAMESPACE = "namespace"
 CONFIG_XDR = "xdr"

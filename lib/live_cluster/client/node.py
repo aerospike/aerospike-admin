@@ -1386,9 +1386,6 @@ class Node(AsyncObject):
                     # info_get_config returns a dict that must be unpacked.
                     namespace_configs[namespace] = namespace_config[namespace]
                 config = namespace_configs
-
-        elif stanza == "" or stanza == "service":
-            config = client_util.info_to_dict(await self.info("get-config:"))
         elif stanza == "xdr" and version.LooseVersion(
             await self.info_build()
         ) >= version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION):
@@ -1405,16 +1402,12 @@ class Node(AsyncObject):
             )
 
             config = xdr_config
-        elif stanza != "all":
+        elif not stanza:
+            config = client_util.info_to_dict(await self.info("get-config:"))
+        else:
             config = client_util.info_to_dict(
                 await self.info("get-config:context=%s" % stanza)
             )
-        elif stanza == "all":
-            config["namespace"], config["service"] = await asyncio.gather(
-                self.info_get_config("namespace"), self.info_get_config("service")
-            )
-            # Server lumps this with service
-            # config["network"] = await self.info_get_config("network")
         return config
 
     @async_return_exceptions
@@ -2575,7 +2568,7 @@ class Node(AsyncObject):
                 sock.settimeout(None)
                 self.socket_pool[port].add(sock)
             else:
-                sock.close()
+                await sock.close()
 
         except Exception:
             if sock:
@@ -2663,7 +2656,7 @@ class Node(AsyncObject):
         ASProtocolError on fail
         """
         try:
-            await self._admin_cadmin(ASSocket.query_users, (), self.ip)
+            return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
         except Exception as e:
             return e
 

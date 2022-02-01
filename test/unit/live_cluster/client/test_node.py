@@ -1119,7 +1119,7 @@ class NodeTest(asynctest.TestCase):
 
         config = await self.node.info_get_config("service")
 
-        self.info_mock.assert_called_with("get-config:", self.ip)
+        self.info_mock.assert_called_with("get-config:context=service", self.ip)
         self.assertEqual(
             config,
             expected,
@@ -1132,20 +1132,6 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with(
             "get-config:context=namespace;id=test", self.ip
         )
-
-    @patch("lib.live_cluster.client.node.Node.info_namespaces")
-    async def test_info_get_config_all(self, info_namespaces_mock):
-        info_namespaces_mock.return_value = [
-            "test_two",
-        ]
-        await self.node.info_get_config("all")
-
-        info_namespaces_mock.assert_called()
-        self.assertEqual(self.info_mock.call_count, 2)
-        self.info_mock.assert_any_call(
-            "get-config:context=namespace;id=test_two", self.ip
-        )
-        self.info_mock.assert_any_call("get-config:", self.ip)
 
     async def test_info_get_config_xdr(self):
         def side_effect(req, ip):

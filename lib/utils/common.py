@@ -284,6 +284,7 @@ def find_nodewise_features(
     xdr_dc_stats,
     service_configs={},
     ns_configs={},
+    security_configs={},
 ):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
@@ -292,6 +293,8 @@ def find_nodewise_features(
 
     features = {}
 
+    # Before asadm 2.7 security configs were joined into service configs because of info_get_config in node.py.
+    service_configs = _deep_merge_dicts(service_configs, security_configs)
     service_data = _deep_merge_dicts(service_stats, service_configs)
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
