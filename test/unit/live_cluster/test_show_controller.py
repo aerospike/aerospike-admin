@@ -19,6 +19,7 @@ from mock.mock import call
 
 from lib.live_cluster.show_controller import (
     ShowBestPracticesController,
+    ShowConfigController,
     ShowJobsController,
     ShowRacksController,
     ShowRolesController,
@@ -34,6 +35,112 @@ import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import asynctest
+
+
+class ShowConfigControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.show_controller.ShowConfigController.cluster"
+        ).start()
+        self.controller = ShowConfigController()
+        self.getter_mock = patch(
+            "lib.live_cluster.show_controller.GetConfigController", AsyncMock()
+        ).start()
+        self.controller.mods = (
+            {}
+        )  # For some reason they are being polluted from other tests
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.controller.getter = self.getter_mock
+        self.mods = {}
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+
+        self.addCleanup(patch.stopall)
+
+    async def test_do_security_default(self):
+        line = ["security"]
+        mods = {"diff": [], "for": [], "like": [], "with": [], "line": []}
+        configs = {"security": "configs"}
+        self.getter_mock.get_security.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_security.assert_called_with(nodes="all")
+        self.view_mock.show_config.assert_called_with(
+            "Security Configuration",
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            **mods,
+        )
+
+    async def test_do_service_default(self):
+        line = ["service"]
+        mods = {"diff": [], "for": [], "like": [], "with": [], "line": []}
+        configs = {"service": "configs"}
+        self.getter_mock.get_service.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_service.assert_called_with(nodes="all")
+        self.view_mock.show_config.assert_called_with(
+            "Service Configuration",
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            **mods,
+        )
+
+    async def test_do_network_default(self):
+        line = ["network"]
+        mods = {"diff": [], "for": [], "like": [], "with": [], "line": []}
+        configs = {"network": "configs"}
+        self.getter_mock.get_network.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_network.assert_called_with(nodes="all")
+        self.view_mock.show_config.assert_called_with(
+            "Network Configuration",
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            **mods,
+        )
+
+    async def test_do_namespace_default(self):
+        line = "namespace for for-mod"
+        configs = {"foo": "foo-configs", "bar": "bar-configs"}
+        self.getter_mock.get_namespace.return_value = configs
+
+        await self.controller.execute(line.split())
+
+        self.getter_mock.get_namespace.assert_called_with(
+            flip=True, nodes="all", for_mods=["for-mod"]
+        )
+        self.view_mock.show_config.assert_has_calls(
+            [
+                call(
+                    "foo Namespace Configuration",
+                    "foo-configs",
+                    self.cluster_mock,
+                    title_every_nth=0,
+                    flip_output=False,
+                    **self.controller.mods,
+                ),
+                call(
+                    "bar Namespace Configuration",
+                    "bar-configs",
+                    self.cluster_mock,
+                    title_every_nth=0,
+                    flip_output=False,
+                    **self.controller.mods,
+                ),
+            ]
+        )
 
 
 @patch("lib.base_controller.BaseController.view")

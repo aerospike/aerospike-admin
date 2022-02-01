@@ -2655,10 +2655,7 @@ class Node(AsyncObject):
         Returns: {username1: [role1, role2, . . .], username2: [. . .],  . . .},
         ASProtocolError on fail
         """
-        try:
-            return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
-        except Exception as e:
-            return e
+        return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
 
     @async_return_exceptions
     async def admin_query_user(self, user):
@@ -2681,9 +2678,9 @@ class Node(AsyncObject):
         whitelist: list[string] (optional)
         read_quota: (optional)
         write_quota: (optional)
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.create_role,
             (role, privileges, whitelist, read_quota, write_quota),
             self.ip,
@@ -2694,7 +2691,7 @@ class Node(AsyncObject):
         """
         Delete role.
         role: string
-        Returns: 0 on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
         return await self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
 
@@ -2753,7 +2750,7 @@ class Node(AsyncObject):
         write_quota: int or string that represents and int
         Returns: None on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.set_quotas, (role, read_quota, write_quota), self.ip
         )
 
@@ -2768,7 +2765,7 @@ class Node(AsyncObject):
         write_quota: True to delete, False to leave alone
         Returns: None on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.delete_quotas, (role, read_quota, write_quota), self.ip
         )
 

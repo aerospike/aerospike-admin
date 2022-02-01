@@ -224,17 +224,23 @@ class ASSocket:
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to create user")
 
+        return ASResponse.OK
+
     async def delete_user(self, user):
         rsp_code = await drop_user(self.reader, self.writer, user)
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to delete user")
 
+        return ASResponse.OK
+
     async def set_password(self, user, password):
         rsp_code = await set_password(self.reader, self.writer, user, password)
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to set password")
+
+        return ASResponse.OK
 
     async def change_password(self, user, old_password, new_password):
         rsp_code = await change_password(
@@ -244,17 +250,23 @@ class ASSocket:
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to change password")
 
+        return ASResponse.OK
+
     async def grant_roles(self, user, roles):
         rsp_code = await grant_roles(self.reader, self.writer, user, roles)
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to grant roles")
 
+        return ASResponse.OK
+
     async def revoke_roles(self, user, roles):
         rsp_code = await revoke_roles(self.reader, self.writer, user, roles)
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to revoke roles")
+
+        return ASResponse.OK
 
     async def query_users(self):
         rsp_code, users_dict = await query_users(self.reader, self.writer)
@@ -288,11 +300,15 @@ class ASSocket:
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to create role")
 
+        return ASResponse.OK
+
     async def delete_role(self, role):
         rsp_code = await delete_role(self.reader, self.writer, role)
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to delete role")
+
+        return ASResponse.OK
 
     async def add_privileges(self, role, privileges):
         rsp_code = await add_privileges(self.reader, self.writer, role, privileges)
@@ -300,11 +316,15 @@ class ASSocket:
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to grant privilege")
 
+        return ASResponse.OK
+
     async def delete_privileges(self, role, privileges):
         rsp_code = await delete_privileges(self.reader, self.writer, role, privileges)
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to revoke privilege")
+
+        return ASResponse.OK
 
     async def set_whitelist(self, role, whitelist):
         rsp_code = await set_whitelist(self.reader, self.writer, role, whitelist)
@@ -312,11 +332,15 @@ class ASSocket:
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to set allowlist")
 
+        return ASResponse.OK
+
     async def delete_whitelist(self, role):
         rsp_code = await delete_whitelist(self.reader, self.writer, role)
 
         if rsp_code != ASResponse.OK:
             raise ASProtocolError(rsp_code, "Failed to delete allowlist")
+
+        return ASResponse.OK
 
     async def set_quotas(self, role, read_quota=None, write_quota=None):
         rsp_code = await set_quotas(
@@ -330,6 +354,8 @@ class ASSocket:
                     "s" if read_quota is not None and write_quota is not None else ""
                 ),
             )
+
+        return ASResponse.OK
 
     async def delete_quotas(self, role, read_quota=False, write_quota=False):
         """
@@ -346,6 +372,8 @@ class ASSocket:
                     "s" if read_quota and write_quota else ""
                 ),
             )
+
+        return ASResponse.OK
 
     async def query_roles(self):
         rsp_code, role_dict = await query_roles(self.reader, self.writer)
