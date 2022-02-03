@@ -530,21 +530,39 @@ class ShowJobsControllerTest(asynctest.TestCase):
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
 
     async def test_default(self):
-        self.getter_mock.get_scans.return_value = "scans"
         self.getter_mock.get_query.return_value = "queries"
-        self.getter_mock.get_sindex_builder.return_value = "sindex-builder"
 
         await self.controller.execute([])
 
-        self.getter_mock.get_scans.assert_called_with(nodes="all")
         self.getter_mock.get_query.assert_called_with(nodes="all")
-        self.getter_mock.get_sindex_builder.assert_called_with(nodes="all")
         self.view_mock.show_jobs.assert_has_calls(
             [
-                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
                 call(
                     "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
                 ),
+            ]
+        )
+
+    async def test_scans(self):
+        self.getter_mock.get_scans.return_value = "scans"
+
+        await self.controller.execute(["scans"])
+
+        self.getter_mock.get_scans.assert_called_with(nodes="all")
+        self.view_mock.show_jobs.assert_has_calls(
+            [
+                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+            ]
+        )
+
+    async def test_sindex_builder(self):
+        self.getter_mock.get_sindex_builder.return_value = "sindex-builder"
+
+        await self.controller.execute(["sindex"])
+
+        self.getter_mock.get_sindex_builder.assert_called_with(nodes="all")
+        self.view_mock.show_jobs.assert_has_calls(
+            [
                 call(
                     "SIndex Builder Jobs",
                     self.cluster_mock,

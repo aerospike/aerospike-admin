@@ -1089,24 +1089,11 @@ class ShowJobsController(LiveClusterCommandController):
     )
     async def _do_default(self, line):
         return await asyncio.gather(
-            self.do_scans(line[:]),
             self.do_queries(line[:]),
-            self.do_sindex_builder(line[:]),
         )
 
     @CommandHelp(
-        'Displays scan jobs. For easier viewing run "page on" first.',
-        "Usage: scans [trid <trid1> [<trid2>]]",
-        "  trid          - List of transaction ids to filter for.",
-    )
-    async def do_scans(self, line):
-        jobs = await self.getter.get_scans(nodes=self.nodes)
-        return util.callable(
-            self.view.show_jobs, "Scan Jobs", self.cluster, jobs, **self.mods
-        )
-
-    @CommandHelp(
-        "Displays query jobs.",
+        'Displays query jobs. For easier viewing run "page on" first.',
         "Usage: queries [trid <trid1> [<trid2>]]",
         "  trid          - List of transaction ids to filter for.",
     )
@@ -1114,6 +1101,20 @@ class ShowJobsController(LiveClusterCommandController):
         jobs = await self.getter.get_query(nodes=self.nodes)
         return util.callable(
             self.view.show_jobs, "Query Jobs", self.cluster, jobs, **self.mods
+        )
+
+    # TODO: Should be removed eventually. "scan-show" was removed in server 6.0.
+    # So should probably be removed when server 7.0 is supported.
+    @CommandHelp(
+        'Displays scan jobs. For easier viewing run "page on" first.',
+        "Removed in server v. 6.0 and later.",
+        "Usage: scans [trid <trid1> [<trid2>]]",
+        "  trid          - List of transaction ids to filter for.",
+    )
+    async def do_scans(self, line):
+        jobs = await self.getter.get_scans(nodes=self.nodes)
+        return util.callable(
+            self.view.show_jobs, "Scan Jobs", self.cluster, jobs, **self.mods
         )
 
     # TODO: Should be removed eventually. "sindex-builder" was removed in server 5.7.
