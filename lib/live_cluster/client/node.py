@@ -109,6 +109,7 @@ def return_exceptions(func):
 class Node(AsyncObject):
     dns_cache = {}
     info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
+    security_disabled_warning = False  # We only want to warn the user once.
 
     async def __init__(
         self,
@@ -246,7 +247,7 @@ class Node(AsyncObject):
             )
 
     def _initialize_socket_pool(self):
-        self.socket_pool: dict[str, ASSocket] = {}
+        self.socket_pool: dict[str, set(ASSocket)] = {}
         self.socket_pool[self.port] = set()
         self.socket_pool_max_size = 5
 
@@ -363,6 +364,12 @@ class Node(AsyncObject):
         await self.connect(self.ip, self.port)
 
     async def login(self):
+        """
+        Creates a new socket and gets the session token for authentication. No login
+        is done if a user was not provided and PKI is not being used.
+        First introduced in 0.2.0. Before security only required a user/pass authentication
+        stage rather than a two step login() -> token -> auth().
+        """
         if self.auth_mode != constants.AuthMode.PKI and self.user is None:
             return True
 
@@ -392,15 +399,15 @@ class Node(AsyncObject):
                 return False
         except ASProtocolError as e:
             if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
-                self.logger.warning(e)
-                self.user = None
+                if not Node.security_disabled_warning:
+                    self.logger.warning(e)
+                    Node.security_disabled_warning = True
             else:
                 await sock.close()
                 raise
 
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
-
         return True
 
     @property
@@ -517,11 +524,26 @@ class Node(AsyncObject):
         )
 
         if await sock.connect():
-            if await sock.authenticate(self.session_token):
-                return sock
-            elif self.session_token is not None:
-                # login enabled.... might be session_token expired, need to perform login again
-                self.perform_login = True
+            try:
+                if await sock.authenticate(self.session_token):
+                    return sock
+            except ASProtocolError as e:
+                if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
+                    # A user/pass was provided and security is disabled. This is OK
+                    # and a warning should have been displayed at login
+                    return sock
+                elif (
+                    e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
+                    and self.user
+                ):
+                    # A node likely switched from security disabled to security enable.
+                    # In which case the error is caused by login never being called.
+                    self.perform_login = True
+                    await self.login()
+                    if await sock.authenticate(self.session_token):
+                        return sock
+
+                raise
 
         return None
 
@@ -553,8 +575,6 @@ class Node(AsyncObject):
     @async_return_exceptions
     @util.async_cached
     async def _info_cinfo(self, command, ip=None, port=None):
-        # TODO: citrusleaf.py does not support passing a timeout default is
-        # 0.5s
         if ip is None:
             ip = self.ip
         if port is None:
@@ -569,6 +589,8 @@ class Node(AsyncObject):
             if sock:
                 result = await sock.info(command)
                 try:
+                    # TODO: same code is in _admin_cadmin. management of socket_pool should
+                    # be abstracted.
                     if len(self.socket_pool[port]) < self.socket_pool_max_size:
                         sock.settimeout(None)
                         self.socket_pool[port].add(sock)

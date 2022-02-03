@@ -149,7 +149,7 @@ class ASSocket:
         if session_token is None:
             # old authentication
             resp_code = await authenticate_old(
-                self.reader, self.writer, self.user, self.password
+                self.reader, self.writer, self.user, self.password, self.auth_mode
             )
         else:
             # new authentication with session_token
@@ -158,15 +158,8 @@ class ASSocket:
             )
 
         if resp_code != ASResponse.OK:
-            # TODO remove print statement and raise an exception like requests
-            print(
-                "Authentication failed for",
-                self.user,
-                ":",
-                str(ASResponse(resp_code)) + ".",
-            )
             self.sock.close()
-            return False
+            raise ASProtocolError(resp_code, "Unable to authenticate")
 
         return True
 

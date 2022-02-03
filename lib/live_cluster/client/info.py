@@ -483,7 +483,11 @@ async def authenticate_new(
 
 
 async def authenticate_old(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user, password
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    user,
+    password,
+    auth_mode,
 ):
     return await _authenticate(
         reader,
@@ -491,6 +495,7 @@ async def authenticate_old(
         user,
         password=_hash_password(password),
         password_field_id=ASField.CREDENTIAL,
+        auth_mode=auth_mode,
     )
 
 

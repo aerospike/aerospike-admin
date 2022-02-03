@@ -156,10 +156,112 @@ class NodeTest(asynctest.TestCase):
             ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
         )
         as_socket_mock.close.assert_not_called()
-        self.assertIsNone(self.node.user)
+        self.assertIsNotNone(self.node.user)
         self.assertFalse(self.node.perform_login)
         self.assertEqual(self.node.session_token, "token")
         self.assertEqual(self.node.session_expiration, "session-ttl")
+
+        # call again to make sure it is not logged twice.
+        self.node.logger.warning.reset_mock()
+        self.node.session_expiration = 0
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.side_effect = Mock(
+            side_effect=ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
+        )
+        as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
+
+        self.assertTrue(await self.node.login())
+        self.node.logger.warning.assert_not_called()
+
+    async def test_get_connection_uses_socket_pool(self):
+        class ASSocket_Mock(AsyncMock):
+            settimeout = Mock()
+
+        as_socket_mock1 = ASSocket_Mock()
+        as_socket_mock2 = ASSocket_Mock()
+        as_socket_mock1.is_connected.return_value = True
+        as_socket_mock1.name = 1
+        as_socket_mock2.is_connected.return_value = False
+        as_socket_mock2.name = 2
+        self.node.socket_pool[self.node.port].add(as_socket_mock2)
+        self.node.socket_pool[self.node.port].add(as_socket_mock1)
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock.name, 1)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+
+        class ASSocket_Mock(AsyncMock):
+            settimeout = Mock()
+
+        as_socket_in_pool = ASSocket_Mock()
+        as_socket_in_pool.is_connected.return_value = False
+        self.node.socket_pool[self.node.port].add(as_socket_in_pool)
+
+        self.node.session_token = "session-token"
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.authenticate.return_value = True
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket_mock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_None(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+        as_socket_mock.connect.return_value = False
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIsNone(sock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket_when_security_not_enabled(
+        self, as_socket_mock
+    ):
+        as_socket_mock = as_socket_mock.return_value
+        self.node.session_token = "session-token"
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.authenticate.return_value = AsyncMock(
+            side_effect=ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "foo")
+        )
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock, as_socket_mock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket_when_no_cred_is_returned_and_user_is_provided(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.perform_login = False
+        as_socket_mock = as_socket_mock.return_value
+        self.node.session_token = None
+        as_socket_mock.connect.return_value = True
+        session_token = "new-token"
+
+        def side_effect(token):
+            if token is None:
+                raise ASProtocolError(ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo")
+            elif token == session_token:
+                return True
+
+            return False
+
+        as_socket_mock.authenticate.side_effect = side_effect
+        as_socket_mock.get_session_info.return_value = session_token, 0
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock, as_socket_mock)
+        self.assertEqual(self.node.session_token, session_token)
 
     ###### Services ######
 

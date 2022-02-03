@@ -38,9 +38,6 @@ CLUSTER_REFRESH_INTERVAL = 3
 
 
 class Cluster(AsyncObject):
-    # Kinda like a singleton... All instantiated classes will share the same
-    # state.
-    cluster_state = {}
     use_services_alumni = False
     use_services_alt = False
     logger = logging.getLogger("asadm")
@@ -515,12 +512,6 @@ class Cluster(AsyncObject):
                 ssl_context=self.ssl_context,
             )
 
-            # If a username and password is provided but security is disabled a nodes
-            # user will be set to None to disable login/authentication. Set cluster.user
-            # to do the same for future nodes.
-            if self.user is not None and new_node.user is None:
-                self.user = None
-
             if not new_node:
                 return new_node
             if not new_node.alive:
@@ -558,9 +549,8 @@ class Cluster(AsyncObject):
                 if self.need_to_refresh_cluster():
                     await self._crawl()
                     self.last_cluster_refresh_time = time()
-            except Exception as e:
-                print(e)
-                raise e
+            except Exception:
+                raise
 
         return
 
