@@ -2700,6 +2700,7 @@ class ManageJobsKillTridController(ManageLeafCommandController):
 class ManageJobsKillAllController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
+            "queries": ManageJobsKillAllQueriesController,
             "scans": ManageJobsKillAllScansController,
         }
 
@@ -2708,7 +2709,8 @@ class ManageJobsKillAllController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"manage jobs kill all scans" is used to abort all scan jobs.',
+    '"manage jobs kill all scans" is used to abort all scan jobs. Removed in server v.',
+    '6.0 and later. Use "manage jobs kill all queries" instead.'
     "Usage: kill all scans",
 )
 class ManageJobsKillAllScansController(ManageLeafCommandController):
@@ -2731,5 +2733,33 @@ class ManageJobsKillAllScansController(ManageLeafCommandController):
                     return
 
         resp = await self.cluster.info_scan_abort_all(nodes=self.nodes)
+
+        self.view.print_info_responses("Kill Jobs", resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    '"manage jobs kill all queries" is used to abort all query jobs.',
+    "Usage: kill all queries",
+)
+class ManageJobsKillAllQueriesController(ManageLeafCommandController):
+    def __init__(self):
+        self.modifiers = {"with"}
+
+    async def _do_default(self, line):
+        if self.warn:
+            if self.nodes == "all":
+                if not self.prompt_challenge(
+                    "You're about to kill all query jobs on all nodes."
+                ):
+                    return
+            else:
+                if not self.prompt_challenge(
+                    "You're about to kill all query jobs on node(s): {}.".format(
+                        ", ".join(self.nodes)
+                    )
+                ):
+                    return
+
+        resp = await self.cluster.info_query_abort_all(nodes=self.nodes)
 
         self.view.print_info_responses("Kill Jobs", resp, self.cluster, **self.mods)

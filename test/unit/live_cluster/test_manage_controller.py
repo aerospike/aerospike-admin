@@ -23,6 +23,7 @@ from lib.live_cluster.manage_controller import (
     ManageConfigController,
     ManageConfigLeafController,
     ManageJobsKillAllScansController,
+    ManageJobsKillAllQueriesController,
     ManageJobsKillTridController,
     ManageQuiesceController,
     ManageReclusterController,
@@ -2015,7 +2016,7 @@ class ManageJobsKillTridControllerTest(asynctest.TestCase):
 
 
 @asynctest.fail_on(active_handles=True)
-class ManageJobsKillAllControllerTest(asynctest.TestCase):
+class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
@@ -2049,6 +2050,43 @@ class ManageJobsKillAllControllerTest(asynctest.TestCase):
             "You're about to kill all scan jobs on all nodes."
         )
         self.cluster_mock.info_scan_abort_all.assert_not_called()
+
+
+@asynctest.fail_on(active_handles=True)
+class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageJobsKillAllQueriesController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageJobsKillAllQueriesController()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageJobsKillAllQueriesController.prompt_challenge"
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_kill_all_queries(self):
+        module = "queries"
+        self.cluster_mock.info_query_abort_all.return_value = {"1.1.1.1": "ok"}
+
+        await self.controller.execute(module.split())
+
+        self.cluster_mock.info_query_abort_all.assert_called_with(nodes="all")
+
+    async def test_kill_all_warn(self):
+        module = "queries"
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+
+        await self.controller.execute(module.split())
+
+        self.prompt_mock.assert_called_with(
+            "You're about to kill all query jobs on all nodes."
+        )
+        self.cluster_mock.info_query_abort_all.assert_not_called()
 
 
 @asynctest.fail_on(active_handles=True)

@@ -3304,7 +3304,7 @@ class NodeTest(asynctest.TestCase):
         self.assertDictEqual(actual, expected)
 
     async def test_jobs_helper_uses_new(self):
-        self.node.features = ["query_show"]
+        self.node.features = ["query-show"]
         self.info_mock.return_value = "foo"
         old = "old"
         new = "new"
@@ -3423,35 +3423,6 @@ class NodeTest(asynctest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-    async def test_async_abort_all_helper(self):
-        async def show_func():
-            return {
-                "123": {"trid": "123", "module": "query", "status": "done"},
-                "456": {"trid": "456", "module": "query", "status": "running"},
-                "789": {"trid": "456", "module": "query", "status": "running"},
-            }
-
-        async def abort_func(trid):
-            if trid == 456:
-                time.sleep(0.5)
-
-            return ASINFO_RESPONSE_OK
-
-        expected = 2
-
-        actual = await self.node._async_abort_all_helper(show_func, abort_func)
-
-        self.assertEqual(actual, expected)
-
-    async def test_info_jobs_kill_all(self):
-        self.node._async_abort_all_helper = AsyncMock()
-        self.node._async_abort_all_helper.return_value = 5
-        expected = "ok - number of sindex-builders killed: 5"
-
-        actual = await self.node.info_jobs_kill_all("sindex-builder")
-
-        self.assertEqual(actual, expected)
-
     async def test_info_scan_abort_all_with_feature_present(self):
         self.node.features = ["query-show"]
         self.info_mock.return_value = "OK - number of scans killed: 7"
@@ -3468,6 +3439,23 @@ class NodeTest(asynctest.TestCase):
         expected = ASInfoError("Failed to abort all scans", "error")
 
         actual = await self.node.info_scan_abort_all()
+
+        self.assertEqual(actual, expected)
+
+    async def test_info_query_abort_all(self):
+        self.info_mock.return_value = "OK - number of queries killed: 7"
+        expected = "ok - number of queries killed: 7"
+
+        actual = await self.node.info_query_abort_all()
+
+        self.info_mock.assert_called_with("query-abort-all:", self.ip)
+        self.assertEqual(actual, expected)
+
+    async def test_info_query_abort_all_with_error(self):
+        self.info_mock.return_value = "error"
+        expected = ASInfoError("Failed to abort all queries", "error")
+
+        actual = await self.node.info_query_abort_all()
 
         self.assertEqual(actual, expected)
 
