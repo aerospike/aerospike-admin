@@ -334,7 +334,7 @@ class GetConfigController:
 
             namespace_set.update(namespace)
 
-        namespace_list = util.filter_list(namespace_set, for_mods)
+        namespace_list = list(util.filter_list(namespace_set, for_mods))
         ns_configs = {}
         ns_node_configs = []
 
@@ -538,7 +538,7 @@ class GetStatisticsController:
 
             namespace_set.update(namespace)
 
-        namespace_list = util.filter_list(namespace_set, for_mods)
+        namespace_list = list(util.filter_list(namespace_set, for_mods))
         tasks = [
             asyncio.create_task(
                 self.cluster.info_namespace_statistics(namespace, nodes=nodes)
@@ -549,6 +549,9 @@ class GetStatisticsController:
 
         for namespace, stat_task in zip(namespace_list, tasks):
             ns_stats[namespace] = await stat_task
+
+            if isinstance(ns_stats[namespace], Exception):
+                continue
 
             for node in list(ns_stats[namespace].keys()):
                 if not ns_stats[namespace][node] or isinstance(
