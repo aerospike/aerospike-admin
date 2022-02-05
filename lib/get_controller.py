@@ -14,6 +14,7 @@
 
 import asyncio
 import copy
+from distutils.command.config import config
 
 from lib.utils import common, util, constants, version
 from .live_cluster.client import Cluster
@@ -246,29 +247,46 @@ class GetConfigController:
     async def get_all(self, nodes="all"):
         futures = [
             (
-                "service",
+                constants.CONFIG_SECURITY,
+                asyncio.create_task(self.get_security(nodes=nodes)),
+            ),
+            (
+                constants.CONFIG_SERVICE,
                 asyncio.create_task(self.get_service(nodes=nodes)),
             ),
             (
-                "namespace",
+                constants.CONFIG_NAMESPACE,
                 asyncio.create_task(self.get_namespace(nodes=nodes)),
             ),
             (
-                "network",
+                constants.CONFIG_NETWORK,
                 asyncio.create_task(self.get_network(nodes=nodes)),
             ),
-            ("xdr", asyncio.create_task(self.get_xdr(nodes=nodes))),
-            ("dc", asyncio.create_task(self.get_dc(nodes=nodes))),
-            ("roster", asyncio.create_task(self.get_roster(nodes=nodes))),
-            ("racks", asyncio.create_task(self.get_racks(nodes=nodes))),
+            (constants.CONFIG_XDR, asyncio.create_task(self.get_xdr(nodes=nodes))),
+            (constants.CONFIG_DC, asyncio.create_task(self.get_dc(nodes=nodes))),
             (
-                "rack-ids",
+                constants.CONFIG_ROSTER,
+                asyncio.create_task(self.get_roster(nodes=nodes)),
+            ),
+            (constants.CONFIG_RACKS, asyncio.create_task(self.get_racks(nodes=nodes))),
+            (
+                constants.CONFIG_RACK_IDS,
                 asyncio.create_task(self.get_rack_ids(nodes=nodes)),
             ),
         ]
         config_map = dict([(k, await f) for k, f in futures])
 
         return config_map
+
+    async def get_security(self, nodes="all"):
+        security_configs = await self.cluster.info_get_config(
+            nodes=nodes, stanza="security"
+        )
+        for node in security_configs:
+            if isinstance(security_configs[node], Exception):
+                security_configs[node] = {}
+
+        return security_configs
 
     async def get_service(self, nodes="all"):
         service_configs = await self.cluster.info_get_config(
@@ -282,37 +300,8 @@ class GetConfigController:
 
     async def get_network(self, nodes="all"):
         network_configs = {}
-        hb_configs = asyncio.create_task(
-            self.cluster.info_get_config(nodes=nodes, stanza="network.heartbeat")
-        )
-        info_configs = asyncio.create_task(
-            self.cluster.info_get_config(nodes=nodes, stanza="network.info")
-        )
-        nw_configs = asyncio.create_task(
-            self.cluster.info_get_config(nodes=nodes, stanza="network")
-        )
-        hb_configs = await hb_configs
+        nw_configs = await self.cluster.info_get_config(nodes=nodes, stanza="network")
 
-        for node in hb_configs:
-            try:
-                if isinstance(hb_configs[node], Exception):
-                    network_configs[node] = {}
-                else:
-                    network_configs[node] = hb_configs[node]
-            except Exception:
-                pass
-
-        info_configs = await info_configs
-        for node in info_configs:
-            try:
-                if isinstance(info_configs[node], Exception):
-                    continue
-                else:
-                    network_configs[node].update(info_configs[node])
-            except Exception:
-                pass
-
-        nw_configs = await nw_configs
         for node in nw_configs:
             try:
                 if isinstance(nw_configs[node], Exception):
@@ -507,18 +496,18 @@ class GetStatisticsController:
     async def get_all(self, nodes="all"):
         futures = [
             (
-                "service",
+                constants.STAT_SERVICE,
                 asyncio.create_task(self.get_service(nodes=nodes)),
             ),
             (
-                "namespace",
+                constants.STAT_NAMESPACE,
                 asyncio.create_task(self.get_namespace(nodes=nodes)),
             ),
-            ("set", asyncio.create_task(self.get_sets(nodes=nodes))),
-            ("bin", asyncio.create_task(self.get_bins(nodes=nodes))),
-            ("sindex", asyncio.create_task(self.get_sindex(nodes=nodes))),
-            ("xdr", asyncio.create_task(self.get_xdr(nodes=nodes))),
-            ("dc", asyncio.create_task(self.get_dc(nodes=nodes))),
+            (constants.STAT_SETS, asyncio.create_task(self.get_sets(nodes=nodes))),
+            (constants.STAT_BINS, asyncio.create_task(self.get_bins(nodes=nodes))),
+            (constants.STAT_SINDEX, asyncio.create_task(self.get_sindex(nodes=nodes))),
+            (constants.STAT_XDR, asyncio.create_task(self.get_xdr(nodes=nodes))),
+            (constants.STAT_DC, asyncio.create_task(self.get_dc(nodes=nodes))),
         ]
 
         stat_map = dict([(k, await f) for k, f in futures])
@@ -696,12 +685,14 @@ class GetFeaturesController:
             xdr_dc_stats,
             service_configs,
             ns_configs,
+            security_configs,
         ) = await asyncio.gather(
             self.cluster.info_statistics(nodes=nodes),
             self.cluster.info_all_namespace_statistics(nodes=nodes),
             self.cluster.info_all_dc_statistics(nodes=nodes),
             self.cluster.info_get_config(stanza="service", nodes=nodes),
             self.cluster.info_get_config(stanza="namespace", nodes=nodes),
+            self.cluster.info_get_config(stanza="security", nodes=nodes),
         )
 
         return common.find_nodewise_features(
@@ -710,6 +701,7 @@ class GetFeaturesController:
             xdr_dc_stats=xdr_dc_stats,
             service_configs=service_configs,
             ns_configs=ns_configs,
+            security_configs=security_configs,
         )
 
 

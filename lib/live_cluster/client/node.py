@@ -1408,9 +1408,6 @@ class Node(AsyncObject):
                     # info_get_config returns a dict that must be unpacked.
                     namespace_configs[namespace] = namespace_config[namespace]
                 config = namespace_configs
-
-        elif stanza == "" or stanza == "service":
-            config = client_util.info_to_dict(await self.info("get-config:"))
         elif stanza == "xdr" and version.LooseVersion(
             await self.info_build()
         ) >= version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION):
@@ -1427,16 +1424,12 @@ class Node(AsyncObject):
             )
 
             config = xdr_config
-        elif stanza != "all":
+        elif not stanza:
+            config = client_util.info_to_dict(await self.info("get-config:"))
+        else:
             config = client_util.info_to_dict(
                 await self.info("get-config:context=%s" % stanza)
             )
-        elif stanza == "all":
-            config["namespace"], config["service"] = await asyncio.gather(
-                self.info_get_config("namespace"), self.info_get_config("service")
-            )
-            # Server lumps this with service
-            # config["network"] = await self.info_get_config("network")
         return config
 
     @async_return_exceptions
@@ -2684,10 +2677,7 @@ class Node(AsyncObject):
         Returns: {username1: [role1, role2, . . .], username2: [. . .],  . . .},
         ASProtocolError on fail
         """
-        try:
-            return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
-        except Exception as e:
-            return e
+        return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
 
     @async_return_exceptions
     async def admin_query_user(self, user):
@@ -2710,9 +2700,9 @@ class Node(AsyncObject):
         whitelist: list[string] (optional)
         read_quota: (optional)
         write_quota: (optional)
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.create_role,
             (role, privileges, whitelist, read_quota, write_quota),
             self.ip,
@@ -2723,7 +2713,7 @@ class Node(AsyncObject):
         """
         Delete role.
         role: string
-        Returns: 0 on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
         return await self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
 
@@ -2782,7 +2772,7 @@ class Node(AsyncObject):
         write_quota: int or string that represents and int
         Returns: None on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.set_quotas, (role, read_quota, write_quota), self.ip
         )
 
@@ -2797,7 +2787,7 @@ class Node(AsyncObject):
         write_quota: True to delete, False to leave alone
         Returns: None on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.delete_quotas, (role, read_quota, write_quota), self.ip
         )
 

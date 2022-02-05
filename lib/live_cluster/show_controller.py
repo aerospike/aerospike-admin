@@ -242,7 +242,7 @@ class ShowConfigController(LiveClusterCommandController):
         self.getter = GetConfigController(self.cluster)
 
     @CommandHelp(
-        "Displays service, network, and namespace configuration",
+        "Displays security, service, network, and namespace configuration",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
@@ -250,9 +250,42 @@ class ShowConfigController(LiveClusterCommandController):
     )
     async def _do_default(self, line):
         return await asyncio.gather(
+            self.do_security(line[:]),
             self.do_service(line[:]),
             self.do_network(line[:]),
             self.do_namespace(line[:]),
+        )
+
+    @CommandHelp("Displays security configuration")
+    async def do_security(self, line):
+
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        security_configs = await self.getter.get_security(nodes=self.nodes)
+
+        return util.callable(
+            self.view.show_config,
+            "Security Configuration",
+            security_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods,
         )
 
     @CommandHelp("Displays service configuration")

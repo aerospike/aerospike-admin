@@ -215,7 +215,7 @@ class ASSocketTestConnect(asynctest.TestCase):
     ):
         mock.return_value = ASResponse.OK
 
-        self.assertIsNone(await func(*args))
+        self.assertEqual(await func(*args), ASResponse.OK)
 
         mock.assert_called_with(self.as_socket.reader, self.as_socket.writer, *args)
 
