@@ -156,10 +156,112 @@ class NodeTest(asynctest.TestCase):
             ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
         )
         as_socket_mock.close.assert_not_called()
-        self.assertIsNone(self.node.user)
+        self.assertIsNotNone(self.node.user)
         self.assertFalse(self.node.perform_login)
         self.assertEqual(self.node.session_token, "token")
         self.assertEqual(self.node.session_expiration, "session-ttl")
+
+        # call again to make sure it is not logged twice.
+        self.node.logger.warning.reset_mock()
+        self.node.session_expiration = 0
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.side_effect = Mock(
+            side_effect=ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
+        )
+        as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
+
+        self.assertTrue(await self.node.login())
+        self.node.logger.warning.assert_not_called()
+
+    async def test_get_connection_uses_socket_pool(self):
+        class ASSocket_Mock(AsyncMock):
+            settimeout = Mock()
+
+        as_socket_mock1 = ASSocket_Mock()
+        as_socket_mock2 = ASSocket_Mock()
+        as_socket_mock1.is_connected.return_value = True
+        as_socket_mock1.name = 1
+        as_socket_mock2.is_connected.return_value = False
+        as_socket_mock2.name = 2
+        self.node.socket_pool[self.node.port].add(as_socket_mock2)
+        self.node.socket_pool[self.node.port].add(as_socket_mock1)
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock.name, 1)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+
+        class ASSocket_Mock(AsyncMock):
+            settimeout = Mock()
+
+        as_socket_in_pool = ASSocket_Mock()
+        as_socket_in_pool.is_connected.return_value = False
+        self.node.socket_pool[self.node.port].add(as_socket_in_pool)
+
+        self.node.session_token = "session-token"
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.authenticate.return_value = True
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket_mock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_None(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+        as_socket_mock.connect.return_value = False
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIsNone(sock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket_when_security_not_enabled(
+        self, as_socket_mock
+    ):
+        as_socket_mock = as_socket_mock.return_value
+        self.node.session_token = "session-token"
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.authenticate.return_value = AsyncMock(
+            side_effect=ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "foo")
+        )
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock, as_socket_mock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket_when_no_cred_is_returned_and_user_is_provided(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.perform_login = False
+        as_socket_mock = as_socket_mock.return_value
+        self.node.session_token = None
+        as_socket_mock.connect.return_value = True
+        session_token = "new-token"
+
+        def side_effect(token):
+            if token is None:
+                raise ASProtocolError(ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo")
+            elif token == session_token:
+                return True
+
+            return False
+
+        as_socket_mock.authenticate.side_effect = side_effect
+        as_socket_mock.get_session_info.return_value = session_token, 0
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock, as_socket_mock)
+        self.assertEqual(self.node.session_token, session_token)
 
     ###### Services ######
 
@@ -1119,7 +1221,7 @@ class NodeTest(asynctest.TestCase):
 
         config = await self.node.info_get_config("service")
 
-        self.info_mock.assert_called_with("get-config:", self.ip)
+        self.info_mock.assert_called_with("get-config:context=service", self.ip)
         self.assertEqual(
             config,
             expected,
@@ -1132,20 +1234,6 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with(
             "get-config:context=namespace;id=test", self.ip
         )
-
-    @patch("lib.live_cluster.client.node.Node.info_namespaces")
-    async def test_info_get_config_all(self, info_namespaces_mock):
-        info_namespaces_mock.return_value = [
-            "test_two",
-        ]
-        await self.node.info_get_config("all")
-
-        info_namespaces_mock.assert_called()
-        self.assertEqual(self.info_mock.call_count, 2)
-        self.info_mock.assert_any_call(
-            "get-config:context=namespace;id=test_two", self.ip
-        )
-        self.info_mock.assert_any_call("get-config:", self.ip)
 
     async def test_info_get_config_xdr(self):
         def side_effect(req, ip):
@@ -3510,6 +3598,120 @@ class NodeTest(asynctest.TestCase):
             self.node.ip,
             self.node.port,
         )
+
+    async def test_admin_funcs(self):
+        class TestCase:
+            def __init__(self, node_func, assocket_func, args):
+                self.node_func = node_func
+                self.assocket_func = assocket_func
+                self.args = args
+
+        test_cases = [
+            TestCase(
+                self.node.admin_create_user,
+                ASSocket.create_user,
+                ("user", "pass", ["role1", "role2"]),
+            ),
+            TestCase(
+                self.node.admin_delete_user,
+                ASSocket.delete_user,
+                ["user"],
+            ),
+            TestCase(
+                self.node.admin_set_password,
+                ASSocket.set_password,
+                ("user", "pass"),
+            ),
+            TestCase(
+                self.node.admin_change_password,
+                ASSocket.change_password,
+                ("user", "oldpass", "newpass"),
+            ),
+            TestCase(
+                self.node.admin_grant_roles,
+                ASSocket.grant_roles,
+                ("user", ["role1", "role2"]),
+            ),
+            TestCase(
+                self.node.admin_revoke_roles,
+                ASSocket.revoke_roles,
+                ("user", ["role1", "role2"]),
+            ),
+            TestCase(
+                self.node.admin_query_users,
+                ASSocket.query_users,
+                (),
+            ),
+            TestCase(
+                self.node.admin_query_user,
+                ASSocket.query_user,
+                ["user"],
+            ),
+            TestCase(
+                self.node.admin_create_role,
+                ASSocket.create_role,
+                ("role", "privileges", "whitelist", "read_quota", "write_quota"),
+            ),
+            TestCase(
+                self.node.admin_delete_role,
+                ASSocket.delete_role,
+                ["role"],
+            ),
+            TestCase(
+                self.node.admin_add_privileges,
+                ASSocket.add_privileges,
+                ("role", ["priv1", "priv2"]),
+            ),
+            TestCase(
+                self.node.admin_delete_privileges,
+                ASSocket.delete_privileges,
+                ("role", ["priv1", "priv2"]),
+            ),
+            TestCase(
+                self.node.admin_set_whitelist,
+                ASSocket.set_whitelist,
+                ("role", "whitelist"),
+            ),
+            TestCase(
+                self.node.admin_delete_whitelist,
+                ASSocket.delete_whitelist,
+                ["role"],
+            ),
+            TestCase(
+                self.node.admin_set_quotas,
+                ASSocket.set_quotas,
+                ("role", "read-quota", "write-quota"),
+            ),
+            TestCase(
+                self.node.admin_delete_quotas,
+                ASSocket.delete_quotas,
+                ("role", "read-quota", "write-quota"),
+            ),
+            TestCase(
+                self.node.admin_query_roles,
+                ASSocket.query_roles,
+                (),
+            ),
+            TestCase(
+                self.node.admin_query_role,
+                ASSocket.query_role,
+                ["role"],
+            ),
+        ]
+
+        for tc in test_cases:
+            admin_cadmin_mock = lib.live_cluster.client.node.Node._admin_cadmin = patch(
+                "lib.live_cluster.client.node.Node._admin_cadmin", AsyncMock()
+            ).start()
+            admin_cadmin_mock.return_value = "foo"
+            result = await tc.node_func(*tc.args)
+            self.assertFalse(
+                isinstance(result, Exception), msg="exception: {}".format(result)
+            )
+            self.assertEqual(result, "foo")
+            admin_cadmin_mock.assert_called_with(
+                tc.assocket_func, tc.args, self.node.ip
+            )
 
 
 if __name__ == "__main__":

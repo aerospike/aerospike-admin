@@ -242,7 +242,7 @@ class ShowConfigController(LiveClusterCommandController):
         self.getter = GetConfigController(self.cluster)
 
     @CommandHelp(
-        "Displays service, network, and namespace configuration",
+        "Displays security, service, network, and namespace configuration",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
@@ -250,9 +250,42 @@ class ShowConfigController(LiveClusterCommandController):
     )
     async def _do_default(self, line):
         return await asyncio.gather(
+            self.do_security(line[:]),
             self.do_service(line[:]),
             self.do_network(line[:]),
             self.do_namespace(line[:]),
+        )
+
+    @CommandHelp("Displays security configuration")
+    async def do_security(self, line):
+
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        security_configs = await self.getter.get_security(nodes=self.nodes)
+
+        return util.callable(
+            self.view.show_config,
+            "Security Configuration",
+            security_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods,
         )
 
     @CommandHelp("Displays service configuration")
@@ -376,7 +409,7 @@ class ShowConfigController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        xdr5_configs, old_xdr_configs = asyncio.gather(
+        xdr5_configs, old_xdr_configs = await asyncio.gather(
             self.getter.get_xdr5(nodes=self.nodes),
             self.getter.get_old_xdr(nodes=self.nodes),
         )
@@ -922,14 +955,26 @@ class ShowPmapController(LiveClusterCommandController):
 @CommandHelp(
     "Displays users and their assigned roles, connections, and quota metrics",
     "for the Aerospike cluster.",
+    "Usage: users [user]",
+    "  user          - Display output for a single user.",
 )
 class ShowUsersController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
         self.getter = GetUsersController(self.cluster)
 
     async def _do_default(self, line):
-        users_data = await self.getter.get_users(nodes="principal")
+        user = None
+
+        if line:
+            user = line.pop(0)
+
+        users_data = None
+
+        if user is None:
+            users_data = await self.getter.get_users(nodes="principal")
+        else:
+            users_data = await self.getter.get_user(user, nodes="principal")
+
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
@@ -944,14 +989,24 @@ class ShowUsersController(LiveClusterCommandController):
 @CommandHelp(
     "Displays roles and their assigned privileges, allowlist, and quotas",
     "for the Aerospike cluster.",
+    "Usage: roles [role]",
+    "  role          - Display output for a single role.",
 )
 class ShowRolesController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
         self.getter = GetRolesController(self.cluster)
 
     async def _do_default(self, line):
-        roles_data = await self.getter.get_roles(nodes="principal")
+        role = None
+
+        if line:
+            role = line.pop(0)
+
+        if role is None:
+            roles_data = await self.getter.get_roles(nodes="principal")
+        else:
+            roles_data = await self.getter.get_role(role, nodes="principal")
+
         resp = list(roles_data.values())[0]
 
         if isinstance(resp, ASProtocolError):

@@ -106,8 +106,8 @@ def return_exceptions(func):
 
 class Node(AsyncObject):
     dns_cache = {}
-    pool_lock = asyncio.Lock()
     info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
+    security_disabled_warning = False  # We only want to warn the user once.
 
     async def __init__(
         self,
@@ -245,7 +245,7 @@ class Node(AsyncObject):
             )
 
     def _initialize_socket_pool(self):
-        self.socket_pool: dict[str, ASSocket] = {}
+        self.socket_pool: dict[str, set(ASSocket)] = {}
         self.socket_pool[self.port] = set()
         self.socket_pool_max_size = 5
 
@@ -362,6 +362,12 @@ class Node(AsyncObject):
         await self.connect(self.ip, self.port)
 
     async def login(self):
+        """
+        Creates a new socket and gets the session token for authentication. No login
+        is done if a user was not provided and PKI is not being used.
+        First introduced in 0.2.0. Before security only required a user/pass authentication
+        stage rather than a two step login() -> token -> auth().
+        """
         if self.auth_mode != constants.AuthMode.PKI and self.user is None:
             return True
 
@@ -391,15 +397,15 @@ class Node(AsyncObject):
                 return False
         except ASProtocolError as e:
             if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
-                self.logger.warning(e)
-                self.user = None
+                if not Node.security_disabled_warning:
+                    self.logger.warning(e)
+                    Node.security_disabled_warning = True
             else:
                 await sock.close()
                 raise
 
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
-
         return True
 
     @property
@@ -516,11 +522,26 @@ class Node(AsyncObject):
         )
 
         if await sock.connect():
-            if await sock.authenticate(self.session_token):
-                return sock
-            elif self.session_token is not None:
-                # login enabled.... might be session_token expired, need to perform login again
-                self.perform_login = True
+            try:
+                if await sock.authenticate(self.session_token):
+                    return sock
+            except ASProtocolError as e:
+                if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
+                    # A user/pass was provided and security is disabled. This is OK
+                    # and a warning should have been displayed at login
+                    return sock
+                elif (
+                    e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
+                    and self.user
+                ):
+                    # A node likely switched from security disabled to security enable.
+                    # In which case the error is caused by login never being called.
+                    self.perform_login = True
+                    await self.login()
+                    if await sock.authenticate(self.session_token):
+                        return sock
+
+                raise
 
         return None
 
@@ -552,8 +573,6 @@ class Node(AsyncObject):
     @async_return_exceptions
     @util.async_cached
     async def _info_cinfo(self, command, ip=None, port=None):
-        # TODO: citrusleaf.py does not support passing a timeout default is
-        # 0.5s
         if ip is None:
             ip = self.ip
         if port is None:
@@ -568,6 +587,8 @@ class Node(AsyncObject):
             if sock:
                 result = await sock.info(command)
                 try:
+                    # TODO: same code is in _admin_cadmin. management of socket_pool should
+                    # be abstracted.
                     if len(self.socket_pool[port]) < self.socket_pool_max_size:
                         sock.settimeout(None)
                         self.socket_pool[port].add(sock)
@@ -1385,36 +1406,28 @@ class Node(AsyncObject):
                     # info_get_config returns a dict that must be unpacked.
                     namespace_configs[namespace] = namespace_config[namespace]
                 config = namespace_configs
-
-        elif stanza == "" or stanza == "service":
-            config = client_util.info_to_dict(await self.info("get-config:"))
         elif stanza == "xdr" and version.LooseVersion(
             await self.info_build()
         ) >= version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION):
             xdr_config = {}
             xdr_config["dc_configs"] = {}
             xdr_config["ns_configs"] = {}
-            xdr_config["xdr_configs"] = client_util.info_to_dict(
-                await self.info("get-config:context=xdr")
+            tmp_xdr_config, dcs = await asyncio.gather(
+                self.info("get-config:context=xdr"), self.info_dcs()
             )
-
-            dcs = xdr_config["xdr_configs"]["dcs"].split(",")
+            xdr_config["xdr_configs"] = client_util.info_to_dict(tmp_xdr_config)
 
             await asyncio.gather(
                 *[self.xdr_config_helper(xdr_config, dc) for dc in dcs]
             )
 
             config = xdr_config
-        elif stanza != "all":
+        elif not stanza:
+            config = client_util.info_to_dict(await self.info("get-config:"))
+        else:
             config = client_util.info_to_dict(
                 await self.info("get-config:context=%s" % stanza)
             )
-        elif stanza == "all":
-            config["namespace"], config["service"] = await asyncio.gather(
-                self.info_get_config("namespace"), self.info_get_config("service")
-            )
-            # Server lumps this with service
-            # config["network"] = await self.info_get_config("network")
         return config
 
     @async_return_exceptions
@@ -2575,7 +2588,7 @@ class Node(AsyncObject):
                 sock.settimeout(None)
                 self.socket_pool[port].add(sock)
             else:
-                sock.close()
+                await sock.close()
 
         except Exception:
             if sock:
@@ -2662,10 +2675,7 @@ class Node(AsyncObject):
         Returns: {username1: [role1, role2, . . .], username2: [. . .],  . . .},
         ASProtocolError on fail
         """
-        try:
-            await self._admin_cadmin(ASSocket.query_users, (), self.ip)
-        except Exception as e:
-            return e
+        return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
 
     @async_return_exceptions
     async def admin_query_user(self, user):
@@ -2688,9 +2698,9 @@ class Node(AsyncObject):
         whitelist: list[string] (optional)
         read_quota: (optional)
         write_quota: (optional)
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.create_role,
             (role, privileges, whitelist, read_quota, write_quota),
             self.ip,
@@ -2701,7 +2711,7 @@ class Node(AsyncObject):
         """
         Delete role.
         role: string
-        Returns: 0 on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
         return await self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
 
@@ -2760,7 +2770,7 @@ class Node(AsyncObject):
         write_quota: int or string that represents and int
         Returns: None on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.set_quotas, (role, read_quota, write_quota), self.ip
         )
 
@@ -2775,7 +2785,7 @@ class Node(AsyncObject):
         write_quota: True to delete, False to leave alone
         Returns: None on success, ASProtocolError on fail
         """
-        await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.delete_quotas, (role, read_quota, write_quota), self.ip
         )
 

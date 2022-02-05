@@ -224,6 +224,14 @@ def _parse_context(
             break
 
 
+def _parse_security_context(parsed_map, fstream, line):
+    context = "security"
+    if context not in parsed_map:
+        parsed_map[context] = {}
+    dir_ptr = parsed_map[context]
+    _parse_context(parsed_map=dir_ptr, fstream=fstream)
+
+
 def _parse_service_context(parsed_map, fstream, line):
     context = "service"
     if context not in parsed_map:
