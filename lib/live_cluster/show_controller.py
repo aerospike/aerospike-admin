@@ -409,7 +409,7 @@ class ShowConfigController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        xdr5_configs, old_xdr_configs = asyncio.gather(
+        xdr5_configs, old_xdr_configs = await asyncio.gather(
             self.getter.get_xdr5(nodes=self.nodes),
             self.getter.get_old_xdr(nodes=self.nodes),
         )

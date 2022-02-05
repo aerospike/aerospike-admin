@@ -3,11 +3,83 @@ from pytest import PytestUnraisableExceptionWarning
 from mock import patch
 from mock.mock import AsyncMock
 
-from lib.get_controller import GetJobsController, GetPmapController, GetConfigController
+from lib.get_controller import (
+    GetJobsController,
+    GetPmapController,
+    GetConfigController,
+    GetStatisticsController,
+)
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import asynctest
+
+
+class GetStatisticsControllerTest(asynctest.TestCase):
+    def mock_info_call(self, cmd, nodes="all"):
+        if cmd == "version":
+            return {"10.71.71.169:3000": "3.6.0"}
+
+        if cmd == "node":
+            return {"10.71.71.169:3000": "BB93039BC7AC40C"}
+
+        if cmd == "partition-info":
+            return self.partition_info
+
+        return {}
+
+    def setUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        # cluster = Cluster(("10.71.71.169", "3000", None))
+        self.cluster_mock = patch(
+            "lib.live_cluster.client.cluster.Cluster", AsyncMock()
+        ).start()
+        self.cluster_mock.info = AsyncMock()
+        self.cluster_mock.info.side_effect = self.mock_info_call
+        self.controller = GetStatisticsController(self.cluster_mock)
+
+    async def test_get_namespace(self):
+        self.cluster_mock.info_namespaces.return_value = {
+            "1.1.1.1": ["foo", "bar"],
+            "2.2.2.2": Exception(),
+            "3.3.3.3": ["foo", "bar"],
+            "4.4.4.4": ["tar", "zip"],
+        }
+
+        async def side_effect(namespace, nodes):
+            if namespace == "foo":
+                return {
+                    "1.1.1.1": {"stat1": 1, "stat2": 2},
+                    "2.2.2.2": {"stat1": 1, "stat2": 2},
+                }
+            elif namespace == "bar":
+                return {
+                    "1.1.1.1": {"stat3": 3, "stat4": 4},
+                    "2.2.2.2": {"stat3": 3, "stat4": 4},
+                }
+            elif namespace == "tar":
+                return Exception()
+            elif namespace == "zip":
+                return {"4.4.4.4": Exception()}
+
+            self.fail()
+
+        self.cluster_mock.info_namespace_statistics.side_effect = side_effect
+        expected = {
+            "1.1.1.1": {
+                "foo": {"stat1": 1, "stat2": 2},
+                "bar": {"stat3": 3, "stat4": 4},
+            },
+            "2.2.2.2": {
+                "foo": {"stat1": 1, "stat2": 2},
+                "bar": {"stat3": 3, "stat4": 4},
+            },
+        }
+
+        result = await self.controller.get_namespace()
+
+        self.assertDictEqual(result, expected)
 
 
 class GetPmapControllerTest(asynctest.TestCase):
@@ -117,7 +189,9 @@ class GetConfigControllerTest(asynctest.TestCase):
         return {}
 
     def setUp(self):
-        self.cluster_mock = patch("lib.live_cluster.client.cluster.Cluster").start()
+        self.cluster_mock = patch(
+            "lib.live_cluster.client.cluster.Cluster", AsyncMock()
+        ).start()
         self.controller = GetConfigController(self.cluster_mock)
         self.addCleanup(patch.stopall)
         warnings.filterwarnings("error", category=RuntimeWarning)
@@ -128,7 +202,7 @@ class GetConfigControllerTest(asynctest.TestCase):
             "10.71.71.169:3000": ["bar", "test"]
         }
 
-        def side_effect(stanza, namespace, nodes):
+        async def side_effect(stanza, namespace, nodes):
             if namespace == "test":
                 return {
                     "10.71.71.169:3000": {
@@ -162,6 +236,40 @@ class GetConfigControllerTest(asynctest.TestCase):
         }
 
         actual_output = await self.controller.get_namespace(flip=True)
+        self.assertDictEqual(expected_output, actual_output)
+
+    async def test_get_namespace_with_for(self):
+        self.cluster_mock.info_namespaces.return_value = {
+            "10.71.71.169:3000": ["bar", "test"]
+        }
+
+        async def side_effect(stanza, namespace, nodes):
+            if namespace == "test":
+                return {
+                    "10.71.71.169:3000": {
+                        "test": {
+                            "a": "1",
+                            "b": "2",
+                            "c": "3",
+                        }
+                    }
+                }
+            elif namespace == "bar":
+                return {"10.71.71.169:3000": {"bar": {"d": "4", "e": "5", "f": "6"}}}
+
+        self.cluster_mock.info_get_config.side_effect = side_effect
+
+        expected_output = {
+            "10.71.71.169:3000": {
+                "bar": {
+                    "d": "4",
+                    "e": "5",
+                    "f": "6",
+                }
+            },
+        }
+
+        actual_output = await self.controller.get_namespace(for_mods=["bar"])
         self.assertDictEqual(expected_output, actual_output)
 
 

@@ -167,6 +167,7 @@ class ASSocketTestConnect(asynctest.TestCase):
             self.as_socket.writer,
             self.as_socket.user,
             self.as_socket.password,
+            "INTERNAL",
         )
 
         self.as_socket.user = None
@@ -178,8 +179,21 @@ class ASSocketTestConnect(asynctest.TestCase):
     @patch("lib.live_cluster.client.assocket.authenticate_new", new_callable=AsyncMock)
     async def test_authenticate_returns_false(self, new_mock, old_mock):
         new_mock.return_value = ASResponse.NOT_AUTHENTICATED
+        self.as_socket.sock = None
 
         self.assertFalse(await self.as_socket.authenticate("token"))
+
+        new_mock.assert_not_called()
+        old_mock.assert_not_called()
+
+    @patch("lib.live_cluster.client.assocket.authenticate_old", new_callable=AsyncMock)
+    @patch("lib.live_cluster.client.assocket.authenticate_new", new_callable=AsyncMock)
+    async def test_authenticate_raises_not_authenticated(self, new_mock, old_mock):
+        new_mock.return_value = ASResponse.NOT_AUTHENTICATED
+
+        await self.assertAsyncRaises(
+            ASProtocolError, self.as_socket.authenticate("token")
+        )
 
         new_mock.assert_called_with(
             self.as_socket.reader,
@@ -189,24 +203,6 @@ class ASSocketTestConnect(asynctest.TestCase):
             "INTERNAL",
         )
         self.socket_mock.close.assert_called_once()
-
-        # old_mock.return_value = ASResponse.NOT_WHITELISTED
-        # self.socket_mock.reset_mock()
-
-        # self.assertFalse(await self.as_socket.authenticate(None))
-
-        # old_mock.assert_called_with(
-        #     self.as_socket.reader,
-        #     self.as_socket.writer,
-        #     self.as_socket.user,
-        #     self.as_socket.password,
-        # )
-        # self.socket_mock.close.assert_called_once()
-
-        # self.as_socket.sock = None
-
-        # self.assertFalse(await self.as_socket.authenticate(None))
-        # self.assertFalse(await self.as_socket.authenticate("token"))
 
     @patch("lib.live_cluster.client.assocket.info")
     async def test_is_connected_returns_true(self, info_mock):
