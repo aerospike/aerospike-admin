@@ -303,13 +303,10 @@ class GetConfigController:
         nw_configs = await self.cluster.info_get_config(nodes=nodes, stanza="network")
 
         for node in nw_configs:
-            try:
-                if isinstance(nw_configs[node], Exception):
-                    continue
-                else:
-                    network_configs[node].update(nw_configs[node])
-            except Exception:
-                pass
+            if isinstance(nw_configs[node], Exception):
+                continue
+            else:
+                network_configs[node] = nw_configs[node]
 
         return network_configs
 
