@@ -1360,14 +1360,10 @@ class Node(AsyncObject):
 
     async def xdr_config_helper(self, xdr_configs, dc):
         dc_config = await self.info("get-config:context=xdr;dc=%s" % dc)
+        dc_config = client_util.info_to_dict(dc_config)
         xdr_configs["ns_configs"][dc] = {}
-        xdr_configs["dc_configs"][dc] = client_util.info_to_dict(dc_config)
-
-        start_namespaces = dc_config.find("namespaces=") + len("namespaces=")
-        end_namespaces = dc_config.find(";", start_namespaces)
-        namespaces = (
-            ns for ns in dc_config[start_namespaces:end_namespaces].split(",")
-        )
+        xdr_configs["dc_configs"][dc] = dc_config
+        namespaces = dc_config["namespaces"].split(",")
 
         await asyncio.gather(
             *[
