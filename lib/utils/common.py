@@ -50,7 +50,7 @@ comp_ops = {
 
 # TODO:  This needs to be a data structure of some kind other than a map. Currently,
 # TODO:  it is difficult to read and reference values.  A dictionary of string -> tuple
-# TODO:  -> tuple. wtf?
+# TODO:  -> tuple.
 # Dictionary to contain feature and related stats to identify state of that feature.
 # xdr/dc stats are not coupled with xdr-dc configs because at this time it is not required.
 # In the future xdr, xdr/dc, and xdr/dc/namespace configs might need to be included.
