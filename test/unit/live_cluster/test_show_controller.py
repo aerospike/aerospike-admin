@@ -516,7 +516,7 @@ class ShowJobsControllerTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowJobsController.cluster"
+            "lib.live_cluster.show_controller.ShowJobsController.cluster", AsyncMock()
         ).start()
         self.controller = ShowJobsController()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
@@ -529,10 +529,73 @@ class ShowJobsControllerTest(asynctest.TestCase):
         self.controller.getter = self.getter_mock
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
 
-    async def test_default(self):
+    async def test_default_6_0(self):
         self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
 
         await self.controller.execute([])
+
+        self.getter_mock.get_query.assert_called_with(nodes="all")
+        self.assertEqual(self.view_mock.show_jobs.call_count, 1)
+        self.view_mock.show_jobs.assert_has_calls(
+            [
+                call(
+                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                ),
+            ]
+        )
+
+    async def test_default_5_7(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.getter_mock.get_scans.return_value = "scans"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.7"}
+
+        await self.controller.execute([])
+
+        self.getter_mock.get_query.assert_called_with(nodes="all")
+        self.getter_mock.get_scans.assert_called_with(nodes="all")
+        self.assertEqual(self.view_mock.show_jobs.call_count, 2)
+        self.view_mock.show_jobs.assert_has_calls(
+            [
+                call(
+                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                ),
+                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+            ]
+        )
+
+    async def test_default_5_6(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.getter_mock.get_scans.return_value = "scans"
+        self.getter_mock.get_sindex_builder.return_value = "sindex-builder"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.6"}
+
+        await self.controller.execute([])
+
+        self.getter_mock.get_query.assert_called_with(nodes="all")
+        self.getter_mock.get_scans.assert_called_with(nodes="all")
+        self.getter_mock.get_sindex_builder.assert_called_with(nodes="all")
+        self.view_mock.show_jobs.assert_has_calls(
+            [
+                call(
+                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                ),
+                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+                call(
+                    "SIndex Builder Jobs",
+                    self.cluster_mock,
+                    "sindex-builder",
+                    **self.controller.mods,
+                ),
+            ]
+        )
+        self.assertEqual(self.view_mock.show_jobs.call_count, 3)
+
+    async def test_queries(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries"])
 
         self.getter_mock.get_query.assert_called_with(nodes="all")
         self.view_mock.show_jobs.assert_has_calls(
@@ -545,6 +608,7 @@ class ShowJobsControllerTest(asynctest.TestCase):
 
     async def test_scans(self):
         self.getter_mock.get_scans.return_value = "scans"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.7"}
 
         await self.controller.execute(["scans"])
 
@@ -555,8 +619,21 @@ class ShowJobsControllerTest(asynctest.TestCase):
             ]
         )
 
+    async def test_scans_logs_errors(self):
+        self.getter_mock.get_scans.return_value = "scans"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["scans"])
+
+        self.getter_mock.get_scans.assert_not_called()
+        self.view_mock.show_jobs.assert_not_called()
+        self.logger_mock.error.assert_called_with(
+            "Scans were unified into queries in server v. 6.0 and later. User 'show queries' instead."
+        )
+
     async def test_sindex_builder(self):
         self.getter_mock.get_sindex_builder.return_value = "sindex-builder"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.6"}
 
         await self.controller.execute(["sindex"])
 
@@ -570,6 +647,18 @@ class ShowJobsControllerTest(asynctest.TestCase):
                     **self.controller.mods,
                 ),
             ]
+        )
+
+    async def test_sindex_builder_logs_errors(self):
+        self.getter_mock.get_sindex_builder.return_value = "sindex-builder"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.7"}
+
+        await self.controller.execute(["sindex"])
+
+        self.getter_mock.get_sindex_builder.assert_not_called()
+        self.view_mock.show_jobs.assert_not_called()
+        self.logger_mock.error.assert_called_with(
+            "SIndex builder jobs were removed in server v. 5.7 and later."
         )
 
 

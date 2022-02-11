@@ -158,7 +158,9 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
         self.addCleanup(patch.stopall)
 
     async def test_logs_error_when_server_does_not_support_quotas(self):
-        log_message = "'read' and 'write' modifiers are not supported on aerospike versions <= 5.5"
+        log_message = (
+            "'read' and 'write' quotas are only supported on server v. 5.6 and later."
+        )
         line = "test-role priv test-priv read 100 write 200"
         self.cluster_mock.info_build.side_effect = [
             {"principal": "5.5.0.0"},
@@ -2029,11 +2031,13 @@ class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.prompt_challenge"
         ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.addCleanup(patch.stopall)
 
     async def test_kill_all_scans(self):
         module = "scan"
         self.cluster_mock.info_scan_abort_all.return_value = {"1.1.1.1": "ok"}
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.7"}
 
         await self.controller.execute(module.split())
 
@@ -2043,6 +2047,7 @@ class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
         module = "scans"
         self.controller.warn = True
         self.prompt_mock.return_value = False
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.7"}
 
         await self.controller.execute(module.split())
 
@@ -2050,6 +2055,17 @@ class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
             "You're about to kill all scan jobs on all nodes."
         )
         self.cluster_mock.info_scan_abort_all.assert_not_called()
+
+    async def test_kill_not_supported(self):
+        module = "scans"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(module.split())
+
+        self.cluster_mock.info_scan_abort_all.assert_not_called()
+        self.logger_mock.error.assert_called_with(
+            "Killing scans is not supported on server v. 6.0 and later."
+        )
 
 
 @asynctest.fail_on(active_handles=True)
@@ -2066,11 +2082,13 @@ class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillAllQueriesController.prompt_challenge"
         ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.addCleanup(patch.stopall)
 
     async def test_kill_all_queries(self):
         module = "queries"
         self.cluster_mock.info_query_abort_all.return_value = {"1.1.1.1": "ok"}
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
 
         await self.controller.execute(module.split())
 
@@ -2080,6 +2098,7 @@ class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
         module = "queries"
         self.controller.warn = True
         self.prompt_mock.return_value = False
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
 
         await self.controller.execute(module.split())
 
@@ -2087,6 +2106,17 @@ class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
             "You're about to kill all query jobs on all nodes."
         )
         self.cluster_mock.info_query_abort_all.assert_not_called()
+
+    async def test_kill_not_supported(self):
+        module = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.9"}
+
+        await self.controller.execute(module.split())
+
+        self.cluster_mock.info_scan_abort_all.assert_not_called()
+        self.logger_mock.error.assert_called_with(
+            "Killing all queries is only supported on server v. 6.0 and later."
+        )
 
 
 @asynctest.fail_on(active_handles=True)

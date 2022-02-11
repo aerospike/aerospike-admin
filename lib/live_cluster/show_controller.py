@@ -1084,12 +1084,32 @@ class ShowJobsController(LiveClusterCommandController):
         self.modifiers = set(["with", "like", "trid"])
         self.getter = GetJobsController(self.cluster)
 
+    # TODO: This should be a utility
+    async def _supported(self, v):
+        builds = await self.cluster.info_build(nodes=self.nodes)
+
+        for build in builds.values():
+            if not isinstance(build, Exception) and version.LooseVersion(
+                build
+            ) < version.LooseVersion(v):
+                return True
+
+        return False
+
+    async def _scans_supported(self):
+        return await self._supported(constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION)
+
+    async def _sindex_supported(self):
+        return await self._supported(constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION)
+
     @CommandHelp(
-        '"show jobs" displays scans, queries, and sindex-builder jobs.',
+        '"show jobs" displays jobs from all available modules.',
     )
     async def _do_default(self, line):
         return await asyncio.gather(
             self.do_queries(line[:]),
+            self.do_scans(line[:], default=True),
+            self.do_sindex_builder(line[:], default=True),
         )
 
     @CommandHelp(
@@ -1107,11 +1127,23 @@ class ShowJobsController(LiveClusterCommandController):
     # So should probably be removed when server 7.0 is supported.
     @CommandHelp(
         'Displays scan jobs. For easier viewing run "page on" first.',
-        "Removed in server v. 6.0 and later.",
+        "Removed in server v. {} and later.".format(
+            constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION
+        ),
         "Usage: scans [trid <trid1> [<trid2>]]",
         "  trid          - List of transaction ids to filter for.",
     )
-    async def do_scans(self, line):
+    async def do_scans(self, line, default=False):
+        # default indicates calling function is _do_default
+        if not await self._scans_supported():
+            if not default:
+                self.logger.error(
+                    "Scans were unified into queries in server v. {} and later. User 'show queries' instead.".format(
+                        constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION
+                    )
+                )
+            return
+
         jobs = await self.getter.get_scans(nodes=self.nodes)
         return util.callable(
             self.view.show_jobs, "Scan Jobs", self.cluster, jobs, **self.mods
@@ -1120,12 +1152,24 @@ class ShowJobsController(LiveClusterCommandController):
     # TODO: Should be removed eventually. "sindex-builder" was removed in server 5.7.
     # So should probably be removed when server 7.0 is supported.
     @CommandHelp(
-        "Displays sindex-builder jobs. Removed in server v. 5.7 and later.",
+        "Displays sindex-builder jobs. Removed in server v. {} and later.".format(
+            constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
+        ),
         "Usage: sindex-builder [trid <trid1> [<trid2>]]",
         "  trid          - List of transaction ids to filter for.",
     )
     @CommandName("sindex-builder")
-    async def do_sindex_builder(self, line):
+    async def do_sindex_builder(self, line, default=False):
+        # default indicates calling function is _do_default
+        if not await self._sindex_supported():
+            if not default:
+                self.logger.error(
+                    "SIndex builder jobs were removed in server v. {} and later.".format(
+                        constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
+                    )
+                )
+            return
+
         jobs = await self.getter.get_sindex_builder(nodes=self.nodes)
         return util.callable(
             self.view.show_jobs, "SIndex Builder Jobs", self.cluster, jobs, **self.mods
