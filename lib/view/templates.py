@@ -693,6 +693,7 @@ info_sindex_sheet = Sheet(
             converter=sindex_state_converter,
         ),  # new
         Field("Sync State", Projectors.String("sindex_stats", "sync_state")),  # old
+        # removed 6.0
         Field("Keys", Projectors.Number("sindex_stats", "keys")),
         Field(
             "Entries",
@@ -702,9 +703,14 @@ info_sindex_sheet = Sheet(
         ),
         Field(
             "Memory Used",
-            Projectors.Sum(
-                Projectors.Number("sindex_stats", "ibtr_memory_used"),
-                Projectors.Number("sindex_stats", "nbtr_memory_used"),
+            # removed in 6.0
+            Projectors.Any(
+                FieldType.number,
+                Projectors.Number("sindex_stats", "memory_used"),
+                Projectors.Sum(
+                    Projectors.Number("sindex_stats", "ibtr_memory_used"),
+                    Projectors.Number("sindex_stats", "nbtr_memory_used"),
+                ),
             ),
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
@@ -716,7 +722,7 @@ info_sindex_sheet = Sheet(
                     "Requests",
                     Projectors.Any(
                         FieldType.number,
-                        # query_basic_* added 5.7
+                        # query_basic_* added 5.7, removed in 6.0
                         Projectors.Sum(
                             Projectors.Number("sindex_stats", "query_basic_complete"),
                             Projectors.Number("sindex_stats", "query_basic_error"),
@@ -732,7 +738,7 @@ info_sindex_sheet = Sheet(
                     "Avg Num Recs",
                     Projectors.Number(
                         "sindex_stats",
-                        "query_basic_avg_rec_count",  # query_basic_* added 5.7
+                        "query_basic_avg_rec_count",  # query_basic_* added 5.7, removed 6.0
                         "query_avg_rec_count",  # removed in 5.7
                     ),
                     converter=Converters.scientific_units,
@@ -745,6 +751,7 @@ info_sindex_sheet = Sheet(
             (
                 Field(
                     "Writes",
+                    # write_success removed in 6.0
                     Projectors.Number(
                         "sindex_stats", "write_success", "stat_write_success"
                     ),
@@ -753,6 +760,7 @@ info_sindex_sheet = Sheet(
                 ),
                 Field(
                     "Deletes",
+                    # delete_success removed in 6.0
                     Projectors.Number(
                         "sindex_stats", "delete_success", "stat_delete_success"
                     ),

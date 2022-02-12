@@ -2389,7 +2389,7 @@ class Node(AsyncObject):
     async def _jobs_helper(self, old_req, new_req):
         req = None
 
-        if self.is_feature_present("query_show"):
+        if self.is_feature_present("query-show"):
             req = new_req
         else:
             req = old_req
@@ -2447,7 +2447,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_scan_abort(self, trid):
         """
-        Kill a scan job. Calls "scan-abort" if "s-show" features exists. Otherwise,
+        Kill a scan job. Calls "scan-abort" if "scan-show" features exists. Otherwise,
         calls "jobs".  "scan-abort" was supported prior but was not documented until
         server 5.7.
 
@@ -2482,58 +2482,6 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def _async_abort_all_helper(self, show_func, abort_func):
-        """
-        Helper to kill all jobs from a certain module.
-        """
-        queries = await show_func()
-
-        if isinstance(queries, ASInfoError):
-            raise queries
-
-        trids = [
-            trid for trid in queries.keys() if "done" not in queries[trid]["status"]
-        ]
-        responses = []
-        abort_count = 0
-
-        if not trids:
-            return 0
-
-        # returns generator
-        responses = await client_util.concurrent_map(abort_func, trids)
-
-        for resp in responses:
-            if resp != ASINFO_RESPONSE_OK:
-                raise ASInfoError(resp)
-            abort_count += 1
-
-        return abort_count
-
-    # TODO: Deprecated but still needed to support killing old job types that have been
-    # removed in server 5.7. Should be stripped out at some point.
-    @async_return_exceptions
-    async def info_jobs_kill_all(self, module):
-        """
-        Not used since "scan-abort-all" is supported since 3.5.
-        This will be needed if we add "query-abort-all" in a later version to support
-        backwards compatibility
-        """
-
-        async def show_func():
-            return await self.info_jobs(module)
-
-        async def abort_func(trid):
-            return await self.info_jobs_kill(module, trid)
-
-        abort_count = await self._async_abort_all_helper(show_func, abort_func)
-
-        if isinstance(abort_count, ASInfoError):
-            raise abort_count
-
-        return "ok - number of {}s killed: {}".format(module, abort_count)
-
-    @async_return_exceptions
     async def info_scan_abort_all(self):
         """
         Abort all scans.  Supported since 3.5 but only documented as of 5.7 :)
@@ -2542,10 +2490,25 @@ class Node(AsyncObject):
         """
         resp = await self.info("scan-abort-all:")
 
-        if resp.startswith("OK - number of scans killed:"):
+        if resp.startswith("OK - number of"):
             return resp.lower()
 
         raise ASInfoError("Failed to abort all scans", resp)
+
+    @async_return_exceptions
+    async def info_query_abort_all(self):
+        """
+        Abort all queries.  Added in 6.0 when scans were unified into queries.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        resp = await self.info("query-abort-all:")
+
+        # TODO: Check actual response
+        if resp.startswith("OK - number of"):
+            return resp.lower()
+
+        raise ASInfoError("Failed to abort all queries", resp)
 
     @async_return_exceptions
     async def info_revive(self, namespace):
