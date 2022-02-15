@@ -568,7 +568,7 @@ async def request_license_usage(agent_host, agent_port):
     timeout = aiohttp.ClientTimeout(total=10)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        entries_params = {"start", a_year_ago}
+        entries_params = {"start": a_year_ago}
         res_entries, res_health = await asyncio.gather(
             session.get(
                 "http://"

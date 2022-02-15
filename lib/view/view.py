@@ -2149,7 +2149,7 @@ class CliView(object):
         index += 1
 
         print(
-            CliView.get_summary_line_prefix(index, "Usage")
+            CliView.get_summary_line_prefix(index, "Active Features")
             + ", ".join(sorted(summary["CLUSTER"]["active_features"]))
         )
 
