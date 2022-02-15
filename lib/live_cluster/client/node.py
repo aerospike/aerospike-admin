@@ -543,6 +543,7 @@ class Node(AsyncObject):
                     if await sock.authenticate(self.session_token):
                         return sock
 
+                await sock.close()
                 raise
 
         return None

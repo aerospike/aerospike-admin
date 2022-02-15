@@ -202,7 +202,6 @@ class ASSocketTestConnect(asynctest.TestCase):
             "token",
             "INTERNAL",
         )
-        self.socket_mock.close.assert_called_once()
 
     @patch("lib.live_cluster.client.assocket.info")
     async def test_is_connected_returns_true(self, info_mock):
