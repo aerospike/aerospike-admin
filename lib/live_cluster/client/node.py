@@ -38,6 +38,7 @@ from .types import (
     ASInfoClusterStableError,
     ASProtocolError,
     ASResponse,
+    Addr_Port_TLSName,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,6 +154,7 @@ class Node(AsyncObject):
             self.enable_tls = False
         self.consider_alumni = consider_alumni
         self.use_services_alt = use_services_alt
+        self.peers: list[tuple[Addr_Port_TLSName]] = []
 
         # session token
         self.session_token = None
@@ -259,32 +261,40 @@ class Node(AsyncObject):
             return True
         return False
 
+    async def _node_connect(self):
+        peers_info_calls = self._get_info_peers_list_calls()
+        service_info_call = self._get_service_info_call()
+        commands = ["node", service_info_call, "features"] + peers_info_calls
+        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+
+        if isinstance(results, Exception):
+            raise results
+
+        node_id = results["node"]
+        service_addresses = self._info_service_helper(results[service_info_call])
+        features = results["features"]
+        peers = self._aggregate_peers([results[call] for call in peers_info_calls])
+        return node_id, service_addresses, features, peers
+
     async def connect(self, address, port):
         try:
             if not await self.login():
                 raise IOError("Login Error")
 
-            node_id = asyncio.create_task(self.info_node())
-            service_addresses = asyncio.create_task(self.info_service_list())
-            features = asyncio.create_task(self.info("features"))
+            # At startup the socket_pool is empty.  Login adds its socket to the pool.
+            # This ensures that the following call uses the same socket as login(). This is
+            # needed when a load balancer is used because the session token received from login
+            # will be for a specific node.
+            (
+                self.node_id,
+                service_addresses,
+                self.features,
+                self.peers,
+            ) = await self._node_connect()
             update_ip = asyncio.create_task(self._update_IP(address, port))
-            peers = asyncio.create_task(self.info_peers_list())
-
-            self.node_id = await node_id
 
             if isinstance(self.node_id, Exception):
-                # Not able to connect this address
-                asyncio.gather(
-                    service_addresses,
-                    features,
-                    update_ip,
-                    peers,
-                )
                 raise self.node_id
-
-            service_addresses, self.features = await asyncio.gather(
-                service_addresses, features
-            )
 
             # Original address may not be the service address, the
             # following will ensure we have the service address
@@ -293,9 +303,7 @@ class Node(AsyncObject):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            update_ip, _, self.peers = await asyncio.gather(
-                update_ip, self.close(), peers
-            )
+            update_ip, _ = await asyncio.gather(update_ip, self.close())
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
@@ -344,7 +352,7 @@ class Node(AsyncObject):
             self.alive = True
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
-        except Exception:
+        except Exception as e:
 
             # Node is offline... fake a node
             self.ip = address
@@ -406,6 +414,7 @@ class Node(AsyncObject):
                 await sock.close()
                 raise
 
+        self.socket_pool[self.port].add(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
         return True
@@ -613,7 +622,6 @@ class Node(AsyncObject):
                 await sock.close()
             raise ex
 
-    @async_return_exceptions
     async def info(self, command):
         """
         asinfo function equivalent
@@ -648,45 +656,6 @@ class Node(AsyncObject):
     ###### Services ######
 
     # post 3.10 services
-
-    @async_return_exceptions
-    async def info_peers(self):
-        """
-        Get peers this node knows of that are active
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_helper(await self.info("peers-tls-std"))
-
-        return self._info_peers_helper(await self.info("peers-clear-std"))
-
-    @async_return_exceptions
-    async def info_peers_alumni(self):
-        """
-        Get peers this node has ever know of
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_helper(await self.info("alumni-tls-std"))
-        return self._info_peers_helper(await self.info("alumni-clear-std"))
-
-    @async_return_exceptions
-    async def info_peers_alt(self):
-        """
-        Get peers this node knows of that are active alternative addresses
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_helper(await self.info("peers-tls-alt"))
-
-        return self._info_peers_helper(await self.info("peers-clear-alt"))
-
     def _info_peers_helper(self, peers):
         """
         Takes an info peers list response and returns a list.
@@ -753,33 +722,79 @@ class Node(AsyncObject):
 
         return p_list
 
-    @async_return_exceptions
-    async def get_alumni_peers(self):
-        # info_peers_alumni for server version prior to 4.3.1 gives
-        # only old nodes (which are not part of current cluster), so to get full list we need to
-        # add info_peers
-        alumni_peers, peers_alumni = await asyncio.gather(
-            self.get_peers(), self.info_peers_alumni()
-        )
-        return list(set(alumni_peers + peers_alumni))
+    def _get_info_peers_call(self):
+        if self.enable_tls:
+            return "peers-tls-std"
+        else:
+            return "peers-clear-std"
 
     @async_return_exceptions
-    async def get_peers(self, all=False):
-        if all:
-            alt, std = await asyncio.gather(self.info_peers_alt(), self.info_peers())
-            return alt + std
+    async def info_peers(self):
+        """
+        Get peers this node knows of that are active
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        return self._info_peers_helper(await self.info(self._get_info_peers_call()))
+
+    def _get_info_peers_alumni_call(self):
+        if self.enable_tls:
+            return "alumni-tls-std"
+        else:
+            return "alumni-clear-std"
+
+    @async_return_exceptions
+    async def info_peers_alumni(self):
+        """
+        Get peers this node has ever know of
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        return self._info_peers_helper(
+            await self.info(self._get_info_peers_alumni_call())
+        )
+
+    def _get_info_peers_alt_call(self):
+        if self.enable_tls:
+            return "peers-tls-alt"
+        else:
+            return "peers-clear-alt"
+
+    @async_return_exceptions
+    async def info_peers_alt(self):
+        """
+        Get peers this node knows of that are active alternative addresses
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        return self._info_peers_helper(await self.info(self._get_info_peers_alt_call()))
+
+    def _get_info_peers_list_calls(self):
+        calls = []
+        # at most 2 calls will be needed
+        if self.consider_alumni:
+            calls.append(self._get_info_peers_alumni_call())
 
         if self.use_services_alt:
-            return await self.info_peers_alt()
+            calls.append(self._get_info_peers_alt_call())
+        else:
+            calls.append(self._get_info_peers_call())
 
-        return await self.info_peers()
+        return calls
+
+    def _aggregate_peers(self, results) -> list[str]:
+        results = [self._info_peers_helper(result) for result in results]
+        return list(set().union(*results))
 
     @async_return_exceptions
-    async def info_peers_list(self):
-        if self.consider_alumni:
-            return await self.get_alumni_peers()
-        else:
-            return await self.get_peers()
+    async def info_peers_list(self) -> list[str]:
+        results = await asyncio.gather(
+            *[self.info(call) for call in self._get_info_peers_list_calls()]
+        )
+        return self._aggregate_peers(results)
 
     @async_return_exceptions
     async def info_peers_flat_list(self):
@@ -807,50 +822,67 @@ class Node(AsyncObject):
             for v in s
         ]
 
-    @async_return_exceptions
-    async def info_service_alt(self):
-        """
-        Get service alternate endpoints of this node
+    # @async_return_exceptions
+    # async def info_service_alt(self):
+    #     """
+    #     Get service alternate endpoints of this node
 
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
+    #     Returns:
+    #     list -- [(ip,port,tls_name),...]
+    #     """
 
-        try:
+    #     try:
+    #         if self.enable_tls:
+    #             return self._info_service_helper(
+    #                 await self.info("service-tls-alt"), ","
+    #             )
+
+    #         return self._info_service_helper(await self.info("service-clear-alt"), ",")
+    #     except Exception:
+    #         return []
+
+    # @async_return_exceptions
+    # async def info_service(self):
+    #     """
+    #     Get service endpoints of this node
+
+    #     Returns:
+    #     list -- [(ip,port,tls_name),...]
+    #     """
+
+    #     try:
+    #         if self.enable_tls:
+    #             return self._info_service_helper(
+    #                 await self.info("service-tls-std"), ","
+    #             )
+
+    #         return self._info_service_helper(await self.info("service-clear-std"), ",")
+    #     except Exception:
+    #         return []
+
+    def _get_service_info_call(self):
+        if self.use_services_alt:
             if self.enable_tls:
-                return self._info_service_helper(
-                    await self.info("service-tls-alt"), ","
-                )
+                return "service-tls-alt"
+            else:
+                return "service-clear-alt"
 
-            return self._info_service_helper(await self.info("service-clear-alt"), ",")
-        except Exception:
-            return []
+        if self.enable_tls:
+            return "service-tls-std"
 
-    @async_return_exceptions
-    async def info_service(self):
-        """
-        Get service endpoints of this node
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        try:
-            if self.enable_tls:
-                return self._info_service_helper(
-                    await self.info("service-tls-std"), ","
-                )
-
-            return self._info_service_helper(await self.info("service-clear-std"), ",")
-        except Exception:
-            return []
+        return "service-clear-std"
 
     @async_return_exceptions
     async def info_service_list(self):
-        if self.use_services_alt:
-            return await self.info_service_alt()
+        """
+        Get service endpoints of this node.  Changes if tls or service-alt is enabled.
 
-        return await self.info_service()
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+        return self._info_service_helper(
+            await self.info(self._get_service_info_call()), ","
+        )
 
     ###### Service End ######
 

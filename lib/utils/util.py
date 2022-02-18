@@ -769,5 +769,7 @@ class async_cached(object):
         self[key] = self._CacheableCoroutine(self.func(*key))
         return self.cache[key][0]
 
-    def __call__(self, *args):
+    def __call__(self, *args, **kwargs):
+        if "disable_cache" in kwargs and kwargs["disable_cache"]:
+            return self.func(*args)
         return self[args]

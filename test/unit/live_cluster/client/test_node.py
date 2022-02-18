@@ -68,7 +68,7 @@ class NodeTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         # Here so call count does not include Node initialization
-        self.info_mock = patch(
+        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
             "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
         ).start()
         self.node.conf_schema_handler = MagicMock()
@@ -79,15 +79,22 @@ class NodeTest(asynctest.TestCase):
         correct information
         """
 
-        def side_effect(*args):
+        def side_effect(*args, **kwargs):
             cmd = args[0]
-
-            if cmd == "node":
+            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": "A00000000000000",
+                    "service-clear-std": "192.3.3.3:4567",
+                    "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
+                    "features": "features",
+                }
+            elif cmd == "node":
                 return "A00000000000000"
-            elif cmd == "service-clear-std":
-                return "192.3.3.3:4567"
+            elif cmd == "peers-clear-std":
+                return "peers"
             else:
-                return "5.0.0.11"
+                # Info call was made that was not defined here
+                self.fail()
 
         self.info_mock.side_effect = side_effect
         socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.3.3.3", 4567))]

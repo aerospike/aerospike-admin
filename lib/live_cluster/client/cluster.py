@@ -19,8 +19,8 @@ import re
 import logging
 import inspect
 from time import time
-from typing import List
 from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
+from lib.live_cluster.client.types import Addr_Port_TLSName
 from lib.utils.async_object import AsyncObject
 
 from lib.utils.lookup_dict import LookupDict
@@ -44,7 +44,7 @@ class Cluster(AsyncObject):
 
     async def __init__(
         self,
-        seed_nodes,
+        seed_nodes: Addr_Port_TLSName,
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,
@@ -70,7 +70,7 @@ class Cluster(AsyncObject):
         self.use_services_alt = use_services_alt
 
         # self.nodes is a dict from Node ID -> Node objects
-        self.nodes = {}
+        self.nodes: dict[str, Node] = {}
 
         # to avoid multiple entries of endpoints for same server we are keeping
         # this pointers
@@ -80,8 +80,8 @@ class Cluster(AsyncObject):
         # and (ip, port) -> Node, and node.node_id -> Node
         self.node_lookup = LookupDict(LookupDict.PREFIX_MODE)
 
-        self._seed_nodes = set(seed_nodes)
-        self._live_nodes = set()
+        self._seed_nodes: set[Addr_Port_TLSName] = set(seed_nodes)
+        self._live_nodes: set[Addr_Port_TLSName] = set()
         self.ssl_context = ssl_context
 
         # crawl the cluster search for nodes in addition to the seed nodes.
@@ -190,7 +190,8 @@ class Cluster(AsyncObject):
             self.logger.error(e)
             return ""
 
-    def get_live_nodes(self):
+    def get_live_nodes(self) -> set[Addr_Port_TLSName]:
+        # TODO: why not return a reference to Node objects instead?
         return self._live_nodes
 
     def get_visibility_error_nodes(self):
@@ -221,12 +222,13 @@ class Cluster(AsyncObject):
                     # nodes which can't detect online nodes
                     continue
 
-                alumni_peers, peers = await asyncio.gather(
-                    node.get_alumni_peers(), node.get_peers(all=True)
+                alumni_peers, peers, alt_peers = await asyncio.gather(
+                    node.info_peers_alumni(), node.info_peers(), node.info_peers_alt()
                 )
                 alumni_peers = client_util.flatten(alumni_peers)
                 peers = client_util.flatten(peers)
-                not_visible = set(alumni_peers) - set(peers)
+                alt_peers = client_util.flatten(alt_peers)
+                not_visible = set(alumni_peers) - set(peers) - set(alt_peers)
 
                 if len(not_visible) >= 1:
                     for n in not_visible:
@@ -366,7 +368,7 @@ class Cluster(AsyncObject):
         if node.alive:
             self.node_lookup[node.node_id] = node
 
-    def get_node(self, node) -> List[Node]:
+    def get_node(self, node) -> list[Node]:
         """
         node: str, either a nodes ip, id, fqdn, or a prefix of them.
         If ends with '*' then do a prefix match which can return multiple nodes.

@@ -1,6 +1,8 @@
 from enum import IntEnum, unique
 import logging
 
+Addr_Port_TLSName = tuple[str, int, str]
+
 
 @unique
 class ASCommand(IntEnum):
