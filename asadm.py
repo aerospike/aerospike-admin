@@ -807,7 +807,7 @@ async def main():
 
 
 def disable_coloring():
-    from .lib.view import terminal
+    from lib.view import terminal
 
     terminal.enable_color(False)
 
