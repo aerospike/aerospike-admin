@@ -785,6 +785,8 @@ class Node(AsyncObject):
     async def info_peers_alumni(self):
         """
         Get peers this node has ever know of
+        Note: info_peers_alumni for server version prior to 4.3.1 gives only old nodes
+        which are not part of current cluster.
 
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
@@ -858,44 +860,6 @@ class Node(AsyncObject):
             )
             for v in s
         ]
-
-    # @async_return_exceptions
-    # async def info_service_alt(self):
-    #     """
-    #     Get service alternate endpoints of this node
-
-    #     Returns:
-    #     list -- [(ip,port,tls_name),...]
-    #     """
-
-    #     try:
-    #         if self.enable_tls:
-    #             return self._info_service_helper(
-    #                 await self.info("service-tls-alt"), ","
-    #             )
-
-    #         return self._info_service_helper(await self.info("service-clear-alt"), ",")
-    #     except Exception:
-    #         return []
-
-    # @async_return_exceptions
-    # async def info_service(self):
-    #     """
-    #     Get service endpoints of this node
-
-    #     Returns:
-    #     list -- [(ip,port,tls_name),...]
-    #     """
-
-    #     try:
-    #         if self.enable_tls:
-    #             return self._info_service_helper(
-    #                 await self.info("service-tls-std"), ","
-    #             )
-
-    #         return self._info_service_helper(await self.info("service-clear-std"), ",")
-    #     except Exception:
-    #         return []
 
     def _get_service_info_call(self):
         if self.use_services_alt:
