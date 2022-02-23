@@ -319,7 +319,13 @@ class Cluster(AsyncObject):
                     for node in nodes
                     if (node is not None and node.alive and node not in visited)
                 ]
-                visited |= set([node for node in nodes if node is not None])
+                visited |= set(
+                    [
+                        (node.ip, node.port, node.tls_name)
+                        for node in nodes
+                        if node is not None
+                    ]
+                )
                 visited |= unvisited
                 unvisited.clear()
 
