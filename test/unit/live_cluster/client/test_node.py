@@ -14,6 +14,7 @@
 
 from ctypes import ArgumentError
 import time
+from unittest.mock import call
 import warnings
 from pytest import PytestUnraisableExceptionWarning
 from mock import MagicMock, patch
@@ -38,6 +39,122 @@ from lib.live_cluster.client import (
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import asynctest
+
+
+class NodeInitTest(asynctest.TestCase):
+    async def setUp(self):
+        self.maxDiff = None
+        self.ip = "192.1.1.1"
+        self.get_fully_qualified_domain_name = patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name"
+        ).start()
+
+        getaddrinfo = patch("socket.getaddrinfo")
+
+        self.addCleanup(patch.stopall)
+
+        lib.live_cluster.client.node.Node.info_build = patch(
+            "lib.live_cluster.client.node.Node.info_build", AsyncMock()
+        ).start()
+        socket.getaddrinfo = getaddrinfo.start()
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+        self.get_fully_qualified_domain_name.return_value = "host.domain.local"
+        socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
+
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+
+        # Here so call count does not include Node initialization
+
+    async def test_init_node(self):
+        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
+            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
+        ).start()
+        """
+        Ensures that we can instantiate a Node and that the node acquires the
+        correct information
+        """
+
+        def side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": "A00000000000000",
+                    "service-clear-std": "192.3.3.3:4567",
+                    "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
+                    "features": "features",
+                }
+            elif cmd == "node":
+                return "A00000000000000"
+            elif cmd == "peers-clear-std":
+                return "peers"
+            else:
+                # Info call was made that was not defined here
+                self.fail()
+
+        self.info_mock.side_effect = side_effect
+        socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.3.3.3", 4567))]
+
+        n = await Node("192.1.1.1")
+
+        self.assertEqual(n.ip, "192.3.3.3", "IP address is not correct")
+        self.assertEqual(n.fqdn, "host.domain.local", "FQDN is not correct")
+        self.assertEqual(n.port, 4567, "Port is not correct")
+        self.assertEqual(n.node_id, "A00000000000000", "Node Id is not correct")
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_node_connection_uses_same_socket_as_login(self, as_socket_mock_init):
+        # This is important to support the use of load-balancers as a seed node. The login
+        # needs to use the same socket as the rest of the calls to establish a connection.
+        def as_socket_mock():
+            mock = AsyncMock()
+            mock.get_session_info = Mock()
+            mock.settimeout = Mock()
+            return mock
+
+        as_socket_mock_used_for_login = as_socket_mock()
+
+        i = 0
+
+        def side_effect_init(*args, **kwargs):
+            nonlocal i
+            sock = None
+
+            if i == 0:
+                sock = as_socket_mock_used_for_login
+            else:
+                sock = as_socket_mock()
+
+            i += 1
+            return sock
+
+        as_socket_mock_init.side_effect = side_effect_init
+        as_socket_mock_used_for_login.connect.return_value = True
+        as_socket_mock_used_for_login.login.returns_value = True
+        as_socket_mock_used_for_login.get_session_info.return_value = "token", 59
+
+        def side_effect_info(*args, **kwargs):
+            if args[0] == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": "A0",
+                    "service-clear-std": "1.1.1.1:3000;172.17.0.1:3000;172.17.1.1:3000",
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                }
+
+        as_socket_mock_used_for_login.info.side_effect = side_effect_info
+
+        await Node("1.1.1.1", user="user")
+        as_socket_mock_used_for_login.login.assert_called_once()
+        # Login and the first info call used different sockets
+        as_socket_mock_used_for_login.info.assert_has_calls(
+            [
+                call(
+                    ["node", "service-clear-std", "features", "peers-clear-std"],
+                )
+            ],
+        )
 
 
 class NodeTest(asynctest.TestCase):
@@ -73,39 +190,6 @@ class NodeTest(asynctest.TestCase):
         ).start()
         self.node.conf_schema_handler = MagicMock()
 
-    async def test_init_node(self):
-        """
-        Ensures that we can instantiate a Node and that the node acquires the
-        correct information
-        """
-
-        def side_effect(*args, **kwargs):
-            cmd = args[0]
-            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
-                return {
-                    "node": "A00000000000000",
-                    "service-clear-std": "192.3.3.3:4567",
-                    "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
-                    "features": "features",
-                }
-            elif cmd == "node":
-                return "A00000000000000"
-            elif cmd == "peers-clear-std":
-                return "peers"
-            else:
-                # Info call was made that was not defined here
-                self.fail()
-
-        self.info_mock.side_effect = side_effect
-        socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.3.3.3", 4567))]
-
-        n = await Node("192.1.1.1")
-
-        self.assertEqual(n.ip, "192.3.3.3", "IP address is not correct")
-        self.assertEqual(n.fqdn, "host.domain.local", "FQDN is not correct")
-        self.assertEqual(n.port, 4567, "Port is not correct")
-        self.assertEqual(n.node_id, "A00000000000000", "Node Id is not correct")
-
     async def test_login_returns_true_if_user_is_none(self):
         self.node.user = None
         self.node.auth_mode = constants.AuthMode.INTERNAL
@@ -118,6 +202,22 @@ class NodeTest(asynctest.TestCase):
         self.node.session_expiration = time.time() + 60
 
         self.assertTrue(await self.node.login())
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_login_returns_true_if_login_was_successful(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+        self.node.user = True
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.returns_value = True
+        as_socket_mock.get_session_info.return_value = "token", 59
+        self.assertEqual(self.node.socket_pool, {self.node.port: set()})
+
+        self.assertTrue(await self.node.login())
+
+        as_socket_mock.close.assert_not_called()
+        self.assertEqual(self.node.socket_pool, {self.node.port: set([as_socket_mock])})
+        self.assertEqual("token", self.node.session_token)
+        self.assertEqual(59, self.node.session_expiration)
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_login_returns_false_if_socket_cant_connect(self, as_socket_mock):
@@ -180,6 +280,7 @@ class NodeTest(asynctest.TestCase):
         self.assertTrue(await self.node.login())
         self.node.logger.warning.assert_not_called()
 
+    # TODO: Make unit tests for socket pool
     async def test_get_connection_uses_socket_pool(self):
         class ASSocket_Mock(AsyncMock):
             settimeout = Mock()
@@ -187,9 +288,11 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock1 = ASSocket_Mock()
         as_socket_mock2 = ASSocket_Mock()
         as_socket_mock1.is_connected.return_value = True
+        as_socket_mock1.connect.return_value = True
         as_socket_mock1.name = 1
         as_socket_mock2.is_connected.return_value = False
         as_socket_mock2.name = 2
+        self.node._initialize_socket_pool()
         self.node.socket_pool[self.node.port].add(as_socket_mock2)
         self.node.socket_pool[self.node.port].add(as_socket_mock1)
 

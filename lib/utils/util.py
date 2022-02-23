@@ -24,6 +24,10 @@ import sys
 import logging
 from time import time
 
+from lib.utils import logger_debug
+
+logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
+
 
 def callable(func, *args, **kwargs):
     """
@@ -764,6 +768,7 @@ class async_cached(object):
         if key in self.cache:
             value, eol = self.cache[key]
             if eol > time():
+                logger.debug("return cached %s: %s", key[1:], value)
                 return value
 
         self[key] = self._CacheableCoroutine(self.func(*key))

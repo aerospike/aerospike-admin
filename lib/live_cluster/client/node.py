@@ -23,7 +23,7 @@ import base64
 
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import conf_parser
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import full_parser
-from lib.utils import common, constants, util, version
+from lib.utils import common, constants, util, version, logger_debug
 from lib.utils.async_object import AsyncObject
 
 
@@ -41,15 +41,7 @@ from .types import (
     Addr_Port_TLSName,
 )
 
-logger = logging.getLogger(__name__)
-logger.propagate = False
-logger.setLevel(logging.CRITICAL)
-logger_handler = logging.StreamHandler()
-# uncomment for better debug logging
-# from lib.utils.logger import DebugFormatter
-# logger_handler.setFormatter(DebugFormatter())
-logger_handler.setLevel(logging.DEBUG)
-logger.addHandler(logger_handler)
+logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
 
 #### Remote Server connection module
 
@@ -249,9 +241,10 @@ class Node(AsyncObject):
             )
 
     def _initialize_socket_pool(self):
+        logger.debug("%s:%s init socket pool", self.ip, self.port)
         self.socket_pool: dict[str, set(ASSocket)] = {}
         self.socket_pool[self.port] = set()
-        self.socket_pool_max_size = 5
+        self.socket_pool_max_size = 3
 
     def _is_any_my_ip(self, ips):
         if not ips:
@@ -398,25 +391,45 @@ class Node(AsyncObject):
         )
 
         if not await sock.connect():
+            logger.debug(
+                "%s:%s failed to connect to socket %s", self.ip, self.port, sock
+            )
             await sock.close()
             return False
 
         try:
             if not await sock.login():
+                logger.debug(
+                    "%s:%s failed to login to socket %s", self.ip, self.port, sock
+                )
                 await sock.close()
                 return False
         except ASProtocolError as e:
             if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
+                logger.debug(
+                    "%s:%s failed to login to socket, security not enabled, ignoring... %s",
+                    self.ip,
+                    self.port,
+                    sock,
+                )
                 if not Node.security_disabled_warning:
                     self.logger.warning(e)
                     Node.security_disabled_warning = True
             else:
+                logger.debug(
+                    "%s:%s failed to login to socket %s, exc: %s",
+                    self.ip,
+                    self.port,
+                    sock,
+                    e,
+                )
                 await sock.close()
                 raise
 
         self.socket_pool[self.port].add(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
+        logger.debug("%s:%s successful login to socket %s", self.ip, self.port, sock)
         return True
 
     @property
@@ -532,11 +545,15 @@ class Node(AsyncObject):
             timeout=self._timeout,
         )
 
+        logger.debug("%s:%s created new sock %s", ip, port, id(sock))
+
         if await sock.connect():
             try:
                 if await sock.authenticate(self.session_token):
+                    logger.debug("sock auth successful %s", id(sock))
                     return sock
             except ASProtocolError as e:
+                logger.debug("sock auth failed %s", id(sock))
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
@@ -547,14 +564,17 @@ class Node(AsyncObject):
                 ):
                     # A node likely switched from security disabled to security enable.
                     # In which case the error is caused by login never being called.
+                    logger.debug("trying to sock login again %s", id(sock))
                     self.perform_login = True
                     await self.login()
                     if await sock.authenticate(self.session_token):
+                        logger.debug("sock auth successful on second try %s", id(sock))
                         return sock
 
                 await sock.close()
                 raise
 
+        logger.debug("sock connect failed %s", id(sock))
         return None
 
     async def close(self):
@@ -608,10 +628,18 @@ class Node(AsyncObject):
                     else:
                         await sock.close()
 
-                except Exception:
+                except Exception as e:
                     await sock.close()
 
             if result != -1 and result is not None:
+                logger.debug(
+                    "%s:%s info cmd '%s' and sock %s returned %s",
+                    self.ip,
+                    self.port,
+                    command,
+                    id(sock),
+                    result,
+                )
                 return result
 
             else:
@@ -620,6 +648,15 @@ class Node(AsyncObject):
         except Exception as ex:
             if sock:
                 await sock.close()
+
+            logger.debug(
+                "%s:%s info cmd '%s' and sock %s raised %s for",
+                self.ip,
+                self.port,
+                command,
+                id(sock),
+                ex,
+            )
             raise ex
 
     async def info(self, command):

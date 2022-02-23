@@ -24,14 +24,12 @@ from lib.live_cluster.client.types import Addr_Port_TLSName
 from lib.utils.async_object import AsyncObject
 
 from lib.utils.lookup_dict import LookupDict
-from lib.utils import util, constants
+from lib.utils import logger_debug, util, constants
 
 from . import client_util
 from .node import Node
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
-
+logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
 
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
@@ -301,7 +299,7 @@ class Cluster(AsyncObject):
         """
         nodes_to_add = await self.find_new_nodes()
 
-        logger.debug("Nodes to add to cluster: %s", str(nodes_to_add))
+        logger.debug("Nodes to add to cluster: %s", nodes_to_add)
 
         if not nodes_to_add or len(nodes_to_add) == 0:
             return
@@ -312,6 +310,7 @@ class Cluster(AsyncObject):
 
             while unvisited - visited:
                 l_unvisited = list(unvisited)
+                logger.debug("Register nodes in cluster: %s", l_unvisited)
                 nodes = await client_util.concurrent_map(
                     self._register_node, l_unvisited
                 )
@@ -320,13 +319,14 @@ class Cluster(AsyncObject):
                     for node in nodes
                     if (node is not None and node.alive and node not in visited)
                 ]
+                visited |= set([node for node in nodes if node is not None])
                 visited |= unvisited
                 unvisited.clear()
 
                 if not self.only_connect_seed:
-                    services_list = map(self._get_services, live_nodes)
+                    visted_nodes_peers = map(self._get_peers, live_nodes)
 
-                    for node, services in zip(live_nodes, services_list):
+                    for node, services in zip(live_nodes, visted_nodes_peers):
                         if isinstance(services, Exception):
                             continue
 
@@ -337,7 +337,10 @@ class Cluster(AsyncObject):
                                 all_services.add(s)
 
                         all_services.add((node.ip, node.port, node.tls_name))
+
                 unvisited = all_services - visited
+                logger.debug("Peers to add to cluster: %s", unvisited)
+
             self._refresh_node_liveliness()
         except Exception:
             pass
@@ -531,7 +534,7 @@ class Cluster(AsyncObject):
         return None
 
     @staticmethod
-    def _get_services(node):
+    def _get_peers(node):
         """
         Given a node object return its services list / peers list
         """
