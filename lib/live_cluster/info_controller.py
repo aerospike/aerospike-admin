@@ -43,7 +43,7 @@ class InfoController(LiveClusterCommandController):
         stats, cluster_names, builds, versions = await asyncio.gather(
             self.cluster.info_statistics(nodes=self.nodes),
             self.cluster.info("cluster-name", nodes=self.nodes),
-            self.cluster.info("build", nodes=self.nodes),
+            self.cluster.info_build(nodes=self.nodes),
             self.cluster.info("version", nodes=self.nodes),
         )
 
