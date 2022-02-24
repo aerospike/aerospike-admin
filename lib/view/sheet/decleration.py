@@ -15,8 +15,6 @@
 from collections import Counter
 import logging
 
-from attr import field
-
 from lib.utils import file_size
 from lib.view import terminal
 
@@ -24,7 +22,7 @@ from .const import DynamicFieldOrder, FieldType, SheetStyle
 from .source import source_lookup, source_root
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.CRITICAL)
 
 
 class Sheet(object):
