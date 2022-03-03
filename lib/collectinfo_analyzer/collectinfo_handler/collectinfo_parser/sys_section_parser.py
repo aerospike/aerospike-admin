@@ -33,61 +33,44 @@ def parse_sys_section(section_list, imap, parsed_map):
     for section in section_list:
         if section == "top":
             _parse_top_section(imap, parsed_map)
-
         elif section == "lsb":
             _parse_lsb_release_section(imap, parsed_map)
-
         elif section == "uname":
             _parse_uname_section(imap, parsed_map)
-
         elif section == "meminfo":
             _parse_meminfo_section(imap, parsed_map)
-
         elif section == "awsdata":
             _parse_awsdata_section(imap, parsed_map)
-
         elif section == "hostname":
             _parse_hostname_section(imap, parsed_map)
-
         elif section == "df":
             _parse_df_section(imap, parsed_map)
-
         elif section == "free-m":
             _parse_free_m_section(imap, parsed_map)
-
         elif section == "iostat":
             _parse_iostat_section(imap, parsed_map)
-
         elif section == "interrupts":
             _parse_interrupts_section(imap, parsed_map)
-
         elif section == "ip_addr":
             _parse_ipaddr_section(imap, parsed_map)
-
         elif section == "dmesg":
             _parse_dmesg_section(imap, parsed_map)
-
         elif section == "lscpu":
             _parse_lscpu_section(imap, parsed_map)
-
         elif section == "iptables":
             _parse_iptables_section(imap, parsed_map)
-
         elif section == "sysctlall":
             _parse_sysctlall_section(imap, parsed_map)
-
         elif section == "hdparm":
             _parse_hdparm_section(imap, parsed_map)
-
         elif section == "limits":
             _parse_limits_section(imap, parsed_map)
-
         elif section == "environment":
             _parse_environment_section(imap, parsed_map)
-
         elif section == "scheduler":
             _parse_scheduler_section(imap, parsed_map)
-
+        elif section == "ethtool":
+            _parse_ethtool_section(imap, parsed_map)
         else:
             logger.warning(
                 "Section unknown, cannot be parsed. Check SYS_SECTION_NAME_LIST. Section: "
@@ -1227,3 +1210,58 @@ def _parse_awsdata_section(imap, parsed_map):
                 field_count += 1
             continue
     parsed_map[final_section_name_1] = awsdata
+
+
+def _parse_ethtool_section(imap, parsed_map):
+    sec_id_1 = "ID_114"
+    final_section_name_1 = "ethtool"
+    raw_section_name_1, final_section_name_1, _ = util.get_section_name_from_id(
+        sec_id_1
+    )
+
+    logger.info("Parsing section: " + final_section_name_1)
+    if not imap:
+        logger.warning("Null section json")
+        return
+
+    ethtool_data = {}
+
+    ethtool_section_list = None
+
+    if raw_section_name_1 in imap:
+        ethtool_section_list = imap[raw_section_name_1]
+    else:
+        logger.warning(raw_section_name_1 + " section is not present in section json.")
+        return
+
+    ethtool_section = ethtool_section_list[0]
+    current_device = None
+
+    for line in ethtool_section:
+        line = line.lower()
+
+        if "ethtool" in line:
+            current_device = line.split()[-1]
+            ethtool_data[current_device] = {}
+            continue
+
+        if "nic statistics" in line:
+            continue
+
+        if current_device is None:
+            continue
+
+        line = line.replace(" ", "")
+        line = line.split(":")
+
+        if len(line) != 2:
+            continue
+
+        key, val = line
+
+        try:
+            ethtool_data[current_device][key] = int(val)
+        except:
+            ethtool_data[current_device][key] = val
+
+    parsed_map[final_section_name_1] = ethtool_data
