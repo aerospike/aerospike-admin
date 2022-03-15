@@ -927,7 +927,7 @@ summary_namespace_sheet = Sheet(
             Projectors.Number("ns_stats", "master_objects"),
             Converters.scientific_units,
         ),
-        Field("Compression Ratio", Projectors.Float("ns_stats", "compression-ratio")),
+        Field("Compression Ratio", Projectors.Float("ns_stats", "compression_ratio")),
     ),
     from_source="ns_stats",
     for_each="ns_stats",

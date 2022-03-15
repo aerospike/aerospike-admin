@@ -925,7 +925,7 @@ def create_summary(
             flash_index_used = sum(
                 util.get_value_from_second_level_of_dict(
                     ns_stats,
-                    ("index_pmem_used_bytes",),
+                    ("index_flash_used_bytes",),
                     default_value=0,
                     return_type=int,
                 ).values()
