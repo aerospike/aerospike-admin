@@ -13,12 +13,16 @@
 # limitations under the License.
 
 from collections import Counter
+import logging
 
 from lib.utils import file_size
 from lib.view import terminal
 
 from .const import DynamicFieldOrder, FieldType, SheetStyle
 from .source import source_lookup, source_root
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 
 class Sheet(object):
@@ -473,6 +477,7 @@ class BaseProjector(object):
         except Exception as e:
             # XXX - A debug log may be useful.
             # print 'debug - ', e, self.source, self.source
+            logger.debug("Problem projecting keys %s, exc: %s", self.keys, e)
             raise ErrorEntryException("unexpected error occurred: {}".format(e))
 
         if result is None:
@@ -648,7 +653,10 @@ class Projectors(object):
         def __init__(self, numerator_projector, denominator_projector):
             """
             Arguments:
-            field_projectors  -- Projectors to be summed.
+            numerator_projector -- A field project of FieldType.number.
+            denominator_projector -- A field projector with FieldType.number
+
+            Computed as numbertor / denominator
             """
             self.numerator_projector = numerator_projector
             self.denominator_projector = denominator_projector
@@ -670,6 +678,29 @@ class Projectors(object):
             ) / self.denominator_projector(sheet, sources)
 
             return result
+
+    class PercentCompute(Div):
+        field_type = FieldType.number
+
+        def __init__(self, numerator_projector, denominator_projector, **kwargs):
+            """
+            Arguments:
+            invert:  Return result as (100 - result) if true
+            See Div for remaining args.
+
+            Computed as ((numberator/denomanator) * 100)
+            """
+            super().__init__(numerator_projector, denominator_projector)
+            self.invert = kwargs.get("invert", False)
+
+        def do_project(self, sheet, sources):
+            """
+            Arguments:
+            source -- A set of sources to project a sum of fields.
+            """
+            result = super().do_project(sheet, sources)
+            result *= 100
+            return result if not self.invert else 100 - result
 
     class Any(BaseProjector):
         def __init__(self, field_type, *field_projectors):

@@ -270,7 +270,11 @@ class BaseRSheet(object):
 
                     dfields.append(
                         decleration.Field(
-                            key, proj, aggregator=aggr, dynamic_field_decl=dfield, converter=conv_func
+                            key,
+                            proj,
+                            aggregator=aggr,
+                            dynamic_field_decl=dfield,
+                            converter=conv_func,
                         )
                     )
             else:
