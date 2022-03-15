@@ -319,6 +319,9 @@ class Cluster(AsyncObject):
                     for node in nodes
                     if (node is not None and node.alive and node not in visited)
                 ]
+
+                # In the LB case, the LB seed node will be in unvisited but the actual AS node
+                # will be in "nodes".  This ensures we don't visit the same node twice.
                 visited |= set(
                     [
                         (node.ip, node.port, node.tls_name)
@@ -332,14 +335,14 @@ class Cluster(AsyncObject):
                 if not self.only_connect_seed:
                     visted_nodes_peers = map(self._get_peers, live_nodes)
 
-                    for node, services in zip(live_nodes, visted_nodes_peers):
-                        if isinstance(services, Exception):
+                    for node, peers in zip(live_nodes, visted_nodes_peers):
+                        if isinstance(peers, Exception):
                             continue
 
-                        for service in services:
-                            # service can be a list of tuples. Most likely just
+                        for peer in peers:
+                            # peer can be a list of tuples. Most likely just
                             # as single tuple though.
-                            for s in service:
+                            for s in peer:
                                 all_services.add(s)
 
                         all_services.add((node.ip, node.port, node.tls_name))
