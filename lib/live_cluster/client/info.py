@@ -1325,6 +1325,8 @@ async def info(reader, writer, names=None):
     else:
         rdict = dict()
         for line in rsp_data.split("\n"):
+            if "not authenticated" in line.lower():
+                return ASInfoNotAuthenticatedError("Connection failed", line)
             if len(line) < 1:
                 # this accounts for the trailing '\n' - cheaper than chomp
                 continue

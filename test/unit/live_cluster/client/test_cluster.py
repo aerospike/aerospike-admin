@@ -49,9 +49,25 @@ class ClusterTest(asynctest.TestCase):
         if "build" not in return_key_value:
             return_key_value["build"] = "4.9.0.0"
 
-        async def info_cinfo_side_effect(*args):
+        async def info_cinfo_side_effect(*args, **kwargs):
             ip_last_digit = ip.split(".")[3]
             cmd = args[0]
+
+            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": return_value,
+                    "service-clear-std": (
+                        str(ip)
+                        + ":"
+                        + str(port)
+                        + ";172.17.0.1:"
+                        + str(port)
+                        + ";172.17.1.1:"
+                        + str(port)
+                    ),
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                }
 
             if cmd == "service":
                 return (
@@ -302,7 +318,7 @@ class ClusterTest(asynctest.TestCase):
         self.assertCountEqual(expected, actual)
 
     async def test_get_node_displaynames(self):
-        cl = await self.get_cluster_mock(0)
+        cl = await self.get_cluster_mock(1)
         expected = {"127.0.0.0:3000": "host.domain.local:3000"}
         self.assertEqual(
             cl.get_node_displaynames(),
@@ -311,7 +327,7 @@ class ClusterTest(asynctest.TestCase):
         )
 
     async def test_get_node_names(self):
-        cl = await self.get_cluster_mock(0)
+        cl = await self.get_cluster_mock(1)
         expected = {"127.0.0.0:3000": "host.domain.local:3000"}
         self.assertEqual(
             cl.get_node_names(),
@@ -328,8 +344,21 @@ class ClusterTest(asynctest.TestCase):
             "get_expected_principal did not return the expected result",
         )
 
-    async def test_get_visibility_error_nodes(self):
+    async def test_get_visibility_error_nodes_returns_empty(self):
         cl = await self.get_cluster_mock(3)
+        cl._refresh_node_liveliness()
+        cl.nodes["127.0.0.0:3000"].peers = [
+            (("127.0.0.1", 3000, None),),
+            (("127.0.0.2", 3000, None),),
+        ]
+        cl.nodes["127.0.0.1:3000"].peers = [
+            (("127.0.0.0", 3000, None),),
+            (("127.0.0.2", 3000, None),),
+        ]
+        cl.nodes["127.0.0.2:3000"].peers = [
+            (("127.0.0.0", 3000, None),),
+            (("127.0.0.1", 3000, None),),
+        ]
 
         expected = []
         self.assertEqual(
@@ -338,8 +367,22 @@ class ClusterTest(asynctest.TestCase):
             "get_visibility_error_nodes did not return the expected result",
         )
 
-        cl._live_nodes = ["127.0.0.1:3000", "127.0.0.2:3000", "127.0.0.0:3000"]
-        expected = ["127.0.0.1:3000", "127.0.0.2:3000", "127.0.0.0:3000"]
+    async def test_get_visibility_error_nodes_returns_node(self):
+        cl = await self.get_cluster_mock(3)
+        cl._refresh_node_liveliness()
+        cl.nodes["127.0.0.0:3000"].peers = [
+            (("127.0.0.1", 3000, None),),
+            (("127.0.0.2", 3000, None),),
+        ]
+        cl.nodes["127.0.0.1:3000"].peers = [
+            (("127.0.0.2", 3000, None),),
+        ]
+        cl.nodes["127.0.0.2:3000"].peers = [
+            (("127.0.0.0", 3000, None),),
+            (("127.0.0.1", 3000, None),),
+        ]
+
+        expected = ["127.0.0.1:3000"]
         self.assertEqual(
             sorted(cl.get_visibility_error_nodes()),
             sorted(expected),
@@ -456,9 +499,6 @@ class ClusterTest(asynctest.TestCase):
     async def test_is_feature_present(self):
         cl = await self.get_cluster_mock(
             2,
-            return_key_value={
-                "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;"
-            },
         )
         expected = {"127.0.0.1:3000": True, "127.0.0.0:3000": True}
         self.assertEqual(
