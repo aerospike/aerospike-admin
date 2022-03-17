@@ -1,3 +1,4 @@
+from unittest.mock import call
 from test.unit import util
 from lib.live_cluster.client.config_handler import (
     BoolConfigType,
@@ -274,7 +275,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
     "5.4.0": "5_4_0.json",
     "5.5.0": "5_5_0.json",
     "5.6.0": "5_6_0.json",
-    "5.7.0": "5_7_0.json"
+    "5.7.0": "5_7_0.json",
     "6.0.0": "6_0_0.json"
 }
                 """
@@ -288,12 +289,18 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         pkgutil_mock.side_effect = self.pkgutil_side_effect
 
         JsonDynamicConfigHandler("dir", "0.0.0")
-        pkgutil_mock.assert_any_call(
-            "lib.live_cluster.client.config_handler", "dir/schema_map.json"
+        pkgutil_mock.assert_has_calls(
+            [
+                call("lib.live_cluster.client.config_handler", "dir/schema_map.json"),
+                call("lib.live_cluster.client.config_handler", "dir/4_0_0.json"),
+            ]
         )
-        pkgutil_mock.assert_any_call(
-            "lib.live_cluster.client.config_handler", "dir/4_0_0.json"
-        )
+        # pkgutil_mock.assert_any_call(
+        #     "lib.live_cluster.client.config_handler", "dir/schema_map.json"
+        # )
+        # pkgutil_mock.assert_any_call(
+        #     "lib.live_cluster.client.config_handler", "dir/4_0_0.json"
+        # )
 
         JsonDynamicConfigHandler("dir", "4.0.1")
         pkgutil_mock.assert_called_with(
