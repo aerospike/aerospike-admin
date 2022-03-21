@@ -617,7 +617,7 @@ def config_file_help():
     print("\n")
 
 
-def create_deprecate_action(action):
+def create_deprecate_action(action, optional_msg=""):
     """
     Used to create a deprecated flag action. The DeprecateAction is useful for obvious reasons
     but the need to pass a BaseClass may not be.  This allows you to deprecate a flag that already
@@ -625,11 +625,14 @@ def create_deprecate_action(action):
     create_deprecate_action(argparse._Store)
 
     action - A argparse.Action class not an instance.
+    optional_msg - Message to be printed after deprecation warning.
     """
 
     class DeprecateAction(action):
         def __call__(self, parser, namespace, values, option_string=None):
-            logger.warn("Argument %s is deprecated." % self.option_strings)
+            logger.warn(
+                "Argument {} is deprecated. {}", self.option_strings, optional_msg
+            )
 
     return DeprecateAction
 
@@ -667,7 +670,10 @@ def get_cli_args():
     add_fn("--tls-keyfile")
     add_fn("--tls-keyfile-password", nargs="?", const=DEFAULTPASSWORD)
     add_fn("--tls-certfile")
-    add_fn("--tls-cert-blacklist", action=create_deprecate_action(argparse.Action))
+    add_fn(
+        "--tls-cert-blacklist",
+        action=create_deprecate_action(argparse.Action, "Use a crl instead."),
+    )
     add_fn("--tls-crl-check", action="store_true")
     add_fn("--tls-crl-check-all", action="store_true")
 
