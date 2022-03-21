@@ -23,23 +23,15 @@ import re
 import shlex
 import sys
 import asyncio
+import readline
 from lib.utils.async_object import AsyncObject
 
-if sys.version_info[0] < 3:
-    raise Exception(
-        "asadm requires Python 3. Use Aerospike tools package <= 3.27.x for Python 2 support."
-    )
 
-if "-e" not in sys.argv and "--asinfo" not in sys.argv:
-    # asinfo mode or non-interactive mode does not need readline
-    # if we import readline then it adds escape character, which breaks some of asinfo use-cases.
-    import readline
-
-    if "libedit" in readline.__doc__:
-        # BSD libedit style tab completion for OS X
-        readline.parse_and_bind("bind ^I rl_complete")
-    else:
-        readline.parse_and_bind("tab: complete")
+if "libedit" in readline.__doc__:
+    # BSD libedit style tab completion for OS X
+    readline.parse_and_bind("bind ^I rl_complete")
+else:
+    readline.parse_and_bind("tab: complete")
 
 # Setup logger before anything
 
@@ -52,9 +44,12 @@ from lib.live_cluster.client import info
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
+from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
-from lib.view import terminal, view
+from lib.view import terminal, view, sheet
+from time import sleep
+import yappi  # noqa F401
 
 # Do not remove this line.  It mitigates a race condition that occurs when using
 # pyinstaller and socket.getaddrinfo.  For some reason the idna codec is not registered
@@ -297,14 +292,10 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
         self.preloop()
         if self.use_rawinput and self.completekey:
-            try:
-                import readline
+            self.old_completer = readline.get_completer()
+            readline.set_completer(self.complete)
+            readline.parse_and_bind(self.completekey + ": complete")
 
-                self.old_completer = readline.get_completer()
-                readline.set_completer(self.complete)
-                readline.parse_and_bind(self.completekey + ": complete")
-            except ImportError:
-                pass
         try:
             if intro is not None:
                 self.intro = intro
@@ -335,8 +326,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         finally:
             if self.use_rawinput and self.completekey:
                 try:
-                    import readline
-
                     readline.set_completer(self.old_completer)
                 except ImportError:
                     pass
@@ -507,7 +496,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
        `%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\'
            `%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\'
 """
-        from time import sleep
 
         s = 0.5
         for line in msg.split("\n"):
@@ -632,8 +620,6 @@ async def main():
         disable_coloring()
 
     if cli_args.pmap:
-        from lib.live_cluster.collectinfo_controller import CollectinfoController
-
         CollectinfoController.get_pmap = True
 
     mode = AdminMode.LIVE_CLUSTER
@@ -659,7 +645,7 @@ async def main():
         execute_only_mode = True
         logger.execute_only_mode = True
 
-    cli_args, seeds = conf.loadconfig(cli_args, logger)
+    cli_args, seeds = conf.loadconfig(cli_args)
 
     if cli_args.services_alumni and cli_args.services_alternate:
         logger.critical(
@@ -721,8 +707,6 @@ async def main():
     use_yappi = False
     if cli_args.profile:
         try:
-            import yappi  # noqa F401
-
             use_yappi = True
         except Exception as a:
             print("Unable to load profiler")
@@ -807,22 +791,16 @@ async def main():
 
 
 def disable_coloring():
-    from lib.view import terminal
-
     terminal.enable_color(False)
 
 
 def output_json():
-    from lib.view.sheet import set_style_json
-
-    set_style_json()
+    sheet.set_style_json()
 
 
 async def cmdloop(shell, func, args, use_yappi, single_command):
     try:
         if use_yappi:
-            import yappi
-
             yappi.start()
             func(*args)
             yappi.get_func_stats().print_all()
