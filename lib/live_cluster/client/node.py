@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import asyncio
 from ctypes import ArgumentError
 import copy
 import logging
@@ -22,7 +23,8 @@ import base64
 
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import conf_parser
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import full_parser
-from lib.utils import common, constants, util, version
+from lib.utils import common, constants, util, version, logger_debug
+from lib.utils.async_object import AsyncObject
 
 
 from .assocket import ASSocket
@@ -36,17 +38,10 @@ from .types import (
     ASInfoClusterStableError,
     ASProtocolError,
     ASResponse,
+    Addr_Port_TLSName,
 )
 
-logger = logging.getLogger(__name__)
-logger.propagate = False
-logger.setLevel(logging.CRITICAL)
-logger_handler = logging.StreamHandler()
-# uncomment for better debug logging
-# from lib.utils.logger import DebugFormatter
-# logger_handler.setFormatter(DebugFormatter())
-logger_handler.setLevel(logging.DEBUG)
-logger.addHandler(logger_handler)
+logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
 
 #### Remote Server connection module
 
@@ -62,6 +57,7 @@ except ImportError:
 
 
 def get_fully_qualified_domain_name(address, timeout=0.5):
+    # TODO: make async
     # note: cannot use timeout lib because signal must be run from the
     #       main thread
 
@@ -80,6 +76,18 @@ def get_fully_qualified_domain_name(address, timeout=0.5):
     return result[0]
 
 
+def async_return_exceptions(func):
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            args[0].alive = False
+            return e
+
+    return wrapper
+
+
+# TODO: May not be needed
 def return_exceptions(func):
     def wrapper(*args, **kwargs):
         try:
@@ -91,17 +99,17 @@ def return_exceptions(func):
     return wrapper
 
 
-class Node(object):
+class Node(AsyncObject):
     dns_cache = {}
-    pool_lock = threading.Lock()
     info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
+    security_disabled_warning = False  # We only want to warn the user once.
 
-    def __init__(
+    async def __init__(
         self,
         address,
         port=3000,
         tls_name=None,
-        timeout=5,
+        timeout=1,
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,
@@ -138,6 +146,7 @@ class Node(object):
             self.enable_tls = False
         self.consider_alumni = consider_alumni
         self.use_services_alt = use_services_alt
+        self.peers: list[tuple[Addr_Port_TLSName]] = []
 
         # session token
         self.session_token = None
@@ -210,8 +219,9 @@ class Node(object):
         self.peers_generation = -1
         self.service_addresses = []
         self._initialize_socket_pool()
-        self.connect(address, port)
+        await self.connect(address, port)
         self.localhost = False
+
         try:
             if address.lower() == "localhost":
                 self.localhost = True
@@ -227,11 +237,12 @@ class Node(object):
         # TODO: Put json files in a submodule
         if self.alive:
             self.conf_schema_handler = JsonDynamicConfigHandler(
-                constants.CONFIG_SCHEMAS_HOME, self.info_build()
+                constants.CONFIG_SCHEMAS_HOME, await self.info_build()
             )
 
     def _initialize_socket_pool(self):
-        self.socket_pool = {}
+        logger.debug("%s:%s init socket pool", self.ip, self.port)
+        self.socket_pool: dict[str, set(ASSocket)] = {}
         self.socket_pool[self.port] = set()
         self.socket_pool_max_size = 3
 
@@ -243,23 +254,40 @@ class Node(object):
             return True
         return False
 
-    def connect(self, address, port):
+    async def _node_connect(self):
+        peers_info_calls = self._get_info_peers_list_calls()
+        service_info_call = self._get_service_info_call()
+        commands = ["node", service_info_call, "features"] + peers_info_calls
+        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+
+        if isinstance(results, Exception):
+            raise results
+
+        node_id = results["node"]
+        service_addresses = self._info_service_helper(results[service_info_call])
+        features = results["features"]
+        peers = self._aggregate_peers([results[call] for call in peers_info_calls])
+        return node_id, service_addresses, features, peers
+
+    async def connect(self, address, port):
         try:
-            if not self.login():
+            if not await self.login():
                 raise IOError("Login Error")
-            service_addresses = util.Future(self.info_service_list).start()
-            node_id = util.Future(self.info_node).start()
-            features = util.Future(self.info, "features").start()
-            update_ip = util.Future(self._update_IP, address, port).start()
-            peers = util.Future(self.info_peers_list).start()
-            self.node_id = node_id.result()
+
+            # At startup the socket_pool is empty.  Login adds its socket to the pool.
+            # This ensures that the following call uses the same socket as login(). This is
+            # needed when a load balancer is used because the session token received from login
+            # will be for a specific node.
+            (
+                self.node_id,
+                service_addresses,
+                self.features,
+                self.peers,
+            ) = await self._node_connect()
+            update_ip = asyncio.create_task(self._update_IP(address, port))
 
             if isinstance(self.node_id, Exception):
-                # Not able to connect this address
                 raise self.node_id
-
-            service_addresses = service_addresses.result()
-            self.features = features.result()
 
             # Original address may not be the service address, the
             # following will ensure we have the service address
@@ -268,8 +296,7 @@ class Node(object):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            update_ip.result()
-            self.close()
+            update_ip, _ = await asyncio.gather(update_ip, self.close())
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
@@ -291,10 +318,13 @@ class Node(object):
                         break
 
                     # IP address have changed. Not common.
-                    node_id = util.Future(self.info_node).start()
-                    update_ip = util.Future(self._update_IP, self.ip, self.port).start()
-                    peers = util.Future(self.info_peers_list).start()
-                    self.node_id = node_id.result()
+                    self.node_id, update_ip, self.peers = await asyncio.gather(
+                        *[
+                            self.info_node(),
+                            self._update_IP(self.ip, self.port),
+                            self.info_peers_list(),
+                        ]
+                    )
 
                     if not isinstance(self.node_id, Exception):
                         break
@@ -311,12 +341,12 @@ class Node(object):
 
             self._service_IP_port = self.create_key(self.ip, self.port)
             self._key = hash(self._service_IP_port)
-            self.new_histogram_version = self._is_new_histogram_version()
+            self.new_histogram_version = await self._is_new_histogram_version()
             self.alive = True
-            self.peers = peers.result()
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
-        except Exception:
+        except Exception as e:
+
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -331,10 +361,16 @@ class Node(object):
             self.use_new_histogram_format = False
             self.alive = False
 
-    def refresh_connection(self):
-        self.connect(self.ip, self.port)
+    async def refresh_connection(self):
+        await self.connect(self.ip, self.port)
 
-    def login(self):
+    async def login(self):
+        """
+        Creates a new socket and gets the session token for authentication. No login
+        is done if a user was not provided and PKI is not being used.
+        First introduced in 0.2.0. Before security only required a user/pass authentication
+        stage rather than a two step login() -> token -> auth().
+        """
         if self.auth_mode != constants.AuthMode.PKI and self.user is None:
             return True
 
@@ -354,25 +390,46 @@ class Node(object):
             timeout=self._timeout,
         )
 
-        if not sock.connect():
-            sock.close()
+        if not await sock.connect():
+            logger.debug(
+                "%s:%s failed to connect to socket %s", self.ip, self.port, sock
+            )
+            await sock.close()
             return False
 
         try:
-            if not sock.login():
-                sock.close()
+            if not await sock.login():
+                logger.debug(
+                    "%s:%s failed to login to socket %s", self.ip, self.port, sock
+                )
+                await sock.close()
                 return False
         except ASProtocolError as e:
             if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
-                self.logger.warning(e)
-                self.user = None
+                logger.debug(
+                    "%s:%s failed to login to socket, security not enabled, ignoring... %s",
+                    self.ip,
+                    self.port,
+                    sock,
+                )
+                if not Node.security_disabled_warning:
+                    self.logger.warning(e)
+                    Node.security_disabled_warning = True
             else:
-                sock.close()
+                logger.debug(
+                    "%s:%s failed to login to socket %s, exc: %s",
+                    self.ip,
+                    self.port,
+                    sock,
+                    e,
+                )
+                await sock.close()
                 raise
 
+        self.socket_pool[self.port].add(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
-
+        logger.debug("%s:%s successful login to socket %s", self.ip, self.port, sock)
         return True
 
     @property
@@ -393,7 +450,7 @@ class Node(object):
     def __eq__(self, other):
         return self._key == other._key
 
-    def _update_IP(self, address, port):
+    async def _update_IP(self, address, port):
         if address not in self.dns_cache:
             self.dns_cache[address] = (
                 socket.getaddrinfo(address, port, socket.AF_UNSPEC, socket.SOCK_STREAM)[
@@ -415,8 +472,8 @@ class Node(object):
     def __str__(self):
         return self.sock_name()
 
-    def is_XDR_enabled(self):
-        config = self.info_get_config("xdr")
+    async def is_XDR_enabled(self):
+        config = await self.info_get_config("xdr")
 
         if isinstance(config, Exception):
             return False
@@ -437,9 +494,9 @@ class Node(object):
             return False
         return feature in self.features
 
-    def has_peers_changed(self):
+    async def has_peers_changed(self):
         try:
-            new_generation = self.info("peers-generation")
+            new_generation = await self.info("peers-generation")
             if self.peers_generation != new_generation:
                 self.peers_generation = new_generation
                 return True
@@ -448,33 +505,31 @@ class Node(object):
         except Exception:
             return True
 
-    def _is_new_histogram_version(self):
-        as_version = self.info_build()
+    async def _is_new_histogram_version(self):
+        as_version = await self.info_build()
         if isinstance(as_version, Exception):
             return False
 
         return common.is_new_histogram_version(as_version)
 
-    def _get_connection(self, ip, port):
+    async def _get_connection(self, ip, port) -> ASSocket:
         sock = None
 
-        with Node.pool_lock:
+        try:
+            while True:
 
-            try:
-                while True:
+                sock = self.socket_pool[port].pop()
 
-                    sock = self.socket_pool[port].pop()
+                if await sock.is_connected():
+                    if not self.ssl_context:
+                        sock.settimeout(self._timeout)
+                    break
 
-                    if sock.is_connected():
-                        if not self.ssl_context:
-                            sock.settimeout(self._timeout)
-                        break
+                await sock.close()
+                sock = None
 
-                    sock.close()
-                    sock = None
-
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         if sock:
             return sock
@@ -490,20 +545,43 @@ class Node(object):
             timeout=self._timeout,
         )
 
-        if sock.connect():
-            if sock.authenticate(self.session_token):
-                return sock
-            elif self.session_token is not None:
-                # login enabled.... might be session_token expired, need to perform login again
-                self.perform_login = True
+        logger.debug("%s:%s created new sock %s", ip, port, id(sock))
 
+        if await sock.connect():
+            try:
+                if await sock.authenticate(self.session_token):
+                    logger.debug("sock auth successful %s", id(sock))
+                    return sock
+            except ASProtocolError as e:
+                logger.debug("sock auth failed %s", id(sock))
+                if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
+                    # A user/pass was provided and security is disabled. This is OK
+                    # and a warning should have been displayed at login
+                    return sock
+                elif (
+                    e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
+                    and self.user
+                ):
+                    # A node likely switched from security disabled to security enable.
+                    # In which case the error is caused by login never being called.
+                    logger.debug("trying to sock login again %s", id(sock))
+                    self.perform_login = True
+                    await self.login()
+                    if await sock.authenticate(self.session_token):
+                        logger.debug("sock auth successful on second try %s", id(sock))
+                        return sock
+
+                await sock.close()
+                raise
+
+        logger.debug("sock connect failed %s", id(sock))
         return None
 
-    def close(self):
+    async def close(self):
         try:
             while True:
                 sock = self.socket_pool[self.port].pop()
-                sock.close()
+                await sock.close()
         except Exception:
             pass
 
@@ -524,36 +602,44 @@ class Node(object):
     # will get that ip to which asadm can't connect. It will create new
     # issues in future process.
 
-    @return_exceptions
-    @util.cached
-    def _info_cinfo(self, command, ip=None, port=None):
-        # TODO: citrusleaf.py does not support passing a timeout default is
-        # 0.5s
+    @async_return_exceptions
+    @util.async_cached
+    async def _info_cinfo(self, command, ip=None, port=None):
         if ip is None:
             ip = self.ip
         if port is None:
             port = self.port
         result = None
 
-        sock = self._get_connection(ip, port)
+        sock = await self._get_connection(ip, port)
         if not sock:
             raise IOError("Error: Could not connect to node %s" % ip)
 
         try:
             if sock:
-                result = sock.info(command)
+                result = await sock.info(command)
                 try:
+                    # TODO: same code is in _admin_cadmin. management of socket_pool should
+                    # be abstracted.
                     if len(self.socket_pool[port]) < self.socket_pool_max_size:
                         sock.settimeout(None)
                         self.socket_pool[port].add(sock)
 
                     else:
-                        sock.close()
+                        await sock.close()
 
-                except Exception:
-                    sock.close()
+                except Exception as e:
+                    await sock.close()
 
             if result != -1 and result is not None:
+                logger.debug(
+                    "%s:%s info cmd '%s' and sock %s returned %s",
+                    self.ip,
+                    self.port,
+                    command,
+                    id(sock),
+                    result,
+                )
                 return result
 
             else:
@@ -561,22 +647,29 @@ class Node(object):
 
         except Exception as ex:
             if sock:
-                sock.close()
+                await sock.close()
+
+            logger.debug(
+                "%s:%s info cmd '%s' and sock %s raised %s for",
+                self.ip,
+                self.port,
+                command,
+                id(sock),
+                ex,
+            )
             raise ex
 
-    @return_exceptions
-    @util.logthis(logger)
-    def info(self, command):
+    async def info(self, command):
         """
         asinfo function equivalent
 
         Arguments:
         command -- the info command to execute on this node
         """
-        return self._info_cinfo(command, self.ip)
+        return await self._info_cinfo(command, self.ip)
 
-    @return_exceptions
-    def info_node(self):
+    @async_return_exceptions
+    async def info_node(self):
         """
         Get this nodes id. asinfo -v "node"
 
@@ -584,10 +677,10 @@ class Node(object):
         string -- this node's id.
         """
 
-        return self.info("node")
+        return await self.info("node")
 
-    @return_exceptions
-    def info_ip_port(self):
+    @async_return_exceptions
+    async def info_ip_port(self):
         """
         Get this nodes ip:port.
 
@@ -600,46 +693,6 @@ class Node(object):
     ###### Services ######
 
     # post 3.10 services
-
-    @return_exceptions
-    def info_peers(self):
-        """
-        Get peers this node knows of that are active
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_helper(self.info("peers-tls-std"))
-
-        return self._info_peers_helper(self.info("peers-clear-std"))
-
-    @return_exceptions
-    def info_peers_alumni(self):
-        """
-        Get peers this node has ever know of
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_helper(self.info("alumni-tls-std"))
-        return self._info_peers_helper(self.info("alumni-clear-std"))
-
-    @return_exceptions
-    def info_peers_alt(self):
-        """
-        Get peers this node knows of that are active alternative addresses
-
-        Returns:
-        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
-        """
-        if self.enable_tls:
-            return self._info_peers_helper(self.info("peers-tls-alt"))
-
-        return self._info_peers_helper(self.info("peers-clear-alt"))
-
-    @return_exceptions
     def _info_peers_helper(self, peers):
         """
         Takes an info peers list response and returns a list.
@@ -706,44 +759,92 @@ class Node(object):
 
         return p_list
 
-    @return_exceptions
-    def get_alumni_peers(self):
-        # info_peers_alumni for server version prior to 4.3.1 gives
-        # only old nodes (which are not part of current cluster), so to get full list we need to
-        # add info_peers
-        alumni_peers = util.Future(self.get_peers).start()
-        peers_alumni = util.Future(self.info_peers_alumni).start()
-        return list(set(alumni_peers.result() + peers_alumni.result()))
+    def _get_info_peers_call(self):
+        if self.enable_tls:
+            return "peers-tls-std"
+        else:
+            return "peers-clear-std"
 
-    @return_exceptions
-    def get_peers(self, all=False):
-        if all:
-            alt = util.Future(self.info_peers_alt).start()
-            std = util.Future(self.info_peers).start()
-            return alt.result() + std.result()
+    @async_return_exceptions
+    async def info_peers(self):
+        """
+        Get peers this node knows of that are active
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        return self._info_peers_helper(await self.info(self._get_info_peers_call()))
+
+    def _get_info_peers_alumni_call(self):
+        if self.enable_tls:
+            return "alumni-tls-std"
+        else:
+            return "alumni-clear-std"
+
+    @async_return_exceptions
+    async def info_peers_alumni(self):
+        """
+        Get peers this node has ever know of
+        Note: info_peers_alumni for server version prior to 4.3.1 gives only old nodes
+        which are not part of current cluster.
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        return self._info_peers_helper(
+            await self.info(self._get_info_peers_alumni_call())
+        )
+
+    def _get_info_peers_alt_call(self):
+        if self.enable_tls:
+            return "peers-tls-alt"
+        else:
+            return "peers-clear-alt"
+
+    @async_return_exceptions
+    async def info_peers_alt(self):
+        """
+        Get peers this node knows of that are active alternative addresses
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        return self._info_peers_helper(await self.info(self._get_info_peers_alt_call()))
+
+    def _get_info_peers_list_calls(self):
+        calls = []
+        # at most 2 calls will be needed
+        if self.consider_alumni:
+            calls.append(self._get_info_peers_alumni_call())
 
         if self.use_services_alt:
-            return self.info_peers_alt()
-
-        return self.info_peers()
-
-    @return_exceptions
-    def info_peers_list(self):
-        if self.consider_alumni:
-            return self.get_alumni_peers()
+            calls.append(self._get_info_peers_alt_call())
         else:
-            return self.get_peers()
+            calls.append(self._get_info_peers_call())
 
-    @return_exceptions
-    def info_peers_flat_list(self):
-        return client_util.flatten(self.info_peers_list())
+        return calls
+
+    def _aggregate_peers(self, results) -> list[str]:
+        results = [self._info_peers_helper(result) for result in results]
+        return list(set().union(*results))
+
+    @async_return_exceptions
+    async def info_peers_list(self) -> list[str]:
+        results = await asyncio.gather(
+            *[self.info(call) for call in self._get_info_peers_list_calls()]
+        )
+        return self._aggregate_peers(results)
+
+    @async_return_exceptions
+    async def info_peers_flat_list(self):
+        return client_util.flatten(await self.info_peers_list())
 
     ###### Services End ######
 
     ###### Service ######
     # post 3.10 services
 
-    @return_exceptions
+    # @return_exceptions
     def _info_service_helper(self, service, delimiter=";"):
         if not service or isinstance(service, Exception):
             return []
@@ -760,51 +861,34 @@ class Node(object):
             for v in s
         ]
 
-    @return_exceptions
-    def info_service_alt(self):
-        """
-        Get service alternate endpoints of this node
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        try:
-            if self.enable_tls:
-                return self._info_service_helper(self.info("service-tls-alt"), ",")
-
-            return self._info_service_helper(self.info("service-clear-alt"), ",")
-        except Exception:
-            return []
-
-    @return_exceptions
-    def info_service(self):
-        """
-        Get service endpoints of this node
-
-        Returns:
-        list -- [(ip,port,tls_name),...]
-        """
-
-        try:
-            if self.enable_tls:
-                return self._info_service_helper(self.info("service-tls-std"), ",")
-
-            return self._info_service_helper(self.info("service-clear-std"), ",")
-        except Exception:
-            return []
-
-    @return_exceptions
-    def info_service_list(self):
+    def _get_service_info_call(self):
         if self.use_services_alt:
-            return self.info_service_alt()
+            if self.enable_tls:
+                return "service-tls-alt"
+            else:
+                return "service-clear-alt"
 
-        return self.info_service()
+        if self.enable_tls:
+            return "service-tls-std"
+
+        return "service-clear-std"
+
+    @async_return_exceptions
+    async def info_service_list(self):
+        """
+        Get service endpoints of this node.  Changes if tls or service-alt is enabled.
+
+        Returns:
+        list -- [(ip,port,tls_name),...]
+        """
+        return self._info_service_helper(
+            await self.info(self._get_service_info_call()), ","
+        )
 
     ###### Service End ######
 
-    @return_exceptions
-    def info_statistics(self):
+    @async_return_exceptions
+    async def info_statistics(self):
         """
         Get statistics for this node. asinfo -v "statistics"
 
@@ -812,10 +896,10 @@ class Node(object):
         dictionary -- statistic name -> value
         """
 
-        return client_util.info_to_dict(self.info("statistics"))
+        return client_util.info_to_dict(await self.info("statistics"))
 
-    @return_exceptions
-    def info_namespaces(self):
+    @async_return_exceptions
+    async def info_namespaces(self):
         """
         Get a list of namespaces for this node. asinfo -v "namespaces"
 
@@ -823,10 +907,10 @@ class Node(object):
         list -- list of namespaces
         """
 
-        return client_util.info_to_list(self.info("namespaces"))
+        return client_util.info_to_list(await self.info("namespaces"))
 
-    @return_exceptions
-    def info_namespace_statistics(self, namespace):
+    @async_return_exceptions
+    async def info_namespace_statistics(self, namespace):
         """
         Get statistics for a namespace.
 
@@ -834,7 +918,7 @@ class Node(object):
         dict -- {stat_name : stat_value, ...}
         """
 
-        ns_stat = client_util.info_to_dict(self.info("namespace/%s" % namespace))
+        ns_stat = client_util.info_to_dict(await self.info("namespace/%s" % namespace))
 
         # Due to new server feature namespace add/remove with rolling restart,
         # there is possibility that different nodes will have different namespaces.
@@ -848,22 +932,22 @@ class Node(object):
             ns_stat = {}
         return ns_stat
 
-    @return_exceptions
-    def info_all_namespace_statistics(self):
-        namespaces = self.info_namespaces()
+    @async_return_exceptions
+    async def info_all_namespace_statistics(self):
+        namespaces = await self.info_namespaces()
 
         if isinstance(namespaces, Exception):
             return namespaces
 
         stats = {}
         for ns in namespaces:
-            stats[ns] = self.info_namespace_statistics(ns)
+            stats[ns] = await self.info_namespace_statistics(ns)
 
         return stats
 
-    @return_exceptions
-    def info_set_statistics(self, namespace, set_):
-        set_stat = self.info("sets/{}/{}".format(namespace, set_))
+    @async_return_exceptions
+    async def info_set_statistics(self, namespace, set_):
+        set_stat = await self.info("sets/{}/{}".format(namespace, set_))
 
         if set_stat[-1] == ";":
             set_stat = client_util.info_colon_to_dict(set_stat[0:-1])
@@ -872,9 +956,9 @@ class Node(object):
 
         return set_stat
 
-    @return_exceptions
-    def info_all_set_statistics(self):
-        stats = self.info("sets")
+    @async_return_exceptions
+    async def info_all_set_statistics(self):
+        stats = await self.info("sets")
         stats = client_util.info_to_list(stats)
         if not stats:
             return {}
@@ -896,9 +980,9 @@ class Node(object):
 
         return sets
 
-    @return_exceptions
-    def info_health_outliers(self):
-        stats = self.info("health-outliers")
+    @async_return_exceptions
+    async def info_health_outliers(self):
+        stats = await self.info("health-outliers")
         stats = client_util.info_to_list(stats)
         if not stats:
             return {}
@@ -911,10 +995,10 @@ class Node(object):
 
         return health_dict
 
-    @return_exceptions
-    def info_best_practices(self):
+    @async_return_exceptions
+    async def info_best_practices(self):
         failed_practices = []
-        resp = self.info("best-practices")
+        resp = await self.info("best-practices")
 
         if isinstance(resp, ASInfoError):
             return resp
@@ -931,9 +1015,9 @@ class Node(object):
 
         return failed_practices
 
-    @return_exceptions
-    def info_bin_statistics(self):
-        stats = client_util.info_to_list(self.info("bins"))
+    @async_return_exceptions
+    async def info_bin_statistics(self):
+        stats = client_util.info_to_list(await self.info("bins"))
         if not stats:
             return {}
         stats.pop()
@@ -948,34 +1032,34 @@ class Node(object):
 
         return stat_dict
 
-    @return_exceptions
-    def info_XDR_statistics(self):
+    @async_return_exceptions
+    async def info_XDR_statistics(self):
         """
         Get statistics for XDR
 
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        build = self.info_build()
+        build = await self.info_build()
 
         # for new aerospike version (>=3.8) with
         # xdr-in-asd stats available on service port
         if version.LooseVersion(build) < version.LooseVersion(
             constants.SERVER_NEW_XDR5_VERSION
         ):
-            return client_util.info_to_dict(self.info("statistics/xdr"))
+            return client_util.info_to_dict(await self.info("statistics/xdr"))
 
-        return self.info_all_dc_statistics()
+        return await self.info_all_dc_statistics()
 
-    @return_exceptions
-    def info_set_config_xdr_create_dc(self, dc):
-        dcs = self.info_dcs()
+    @async_return_exceptions
+    async def info_set_config_xdr_create_dc(self, dc):
+        dcs = await self.info_dcs()
         error_message = "Failed to create XDR datacenter"
 
         if dc in dcs:
             raise ASInfoError(error_message, "DC already exists")
 
-        build = self.info_build()
+        build = await self.info_build()
         req = "set-config:context=xdr;dc={};action=create"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -984,16 +1068,16 @@ class Node(object):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc)
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoError(error_message, resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_xdr_delete_dc(self, dc):
-        dcs = self.info_dcs()
+    @async_return_exceptions
+    async def info_set_config_xdr_delete_dc(self, dc):
+        dcs = await self.info_dcs()
         error_message = "Failed to delete XDR datacenter"
 
         logger.debug("Found dcs: %s", dcs)
@@ -1001,7 +1085,7 @@ class Node(object):
         if dc not in dcs:
             raise ASInfoError(error_message, "DC does not exist")
 
-        build = self.info_build()
+        build = await self.info_build()
         req = "set-config:context=xdr;dc={};action=delete"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1010,18 +1094,18 @@ class Node(object):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc)
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoError(error_message, resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_xdr_add_namespace(self, dc, namespace, rewind=None):
+    @async_return_exceptions
+    async def info_set_config_xdr_add_namespace(self, dc, namespace, rewind=None):
         error_message = "Failed to add namespace to XDR datacenter"
 
-        build = self.info_build()
+        build = await self.info_build()
         req = "set-config:context=xdr;dc={};namespace={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1042,16 +1126,16 @@ class Node(object):
                     )
             req += ";rewind={}".format(rewind)
 
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoError(error_message, resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_xdr_remove_namespace(self, dc, namespace):
-        build = self.info_build()
+    @async_return_exceptions
+    async def info_set_config_xdr_remove_namespace(self, dc, namespace):
+        build = await self.info_build()
         req = "set-config:context=xdr;dc={};namespace={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1060,16 +1144,16 @@ class Node(object):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, namespace)
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to remove namespace from XDR datacenter", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_xdr_add_node(self, dc, node):
-        build = self.info_build()
+    @async_return_exceptions
+    async def info_set_config_xdr_add_node(self, dc, node):
+        build = await self.info_build()
         req = "set-config:context=xdr;dc={};node-address-port={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1078,16 +1162,16 @@ class Node(object):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, node)
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to add node to XDR datacenter", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_xdr_remove_node(self, dc, node):
-        build = self.info_build()
+    @async_return_exceptions
+    async def info_set_config_xdr_remove_node(self, dc, node):
+        build = await self.info_build()
         req = "set-config:context=xdr;dc={};node-address-port={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1096,22 +1180,22 @@ class Node(object):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, node)
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to remove node from XDR datacenter", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_xdr(self, param, value, dc=None, namespace=None):
+    @async_return_exceptions
+    async def info_set_config_xdr(self, param, value, dc=None, namespace=None):
         if namespace and not dc:
             raise ArgumentError("Namespace must be accompanied by a dc.")
 
         req = "set-config:context=xdr;{}={}".format(param, value)
 
         if dc:
-            build = self.info_build()
+            build = await self.info_build()
 
             if version.LooseVersion(build) < version.LooseVersion(
                 constants.SERVER_NEW_XDR5_VERSION
@@ -1123,7 +1207,7 @@ class Node(object):
         if namespace:
             req += ";namespace={}".format(namespace)
 
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             context = ["xdr"]
@@ -1147,10 +1231,10 @@ class Node(object):
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_logs(self):
+    @async_return_exceptions
+    async def info_logs(self):
         id_file_dict = {}
-        ls = client_util.info_to_list(self.info("logs"))
+        ls = client_util.info_to_list(await self.info("logs"))
 
         for pair in ls:
             id, file = pair.split(":")
@@ -1158,9 +1242,9 @@ class Node(object):
 
         return id_file_dict
 
-    @return_exceptions
-    def info_set_config_logging(self, file, param, value):
-        logs = self.info_logs()
+    @async_return_exceptions
+    async def info_set_config_logging(self, file, param, value):
+        logs = await self.info_logs()
         error_message = "Failed to set logging configuration parameter {} to {}"
 
         if file not in logs:
@@ -1169,7 +1253,7 @@ class Node(object):
                 "{} does not exist".format(file),
             )
 
-        resp = self.info("log-set:id={};{}={}".format(logs[file], param, value))
+        resp = await self.info("log-set:id={};{}={}".format(logs[file], param, value))
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoConfigError(
@@ -1183,9 +1267,9 @@ class Node(object):
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_service(self, param, value):
-        resp = self.info("set-config:context=service;{}={}".format(param, value))
+    @async_return_exceptions
+    async def info_set_config_service(self, param, value):
+        resp = await self.info("set-config:context=service;{}={}".format(param, value))
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoConfigError(
@@ -1201,9 +1285,8 @@ class Node(object):
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    @util.logthis(logger)
-    def info_set_config_namespace(
+    @async_return_exceptions
+    async def info_set_config_namespace(
         self, param, value, namespace, set_=None, subcontext=None
     ):
         new_param = param
@@ -1222,7 +1305,7 @@ class Node(object):
         if set_:
             req += ";set={}".format(set_)
 
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             context = ["namespace"]
@@ -1246,10 +1329,12 @@ class Node(object):
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_network(self, param, value, subcontext):
+    @async_return_exceptions
+    async def info_set_config_network(self, param, value, subcontext):
         new_param = ".".join([subcontext, param])
-        resp = self.info("set-config:context=network;{}={}".format(new_param, value))
+        resp = await self.info(
+            "set-config:context=network;{}={}".format(new_param, value)
+        )
 
         if resp != ASINFO_RESPONSE_OK:
             context = ["network"]
@@ -1270,13 +1355,15 @@ class Node(object):
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_set_config_security(self, param, value, subcontext=None):
+    @async_return_exceptions
+    async def info_set_config_security(self, param, value, subcontext=None):
         new_param = param
         if subcontext:
             new_param = ".".join([subcontext, param])
 
-        resp = self.info("set-config:context=security;{}={}".format(new_param, value))
+        resp = await self.info(
+            "set-config:context=security;{}={}".format(new_param, value)
+        )
 
         if resp != ASINFO_RESPONSE_OK:
             context = ["security"]
@@ -1297,8 +1384,30 @@ class Node(object):
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_get_config(self, stanza="", namespace=""):
+    async def xdr_namespace_config_helper(self, xdr_configs, dc, namespace):
+        namespace_config = await self.info(
+            "get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace)
+        )
+        xdr_configs["ns_configs"][dc][namespace] = client_util.info_to_dict(
+            namespace_config
+        )
+
+    async def xdr_config_helper(self, xdr_configs, dc):
+        dc_config = await self.info("get-config:context=xdr;dc=%s" % dc)
+        dc_config = client_util.info_to_dict(dc_config)
+        xdr_configs["ns_configs"][dc] = {}
+        xdr_configs["dc_configs"][dc] = dc_config
+        namespaces = dc_config["namespaces"].split(",")
+
+        await asyncio.gather(
+            *[
+                self.xdr_namespace_config_helper(xdr_configs, dc, namespace)
+                for namespace in namespaces
+            ]
+        )
+
+    @async_return_exceptions
+    async def info_get_config(self, stanza="", namespace=""):
         """
         Get the complete config for a node. This should include the following
         stanzas: Service, Network, XDR, and Namespace
@@ -1307,70 +1416,54 @@ class Node(object):
         Returns:
         dict -- stanza --> [namespace] --> param --> value
         """
-        build = util.Future(self.info_build).start()
         config = {}
 
         if stanza == "namespace":
             if namespace != "":
                 config = {
                     namespace: client_util.info_to_dict(
-                        self.info("get-config:context=namespace;id=%s" % namespace)
+                        await self.info(
+                            "get-config:context=namespace;id=%s" % namespace
+                        )
                     )
                 }
             else:
                 namespace_configs = {}
-                namespaces = self.info_namespaces()
-                for namespace in namespaces:
-                    namespace_config = self.info_get_config("namespace", namespace)
-                    namespace_config = namespace_config[namespace]
-                    namespace_configs[namespace] = namespace_config
-                config = namespace_configs
+                namespaces = await self.info_namespaces()
+                config_list = await client_util.concurrent_map(
+                    lambda ns: self.info_get_config("namespace", ns), namespaces
+                )
 
-        elif stanza == "" or stanza == "service":
-            config = client_util.info_to_dict(self.info("get-config:"))
+                for namespace, namespace_config in zip(namespaces, config_list):
+                    # info_get_config returns a dict that must be unpacked.
+                    namespace_configs[namespace] = namespace_config[namespace]
+                config = namespace_configs
         elif stanza == "xdr" and version.LooseVersion(
-            build.result()
+            await self.info_build()
         ) >= version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION):
             xdr_config = {}
             xdr_config["dc_configs"] = {}
             xdr_config["ns_configs"] = {}
-            xdr_config["xdr_configs"] = client_util.info_to_dict(
-                self.info("get-config:context=xdr")
+            tmp_xdr_config, dcs = await asyncio.gather(
+                self.info("get-config:context=xdr"), self.info_dcs()
             )
+            xdr_config["xdr_configs"] = client_util.info_to_dict(tmp_xdr_config)
 
-            for dc in xdr_config["xdr_configs"]["dcs"].split(","):
-                dc_config = self.info("get-config:context=xdr;dc=%s" % dc)
-                xdr_config["ns_configs"][dc] = {}
-                xdr_config["dc_configs"][dc] = client_util.info_to_dict(dc_config)
-
-                start_namespaces = dc_config.find("namespaces=") + len("namespaces=")
-                end_namespaces = dc_config.find(";", start_namespaces)
-                namespaces = (
-                    ns for ns in dc_config[start_namespaces:end_namespaces].split(",")
-                )
-
-                for namespace in namespaces:
-                    namespace_config = self.info(
-                        "get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace)
-                    )
-                    xdr_config["ns_configs"][dc][namespace] = client_util.info_to_dict(
-                        namespace_config
-                    )
+            await asyncio.gather(
+                *[self.xdr_config_helper(xdr_config, dc) for dc in dcs]
+            )
 
             config = xdr_config
-        elif stanza != "all":
+        elif not stanza:
+            config = client_util.info_to_dict(await self.info("get-config:"))
+        else:
             config = client_util.info_to_dict(
-                self.info("get-config:context=%s" % stanza)
+                await self.info("get-config:context=%s" % stanza)
             )
-        elif stanza == "all":
-            config["namespace"] = self.info_get_config("namespace")
-            config["service"] = self.info_get_config("service")
-            # Server lumps this with service
-            # config["network"] = self.info_get_config("network")
         return config
 
-    @return_exceptions
-    def info_get_originalconfig(self, stanza=""):
+    @async_return_exceptions
+    async def info_get_originalconfig(self, stanza=""):
         """
         Get the original config (from conf file) for a node. This should include the following
         stanzas: Service, Network, XDR, DC, and Namespace
@@ -1454,8 +1547,8 @@ class Node(object):
             total_rows.append(copy.deepcopy(row))
         return total_rows
 
-    @return_exceptions
-    def info_latency(self, back=None, duration=None, slice_tm=None, ns_set=None):
+    @async_return_exceptions
+    async def info_latency(self, back=None, duration=None, slice_tm=None, ns_set=None):
         cmd = "latency:"
         try:
             if back or back == 0:
@@ -1477,7 +1570,7 @@ class Node(object):
         data = {}
 
         try:
-            hist_info = self.info(cmd)
+            hist_info = await self.info(cmd)
         except Exception:
             return data
         tdata = hist_info.split(";")
@@ -1548,8 +1641,8 @@ class Node(object):
                 pass
         return data
 
-    @return_exceptions
-    def info_latencies(
+    @async_return_exceptions
+    async def info_latencies(
         self, buckets=3, exponent_increment=3, verbose=False, ns_set=None
     ):
         """
@@ -1572,7 +1665,7 @@ class Node(object):
                 namespaces = ns_set
             else:
                 try:
-                    namespaces = self.info("namespaces").split(";")
+                    namespaces = (await self.info("namespaces")).split(";")
                 except Exception:
                     return data
             optional_benchmarks = [
@@ -1594,7 +1687,7 @@ class Node(object):
         hist_info = []
         for cmd in cmd_latencies:
             try:
-                hist_info.append(self.info(cmd))
+                hist_info.append(await self.info(cmd))
             except Exception:
                 return data
             if hist_info[-1].startswith("error"):
@@ -1704,19 +1797,21 @@ class Node(object):
                 pass
         return data
 
-    @return_exceptions
-    def info_dcs(self):
+    @async_return_exceptions
+    async def info_dcs(self):
         """
         Get a list of datacenters for this node. asinfo -v "dcs" -p 3004
 
         Returns:
         list -- list of dcs
         """
-        xdr_major_version = int(self.info_build()[0])
+        xdr_major_version = int((await self.info_build())[0])
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
-            xdr_data = client_util.info_to_dict(self.info("get-config:context=xdr"))
+            xdr_data = client_util.info_to_dict(
+                await self.info("get-config:context=xdr")
+            )
 
             if xdr_data is None:
                 return []
@@ -1728,52 +1823,53 @@ class Node(object):
 
             return dcs.split(",")
 
-        return client_util.info_to_list(self.info("dcs"))
+        return client_util.info_to_list(await self.info("dcs"))
 
-    @return_exceptions
-    def info_dc_statistics(self, dc):
+    @async_return_exceptions
+    async def info_dc_statistics(self, dc):
         """
         Get statistics for a datacenter.
 
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        xdr_major_version = int(self.info_build()[0])
+        xdr_major_version = int((await self.info_build())[0])
 
         # If xdr version is < XDR5.0 return output of old asinfo command.
         if xdr_major_version < 5:
-            return client_util.info_to_dict(self.info("dc/%s" % dc))
+            return client_util.info_to_dict(await self.info("dc/%s" % dc))
         else:
             return client_util.info_to_dict(
-                self.info("get-stats:context=xdr;dc=%s" % dc)
+                await self.info("get-stats:context=xdr;dc=%s" % dc)
             )
 
-    @return_exceptions
-    def info_all_dc_statistics(self):
-        dcs = self.info_dcs()
+    @async_return_exceptions
+    async def info_all_dc_statistics(self):
+        dcs = await self.info_dcs()
 
         if isinstance(dcs, Exception):
             return {}
 
-        stats = {}
-        for dc in dcs:
-            stat = self.info_dc_statistics(dc)
+        result_stats = {}
+
+        stat_list = await asyncio.gather(*[self.info_dc_statistics(dc) for dc in dcs])
+
+        for dc, stat in zip(dcs, stat_list):
             if not stat or isinstance(stat, Exception):
                 stat = {}
-            stats[dc] = stat
+            result_stats[dc] = stat
 
-        return stats
+        return result_stats
 
-    @return_exceptions
-    @util.logthis(logger)
-    def info_udf_list(self):
+    @async_return_exceptions
+    async def info_udf_list(self):
         """
         Get list of UDFs stored on the node.
 
         Returns:
         dict -- {<file-name>: {"filename": <file-name>, "hash": <hash>, "type": 'LUA'}, . . .}
         """
-        udf_data = self.info("udf-list")
+        udf_data = await self.info("udf-list")
 
         if not udf_data:
             return {}
@@ -1782,8 +1878,8 @@ class Node(object):
             udf_data, "filename", delimiter2=","
         )
 
-    @return_exceptions
-    def info_udf_put(self, udf_file_name, udf_str, udf_type="LUA"):
+    @async_return_exceptions
+    async def info_udf_put(self, udf_file_name, udf_str, udf_type="LUA"):
         """
         Add a udf module.
 
@@ -1803,21 +1899,21 @@ class Node(object):
             + ";content="
             + content
         )
-        resp = self.info(command)
+        resp = await self.info(command)
 
         if resp.lower() not in {ASINFO_RESPONSE_OK, ""}:
             raise ASInfoError("Failed to add UDF", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_udf_remove(self, udf_file_name):
+    @async_return_exceptions
+    async def info_udf_remove(self, udf_file_name):
         """
         Remove a udf module.
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        existing_udfs = self.info_udf_list()
+        existing_udfs = await self.info_udf_list()
         existing_names = existing_udfs.keys()
 
         # Server does not check if udf exists
@@ -1826,15 +1922,15 @@ class Node(object):
                 "Failed to remove UDF {}".format(udf_file_name), "UDF does not exist"
             )
         command = "udf-remove:filename=" + udf_file_name + ";"
-        resp = self.info(command)
+        resp = await self.info(command)
 
         if resp.lower() not in {ASINFO_RESPONSE_OK, ""}:
             raise ASInfoError("Failed to remove UDF {}".format(udf_file_name), resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_roster_namespace(self, namespace):
+    @async_return_exceptions
+    async def info_roster_namespace(self, namespace):
         """
         Show roster information (for namespaces running in strong consistency mode). A
         list with a single element equal to [] indicates an unset roster.
@@ -1844,7 +1940,7 @@ class Node(object):
         Returns: {"roster": [node_id[@rack_id], ...], "pending_roster": [node_id[@rack_id], ...], "observed_nodes": [node_id[@rack_id], ...]}
         """
         req = "roster:namespace={}".format(namespace)
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp.startswith("ERROR"):
             raise ASInfoError("Could not retrieve roster for namespace", resp)
@@ -1862,8 +1958,8 @@ class Node(object):
 
         return response
 
-    @return_exceptions
-    def info_roster(self, namespace=None):
+    @async_return_exceptions
+    async def info_roster(self, namespace=None):
         """
         Get roster info. A key_value of ['null'] indicates an unset roster.
 
@@ -1871,9 +1967,9 @@ class Node(object):
         dict -- {ns1:{key_name : key_value, ...}, ns2:{key_name : key_value, ...}}
         """
         if namespace is not None:
-            return self.info_roster_namespace(namespace)
+            return await self.info_roster_namespace(namespace)
 
-        roster_data = self.info("roster:")
+        roster_data = await self.info("roster:")
 
         if not roster_data:
             return {}
@@ -1889,15 +1985,15 @@ class Node(object):
 
         return roster_data
 
-    @return_exceptions
-    def info_roster_set(self, namespace, node_ids):
+    @async_return_exceptions
+    async def info_roster_set(self, namespace, node_ids):
         """
         Set the pending roster (for namespaces running in strong consistency mode).
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
         req = "roster-set:namespace={};nodes={}".format(namespace, ",".join(node_ids))
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError(
@@ -1906,8 +2002,8 @@ class Node(object):
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_cluster_stable(
+    @async_return_exceptions
+    async def info_cluster_stable(
         self, cluster_size=None, namespace=None, ignore_migrations=False
     ):
         """
@@ -1930,7 +2026,7 @@ class Node(object):
 
         req += ";".join(args)
 
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if isinstance(resp, Exception):
             raise resp
@@ -1943,8 +2039,8 @@ class Node(object):
 
         return resp
 
-    @return_exceptions
-    def info_racks(self):
+    @async_return_exceptions
+    async def info_racks(self):
         """
         Get rack info.
         If roster_rack is returned then that value is used.  Otherwise use rack value.
@@ -1953,7 +2049,7 @@ class Node(object):
         Returns:
         dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
         """
-        rack_data = self.info("racks:")
+        rack_data = await self.info("racks:")
 
         if not rack_data:
             return {}
@@ -1990,15 +2086,15 @@ class Node(object):
 
         return rack_dict
 
-    @return_exceptions
-    def info_rack_ids(self):
+    @async_return_exceptions
+    async def info_rack_ids(self):
         """
         Get rack ids for this node for each namespace.
 
         Returns:
         dict -- {ns1: rack_id, ns2: rack_id, ...}
         """
-        resp = self.info("rack-ids")
+        resp = await self.info("rack-ids")
         rack_data = {}
 
         if not resp:
@@ -2014,18 +2110,18 @@ class Node(object):
 
         return rack_data
 
-    @return_exceptions
-    def info_dc_get_config(self):
+    @async_return_exceptions
+    async def info_dc_get_config(self):
         """
         Get config for a datacenter.
 
         Returns:
         dict -- {dc_name1:{config_name : config_value, ...}, dc_name2:{config_name : config_value, ...}}
         """
-        configs = self.info("get-dc-config")
+        configs = await self.info("get-dc-config")
 
         if not configs or isinstance(configs, Exception):
-            configs = self.info("get-dc-config:")
+            configs = await self.info("get-dc-config:")
 
         if not configs or isinstance(configs, Exception):
             return {}
@@ -2036,19 +2132,22 @@ class Node(object):
             ignore_field_without_key_value_delimiter=False,
         )
 
-    @return_exceptions
-    def info_XDR_get_config(self):
-        return self.info_get_config(stanza="xdr")
+    @async_return_exceptions
+    async def info_XDR_get_config(self):
+        return await self.info_get_config(stanza="xdr")
 
-    def _collect_histogram_data(
+    async def _collect_histogram_data(
         self, histogram, command, logarithmic=False, raw_output=False
     ):
-        namespaces = self.info_namespaces()
+        namespaces = await self.info_namespaces()
 
         data = {}
-        for namespace in namespaces:
+        datums = await asyncio.gather(
+            *[self.info(command % (namespace, histogram)) for namespace in namespaces]
+        )
+
+        for namespace, datum in zip(namespaces, datums):
             try:
-                datum = self.info(command % (namespace, histogram))
                 if not datum or isinstance(datum, Exception):
                     continue
 
@@ -2067,10 +2166,10 @@ class Node(object):
 
         return data
 
-    @return_exceptions
-    def info_histogram(self, histogram, logarithmic=False, raw_output=False):
+    @async_return_exceptions
+    async def info_histogram(self, histogram, logarithmic=False, raw_output=False):
         if not self.new_histogram_version:
-            return self._collect_histogram_data(
+            return await self._collect_histogram_data(
                 histogram, command="hist-dump:ns=%s;hist=%s", raw_output=raw_output
             )
 
@@ -2079,7 +2178,7 @@ class Node(object):
         if logarithmic:
             if histogram == "objsz":
                 histogram = "object-size"
-            return self._collect_histogram_data(
+            return await self._collect_histogram_data(
                 histogram,
                 command=command,
                 logarithmic=logarithmic,
@@ -2089,20 +2188,20 @@ class Node(object):
         if histogram == "objsz":
             histogram = "object-size-linear"
 
-        return self._collect_histogram_data(
+        return await self._collect_histogram_data(
             histogram, command=command, logarithmic=logarithmic, raw_output=raw_output
         )
 
-    @return_exceptions
-    def info_sindex(self):
+    @async_return_exceptions
+    async def info_sindex(self):
         return [
             client_util.info_to_dict(v, ":")
-            for v in client_util.info_to_list(self.info("sindex"))
+            for v in client_util.info_to_list(await self.info("sindex"))
             if v != ""
         ]
 
-    @return_exceptions
-    def info_sindex_statistics(self, namespace, indexname):
+    @async_return_exceptions
+    async def info_sindex_statistics(self, namespace, indexname):
         """
         Get statistics for a sindex.
 
@@ -2110,11 +2209,11 @@ class Node(object):
         dict -- {stat_name : stat_value, ...}
         """
         return client_util.info_to_dict(
-            self.info("sindex/%s/%s" % (namespace, indexname))
+            await self.info("sindex/%s/%s" % (namespace, indexname))
         )
 
-    @return_exceptions
-    def info_sindex_create(
+    @async_return_exceptions
+    async def info_sindex_create(
         self, index_name, namespace, bin_name, bin_type, index_type=None, set_=None
     ):
         """
@@ -2133,15 +2232,15 @@ class Node(object):
             command += "set={};".format(set_)
 
         command += "indexdata={},{}".format(bin_name, bin_type)
-        resp = self.info(command)
+        resp = await self.info(command)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to create sindex {}".format(index_name), resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_sindex_delete(self, index_name, namespace, set_=None):
+    @async_return_exceptions
+    async def info_sindex_delete(self, index_name, namespace, set_=None):
         """
         Delete a secondary index. set_ must be provided if sindex is created on a set.
 
@@ -2156,29 +2255,29 @@ class Node(object):
                 namespace, set_, index_name
             )
 
-        resp = self.info(command)
+        resp = await self.info(command)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to delete sindex {}".format(index_name), resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_build(self):
+    @async_return_exceptions
+    async def info_build(self):
         """
         Get Build Version
 
         Returns:
         string -- build version
         """
-        return self.info("build")
+        return await self.info("build")
 
-    def _use_new_truncate_command(self):
+    async def _use_new_truncate_command(self):
         """
         A new truncate-namespace and truncate-namespace-undo was added to some
         4.3.x, 4.4.x, and 4.5.x but not all
         """
-        build = self.info_build()
+        build = await self.info_build()
 
         for version_ in constants.SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS:
             if version_[1] is not None:
@@ -2192,8 +2291,8 @@ class Node(object):
 
         return False
 
-    @return_exceptions
-    def info_truncate(self, namespace, set_=None, lut=None):
+    @async_return_exceptions
+    async def info_truncate(self, namespace, set_=None, lut=None):
         """
         Truncate a namespace or set. If namespace and set are provided a set will be
         truncated. Deletes every record in the namespace/set whose last update time (lut)
@@ -2211,7 +2310,7 @@ class Node(object):
             )
         else:
             error_message = "Failed to truncate namespace {}".format(namespace)
-            if self._use_new_truncate_command():
+            if await self._use_new_truncate_command():
                 req = "truncate-namespace:namespace={}".format(namespace)
             else:
                 req = "truncate:namespace={}".format(namespace)
@@ -2219,15 +2318,15 @@ class Node(object):
         if lut is not None:
             req += ";lut={}".format(lut)
 
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError(error_message, resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_truncate_undo(self, namespace, set_=None):
+    @async_return_exceptions
+    async def info_truncate_undo(self, namespace, set_=None):
         """
         Undo truncation of a namespace or set.
 
@@ -2245,34 +2344,34 @@ class Node(object):
             error_message = "Failed to undo truncation of namespace {}".format(
                 namespace
             )
-            if self._use_new_truncate_command():
+            if await self._use_new_truncate_command():
                 req = "truncate-namespace-undo:namespace={}".format(namespace)
             else:
                 req = "truncate-undo:namespace={}".format(namespace)
 
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError(error_message, resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_recluster(self):
+    @async_return_exceptions
+    async def info_recluster(self):
         """
         Force the cluster to advance the cluster key and rebalance.
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = self.info("recluster:")
+        resp = await self.info("recluster:")
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to recluster", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_quiesce(self):
+    @async_return_exceptions
+    async def info_quiesce(self):
         """
         Cause a node to avoid participating as a replica after the next recluster event.
         Quiescing and reclustering before removing a node from the cluster prevents
@@ -2280,21 +2379,21 @@ class Node(object):
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = self.info("quiesce:")
+        resp = await self.info("quiesce:")
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to quiesce", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_quiesce_undo(self):
+    @async_return_exceptions
+    async def info_quiesce_undo(self):
         """
         Revert the effects of the quiesce on the next recluster event.
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = self.info("quiesce-undo:")
+        resp = await self.info("quiesce-undo:")
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to undo quiesce", resp)
@@ -2303,15 +2402,15 @@ class Node(object):
 
     # TODO: Deprecated but still needed to support reading old job type removed in
     # server 5.7.  Should be stripped out at some point.
-    @return_exceptions
-    def info_jobs(self, module):
+    @async_return_exceptions
+    async def info_jobs(self, module):
         """
         Get all jobs from a particular module. Exceptable values are scan, query, and
         sindex-builder.
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}},
         """
-        resp = self.info("jobs:module={}".format(module))
+        resp = await self.info("jobs:module={}".format(module))
 
         if resp.startswith("ERROR"):
             return {}
@@ -2320,19 +2419,19 @@ class Node(object):
 
         return jobs
 
-    @return_exceptions
-    def _jobs_helper(self, old_req, new_req):
+    @async_return_exceptions
+    async def _jobs_helper(self, old_req, new_req):
         req = None
 
-        if self.is_feature_present("query_show"):
+        if self.is_feature_present("query-show"):
             req = new_req
         else:
             req = old_req
 
-        return self.info(req)
+        return await self.info(req)
 
-    @return_exceptions
-    def info_query_show(self):
+    @async_return_exceptions
+    async def info_query_show(self):
         """
         Get all query jobs. Calls "query-show" if supported (5.7).  Calls "jobs" if not.
 
@@ -2341,13 +2440,13 @@ class Node(object):
         old_req = "jobs:module=query"
         new_req = "query-show"
 
-        resp = self._jobs_helper(old_req, new_req)
+        resp = await self._jobs_helper(old_req, new_req)
         resp = client_util.info_to_dict_multi_level(resp, "trid")
 
         return resp
 
-    @return_exceptions
-    def info_scan_show(self):
+    @async_return_exceptions
+    async def info_scan_show(self):
         """
         Get all scan jobs. Calls "scan-show" if supported (5.7).  Calls "jobs" if not.
 
@@ -2356,15 +2455,15 @@ class Node(object):
         old_req = "jobs:module=scan"
         new_req = "scan-show"
 
-        resp = self._jobs_helper(old_req, new_req)
+        resp = await self._jobs_helper(old_req, new_req)
         resp = client_util.info_to_dict_multi_level(resp, "trid")
 
         return resp
 
     # TODO: Deprecated but still needed to support killing old job types that have been
     # removed in server 5.7. Should be stripped out at some point.
-    @return_exceptions
-    def info_jobs_kill(self, module, trid):
+    @async_return_exceptions
+    async def info_jobs_kill(self, module, trid):
         """
         Kill a job.
 
@@ -2372,17 +2471,17 @@ class Node(object):
         """
         req = "jobs:module={};cmd=kill-job;trid={}".format(module, trid)
 
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to kill job", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_scan_abort(self, trid):
+    @async_return_exceptions
+    async def info_scan_abort(self, trid):
         """
-        Kill a scan job. Calls "scan-abort" if "s-show" features exists. Otherwise,
+        Kill a scan job. Calls "scan-abort" if "scan-show" features exists. Otherwise,
         calls "jobs".  "scan-abort" was supported prior but was not documented until
         server 5.7.
 
@@ -2391,15 +2490,15 @@ class Node(object):
         old_req = "jobs:module=scan;cmd=kill-job;trid={}".format(trid)
         new_req = "scan-abort:trid={}".format(trid)
 
-        resp = self._jobs_helper(old_req, new_req)
+        resp = await self._jobs_helper(old_req, new_req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to kill job", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def info_query_abort(self, trid):
+    @async_return_exceptions
+    async def info_query_abort(self, trid):
         """
         Kill a query job. Calls "query-abort" if "query-show" features exists. Otherwise,
         calls "jobs". Unlike "scan-abort", "query-abort" was not supported until 5.7.
@@ -2409,88 +2508,51 @@ class Node(object):
         old_req = "jobs:module=query;cmd=kill-job;trid={}".format(trid)
         new_req = "query-abort:trid={}".format(trid)
 
-        resp = self._jobs_helper(old_req, new_req)
+        resp = await self._jobs_helper(old_req, new_req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to kill job", resp)
 
         return ASINFO_RESPONSE_OK
 
-    @return_exceptions
-    def _async_abort_all_helper(self, show_func, abort_func):
-        """
-        Helper to kill all jobs from a certain module.
-        """
-        queries = show_func()
-
-        if isinstance(queries, ASInfoError):
-            raise queries
-
-        trids = [
-            trid for trid in queries.keys() if "done" not in queries[trid]["status"]
-        ]
-        responses = []
-        abort_count = 0
-
-        if not trids:
-            return 0
-
-        # returns generator
-        responses = client_util.concurrent_map(abort_func, trids)
-
-        for resp in responses:
-            if resp != ASINFO_RESPONSE_OK:
-                raise ASInfoError(resp)
-            abort_count += 1
-
-        return abort_count
-
-    # TODO: Deprecated but still needed to support killing old job types that have been
-    # removed in server 5.7. Should be stripped out at some point.
-    @return_exceptions
-    def info_jobs_kill_all(self, module):
-        """
-        Not used since "scan-abort-all" is supported since 3.5.
-        This will be needed if we add "query-abort-all" in a later version to support
-        backwards compatibility
-        """
-
-        def show_func():
-            return self.info_jobs(module)
-
-        def abort_func(trid):
-            return self.info_jobs_kill(module, trid)
-
-        abort_count = self._async_abort_all_helper(show_func, abort_func)
-
-        if isinstance(abort_count, ASInfoError):
-            raise abort_count
-
-        return "ok - number of {}s killed: {}".format(module, abort_count)
-
-    @return_exceptions
-    def info_scan_abort_all(self):
+    @async_return_exceptions
+    async def info_scan_abort_all(self):
         """
         Abort all scans.  Supported since 3.5 but only documented as of 5.7 :)
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = self.info("scan-abort-all:")
+        resp = await self.info("scan-abort-all:")
 
-        if resp.startswith("OK - number of scans killed:"):
+        if resp.startswith("OK - number of"):
             return resp.lower()
 
         raise ASInfoError("Failed to abort all scans", resp)
 
-    @return_exceptions
-    def info_revive(self, namespace):
+    @async_return_exceptions
+    async def info_query_abort_all(self):
+        """
+        Abort all queries.  Added in 6.0 when scans were unified into queries.
+
+        Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
+        """
+        resp = await self.info("query-abort-all:")
+
+        # TODO: Check actual response
+        if resp.startswith("OK - number of"):
+            return resp.lower()
+
+        raise ASInfoError("Failed to abort all queries", resp)
+
+    @async_return_exceptions
+    async def info_revive(self, namespace):
         """
         Used to revive dead partitions in a namespace running in strong consistency mode.
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
         req = "revive:namespace={}".format(namespace)
-        resp = self.info(req)
+        resp = await self.info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoError("Failed to revive", resp)
@@ -2503,38 +2565,37 @@ class Node(object):
     #
     ############################################################################
 
-    @util.logthis(logger)
-    def _admin_cadmin(self, admin_func, args, ip, port=None):
+    async def _admin_cadmin(self, admin_func, args, ip, port=None):
         if port is None:
             port = self.port
 
         result = None
-        sock = self._get_connection(ip, port)
+        sock = await self._get_connection(ip, port)
 
         if not sock:
             raise IOError("Error: Could not connect to node %s" % ip)
 
         try:
-            result = admin_func(sock, *args)
+            result = await admin_func(sock, *args)
 
             # Either restore the socket in the pool or close it if it is full.
             if len(self.socket_pool[port]) < self.socket_pool_max_size:
                 sock.settimeout(None)
                 self.socket_pool[port].add(sock)
             else:
-                sock.close()
+                await sock.close()
 
         except Exception:
             if sock:
-                sock.close()
+                await sock.close()
 
             # Re-raise the last exception
             raise
 
         return result
 
-    @return_exceptions
-    def admin_create_user(self, user, password, roles):
+    @async_return_exceptions
+    async def admin_create_user(self, user, password, roles):
         """
         Create user.
         user: string
@@ -2543,32 +2604,34 @@ class Node(object):
 
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.create_user, (user, password, roles), self.ip
         )
 
-    @return_exceptions
-    def admin_delete_user(self, user):
+    @async_return_exceptions
+    async def admin_delete_user(self, user):
         """
         Delete user.
         user: string
 
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.delete_user, [user], self.ip)
+        return await self._admin_cadmin(ASSocket.delete_user, [user], self.ip)
 
-    @return_exceptions
-    def admin_set_password(self, user, password):
+    @async_return_exceptions
+    async def admin_set_password(self, user, password):
         """
         Set user password.
         user: string
         password: string (un-hashed)
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.set_password, (user, password), self.ip)
+        return await self._admin_cadmin(
+            ASSocket.set_password, (user, password), self.ip
+        )
 
-    @return_exceptions
-    def admin_change_password(self, user, old_password, new_password):
+    @async_return_exceptions
+    async def admin_change_password(self, user, old_password, new_password):
         """
         Change user password.
         user: string
@@ -2576,51 +2639,51 @@ class Node(object):
         new_password: string (un-hashed)
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.change_password, (user, old_password, new_password), self.ip
         )
 
-    @return_exceptions
-    def admin_grant_roles(self, user, roles):
+    @async_return_exceptions
+    async def admin_grant_roles(self, user, roles):
         """
         Grant roles to user.
         user: string
         roles: list[string]
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.grant_roles, (user, roles), self.ip)
+        return await self._admin_cadmin(ASSocket.grant_roles, (user, roles), self.ip)
 
-    @return_exceptions
-    def admin_revoke_roles(self, user, roles):
+    @async_return_exceptions
+    async def admin_revoke_roles(self, user, roles):
         """
         Remove roles from user.
         user: string
         roles: list[string]
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.revoke_roles, (user, roles), self.ip)
+        return await self._admin_cadmin(ASSocket.revoke_roles, (user, roles), self.ip)
 
-    @return_exceptions
-    def admin_query_users(self):
+    @async_return_exceptions
+    async def admin_query_users(self):
         """
         Query users.
         Returns: {username1: [role1, role2, . . .], username2: [. . .],  . . .},
         ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.query_users, (), self.ip)
+        return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
 
-    @return_exceptions
-    def admin_query_user(self, user):
+    @async_return_exceptions
+    async def admin_query_user(self, user):
         """
         Query a user.
         user: string
         Returns: {username: [role1, role2, . . .]},
         ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.query_user, [user], self.ip)
+        return await self._admin_cadmin(ASSocket.query_user, [user], self.ip)
 
-    @return_exceptions
-    def admin_create_role(
+    @async_return_exceptions
+    async def admin_create_role(
         self, role, privileges, whitelist=None, read_quota=None, write_quota=None
     ):
         """
@@ -2630,66 +2693,70 @@ class Node(object):
         whitelist: list[string] (optional)
         read_quota: (optional)
         write_quota: (optional)
-        Returns: None on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.create_role,
             (role, privileges, whitelist, read_quota, write_quota),
             self.ip,
         )
 
-    @return_exceptions
-    def admin_delete_role(self, role):
+    @async_return_exceptions
+    async def admin_delete_role(self, role):
         """
         Delete role.
         role: string
-        Returns: 0 on success, ASProtocolError on fail
+        Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
+        return await self._admin_cadmin(ASSocket.delete_role, [role], self.ip)
 
-    @return_exceptions
-    def admin_add_privileges(self, role, privileges):
+    @async_return_exceptions
+    async def admin_add_privileges(self, role, privileges):
         """
         Add privileges to role.
         role: string
         privileges: list[string]
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.add_privileges, (role, privileges), self.ip)
+        return await self._admin_cadmin(
+            ASSocket.add_privileges, (role, privileges), self.ip
+        )
 
-    @return_exceptions
-    def admin_delete_privileges(self, role, privileges):
+    @async_return_exceptions
+    async def admin_delete_privileges(self, role, privileges):
         """
         Delete privileges from role.
         role: string
         privileges: list[string]
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.delete_privileges, (role, privileges), self.ip
         )
 
-    @return_exceptions
-    def admin_set_whitelist(self, role, whitelist):
+    @async_return_exceptions
+    async def admin_set_whitelist(self, role, whitelist):
         """
         Set whitelist for a role.
         role: string
         whitelist: list[string]
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.set_whitelist, (role, whitelist), self.ip)
+        return await self._admin_cadmin(
+            ASSocket.set_whitelist, (role, whitelist), self.ip
+        )
 
-    @return_exceptions
-    def admin_delete_whitelist(self, role):
+    @async_return_exceptions
+    async def admin_delete_whitelist(self, role):
         """
         Delete whitelist for a role.
         role: string
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.delete_whitelist, [role], self.ip)
+        return await self._admin_cadmin(ASSocket.delete_whitelist, [role], self.ip)
 
-    @return_exceptions
-    def admin_set_quotas(self, role, read_quota=None, write_quota=None):
+    @async_return_exceptions
+    async def admin_set_quotas(self, role, read_quota=None, write_quota=None):
         """
         Set rate limit for a role. Either read_quota or write_quota should be
         provided but will be enforced elsewhere.
@@ -2698,12 +2765,12 @@ class Node(object):
         write_quota: int or string that represents and int
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.set_quotas, (role, read_quota, write_quota), self.ip
         )
 
-    @return_exceptions
-    def admin_delete_quotas(self, role, read_quota=False, write_quota=False):
+    @async_return_exceptions
+    async def admin_delete_quotas(self, role, read_quota=False, write_quota=False):
         """
         NOT IN USE
         Delete rate limit for a role. Either read_quota or write_quota should be
@@ -2713,12 +2780,12 @@ class Node(object):
         write_quota: True to delete, False to leave alone
         Returns: None on success, ASProtocolError on fail
         """
-        self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.delete_quotas, (role, read_quota, write_quota), self.ip
         )
 
-    @return_exceptions
-    def admin_query_roles(self):
+    @async_return_exceptions
+    async def admin_query_roles(self):
         """
         Query all roles.
         Returns: { role1:
@@ -2730,10 +2797,10 @@ class Node(object):
                  },
         ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.query_roles, (), self.ip)
+        return await self._admin_cadmin(ASSocket.query_roles, (), self.ip)
 
-    @return_exceptions
-    def admin_query_role(self, role):
+    @async_return_exceptions
+    async def admin_query_role(self, role):
         """
         Query a role.
         role: string
@@ -2743,7 +2810,7 @@ class Node(object):
                  },
         ASProtocolError on fail
         """
-        return self._admin_cadmin(ASSocket.query_role, [role], self.ip)
+        return await self._admin_cadmin(ASSocket.query_role, [role], self.ip)
 
     ############################################################################
     #
@@ -3056,6 +3123,7 @@ class Node(object):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
+        # TODO make async
         logger.debug(
             (
                 "%s.info_system_statistics default_user=%s default_pws=%s"

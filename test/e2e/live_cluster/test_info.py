@@ -110,7 +110,6 @@ class TestInfo(unittest.TestCase):
             "Bins",
             "Bin Type",
             "State",
-            "Keys",
             "Entries",
             "Memory Used",
             "Queries Requests",

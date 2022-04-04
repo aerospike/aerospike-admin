@@ -91,13 +91,13 @@ class RowRSheet(BaseRSheetCLI):
             n_repeats = 1
             need_column = True
 
-            for entry_ix, column_widths in enumerate(column_widths):
-                if need_column or cur_pos + column_widths < terminal_width:
-                    cur_pos += column_widths
+            for entry_ix, column_width in enumerate(column_widths):
+                if need_column or cur_pos + column_width < terminal_width:
+                    cur_pos += column_width
                     need_column = False
                 else:
                     title_indices.add(entry_ix)
-                    cur_pos = title_incr + column_widths
+                    cur_pos = title_incr + column_width
                     n_repeats += 1
 
             if has_aggregate:

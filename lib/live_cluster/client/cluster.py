@@ -12,40 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import copy
 import random
 import re
-import threading
 import logging
+import inspect
 from time import time
 from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
+from lib.live_cluster.client.types import Addr_Port_TLSName
+from lib.utils.async_object import AsyncObject
 
 from lib.utils.lookup_dict import LookupDict
-from lib.utils import util, constants
+from lib.utils import logger_debug, util, constants
 
 from . import client_util
 from .node import Node
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
-
+logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
 
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
 
 
-class Cluster(object):
-    # Kinda like a singleton... All instantiated classes will share the same
-    # state.
-    cluster_state = {}
+class Cluster(AsyncObject):
     use_services_alumni = False
     use_services_alt = False
-    crawl_lock = threading.Lock()
     logger = logging.getLogger("asadm")
 
-    def __init__(
+    async def __init__(
         self,
-        seed_nodes,
+        seed_nodes: Addr_Port_TLSName,
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,
@@ -53,15 +50,13 @@ class Cluster(object):
         use_services_alt=False,
         ssl_context=None,
         only_connect_seed=False,
-        timeout=5,
+        timeout=1,
     ):
         """
         Want to be able to support multiple nodes on one box (for testing)
         seed_nodes should be the form (address,port,tls) address can be fqdn or ip.
         """
-        self.__dict__ = self.cluster_state
-        if self.cluster_state != {}:
-            return
+        Cluster.crawl_lock = asyncio.Lock()
 
         self._timeout = timeout
 
@@ -69,11 +64,11 @@ class Cluster(object):
         self.password = password
         self.auth_mode = auth_mode
 
-        Cluster.use_services_alumni = use_services_alumni
-        Cluster.use_services_alt = use_services_alt
+        self.use_services_alumni = use_services_alumni
+        self.use_services_alt = use_services_alt
 
         # self.nodes is a dict from Node ID -> Node objects
-        self.nodes = {}
+        self.nodes: dict[str, Node] = {}
 
         # to avoid multiple entries of endpoints for same server we are keeping
         # this pointers
@@ -83,14 +78,14 @@ class Cluster(object):
         # and (ip, port) -> Node, and node.node_id -> Node
         self.node_lookup = LookupDict(LookupDict.PREFIX_MODE)
 
-        self._seed_nodes = set(seed_nodes)
-        self._live_nodes = set()
+        self._seed_nodes: set[Addr_Port_TLSName] = set(seed_nodes)
+        self._live_nodes: set[Addr_Port_TLSName] = set()
         self.ssl_context = ssl_context
 
         # crawl the cluster search for nodes in addition to the seed nodes.
         self.last_cluster_refresh_time = 0
         self.only_connect_seed = only_connect_seed
-        self._refresh_cluster()
+        await self._refresh_cluster()
 
         # to avoid same label (NODE column) for multiple nodes we need to keep track
         # of available nodes name, if names are same then we can use ip:port
@@ -193,7 +188,8 @@ class Cluster(object):
             self.logger.error(e)
             return ""
 
-    def get_live_nodes(self):
+    def get_live_nodes(self) -> set[Addr_Port_TLSName]:
+        # TODO: why not return a reference to Node objects instead?
         return self._live_nodes
 
     def get_visibility_error_nodes(self):
@@ -214,7 +210,7 @@ class Cluster(object):
 
         return cluster_visibility_error_nodes
 
-    def get_down_nodes(self):
+    async def get_down_nodes(self):
         cluster_down_nodes = []
         for k in self.nodes.keys():
             try:
@@ -224,11 +220,13 @@ class Cluster(object):
                     # nodes which can't detect online nodes
                     continue
 
-                alumni_peers = util.Future(node.get_alumni_peers).start()
-                peers = util.Future(node.get_peers, all=True).start()
-                alumni_peers = client_util.flatten(alumni_peers.result())
-                peers = client_util.flatten(peers.result())
-                not_visible = set(alumni_peers) - set(peers)
+                alumni_peers, peers, alt_peers = await asyncio.gather(
+                    node.info_peers_alumni(), node.info_peers(), node.info_peers_alt()
+                )
+                alumni_peers = client_util.flatten(alumni_peers)
+                peers = client_util.flatten(peers)
+                alt_peers = client_util.flatten(alt_peers)
+                not_visible = set(alumni_peers) - set(peers) - set(alt_peers)
 
                 if len(not_visible) >= 1:
                     for n in not_visible:
@@ -261,14 +259,14 @@ class Cluster(object):
             except Exception:
                 pass
 
-    def find_new_nodes(self):
+    async def find_new_nodes(self):
         added_endpoints = []
         peers = []
         aliases = {}
         if self.nodes:
             for node_key in list(self.nodes.keys()):
                 node = self.nodes[node_key]
-                node.refresh_connection()
+                await node.refresh_connection()
                 if node.key != node_key:
                     # change in service list
                     self.nodes.pop(node_key)
@@ -295,13 +293,13 @@ class Cluster(object):
 
         return nodes_to_add
 
-    def _crawl(self):
+    async def _crawl(self):
         """
         Find all the nodes in the cluster and add them to self.nodes.
         """
-        nodes_to_add = self.find_new_nodes()
+        nodes_to_add = await self.find_new_nodes()
 
-        logger.debug("Nodes to add to cluster: %s", str(nodes_to_add))
+        logger.debug("Nodes to add to cluster: %s", nodes_to_add)
 
         if not nodes_to_add or len(nodes_to_add) == 0:
             return
@@ -312,31 +310,46 @@ class Cluster(object):
 
             while unvisited - visited:
                 l_unvisited = list(unvisited)
-                nodes = client_util.concurrent_map(self._register_node, l_unvisited)
+                logger.debug("Register nodes in cluster: %s", l_unvisited)
+                nodes = await client_util.concurrent_map(
+                    self._register_node, l_unvisited
+                )
                 live_nodes = [
                     node
                     for node in nodes
                     if (node is not None and node.alive and node not in visited)
                 ]
+
+                # In the LB case, the LB seed node will be in unvisited but the actual AS node
+                # will be in "nodes".  This ensures we don't visit the same node twice.
+                visited |= set(
+                    [
+                        (node.ip, node.port, node.tls_name)
+                        for node in nodes
+                        if node is not None
+                    ]
+                )
                 visited |= unvisited
                 unvisited.clear()
 
                 if not self.only_connect_seed:
-                    services_list = client_util.concurrent_map(
-                        self._get_services, live_nodes
-                    )
-                    for node, services in zip(live_nodes, services_list):
-                        if isinstance(services, Exception):
+                    visted_nodes_peers = map(self._get_peers, live_nodes)
+
+                    for node, peers in zip(live_nodes, visted_nodes_peers):
+                        if isinstance(peers, Exception):
                             continue
 
-                        for service in services:
-                            # service can be a list of tuples. Most likely just
+                        for peer in peers:
+                            # peer can be a list of tuples. Most likely just
                             # as single tuple though.
-                            for s in service:
+                            for s in peer:
                                 all_services.add(s)
 
                         all_services.add((node.ip, node.port, node.tls_name))
+
                 unvisited = all_services - visited
+                logger.debug("Peers to add to cluster: %s", unvisited)
+
             self._refresh_node_liveliness()
         except Exception:
             pass
@@ -367,7 +380,7 @@ class Cluster(object):
         if node.alive:
             self.node_lookup[node.node_id] = node
 
-    def get_node(self, node):
+    def get_node(self, node) -> list[Node]:
         """
         node: str, either a nodes ip, id, fqdn, or a prefix of them.
         If ends with '*' then do a prefix match which can return multiple nodes.
@@ -426,20 +439,20 @@ class Cluster(object):
 
         return use_nodes
 
-    def _register_node(self, addr_port_tls):
+    async def _register_node(self, addr_port_tls):
         if not addr_port_tls:
             return None
         if not isinstance(addr_port_tls, tuple):
             return None
         if not isinstance(addr_port_tls[0], tuple):
-            return self._create_node(addr_port_tls, force=True)
+            return await self._create_node(addr_port_tls, force=True)
 
         new_node = None
         for i, a_p_t in enumerate(addr_port_tls):
             if i == len(addr_port_tls) - 1:
-                new_node = self._create_node(a_p_t, force=True)
+                new_node = await self._create_node(a_p_t, force=True)
             else:
-                new_node = self._create_node(a_p_t)
+                new_node = await self._create_node(a_p_t)
             if not new_node:
                 continue
             else:
@@ -463,7 +476,7 @@ class Cluster(object):
             pass
         return None
 
-    def _create_node(self, addr_port_tls, force=False):
+    async def _create_node(self, addr_port_tls, force=False):
         """
         Instantiate and return a new node
 
@@ -500,7 +513,7 @@ class Cluster(object):
                 # Will create node again
 
             # if not existing:
-            new_node = Node(
+            new_node = await Node(
                 addr,
                 port,
                 tls_name=tls_name,
@@ -508,16 +521,10 @@ class Cluster(object):
                 user=self.user,
                 password=self.password,
                 auth_mode=self.auth_mode,
-                consider_alumni=Cluster.use_services_alumni,
-                use_services_alt=Cluster.use_services_alt,
+                consider_alumni=self.use_services_alumni,
+                use_services_alt=self.use_services_alt,
                 ssl_context=self.ssl_context,
             )
-
-            # If a username and password is provided but security is disabled a nodes
-            # user will be set to None to disable login/authentication. Set cluster.user
-            # to do the same for future nodes.
-            if self.user is not None and new_node.user is None:
-                self.user = None
 
             if not new_node:
                 return new_node
@@ -536,7 +543,7 @@ class Cluster(object):
         return None
 
     @staticmethod
-    def _get_services(node):
+    def _get_peers(node):
         """
         Given a node object return its services list / peers list
         """
@@ -550,45 +557,78 @@ class Cluster(object):
             return True
         return False
 
-    def _refresh_cluster(self):
-        with Cluster.crawl_lock:
+    async def _refresh_cluster(self):
+        async with Cluster.crawl_lock:
             try:
                 if self.need_to_refresh_cluster():
-                    self._crawl()
+                    await self._crawl()
                     self.last_cluster_refresh_time = time()
-            except Exception as e:
-                print(e)
-                raise e
+            except Exception:
+                raise
 
-    def call_node_method(self, nodes, method_name, *args, **kwargs):
+        return
+
+    async def call_node_method_async(self, nodes, method_name, *args, **kwargs):
         """
         Run a particular method command across a set of nodes
         nodes is a list of nodes to to run the command against.
         if nodes is None then we run on all nodes.
         """
         if self.need_to_refresh_cluster():
-            self._refresh_cluster()
+            await self._refresh_cluster()
 
         use_nodes = self.get_nodes(nodes)
 
         if len(use_nodes) == 0:
             raise IOError("Unable to find any Aerospike nodes")
+
+        async def key_to_method(node):
+            node_result = getattr(node, method_name)(*args, **kwargs)
+
+            if inspect.iscoroutine(node_result):
+                return (node.key, await node_result)
+
+            return (node.key, node_result)
+
         return dict(
-            client_util.concurrent_map(
-                lambda node: (node.key, getattr(node, method_name)(*args, **kwargs)),
+            await client_util.concurrent_map(
+                key_to_method,
                 use_nodes,
             )
         )
 
-    def is_XDR_enabled(self, nodes="all"):
-        return self.call_node_method(nodes, "is_XDR_enabled")
+    def call_node_method(self, nodes, method_name, *args, **kwargs):
+        """
+        Run a particular method command across a set of nodes.
+        "nodes" is a list of nodes to to run the command against.
+        if nodes is None then we run on all nodes.
+        """
+        use_nodes = self.get_nodes(nodes)
 
-    def is_feature_present(self, feature, nodes="all"):
-        return self.call_node_method(nodes, "is_feature_present", feature)
+        if len(use_nodes) == 0:
+            raise IOError("Unable to find any Aerospike nodes")
 
-    def get_IP_to_node_map(self):
+        def key_to_method(node):
+            node_result = getattr(node, method_name)(*args, **kwargs)
+
+            return (node.key, node_result)
+
+        return dict(
+            map(
+                key_to_method,
+                use_nodes,
+            )
+        )
+
+    async def is_XDR_enabled(self, nodes="all"):
+        return await self.call_node_method_async(nodes, "is_XDR_enabled")
+
+    async def is_feature_present(self, feature, nodes="all"):
+        return await self.call_node_method_async(nodes, "is_feature_present", feature)
+
+    async def get_IP_to_node_map(self):
         if self.need_to_refresh_cluster():
-            self._refresh_cluster()
+            await self._refresh_cluster()
         node_map = {}
         for a in self.aliases.keys():
             try:
@@ -597,9 +637,9 @@ class Cluster(object):
                 pass
         return node_map
 
-    def get_node_to_IP_map(self):
+    async def get_node_to_IP_map(self):
         if self.need_to_refresh_cluster():
-            self._refresh_cluster()
+            await self._refresh_cluster()
         ip_map = {}
         for addr in self.aliases.keys():
             try:
@@ -617,27 +657,48 @@ class Cluster(object):
         return ip_map
 
     def __getattr__(self, name):
-        regex = re.compile("^info.*$|^admin.*$|^config.*$")
-        if regex.match(name):
+        regex_async = re.compile("^info.*$|^admin.*$")
+        regex_sync = re.compile("^config.*$")
 
-            def info_func(*args, **kwargs):
+        if regex_async.match(name):
+
+            async def call_nodes(*args, **kwargs):
                 if "nodes" not in kwargs:
                     nodes = "all"
                 else:
                     nodes = kwargs["nodes"]
                     del kwargs["nodes"]
 
-                return self.call_node_method(nodes, name, *args, **kwargs)
+                result = self.call_node_method_async(nodes, name, *args, **kwargs)
 
-            return info_func
+                if inspect.iscoroutine(result):
+                    result = await result
+
+                return result
+
+            return call_nodes
+        elif regex_sync.match(name):
+
+            def call_nodes(*args, **kwargs):
+                if "nodes" not in kwargs:
+                    nodes = "all"
+                else:
+                    nodes = kwargs["nodes"]
+                    del kwargs["nodes"]
+
+                result = self.call_node_method(nodes, name, *args, **kwargs)
+
+                return result
+
+            return call_nodes
         else:
             raise AttributeError("Cluster has no attribute '%s'" % (name))
 
-    def close(self):
+    async def close(self):
         for node_key in self.nodes.keys():
             try:
                 node = self.nodes[node_key]
-                node.close()
+                await node.close()
             except Exception:
                 pass
         self.nodes = None

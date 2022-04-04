@@ -19,11 +19,11 @@ ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 CONFIG_SCHEMAS_HOME = "config-schemas"
 
 CONFIG_SERVICE = "service"
+CONFIG_SECURITY = "security"
 CONFIG_NETWORK = "network"
 CONFIG_NAMESPACE = "namespace"
 CONFIG_XDR = "xdr"
 CONFIG_DC = "dc"
-CONFIG_CLUSTER = "cluster"
 CONFIG_RACK_IDS = "rack-ids"
 CONFIG_ROSTER = "roster"
 CONFIG_RACKS = "racks"
@@ -119,6 +119,8 @@ class JobType:
 
 
 # server versions with critical changes
+SERVER_QUERIES_ABORT_ALL_FIRST_VERSION = "6.0"
+SERVER_SINDEX_BUILDER_REMOVED_VERSION = "5.7"
 SERVER_SHOW_BEST_PRACTICES_FIRST_VERSION = "5.7"
 SERVER_QUOTAS_FIRST_VERSION = "5.6"
 SERVER_NEW_LATENCIES_CMD_FIRST_VERSION = "5.1"

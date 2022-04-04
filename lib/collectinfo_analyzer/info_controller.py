@@ -15,28 +15,16 @@ class InfoController(CollectinfoCommandController):
         self.controller_map = dict(namespace=InfoNamespaceController)
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.do_network(line)
-        self.controller_map["namespace"]()(line[:])
+        # needs to be awaited since the base class is async
+        await self.controller_map["namespace"]()(line[:])
         self.do_xdr(line)
 
     @CommandHelp("Displays network summary information.")
     def do_network(self, line):
         service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
-        cluster_configs = self.log_handler.info_getconfig(
-            stanza=constants.CONFIG_CLUSTER
-        )
         for timestamp in sorted(service_stats.keys()):
-            for node in service_stats[timestamp]:
-                try:
-                    if not isinstance(
-                        cluster_configs[timestamp][node]["mode"], Exception
-                    ):
-                        service_stats[timestamp][node][
-                            "rackaware_mode"
-                        ] = cluster_configs[timestamp][node]["mode"]
-                except Exception:
-                    pass
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_asd_build()
             versions = cinfo_log.get_asd_version()

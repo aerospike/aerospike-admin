@@ -143,7 +143,7 @@ def create_disabled_controller(controller, command_):
     class DisableController(controller):
 
         # override
-        def execute(self, line):
+        async def execute(self, line):
             self.logger.error(
                 'User must be in privileged mode to issue "{}" commands.\n'
                 '       Type "enable" to enter privileged mode.'.format(command_)
@@ -249,8 +249,8 @@ class BaseController(object):
             # or exact match
             return []
 
-    def __call__(self, line):
-        return self.execute(line)
+    async def __call__(self, line):
+        return await self.execute(line)
 
     def _init_controller_map(self):
         try:  # define controller map if not defined
@@ -315,16 +315,15 @@ class BaseController(object):
     def _run_results(self, results):
         rv = []
         for result in results:
-            if isinstance(result, util.Future):
-                result.start()
-                rv.append(result.result())
+            if inspect.isfunction(result):
+                rv.append(result())
             elif isinstance(result, list) or isinstance(result, tuple):
                 rv.append(self._run_results(result))
             else:
                 rv.append(result)
         return rv
 
-    def execute(self, line):
+    async def execute(self, line):
         # Init all command controller objects
         self._init()
 
@@ -340,13 +339,20 @@ class BaseController(object):
 
                 results = method(line)
 
-                if not isinstance(results, list) and not isinstance(results, tuple):
+                if inspect.iscoroutine(results):
+                    results = await results
 
-                    if isinstance(results, util.Future):
+                if not isinstance(results, list) and not isinstance(results, tuple):
+                    """
+                    returning view functions wrapped in coroutines to display allows
+                    multiple do_* func to run concurrently but display deterministicely.
+                    """
+                    if inspect.isfunction(results):
                         results = (results,)
                     else:
                         return results
 
+                # results is a tuple or list of coroutines
                 return self._run_results(results)
 
             except IOError as e:
@@ -442,7 +448,7 @@ class BaseController(object):
         else:
             raise ShellException("Method was not set? %s" % (line))
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         # Override method to provide default command behavior
         raise ShellException("%s: command not found." % (" ".join(line)))
 

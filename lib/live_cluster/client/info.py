@@ -16,6 +16,7 @@
 #
 ####
 
+import asyncio
 import logging
 import sys
 import struct
@@ -131,11 +132,11 @@ def _unpack_protocol_header(buf, offset=0):
     return protocol_version, protocol_type, data_size, offset
 
 
-def _receive_data(sock, sz):
+async def _receive_data(reader: asyncio.StreamReader, sz):
     pos = 0
     data = None
     while pos < sz:
-        chunk = sock.recv(sz - pos)
+        chunk = await reader.read(sz - pos)
         if pos == 0:
             data = chunk
         else:
@@ -406,13 +407,16 @@ def _c_str_to_bytes(buf):
     return bytes(buf)
 
 
-def _send_and_get_admin_header(sock, send_buf):
+async def _send_and_get_admin_header(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, send_buf
+):
     # OpenSSL wrapper doesn't support ctypes
     send_buf = _c_str_to_bytes(send_buf)
 
     try:
-        sock.sendall(send_buf)
-        recv_buf = _receive_data(sock, _TOTAL_HEADER_SIZE)
+        writer.write(send_buf)
+        await writer.drain()
+        recv_buf = await _receive_data(reader, _TOTAL_HEADER_SIZE)
         rsp_header = _unpack_admin_header(recv_buf, _PROTOCOL_HEADER_SIZE)
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
@@ -420,7 +424,14 @@ def _send_and_get_admin_header(sock, send_buf):
     return rsp_header
 
 
-def _authenticate(sock, user, password, password_field_id, auth_mode):
+async def _authenticate(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    user,
+    password,
+    password_field_id,
+    auth_mode,
+):
     if auth_mode != constants.AuthMode.PKI:
         field_count = 2
         admin_data_size = len(user) + len(password)
@@ -443,7 +454,9 @@ def _authenticate(sock, user, password, password_field_id, auth_mode):
 
     try:
         # OpenSSL wrapper doesn't support ctypes
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except Exception as e:
         import traceback
@@ -452,9 +465,16 @@ def _authenticate(sock, user, password, password_field_id, auth_mode):
         raise IOError("Error: %s" % str(e))
 
 
-def authenticate_new(sock, user, session_token, auth_mode):
-    return _authenticate(
-        sock,
+async def authenticate_new(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    user,
+    session_token,
+    auth_mode,
+):
+    return await _authenticate(
+        reader,
+        writer,
         user,
         password=session_token,
         password_field_id=ASField.SESSION_TOKEN,
@@ -462,19 +482,25 @@ def authenticate_new(sock, user, session_token, auth_mode):
     )
 
 
-@util.logthis(logger)
-def authenticate_old(sock, user, password):
-    return _authenticate(
-        sock,
+async def authenticate_old(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    user,
+    password,
+    auth_mode,
+):
+    return await _authenticate(
+        reader,
+        writer,
         user,
         password=_hash_password(password),
         password_field_id=ASField.CREDENTIAL,
+        auth_mode=auth_mode,
     )
 
 
 # roles is a list of strings representing role names.
-@util.logthis(logger)
-def create_user(sock, user, password, roles):
+async def create_user(reader, writer, user, password, roles):
     """Attempts to create a user in AS.
     user: string,
     password: string (un-hashed),
@@ -493,14 +519,15 @@ def create_user(sock, user, password, roles):
     offset = _pack_admin_field(send_buf, offset, ASField.ROLES, roles)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except Exception as e:
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def drop_user(sock, user):
+async def drop_user(reader, writer, user):
     """Attempts to delete a user in AS.
     user: string,
     Returns: ASResponse
@@ -514,14 +541,17 @@ def drop_user(sock, user):
     offset = _pack_admin_field(send_buf, offset, ASField.USER, user)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except Exception as e:
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def set_password(sock, user, password):
+async def set_password(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user, password
+):
     """Attempts to set a user password in AS.
     user: string,
     password: string (un-hashed),
@@ -538,14 +568,21 @@ def set_password(sock, user, password):
     offset = _pack_admin_field(send_buf, offset, ASField.PASSWORD, hashed_password)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def change_password(sock, user, old_password, new_password):
+async def change_password(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    user,
+    old_password,
+    new_password,
+):
     """Attempts to change a users passowrd in AS.
     user: string,
     old_password: string (un-hashed),
@@ -567,15 +604,18 @@ def change_password(sock, user, old_password, new_password):
     offset = _pack_admin_field(send_buf, offset, ASField.PASSWORD, hashed_new_password)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
 # roles is a list of strings representing role names.
-@util.logthis(logger)
-def grant_roles(sock, user, roles):
+async def grant_roles(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user, roles
+):
     """Attempts to grant roles to user in AS.
     user: string,
     roles: list[string],
@@ -591,15 +631,18 @@ def grant_roles(sock, user, roles):
     offset = _pack_admin_field(send_buf, offset, ASField.ROLES, roles)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
 # roles is a list of strings representing role names.
-@util.logthis(logger)
-def revoke_roles(sock, user, roles):
+async def revoke_roles(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user, roles
+):
     """Attempts to remove roles from a user in AS.
     user: string,
     roles: list[string],
@@ -615,13 +658,17 @@ def revoke_roles(sock, user, roles):
     offset = _pack_admin_field(send_buf, offset, ASField.ROLES, roles)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
-def _query_users(sock, user=None):
+async def _query_users(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user=None
+):
     """Attempts to query users and respective roles from AS.
     user: string or None, If none queries all users.
     Returns: ASResponse
@@ -645,12 +692,13 @@ def _query_users(sock, user=None):
     send_buf = _c_str_to_bytes(send_buf)
 
     try:
-        sock.sendall(send_buf)
+        writer.write(send_buf)
+        await writer.drain()
 
         while True:
-            rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
+            rsp_buf = await _receive_data(reader, _PROTOCOL_HEADER_SIZE)
             _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
-            rsp_buf = _receive_data(sock, data_size)
+            rsp_buf = await _receive_data(reader, data_size)
             offset = 0
 
             # Each loop will process a user:role pair.
@@ -725,19 +773,22 @@ def _query_users(sock, user=None):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def query_users(sock):
-    return _query_users(sock)
+async def query_users(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    return await _query_users(reader, writer)
 
 
-@util.logthis(logger)
-def query_user(sock, user):
-    return _query_users(sock, user)
+async def query_user(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, user):
+    return await _query_users(reader, writer, user)
 
 
-@util.logthis(logger)
-def create_role(
-    sock, role, privileges=None, whitelist=None, read_quota=None, write_quota=None
+async def create_role(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    role,
+    privileges=None,
+    whitelist=None,
+    read_quota=None,
+    write_quota=None,
 ):
     """Attempts to create a role in AS with certain privleges and whitelist. Either
     privilege or whitelist should be provided.
@@ -788,14 +839,15 @@ def create_role(
         offset = _pack_admin_field(send_buf, offset, ASField.WRITE_QUOTA, write_quota)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def delete_role(sock, role):
+async def delete_role(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role):
     """Attempts to delete a role in AS.
     role: string,
     Returns: ASResponse
@@ -809,14 +861,17 @@ def delete_role(sock, role):
     offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def add_privileges(sock, role, privileges):
+async def add_privileges(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role, privileges
+):
     """Attempts to add privleges to a role in AS.
     role: string,
     privileges: list[string]
@@ -831,12 +886,13 @@ def add_privileges(sock, role, privileges):
     offset = _pack_admin_field(send_buf, offset, ASField.ROLE, role)
     offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
 
-    _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+    _, return_code, _, _, _ = await _send_and_get_admin_header(reader, writer, send_buf)
     return return_code
 
 
-@util.logthis(logger)
-def delete_privileges(sock, role, privileges):
+async def delete_privileges(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role, privileges
+):
     """Attempts to remove privleges to a role in AS.
     role: string,
     privileges: list[string]
@@ -852,13 +908,17 @@ def delete_privileges(sock, role, privileges):
     offset = _pack_admin_field(send_buf, offset, ASField.PRIVILEGES, privileges)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
-def _set_whitelist(sock, role, whitelist=None):
+async def _set_whitelist(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role, whitelist=None
+):
     """Attempts to add a whitelist to a role in AS.
     role: string,
     privileges: list[string] of addresses
@@ -881,23 +941,33 @@ def _set_whitelist(sock, role, whitelist=None):
         offset = _pack_admin_field(send_buf, offset, ASField.WHITELIST, whitelist)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def set_whitelist(sock, role, whitelist):
-    return _set_whitelist(sock, role, whitelist)
+async def set_whitelist(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role, whitelist
+):
+    return await _set_whitelist(reader, writer, role, whitelist)
 
 
-@util.logthis(logger)
-def delete_whitelist(sock, role):
-    return _set_whitelist(sock, role)
+async def delete_whitelist(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role
+):
+    return await _set_whitelist(reader, writer, role)
 
 
-def _set_quotas(sock, role, read_quota=None, write_quota=None):
+async def _set_quotas(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    role,
+    read_quota=None,
+    write_quota=None,
+):
     """Attempts to add a quota to a role in AS.
     role: string,
     read_quota: int or str representing an int,
@@ -927,19 +997,31 @@ def _set_quotas(sock, role, read_quota=None, write_quota=None):
         offset = _pack_admin_field(send_buf, offset, ASField.WRITE_QUOTA, write_quota)
 
     try:
-        _, return_code, _, _, _ = _send_and_get_admin_header(sock, send_buf)
+        _, return_code, _, _, _ = await _send_and_get_admin_header(
+            reader, writer, send_buf
+        )
         return return_code
     except SocketError as e:
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def set_quotas(sock, role, read_quota=None, write_quota=None):
-    return _set_quotas(sock, role, read_quota, write_quota)
+async def set_quotas(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    role,
+    read_quota=None,
+    write_quota=None,
+):
+    return await _set_quotas(reader, writer, role, read_quota, write_quota)
 
 
-@util.logthis(logger)
-def delete_quotas(sock, role, read_quota=False, write_quota=False):
+async def delete_quotas(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    role,
+    read_quota=False,
+    write_quota=False,
+):
     """
     NOT IN USE
     """
@@ -952,10 +1034,12 @@ def delete_quotas(sock, role, read_quota=False, write_quota=False):
     if write_quota:
         write = 0
 
-    return _set_quotas(sock, role, read, write)
+    return await _set_quotas(reader, writer, role, read, write)
 
 
-def _query_role(sock, role=None):
+async def _query_role(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role=None
+):
     """Attempts to query roles and respective privileges from Afield_count: string or None, If none queries all users.
     Returns: ASResponse, {role_name: [privleges: ASPrivilege]}
     """
@@ -978,12 +1062,13 @@ def _query_role(sock, role=None):
     send_buf = _c_str_to_bytes(send_buf)
 
     try:
-        sock.sendall(send_buf)
+        writer.write(send_buf)
+        await writer.drain()
 
         while True:
-            rsp_buf = _receive_data(sock, _PROTOCOL_HEADER_SIZE)
+            rsp_buf = await _receive_data(reader, _PROTOCOL_HEADER_SIZE)
             _, _, data_size, _ = _unpack_protocol_header(rsp_buf)
-            rsp_buf = _receive_data(sock, data_size)
+            rsp_buf = await _receive_data(reader, data_size)
 
             offset = 0
 
@@ -1047,14 +1132,12 @@ def _query_role(sock, role=None):
         raise IOError("Error: %s" % str(e))
 
 
-@util.logthis(logger)
-def query_roles(sock):
-    return _query_role(sock)
+async def query_roles(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    return await _query_role(reader, writer)
 
 
-@util.logthis(logger)
-def query_role(sock, role):
-    return _query_role(sock, role)
+async def query_role(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, role):
+    return await _query_role(reader, writer, role)
 
 
 def _parse_session_info(data, field_count):
@@ -1081,7 +1164,13 @@ def _parse_session_info(data, field_count):
     return session_token, session_ttl
 
 
-def login(sock, user, password, auth_mode):
+async def login(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    user,
+    password,
+    auth_mode,
+):
     credential = _hash_password(password)
 
     if auth_mode == constants.AuthMode.INTERNAL:
@@ -1110,8 +1199,11 @@ def login(sock, user, password, auth_mode):
     try:
         # OpenSSL wrapper doesn't support ctypes
         send_buf = _c_str_to_bytes(send_buf)
-        sock.sendall(send_buf)
-        recv_buff = _receive_data(sock, _PROTOCOL_HEADER_SIZE + _ADMIN_HEADER_SIZE)
+        writer.write(send_buf)
+        await writer.drain()
+        recv_buff = await _receive_data(
+            reader, _PROTOCOL_HEADER_SIZE + _ADMIN_HEADER_SIZE
+        )
         _, _, data_size, offset = _unpack_protocol_header(recv_buff)
         _, return_code, _, field_count, _ = _unpack_admin_header(recv_buff)
         data_size -= _ADMIN_HEADER_SIZE
@@ -1121,14 +1213,14 @@ def login(sock, user, password, auth_mode):
 
             if return_code == ASResponse.INVALID_COMMAND:
                 # login is invalid command, so cluster does not support ldap
-                return authenticate_old(sock, user, password), None, 0
+                return authenticate_old(reader, writer, user, password), None, 0
 
             # login failed
             return return_code, None, 0
 
         if data_size < 0 or field_count < 1:
             raise IOError("Login failed to retrieve session token")
-        recv_buff = _receive_data(sock, data_size)
+        recv_buff = await _receive_data(reader, data_size)
         session_token, session_ttl = _parse_session_info(recv_buff, field_count)
         session_token = _c_str_to_bytes(session_token)
 
@@ -1157,20 +1249,23 @@ def _pack_info_field(buf, offset, field):
     return _pack_string(buf, offset, field)
 
 
-def _info_request(sock, buf):
+async def _info_request(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, buf
+):
     rsp_data = None
     # request over TCP
     try:
         if not isinstance(buf, bytes):
             buf = bytes(buf)  # OpenSSL does not support c-types
 
-        sock.send(buf)
+        writer.write(buf)
+        await writer.drain()
         # get response
-        rsp_hdr = sock.recv(8)
+        rsp_hdr = await reader.read(8)
         _, _, data_size, _ = _unpack_protocol_header(rsp_hdr)
 
         if data_size > 0:
-            rsp_data = _receive_data(sock, data_size)
+            rsp_data = await _receive_data(reader, data_size)
 
     except Exception as ex:
         raise IOError("Error: %s" % str(ex))
@@ -1182,8 +1277,8 @@ def _info_request(sock, buf):
     return rsp_data
 
 
-def info(sock, names=None):
-    if not sock:
+async def info(reader, writer, names=None):
+    if not reader or not writer:
         raise IOError("Error: Could not connect to node")
     buf = None
     # Passed a set of names: created output buf
@@ -1211,7 +1306,7 @@ def info(sock, names=None):
         )
         offset = _pack_info_field(buf, offset, namestr)
 
-    rsp_data = _info_request(sock, buf)
+    rsp_data = await _info_request(reader, writer, buf)
     rsp_data = util.bytes_to_str(rsp_data)
 
     if rsp_data == -1 or rsp_data is None:
@@ -1230,6 +1325,8 @@ def info(sock, names=None):
     else:
         rdict = dict()
         for line in rsp_data.split("\n"):
+            if "not authenticated" in line.lower():
+                return ASInfoNotAuthenticatedError("Connection failed", line)
             if len(line) < 1:
                 # this accounts for the trailing '\n' - cheaper than chomp
                 continue

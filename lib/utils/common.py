@@ -16,6 +16,7 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyser / log-analyser)
 #############################################################################################################
 
+import asyncio
 import datetime
 import json
 import logging
@@ -27,6 +28,7 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
+import aiohttp
 import zipfile
 from collections import OrderedDict
 
@@ -46,6 +48,9 @@ comp_ops = {
     "!=": operator.ne,
 }
 
+# TODO:  This needs to be a data structure of some kind other than a map. Currently,
+# TODO:  it is difficult to read and reference values.  A dictionary of string -> tuple
+# TODO:  -> tuple.
 # Dictionary to contain feature and related stats to identify state of that feature.
 # xdr/dc stats are not coupled with xdr-dc configs because at this time it is not required.
 # In the future xdr, xdr/dc, and xdr/dc/namespace configs might need to be included.
@@ -81,6 +86,7 @@ FEATURE_KEYS = {
             "udf_bg_scans_failed",
         ),
         (
+            # pre 6.0, all of these stats have an equivalent Query stat post 6.0
             "scan_basic_complete",
             "scan_basic_error",
             "scan_aggr_complete",
@@ -91,7 +97,48 @@ FEATURE_KEYS = {
         None,
     ),
     "SIndex": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes"), None),
-    "Query": (("query_reqs", "query_success"), ("query_reqs", "query_success"), None),
+    "Query": (
+        ("query_reqs", "query_success"),
+        (
+            "query_reqs",
+            "query_success",
+        ),
+        None,
+    ),
+    "Primary Index Query": (
+        None,
+        (
+            # post 6.0 when queries and scans were unified into just queries
+            "pi_query_long_basic_complete",
+            "pi_query_long_basic_error",
+            "pi_query_short_basic_complete",
+            "pi_query_short_basic_error",
+            "pi_query_aggr_complete",
+            "pi_query_aggr_error",
+            "pi_query_udf_bg_complete",
+            "pi_query_udf_bg_error",
+            "pi_query_ops_bg_complete",
+            "pi_query_ops_bg_error",
+        ),
+        None,
+    ),
+    "SIndex Query": (
+        None,
+        (
+            # post 6.0 when queries and scans were unified into just queries
+            "si_query_long_basic_complete",
+            "si_query_long_basic_error",
+            "si_query_short_basic_complete",
+            "si_query_short_basic_error",
+            "si_query_aggr_complete",
+            "si_query_aggr_error",
+            "si_query_udf_bg_complete",
+            "si_query_udf_bg_error",
+            "si_query_ops_bg_complete",
+            "si_query_ops_bg_error",
+        ),
+        None,
+    ),
     "Aggregation": (
         ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
         ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
@@ -245,7 +292,6 @@ def _find_features_for_cluster(
     xdr_dc_stats,
     service_configs={},
     ns_configs={},
-    cluster_configs={},
 ):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
@@ -255,7 +301,6 @@ def _find_features_for_cluster(
     features = []
 
     service_data = _deep_merge_dicts(service_stats, service_configs)
-    service_data = _deep_merge_dicts(service_data, cluster_configs)
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
     nodes = list(service_data.keys())
@@ -284,7 +329,7 @@ def find_nodewise_features(
     xdr_dc_stats,
     service_configs={},
     ns_configs={},
-    cluster_configs={},
+    security_configs={},
 ):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
@@ -293,8 +338,9 @@ def find_nodewise_features(
 
     features = {}
 
+    # Before asadm 2.7 security configs were joined into service configs because of info_get_config in node.py.
+    service_configs = _deep_merge_dicts(service_configs, security_configs)
     service_data = _deep_merge_dicts(service_stats, service_configs)
-    service_data = _deep_merge_dicts(service_data, cluster_configs)
     ns_data = _deep_merge_dicts(ns_stats, ns_configs)
 
     nodes = list(service_data.keys())
@@ -508,7 +554,7 @@ def compute_license_data_size(namespace_stats, license_data_usage, cluster_dict)
         return
 
 
-def request_license_usage(agent_host, agent_port):
+async def request_license_usage(agent_host, agent_port):
     json_data = {
         "license_usage": {},
         "agent_health": {},
@@ -519,65 +565,55 @@ def request_license_usage(agent_host, agent_port):
         days=365
     )
     a_year_ago = a_year_ago.isoformat()
-    url_entries = urllib.parse.urlunparse(
-        (
-            "http",
-            agent_host + ":" + str(agent_port),
-            "v1/entries/range/time",
-            "",
-            urllib.parse.urlencode((("start", a_year_ago),)),
-            "",
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        entries_params = {"start": a_year_ago}
+        res_entries, res_health = await asyncio.gather(
+            session.get(
+                "http://"
+                + agent_host
+                + ":"
+                + str(agent_port)
+                + "/v1/entries/range/time",
+                params=entries_params,
+            ),
+            session.get(
+                "http://" + agent_host + ":" + str(agent_port) + "/v1/health",
+                params=entries_params,
+            ),
         )
-    )
-    url_health = urllib.parse.urlunparse(
-        (
-            "http",
-            agent_host + ":" + str(agent_port),
-            "v1/health",
-            "",
-            "",
-            "",
-        )
-    )
 
-    req_entries = urllib.request.Request(url_entries)
-    req_health = urllib.request.Request(url_health)
+        try:
+            res_health = await res_health.json()
 
-    res_health = util.Future(urllib.request.urlopen, req_health, timeout=5).start()
-    res_entries = util.Future(urllib.request.urlopen, req_entries, timeout=5).start()
-
-    try:
-        res_health = res_health.result()
-
-        if res_health is not None:
-            body = res_health.read().decode()
-            json_data["agent_health"] = json.loads(body)
-        else:
-            json_data["agent_health"] = {}
-            error = "Unable to connect"
-    except Exception as e:
-        json_data["agent_health"] = str(e)
-        error = e
-
-    try:
-        res_entries = res_entries.result()
-
-        if res_entries is not None:
-            body = res_entries.read().decode()
-            json_data["license_usage"] = json.loads(body)
-        else:
-            json_data["license_usage"] = {}
-            error = "Unable to connect"
-    except Exception as e:
-        json_data["license_usage"] = str(e)
-
-        if error is None or isinstance(error, str):
+            if res_health is not None:
+                json_data["agent_health"] = res_health
+            else:
+                json_data["agent_health"] = {}
+                error = "Unable to connect"
+        except Exception as e:
+            json_data["agent_health"] = str(e)
             error = e
+
+        try:
+            res_entries = await res_entries.json()
+
+            if res_entries is not None:
+                json_data["license_usage"] = res_entries
+            else:
+                json_data["license_usage"] = {}
+                error = "Unable to connect"
+        except Exception as e:
+            json_data["license_usage"] = str(e)
+
+            if error is None:
+                error = e
 
     return json_data, error
 
 
-request_license_usage = util.cached(request_license_usage, ttl=30)
+request_license_usage = util.async_cached(request_license_usage, ttl=30)
 
 
 def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
@@ -678,7 +714,6 @@ def create_summary(
     metadata,
     service_configs={},
     ns_configs={},
-    cluster_configs={},
     license_data_usage={},
 ):
     """
@@ -692,7 +727,6 @@ def create_summary(
         xdr_dc_stats,
         service_configs=service_configs,
         ns_configs=ns_configs,
-        cluster_configs=cluster_configs,
     )
 
     namespace_stats = util.flip_keys(namespace_stats)
@@ -891,7 +925,7 @@ def create_summary(
             flash_index_used = sum(
                 util.get_value_from_second_level_of_dict(
                     ns_stats,
-                    ("index_pmem_used_bytes",),
+                    ("index_flash_used_bytes",),
                     default_value=0,
                     return_type=int,
                 ).values()

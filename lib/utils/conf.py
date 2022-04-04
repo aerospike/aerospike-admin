@@ -42,7 +42,7 @@ class _Namespace(object):
 
 
 # Default is local host without security / tls
-# with timeout value of 5ms
+# with timeout value of 1ms
 _confdefault = {
     "cluster": {
         "host": "127.0.0.1",
@@ -66,7 +66,7 @@ _confdefault = {
     },
     "asadm": {
         "services-alumni": False,
-        "timeout": 5,
+        "timeout": 1,
         "line-separator": False,
         "no-color": False,
         "out-file": "",
@@ -604,7 +604,7 @@ def print_config_file_option():
     )
     print(
         " --timeout=value      Set timeout value in seconds for node level operations. \n"
-        "                      TLS connection does not support timeout. Default: 5 seconds"
+        "                      TLS connection does not support timeout. Default: 1 seconds"
     )
     print(
         " --enable             Run commands in privileged mode.  Must be used with the\n"

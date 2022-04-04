@@ -8,8 +8,6 @@ from .live_cluster_command_controller import LiveClusterCommandController
     '"asinfo" provides raw access to the info protocol.',
     "  Options:",
     "    -v <command>   - The command to execute",
-    "    -p <port>      - Port to use in the case of an XDR info command and XDR is",
-    "                     not in asd",
     '    -l             - Replace semicolons ";" with newlines. If output does',
     '                     not contain semicolons "-l" will attempt to use',
     '                     colons ":" followed by commas ",".',
@@ -20,7 +18,7 @@ class ASInfoController(LiveClusterCommandController):
         self.modifiers = set(["with", "like"])
 
     @CommandHelp("Executes an info command.")
-    def _do_default(self, line):
+    async def _do_default(self, line):
         mods = self.parse_modifiers(line)
         line = mods["line"]
         nodes = self.nodes
@@ -38,8 +36,6 @@ class ASInfoController(LiveClusterCommandController):
                     value = tline.pop(0)
                 elif word == "-l":
                     line_sep = True
-                elif word == "-p":
-                    port = tline.pop(0)
                 elif word == "--no_node_name":
                     show_node_name = False
                 else:
@@ -54,8 +50,6 @@ class ASInfoController(LiveClusterCommandController):
         if value is not None:
             value = value.translate(str.maketrans("", "", "'\""))
 
-        results = self.cluster.info(value, nodes=nodes)
+        results = await self.cluster.info(value, nodes=nodes)
 
-        return util.Future(
-            self.view.asinfo, results, line_sep, show_node_name, self.cluster, **mods
-        )
+        return self.view.asinfo(results, line_sep, show_node_name, self.cluster, **mods)

@@ -34,16 +34,51 @@ class ShowConfigController(CollectinfoCommandController):
         self.modifiers = set(["like", "diff", "for"])
 
     @CommandHelp(
-        "Displays service, network, and namespace configuration",
+        "Displays security, service, network, and namespace configuration",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   default: False, no repetition.",
         "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
+        self.do_security(line[:])
         self.do_service(line[:])
         self.do_network(line[:])
         self.do_namespace(line[:])
+
+    @CommandHelp("Displays service configuration")
+    def do_security(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        security_configs = self.log_handler.info_getconfig(
+            stanza=constants.CONFIG_SECURITY
+        )
+
+        for timestamp in sorted(security_configs.keys()):
+            self.view.show_config(
+                "Security Configuration",
+                security_configs[timestamp],
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                timestamp=timestamp,
+                **self.mods
+            )
 
     @CommandHelp("Displays service configuration")
     def do_service(self, line):
@@ -289,39 +324,6 @@ class ShowConfigController(CollectinfoCommandController):
                     + '/path/to/collect_info_file -e "show config xdr"\''
                     + " for versions 5.0 and up."
                 )
-
-    @CommandHelp("Displays cluster configuration")
-    def do_cluster(self, line):
-
-        title_every_nth = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="-r",
-            return_type=int,
-            default=0,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        flip_output = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="-flip",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        cl_configs = self.log_handler.info_getconfig(stanza=constants.CONFIG_CLUSTER)
-
-        for timestamp in sorted(cl_configs.keys()):
-            self.view.show_config(
-                "Cluster Configuration",
-                cl_configs[timestamp],
-                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
-                title_every_nth=title_every_nth,
-                flip_output=flip_output,
-                timestamp=timestamp,
-                **self.mods
-            )
 
 
 @CommandHelp(
@@ -1077,13 +1079,9 @@ class ShowJobsController(CollectinfoCommandController):
         "Displays scans, queries, and sindex-builder jobs.",
     )
     def _do_default(self, line):
-        actions = (
-            util.Future(self.do_scans, line[:]).start(),
-            util.Future(self.do_queries, line[:]).start(),
-            util.Future(self.do_sindex_builder, line[:]).start(),
-        )
-
-        return [action.result() for action in actions]
+        self.do_scans(line[:])
+        self.do_queries(line[:]),
+        self.do_sindex_builder(line[:])
 
     def _job_helper(self, module, title):
         jobs_data = self.log_handler.info_meta_data(stanza=constants.METADATA_JOBS)

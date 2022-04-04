@@ -1,3 +1,18 @@
+# Copyright 2013-2021 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+QUERIES = """
 /***************************************************
 * System Resource                                  *
 ****************************************************/
@@ -1277,55 +1292,244 @@ ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
 				"Non-zero udf sub-transaction error check");
 
 
-// Query Agg statistics
-s = select "query_aggr_complete" as "val", "query_agg_success" as "val" from NAMESPACE.STATISTICS save;
-e = select "query_aggr_error" as "val", "query_agg_error" as "val" from NAMESPACE.STATISTICS save;
-a = select "query_aggr_abort" as "val", "query_agg_abort" as "val" from NAMESPACE.STATISTICS save;
+SET CONSTRAINT VERSION >= 6.0;
+
+u = select "uptime" from SERVICE.STATISTICS;
+u = GROUP BY CLUSTER, NODE do MAX(u);
+
+// Primary Index Basic Long Query, previously basic scan
+s = select "pi_query_long_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "pi_query_long_basic_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total pindex long queries";
+total_transactions_per_sec = do total_transactions / u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "pi_query_long_basic_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "pi_query_long_basic_error % of total pindex long queries";
+r = do p <= 5;
+ASSERT(r, True, "High basic primary index long query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal basic primary index long query errors (> 5% total). Please run 'show statistics namespace like pi_query_long_basic' to see values.",
+				"High basic primary index long query errors check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero basic primary index long query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero basic primary index long query errors. Please run 'show statistics namespace like pi_query_long_basic' to see values.",
+				"Non-zero basic primary index long query errors check");
+
+// Primary Index Basic Short Query, previously basic scan
+s = select "pi_query_short_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "pi_query_short_basic_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total pindex short queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "pi_query_short_basic_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "pi_query_short_basic_error % of total pindex short queries";
+r = do p <= 5;
+ASSERT(r, True, "High basic primary index short query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal basic primary index short query errors (> 5% total). Please run 'show statistics namespace like pi_query_short_basic' to see values.",
+				"High basic primary index short query errors check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero basic primary index short query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero basic primary index short query errors. Please run 'show statistics namespace like pi_query_short_basic' to see values.",
+				"Non-zero basic primary index short query errors check");
+    
+// Primary Index Aggregation query statistics, formally aggregation scans.
+s = select "pi_query_aggr_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "pi_query_aggr_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total pindex query aggregations";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "pi_query_aggr_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "pi_query_aggr_error % of total pindex query aggregations";
+r = do p <= 5;
+ASSERT(r, True, "High primary index aggregation query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal primary index aggregation query errors (> 5% total). Please run 'show statistics namespace like pi_query_aggr' to see values.",
+				"High primary index aggregation query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero primary index aggregation query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero primary index aggregation query errors. Please run 'show statistics namespace like pi_query_aggr' to see values.",
+				"Non-zero primary index aggregation query error check");
+
+
+// Primary Index Background UDF queries statistics, formally background udf scans.
+s = select "pi_query_udf_bg_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "pi_query_udf_bg_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total pindex background udf queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "pi_query_udf_bg_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "pi_query_udf_bg_error % of total pindex background udf queries";
+r = do p <= 5;
+ASSERT(r, True, "High primary index background udf queries errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal primary index background udf queries errors (> 5% total). Please run 'show statistics namespace like pi_query_udf_bg' to see values.",
+				"High primary index background udf queries error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero primary index background udf queries errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero primary index background udf queries errors. Please run 'show statistics namespace like pi_query_udf_bg' to see values.",
+				"Non-zero primary index background udf queries error check");
+
+// Secondary Index Basic Long Query Statistics, formally Query Lookup statistics
+c = select "si_query_long_basic_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_long_basic_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total sindex long queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "si_query_long_basic_error % of total basic queries";
+r = do p <= 5;
+ASSERT(r, True, "High secondary index basic long query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex basic long query errors (> 5% total). Please run 'show statistics namespace like si_query_long_basic' to see values.",
+				"High sindex basic long query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero sindex basic long query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex basic query errors. Please run 'show statistics namespace like si_query_long_basic' to see values.",
+				"Non-zero sindex basic long query error check");
+    
+    
+// Secondary Index Basic Short Query Statistics, formally Query Lookup statistics
+c = select "si_query_short_basic_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_short_basic_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total sindex short basic queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "si_query_short_basic_error % of total sindex short basic queries";
+r = do p <= 5;
+ASSERT(r, True, "High sindex basic short query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex basic short query errors (> 5% total). Please run 'show statistics namespace like si_query_short_basic' to see values.",
+				"High sindex basic short query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero sindex basic short query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex basic query errors. Please run 'show statistics namespace like si_query_short_basic' to see values.",
+				"Non-zero sindex basic short query error check");
+    
+    
+// Secondary Index Aggregation Query Statistics, fromally Query Agg statistics
+s = select "si_query_aggr_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_aggr_error" as "val" from NAMESPACE.STATISTICS save;
 total_transactions = do s + e; 
-total_transaction = do total_transactions + a save as "total query aggregations";
+total_transaction = do total_transactions + a save as "total sindex query aggregations";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
 e = do e/u save as "errors per second (by using uptime)";
 e = group by CLUSTER, NAMESPACE e;
 p = do e/total_transactions_per_sec;
-p = do p * 100 save as "query_aggr_error % of total query aggregations";
+p = do p * 100 save as "si_query_aggr_error % of total query aggregations";
 r = do p <= 5;
-ASSERT(r, True, "High query aggregation errors", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal query aggregation errors (> 5% query aggregations). Please run 'show statistics namespace like query_agg' to see values.",
-				"High query aggregation error check");
+ASSERT(r, True, "High sindex query aggregation errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex query aggregation errors (> 5% total). Please run 'show statistics namespace like si_query_aggr' to see values.",
+				"High sindex query aggregation error check");
 warning_breached = do p > 5;
 r = do p <= error_pct_threshold;
 r = do r || warning_breached;
-ASSERT(r, True, "Non-zero query aggregation errors", "OPERATIONS", INFO,
-				"Listed namespace[s] show non-zero query aggregation errors. Please run 'show statistics namespace like query_agg' to see values.",
-				"Non-zero query aggregation error check");
-
-
-// Query Lookup statistics
-c = select "query_basic_complete" as "val", "query_lookup_success" as "val" from NAMESPACE.STATISTICS save;
-e = select "query_basic_error" as "val", "query_lookup_error" as "val" from NAMESPACE.STATISTICS save;
-a = select "query_basic_abort" as "val", "query_lookup_abort" as "val" from NAMESPACE.STATISTICS save;
-total_transactions = do c + e;
-total_transactions = do total_transactions + a save as "total query lookups";
+ASSERT(r, True, "Non-zero sindex query aggregation errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex query aggregation errors. Please run 'show statistics namespace like si_query_aggr' to see values.",
+				"Non-zero sindex query aggregation error check");
+    
+// Secondary Index Background UDF Query Statistics
+c = select "si_query_udf_bg_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_udf_bg_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total sindex query background udf";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
 e = do e/u save as "errors per second (by using uptime)";
 e = group by CLUSTER, NAMESPACE e;
 p = do e/total_transactions_per_sec;
-p = do p * 100 save as "query_basic_error % of total query lookups";
+p = do p * 100 save as "si_query_udf_bg_error % of total basic queries";
 r = do p <= 5;
-ASSERT(r, True, "High query lookup errors", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_basic' (=> 5.7) or 'show statistics namespace like query_lookup' (< 5.7) to see values.",
-				"High query lookup error check");
+ASSERT(r, True, "High sindex UDF background query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex UDF background query errors (> 5% total). Please run 'show statistics namespace like si_query_udf_bg' to see values.",
+				"High sindex UDF background query error check");
 warning_breached = do p > 5;
 r = do p <= error_pct_threshold;
 r = do r || warning_breached;
-ASSERT(r, True, "Non-zero query lookup errors", "OPERATIONS", INFO,
-				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_basic' (=> 5.7) or 'show statistics namespace like query_lookup' (< 5.7) to see values.",
-				"Non-zero query lookup error check");
+ASSERT(r, True, "Non-zero sindex UDF background query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex UDF background query errors. Please run 'show statistics namespace like si_query_udf_bg' to see values.",
+				"Non-zero sindex UDF background query error check");
+    
+// Secondary Index Background Ops Query Statistics
+c = select "si_query_ops_bg_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_ops_bg_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total sindex background ops queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "si_query_ops_bg_error % of total sindex background ops queries";
+r = do p <= 5;
+ASSERT(r, True, "High sindex background ops query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex background ops query errors (> 5% total). Please run 'show statistics namespace like si_query_ops_bg' to see values.",
+				"High sindex background ops query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero sindex background ops query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex background ops query errors. Please run 'show statistics namespace like si_query_ops_bg' to see values.",
+				"Non-zero sindex background ops query error check");
+
+// Should be constrained to just 5.7
+SET CONSTRAINT VERSION < 6.0
+
+// Scan Background OPS statistics
+s = select "scan_ops_bg_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_ops_bg_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total background ops scans";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "scan_ops_bg_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "scan_ops_bg_error % of total background ops scans";
+r = do p <= 5;
+ASSERT(r, True, "High background ops scans errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal background ops scan errors (> 5% scan background ops). Please run 'show statistics namespace like scan_ops_bg' to see values.",
+				"High scan background ops error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero scan background ops errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero scan background ops errors. Please run 'show statistics namespace like scan_ops_bg' to see values.",
+				"Non-zero scan background ops error check");
+
+SET CONSTRAINT VERSION > 3.9
 
 // Scan Agg statistics
 s = select "scan_aggr_complete" as "cnt" from NAMESPACE.STATISTICS;
@@ -1349,11 +1553,10 @@ r = do r || warning_breached;
 ASSERT(r, True, "Non-zero scan aggregation errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan aggregation errors. Please run 'show statistics namespace like scan_agg' to see values.",
 				"Non-zero scan aggregation error check");
-
-
+    
 // Scan Basic statistics
 s = select "scan_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
-e = select "scan_basic_error" as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_basic_error", as "cnt" from NAMESPACE.STATISTICS;
 total_transactions = do s + e save as "total basic scans";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
@@ -1397,6 +1600,50 @@ r = do r || warning_breached;
 ASSERT(r, True, "Non-zero scan background udf errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan background udf errors. Please run 'show statistics namespace like scan_udf_bg' to see values.",
 				"Non-zero scan background udf error check");
+    
+// Query Agg statistics
+s = select "query_aggr_complete" as "val", "query_agg_success" as "val" from NAMESPACE.STATISTICS save;
+e = select "query_aggr_error" as "val", "query_agg_error" as "val" from NAMESPACE.STATISTICS save;
+total_transaction = do s + e save as "total query aggregations";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "query_aggr_error % of total query aggregations";
+r = do p <= 5;
+ASSERT(r, True, "High query aggregation errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal query aggregation errors (> 5% query aggregations). Please run 'show statistics namespace like query_agg' to see values.",
+				"High query aggregation error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero query aggregation errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero query aggregation errors. Please run 'show statistics namespace like query_agg' to see values.",
+				"Non-zero query aggregation error check");
+
+// Query Lookup statistics
+c = select "query_basic_complete" as "val", "query_lookup_success" as "val" from NAMESPACE.STATISTICS save;
+e = select "query_basic_error" as "val", "query_lookup_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total query lookups";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "query_basic_error % of total query lookups";
+r = do p <= 5;
+ASSERT(r, True, "High query lookup errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_basic' (=> 5.7) or 'show statistics namespace like query_lookup' (< 5.7) to see values.",
+				"High query lookup error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero query lookup errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_basic' (=> 5.7) or 'show statistics namespace like query_lookup' (< 5.7) to see values.",
+				"Non-zero query lookup error check");
 
 
 // Client transaction statistics
@@ -1841,3 +2088,5 @@ ASSERT(m, False, "Outlier[s] detected by the server health check.", "OPERATIONS"
 			    "Server health check outlier detection. Run command 'asinfo -v health-outliers' to see list of outliers");
 
 SET CONSTRAINT VERSION ALL;
+
+"""

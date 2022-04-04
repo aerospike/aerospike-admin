@@ -12,22 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+from pytest import PytestUnraisableExceptionWarning
 from mock import patch
 import socket
-import unittest
 
 import lib
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
 
+import warnings
 
-class ClusterTest(unittest.TestCase):
-    def get_cluster_mock(self, node_count, return_key_value={}):
-        cl = Cluster([("127.0.0.0", 3000, None)])
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
+
+
+class ClusterTest(asynctest.TestCase):
+    async def get_cluster_mock(self, node_count, return_key_value={}):
+        cl: Cluster = await Cluster([("127.0.0.0", 3000, None)])
         cl.clear_node_list()
 
         for i in range(node_count):
-            n = self.get_info_mock(
+            n = await self.get_info_mock(
                 "A0000000000000" + str(i),
                 return_key_value=return_key_value,
                 ip="127.0.0." + str(i),
@@ -35,16 +42,32 @@ class ClusterTest(unittest.TestCase):
             cl.update_node(n)
         return cl
 
-    def get_info_mock(
+    async def get_info_mock(
         self, return_value, return_key_value={}, ip="127.0.0.1", port=3000
     ):
 
         if "build" not in return_key_value:
             return_key_value["build"] = "4.9.0.0"
 
-        def info_cinfo_side_effect(*args):
+        async def info_cinfo_side_effect(*args, **kwargs):
             ip_last_digit = ip.split(".")[3]
             cmd = args[0]
+
+            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": return_value,
+                    "service-clear-std": (
+                        str(ip)
+                        + ":"
+                        + str(port)
+                        + ";172.17.0.1:"
+                        + str(port)
+                        + ";172.17.1.1:"
+                        + str(port)
+                    ),
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                }
 
             if cmd == "service":
                 return (
@@ -128,7 +151,7 @@ class ClusterTest(unittest.TestCase):
 
         Node._info_cinfo.side_effect = info_cinfo_side_effect
 
-        n = Node(ip, port=port)
+        n = await Node(ip, port=port)
         return n
 
     def setUp(self):
@@ -151,10 +174,13 @@ class ClusterTest(unittest.TestCase):
 
         socket.getaddrinfo.side_effect = getaddressinfo_side_effect
 
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+
         self.addCleanup(patch.stopall)
 
-    def test_get_node(self):
-        cl = self.get_cluster_mock(1)
+    async def test_get_node(self):
+        cl = await self.get_cluster_mock(1)
         ip_ports = [
             ("192.168.0.1", 3000),
             ("192.168.0.2", 3000),
@@ -168,7 +194,7 @@ class ClusterTest(unittest.TestCase):
             ("192.168.0.1", 3002),
         ]
         for i, (ip, port) in enumerate(ip_ports):
-            n = self.get_info_mock("A0000000000000" + str(i), ip=ip, port=port)
+            n = await self.get_info_mock("A0000000000000" + str(i), ip=ip, port=port)
             cl.update_node(n)
 
         expected = [
@@ -239,8 +265,8 @@ class ClusterTest(unittest.TestCase):
 
         self.assertCountEqual(expected, actual)
 
-    def test_get_nodes(self):
-        cl = self.get_cluster_mock(3)
+    async def test_get_nodes(self):
+        cl = await self.get_cluster_mock(3)
 
         actual = cl.get_nodes("all")
 
@@ -255,7 +281,7 @@ class ClusterTest(unittest.TestCase):
         self.assertEqual(len(actual), 1)
         self.assertEqual(actual[0].node_id, "A00000000000002")
 
-        cl = self.get_cluster_mock(1)
+        cl = await self.get_cluster_mock(1)
         ip_ports = [
             ("192.168.0.1", 3000),
             ("192.168.0.2", 3000),
@@ -272,7 +298,7 @@ class ClusterTest(unittest.TestCase):
             ("192.168.0.1", 3002),
         ]
         for i, (ip, port) in enumerate(ip_ports):
-            n = self.get_info_mock("A0000000000000" + str(i), ip=ip, port=port)
+            n = await self.get_info_mock("A0000000000000" + str(i), ip=ip, port=port)
             cl.update_node(n)
 
         expected = [
@@ -291,8 +317,8 @@ class ClusterTest(unittest.TestCase):
 
         self.assertCountEqual(expected, actual)
 
-    def test_get_node_displaynames(self):
-        cl = self.get_cluster_mock(0)
+    async def test_get_node_displaynames(self):
+        cl = await self.get_cluster_mock(1)
         expected = {"127.0.0.0:3000": "host.domain.local:3000"}
         self.assertEqual(
             cl.get_node_displaynames(),
@@ -300,8 +326,8 @@ class ClusterTest(unittest.TestCase):
             "get_node_displaynames did not return the expected result",
         )
 
-    def test_get_node_names(self):
-        cl = self.get_cluster_mock(0)
+    async def test_get_node_names(self):
+        cl = await self.get_cluster_mock(1)
         expected = {"127.0.0.0:3000": "host.domain.local:3000"}
         self.assertEqual(
             cl.get_node_names(),
@@ -309,8 +335,8 @@ class ClusterTest(unittest.TestCase):
             "get_node_names did not return the expected result",
         )
 
-    def test_get_expected_principal(self):
-        cl = self.get_cluster_mock(3)
+    async def test_get_expected_principal(self):
+        cl = await self.get_cluster_mock(3)
         expected = "A00000000000002"
         self.assertEqual(
             cl.get_expected_principal(),
@@ -318,8 +344,21 @@ class ClusterTest(unittest.TestCase):
             "get_expected_principal did not return the expected result",
         )
 
-    def test_get_visibility_error_nodes(self):
-        cl = self.get_cluster_mock(3)
+    async def test_get_visibility_error_nodes_returns_empty(self):
+        cl = await self.get_cluster_mock(3)
+        cl._refresh_node_liveliness()
+        cl.nodes["127.0.0.0:3000"].peers = [
+            (("127.0.0.1", 3000, None),),
+            (("127.0.0.2", 3000, None),),
+        ]
+        cl.nodes["127.0.0.1:3000"].peers = [
+            (("127.0.0.0", 3000, None),),
+            (("127.0.0.2", 3000, None),),
+        ]
+        cl.nodes["127.0.0.2:3000"].peers = [
+            (("127.0.0.0", 3000, None),),
+            (("127.0.0.1", 3000, None),),
+        ]
 
         expected = []
         self.assertEqual(
@@ -328,26 +367,40 @@ class ClusterTest(unittest.TestCase):
             "get_visibility_error_nodes did not return the expected result",
         )
 
-        cl._live_nodes = ["127.0.0.1:3000", "127.0.0.2:3000", "127.0.0.0:3000"]
-        expected = ["127.0.0.1:3000", "127.0.0.2:3000", "127.0.0.0:3000"]
+    async def test_get_visibility_error_nodes_returns_node(self):
+        cl = await self.get_cluster_mock(3)
+        cl._refresh_node_liveliness()
+        cl.nodes["127.0.0.0:3000"].peers = [
+            (("127.0.0.1", 3000, None),),
+            (("127.0.0.2", 3000, None),),
+        ]
+        cl.nodes["127.0.0.1:3000"].peers = [
+            (("127.0.0.2", 3000, None),),
+        ]
+        cl.nodes["127.0.0.2:3000"].peers = [
+            (("127.0.0.0", 3000, None),),
+            (("127.0.0.1", 3000, None),),
+        ]
+
+        expected = ["127.0.0.1:3000"]
         self.assertEqual(
             sorted(cl.get_visibility_error_nodes()),
             sorted(expected),
             "get_visibility_error_nodes did not return the expected result",
         )
 
-    def test_get_down_nodes(self):
-        cl = self.get_cluster_mock(3)
+    async def test_get_down_nodes(self):
+        cl = await self.get_cluster_mock(3)
 
         expected = ["172.17.0.3:3000"]
         self.assertEqual(
-            sorted(cl.get_down_nodes()),
+            sorted(await cl.get_down_nodes()),
             sorted(expected),
             "get_down_nodes did not return the expected result",
         )
 
-    def test_update_aliases(self):
-        cl = self.get_cluster_mock(3)
+    async def test_update_aliases(self):
+        cl = await self.get_cluster_mock(3)
         aliases = {}
         endpoints = [("127.0.0.1", 3000)]
         key1 = Node.create_key("127.0.0.2", 3000)
@@ -372,8 +425,8 @@ class ClusterTest(unittest.TestCase):
             aliases, expected, "update_aliases did not return the expected result"
         )
 
-    def test_clear_node_list(self):
-        cl = self.get_cluster_mock(3)
+    async def test_clear_node_list(self):
+        cl = await self.get_cluster_mock(3)
         aliases = cl.aliases
         cl.aliases = {
             "127.0.0.1:3000": "127.0.0.2:3000",
@@ -386,32 +439,37 @@ class ClusterTest(unittest.TestCase):
         )
         cl.aliases = aliases
 
-    def test_call_node_method(self):
-        cl = self.get_cluster_mock(2)
+    @asynctest.fail_on(active_handles=True)
+    async def test_call_node_method(self):
+        cl = await self.get_cluster_mock(2)
 
-        cl.call_node_method(nodes="all", method_name="info_peers")
+        await cl.call_node_method_async(nodes="all", method_name="info_peers")
         for n in cl.nodes.values():
             n._info_cinfo.assert_any_call("peers-clear-std", n.ip)
 
         key = "127.0.0.1:3000"
-        cl.call_node_method(nodes=[key], method_name="info", command="build")
+        await cl.call_node_method_async(
+            nodes=[key], method_name="info", command="build"
+        )
         n = cl.get_node(key)[0]
         n._info_cinfo.assert_called_with("build", n.ip)
 
         key = "127.0.0.1"
-        cl.call_node_method(nodes=[key], method_name="info", command="build")
+        await cl.call_node_method_async(
+            nodes=[key], method_name="info", command="build"
+        )
         n = cl.get_node(key)[0]
         n._info_cinfo.assert_called_with("build", n.ip)
 
         keys = ["127.0.0*"]
-        cl.call_node_method(nodes=keys, method_name="info", command="build")
+        await cl.call_node_method_async(nodes=keys, method_name="info", command="build")
         n = cl.get_node(keys[0])[0]
         n._info_cinfo.assert_any_call("build", n.ip)
         n = cl.get_node(keys[0])[1]
         n._info_cinfo.assert_any_call("build", n.ip)
 
-    def test_is_XDR_enabled(self):
-        cl = self.get_cluster_mock(
+    async def test_is_XDR_enabled(self):
+        cl = await self.get_cluster_mock(
             2,
             return_key_value={
                 "get-config:context=xdr": "enable-xdr=true;config1=config1value;"
@@ -419,12 +477,12 @@ class ClusterTest(unittest.TestCase):
         )
         expected = {"127.0.0.1:3000": True, "127.0.0.0:3000": True}
         self.assertEqual(
-            cl.is_XDR_enabled(),
+            await cl.is_XDR_enabled(),
             expected,
             "is_XDR_enabled(nodes=all) did not return the expected result",
         )
 
-        cl = self.get_cluster_mock(
+        cl = await self.get_cluster_mock(
             2,
             return_key_value={
                 "get-config:context=xdr": "enable-xdr=false;config1=config1value;"
@@ -433,26 +491,23 @@ class ClusterTest(unittest.TestCase):
         key = "127.0.0.1:3000"
         expected = {key: False}
         self.assertEqual(
-            cl.is_XDR_enabled(nodes=[key]),
+            await cl.is_XDR_enabled(nodes=[key]),
             expected,
             "is_XDR_enabled did not return the expected result",
         )
 
-    def test_is_feature_present(self):
-        cl = self.get_cluster_mock(
+    async def test_is_feature_present(self):
+        cl = await self.get_cluster_mock(
             2,
-            return_key_value={
-                "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;"
-            },
         )
         expected = {"127.0.0.1:3000": True, "127.0.0.0:3000": True}
         self.assertEqual(
-            cl.is_feature_present("cdt-map"),
+            await cl.is_feature_present("cdt-map"),
             expected,
             "is_feature_present(nodes=all) did not return the expected result",
         )
 
-        cl = self.get_cluster_mock(
+        cl = await self.get_cluster_mock(
             2,
             return_key_value={
                 "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;"
@@ -461,13 +516,13 @@ class ClusterTest(unittest.TestCase):
         key = "127.0.0.1:3000"
         expected = {key: False}
         self.assertEqual(
-            cl.is_feature_present("wrongFeature", nodes=[key]),
+            await cl.is_feature_present("wrongFeature", nodes=[key]),
             expected,
             "is_feature_present did not return the expected result",
         )
 
-    def test_get_IP_to_node_map(self):
-        cl = self.get_cluster_mock(3)
+    async def test_get_IP_to_node_map(self):
+        cl = await self.get_cluster_mock(3)
         aliases = cl.aliases
         cl.aliases = {
             "127.0.0.1:3000": "127.0.0.2:3000",
@@ -480,14 +535,14 @@ class ClusterTest(unittest.TestCase):
             "127.0.0.0:3000": "A00000000000000",
         }
         self.assertEqual(
-            cl.get_IP_to_node_map(),
+            await cl.get_IP_to_node_map(),
             expected,
             "get_IP_to_node_map did not return the expected result",
         )
         cl.aliases = aliases
 
-    def test_get_node_to_IP_map(self):
-        cl = self.get_cluster_mock(3)
+    async def test_get_node_to_IP_map(self):
+        cl = await self.get_cluster_mock(3)
         aliases = cl.aliases
         cl.aliases = {
             "127.0.0.1:3000": "127.0.0.2:3000",
@@ -499,14 +554,14 @@ class ClusterTest(unittest.TestCase):
             "A00000000000000": "127.0.0.0:3000",
         }
         self.assertEqual(
-            cl.get_node_to_IP_map(),
+            await cl.get_node_to_IP_map(),
             expected,
             "get_node_to_IP_map did not return the expected result",
         )
         cl.aliases = aliases
 
-    def test_get_seed_nodes(self):
-        cl = self.get_cluster_mock(3)
+    async def test_get_seed_nodes(self):
+        cl = await self.get_cluster_mock(3)
         expected = [("127.0.0.0", 3000, None)]
         self.assertEqual(
             cl.get_seed_nodes(),

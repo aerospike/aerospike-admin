@@ -14,11 +14,14 @@
 
 from ctypes import ArgumentError
 import time
+from unittest.mock import call
+import warnings
+from pytest import PytestUnraisableExceptionWarning
 from mock import MagicMock, patch
 import socket
 import unittest
 
-from mock.mock import Mock
+from mock.mock import AsyncMock, Mock
 
 import lib
 from lib.live_cluster.client.types import ASProtocolError, ASResponse
@@ -33,12 +36,15 @@ from lib.live_cluster.client import (
     ASInfoError,
 )
 
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
 
-class NodeTest(unittest.TestCase):
-    def setUp(self):
+
+class NodeInitTest(asynctest.TestCase):
+    async def setUp(self):
         self.maxDiff = None
         self.ip = "192.1.1.1"
-        info_build = patch("lib.live_cluster.client.node.Node.info_build")
         self.get_fully_qualified_domain_name = patch(
             "lib.live_cluster.client.node.get_fully_qualified_domain_name"
         ).start()
@@ -47,86 +53,200 @@ class NodeTest(unittest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-        lib.live_cluster.client.node.Node.info_build = info_build.start()
+        lib.live_cluster.client.node.Node.info_build = patch(
+            "lib.live_cluster.client.node.Node.info_build", AsyncMock()
+        ).start()
         socket.getaddrinfo = getaddrinfo.start()
 
         lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
         self.get_fully_qualified_domain_name.return_value = "host.domain.local"
         socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
 
-        self.node = Node(self.ip)
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         # Here so call count does not include Node initialization
-        self.info_mock = patch("lib.live_cluster.client.node.Node._info_cinfo").start()
-        self.node.conf_schema_handler = MagicMock()
 
-    def test_init_node(self):
+    async def test_init_node(self):
+        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
+            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
+        ).start()
         """
         Ensures that we can instantiate a Node and that the node acquires the
         correct information
         """
 
-        def side_effect(*args):
+        def side_effect(*args, **kwargs):
             cmd = args[0]
-
-            if cmd == "node":
+            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": "A00000000000000",
+                    "service-clear-std": "192.3.3.3:4567",
+                    "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
+                    "features": "features",
+                }
+            elif cmd == "node":
                 return "A00000000000000"
-            elif cmd == "service-clear-std":
-                return "192.3.3.3:4567"
+            elif cmd == "peers-clear-std":
+                return "peers"
             else:
-                return "5.0.0.11"
+                # Info call was made that was not defined here
+                self.fail()
 
         self.info_mock.side_effect = side_effect
         socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.3.3.3", 4567))]
 
-        n = Node("192.1.1.1")
+        n = await Node("192.1.1.1")
 
         self.assertEqual(n.ip, "192.3.3.3", "IP address is not correct")
         self.assertEqual(n.fqdn, "host.domain.local", "FQDN is not correct")
         self.assertEqual(n.port, 4567, "Port is not correct")
         self.assertEqual(n.node_id, "A00000000000000", "Node Id is not correct")
 
-    def test_login_returns_true_if_user_is_none(self):
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_node_connection_uses_same_socket_as_login(self, as_socket_mock_init):
+        # This is important to support the use of load-balancers as a seed node. The login
+        # needs to use the same socket as the rest of the calls to establish a connection.
+        def as_socket_mock():
+            mock = AsyncMock()
+            mock.get_session_info = Mock()
+            mock.settimeout = Mock()
+            return mock
+
+        as_socket_mock_used_for_login = as_socket_mock()
+
+        i = 0
+
+        def side_effect_init(*args, **kwargs):
+            nonlocal i
+            sock = None
+
+            if i == 0:
+                sock = as_socket_mock_used_for_login
+            else:
+                sock = as_socket_mock()
+
+            i += 1
+            return sock
+
+        as_socket_mock_init.side_effect = side_effect_init
+        as_socket_mock_used_for_login.connect.return_value = True
+        as_socket_mock_used_for_login.login.returns_value = True
+        as_socket_mock_used_for_login.get_session_info.return_value = "token", 59
+
+        def side_effect_info(*args, **kwargs):
+            if args[0] == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": "A0",
+                    "service-clear-std": "1.1.1.1:3000;172.17.0.1:3000;172.17.1.1:3000",
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                }
+
+        as_socket_mock_used_for_login.info.side_effect = side_effect_info
+
+        await Node("1.1.1.1", user="user")
+        as_socket_mock_used_for_login.login.assert_called_once()
+        # Login and the first info call used different sockets
+        as_socket_mock_used_for_login.info.assert_has_calls(
+            [
+                call(
+                    ["node", "service-clear-std", "features", "peers-clear-std"],
+                )
+            ],
+        )
+
+
+class NodeTest(asynctest.TestCase):
+    async def setUp(self):
+        self.maxDiff = None
+        self.ip = "192.1.1.1"
+        self.get_fully_qualified_domain_name = patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name"
+        ).start()
+
+        getaddrinfo = patch("socket.getaddrinfo")
+
+        self.addCleanup(patch.stopall)
+
+        lib.live_cluster.client.node.Node.info_build = patch(
+            "lib.live_cluster.client.node.Node.info_build", AsyncMock()
+        ).start()
+        socket.getaddrinfo = getaddrinfo.start()
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+        self.get_fully_qualified_domain_name.return_value = "host.domain.local"
+        socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            self.node: Node = await Node(self.ip, timeout=0)
+
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+
+        # Here so call count does not include Node initialization
+        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
+            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
+        ).start()
+        self.node.conf_schema_handler = MagicMock()
+
+    async def test_login_returns_true_if_user_is_none(self):
         self.node.user = None
         self.node.auth_mode = constants.AuthMode.INTERNAL
 
-        self.assertTrue(self.node.login())
+        self.assertTrue(await self.node.login())
 
-    def test_login_returns_true_if_session_has_not_expired(self):
+    async def test_login_returns_true_if_session_has_not_expired(self):
         self.node.auth_mode = constants.AuthMode.PKI
         self.node.perform_login = False
         self.node.session_expiration = time.time() + 60
 
-        self.assertTrue(self.node.login())
+        self.assertTrue(await self.node.login())
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
-    def test_login_returns_false_if_socket_cant_connect(self, as_socket_mock):
+    async def test_login_returns_true_if_login_was_successful(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+        self.node.user = True
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.returns_value = True
+        as_socket_mock.get_session_info.return_value = "token", 59
+        self.assertEqual(self.node.socket_pool, {self.node.port: set()})
+
+        self.assertTrue(await self.node.login())
+
+        as_socket_mock.close.assert_not_called()
+        self.assertEqual(self.node.socket_pool, {self.node.port: set([as_socket_mock])})
+        self.assertEqual("token", self.node.session_token)
+        self.assertEqual(59, self.node.session_expiration)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_login_returns_false_if_socket_cant_connect(self, as_socket_mock):
         as_socket_mock = as_socket_mock.return_value
         self.node.user = True
         as_socket_mock.connect.return_value = False
 
-        self.assertFalse(self.node.login())
+        self.assertFalse(await self.node.login())
 
         as_socket_mock.connect.assert_called_once()
         as_socket_mock.close.assert_called_once()
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
-    def test_login_raises_except_if_socket_returns_unexpected_error(
+    async def test_login_raises_except_if_socket_returns_unexpected_error(
         self, as_socket_mock
     ):
         as_socket_mock = as_socket_mock.return_value
         self.node.user = True
         as_socket_mock.connect.return_value = True
-        as_socket_mock.login.side_effect = Mock(
-            side_effect=ASProtocolError(ASResponse.BAD_RATE_QUOTA, "")
+        as_socket_mock.login.side_effect = ASProtocolError(
+            ASResponse.BAD_RATE_QUOTA, ""
         )
 
-        util.assert_exception(self, ASProtocolError, None, self.node.login)
+        await self.assertAsyncRaises(ASProtocolError, self.node.login())
 
         as_socket_mock.close.assert_called_once()
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
-    def test_login_logs_warning_when_socket_raises_security_not_enabled(
+    async def test_login_logs_warning_when_socket_raises_security_not_enabled(
         self, as_socket_mock
     ):
         self.node.logger.warning = MagicMock()
@@ -138,19 +258,124 @@ class NodeTest(unittest.TestCase):
         )
         as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
 
-        self.assertTrue(self.node.login())
+        self.assertTrue(await self.node.login())
         self.node.logger.warning.assert_called_with(
             ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
         )
         as_socket_mock.close.assert_not_called()
-        self.assertIsNone(self.node.user)
+        self.assertIsNotNone(self.node.user)
         self.assertFalse(self.node.perform_login)
         self.assertEqual(self.node.session_token, "token")
         self.assertEqual(self.node.session_expiration, "session-ttl")
 
+        # call again to make sure it is not logged twice.
+        self.node.logger.warning.reset_mock()
+        self.node.session_expiration = 0
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.side_effect = Mock(
+            side_effect=ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
+        )
+        as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
+
+        self.assertTrue(await self.node.login())
+        self.node.logger.warning.assert_not_called()
+
+    # TODO: Make unit tests for socket pool
+    async def test_get_connection_uses_socket_pool(self):
+        class ASSocket_Mock(AsyncMock):
+            settimeout = Mock()
+
+        as_socket_mock1 = ASSocket_Mock()
+        as_socket_mock2 = ASSocket_Mock()
+        as_socket_mock1.is_connected.return_value = True
+        as_socket_mock1.connect.return_value = True
+        as_socket_mock1.name = 1
+        as_socket_mock2.is_connected.return_value = False
+        as_socket_mock2.name = 2
+        self.node._initialize_socket_pool()
+        self.node.socket_pool[self.node.port].add(as_socket_mock2)
+        self.node.socket_pool[self.node.port].add(as_socket_mock1)
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock.name, 1)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+
+        class ASSocket_Mock(AsyncMock):
+            settimeout = Mock()
+
+        as_socket_in_pool = ASSocket_Mock()
+        as_socket_in_pool.is_connected.return_value = False
+        self.node.socket_pool[self.node.port].add(as_socket_in_pool)
+
+        self.node.session_token = "session-token"
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.authenticate.return_value = True
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket_mock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_None(self, as_socket_mock):
+        as_socket_mock = as_socket_mock.return_value
+        as_socket_mock.connect.return_value = False
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIsNone(sock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket_when_security_not_enabled(
+        self, as_socket_mock
+    ):
+        as_socket_mock = as_socket_mock.return_value
+        self.node.session_token = "session-token"
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.authenticate.return_value = AsyncMock(
+            side_effect=ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "foo")
+        )
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock, as_socket_mock)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_returns_new_socket_when_no_cred_is_returned_and_user_is_provided(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.perform_login = False
+        as_socket_mock = as_socket_mock.return_value
+        self.node.session_token = None
+        as_socket_mock.connect.return_value = True
+        session_token = "new-token"
+
+        def side_effect(token):
+            if token is None:
+                raise ASProtocolError(ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo")
+            elif token == session_token:
+                return True
+
+            return False
+
+        as_socket_mock.authenticate.side_effect = side_effect
+        as_socket_mock.get_session_info.return_value = session_token, 0
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # just making sure the correct one was returned since we are dealing with a set.
+        self.assertEqual(sock, as_socket_mock)
+        self.assertEqual(self.node.session_token, session_token)
+
     ###### Services ######
 
-    def test_info_peers(self):
+    async def test_info_peers(self):
         """
         Ensure function returns a list of tuples
         """
@@ -160,7 +385,7 @@ class NodeTest(unittest.TestCase):
             (("2001:db8:85a3::8a2e", 6666, None),),
         ]
 
-        services = self.node.info_peers()
+        services = await self.node.info_peers()
 
         self.info_mock.assert_called_with("peers-clear-std", self.ip)
         self.assertEqual(
@@ -174,7 +399,7 @@ class NodeTest(unittest.TestCase):
             (("2001:db8:85a3::8a2e", 4333, "peers"),),
         ]
 
-        services = self.node.info_peers()
+        services = await self.node.info_peers()
 
         self.info_mock.assert_called_with("peers-tls-std", "192.1.1.1")
         self.assertEqual(
@@ -183,14 +408,14 @@ class NodeTest(unittest.TestCase):
             "info_peers with TLS enabled did not return the expected result",
         )
 
-    def test_info_peers_alumni(self):
+    async def test_info_peers_alumni(self):
         """
         Ensure function returns a list of tuples
         """
         self.info_mock.return_value = "0,3000,[[BB9050011AC4202,,[172.17.0.3]]]"
         expected = [(("172.17.0.3", 3000, None),)]
 
-        services = self.node.info_peers_alumni()
+        services = await self.node.info_peers_alumni()
 
         self.info_mock.assert_called_with("alumni-clear-std", "192.1.1.1")
         self.assertEqual(
@@ -203,7 +428,7 @@ class NodeTest(unittest.TestCase):
         self.node.enable_tls = True
         expected = [(("172.17.0.3", 4333, "peers-alumni"),)]
 
-        services = self.node.info_peers_alumni()
+        services = await self.node.info_peers_alumni()
 
         self.info_mock.assert_called_with("alumni-tls-std", "192.1.1.1")
         self.assertEqual(
@@ -212,14 +437,14 @@ class NodeTest(unittest.TestCase):
             "info_peers_alumni with TLS enabled did not return the expected result",
         )
 
-    def test_info_peers_alt(self):
+    async def test_info_peers_alt(self):
         """
         Ensure function returns a list of tuples
         """
         self.info_mock.return_value = "0,3000,[[BB9050011AC4202,,[172.17.0.2]]]"
         expected = [(("172.17.0.2", 3000, None),)]
 
-        services = self.node.info_peers_alt()
+        services = await self.node.info_peers_alt()
 
         self.info_mock.assert_called_with("peers-clear-alt", "192.1.1.1")
         self.assertEqual(
@@ -232,7 +457,7 @@ class NodeTest(unittest.TestCase):
         self.node.enable_tls = True
         expected = [(("172.17.0.2", 4333, "peers-alt"),)]
 
-        services = self.node.info_peers_alt()
+        services = await self.node.info_peers_alt()
 
         self.info_mock.assert_called_with("peers-tls-alt", "192.1.1.1")
         self.assertEqual(
@@ -241,7 +466,7 @@ class NodeTest(unittest.TestCase):
             "info_peers_alt with TLS enabled did not return the expected result",
         )
 
-    def test_info_peers_list(self):
+    async def test_info_peers_list(self):
         self.info_mock.return_value = "0,3000,[[BB9050011AC4202,,[172.17.0.2]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]]]]"
         self.node.use_services_alt = True
         expected = [
@@ -249,7 +474,7 @@ class NodeTest(unittest.TestCase):
             (("2001:db8:85a3::8a2e", 3000, None),),
         ]
 
-        peers_list = self.node.info_peers_list()
+        peers_list = await self.node.info_peers_list()
 
         self.info_mock.assert_called_with("peers-clear-alt", "192.1.1.1")
         self.assertEqual(
@@ -266,7 +491,7 @@ class NodeTest(unittest.TestCase):
             (("2001:db8:85a3::8a2e", 6666, None),),
         ]
 
-        peers_list = self.node.info_peers_list()
+        peers_list = await self.node.info_peers_list()
 
         self.info_mock.assert_called_with("peers-clear-std", "192.1.1.1")
         self.assertEqual(
@@ -282,7 +507,7 @@ class NodeTest(unittest.TestCase):
             (("2001:db8:85a3::8a2e", 4333, "peers"),),
         ]
 
-        peers_list = self.node.info_peers_list()
+        peers_list = await self.node.info_peers_list()
 
         self.info_mock.assert_called_with("peers-tls-std", "192.1.1.1")
         self.assertEqual(
@@ -296,7 +521,7 @@ class NodeTest(unittest.TestCase):
         self.node.use_services_alt = True
         expected = [(("172.17.0.2", 3000, None),)]
 
-        peers_list = self.node.info_peers_list()
+        peers_list = await self.node.info_peers_list()
 
         self.info_mock.assert_called_with("peers-clear-alt", "192.1.1.1")
         self.assertEqual(
@@ -311,7 +536,7 @@ class NodeTest(unittest.TestCase):
         self.node.enable_tls = True
         expected = [(("172.17.0.2", 4333, "peers-alt"),)]
 
-        peers_list = self.node.info_peers_list()
+        peers_list = await self.node.info_peers_list()
 
         self.info_mock.assert_called_with("peers-tls-alt", "192.1.1.1")
         self.assertEqual(
@@ -330,7 +555,7 @@ class NodeTest(unittest.TestCase):
         self.node.consider_alumni = True
         expected = [(("172.17.0.3", 3000, None),), (("172.17.0.2", 3000, None),)]
 
-        peers_list = self.node.info_peers_list()
+        peers_list = await self.node.info_peers_list()
 
         self.assertEqual(self.info_mock.call_count, 2)
         self.info_mock.assert_any_call("alumni-clear-std", "192.1.1.1")
@@ -353,7 +578,7 @@ class NodeTest(unittest.TestCase):
             (("172.17.0.2", 4333, "peers-alt"),),
         ]
 
-        peers_list = self.node.info_peers_list()
+        peers_list = await self.node.info_peers_list()
 
         self.assertEqual(self.info_mock.call_count, 2)
         self.info_mock.assert_any_call("alumni-tls-std", "192.1.1.1")
@@ -367,11 +592,11 @@ class NodeTest(unittest.TestCase):
         self.node.enable_tls = False
         self.node.consider_alumni = False
 
-    def test_info_service_list(self):
+    async def test_info_service_list(self):
         self.info_mock.return_value = "172.17.0.1:3000,172.17.1.1:3000"
         expected = [("172.17.0.1", 3000, None), ("172.17.1.1", 3000, None)]
 
-        service_list = self.node.info_service_list()
+        service_list = await self.node.info_service_list()
 
         self.info_mock.assert_called_with("service-clear-std", "192.1.1.1")
         self.assertEqual(
@@ -384,7 +609,7 @@ class NodeTest(unittest.TestCase):
         self.node.enable_tls = True
         expected = [("172.17.0.1", 4333, None), ("172.17.1.1", 4333, None)]
 
-        service_list = self.node.info_service_list()
+        service_list = await self.node.info_service_list()
 
         self.info_mock.assert_called_with("service-tls-std", "192.1.1.1")
         self.assertEqual(
@@ -398,7 +623,7 @@ class NodeTest(unittest.TestCase):
         self.node.use_services_alt = True
         expected = [("172.17.0.2", 3000, None), ("172.17.1.2", 3000, None)]
 
-        service_list = self.node.info_service_list()
+        service_list = await self.node.info_service_list()
 
         self.info_mock.assert_called_with("service-clear-alt", "192.1.1.1")
         self.assertEqual(
@@ -411,7 +636,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "172.17.0.2:4333,172.17.1.2:4333"
         expected = [("172.17.0.2", 4333, None), ("172.17.1.2", 4333, None)]
 
-        service_list = self.node.info_service_list()
+        service_list = await self.node.info_service_list()
 
         self.info_mock.assert_called_with("service-tls-alt", "192.1.1.1")
         self.assertEqual(
@@ -423,11 +648,11 @@ class NodeTest(unittest.TestCase):
         self.node.enable_tls = False
         self.node.use_services_alt = False
 
-    def test_info_statistics(self):
+    async def test_info_statistics(self):
         self.info_mock.return_value = "cs=2;ck=71;ci=false;o=5"
         expected = {"cs": "2", "ck": "71", "ci": "false", "o": "5"}
 
-        stats = self.node.info_statistics()
+        stats = await self.node.info_statistics()
 
         self.info_mock.assert_called_with("statistics", self.ip)
         self.assertEqual(
@@ -436,11 +661,11 @@ class NodeTest(unittest.TestCase):
             "info_statistics error:\n_expected:\t%s\n_found:\t%s" % (expected, stats),
         )
 
-    def test_info_namespaces(self):
+    async def test_info_namespaces(self):
         self.info_mock.return_value = "test;bar"
         expected = ["test", "bar"]
 
-        namespaces = self.node.info_namespaces()
+        namespaces = await self.node.info_namespaces()
 
         self.info_mock.assert_called_with("namespaces", self.ip)
         self.assertEqual(
@@ -450,11 +675,11 @@ class NodeTest(unittest.TestCase):
             % (expected, namespaces),
         )
 
-    def test_info_node(self):
+    async def test_info_node(self):
         self.info_mock.return_value = "BB96DDF04CA0568"
         expected = "BB96DDF04CA0568"
 
-        node = self.node.info_node()
+        node = await self.node.info_node()
 
         self.info_mock.assert_called_with("node", self.ip)
         self.assertEqual(
@@ -463,11 +688,11 @@ class NodeTest(unittest.TestCase):
             "info_node error:\n_expected:\t%s\n_found:\t%s" % (expected, node),
         )
 
-    def test_info_namespace_statistics(self):
+    async def test_info_namespace_statistics(self):
         self.info_mock.return_value = "asdf=1;b=b;c=!@#$%^&*()"
         expected = {"asdf": "1", "b": "b", "c": "!@#$%^&*()"}
 
-        stats = self.node.info_namespace_statistics("test")
+        stats = await self.node.info_namespace_statistics("test")
 
         self.info_mock.assert_called_with("namespace/test", self.ip)
         self.assertEqual(
@@ -477,7 +702,7 @@ class NodeTest(unittest.TestCase):
             % (expected, stats),
         )
 
-    def test_info_all_namespace_statistics(self):
+    async def test_info_all_namespace_statistics(self):
         self.info_mock.side_effect = [
             "foo;bar",
             "asdf=1;b=b;c=!@#$%^&*()",
@@ -488,7 +713,7 @@ class NodeTest(unittest.TestCase):
             "bar": {"cdef": "2", "c": "c", "d": ")(*&^%$#@!"},
         }
 
-        actual = self.node.info_all_namespace_statistics()
+        actual = await self.node.info_all_namespace_statistics()
 
         self.assertEqual(self.info_mock.call_count, 3)
         self.info_mock.assert_any_call("namespaces", self.ip)
@@ -496,7 +721,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.assert_any_call("namespace/bar", self.ip)
         self.assertEqual(actual, expected)
 
-    def info_all_namespace_statistics(self):
+    async def info_all_namespace_statistics(self):
         self.info_mock.return_value = (
             "ns=test:set=jar-set:objects=1:tombstones=2:"
             "memory_data_bytes=3:device_data_bytes=4:truncate_lut=5:"
@@ -526,12 +751,12 @@ class NodeTest(unittest.TestCase):
             },
         }
 
-        actual = self.node.info_all_set_statistics()
+        actual = await self.node.info_all_set_statistics()
 
         self.info_mock.assert_called_with("sets")
         self.assertDictEqual(actual, expected)
 
-    def test_info_health_outliers(self):
+    async def test_info_health_outliers(self):
         self.info_mock.return_value = (
             "id=bb9040011ac4202:confidence_pct=100:"
             "reason=fabric_connections_opened;id=bb9040011ac4203:"
@@ -556,16 +781,16 @@ class NodeTest(unittest.TestCase):
             },
         }
 
-        actual = self.node.info_health_outliers()
+        actual = await self.node.info_health_outliers()
 
         self.info_mock.assert_called_with("health-outliers", self.ip)
         self.assertDictEqual(actual, expected)
 
-    def test_info_best_practices(self):
+    async def test_info_best_practices(self):
         self.info_mock.return_value = "failed_best_practices=none"
         expected = []
 
-        actual = self.node.info_best_practices()
+        actual = await self.node.info_best_practices()
 
         self.info_mock.assert_called_with("best-practices", self.ip)
         self.assertListEqual(actual, expected)
@@ -573,12 +798,12 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "failed_best_practices=foo,bar,jar"
         expected = ["foo", "bar", "jar"]
 
-        actual = self.node.info_best_practices()
+        actual = await self.node.info_best_practices()
 
         self.info_mock.assert_called_with("best-practices", self.ip)
         self.assertListEqual(actual, expected)
 
-    def test_info_bin_statistics(self):
+    async def test_info_bin_statistics(self):
         self.info_mock.return_value = (
             "test:bin_names=1,bin_names_quota=2,3,name,"
             "age;bar:bin_names=5,bin_names_quota=6,age;"
@@ -594,42 +819,44 @@ class NodeTest(unittest.TestCase):
             },
         }
 
-        actual = self.node.info_bin_statistics()
+        actual = await self.node.info_bin_statistics()
 
         self.info_mock.assert_called_with("bins", self.ip)
         self.assertDictEqual(actual, expected)
 
-    def test_info_XDR_statistics_with_server_before_5(self):
+    async def test_info_XDR_statistics_with_server_before_5(self):
         self.info_mock.reset_mock()
         lib.live_cluster.client.node.Node.info_build.return_value = "2.5.6"
         self.info_mock.side_effect = ["a=b;c=1;2=z"]
         self.node.features = "xdr"
         expected = {"a": "b", "c": "1", "2": "z"}
 
-        actual = self.node.info_XDR_statistics()
+        actual = await self.node.info_XDR_statistics()
 
         self.assertEqual(self.info_mock.call_count, 1)
         self.info_mock.assert_any_call("statistics/xdr", self.ip)
         self.assertDictEqual(actual, expected)
 
     @patch("lib.live_cluster.client.node.Node.info_all_dc_statistics")
-    def test_info_XDR_statistics_with_server_after_5(self, info_all_dc_statistics_mock):
+    async def test_info_XDR_statistics_with_server_after_5(
+        self, info_all_dc_statistics_mock
+    ):
         info_all_dc_statistics_mock.return_value = "blah"
         expected = "blah"
 
-        actual = self.node.info_XDR_statistics()
+        actual = await self.node.info_XDR_statistics()
 
         self.assertEqual(lib.live_cluster.client.node.Node.info_build.call_count, 1)
         self.assertEqual(info_all_dc_statistics_mock.call_count, 1)
         self.assertEqual(actual, expected)
 
     @patch("lib.live_cluster.client.node.Node.info_dcs")
-    def test_info_set_config_xdr_create_dc_success(self, info_dcs_mock):
+    async def test_info_set_config_xdr_create_dc_success(self, info_dcs_mock):
         info_dcs_mock.return_value = ["DC2", "DC3"]
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_create_dc("DC1")
+        actual = await self.node.info_set_config_xdr_create_dc("DC1")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;action=create", self.ip
@@ -641,7 +868,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_create_dc("DC1")
+        actual = await self.node.info_set_config_xdr_create_dc("DC1")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;datacenter=DC1;action=create", self.ip
@@ -649,10 +876,10 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     @patch("lib.live_cluster.client.node.Node.info_dcs")
-    def test_info_set_config_xdr_create_dc_fail(self, info_dcs_mock):
+    async def test_info_set_config_xdr_create_dc_fail(self, info_dcs_mock):
         info_dcs_mock.return_value = ["DC1", "DC2", "DC3"]
 
-        actual = self.node.info_set_config_xdr_create_dc("DC1")
+        actual = await self.node.info_set_config_xdr_create_dc("DC1")
 
         self.assertEqual(
             str(actual), "Failed to create XDR datacenter : DC already exists."
@@ -661,19 +888,19 @@ class NodeTest(unittest.TestCase):
         info_dcs_mock.return_value = ["DC2", "DC3"]
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_xdr_create_dc("DC1")
+        actual = await self.node.info_set_config_xdr_create_dc("DC1")
 
         self.assertEqual(
             str(actual), "Failed to create XDR datacenter : Unknown error occurred."
         )
 
     @patch("lib.live_cluster.client.node.Node.info_dcs")
-    def test_info_set_config_xdr_delete_dc_success(self, info_dcs_mock):
+    async def test_info_set_config_xdr_delete_dc_success(self, info_dcs_mock):
         info_dcs_mock.return_value = ["DC1", "DC2"]
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_delete_dc("DC1")
+        actual = await self.node.info_set_config_xdr_delete_dc("DC1")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;action=delete", self.ip
@@ -685,7 +912,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_delete_dc("DC1")
+        actual = await self.node.info_set_config_xdr_delete_dc("DC1")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;datacenter=DC1;action=delete", self.ip
@@ -693,10 +920,10 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     @patch("lib.live_cluster.client.node.Node.info_dcs")
-    def test_info_set_config_xdr_delete_dc_fail(self, info_dcs_mock):
+    async def test_info_set_config_xdr_delete_dc_fail(self, info_dcs_mock):
         info_dcs_mock.return_value = ["DC2", "DC3"]
 
-        actual = self.node.info_set_config_xdr_delete_dc("DC1")
+        actual = await self.node.info_set_config_xdr_delete_dc("DC1")
 
         self.assertEqual(actual.message, "Failed to delete XDR datacenter")
         self.assertEqual(actual.response, "DC does not exist")
@@ -704,16 +931,16 @@ class NodeTest(unittest.TestCase):
         info_dcs_mock.return_value = ["DC1", "DC2", "DC3"]
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_xdr_delete_dc("DC1")
+        actual = await self.node.info_set_config_xdr_delete_dc("DC1")
 
         self.assertEqual(actual.message, "Failed to delete XDR datacenter")
         self.assertEqual(actual.response, "Unknown error occurred")
 
-    def test_info_set_config_xdr_add_namespace_success(self):
+    async def test_info_set_config_xdr_add_namespace_success(self):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_add_namespace("DC1", "ns")
+        actual = await self.node.info_set_config_xdr_add_namespace("DC1", "ns")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;namespace=ns;action=add", self.ip
@@ -722,7 +949,7 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_xdr_add_namespace(
+        actual = await self.node.info_set_config_xdr_add_namespace(
             "DC1", "ns", rewind="12345"
         )
 
@@ -735,7 +962,7 @@ class NodeTest(unittest.TestCase):
         lib.live_cluster.client.node.Node.info_build.return_value = "4.3.5.8"
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_xdr_add_namespace(
+        actual = await self.node.info_set_config_xdr_add_namespace(
             "DC1", "ns", rewind="12345"
         )
 
@@ -745,8 +972,8 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-    def test_info_set_config_xdr_add_namespace_fail(self):
-        actual = self.node.info_set_config_xdr_add_namespace(
+    async def test_info_set_config_xdr_add_namespace_fail(self):
+        actual = await self.node.info_set_config_xdr_add_namespace(
             "DC1", "ns", rewind="123aaa456"
         )
 
@@ -755,7 +982,9 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_xdr_add_namespace("DC1", "ns", rewind="all")
+        actual = await self.node.info_set_config_xdr_add_namespace(
+            "DC1", "ns", rewind="all"
+        )
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;namespace=ns;action=add;rewind=all",
@@ -764,11 +993,11 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(actual.message, "Failed to add namespace to XDR datacenter")
         self.assertEqual(actual.response, "Unknown error occurred")
 
-    def test_info_set_config_xdr_remove_namespace_success(self):
+    async def test_info_set_config_xdr_remove_namespace_success(self):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_remove_namespace("DC1", "ns")
+        actual = await self.node.info_set_config_xdr_remove_namespace("DC1", "ns")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;namespace=ns;action=remove", self.ip
@@ -779,28 +1008,28 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_remove_namespace("DC1", "ns")
+        actual = await self.node.info_set_config_xdr_remove_namespace("DC1", "ns")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;datacenter=DC1;namespace=ns;action=remove", self.ip
         )
         self.assertEqual(actual, expected)
 
-    def test_info_set_config_xdr_remove_namespace_fail(self):
+    async def test_info_set_config_xdr_remove_namespace_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_xdr_remove_namespace("DC1", "ns")
+        actual = await self.node.info_set_config_xdr_remove_namespace("DC1", "ns")
 
         self.assertEqual(
             actual.message, "Failed to remove namespace from XDR datacenter"
         )
         self.assertEqual(actual.response, "Unknown error occurred")
 
-    def test_info_set_config_xdr_add_node_success(self):
+    async def test_info_set_config_xdr_add_node_success(self):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_add_node("DC1", "3.3.3.3:8000")
+        actual = await self.node.info_set_config_xdr_add_node("DC1", "3.3.3.3:8000")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;node-address-port=3.3.3.3:8000;action=add",
@@ -812,7 +1041,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_add_node("DC1", "3.3.3.3:8000")
+        actual = await self.node.info_set_config_xdr_add_node("DC1", "3.3.3.3:8000")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;datacenter=DC1;node-address-port=3.3.3.3:8000;action=add",
@@ -820,19 +1049,19 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-    def test_info_set_config_xdr_add_node_fail(self):
+    async def test_info_set_config_xdr_add_node_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_xdr_add_node("DC1", "3.3.3.3:8000")
+        actual = await self.node.info_set_config_xdr_add_node("DC1", "3.3.3.3:8000")
 
         self.assertEqual(actual.message, "Failed to add node to XDR datacenter")
         self.assertEqual(actual.response, "Unknown error occurred")
 
-    def test_info_set_config_xdr_remove_node_success(self):
+    async def test_info_set_config_xdr_remove_node_success(self):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_remove_node("DC1", "3.3.3.3:8000")
+        actual = await self.node.info_set_config_xdr_remove_node("DC1", "3.3.3.3:8000")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;node-address-port=3.3.3.3:8000;action=remove",
@@ -844,7 +1073,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "ok"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_set_config_xdr_remove_node("DC1", "3.3.3.3:8000")
+        actual = await self.node.info_set_config_xdr_remove_node("DC1", "3.3.3.3:8000")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;datacenter=DC1;node-address-port=3.3.3.3:8000;action=remove",
@@ -852,10 +1081,10 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, expected)
 
-    def test_info_set_config_xdr_remove_node_fail(self):
+    async def test_info_set_config_xdr_remove_node_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_xdr_remove_node("DC1", "3.3.3.3:8000")
+        actual = await self.node.info_set_config_xdr_remove_node("DC1", "3.3.3.3:8000")
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;node-address-port=3.3.3.3:8000;action=remove",
@@ -864,10 +1093,12 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(actual.message, "Failed to remove node from XDR datacenter")
         self.assertEqual(actual.response, "Unknown error occurred")
 
-    def test_info_set_config_xdr_success(self):
+    async def test_info_set_config_xdr_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_xdr("foo", "bar", dc="DC1", namespace="NS")
+        actual = await self.node.info_set_config_xdr(
+            "foo", "bar", dc="DC1", namespace="NS"
+        )
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;foo=bar;dc=DC1;namespace=NS", self.ip
@@ -877,22 +1108,26 @@ class NodeTest(unittest.TestCase):
         lib.live_cluster.client.node.Node.info_build.return_value = "3.9"
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_xdr("foo", "bar", dc="DC1", namespace="NS")
+        actual = await self.node.info_set_config_xdr(
+            "foo", "bar", dc="DC1", namespace="NS"
+        )
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;foo=bar;datacenter=DC1;namespace=NS", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_set_config_xdr_fail(self):
-        actual = self.node.info_set_config_xdr("foo", "bar", namespace="NS")
+    async def test_info_set_config_xdr_fail(self):
+        actual = await self.node.info_set_config_xdr("foo", "bar", namespace="NS")
 
         self.assertIsInstance(actual, ArgumentError)
         self.assertEqual(str(actual), "Namespace must be accompanied by a dc.")
 
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_xdr("foo", "bar", dc="DC1", namespace="NS")
+        actual = await self.node.info_set_config_xdr(
+            "foo", "bar", dc="DC1", namespace="NS"
+        )
 
         self.info_mock.assert_called_with(
             "set-config:context=xdr;foo=bar;dc=DC1;namespace=NS", self.ip
@@ -907,29 +1142,29 @@ class NodeTest(unittest.TestCase):
         """
         self.assertEqual(actual.response, "Invalid subcontext xdr")
 
-    def test_info_logs(self):
+    async def test_info_logs(self):
         self.info_mock.return_value = "0:path0;1:path1;2:path2"
         expected = {"path0": "0", "path1": "1", "path2": "2"}
 
-        actual = self.node.info_logs()
+        actual = await self.node.info_logs()
 
         self.assertDictEqual(actual, expected)
 
     @patch("lib.live_cluster.client.node.Node.info_logs")
-    def test_info_set_config_logging_success(self, info_logs_mock):
+    async def test_info_set_config_logging_success(self, info_logs_mock):
         info_logs_mock.return_value = {"path0": "0", "path1": "1", "path2": "2"}
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_logging("path1", "foo", "bar")
+        actual = await self.node.info_set_config_logging("path1", "foo", "bar")
 
         self.info_mock.assert_called_with("log-set:id=1;foo=bar", self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     @patch("lib.live_cluster.client.node.Node.info_logs")
-    def test_info_set_config_logging_fail(self, info_logs_mock):
+    async def test_info_set_config_logging_fail(self, info_logs_mock):
         info_logs_mock.return_value = {"path0": "0", "path1": "1", "path2": "2"}
 
-        actual = self.node.info_set_config_logging("path-DNE", "foo", "bar")
+        actual = await self.node.info_set_config_logging("path-DNE", "foo", "bar")
 
         self.assertIsInstance(actual, ASInfoError)
         self.assertEqual(
@@ -940,7 +1175,7 @@ class NodeTest(unittest.TestCase):
         info_logs_mock.return_value = {"path0": "0", "path1": "1", "path2": "2"}
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_logging("path2", "foo", "bar")
+        actual = await self.node.info_set_config_logging("path2", "foo", "bar")
 
         self.assertIsInstance(actual, ASInfoConfigError)
         self.assertEqual(
@@ -949,18 +1184,18 @@ class NodeTest(unittest.TestCase):
 
         self.assertEqual(actual.response, "Invalid subcontext logging")
 
-    def test_info_set_config_service_success(self):
+    async def test_info_set_config_service_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_service("foo", "bar")
+        actual = await self.node.info_set_config_service("foo", "bar")
 
         self.info_mock.assert_called_with("set-config:context=service;foo=bar", self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_set_config_service_fail(self):
+    async def test_info_set_config_service_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_service("foo", "bar")
+        actual = await self.node.info_set_config_service("foo", "bar")
 
         self.assertIsInstance(actual, ASInfoConfigError)
         self.assertEqual(
@@ -968,10 +1203,10 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual.response, "Invalid subcontext service")
 
-    def test_info_set_config_namespace_success(self):
+    async def test_info_set_config_namespace_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_namespace("foo", "bar", "buff")
+        actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
 
         self.info_mock.assert_called_with(
             "set-config:context=namespace;id=buff;foo=bar", self.ip
@@ -980,7 +1215,7 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_namespace(
+        actual = await self.node.info_set_config_namespace(
             "foo", "bar", "buff", set_="test-set"
         )
 
@@ -991,7 +1226,7 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_namespace(
+        actual = await self.node.info_set_config_namespace(
             "foo", "bar", "buff", subcontext="storage-engine"
         )
 
@@ -1002,7 +1237,7 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_namespace(
+        actual = await self.node.info_set_config_namespace(
             "foo", "bar", "buff", subcontext="geo2dsphere-within"
         )
 
@@ -1011,7 +1246,7 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-        actual = self.node.info_set_config_namespace(
+        actual = await self.node.info_set_config_namespace(
             "foo", "bar", "buff", subcontext="index-type"
         )
 
@@ -1020,10 +1255,10 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_set_config_namespace_fail(self):
+    async def test_info_set_config_namespace_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_namespace("foo", "bar", "buff")
+        actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
 
         self.assertIsInstance(actual, ASInfoConfigError)
         self.assertEqual(
@@ -1031,24 +1266,24 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual.response, "Invalid subcontext namespace")
 
-    def test_info_set_config_network_success(self):
+    async def test_info_set_config_network_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_network("foo", "bar", "sub-context")
+        actual = await self.node.info_set_config_network("foo", "bar", "sub-context")
 
         self.info_mock.assert_called_with(
             "set-config:context=network;sub-context.foo=bar", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_set_config_network_fail(self):
+    async def test_info_set_config_network_fail(self):
         self.info_mock.return_value = "error"
         self.node.conf_schema_handler.get_subcontext.side_effect = [
             ["network"],
             ["not-sub"],
         ]
 
-        actual = self.node.info_set_config_network("foo", "bar", "sub")
+        actual = await self.node.info_set_config_network("foo", "bar", "sub")
 
         self.assertIsInstance(actual, ASInfoConfigError)
         self.assertEqual(
@@ -1056,10 +1291,10 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual.response, "Invalid subcontext sub")
 
-    def test_info_set_config_security_success(self):
+    async def test_info_set_config_security_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_security(
+        actual = await self.node.info_set_config_security(
             "foo", "bar", subcontext="sub-context"
         )
 
@@ -1070,17 +1305,17 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_set_config_security("foo", "bar")
+        actual = await self.node.info_set_config_security("foo", "bar")
 
         self.info_mock.assert_called_with(
             "set-config:context=security;foo=bar", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_set_config_security_fail(self):
+    async def test_info_set_config_security_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_set_config_security("foo", "bar", "sub")
+        actual = await self.node.info_set_config_security("foo", "bar", "sub")
 
         self.assertIsInstance(actual, ASInfoConfigError)
         self.assertEqual(
@@ -1088,15 +1323,15 @@ class NodeTest(unittest.TestCase):
         )
         self.assertEqual(actual.response, "Invalid subcontext security")
 
-    def test_info_get_config_service(self):
+    async def test_info_get_config_service(self):
 
         # todo call getconfig with various formats
         self.info_mock.return_value = "asdf=1;b=b;c=!@#$%^&*()"
         expected = {"asdf": "1", "b": "b", "c": "!@#$%^&*()"}
 
-        config = self.node.info_get_config("service")
+        config = await self.node.info_get_config("service")
 
-        self.info_mock.assert_called_with("get-config:", self.ip)
+        self.info_mock.assert_called_with("get-config:context=service", self.ip)
         self.assertEqual(
             config,
             expected,
@@ -1104,35 +1339,30 @@ class NodeTest(unittest.TestCase):
             % (expected, config),
         )
 
-    def test_info_get_config_namespace(self):
-        self.node.info_get_config("namespace", "test")
+    async def test_info_get_config_namespace(self):
+        await self.node.info_get_config("namespace", "test")
         self.info_mock.assert_called_with(
             "get-config:context=namespace;id=test", self.ip
         )
 
-    @patch("lib.live_cluster.client.node.Node.info_namespaces")
-    def test_info_get_config_all(self, info_namespaces_mock):
-        info_namespaces_mock.return_value = [
-            "test_two",
-        ]
-        self.node.info_get_config("all")
+    async def test_info_get_config_xdr(self):
+        def side_effect(req, ip):
+            if req == "get-config:context=xdr":
+                return "dcs=DC1,DC2;src-id=0;trace-sample=0"
+            elif req == "get-config:context=xdr;dc=DC1":
+                return "namespaces=bar,foo;a=1;b=2;c=3"
+            elif req == "get-config:context=xdr;dc=DC1;namespace=bar":
+                return "d=4;e=5;f=6"
+            elif req == "get-config:context=xdr;dc=DC1;namespace=foo":
+                return "d=7;e=8;f=9"
+            elif req == "get-config:context=xdr;dc=DC2":
+                return "namespaces=jar;a=10;b=11;c=12"
+            elif req == "get-config:context=xdr;dc=DC2;namespace=jar":
+                return "d=13;e=14;f=15"
+            else:
+                raise Exception("Unexpected info call: " + req)
 
-        info_namespaces_mock.assert_called()
-        self.assertEqual(self.info_mock.call_count, 2)
-        self.info_mock.assert_any_call(
-            "get-config:context=namespace;id=test_two", self.ip
-        )
-        self.info_mock.assert_any_call("get-config:", self.ip)
-
-    def test_info_get_config_xdr(self):
-        self.info_mock.side_effect = [
-            "dcs=DC1,DC2;src-id=0;trace-sample=0",
-            "namespaces=bar,foo;a=1;b=2;c=3",
-            "d=4;e=5;f=6",
-            "d=7;e=8;f=9",
-            "namespaces=jar;a=10;b=11;c=12",
-            "d=13;e=14;f=15",
-        ]
+        self.info_mock.side_effect = side_effect
         expected = {
             "dc_configs": {
                 "DC1": {
@@ -1158,9 +1388,8 @@ class NodeTest(unittest.TestCase):
             "xdr_configs": {"dcs": "DC1,DC2", "src-id": "0", "trace-sample": "0"},
         }
 
-        actual = self.node.info_get_config("xdr")
+        actual = await self.node.info_get_config("xdr")
 
-        self.assertEqual(self.info_mock.call_count, 6)
         self.info_mock.assert_any_call("get-config:context=xdr", self.ip)
         self.info_mock.assert_any_call("get-config:context=xdr;dc=DC1", self.ip)
         self.info_mock.assert_any_call(
@@ -1178,8 +1407,8 @@ class NodeTest(unittest.TestCase):
     @patch(
         "lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser.conf_parser.parse_file"
     )
-    def test_info_get_originalconfig(self, parse_file_mock):
-        self.assertDictEqual(self.node.info_get_originalconfig(), {})
+    async def test_info_get_originalconfig(self, parse_file_mock):
+        self.assertDictEqual(await self.node.info_get_originalconfig(), {})
 
         self.node.localhost = True
         parse_file_mock.return_value = {
@@ -1201,7 +1430,7 @@ class NodeTest(unittest.TestCase):
             "tar": "config_data_3",
         }
 
-        actual = self.node.info_get_originalconfig("namespace")
+        actual = await self.node.info_get_originalconfig("namespace")
 
         self.assertDictEqual(actual, expected)
 
@@ -1220,10 +1449,10 @@ class NodeTest(unittest.TestCase):
         }
 
         self.assertDictEqual(
-            {}, self.node.info_get_originalconfig(stanza="does-not-exist")
+            {}, await self.node.info_get_originalconfig(stanza="does-not-exist")
         )
 
-    def test_info_latency(self):
+    async def test_info_latency(self):
         self.info_mock.return_value = (
             "{ns}-read:23:53:38-GMT,ops/sec,>1ms,>8ms,>64ms;23:53:48,5234.4,0.54,0.02,0.00;"
             "{ns}-write:23:53:38-GMT,ops/sec,>1ms,>8ms,>64ms;"
@@ -1257,14 +1486,14 @@ class NodeTest(unittest.TestCase):
             },
         }
 
-        latency_data = self.node.info_latency()
+        latency_data = await self.node.info_latency()
 
         self.assertDictEqual(
             latency_data, expected, "info_latency did not return the expected result"
         )
         self.info_mock.assert_called_with("latency:", self.ip)
 
-    def test_info_latency_with_args(self):
+    async def test_info_latency_with_args(self):
         self.info_mock.return_value = (
             "{ns}-read:23:50:28-GMT,ops/sec,>1ms,>8ms,>64ms;23:50:58,0.0,0.00,0.00,0.00;"
             "23:51:28,0.0,0.00,0.00,0.00;23:51:58,0.0,0.00,0.00,0.00;"
@@ -1307,7 +1536,9 @@ class NodeTest(unittest.TestCase):
             }
         }
 
-        latency_actual = self.node.info_latency(back=300, duration=120, slice_tm=30)
+        latency_actual = await self.node.info_latency(
+            back=300, duration=120, slice_tm=30
+        )
 
         self.assertDictEqual(
             latency_actual,
@@ -1318,7 +1549,7 @@ class NodeTest(unittest.TestCase):
             "latency:back=300;duration=120;slice=30;", self.ip
         )
 
-    def test_info_latencies_default(self):
+    async def test_info_latencies_default(self):
         raw = """
         batch-index:;{test}-read:msec,1.0,2.00,3.00,4.00,5.00,6.00,7.00,8.00,
         9.00,10.00,11.00,12.00,13.00,14.00,15.00,16.00,17.00,18.00;{test}-write:msec,
@@ -1365,11 +1596,11 @@ class NodeTest(unittest.TestCase):
             },
         }
 
-        result = self.node.info_latencies()
+        result = await self.node.info_latencies()
         self.assertDictEqual(result, expected)
         self.info_mock.assert_called_with("latencies:", self.ip)
 
-    def test_info_latencies_e2_b4(self):
+    async def test_info_latencies_e2_b4(self):
         raw = """
         batch-index:;{test}-read:msec,1.0,2.00,3.00,4.00,5.00,6.00,7.00,8.00,
         9.00,10.00,11.00,12.00,13.00,14.00,15.00,16.00,17.00,18.00;{test}-write:msec,
@@ -1416,11 +1647,11 @@ class NodeTest(unittest.TestCase):
             },
         }
 
-        result = self.node.info_latencies(buckets=4, exponent_increment=2)
+        result = await self.node.info_latencies(buckets=4, exponent_increment=2)
         self.assertDictEqual(result, expected)
         self.info_mock.assert_called_with("latencies:", self.ip)
 
-    def test_info_latencies_verbose(self):
+    async def test_info_latencies_verbose(self):
         raw = ""
         self.info_mock.side_effect = [
             "test",
@@ -1435,7 +1666,7 @@ class NodeTest(unittest.TestCase):
             raw,
         ]
 
-        _ = self.node.info_latencies(verbose=True)
+        _ = await self.node.info_latencies(verbose=True)
 
         self.assertEqual(self.info_mock.call_count, 10)
         self.info_mock.assert_any_call("latencies:", self.ip)
@@ -1458,11 +1689,11 @@ class NodeTest(unittest.TestCase):
             "latencies:hist={test}-benchmarks-batch-sub", self.ip
         )
 
-    def test_info_dcs(self):
+    async def test_info_dcs(self):
         self.info_mock.return_value = "a=b;c=d;e=f;dcs=DC1,DC2,DC3"
         expected = ["DC1", "DC2", "DC3"]
 
-        actual = self.node.info_dcs()
+        actual = await self.node.info_dcs()
 
         self.info_mock.assert_called_with("get-config:context=xdr", self.ip)
         self.assertListEqual(actual, expected)
@@ -1470,7 +1701,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "a=b;c=d;e=f;dcs=DC1,DC2,DC3"
         self.node.features = "xdr"
 
-        actual = self.node.info_dcs()
+        actual = await self.node.info_dcs()
 
         self.info_mock.assert_called_with("get-config:context=xdr", self.ip)
         self.assertListEqual(actual, expected)
@@ -1479,18 +1710,18 @@ class NodeTest(unittest.TestCase):
         expected = ["DC3", "DC4", "DC5"]
         lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
 
-        actual = self.node.info_dcs()
+        actual = await self.node.info_dcs()
 
         self.info_mock.assert_called_with("dcs", self.ip)
         self.assertListEqual(actual, expected)
 
-    def test_info_dc_statistics(self):
+    async def test_info_dc_statistics(self):
         expected = {"a": "b", "c": "d", "e": "f"}
         dc = "foo"
         self.info_mock.return_value = "a=b;c=d;e=f"
         self.node.features = "xdr"
 
-        actual = self.node.info_dc_statistics(dc=dc)
+        actual = await self.node.info_dc_statistics(dc=dc)
 
         self.info_mock.assert_called_with(
             "get-stats:context=xdr;dc={}".format(dc), self.ip
@@ -1500,12 +1731,12 @@ class NodeTest(unittest.TestCase):
         lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
         self.info_mock.return_value = "a=b;c=d;e=f"
 
-        actual = self.node.info_dc_statistics(dc=dc)
+        actual = await self.node.info_dc_statistics(dc=dc)
 
         self.info_mock.assert_called_with("dc/{}".format(dc), self.ip)
         self.assertDictEqual(actual, expected)
 
-    def test_info_udf_list(self):
+    async def test_info_udf_list(self):
         self.info_mock.return_value = "filename=basic_udf.lua,hash=706c57cb29e027221560a3cb4b693573ada98bf2,type=LUA;"
         expected = {
             "basic_udf.lua": {
@@ -1515,14 +1746,14 @@ class NodeTest(unittest.TestCase):
             }
         }
 
-        udf_actual = self.node.info_udf_list()
+        udf_actual = await self.node.info_udf_list()
 
         self.assertEqual(
             udf_actual, expected, "info_udf_list did not return the expected result"
         )
         self.info_mock.assert_called_with("udf-list", self.ip)
 
-    def test_info_udf_put_success(self):
+    async def test_info_udf_put_success(self):
         self.info_mock.return_value = ""
         udf_file_name = "test.lua"
         udf_str = "Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum"
@@ -1535,21 +1766,21 @@ class NodeTest(unittest.TestCase):
             )
         )
 
-        actual = self.node.info_udf_put(udf_file_name, udf_str, udf_type)
+        actual = await self.node.info_udf_put(udf_file_name, udf_str, udf_type)
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_udf_put_fail(self):
+    async def test_info_udf_put_fail(self):
         self.info_mock.return_value = "error=invalid_base64_content"
 
-        actual = self.node.info_udf_put("udf_file_name", "udf_str", "udf_type")
+        actual = await self.node.info_udf_put("udf_file_name", "udf_str", "udf_type")
 
         self.assertEqual(actual.message, "Failed to add UDF")
         self.assertEqual(actual.response, "invalid_base64_content")
 
     @patch("lib.live_cluster.client.node.Node.info_udf_list")
-    def test_info_udf_remove_success(self, info_udf_list_mock):
+    async def test_info_udf_remove_success(self, info_udf_list_mock):
         info_udf_list_mock.return_value = {
             "file": {
                 "filename": "bar.lua",
@@ -1559,13 +1790,13 @@ class NodeTest(unittest.TestCase):
         }
         self.info_mock.return_value = "OK"
 
-        actual = self.node.info_udf_remove("file")
+        actual = await self.node.info_udf_remove("file")
 
         self.info_mock.assert_called_with("udf-remove:filename=file;", self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     @patch("lib.live_cluster.client.node.Node.info_udf_list")
-    def test_info_udf_remove_fail(self, info_udf_list_mock):
+    async def test_info_udf_remove_fail(self, info_udf_list_mock):
         self.info_mock.return_value = "error=invalid_filename"
         info_udf_list_mock.return_value = {
             "file": {
@@ -1575,7 +1806,7 @@ class NodeTest(unittest.TestCase):
             }
         }
 
-        actual = self.node.info_udf_remove("file")
+        actual = await self.node.info_udf_remove("file")
 
         self.assertEqual(actual.message, "Failed to remove UDF file")
         self.assertEqual(actual.response, "invalid_filename")
@@ -1588,12 +1819,12 @@ class NodeTest(unittest.TestCase):
             }
         }
 
-        actual = self.node.info_udf_remove("file")
+        actual = await self.node.info_udf_remove("file")
 
         self.assertEqual(actual.message, "Failed to remove UDF file")
         self.assertEqual(actual.response, "UDF does not exist")
 
-    def test_info_roster(self):
+    async def test_info_roster(self):
         self.info_mock.return_value = "ns=test:roster=null:pending_roster=null:observed_nodes=BB9070016AE4202,BB9060016AE4202,BB9050016AE4202,BB9040016AE4202,BB9020016AE4202"
         expected = {
             "test": {
@@ -1610,14 +1841,14 @@ class NodeTest(unittest.TestCase):
             }
         }
 
-        roster_actual = self.node.info_roster()
+        roster_actual = await self.node.info_roster()
 
         self.assertDictEqual(
             roster_actual, expected, "info_roster did not return the expected result"
         )
         self.info_mock.assert_called_with("roster:", self.ip)
 
-    def test_info_roster_namespace(self):
+    async def test_info_roster_namespace(self):
         self.info_mock.return_value = "roster=null:pending_roster=null:observed_nodes=BB9070016AE4202,BB9060016AE4202,BB9050016AE4202,BB9040016AE4202,BB9020016AE4202"
         expected = {
             "observed_nodes": [
@@ -1631,18 +1862,18 @@ class NodeTest(unittest.TestCase):
             "roster": [],
         }
 
-        roster_actual = self.node.info_roster_namespace("test")
+        roster_actual = await self.node.info_roster_namespace("test")
 
         self.assertDictEqual(
             roster_actual, expected, "info_roster did not return the expected result"
         )
         self.info_mock.assert_called_with("roster:namespace=test", self.ip)
 
-    def test_info_cluster_stable(self):
+    async def test_info_cluster_stable(self):
         self.info_mock.return_value = "ABCDEFG"
         expected = "ABCDEFG"
 
-        actual = self.node.info_cluster_stable(
+        actual = await self.node.info_cluster_stable(
             cluster_size=3, namespace="bar", ignore_migrations=True
         )
 
@@ -1655,13 +1886,13 @@ class NodeTest(unittest.TestCase):
             "info_cluster_stable did not return the expected result",
         )
 
-    def test_info_cluster_stable_with_errors(self):
+    async def test_info_cluster_stable_with_errors(self):
         self.info_mock.return_value = "ERROR::cluster-not-specified-size"
         expected = ASInfoClusterStableError(
             "Cluster is unstable", "ERROR::cluster-not-specified-size"
         )
 
-        actual = self.node.info_cluster_stable(cluster_size=3, namespace="bar")
+        actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 
         self.info_mock.assert_called_with(
             "cluster-stable:size=3;namespace=bar", self.ip
@@ -1677,7 +1908,7 @@ class NodeTest(unittest.TestCase):
             "Cluster is unstable", "ERROR::unstable-cluster"
         )
 
-        actual = self.node.info_cluster_stable(cluster_size=3, namespace="bar")
+        actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 
         self.info_mock.assert_called_with(
             "cluster-stable:size=3;namespace=bar", self.ip
@@ -1691,7 +1922,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.return_value = "ERROR::foo"
         expected = ASInfoError("Failed to check cluster stability", "ERROR::foo")
 
-        actual = self.node.info_cluster_stable(namespace="bar")
+        actual = await self.node.info_cluster_stable(namespace="bar")
 
         self.info_mock.assert_called_with("cluster-stable:namespace=bar", self.ip)
         self.assertEqual(
@@ -1700,7 +1931,7 @@ class NodeTest(unittest.TestCase):
             "info_cluster_stable did not return the expected result",
         )
 
-    def test_info_racks(self):
+    async def test_info_racks(self):
         class TestCase:
             def __init__(self, return_val, expected):
                 self.return_val = return_val
@@ -1774,7 +2005,7 @@ class NodeTest(unittest.TestCase):
         for tc in test_cases:
             with self.subTest(return_val=tc.return_val):
                 self.info_mock.return_value = tc.return_val
-                racks_actual = self.node.info_racks()
+                racks_actual = await self.node.info_racks()
                 self.info_mock.assert_called_with("racks:", self.ip)
                 self.assertDictEqual(
                     racks_actual,
@@ -1782,21 +2013,21 @@ class NodeTest(unittest.TestCase):
                     "info_racks did not return the expected result",
                 )
 
-    def test_info_rack_ids(self):
+    async def test_info_rack_ids(self):
         self.info_mock.return_value = "test:0;bar:1;foo:"
         expected = {
             "test": "0",
             "bar": "1",
         }
 
-        racks_actual = self.node.info_rack_ids()
+        racks_actual = await self.node.info_rack_ids()
 
         self.info_mock.assert_called_with("rack-ids", self.ip)
         self.assertEqual(
             racks_actual, expected, "info_rack_ids did not return the expected result"
         )
 
-    def test_info_dc_get_config(self):
+    async def test_info_dc_get_config(self):
         self.info_mock.return_value = (
             "dc-name=REMOTE_DC:dc-type=aerospike:tls-name=:dc-security-config-file=/private/aerospike/security_credentials_REMOTE_DC.txt:"
             "nodes=192.168.100.140+3000,192.168.100.147+3000:int-ext-ipmap=:dc-connections=64:"
@@ -1819,7 +2050,7 @@ class NodeTest(unittest.TestCase):
 
         self.node.features = ["xdr"]
 
-        xdr_dc_confg = self.node.info_dc_get_config()
+        xdr_dc_confg = await self.node.info_dc_get_config()
 
         self.assertEqual(
             xdr_dc_confg,
@@ -1829,7 +2060,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.assert_any_call("get-dc-config", self.ip)
 
     @patch("lib.live_cluster.client.node.Node.info_get_config")
-    def test_info_XDR_get_config(self, info_get_config):
+    async def test_info_XDR_get_config(self, info_get_config):
         info_get_config.return_value = {"a": "1", "b": "2", "c": "3"}
         self.node.features = "xdr"
         expected = {
@@ -1838,11 +2069,11 @@ class NodeTest(unittest.TestCase):
             "c": "3",
         }
 
-        actual = self.node.info_XDR_get_config()
+        actual = await self.node.info_XDR_get_config()
 
         self.assertDictEqual(actual, expected)
 
-    def test_info_histogram(self):
+    async def test_info_histogram(self):
         raw = """
          units=bytes:hist-width=8388608:bucket-width=8192:buckets=0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -2907,7 +3138,7 @@ class NodeTest(unittest.TestCase):
             }
         }
 
-        histogram_actual = self.node.info_histogram("objsz")
+        histogram_actual = await self.node.info_histogram("objsz")
 
         self.assertEqual(
             histogram_actual,
@@ -2921,7 +3152,7 @@ class NodeTest(unittest.TestCase):
         self.info_mock.side_effect = ["test", raw]
         expected = {"test": raw}
 
-        histogram_actual = self.node.info_histogram(
+        histogram_actual = await self.node.info_histogram(
             "objsz", logarithmic=True, raw_output=True
         )
 
@@ -2935,42 +3166,42 @@ class NodeTest(unittest.TestCase):
             "histogram:namespace=test;type=object-size", self.ip
         )
         self.info_mock.side_effect = ["test", raw]
-        self.node.info_histogram("ttl", logarithmic=True, raw_output=True)
+        await self.node.info_histogram("ttl", logarithmic=True, raw_output=True)
         self.info_mock.assert_called_with("histogram:namespace=test;type=ttl", self.ip)
 
         self.node.new_histogram_version = False
         self.info_mock.side_effect = ["test", raw]
-        self.node.info_histogram("objsz", logarithmic=True, raw_output=True)
+        await self.node.info_histogram("objsz", logarithmic=True, raw_output=True)
         self.info_mock.assert_called_with("hist-dump:ns=test;hist=objsz", self.ip)
 
-    def test_info_sindex(self):
+    async def test_info_sindex(self):
         self.info_mock.return_value = "a=1:b=2:c=3:d=4:e=5;a=6:b=7:c=8:d=9:e=10;"
         expected = [
             {"a": "1", "b": "2", "c": "3", "d": "4", "e": "5"},
             {"a": "6", "b": "7", "c": "8", "d": "9", "e": "10"},
         ]
 
-        actual = self.node.info_sindex()
+        actual = await self.node.info_sindex()
 
         self.info_mock.assert_called_with("sindex", self.ip)
         self.assertListEqual(actual, expected)
 
-    def test_info_sindex_statistics(self):
+    async def test_info_sindex_statistics(self):
         self.info_mock.return_value = "a=b;c=d;e=f"
         expected = {"a": "b", "c": "d", "e": "f"}
 
-        actual = self.node.info_sindex_statistics("foo", "bar")
+        actual = await self.node.info_sindex_statistics("foo", "bar")
 
         self.info_mock.assert_called_with("sindex/{}/{}".format("foo", "bar"), self.ip)
         self.assertDictEqual(actual, expected)
 
-    def test_info_sindex_create_success(self):
+    async def test_info_sindex_create_success(self):
         self.info_mock.return_value = "OK"
         expected_call = "sindex-create:indexname={};ns={};indexdata={},{}".format(
             "iname", "ns", "data1", "data2"
         )
 
-        actual = self.node.info_sindex_create("iname", "ns", "data1", "data2")
+        actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2")
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
@@ -2980,29 +3211,29 @@ class NodeTest(unittest.TestCase):
             "iname", "itype", "ns", "set", "data1", "data2"
         )
 
-        actual = self.node.info_sindex_create(
+        actual = await self.node.info_sindex_create(
             "iname", "ns", "data1", "data2", index_type="itype", set_="set"
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_sindex_create_fail(self):
+    async def test_info_sindex_create_fail(self):
         self.info_mock.return_value = "FAIL:4: Invalid indexdata"
 
-        actual = self.node.info_sindex_create("iname", "ns", "data1", "data2")
+        actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2")
 
         self.assertEqual(actual.message, "Failed to create sindex iname")
         self.assertEqual(actual.response, "Invalid indexdata")
 
-    def test_info_sindex_delete_success(self):
+    async def test_info_sindex_delete_success(self):
         self.info_mock.return_value = "OK"
         expected_call = "sindex-delete:ns={};indexname={}".format(
             "ns",
             "iname",
         )
 
-        actual = self.node.info_sindex_delete("iname", "ns")
+        actual = await self.node.info_sindex_delete("iname", "ns")
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
@@ -3014,20 +3245,20 @@ class NodeTest(unittest.TestCase):
             "iname",
         )
 
-        actual = self.node.info_sindex_delete("iname", "ns", set_="set")
+        actual = await self.node.info_sindex_delete("iname", "ns", set_="set")
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_sindex_delete_fail(self):
+    async def test_info_sindex_delete_fail(self):
         self.info_mock.return_value = "FAIL:4: Invalid indexname"
 
-        actual = self.node.info_sindex_delete("iname", "ns")
+        actual = await self.node.info_sindex_delete("iname", "ns")
 
         self.assertEqual(actual.message, "Failed to delete sindex iname")
         self.assertEqual(actual.response, "Invalid indexname")
 
-    def test_use_new_truncate_command(self):
+    async def test_use_new_truncate_command(self):
         input_output = [
             ("4.3.1.11", True),
             ("4.3.2.0", False),
@@ -3041,12 +3272,12 @@ class NodeTest(unittest.TestCase):
         for input, output in input_output:
             lib.live_cluster.client.node.Node.info_build.return_value = input
 
-            self.assertEqual(self.node._use_new_truncate_command(), output)
+            self.assertEqual(await self.node._use_new_truncate_command(), output)
 
-    def test_info_truncate_with_ns_success(self):
+    async def test_info_truncate_with_ns_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_truncate("test-ns")
+        actual = await self.node.info_truncate("test-ns")
 
         self.info_mock.assert_called_once_with(
             "truncate-namespace:namespace=test-ns", self.ip
@@ -3054,51 +3285,51 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     @patch("lib.live_cluster.client.node.Node._use_new_truncate_command")
-    def test_info_truncate_with_ns_and_older_command_success(
+    async def test_info_truncate_with_ns_and_older_command_success(
         self, use_new_truncate_command_mock
     ):
         self.info_mock.return_value = "ok"
         use_new_truncate_command_mock.return_value = False
 
-        actual = self.node.info_truncate("test-ns")
+        actual = await self.node.info_truncate("test-ns")
 
         self.info_mock.assert_called_once_with("truncate:namespace=test-ns", self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_truncate_with_ns_and_lut_success(self):
+    async def test_info_truncate_with_ns_and_lut_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_truncate("test-ns", lut="123456789")
+        actual = await self.node.info_truncate("test-ns", lut="123456789")
 
         self.info_mock.assert_called_once_with(
             "truncate-namespace:namespace=test-ns;lut=123456789", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_truncate_with_set_success(self):
+    async def test_info_truncate_with_set_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_truncate("test-ns", "bar")
+        actual = await self.node.info_truncate("test-ns", "bar")
 
         self.info_mock.assert_called_once_with(
             "truncate:namespace=test-ns;set=bar", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_truncate_with_set_and_lut_success(self):
+    async def test_info_truncate_with_set_and_lut_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_truncate("test-ns", "bar", "123456789")
+        actual = await self.node.info_truncate("test-ns", "bar", "123456789")
 
         self.info_mock.assert_called_once_with(
             "truncate:namespace=test-ns;set=bar;lut=123456789", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_truncate_fail(self):
+    async def test_info_truncate_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_truncate("test-ns", "bar", "123456789")
+        actual = await self.node.info_truncate("test-ns", "bar", "123456789")
 
         self.info_mock.assert_called_once_with(
             "truncate:namespace=test-ns;set=bar;lut=123456789", self.ip
@@ -3110,7 +3341,7 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_truncate("test-ns")
+        actual = await self.node.info_truncate("test-ns")
 
         self.info_mock.assert_called_with(
             "truncate-namespace:namespace=test-ns", self.ip
@@ -3120,10 +3351,10 @@ class NodeTest(unittest.TestCase):
             "Failed to truncate namespace test-ns : Unknown error occurred.",
         )
 
-    def test_info_truncate_undo_with_ns_success(self):
+    async def test_info_truncate_undo_with_ns_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_truncate_undo("test-ns")
+        actual = await self.node.info_truncate_undo("test-ns")
 
         self.info_mock.assert_called_once_with(
             "truncate-namespace-undo:namespace=test-ns", self.ip
@@ -3131,53 +3362,53 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     @patch("lib.live_cluster.client.node.Node._use_new_truncate_command")
-    def test_info_truncate_undo_with_ns_and_older_command_success(
+    async def test_info_truncate_undo_with_ns_and_older_command_success(
         self, use_new_truncate_command_mock
     ):
         self.info_mock.return_value = "ok"
         use_new_truncate_command_mock.return_value = False
 
-        actual = self.node.info_truncate_undo("test-ns")
+        actual = await self.node.info_truncate_undo("test-ns")
 
         self.info_mock.assert_called_once_with(
             "truncate-undo:namespace=test-ns", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_truncate_undo_with_ns_and_lut_success(self):
+    async def test_info_truncate_undo_with_ns_and_lut_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_truncate_undo("test-ns")
+        actual = await self.node.info_truncate_undo("test-ns")
 
         self.info_mock.assert_called_once_with(
             "truncate-namespace-undo:namespace=test-ns", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_truncate_undo_with_set_success(self):
+    async def test_info_truncate_undo_with_set_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_truncate_undo("test-ns", "bar")
+        actual = await self.node.info_truncate_undo("test-ns", "bar")
 
         self.info_mock.assert_called_once_with(
             "truncate-undo:namespace=test-ns;set=bar", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_truncate_undo_with_set_and_lut_success(self):
+    async def test_info_truncate_undo_with_set_and_lut_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_truncate_undo("test-ns", "bar")
+        actual = await self.node.info_truncate_undo("test-ns", "bar")
 
         self.info_mock.assert_called_once_with(
             "truncate-undo:namespace=test-ns;set=bar", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_truncate_undo_fail(self):
+    async def test_info_truncate_undo_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_truncate_undo("test-ns", "bar")
+        actual = await self.node.info_truncate_undo("test-ns", "bar")
 
         self.info_mock.assert_called_once_with(
             "truncate-undo:namespace=test-ns;set=bar", self.ip
@@ -3189,7 +3420,7 @@ class NodeTest(unittest.TestCase):
 
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_truncate_undo("test-ns")
+        actual = await self.node.info_truncate_undo("test-ns")
 
         self.info_mock.assert_called_with(
             "truncate-namespace-undo:namespace=test-ns", self.ip
@@ -3199,18 +3430,18 @@ class NodeTest(unittest.TestCase):
             "Failed to undo truncation of namespace test-ns : Unknown error occurred.",
         )
 
-    def test_info_recluster_success(self):
+    async def test_info_recluster_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_recluster()
+        actual = await self.node.info_recluster()
 
         self.info_mock.assert_called_once_with("recluster:", self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_recluster_fail(self):
+    async def test_info_recluster_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_recluster()
+        actual = await self.node.info_recluster()
 
         self.info_mock.assert_called_once_with("recluster:", self.ip)
         self.assertEqual(
@@ -3218,18 +3449,18 @@ class NodeTest(unittest.TestCase):
             "Failed to recluster : Unknown error occurred.",
         )
 
-    def test_info_quiesce_success(self):
+    async def test_info_quiesce_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_quiesce()
+        actual = await self.node.info_quiesce()
 
         self.info_mock.assert_called_once_with("quiesce:", self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_quiesce_fail(self):
+    async def test_info_quiesce_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_quiesce()
+        actual = await self.node.info_quiesce()
 
         self.info_mock.assert_called_once_with("quiesce:", self.ip)
         self.assertEqual(
@@ -3237,18 +3468,18 @@ class NodeTest(unittest.TestCase):
             "Failed to quiesce : Unknown error occurred.",
         )
 
-    def test_info_quiesce_undo_success(self):
+    async def test_info_quiesce_undo_success(self):
         self.info_mock.return_value = "ok"
 
-        actual = self.node.info_quiesce_undo()
+        actual = await self.node.info_quiesce_undo()
 
         self.info_mock.assert_called_once_with("quiesce-undo:", self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_quiesce_undo_fail(self):
+    async def test_info_quiesce_undo_fail(self):
         self.info_mock.return_value = "error"
 
-        actual = self.node.info_quiesce_undo()
+        actual = await self.node.info_quiesce_undo()
 
         self.info_mock.assert_called_once_with("quiesce-undo:", self.ip)
         self.assertEqual(
@@ -3256,7 +3487,7 @@ class NodeTest(unittest.TestCase):
             "Failed to undo quiesce : Unknown error occurred.",
         )
 
-    def test_info_jobs(self):
+    async def test_info_jobs(self):
         self.info_mock.return_value = (
             "module=scan:trid=123:ns=test;module=query:trid=456:ns=bar"
         )
@@ -3265,34 +3496,34 @@ class NodeTest(unittest.TestCase):
             "456": {"trid": "456", "module": "query", "ns": "bar"},
         }
 
-        actual = self.node.info_jobs("scan")
+        actual = await self.node.info_jobs("scan")
 
         self.info_mock.assert_called_with("jobs:module=scan", self.ip)
         self.assertDictEqual(actual, expected)
 
-    def test_jobs_helper_uses_new(self):
-        self.node.features = ["query_show"]
+    async def test_jobs_helper_uses_new(self):
+        self.node.features = ["query-show"]
         self.info_mock.return_value = "foo"
         old = "old"
         new = "new"
 
-        actual = self.node._jobs_helper(old, new)
+        actual = await self.node._jobs_helper(old, new)
 
         self.info_mock.assert_called_with("new", self.ip)
         self.assertEqual(actual, "foo")
 
-    def test_jobs_helper_uses_old(self):
+    async def test_jobs_helper_uses_old(self):
         self.info_mock.return_value = "foo"
         old = "old"
         new = "new"
 
-        actual = self.node._jobs_helper(old, new)
+        actual = await self.node._jobs_helper(old, new)
 
         self.info_mock.assert_called_with("old", self.ip)
         self.assertEqual(actual, "foo")
 
-    def test_info_query_show(self):
-        self.node._jobs_helper = MagicMock()
+    async def test_info_query_show(self):
+        self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = (
             "module=query:trid=123:ns=test;module=query:trid=456:ns=bar"
         )
@@ -3301,13 +3532,13 @@ class NodeTest(unittest.TestCase):
             "456": {"trid": "456", "module": "query", "ns": "bar"},
         }
 
-        actual = self.node.info_query_show()
+        actual = await self.node.info_query_show()
 
         self.node._jobs_helper.assert_called_with("jobs:module=query", "query-show")
         self.assertDictEqual(actual, expected)
 
-    def test_info_scan_show(self):
-        self.node._jobs_helper = MagicMock()
+    async def test_info_scan_show(self):
+        self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = (
             "module=scan:trid=123:ns=test;module=scan:trid=456:ns=bar"
         )
@@ -3316,132 +3547,120 @@ class NodeTest(unittest.TestCase):
             "456": {"trid": "456", "module": "scan", "ns": "bar"},
         }
 
-        actual = self.node.info_scan_show()
+        actual = await self.node.info_scan_show()
 
         self.node._jobs_helper.assert_called_with("jobs:module=scan", "scan-show")
         self.assertDictEqual(actual, expected)
 
-    def test_info_jobs_kill(self):
+    async def test_info_jobs_kill(self):
         self.info_mock.return_value = "OK"
 
-        actual = self.node.info_jobs_kill("foo", "123")
+        actual = await self.node.info_jobs_kill("foo", "123")
 
         self.info_mock.assert_called_with(
             "jobs:module=foo;cmd=kill-job;trid=123", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    def test_info_jobs_kill_returns_error(self):
+    async def test_info_jobs_kill_returns_error(self):
         self.info_mock.return_value = "not Ok"
         expected = ASInfoError("Failed to kill job", "not Ok")
 
-        actual = self.node.info_jobs_kill("foo", "123")
+        actual = await self.node.info_jobs_kill("foo", "123")
 
         self.info_mock.assert_called_with(
             "jobs:module=foo;cmd=kill-job;trid=123", self.ip
         )
         self.assertEqual(actual, expected)
 
-    def test_info_scan_abort(self):
-        self.node._jobs_helper = MagicMock()
+    async def test_info_scan_abort(self):
+        self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = "OK"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_scan_abort("123")
+        actual = await self.node.info_scan_abort("123")
 
         self.node._jobs_helper.assert_called_with(
             "jobs:module=scan;cmd=kill-job;trid=123", "scan-abort:trid=123"
         )
         self.assertEqual(actual, expected)
 
-    def test_info_scan_abort_returns_error(self):
-        self.node._jobs_helper = MagicMock()
+    async def test_info_scan_abort_returns_error(self):
+        self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = "not Ok"
         expected = ASInfoError("Failed to kill job", "not Ok")
 
-        actual = self.node.info_scan_abort("123")
+        actual = await self.node.info_scan_abort("123")
 
         self.node._jobs_helper.assert_called_with(
             "jobs:module=scan;cmd=kill-job;trid=123", "scan-abort:trid=123"
         )
         self.assertEqual(actual, expected)
 
-    def test_info_query_abort(self):
-        self.node._jobs_helper = MagicMock()
+    async def test_info_query_abort(self):
+        self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = "OK"
         expected = ASINFO_RESPONSE_OK
 
-        actual = self.node.info_query_abort("123")
+        actual = await self.node.info_query_abort("123")
 
         self.node._jobs_helper.assert_called_with(
             "jobs:module=query;cmd=kill-job;trid=123", "query-abort:trid=123"
         )
         self.assertEqual(actual, expected)
 
-    def test_info_query_abort_returns_error(self):
-        self.node._jobs_helper = MagicMock()
+    async def test_info_query_abort_returns_error(self):
+        self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = "not Ok"
         expected = ASInfoError("Failed to kill job", "not Ok")
 
-        actual = self.node.info_query_abort("123")
+        actual = await self.node.info_query_abort("123")
 
         self.node._jobs_helper.assert_called_with(
             "jobs:module=query;cmd=kill-job;trid=123", "query-abort:trid=123"
         )
         self.assertEqual(actual, expected)
 
-    def test_async_abort_all_helper(self):
-        def show_func():
-            return {
-                "123": {"trid": "123", "module": "query", "status": "done"},
-                "456": {"trid": "456", "module": "query", "status": "running"},
-                "789": {"trid": "456", "module": "query", "status": "running"},
-            }
-
-        def abort_func(trid):
-            if trid == 456:
-                time.sleep(0.5)
-
-            return ASINFO_RESPONSE_OK
-
-        expected = 2
-
-        actual = self.node._async_abort_all_helper(show_func, abort_func)
-
-        self.assertEqual(actual, expected)
-
-    def test_info_jobs_kill_all(self):
-        self.node._async_abort_all_helper = MagicMock()
-        self.node._async_abort_all_helper.return_value = 5
-        expected = "ok - number of sindex-builders killed: 5"
-
-        actual = self.node.info_jobs_kill_all("sindex-builder")
-
-        self.assertEqual(actual, expected)
-
-    def test_info_scan_abort_all_with_feature_present(self):
+    async def test_info_scan_abort_all_with_feature_present(self):
         self.node.features = ["query-show"]
         self.info_mock.return_value = "OK - number of scans killed: 7"
         expected = "ok - number of scans killed: 7"
 
-        actual = self.node.info_scan_abort_all()
+        actual = await self.node.info_scan_abort_all()
 
         self.info_mock.assert_called_with("scan-abort-all:", self.ip)
         self.assertEqual(actual, expected)
 
-    def test_info_scan_abort_all_with_feature_present_and_error(self):
+    async def test_info_scan_abort_all_with_feature_present_and_error(self):
         self.node.features = ["query-show"]
         self.info_mock.return_value = "error"
         expected = ASInfoError("Failed to abort all scans", "error")
 
-        actual = self.node.info_scan_abort_all()
+        actual = await self.node.info_scan_abort_all()
+
+        self.assertEqual(actual, expected)
+
+    async def test_info_query_abort_all(self):
+        self.info_mock.return_value = "OK - number of queries killed: 7"
+        expected = "ok - number of queries killed: 7"
+
+        actual = await self.node.info_query_abort_all()
+
+        self.info_mock.assert_called_with("query-abort-all:", self.ip)
+        self.assertEqual(actual, expected)
+
+    async def test_info_query_abort_all_with_error(self):
+        self.info_mock.return_value = "error"
+        expected = ASInfoError("Failed to abort all queries", "error")
+
+        actual = await self.node.info_query_abort_all()
 
         self.assertEqual(actual, expected)
 
     @patch("lib.live_cluster.client.assocket.ASSocket.create_user")
     @patch("lib.live_cluster.client.node.Node._get_connection")
     @patch("lib.live_cluster.client.assocket.ASSocket.settimeout")
-    def test_admin_cadmin(
+    async def test_admin_cadmin(
         self, set_timeout_mock, get_connection_mock, create_user_mock
     ):
         get_connection_mock.return_value = ASSocket(
@@ -3458,7 +3677,7 @@ class NodeTest(unittest.TestCase):
         create_user_mock.return_value = expected
         set_timeout_mock.return_value = None
 
-        actual = self.node._admin_cadmin(
+        actual = await self.node._admin_cadmin(
             ASSocket.create_user, (1, 2, 3), self.node.ip, self.node.port
         )
 
@@ -3469,7 +3688,7 @@ class NodeTest(unittest.TestCase):
 
         get_connection_mock.return_value = None
 
-        util.assert_exception(
+        await util.assert_exception_async(
             self,
             OSError,
             "Error: Could not connect to node 192.1.1.1",
@@ -3479,6 +3698,120 @@ class NodeTest(unittest.TestCase):
             self.node.ip,
             self.node.port,
         )
+
+    async def test_admin_funcs(self):
+        class TestCase:
+            def __init__(self, node_func, assocket_func, args):
+                self.node_func = node_func
+                self.assocket_func = assocket_func
+                self.args = args
+
+        test_cases = [
+            TestCase(
+                self.node.admin_create_user,
+                ASSocket.create_user,
+                ("user", "pass", ["role1", "role2"]),
+            ),
+            TestCase(
+                self.node.admin_delete_user,
+                ASSocket.delete_user,
+                ["user"],
+            ),
+            TestCase(
+                self.node.admin_set_password,
+                ASSocket.set_password,
+                ("user", "pass"),
+            ),
+            TestCase(
+                self.node.admin_change_password,
+                ASSocket.change_password,
+                ("user", "oldpass", "newpass"),
+            ),
+            TestCase(
+                self.node.admin_grant_roles,
+                ASSocket.grant_roles,
+                ("user", ["role1", "role2"]),
+            ),
+            TestCase(
+                self.node.admin_revoke_roles,
+                ASSocket.revoke_roles,
+                ("user", ["role1", "role2"]),
+            ),
+            TestCase(
+                self.node.admin_query_users,
+                ASSocket.query_users,
+                (),
+            ),
+            TestCase(
+                self.node.admin_query_user,
+                ASSocket.query_user,
+                ["user"],
+            ),
+            TestCase(
+                self.node.admin_create_role,
+                ASSocket.create_role,
+                ("role", "privileges", "whitelist", "read_quota", "write_quota"),
+            ),
+            TestCase(
+                self.node.admin_delete_role,
+                ASSocket.delete_role,
+                ["role"],
+            ),
+            TestCase(
+                self.node.admin_add_privileges,
+                ASSocket.add_privileges,
+                ("role", ["priv1", "priv2"]),
+            ),
+            TestCase(
+                self.node.admin_delete_privileges,
+                ASSocket.delete_privileges,
+                ("role", ["priv1", "priv2"]),
+            ),
+            TestCase(
+                self.node.admin_set_whitelist,
+                ASSocket.set_whitelist,
+                ("role", "whitelist"),
+            ),
+            TestCase(
+                self.node.admin_delete_whitelist,
+                ASSocket.delete_whitelist,
+                ["role"],
+            ),
+            TestCase(
+                self.node.admin_set_quotas,
+                ASSocket.set_quotas,
+                ("role", "read-quota", "write-quota"),
+            ),
+            TestCase(
+                self.node.admin_delete_quotas,
+                ASSocket.delete_quotas,
+                ("role", "read-quota", "write-quota"),
+            ),
+            TestCase(
+                self.node.admin_query_roles,
+                ASSocket.query_roles,
+                (),
+            ),
+            TestCase(
+                self.node.admin_query_role,
+                ASSocket.query_role,
+                ["role"],
+            ),
+        ]
+
+        for tc in test_cases:
+            admin_cadmin_mock = lib.live_cluster.client.node.Node._admin_cadmin = patch(
+                "lib.live_cluster.client.node.Node._admin_cadmin", AsyncMock()
+            ).start()
+            admin_cadmin_mock.return_value = "foo"
+            result = await tc.node_func(*tc.args)
+            self.assertFalse(
+                isinstance(result, Exception), msg="exception: {}".format(result)
+            )
+            self.assertEqual(result, "foo")
+            admin_cadmin_mock.assert_called_with(
+                tc.assocket_func, tc.args, self.node.ip
+            )
 
 
 if __name__ == "__main__":

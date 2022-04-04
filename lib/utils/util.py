@@ -12,73 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import copy
+import inspect
 import io
 import pipes
 import re
 import socket
 import subprocess
 import sys
-import threading
 import logging
 from time import time
 
+from lib.utils import logger_debug
 
-def logthis(logger):
-    def _decorator(func):
-        def _decorated(*arg, **kwargs):
-            level = logging.DEBUG
-            logger.log(
-                level, "calling '%s'(%r,%r)", func.__name__, arg, kwargs, stacklevel=2
-            )
-            ret = func(*arg, **kwargs)
-            logger.log(
-                level,
-                "called '%s', returned value: %r",
-                func.__name__,
-                ret,
-                stacklevel=2,
-            )
-            return ret
-
-        return _decorated
-
-    return _decorator
+logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
 
 
-class Future:
-
+def callable(func, *args, **kwargs):
     """
-    Very basic implementation of a async future.
+    Save a function call for later. Useful for saving functions that print output.
     """
-
-    def __init__(self, func, *args, **kwargs):
-        self._result = None
-
-        args = list(args)
-        args.insert(0, func)
-        self.exc = None
-
-        def wrapper(func, *args, **kwargs):
-            self.exc = None
-            try:
-                self._result = func(*args, **kwargs)
-            except Exception as e:
-                # Store original stack trace/exception to be re-thrown later.
-                self.exc = e
-
-        self._worker = threading.Thread(target=wrapper, args=args, kwargs=kwargs)
-
-    def start(self):
-        self._worker.start()
-        return self
-
-    def result(self):
-        if self.exc:
-            raise (self.exc)
-
-        self._worker.join()
-        return self._result
+    return lambda: func(*args, **kwargs)
 
 
 def shell_command(command):
@@ -97,7 +52,7 @@ def shell_command(command):
         return bytes_to_str(out), bytes_to_str(err)
 
 
-def capture_stdout(func, line=""):
+async def capture_stdout(func, line=""):
     """
     Redirecting the stdout to use the output elsewhere
     """
@@ -107,7 +62,13 @@ def capture_stdout(func, line=""):
     capturer = io.StringIO()
     sys.stdout = capturer
 
-    func(line)
+    if inspect.iscoroutinefunction(func):
+        await func(line)
+    else:
+        tmp_output = func(line)
+
+        if inspect.iscoroutine(tmp_output):
+            tmp_output = await tmp_output
 
     output = capturer.getvalue()
     sys.stdout = old
@@ -143,6 +104,28 @@ def capture_stdout_and_stderr(func, line=""):
     sys.stderr = stderr_capturer
 
     func(line)
+
+    stdout_output = stdout_capturer.getvalue()
+    sys.stdout = stdout_old
+
+    stderr_output = stderr_capturer.getvalue()
+    sys.stderr = stderr_old
+
+    return stdout_output, stderr_output
+
+
+async def capture_stdout_and_stderr_async(func, line=""):
+    sys.stdout.flush()
+    stdout_old = sys.stdout
+    stdout_capturer = io.StringIO()
+    sys.stdout = stdout_capturer
+
+    sys.stderr.flush()
+    stderr_old = sys.stderr
+    stderr_capturer = io.StringIO()
+    sys.stderr = stderr_capturer
+
+    await func(line)
 
     stdout_output = stdout_capturer.getvalue()
     sys.stdout = stdout_old
@@ -743,10 +726,35 @@ def find_most_frequent(list_):
 
     return most_freq
 
-  
-class cached(object):
-    # Doesn't support lists, dicts and other unhashables
-    # Also doesn't support kwargs for reason above.
+
+class async_cached(object):
+    """
+    Doesn't support lists, dicts and other unhashables
+    Also doesn't support kwargs for reasons above.
+    """
+
+    class _CacheableCoroutine:
+        """
+        Allow a coroutine to be awaited multipul times. The lock makes sure multiple
+        methods do not call await on the coroutine.
+        """
+
+        def __init__(self, co):
+            self.co = co
+            self.done = False
+            self.result = None
+            self.lock = asyncio.Lock()
+
+        def __await__(self):
+            yield from self.lock.acquire().__await__()
+            try:
+                if self.done:
+                    return self.result
+                self.result = yield from self.co.__await__()
+                self.done = True
+                return self.result
+            finally:
+                self.lock.release()
 
     def __init__(self, func, ttl=0.5):
         self.func = func
@@ -760,11 +768,13 @@ class cached(object):
         if key in self.cache:
             value, eol = self.cache[key]
             if eol > time():
+                logger.debug("return cached %s: %s", key[1:], value)
                 return value
 
-        self[key] = self.func(*key)
+        self[key] = self._CacheableCoroutine(self.func(*key))
         return self.cache[key][0]
 
-    def __call__(self, *args):
+    def __call__(self, *args, **kwargs):
+        if "disable_cache" in kwargs and kwargs["disable_cache"]:
+            return self.func(*args)
         return self[args]
-      

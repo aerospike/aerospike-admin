@@ -224,6 +224,14 @@ def _parse_context(
             break
 
 
+def _parse_security_context(parsed_map, fstream, line):
+    context = "security"
+    if context not in parsed_map:
+        parsed_map[context] = {}
+    dir_ptr = parsed_map[context]
+    _parse_context(parsed_map=dir_ptr, fstream=fstream)
+
+
 def _parse_service_context(parsed_map, fstream, line):
     context = "service"
     if context not in parsed_map:
@@ -450,7 +458,3 @@ def parse_file(file_path):
             pass
 
     return parsed_output
-
-
-# f = "/Users/aerospike/Downloads/tmp 28/collect_info_20171210_050702/20171210_050702_aerospike.conf"
-# print parse_file(f)
