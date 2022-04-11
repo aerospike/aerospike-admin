@@ -22,7 +22,6 @@ class SummaryController(CollectinfoCommandController):
         namespace_stats = self.log_handler.info_statistics(
             stanza=constants.STAT_NAMESPACE
         )
-        set_stats = self.log_handler.info_statistics(stanza=constants.STAT_SETS)
 
         service_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_SERVICE
@@ -30,9 +29,7 @@ class SummaryController(CollectinfoCommandController):
         namespace_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_NAMESPACE
         )
-        cluster_configs = self.log_handler.info_getconfig(
-            stanza=constants.CONFIG_CLUSTER
-        )
+        xdr_dc_stats = self.log_handler.info_statistics(stanza=constants.STAT_XDR)
 
         os_version = self.log_handler.get_sys_data(stanza="lsb")
         kernel_version = self.log_handler.get_sys_data(stanza="uname")
@@ -41,12 +38,9 @@ class SummaryController(CollectinfoCommandController):
 
         last_timestamp = sorted(service_stats.keys())[-1]
 
-        try:
-            cluster_configs = cluster_configs[last_timestamp]
-        except Exception:
-            cluster_configs = {}
-
         cluster_name = {}
+        license_data_usage = {}
+
         try:
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=last_timestamp)
             cluster_name = cinfo_log.get_cluster_name()
@@ -117,15 +111,20 @@ class SummaryController(CollectinfoCommandController):
 
         metadata["os_version"] = os_version
 
+        try:
+            license_data_usage = self.log_handler.get_unique_data_usage()
+        except Exception:
+            pass
+
         self.view.print_summary(
             common.create_summary(
                 service_stats=service_stats[last_timestamp],
                 namespace_stats=namespace_stats[last_timestamp],
-                set_stats=set_stats[last_timestamp],
+                xdr_dc_stats=xdr_dc_stats[last_timestamp],
                 metadata=metadata,
                 service_configs=service_configs[last_timestamp],
                 ns_configs=namespace_configs[last_timestamp],
-                cluster_configs=cluster_configs,
+                license_data_usage=license_data_usage,
             ),
             list_view=enable_list_view,
         )

@@ -79,8 +79,8 @@ class ColumnRSheet(BaseRSheetCLI):
         ) * len(self.decleration.vertical_separator)
         render = []
 
-        self._do_render_title(render, title_width)
-        self._do_render_description(render, title_width, title_width - 10)
+        title_width = self._do_render_title(render, title_width)
+        self._do_render_description(render, title_width, title_width)
 
         # Render fields.
         title_lines = [

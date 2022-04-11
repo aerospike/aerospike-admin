@@ -1,3 +1,18 @@
+# Copyright 2013-2021 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+QUERIES = """
 /***************************************************
 * System Resource                                  *
 ****************************************************/
@@ -62,6 +77,13 @@ s = select "has_firewall" from SYSTEM.IPTABLES;
 ASSERT(s, False, "Node in cluster have firewall setting.", "OPERATIONS", INFO,
                                 "Listed node[s] have firewall setting. Could cause cluster formation issue if misconfigured. Please run 'iptables -L' to check firewall rules.",
 				"Firewall Check.");
+
+s = select "AnonHugePages" from SYSTEM.MEMINFO save;
+r = do s < 102400;
+ASSERT(r, True, "THP may be enabled.", "OPERATIONS", WARNING,
+						"Listed node[s] have AnonHugePages higher than 102400KiB. Node[s] may have THP enabled which may cause higher memory usage. See https://discuss.aerospike.com/t/disabling-transparent-huge-pages-thp-for-aerospike/5233 for more info.", 
+						"System THP enabled check");
+
 
 /* AWS */
 
@@ -302,7 +324,7 @@ r1 = do interval < 150;
 r2 = do interval > 250;
 r = do r1 || r2;
 ASSERT(r, False, "Heartbeat interval is not in expected range (150 <= p <= 250)", "OPERATIONS", INFO,
-        "Listed nodes(s) have heartbeat interval value not in expected range (150 <= p <= 250). New node might fail to join cluster.",
+        "Listed node(s) have heartbeat interval value not in expected range (150 <= p <= 250). New node might fail to join cluster.",
         "Heartbeat interval Check (150 <= p <= 250)");
 
 timeout = select "heartbeat.timeout" from NETWORK.CONFIG save;
@@ -310,7 +332,7 @@ r1 = do timeout < 10;
 r2 = do timeout > 15;
 r = do r1 || r2;
 ASSERT(r, False, "Heartbeat timeout is not in expected range (10 <= p <= 15)", "OPERATIONS", INFO,
-        "Listed nodes(s) have heartbeat timeout value not in expected range (10 <= p <= 15). New node might fail to join cluster.",
+        "Listed node(s) have heartbeat timeout value not in expected range (10 <= p <= 15). New node might fail to join cluster.",
         "Heartbeat timeout Check (10 <= p <= 15)");
 
 
@@ -548,11 +570,6 @@ ASSERT(r, False, "Different set eviction configuration.", "OPERATIONS", WARNING,
 				"Set eviction configuration difference check.");
 
 
-s = select like ("set-enable-xdr") from SET save;
-r = group by CLUSTER, NAMESPACE, SET do NO_MATCH(s, ==, MAJORITY) save;
-ASSERT(r, False, "Different set xdr configuration.", "OPERATIONS", WARNING,
-				"Listed set[s] have different XDR replication setting across multiple nodes in cluster. Please run 'show statistics set like set-enable-xdr' to check values. Possible operational misconfiguration.",
-				"Set xdr configuration difference check.");
 
 
 s = select "n_objects", "objects" from SET save;
@@ -561,7 +578,14 @@ ASSERT(r, False, "Skewed cluster set object count.", "ANOMALY", WARNING,
 				"Listed set[s] have skewed object distribution. Please run 'show statistics set like object' to check counts. It may be non-issue if cluster is undergoing migrations.",
 				"Set object count anomaly check.");
 
-/* XDR */
+/* XDR < 5 */
+SET CONSTRAINT VERSION < 5.0;
+
+s = select like ("set-enable-xdr") from SET save;
+r = group by CLUSTER, NAMESPACE, SET do NO_MATCH(s, ==, MAJORITY) save;
+ASSERT(r, False, "Different set xdr configuration.", "OPERATIONS", WARNING,
+				"Listed set[s] have different XDR replication setting across multiple nodes in cluster. Please run 'show statistics set like set-enable-xdr' to check values. Possible operational misconfiguration.",
+				"Set xdr configuration difference check.");
 
 s = select * from XDR.CONFIG save;
 r = GROUP by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
@@ -736,7 +760,9 @@ ASSERT(r, False, "XDR queue overflows.", "PERFORMANCE", WARNING,
 				"XDR queue overflow error check.",
 				xdr_enabled);
 
+/* XDR > 5 */
 
+SET CONSTRAINT VERSION ALL;
 /* CLUSTER STATE */
 
 r = select "cluster_integrity" from SERVICE.STATISTICS save;
@@ -758,30 +784,6 @@ r = do r == total_nodes;
 ASSERT(r, True, "Unstable Cluster.", "OPERATIONS", CRITICAL,
 				"Listed node[s] have cluster size not matching total number of available nodes. This indicates cluster is not completely wellformed. Please check server logs for more information. Probable cause - issue with network.",
 				"Cluster stability check.");
-
-hp = select "heartbeat.protocol", "heartbeat-protocol" from NETWORK.CONFIG;
-heartbeat_proto_v2 = do hp == "v2";
-heartbeat_proto_v2 = group by CLUSTER, NODE do OR(heartbeat_proto_v2);
-cs = select "cluster_size" from SERVICE.STATISTICS save;
-mcs = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG save;
-cs_without_saved_value = select "cluster_size" from SERVICE.STATISTICS;
-mcs_without_saved_value = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG;
-r = do cs < mcs;
-ASSERT(r, True, "Critical cluster size.", "OPERATIONS", CRITICAL,
-				"Listed node[s] have cluster size higher than configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
-				"Critical cluster size check.",
-				heartbeat_proto_v2);
-
-small_max_configured = do mcs_without_saved_value < 20;
-critical_size = do cs >= mcs;
-correct_size = do mcs_without_saved_value - 10;
-correct_size = do cs_without_saved_value <= correct_size;
-r = do small_max_configured || critical_size;
-r = do r || correct_size;
-ASSERT(r, True, "Cluster size is near the max configured cluster size.", "OPERATIONS", WARNING,
-				"Listed node[s] have cluster size near the configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
-				"Cluster size check.",
-				heartbeat_proto_v2);
 
 paxos_replica_limit = select "paxos-single-replica-limit" from SERVICE.CONFIG save as "paxos-single-replica-limit";
 paxos_replica_limit = group by CLUSTER paxos_replica_limit;
@@ -817,9 +819,11 @@ ASSERT(r, True, "UDF not in sync (not available on all node).", "OPERATIONS", CR
 
 /* SINDEX */
 
-s = select "sync_state" from SINDEX.STATISTICS save;
+s = select "sync_state" as "val", "state" as "val" from SINDEX.STATISTICS save;
 s = group by CLUSTER, NAMESPACE, SET, SINDEX s;
-r = do s == "synced";
+r1 = do s == "synced";
+r2 = do s == "RW";
+r = do r1 || r2;
 ASSERT(r, True, "SINDEX not in sync with primary.", "OPERATIONS", CRITICAL,
 				"Listed sindex[es] are not in sync with primary. This can lead to wrong query results. Consider dropping and recreating secondary index[es].",
 				"SINDEX sync state check.");
@@ -1071,44 +1075,6 @@ ASSERT(r, True, "High client proxy transaction timeouts", "OPERATIONS", WARNING,
 				"High proxy transaction timeouts check");
 
 
-
-// XDR Write statistics
-
-s = select "xdr_write_success" as "cnt", "xdr_client_write_success" as "cnt" from NAMESPACE.STATISTICS;
-t = select "xdr_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
-e = select "xdr_write_error" as "cnt" from NAMESPACE.STATISTICS;
-total_xdr_writes = do s + t;
-total_xdr_writes = do total_xdr_writes + e save as "total xdr writes";
-total_xdr_writes_per_sec = do total_xdr_writes/u;
-total_xdr_writes = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes);
-total_xdr_writes_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes_per_sec);
-
-e = select "xdr_write_error" from NAMESPACE.STATISTICS save;
-e = do e/u save as "errors per second (by using uptime)";
-e = group by CLUSTER, NAMESPACE e;
-p = do e/total_xdr_writes_per_sec;
-p = do p * 100 save as "xdr_write_error % of total xdr writes";
-r = do p <= 5;
-ASSERT(r, True, "High xdr write errors", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal xdr write errors (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
-				"High xdr write error check");
-warning_breached = do p > 5;
-r = do p <= error_pct_threshold;
-r = do r || warning_breached;
-ASSERT(r, True, "Non-zero xdr write errors", "OPERATIONS", INFO,
-				"Listed namespace[s] show non-zero xdr write errors. Please run 'show statistics namespace like xdr_write' to see values.",
-				"Non-zero xdr write error check");
-
-t = select "xdr_write_timeout" from NAMESPACE.STATISTICS save;
-t = group by CLUSTER, NAMESPACE t;
-r = do t/total_xdr_writes;
-r = do r * 100 save as "xdr_write_timeout % of total xdr writes";
-r = do r <= 5;
-ASSERT(r, True, "High xdr write timeouts", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal xdr write timeouts (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
-				"High xdr write timeouts check");
-
-
 // UDF Transaction statistics
 
 s = select "client_udf_complete" as "cnt" from NAMESPACE.STATISTICS;
@@ -1326,51 +1292,244 @@ ASSERT(r, True, "Non-zero udf sub-transaction errors", "OPERATIONS", INFO,
 				"Non-zero udf sub-transaction error check");
 
 
-// Query Agg statistics
+SET CONSTRAINT VERSION >= 6.0;
 
-total_transactions = select "query_agg" from NAMESPACE.STATISTICS save as "total query aggregations";
-total_transactions_per_sec = do total_transactions/u;
+u = select "uptime" from SERVICE.STATISTICS;
+u = GROUP BY CLUSTER, NODE do MAX(u);
+
+// Primary Index Basic Long Query, previously basic scan
+s = select "pi_query_long_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "pi_query_long_basic_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total pindex long queries";
+total_transactions_per_sec = do total_transactions / u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
-e = select "query_agg_error" from NAMESPACE.STATISTICS save;
+e = select "pi_query_long_basic_error" from NAMESPACE.STATISTICS save;
 e = do e/u save as "errors per second (by using uptime)";
 e = group by CLUSTER, NAMESPACE e;
 p = do e/total_transactions_per_sec;
-p = do p * 100 save as "query_agg_error % of total query aggregations";
+p = do p * 100 save as "pi_query_long_basic_error % of total pindex long queries";
 r = do p <= 5;
-ASSERT(r, True, "High query aggregation errors", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal query aggregation errors (> 5% query aggregations). Please run 'show statistics namespace like query_agg' to see values.",
-				"High query aggregation error check");
+ASSERT(r, True, "High basic primary index long query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal basic primary index long query errors (> 5% total). Please run 'show statistics namespace like pi_query_long_basic' to see values.",
+				"High basic primary index long query errors check");
 warning_breached = do p > 5;
 r = do p <= error_pct_threshold;
 r = do r || warning_breached;
-ASSERT(r, True, "Non-zero query aggregation errors", "OPERATIONS", INFO,
-				"Listed namespace[s] show non-zero query aggregation errors. Please run 'show statistics namespace like query_agg' to see values.",
-				"Non-zero query aggregation error check");
+ASSERT(r, True, "Non-zero basic primary index long query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero basic primary index long query errors. Please run 'show statistics namespace like pi_query_long_basic' to see values.",
+				"Non-zero basic primary index long query errors check");
 
-
-// Query Lookup statistics
-
-total_transactions = select "query_lookups" from NAMESPACE.STATISTICS save as "total query lookups";
+// Primary Index Basic Short Query, previously basic scan
+s = select "pi_query_short_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "pi_query_short_basic_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total pindex short queries";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
-e = select "query_lookup_error" from NAMESPACE.STATISTICS save;
+e = select "pi_query_short_basic_error" from NAMESPACE.STATISTICS save;
 e = do e/u save as "errors per second (by using uptime)";
 e = group by CLUSTER, NAMESPACE e;
 p = do e/total_transactions_per_sec;
-p = do p * 100 save as "query_lookup_error % of total query lookups";
+p = do p * 100 save as "pi_query_short_basic_error % of total pindex short queries";
 r = do p <= 5;
-ASSERT(r, True, "High query lookup errors", "OPERATIONS", WARNING,
-				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_lookup' to see values.",
-				"High query lookup error check");
+ASSERT(r, True, "High basic primary index short query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal basic primary index short query errors (> 5% total). Please run 'show statistics namespace like pi_query_short_basic' to see values.",
+				"High basic primary index short query errors check");
 warning_breached = do p > 5;
 r = do p <= error_pct_threshold;
 r = do r || warning_breached;
-ASSERT(r, True, "Non-zero query lookup errors", "OPERATIONS", INFO,
-				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_lookup' to see values.",
-				"Non-zero query lookup error check");
+ASSERT(r, True, "Non-zero basic primary index short query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero basic primary index short query errors. Please run 'show statistics namespace like pi_query_short_basic' to see values.",
+				"Non-zero basic primary index short query errors check");
+    
+// Primary Index Aggregation query statistics, formally aggregation scans.
+s = select "pi_query_aggr_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "pi_query_aggr_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total pindex query aggregations";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
+e = select "pi_query_aggr_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "pi_query_aggr_error % of total pindex query aggregations";
+r = do p <= 5;
+ASSERT(r, True, "High primary index aggregation query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal primary index aggregation query errors (> 5% total). Please run 'show statistics namespace like pi_query_aggr' to see values.",
+				"High primary index aggregation query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero primary index aggregation query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero primary index aggregation query errors. Please run 'show statistics namespace like pi_query_aggr' to see values.",
+				"Non-zero primary index aggregation query error check");
+
+
+// Primary Index Background UDF queries statistics, formally background udf scans.
+s = select "pi_query_udf_bg_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "pi_query_udf_bg_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total pindex background udf queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "pi_query_udf_bg_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "pi_query_udf_bg_error % of total pindex background udf queries";
+r = do p <= 5;
+ASSERT(r, True, "High primary index background udf queries errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal primary index background udf queries errors (> 5% total). Please run 'show statistics namespace like pi_query_udf_bg' to see values.",
+				"High primary index background udf queries error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero primary index background udf queries errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero primary index background udf queries errors. Please run 'show statistics namespace like pi_query_udf_bg' to see values.",
+				"Non-zero primary index background udf queries error check");
+
+// Secondary Index Basic Long Query Statistics, formally Query Lookup statistics
+c = select "si_query_long_basic_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_long_basic_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total sindex long queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "si_query_long_basic_error % of total basic queries";
+r = do p <= 5;
+ASSERT(r, True, "High secondary index basic long query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex basic long query errors (> 5% total). Please run 'show statistics namespace like si_query_long_basic' to see values.",
+				"High sindex basic long query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero sindex basic long query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex basic query errors. Please run 'show statistics namespace like si_query_long_basic' to see values.",
+				"Non-zero sindex basic long query error check");
+    
+    
+// Secondary Index Basic Short Query Statistics, formally Query Lookup statistics
+c = select "si_query_short_basic_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_short_basic_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total sindex short basic queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "si_query_short_basic_error % of total sindex short basic queries";
+r = do p <= 5;
+ASSERT(r, True, "High sindex basic short query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex basic short query errors (> 5% total). Please run 'show statistics namespace like si_query_short_basic' to see values.",
+				"High sindex basic short query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero sindex basic short query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex basic query errors. Please run 'show statistics namespace like si_query_short_basic' to see values.",
+				"Non-zero sindex basic short query error check");
+    
+    
+// Secondary Index Aggregation Query Statistics, fromally Query Agg statistics
+s = select "si_query_aggr_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_aggr_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do s + e; 
+total_transaction = do total_transactions + a save as "total sindex query aggregations";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "si_query_aggr_error % of total query aggregations";
+r = do p <= 5;
+ASSERT(r, True, "High sindex query aggregation errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex query aggregation errors (> 5% total). Please run 'show statistics namespace like si_query_aggr' to see values.",
+				"High sindex query aggregation error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero sindex query aggregation errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex query aggregation errors. Please run 'show statistics namespace like si_query_aggr' to see values.",
+				"Non-zero sindex query aggregation error check");
+    
+// Secondary Index Background UDF Query Statistics
+c = select "si_query_udf_bg_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_udf_bg_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total sindex query background udf";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "si_query_udf_bg_error % of total basic queries";
+r = do p <= 5;
+ASSERT(r, True, "High sindex UDF background query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex UDF background query errors (> 5% total). Please run 'show statistics namespace like si_query_udf_bg' to see values.",
+				"High sindex UDF background query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero sindex UDF background query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex UDF background query errors. Please run 'show statistics namespace like si_query_udf_bg' to see values.",
+				"Non-zero sindex UDF background query error check");
+    
+// Secondary Index Background Ops Query Statistics
+c = select "si_query_ops_bg_complete" as "val" from NAMESPACE.STATISTICS save;
+e = select "si_query_ops_bg_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total sindex background ops queries";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "si_query_ops_bg_error % of total sindex background ops queries";
+r = do p <= 5;
+ASSERT(r, True, "High sindex background ops query errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal sindex background ops query errors (> 5% total). Please run 'show statistics namespace like si_query_ops_bg' to see values.",
+				"High sindex background ops query error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero sindex background ops query errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero sindex background ops query errors. Please run 'show statistics namespace like si_query_ops_bg' to see values.",
+				"Non-zero sindex background ops query error check");
+
+// Should be constrained to just 5.7
+SET CONSTRAINT VERSION < 6.0
+
+// Scan Background OPS statistics
+s = select "scan_ops_bg_complete" as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_ops_bg_error" as "cnt" from NAMESPACE.STATISTICS;
+total_transactions = do s + e save as "total background ops scans";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = select "scan_ops_bg_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "scan_ops_bg_error % of total background ops scans";
+r = do p <= 5;
+ASSERT(r, True, "High background ops scans errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal background ops scan errors (> 5% scan background ops). Please run 'show statistics namespace like scan_ops_bg' to see values.",
+				"High scan background ops error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero scan background ops errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero scan background ops errors. Please run 'show statistics namespace like scan_ops_bg' to see values.",
+				"Non-zero scan background ops error check");
+
+SET CONSTRAINT VERSION > 3.9
 
 // Scan Agg statistics
 s = select "scan_aggr_complete" as "cnt" from NAMESPACE.STATISTICS;
@@ -1394,11 +1553,10 @@ r = do r || warning_breached;
 ASSERT(r, True, "Non-zero scan aggregation errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan aggregation errors. Please run 'show statistics namespace like scan_agg' to see values.",
 				"Non-zero scan aggregation error check");
-
-
+    
 // Scan Basic statistics
 s = select "scan_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
-e = select "scan_basic_error" as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_basic_error", as "cnt" from NAMESPACE.STATISTICS;
 total_transactions = do s + e save as "total basic scans";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
@@ -1442,6 +1600,50 @@ r = do r || warning_breached;
 ASSERT(r, True, "Non-zero scan background udf errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan background udf errors. Please run 'show statistics namespace like scan_udf_bg' to see values.",
 				"Non-zero scan background udf error check");
+    
+// Query Agg statistics
+s = select "query_aggr_complete" as "val", "query_agg_success" as "val" from NAMESPACE.STATISTICS save;
+e = select "query_aggr_error" as "val", "query_agg_error" as "val" from NAMESPACE.STATISTICS save;
+total_transaction = do s + e save as "total query aggregations";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "query_aggr_error % of total query aggregations";
+r = do p <= 5;
+ASSERT(r, True, "High query aggregation errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal query aggregation errors (> 5% query aggregations). Please run 'show statistics namespace like query_agg' to see values.",
+				"High query aggregation error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero query aggregation errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero query aggregation errors. Please run 'show statistics namespace like query_agg' to see values.",
+				"Non-zero query aggregation error check");
+
+// Query Lookup statistics
+c = select "query_basic_complete" as "val", "query_lookup_success" as "val" from NAMESPACE.STATISTICS save;
+e = select "query_basic_error" as "val", "query_lookup_error" as "val" from NAMESPACE.STATISTICS save;
+total_transactions = do c + e save as "total query lookups";
+total_transactions_per_sec = do total_transactions/u;
+total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
+
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_transactions_per_sec;
+p = do p * 100 save as "query_basic_error % of total query lookups";
+r = do p <= 5;
+ASSERT(r, True, "High query lookup errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal query lookup errors (> 5% query lookups). Please run 'show statistics namespace like query_basic' (=> 5.7) or 'show statistics namespace like query_lookup' (< 5.7) to see values.",
+				"High query lookup error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero query lookup errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero query lookup errors. Please run 'show statistics namespace like query_basic' (=> 5.7) or 'show statistics namespace like query_lookup' (< 5.7) to see values.",
+				"Non-zero query lookup error check");
 
 
 // Client transaction statistics
@@ -1487,6 +1689,70 @@ ASSERT(r, False, "Skewed Fail Key Busy count.", "ANOMALY", INFO,
 				"fail_key_busy show skew count patterns (for listed node[s]). Please run 'show statistics namespace like fail_key_busy' for details.",
 				"Key Busy  errors count anomaly check.");
 
+// XDR Write statistics
+
+SET CONSTRAINT VERSION < 4.5.1
+
+s = select "xdr_write_success" as "cnt", "xdr_client_write_success" as "cnt" from NAMESPACE.STATISTICS;
+t = select "xdr_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
+e = select "xdr_write_error" as "cnt" from NAMESPACE.STATISTICS;
+total_xdr_writes = do s + t;
+total_xdr_writes = do total_xdr_writes + e save as "total xdr writes";
+total_xdr_writes_per_sec = do total_xdr_writes/u;
+total_xdr_writes = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes);
+total_xdr_writes_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_xdr_writes_per_sec);
+
+e = select "xdr_write_error" from NAMESPACE.STATISTICS save;
+e = do e/u save as "errors per second (by using uptime)";
+e = group by CLUSTER, NAMESPACE e;
+p = do e/total_xdr_writes_per_sec;
+p = do p * 100 save as "xdr_write_error % of total xdr writes";
+r = do p <= 5;
+ASSERT(r, True, "High xdr write errors", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal xdr write errors (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
+				"High xdr write error check");
+warning_breached = do p > 5;
+r = do p <= error_pct_threshold;
+r = do r || warning_breached;
+ASSERT(r, True, "Non-zero xdr write errors", "OPERATIONS", INFO,
+				"Listed namespace[s] show non-zero xdr write errors. Please run 'show statistics namespace like xdr_write' to see values.",
+				"Non-zero xdr write error check");
+
+t = select "xdr_write_timeout" from NAMESPACE.STATISTICS save;
+t = group by CLUSTER, NAMESPACE t;
+r = do t/total_xdr_writes;
+r = do r * 100 save as "xdr_write_timeout % of total xdr writes";
+r = do r <= 5;
+ASSERT(r, True, "High xdr write timeouts", "OPERATIONS", WARNING,
+				"Listed namespace[s] show higher than normal xdr write timeouts (> 5% xdr writes). Please run 'show statistics namespace like xdr_write' to see values.",
+				"High xdr write timeouts check");
+
+SET CONSTRAINT VERSION < 3.14;
+/* CLUSTER STATE */
+
+hp = select "heartbeat.protocol", "heartbeat-protocol" from NETWORK.CONFIG;
+heartbeat_proto_v2 = do hp == "v2";
+heartbeat_proto_v2 = group by CLUSTER, NODE do OR(heartbeat_proto_v2);
+cs = select "cluster_size" from SERVICE.STATISTICS save;
+mcs = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG save;
+cs_without_saved_value = select "cluster_size" from SERVICE.STATISTICS;
+mcs_without_saved_value = select "paxos-max-cluster-size" as "cluster_size" from SERVICE.CONFIG;
+r = do cs < mcs;
+ASSERT(r, True, "Critical cluster size.", "OPERATIONS", CRITICAL,
+				"Listed node[s] have cluster size higher than configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
+				"Critical cluster size check.",
+				heartbeat_proto_v2);
+
+small_max_configured = do mcs_without_saved_value < 20;
+critical_size = do cs >= mcs;
+correct_size = do mcs_without_saved_value - 10;
+correct_size = do cs_without_saved_value <= correct_size;
+r = do small_max_configured || critical_size;
+r = do r || correct_size;
+ASSERT(r, True, "Cluster size is near the max configured cluster size.", "OPERATIONS", WARNING,
+				"Listed node[s] have cluster size near the configured paxos-max-cluster-size. Please run 'show config service like paxos-max-cluster-size' to check configured max cluster size.",
+				"Cluster size check.",
+				heartbeat_proto_v2);
 
 SET CONSTRAINT VERSION < 3.9;
 
@@ -1662,7 +1928,6 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", 
 				"Namespace partition-tree-sprigs check for Community edition",
 				e);
 
-
 SET CONSTRAINT VERSION >= 4.3.0.2;
 // sprig mounts-size-limit checks
 
@@ -1746,7 +2011,6 @@ ASSERT(r2, False, "ALL FLASH - Too many sprigs per partition for configured min-
 				"Check for too many sprigs for minimum cluster size.",
 				e2);
 
-
 SET CONSTRAINT VERSION >= 4.0.0.1;
 // SC mode rules
 
@@ -1824,3 +2088,5 @@ ASSERT(m, False, "Outlier[s] detected by the server health check.", "OPERATIONS"
 			    "Server health check outlier detection. Run command 'asinfo -v health-outliers' to see list of outliers");
 
 SET CONSTRAINT VERSION ALL;
+
+"""

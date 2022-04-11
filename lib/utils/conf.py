@@ -14,26 +14,19 @@
 
 import collections
 import json
+import logging
 import os
 import re
-
-try:
-    import toml
-
-    HAVE_TOML = True
-except ImportError:
-    HAVE_TOML = False
-
-try:
-    from jsonschema import validate
-
-    HAVE_JSONSCHEMA = True
-except ImportError:
-    HAVE_JSONSCHEMA = False
+import argparse
+import toml
+import copy
+from jsonschema import validate
 
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
+
+logger = logging.getLogger("asadm")
 
 
 class _Namespace(object):
@@ -42,7 +35,7 @@ class _Namespace(object):
 
 
 # Default is local host without security / tls
-# with timeout value of 5ms
+# with timeout value of 1ms
 _confdefault = {
     "cluster": {
         "host": "127.0.0.1",
@@ -52,6 +45,7 @@ _confdefault = {
         "password": DEFAULTPASSWORD,
         "auth": AuthMode.INTERNAL,
         "tls-enable": False,
+        "tls-name": "",
         "tls-cafile": "",
         "tls-capath": "",
         "tls-cert-blacklist": "",
@@ -65,7 +59,7 @@ _confdefault = {
     },
     "asadm": {
         "services-alumni": False,
-        "timeout": 5,
+        "timeout": 1,
         "line-separator": False,
         "no-color": False,
         "out-file": "",
@@ -77,6 +71,7 @@ _confdefault = {
         "asinfo-mode": False,
         "collectinfo": False,
         "execute": False,
+        "enable": False,
         "log-analyser": False,
         "log-path": "",
         "pmap": False,
@@ -122,6 +117,7 @@ _confspec = """{
                 "asinfo-mode": { "type" : "boolean" },
                 "collectinfo": { "type" : "boolean" },
                 "execute": { "type" : "boolean" },
+                "enable": { "type" : "boolean" },
                 "log-analyser": { "type" : "boolean" },
                 "log-path" : { "type" : "string" }
             },
@@ -138,10 +134,10 @@ _confspec = """{
                 "password" : { "type" : "string" },
                 "auth" : { "type" : "string" },
                 "tls-enable" : { "type" : "boolean" },
+                "tls-name": { "type" : "string" },
                 "tls-cipher-suite" : { "type" : "string" },
                 "tls-crl-check" : { "type" : "boolean" },
                 "tls-crl-check-all" : { "type" : "boolean" },
-
                 "tls-keyfile" : { "type" : "string" },
                 "tls-keyfile-password" : { "type" : "string" },
                 "tls-cafile" : { "type" : "string" },
@@ -155,21 +151,17 @@ _confspec = """{
 }"""
 
 
-def _getdefault(logger):
-    import copy
+def _getdefault():
 
     return copy.deepcopy(_confdefault)
 
 
-def _loadfile(fname, logger):
+def _loadfile(fname):
     conf_dict = {}
 
     if os.path.exists(fname):
         # file exists
-        if HAVE_TOML:
-            conf_dict = toml.loads(open(fname).read())
-        else:
-            raise ImportError("No module named toml")
+        conf_dict = toml.loads(open(fname).read())
 
         include_files = []
         if "include" in conf_dict.keys():
@@ -189,16 +181,13 @@ def _loadfile(fname, logger):
 
         for f in include_files:
             try:
-                _merge(conf_dict, _loadfile(f, logger))
+                _merge(conf_dict, _loadfile(f))
             except Exception as e:
                 logger.error(
                     "Config file parse error: " + str(f) + " " + str(e).split("\n")[0]
                 )
 
-        if HAVE_JSONSCHEMA:
-            validate(conf_dict, json.loads(_confspec))
-        else:
-            raise ImportError("No module named jsonschema")
+        validate(conf_dict, json.loads(_confspec))
 
     return conf_dict
 
@@ -261,11 +250,11 @@ def _merge(dct, merge_dct, ignore_false=False):
 
 def _getseeds(conf):
 
-    re_ipv6host = re.compile("^(\[.*\])$")
-    re_ipv6hostport = re.compile("^(\[.*\]):(.*)$")
-    re_ipv6hostnameport = re.compile("^(\[.*\]):(.*):(.*)$")
-    re_ipv4hostport = re.compile("^(.*):(.*)$")
-    re_ipv4hostnameport = re.compile("^(.*):(.*):(.*)$")
+    re_ipv6host = re.compile(r"^(\[.*\])$")
+    re_ipv6hostport = re.compile(r"^(\[.*\]):(.*)$")
+    re_ipv6hostnameport = re.compile(r"^(\[.*\]):(.*):(.*)$")
+    re_ipv4hostport = re.compile(r"^(.*):(.*)$")
+    re_ipv4hostnameport = re.compile(r"^(.*):(.*):(.*)$")
 
     # Set up default port and tls-name if not specified in
     # host string
@@ -341,37 +330,28 @@ def _getseeds(conf):
         return []
 
 
-def loadconfig(cli_args, logger):
+def loadconfig(cli_args):
     # order of loading is
     #
     # Default
-    default_conf_dict = _getdefault(logger)
+    default_conf_dict = _getdefault()
 
     if cli_args.no_config_file and cli_args.only_config_file:
-        print(
+        logger.critical(
             "--no-config-file and only-config-file are mutually exclusive option. Please enable only one."
         )
-        exit(1)
 
     conf_dict = {}
     conffiles = []
 
     if cli_args.only_config_file is not None or not cli_args.no_config_file:
-        # need to load config file
-
-        if not HAVE_TOML:
-            logger.warning("No module named toml. Skipping Config file read.")
-
-        elif not HAVE_JSONSCHEMA:
-            logger.warning("No module named jsonschema. Skipping Config file read.")
-
-        elif cli_args.only_config_file is not None:
+        if cli_args.only_config_file is not None:
             # Load only config file.
             f = cli_args.only_config_file
 
             if os.path.exists(f):
                 try:
-                    _merge(conf_dict, _loadfile(f, logger))
+                    _merge(conf_dict, _loadfile(f))
                     conffiles.append(f)
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
@@ -405,7 +385,7 @@ def loadconfig(cli_args, logger):
 
             for f in conffiles:
                 try:
-                    _merge(conf_dict, _loadfile(f, logger))
+                    _merge(conf_dict, _loadfile(f))
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
                     logger.critical(
@@ -466,6 +446,10 @@ def print_config_help():
         "                      The input value is either string of ';' separated asadm \n"
         "                      commands or path of file which has asadm commands (ends with ';')."
     )
+    print(
+        " --enable             Run commands in privileged mode.  Must be used with the\n"
+        "                      --execute option. Not allowed in interactive mode."
+    )
     print(" -o --out-file        Path of file to write output of -e command[s].")
     print(" --no-color           Disable colored output.")
     print(
@@ -493,8 +477,7 @@ def print_config_file_option():
     print("----------------------------------\n")
     print("[cluster]")
     print(
-        " -h, --host=HOST\n"
-        '                      HOST is "<host1>[:<tlsname1>][:<port1>],..." \n'
+        ' -h, --host=HOST      HOST is "<host1>[:<tlsname1>][:<port1>],..." \n'
         "                      Server seed hostnames or IP addresses. The tlsname is \n"
         "                      only used when connecting with a secure TLS enabled \n"
         "                      server. Default: localhost:3000\n"
@@ -504,20 +487,15 @@ def print_config_file_option():
         "                        192.168.1.10:cert1:3000,192.168.1.20:cert2:3000"
     )
     print(
-        " --services-alternate \n"
-        "                      Enable use of services-alternate instead of services in\n"
+        " --services-alternate Enable use of services-alternate instead of services in\n"
         "                      info request during cluster tending"
     )
+    print(" -p, --port=PORT      Server default port. Default: 3000")
     print(
-        " -p, --port=PORT \n" "                      Server default port. Default: 3000"
+        " -U, --user=USER      User name used to authenticate with cluster. Default: none"
     )
     print(
-        " -U, --user=USER \n"
-        "                      User name used to authenticate with cluster. Default: none"
-    )
-    print(
-        " -P, --password\n"
-        "                      Password used to authenticate with cluster. Default: none\n"
+        " -P, --password       Password used to authenticate with cluster. Default: none\n"
         "                      User will be prompted on command line if -P specified and no\n"
         "                      password is given."
     )
@@ -531,16 +509,13 @@ def print_config_file_option():
     print(
         " --tls-enable         Enable TLS on connections. By default TLS is disabled."
     )
-    # Deprecated
-    # print(" --tls-encrypt-only   Disable TLS certificate verification.\n")
     print(
-        " --tls-cafile=path\n"
-        "                      Path to a trusted CA certificate file."
+        " -t --tls-name=name   Default TLS name of host to verify for TLS connection,\n"
+        "                      if not specified in host string. It is required if tls-enable\n"
+        "                      is set."
     )
-    print(
-        " --tls-capath=path\n"
-        "                      Path to a directory of trusted CA certificates."
-    )
+    print(" --tls-cafile=path    Path to a trusted CA certificate file.")
+    print(" --tls-capath=path    Path to a directory of trusted CA certificates.")
     print(
         " --tls-protocols=TLS_PROTOCOLS\n"
         "                      Set the TLS protocol selection criteria. This format\n"
@@ -558,9 +533,8 @@ def print_config_file_option():
         "                      html"
     )
     print(
-        " --tls-keyfile=path\n"
-        "                      Path to the key for mutual authentication (if\n"
-        "                      Aerospike Cluster is supporting it)."
+        " --tls-keyfile=path   Path to the key for mutual authentication (if Aerospike\n"
+        "                      Cluster is supporting it)."
     )
     print(
         " --tls-keyfile-password=password\n"
@@ -574,12 +548,11 @@ def print_config_file_option():
         "                      password is given."
     )
     print(
-        " --tls-certfile=path\n"
-        "                      Path to the chain file for mutual authentication (if\n"
+        " --tls-certfile=path  Path to the chain file for mutual authentication (if\n"
         "                      Aerospike Cluster is supporting it)."
     )
     print(
-        " --tls-cert-blacklist=path\n"
+        " --tls-cert-blacklist=path (DEPRECATED)\n"
         "                      Path to a certificate blacklist file. The file should\n"
         "                      contain one line for each blacklisted certificate.\n"
         "                      Each line starts with the certificate serial number\n"
@@ -603,17 +576,16 @@ def print_config_file_option():
     print("")
     print("[asadm]")
     print(
-        " -t --tls-name=name   Default TLS name of host to verify for TLS connection,\n"
-        "                      if not specified in host string. It is required if tls-enable\n"
-        "                      is set."
-    )
-    print(
         " -s --services-alumni\n"
         "                      Enable use of services-alumni-list instead of services-list"
     )
     print(
         " --timeout=value      Set timeout value in seconds for node level operations. \n"
-        "                      TLS connection does not support timeout. Default: 5 seconds"
+        "                      TLS connection does not support timeout. Default: 1 seconds"
+    )
+    print(
+        " --enable             Run commands in privileged mode.  Must be used with the\n"
+        "                      --execute option. Not allowed in interactive mode."
     )
 
 
@@ -645,24 +617,34 @@ def config_file_help():
     print("\n")
 
 
+def create_deprecate_action(action, optional_msg=""):
+    """
+    Used to create a deprecated flag action. The DeprecateAction is useful for obvious reasons
+    but the need to pass a BaseClass may not be.  This allows you to deprecate a flag that already
+    has an action defined.  argparse does not allow multiple actions. So you could do:
+    create_deprecate_action(argparse._Store)
+
+    action - A argparse.Action class not an instance.
+    optional_msg - Message to be printed after deprecation warning.
+    """
+
+    class DeprecateAction(action):
+        def __call__(self, parser, namespace, values, option_string=None):
+            logger.warn(
+                "Argument {} is deprecated. {}", self.option_strings, optional_msg
+            )
+
+    return DeprecateAction
+
+
 def get_cli_args():
-    have_argparse = True
-    try:
-        import argparse
-
-        parser = argparse.ArgumentParser(add_help=False, conflict_handler="resolve")
-        add_fn = parser.add_argument
-    except Exception:
-        import optparse
-
-        have_argparse = False
-        usage = "usage: %prog [options]"
-        parser = optparse.OptionParser(usage, add_help_option=False)
-        add_fn = parser.add_option
+    parser = argparse.ArgumentParser(add_help=False, conflict_handler="resolve")
+    add_fn = parser.add_argument
 
     add_fn("-V", "--version", action="store_true")
     add_fn("-E", "--help", action="store_true")
     add_fn("-e", "--execute")
+    add_fn("--enable", action="store_true")
     add_fn("-o", "--out-file")
     add_fn("-c", "--collectinfo", action="store_true")
     add_fn("-l", "--log-analyser", action="store_true")
@@ -677,16 +659,7 @@ def get_cli_args():
     add_fn("-a", "--services-alternate", action="store_true")
     add_fn("-p", "--port", type=int)
     add_fn("-U", "--user")
-    if have_argparse:
-        add_fn("-P", "--password", nargs="?", const=DEFAULTPASSWORD)
-    else:
-        parser.add_option(
-            "-P",
-            "--password",
-            dest="password",
-            action="store_const",
-            const=DEFAULTPASSWORD,
-        )
+    add_fn("-P", "--password", nargs="?", const=DEFAULTPASSWORD)
 
     add_fn("--auth")
     add_fn("--tls-enable", action="store_true")
@@ -695,17 +668,12 @@ def get_cli_args():
     add_fn("--tls-protocols")
     add_fn("--tls-cipher-suite")
     add_fn("--tls-keyfile")
-    if have_argparse:
-        add_fn("--tls-keyfile-password", nargs="?", const=DEFAULTPASSWORD)
-    else:
-        parser.add_option(
-            "--tls-keyfile-password",
-            dest="tls-keyfile-password",
-            action="store_const",
-            const=DEFAULTPASSWORD,
-        )
+    add_fn("--tls-keyfile-password", nargs="?", const=DEFAULTPASSWORD)
     add_fn("--tls-certfile")
-    add_fn("--tls-cert-blacklist")
+    add_fn(
+        "--tls-cert-blacklist",
+        action=create_deprecate_action(argparse.Action, "Use a crl instead."),
+    )
     add_fn("--tls-crl-check", action="store_true")
     add_fn("--tls-crl-check-all", action="store_true")
 
@@ -748,8 +716,4 @@ def get_cli_args():
     # Usage, `asadm collectinfo --pmap`
     add_fn("--pmap", action="store_true")
 
-    if have_argparse:
-        return parser.parse_args()
-
-    (cli_args, args) = parser.parse_args()
-    return cli_args
+    return parser.parse_args()

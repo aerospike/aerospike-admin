@@ -15,28 +15,16 @@ class InfoController(CollectinfoCommandController):
         self.controller_map = dict(namespace=InfoNamespaceController)
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")
-    def _do_default(self, line):
+    async def _do_default(self, line):
         self.do_network(line)
-        self.controller_map["namespace"]()(line[:])
+        # needs to be awaited since the base class is async
+        await self.controller_map["namespace"]()(line[:])
         self.do_xdr(line)
 
     @CommandHelp("Displays network summary information.")
     def do_network(self, line):
         service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
-        cluster_configs = self.log_handler.info_getconfig(
-            stanza=constants.CONFIG_CLUSTER
-        )
         for timestamp in sorted(service_stats.keys()):
-            for node in service_stats[timestamp]:
-                try:
-                    if not isinstance(
-                        cluster_configs[timestamp][node]["mode"], Exception
-                    ):
-                        service_stats[timestamp][node][
-                            "rackaware_mode"
-                        ] = cluster_configs[timestamp][node]["mode"]
-                except Exception:
-                    pass
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_asd_build()
             versions = cinfo_log.get_asd_version()
@@ -88,7 +76,7 @@ class InfoController(CollectinfoCommandController):
 
             xdr_enable = {}
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_xdr_build()
+            builds = cinfo_log.get_asd_build()
             old_xdr_stats = {}
             xdr5_stats = {}
 
@@ -153,7 +141,7 @@ class InfoController(CollectinfoCommandController):
         )
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_xdr_build()
+            builds = cinfo_log.get_asd_build()
             nodes_running_v5_or_higher = False
             nodes_running_v49_or_lower = False
             node_xdr_build_major_version = 5
@@ -250,16 +238,14 @@ class InfoNamespaceController(CollectinfoCommandController):
 
     @CommandHelp("Displays usage information for each namespace.")
     def do_usage(self, line):
-        ns_stats = self.log_handler.info_statistics(
-            stanza=constants.STAT_NAMESPACE, flip=True
-        )
+        ns_stats = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
                 continue
 
             self.view.info_namespace_usage(
-                util.flip_keys(ns_stats[timestamp]),
+                ns_stats[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
@@ -267,16 +253,17 @@ class InfoNamespaceController(CollectinfoCommandController):
 
     @CommandHelp("Displays object information for each namespace.")
     def do_object(self, line):
-        ns_stats = self.log_handler.info_statistics(
-            stanza=constants.STAT_NAMESPACE, flip=True
-        )
+        # In SC mode effective rack-id is different from that in namespace config.
+        ns_stats = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+        rack_ids = self.log_handler.info_getconfig(stanza=constants.CONFIG_RACK_IDS)
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
                 continue
 
             self.view.info_namespace_object(
-                util.flip_keys(ns_stats[timestamp]),
+                ns_stats[timestamp],
+                rack_ids.get(timestamp, {}),
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods

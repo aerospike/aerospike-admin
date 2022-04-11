@@ -13,12 +13,16 @@
 # limitations under the License.
 
 from collections import Counter
+import logging
 
 from lib.utils import file_size
 from lib.view import terminal
 
 from .const import DynamicFieldOrder, FieldType, SheetStyle
 from .source import source_lookup, source_root
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 
 class Sheet(object):
@@ -39,7 +43,7 @@ class Sheet(object):
         no_entry="--",
         error_entry="~~",
     ):
-        """ Instantiates a sheet definition.
+        """Instantiates a sheet definition.
         Arguments:
         fields -- Sequence of fields to present.
 
@@ -116,7 +120,7 @@ class Sheet(object):
         if len(field_set) != len(static_fields):
             field_keys = ",".join(
                 (
-                    "{} appears {} times".format((key, count))
+                    "{} appears {} times".format(key, count)
                     for count, key in Counter(
                         field.key for field in static_fields
                     ).items()
@@ -218,6 +222,7 @@ class Field(object):
         key=None,
         hidden=None,
         dynamic_field_decl=None,
+        allow_diff=False,
     ):
         """
         Arguments:
@@ -242,6 +247,11 @@ class Field(object):
                       False: Always hidden.
         dynamic_field_decl -- None if not from DynamicFields.
                               Otherwise DynamicFields instance.
+        allow_diff -- A non dynamic field by default does not allow diff and is always
+                      displayed. This is mutally exclusive with dynamic_field_decl.
+                      True: Allow diff.
+                      False: Don't diff.
+                      Default: False
         """
         self.title = title
         self.projector = projector
@@ -252,6 +262,7 @@ class Field(object):
         self.key = title if key is None else key
         self.hidden = hidden
         self.dynamic_field_decl = dynamic_field_decl
+        self.allow_diff = allow_diff
 
         self.has_aggregate = self.aggregator is not None
 
@@ -293,6 +304,7 @@ class DynamicFields(object):
         required=False,
         aggregator_selector=None,
         projector_selector=None,
+        converter_selector=None,
         order=DynamicFieldOrder.ascending,
     ):
         """
@@ -312,51 +324,110 @@ class DynamicFields(object):
         projector_selector -- None: Function used to select a projector. Function
                               will take the form (key) -> Projector.  If none and
                               infer_projector is false String projection is used.
+
+        Note: If a preceding non-dynamic Field uses the same key it will not be rendered
+              by a proceding DynamicField.
         """
         self.source = source
         self.infer_projectors = infer_projectors
         self.required = required
         self.projector_selector = projector_selector
         self.aggregator_selector = aggregator_selector
+        self.converter_selector = converter_selector
         self.order = order
 
         self.has_aggregate = False  # XXX - hack
 
 
 class Aggregator(object):
-    def __init__(self, aggregate_func, initializer=None, converter=None):
+    def __init__(self, aggregate_func, converter=None):
         """
         Arguments:
-        aggregate_func -- function accepts 2 arguments and returns a value.
+        aggregate_func -- aggregate function. Type determined by subclass
 
         Keyword Arguments:
-        initializer -- None : Initial value will be the first cell.
-                       Other: Initial value becomes initializer.
         converter   -- None    : Use the field's converter (if defined).
                     -- Function: Use this function to convert the result.
         """
 
         self.func = aggregate_func
-        self.initializer = initializer
         self.converter = converter
+
+    def compute(self, values):
+        raise NotImplementedError("override compute")
+
+
+class ReduceAggregator(Aggregator):
+    def __init__(self, aggregate_func, initializer=None, converter=None):
+        """
+        Arguments:
+        aggregate_func -- function accepts 2 arguments and returns a value.
+        """
+        self.initializer = initializer
+        super().__init__(aggregate_func, converter=converter)
+
+    def compute(self, values):
+        return self.reduce(values)
+
+    def reduce(self, edatas):
+        initialized = False
+        result = None
+
+        for edata in edatas:
+            edata = edata.value
+
+            if edata is None:
+                return
+
+            if not initialized:
+                initialized = True
+
+                if self.initializer is None:
+                    result = edata
+                    return
+
+                result = self.initializer
+
+            result = self.func(result, edata)
+
+        return result
+
+
+class ComplexAggregator(Aggregator):
+    def __init__(self, aggregate_func, converter=None):
+        """
+        An aggregator that takes all the entires in a group for a more complex calculation.
+
+        Arguments:
+        aggregate_func -- function accepts 1 argument of type list(EntryData) and
+        returns a value.
+        """
+        super().__init__(aggregate_func, converter=converter)
+
+    def compute(self, edatas):
+        return self.func(edatas)
 
 
 class Aggregators(object):
     @staticmethod
     def sum(initializer=0, converter=None):
-        return Aggregator(
-            lambda acc, value: acc + value, initializer=initializer, converter=converter
+        return ReduceAggregator(
+            lambda acc, value: acc + value,
+            initializer=initializer,
+            converter=converter,
         )
 
     @staticmethod
     def count(initializer=0, converter=None):
-        return Aggregator(
-            lambda acc, value: acc + 1, initializer=initializer, converter=converter
+        return ReduceAggregator(
+            lambda acc, value: acc + 1,
+            initializer=initializer,
+            converter=converter,
         )
 
     @staticmethod
     def min(initializer=None, converter=None):
-        return Aggregator(
+        return ReduceAggregator(
             lambda acc, value: acc if acc <= value else value,
             initializer=initializer,
             converter=converter,
@@ -364,7 +435,7 @@ class Aggregators(object):
 
     @staticmethod
     def max(initializer=None, converter=None):
-        return Aggregator(
+        return ReduceAggregator(
             lambda acc, value: acc if acc >= value else value,
             initializer=initializer,
             converter=converter,
@@ -374,6 +445,7 @@ class Aggregators(object):
 class BaseProjector(object):
     field_type = None  # required override
     source = None  # optional override
+    keys = None  # optional override
 
     def __init__(self, source, *keys, **kwargs):
         """
@@ -405,6 +477,7 @@ class BaseProjector(object):
         except Exception as e:
             # XXX - A debug log may be useful.
             # print 'debug - ', e, self.source, self.source
+            logger.debug("Problem projecting keys %s, exc: %s", self.keys, e)
             raise ErrorEntryException("unexpected error occurred: {}".format(e))
 
         if result is None:
@@ -415,7 +488,7 @@ class BaseProjector(object):
     def do_project(self, sheet, sources):
         raise NotImplementedError("override do_project")
 
-    def project_raw(self, sheet, sources):
+    def project_raw(self, sheet, sources, ignore_exception=False):
         row = source_lookup(sources, self.source)
 
         if self.source in sheet.for_each:
@@ -431,8 +504,8 @@ class BaseProjector(object):
         if row is None:
             raise NoEntryException("No entry for this row")
 
-        if isinstance(row, Exception):
-            raise ErrorEntryException("Error occurred fetching row")
+        if not ignore_exception and isinstance(row, Exception):
+            raise ErrorEntryException(row, "Error occurred fetching row")
 
         if self.keys is None:
             # Setting 'self.keys' to None indicates that the field needs the
@@ -458,7 +531,12 @@ class Projectors(object):
         field_type = FieldType.undefined
 
         def do_project(self, sheet, sources):
-            return self.project_raw(sheet, sources)
+            try:
+                row = self.project_raw(sheet, sources)
+            except ErrorEntryException as e:
+                row = e.exc
+
+            return row
 
     class String(BaseProjector):
         field_type = FieldType.string
@@ -478,7 +556,7 @@ class Projectors(object):
             Arguments:
             source -- A set of sources to project a boolean from.
             """
-            value = super(Projectors.Boolean, self).do_project(sheet, sources)
+            value = super().do_project(sheet, sources)
 
             if isinstance(value, str):
                 return value.lower().strip() != "false"
@@ -493,7 +571,7 @@ class Projectors(object):
             Arguments:
             source -- A set of sources to project a float from.
             """
-            value = super(Projectors.Float, self).do_project(sheet, sources)
+            value = super().do_project(sheet, sources)
 
             try:
                 return float(value)
@@ -508,7 +586,7 @@ class Projectors(object):
             Arguments:
             source -- A set of sources to project a number from.
             """
-            value = super(Projectors.Number, self).do_project(sheet, sources)
+            value = super().do_project(sheet, sources)
 
             try:
                 return int(value)
@@ -532,7 +610,7 @@ class Projectors(object):
             invert -- False by default, if True will return 100 - value.
             """
 
-            super(Projectors.Percent, self).__init__(source, *keys, **kwargs)
+            super().__init__(source, *keys, **kwargs)
             self.invert = kwargs.get("invert", False)
 
         def do_project(self, sheet, sources):
@@ -543,7 +621,7 @@ class Projectors(object):
                      'for_each'.
             source -- A set of sources to project a number from.
             """
-            value = super(Projectors.Percent, self).do_project(sheet, sources)
+            value = super().do_project(sheet, sources)
             return value if not self.invert else 100 - value
 
     class Sum(BaseProjector):
@@ -568,6 +646,95 @@ class Projectors(object):
                 result += field_projector(sheet, sources)
 
             return result
+
+    class Div(BaseProjector):
+        field_type = FieldType.number
+
+        def __init__(self, numerator_projector, denominator_projector):
+            """
+            Arguments:
+            numerator_projector -- A field project of FieldType.number.
+            denominator_projector -- A field projector with FieldType.number
+
+            Computed as numbertor / denominator
+            """
+            self.numerator_projector = numerator_projector
+            self.denominator_projector = denominator_projector
+            self.sources = set(
+                (
+                    field_fn.source
+                    for field_fn in [numerator_projector, denominator_projector]
+                )
+            )
+
+        def do_project(self, sheet, sources):
+            """
+            Arguments:
+            source -- A set of sources to project a sum of fields.
+            """
+
+            result = self.numerator_projector(
+                sheet, sources
+            ) / self.denominator_projector(sheet, sources)
+
+            return result
+
+    class PercentCompute(Div):
+        field_type = FieldType.number
+
+        def __init__(self, numerator_projector, denominator_projector, **kwargs):
+            """
+            Arguments:
+            invert:  Return result as (100 - result) if true
+            See Div for remaining args.
+
+            Computed as ((numberator/denomanator) * 100)
+            """
+            super().__init__(numerator_projector, denominator_projector)
+            self.invert = kwargs.get("invert", False)
+
+        def do_project(self, sheet, sources):
+            """
+            Arguments:
+            source -- A set of sources to project a sum of fields.
+            """
+            result = super().do_project(sheet, sources)
+            result *= 100
+            return result if not self.invert else 100 - result
+
+    class Any(BaseProjector):
+        def __init__(self, field_type, *field_projectors):
+            """
+            Arguments:
+            field_type -- The 'FieldType' for this field.
+            field_projectors -- Projectors to be used. First one to succeed will be returned.
+                                which is useful because non-existent keys cause failure.
+            """
+            self.field_type = field_type
+            self.sources = set()
+            for field_fn in field_projectors:
+
+                if field_fn.source is None:
+                    source = field_fn.sources
+                else:
+                    source = set([field_fn.source])
+
+                self.sources = self.sources.union(source)
+
+            self.field_projectors = field_projectors
+
+        def do_project(self, sheet, sources):
+            """
+            Arguments:
+            source -- A set of sources to project a the result of a function
+                      from.
+            """
+
+            for field_projector in self.field_projectors:
+                try:
+                    return field_projector(sheet, sources)
+                except NoEntryException:
+                    pass
 
     class Func(BaseProjector):
         def __init__(self, field_type, func, *field_projectors):
@@ -598,6 +765,30 @@ class Projectors(object):
                     values.append(None)
 
             return self.func(*values)
+
+    class Exception(BaseProjector):
+        def __init__(self, source, *keys, **kwargs):
+            """
+            Arguments:
+            See 'BaseProjector'
+
+            Keyword Arguments:
+            filter_exc -- List of exception types to convert to strings.
+            """
+
+            super().__init__(source, *keys, **kwargs)
+            self.filter_exc = kwargs.get("filter_exc", [])
+
+        def do_project(self, sheet, sources):
+            row = self.project_raw(sheet, sources, ignore_exception=True)
+            for exc_type in self.filter_exc:
+                if isinstance(row, exc_type):
+                    return str(row)
+
+            if isinstance(row, Exception):
+                raise ErrorEntryException(row, "Error occurred fetching row")
+
+            return row
 
 
 class EntryData(object):
@@ -639,7 +830,7 @@ class Converters(object):
         return Converters._file_size(edata.value, file_size.si_float)
 
     @staticmethod
-    def time(edata):
+    def time_seconds(edata):
         """
         Arguments:
         edata -- Take an 'EntryData' and returns the value as time with format
@@ -651,6 +842,16 @@ class Converters(object):
         seconds = time_stamp % 60
 
         return "{:02}:{:02}:{:02}".format(hours, minutes, seconds)
+
+    @staticmethod
+    def time_milliseconds(edata):
+        """
+        Arguments:
+        edata -- Take an 'EntryData' and returns the value as time with format
+                 HH:MM:SS.
+        """
+        edata.value = int(edata.value) / 1000
+        return Converters.time_seconds(edata)
 
     @staticmethod
     def standard(edata):
@@ -670,6 +871,13 @@ class Converters(object):
             return Converters._list_to_str(edata.value, ", ")
 
         return "--"
+
+    @staticmethod
+    def round(decimal):
+        def fun(edata):
+            return round(float(edata.value), decimal)
+
+        return fun
 
 
 class Formatters(object):
@@ -746,4 +954,6 @@ class NoEntryException(Exception):
 
 
 class ErrorEntryException(Exception):
-    pass
+    def __init__(self, error, *args):
+        self.exc = error
+        super().__init__(*args)

@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import itertools
+from unicodedata import numeric
+from lib.view.sheet.decleration import ComplexAggregator, EntryData
+from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoError
 from lib.view.sheet import (
     Aggregators,
     Converters,
@@ -63,22 +66,32 @@ def project_xdr_req_shipped_errors(s, esc, ess):
 
 
 #
-# Common fields.
+# Aggregator helpers
 #
 
 
-cluster_field = Field(
-    "Cluster",
-    Projectors.Func(
-        FieldType.string,
-        lambda c: c if c != "null" else None,
-        Projectors.String("cluster_names", None),
-    ),
-    key="cluster_name",
-)
+def weighted_avg(weights: list[numeric], values: list[numeric]):
+    total = 0.0
+    weighted_avg = 0.0
+
+    for w, v in zip(weights, values):
+        weighted_avg += w * v
+        total += v
+
+    if not total:
+        return 0.0
+
+    weighted_avg /= total
+    return weighted_avg
+
+
+#
+# Common fields.
+#
+
 node_field = Field(
     "Node",
-    Projectors.String("prefixes", None),
+    Projectors.String("node_names", None),
     formatters=(
         Formatters.green_alert(
             lambda edata: edata.record["Node ID"] == edata.common["principal"]
@@ -97,7 +110,6 @@ namespace_field = Field(
 
 info_network_sheet = Sheet(
     (
-        cluster_field,
         node_field,
         Field(
             "Node ID",
@@ -128,15 +140,30 @@ info_network_sheet = Sheet(
             "Migrations",
             Projectors.Number("stats", "migrate_partitions_remaining"),
             converter=Converters.scientific_units,
+            formatters=(Formatters.yellow_alert(lambda edata: edata.value != 0.0),),
         ),
         Subgroup(
             "Cluster",
             (
-                Field("Size", Projectors.Number("stats", "cluster_size")),
+                Field(
+                    "Size",
+                    Projectors.Number("stats", "cluster_size"),
+                    formatters=(
+                        Formatters.red_alert(
+                            lambda edata: str(edata.value)
+                            != edata.common["common_size"]
+                        ),
+                    ),
+                ),
                 Field(
                     "Key",
                     Projectors.String("stats", "cluster_key"),
                     align=FieldAlignment.right,
+                    formatters=(
+                        Formatters.red_alert(
+                            lambda edata: str(edata.value) != edata.common["common_key"]
+                        ),
+                    ),
                 ),
                 Field(
                     "Integrity",
@@ -147,30 +174,45 @@ info_network_sheet = Sheet(
                     "Principal",
                     Projectors.String("stats", "paxos_principal"),
                     align=FieldAlignment.right,
+                    formatters=(
+                        Formatters.red_alert(
+                            lambda edata: str(edata.value)
+                            != edata.common["common_principal"]
+                        ),
+                    ),
                 ),
             ),
         ),
         Field("Client Conns", Projectors.Number("stats", "client_connections")),
         Field(
-            "Uptime", Projectors.Number("stats", "uptime"), converter=Converters.time
+            "Uptime",
+            Projectors.Number("stats", "uptime"),
+            converter=Converters.time_seconds,
         ),
     ),
     from_source=(
-        "cluster_names",
-        "prefixes",
+        "node_names",
         "node_ids",
         "hosts",
         "builds",
         "versions",
         "stats",
     ),
-    group_by="cluster_name",
     order_by="Node",
 )
 
+
+def create_usage_weighted_avg(type: str):
+    def usage_weighted_avg(edatas: EntryData):
+        pcts = map(lambda edata: edata.value, edatas)
+        byte_values = map(lambda edata: edata.record[type]["Used"], edatas)
+        return weighted_avg(pcts, byte_values)
+
+    return usage_weighted_avg
+
+
 info_namespace_usage_sheet = Sheet(
     (
-        cluster_field,
         namespace_field,
         node_field,
         hidden_node_id_field,
@@ -180,6 +222,7 @@ info_namespace_usage_sheet = Sheet(
                 Projectors.Number("ns_stats", "master_objects", "master-objects"),
                 Projectors.Number("ns_stats", "master_tombstones"),
                 Projectors.Number("ns_stats", "prole_objects", "prole-objects"),
+                Projectors.Number("ns_stats", "prole_tombstones"),
                 Projectors.Number("ns_stats", "non_replica_objects"),
                 Projectors.Number("ns_stats", "non_replica_tombstones"),
             ),
@@ -204,7 +247,7 @@ info_namespace_usage_sheet = Sheet(
             formatters=(Formatters.red_alert(lambda edata: edata.value),),
         ),
         Subgroup(
-            "Disk",
+            "Device",
             (
                 Field(
                     "Used",
@@ -216,12 +259,19 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.Percent(
-                        "ns_stats", "device_free_pct", "free_pct_disk", invert=True
+                    Projectors.PercentCompute(
+                        Projectors.Number("ns_stats", "device_used_bytes"),
+                        Projectors.Number("ns_stats", "device_total_bytes"),
+                    ),
+                    converter=Converters.round(2),
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Device"),
+                        converter=Converters.round(2),
                     ),
                     formatters=(
                         Formatters.yellow_alert(
-                            lambda edata: edata.value >= edata.record["Disk"]["HWM%"]
+                            lambda edata: edata.value >= edata.record["Device"]["HWM%"]
+                            and edata.record["Device"]["HWM%"] != 0
                         ),
                     ),
                 ),
@@ -246,12 +296,19 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.Percent(
-                        "ns_stats", "memory_free_pct", "free_pct_memory", invert=True
+                    Projectors.PercentCompute(
+                        Projectors.Number("ns_stats", "memory_used_bytes"),
+                        Projectors.Number("ns_stats", "memory-size"),
+                    ),
+                    converter=Converters.round(2),
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Memory"),
+                        converter=Converters.round(2),
                     ),
                     formatters=(
                         Formatters.yellow_alert(
                             lambda edata: edata.value > edata.record["Memory"]["HWM%"]
+                            and edata.record["Memory"]["HWM%"] != 0
                         ),
                     ),
                 ),
@@ -273,13 +330,24 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.Percent(
-                        "ns_stats", "index_flash_used_pct", "index_pmem_used_pct"
+                    Projectors.PercentCompute(
+                        Projectors.Number(
+                            "ns_stats",
+                            "index_flash_used_bytes",
+                            "index_pmem_used_bytes",
+                        ),
+                        Projectors.Number("ns_stats", "index-type.mounts-size-limit"),
+                    ),
+                    converter=Converters.round(2),
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Primary Index"),
+                        converter=Converters.round(2),
                     ),
                     formatters=(
                         Formatters.yellow_alert(
                             lambda edata: edata.value
                             >= edata.record["Primary Index"]["HWM%"]
+                            and edata.record["Primary Index"]["HWM%"] != 0
                         ),
                     ),
                 ),
@@ -290,15 +358,14 @@ info_namespace_usage_sheet = Sheet(
             ),
         ),
     ),
-    from_source=("cluster_names", "node_ids", "prefixes", "ns_stats"),
+    from_source=("node_ids", "node_names", "ns_stats"),
     for_each="ns_stats",
-    group_by=("cluster_name", "Namespace"),
+    group_by=("Namespace"),
     order_by="Node",
 )
 
 info_namespace_object_sheet = Sheet(
     (
-        cluster_field,
         namespace_field,
         node_field,
         hidden_node_id_field,
@@ -397,15 +464,26 @@ info_namespace_object_sheet = Sheet(
             ),
         ),
     ),
-    from_source=("cluster_names", "node_ids", "prefixes", "ns_stats"),
+    from_source=("node_ids", "node_names", "ns_stats"),
     for_each="ns_stats",
-    group_by=("cluster_name", "Namespace"),
+    group_by=("Namespace"),
     order_by="Node",
 )
 
+
+def set_index_projector(enable_index, index_populating):
+    if not enable_index:
+        return "No"
+
+    if index_populating:
+        return "Building"
+
+    # enable_index and not index_populating
+    return "Yes"
+
+
 info_set_sheet = Sheet(
     (
-        cluster_field,
         Field("Namespace", Projectors.String("set_stats", 0, for_each_key=True)),
         Field("Set", Projectors.String("set_stats", 1, for_each_key=True)),
         node_field,
@@ -432,10 +510,19 @@ info_set_sheet = Sheet(
         Field("Stop Writes Count", Projectors.Number("set_stats", "stop-writes-count")),
         Field("Disable Eviction", Projectors.Boolean("set_stats", "disable-eviction")),
         Field("Set Enable XDR", Projectors.String("set_stats", "set-enable-xdr")),
+        Field(
+            "Set Index",
+            Projectors.Func(
+                FieldType.string,
+                set_index_projector,
+                Projectors.Boolean("set_stats", "enable-index"),
+                Projectors.Boolean("set_stats", "index_populating"),
+            ),
+        ),
     ),
-    from_source=("cluster_names", "node_ids", "prefixes", "set_stats"),
+    from_source=("node_ids", "node_names", "set_stats"),
     for_each="set_stats",
-    group_by=("cluster_name", "Namespace", "Set"),
+    group_by=("Namespace", "Set"),
     order_by="Node",
 )
 
@@ -469,7 +556,7 @@ info_old_xdr_sheet = Sheet(
         Field(
             "Lag (sec)",
             Projectors.Number("xdr_stats", "xdr_timelag", "timediff_lastship_cur_secs"),
-            converter=Converters.time,
+            converter=Converters.time_seconds,
             formatters=(Formatters.red_alert(lambda edata: edata.value >= 300),),
         ),
         Subgroup(
@@ -540,10 +627,10 @@ info_old_xdr_sheet = Sheet(
         Field(
             "XDR Uptime",  # obsolete since 3.11.1.1
             Projectors.Number("xdr_stats", "xdr_uptime", "xdr-uptime"),
-            converter=Converters.time,
+            converter=Converters.time_seconds,
         ),
     ),
-    from_source=("xdr_enable", "node_ids", "prefixes", "builds", "xdr_stats"),
+    from_source=("xdr_enable", "node_ids", "node_names", "builds", "xdr_stats"),
     where=lambda record: record["XDR Enabled"],
     order_by="Node",
 )
@@ -561,7 +648,7 @@ info_dc_sheet = Sheet(
             Projectors.Number(
                 "dc_stats", "xdr_dc_timelag", "xdr-dc-timelag", "dc_timelag"
             ),
-            converter=Converters.time,
+            converter=Converters.time_seconds,
         ),
         Field(
             "Records Shipped",
@@ -588,7 +675,7 @@ info_dc_sheet = Sheet(
             Projectors.Number("dc_stats", "xdr_dc_state", "xdr-dc-state", "dc_state"),
         ),
     ),
-    from_source=("node_ids", "prefixes", "dc_stats"),
+    from_source=("node_ids", "node_names", "dc_stats"),
     for_each="dc_stats",
     where=lambda record: record["DC"],
     group_by=("DC", "Namespaces"),
@@ -619,7 +706,7 @@ info_xdr_sheet = Sheet(
         Field(
             "Lag (hh:mm:ss)",
             Projectors.Number("xdr_stats", "lag"),
-            converter=Converters.time,
+            converter=Converters.time_seconds,
         ),
         Field(
             "Avg Latency (ms)",
@@ -628,10 +715,23 @@ info_xdr_sheet = Sheet(
         ),
         Field("Throughput (rec/s)", Projectors.Number("xdr_stats", "throughput")),
     ),
-    from_source=("xdr_enable", "node_ids", "prefixes", "xdr_stats"),
+    from_source=("xdr_enable", "node_ids", "node_names", "xdr_stats"),
     where=lambda record: record["XDR Enabled"],
     order_by="Node",
 )
+
+
+def sindex_state_converter(edata):
+    state = edata.value
+
+    if state == "WO":
+        return "Write-Only"
+
+    if state == "RW":
+        return "Read-Only"
+
+    return state
+
 
 info_sindex_sheet = Sheet(
     (
@@ -640,11 +740,16 @@ info_sindex_sheet = Sheet(
         Field("Set", Projectors.String("sindex_stats", "set")),
         node_field,
         hidden_node_id_field,
-        Field("Bins", Projectors.Number("sindex_stats", "bins", "bin")),
+        Field("Bins", Projectors.String("sindex_stats", "bins", "bin")),
         Field("Num Bins", Projectors.Number("sindex_stats", "num_bins")),
         Field("Bin Type", Projectors.String("sindex_stats", "type")),
-        Field("State", Projectors.String("sindex_stats", "state")),
-        Field("Sync State", Projectors.String("sindex_stats", "sync_state")),
+        Field(
+            "State",
+            Projectors.String("sindex_stats", "state"),
+            converter=sindex_state_converter,
+        ),  # new
+        Field("Sync State", Projectors.String("sindex_stats", "sync_state")),  # old
+        # removed 6.0
         Field("Keys", Projectors.Number("sindex_stats", "keys")),
         Field(
             "Entries",
@@ -654,7 +759,15 @@ info_sindex_sheet = Sheet(
         ),
         Field(
             "Memory Used",
-            Projectors.Number("sindex_stats", "si_accounted_memory"),
+            # removed in 6.0
+            Projectors.Any(
+                FieldType.number,
+                Projectors.Number("sindex_stats", "memory_used"),
+                Projectors.Sum(
+                    Projectors.Number("sindex_stats", "ibtr_memory_used"),
+                    Projectors.Number("sindex_stats", "nbtr_memory_used"),
+                ),
+            ),
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
         ),
@@ -663,13 +776,27 @@ info_sindex_sheet = Sheet(
             (
                 Field(
                     "Requests",
-                    Projectors.Number("sindex_stats", "query_reqs"),
+                    Projectors.Any(
+                        FieldType.number,
+                        # query_basic_* added 5.7, removed in 6.0
+                        Projectors.Sum(
+                            Projectors.Number("sindex_stats", "query_basic_complete"),
+                            Projectors.Number("sindex_stats", "query_basic_error"),
+                            Projectors.Number("sindex_stats", "query_basic_abort"),
+                        ),
+                        # removed in 5.7
+                        Projectors.Number("sindex_stats", "query_reqs"),
+                    ),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
                 ),
                 Field(
                     "Avg Num Recs",
-                    Projectors.Number("sindex_stats", "query_avg_rec_count"),
+                    Projectors.Number(
+                        "sindex_stats",
+                        "query_basic_avg_rec_count",  # query_basic_* added 5.7, removed 6.0
+                        "query_avg_rec_count",  # removed in 5.7
+                    ),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
                 ),
@@ -680,6 +807,7 @@ info_sindex_sheet = Sheet(
             (
                 Field(
                     "Writes",
+                    # write_success removed in 6.0
                     Projectors.Number(
                         "sindex_stats", "write_success", "stat_write_success"
                     ),
@@ -688,6 +816,7 @@ info_sindex_sheet = Sheet(
                 ),
                 Field(
                     "Deletes",
+                    # delete_success removed in 6.0
                     Projectors.Number(
                         "sindex_stats", "delete_success", "stat_delete_success"
                     ),
@@ -697,7 +826,7 @@ info_sindex_sheet = Sheet(
             ),
         ),
     ),
-    from_source=("node_ids", "prefixes", "sindex_stats"),
+    from_source=("node_ids", "node_names", "sindex_stats"),
     for_each="sindex_stats",
     group_by=("Namespace", "Set"),
     order_by=("Index Name", "Node"),
@@ -706,14 +835,14 @@ info_sindex_sheet = Sheet(
 show_distribution_sheet = Sheet(
     tuple(
         itertools.chain(
-            [TitleField("Node", Projectors.String("prefixes", None))],
+            [TitleField("Node", Projectors.String("node_names", None))],
             [
                 Field("{}%".format(pct), Projectors.Number("histogram", i))
                 for i, pct in enumerate(range(10, 110, 10))
             ],
         )
     ),
-    from_source=("prefixes", "histogram"),
+    from_source=("node_names", "histogram"),
     order_by="Node",
 )
 
@@ -733,10 +862,10 @@ summary_namespace_sheet = Sheet(
             hidden=True,
         ),
         Subgroup(
-            "Devices",
+            "Drives",
             (
-                Field("Total", Projectors.Number("ns_stats", "devices_total")),
-                Field("Per-Node", Projectors.Number("ns_stats", "devices_per_node")),
+                Field("Total", Projectors.Number("ns_stats", "drives_total")),
+                Field("Per-Node", Projectors.Number("ns_stats", "drives_per_node")),
             ),
         ),
         Subgroup(
@@ -749,21 +878,94 @@ summary_namespace_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.Percent("ns_stats", "memory_available_pct", invert=True),
+                    Projectors.Float("ns_stats", "memory_used_pct"),
+                    converter=Converters.round(2),
                 ),
-                Field("Avail%", Projectors.Percent("ns_stats", "memory_available_pct")),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "memory_avail_pct"),
+                    converter=Converters.round(2),
+                ),
             ),
         ),
         Subgroup(
-            "Disk",
+            "Pmem Index",
             (
                 Field(
                     "Total",
-                    Projectors.Number("ns_stats", "disk_total"),
+                    Projectors.Number("ns_stats", "pmem_index_total"),
                     converter=Converters.byte,
                 ),
-                Field("Used%", Projectors.Percent("ns_stats", "disk_used_pct")),
-                Field("Avail%", Projectors.Percent("ns_stats", "disk_available_pct")),
+                Field(
+                    "Used%",
+                    Projectors.Float("ns_stats", "pmem_index_used_pct"),
+                    converter=Converters.round(2),
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "pmem_index_avail_pct"),
+                    converter=Converters.round(2),
+                ),
+            ),
+        ),
+        Subgroup(
+            "Flash Index",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number("ns_stats", "flash_index_total"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Float("ns_stats", "flash_index_used_pct"),
+                    converter=Converters.round(2),
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "flash_index_avail_pct"),
+                    converter=Converters.round(2),
+                ),
+            ),
+        ),
+        Subgroup(
+            "Device",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number("ns_stats", "device_total"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Float("ns_stats", "device_used_pct"),
+                    converter=Converters.round(2),
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "device_avail_pct"),
+                    converter=Converters.round(2),
+                ),
+            ),
+        ),
+        Subgroup(
+            "Pmem",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number("ns_stats", "pmem_total"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Float("ns_stats", "pmem_used_pct"),
+                    converter=Converters.round(2),
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Float("ns_stats", "pmem_avail_pct"),
+                    converter=Converters.round(2),
+                ),
             ),
         ),
         Field(
@@ -781,22 +983,7 @@ summary_namespace_sheet = Sheet(
             Projectors.Number("ns_stats", "master_objects"),
             Converters.scientific_units,
         ),
-        Subgroup(
-            "Usage (Unique-Data)",
-            (
-                Field(
-                    "In-Memory",
-                    Projectors.Number("ns_stats", "license_data_in_memory"),
-                    Converters.byte,
-                ),
-                Field(
-                    "On-Disk",
-                    Projectors.Number("ns_stats", "license_data_on_disk"),
-                    Converters.byte,
-                ),
-            ),
-        ),
-        Field("Compression Ratio", Projectors.Float("ns_stats", "compression-ratio")),
+        Field("Compression Ratio", Projectors.Float("ns_stats", "compression_ratio")),
     ),
     from_source="ns_stats",
     for_each="ns_stats",
@@ -836,7 +1023,7 @@ show_pmap_sheet = Sheet(
             ),
         ),
     ),
-    from_source=("prefixes", "node_ids", "pmap"),
+    from_source=("node_names", "node_ids", "pmap"),
     for_each="pmap",
     group_by="Namespace",
     order_by="Node",
@@ -859,7 +1046,7 @@ show_config_sheet = Sheet(
             aggregator_selector=numeric_sum_aggregator_selector,
         ),
     ),
-    from_source=("prefixes", "data", "node_ids"),
+    from_source=("node_names", "data", "node_ids"),
     order_by="Node",
     default_style=SheetStyle.rows,
 )
@@ -871,7 +1058,7 @@ show_config_xdr_ns_sheet = Sheet(
         Field("Namespace", Projectors.String("data", None, for_each_key=True)),
         DynamicFields("data", required=True, order=DynamicFieldOrder.source),
     ),
-    from_source=("prefixes", "data", "node_ids"),
+    from_source=("node_names", "data", "node_ids"),
     group_by=["Namespace"],
     order_by=["Namespace", "Node"],
     default_style=SheetStyle.rows,
@@ -898,17 +1085,31 @@ show_mapping_to_id_sheet = Sheet(
 
 show_object_distribution_sheet = Sheet(
     (
-        TitleField("Node", Projectors.String("prefixes", None)),
+        TitleField("Node", Projectors.String("node_names", None)),
         DynamicFields("histogram", required=True, order=DynamicFieldOrder.source),
     ),
-    from_source=("prefixes", "histogram"),
+    from_source=("node_names", "histogram"),
     order_by="Node",
 )
 
 
+def latency_weighted_avg(edatas: EntryData):
+    pcts = map(lambda edata: edata.value, edatas)
+    ops_sec_values = map(lambda edata: edata.record["ops/sec"], edatas)
+    return weighted_avg(pcts, ops_sec_values)
+
+
+weightedAvgAggregator = ComplexAggregator(
+    latency_weighted_avg, converter=Converters.round(2)
+)
+
+
 def latency_aggregator_selector(key, is_numeric):
+    if key == "ops/sec":
+        return Aggregators.sum(converter=Converters.round(2))
+
     if key != "Time Span":
-        return Aggregators.max()
+        return weightedAvgAggregator
 
 
 def latency_projector_selector(key):
@@ -919,7 +1120,7 @@ show_latency_sheet = Sheet(
     (
         Field("Namespace", Projectors.String("histogram", 0, for_each_key=True)),
         Field("Histogram", Projectors.String("histogram", 1, for_each_key=True)),
-        TitleField("Node", Projectors.String("prefixes", None)),
+        TitleField("Node", Projectors.String("node_names", None)),
         DynamicFields(
             "histogram",
             required=True,
@@ -928,7 +1129,7 @@ show_latency_sheet = Sheet(
             aggregator_selector=latency_aggregator_selector,
         ),
     ),
-    from_source=("prefixes", "histogram"),
+    from_source=("node_names", "histogram"),
     for_each="histogram",
     group_by=("Namespace", "Histogram"),
     order_by="Node",
@@ -965,7 +1166,10 @@ show_users = Sheet(
             Converters.list_to_comma_sep_str,
             align=FieldAlignment.right,
         ),
-        Field("Connections", Projectors.String("data", "connections"),),
+        Field(
+            "Connections",
+            Projectors.String("data", "connections"),
+        ),
         Subgroup(
             "Read",
             (
@@ -1091,7 +1295,10 @@ show_roles = Sheet(
 show_udfs = Sheet(
     (
         Field("Filename", Projectors.String("data", None, for_each_key=True)),
-        Field("Hash", Projectors.String("data", "hash"),),
+        Field(
+            "Hash",
+            Projectors.String("data", "hash"),
+        ),
         Field("Type", Projectors.String("data", "type")),
     ),
     from_source="data",
@@ -1112,6 +1319,171 @@ show_sindex = Sheet(
     from_source=("data"),
     group_by=("Namespace", "Set"),
     order_by=("Index Name", "Namespace", "Set"),
+)
+
+
+def roster_null_to_empty_list_converter(edata):
+    val = edata.value
+
+    if isinstance(val, list) and len(val) == 1 and val[0] == "null":
+        edata.value = []
+
+    return Converters.list_to_comma_sep_str(edata)
+
+
+show_roster = Sheet(
+    (
+        node_field,
+        Field(
+            "Node ID",
+            Projectors.String("node_ids", None),
+            converter=(
+                lambda edata: "*" + edata.value
+                if edata.value == edata.common["principal"]
+                else edata.value
+            ),
+            formatters=(
+                Formatters.green_alert(
+                    lambda edata: edata.record["Node ID"] == edata.common["principal"]
+                ),
+            ),
+            align=FieldAlignment.left,
+        ),
+        Field("Namespace", Projectors.String("data", None, for_each_key=True)),
+        Field(
+            "Current Roster",
+            Projectors.Identity("data", "roster"),
+            roster_null_to_empty_list_converter,
+            allow_diff=True,
+        ),
+        Field(
+            "Pending Roster",
+            Projectors.Identity("data", "pending_roster"),
+            roster_null_to_empty_list_converter,
+            allow_diff=True,
+        ),
+        Field(
+            "Observed Nodes",
+            Projectors.Identity("data", "observed_nodes"),
+            roster_null_to_empty_list_converter,
+            allow_diff=True,
+        ),
+    ),
+    from_source=("data", "node_names", "node_ids"),
+    for_each="data",
+    group_by=("Namespace"),
+    order_by=("Node ID", "Namespace"),
+)
+
+
+def ok_or_list(resp):
+    if isinstance(resp, Exception):
+        raise resp
+    if not resp:
+        return ASINFO_RESPONSE_OK
+
+    return ", ".join(resp)
+
+
+show_best_practices = Sheet(
+    (
+        node_field,
+        hidden_node_id_field,
+        Field(
+            "Response",
+            Projectors.Func(
+                FieldType.string, ok_or_list, Projectors.Identity("data", None)
+            ),
+            formatters=(
+                Formatters.green_alert(lambda edata: edata.value == ASINFO_RESPONSE_OK),
+                Formatters.red_alert(lambda edata: edata.value != ASINFO_RESPONSE_OK),
+            ),
+        ),
+    ),
+    from_source=("data", "node_names", "node_ids"),
+)
+
+
+def jobs_converter_selector(key):
+    if "recs" in key or "rps" in key or "pids" in key:
+        return Converters.scientific_units
+
+    if "bytes" in key:
+        return Converters.byte
+
+    if "timeout" in key or "time" in key:
+        return Converters.time_milliseconds
+
+    return None
+
+
+show_jobs = Sheet(
+    (
+        hidden_node_id_field,
+        node_field,
+        Field("Namespace", Projectors.Percent("data", "ns")),
+        Field("Module", Projectors.String("data", "module")),
+        Field("Type", Projectors.String("data", "job-type")),
+        Field(
+            "Progress %",
+            Projectors.Float("data", "job-progress"),
+            formatters=(
+                Formatters.yellow_alert(lambda edata: edata.value != 100.0),
+                Formatters.green_alert(lambda edata: edata.value == 100.0),
+            ),
+        ),
+        Field("Transaction ID", Projectors.Number("data", "trid")),
+        Field(
+            "Time Since Done",
+            Projectors.Number("data", "time-since-done"),
+            converter=Converters.time_milliseconds,
+        ),
+        DynamicFields("data", converter_selector=jobs_converter_selector),
+    ),
+    from_source=("data", "node_names", "node_ids"),
+    for_each="data",
+    group_by=("Namespace", "Module", "Type"),
+    order_by=("Progress %", "Time Since Done"),
+    default_style=SheetStyle.rows,
+)
+
+show_racks = Sheet(
+    (
+        Field("Namespace", Projectors.String("data", 0, for_each_key=True)),
+        Field("Rack ID", Projectors.Number("data", 1, for_each_key=True)),
+        Field(
+            "Nodes",
+            Projectors.Identity("data", "nodes"),
+            Converters.list_to_comma_sep_str,
+        ),
+    ),
+    from_source=("data"),
+    for_each="data",
+    group_by=("Namespace"),
+    order_by=("Rack ID"),
+)
+
+kill_jobs = Sheet(
+    (
+        hidden_node_id_field,
+        node_field,
+        Field("Transaction ID", Projectors.Number("data", "trid")),
+        Field("Namespace", Projectors.Percent("data", "ns")),
+        Field("Module", Projectors.String("data", "module")),
+        Field("Type", Projectors.String("data", "job-type")),
+        Field(
+            "Response",
+            Projectors.String("data", "response"),
+            formatters=(
+                Formatters.green_alert(lambda edata: edata.value == ASINFO_RESPONSE_OK),
+                Formatters.red_alert(lambda edata: edata.value != ASINFO_RESPONSE_OK),
+            ),
+        ),
+    ),
+    from_source=("data", "node_names", "node_ids"),
+    group_by=("Namespace", "Module", "Type"),
+    default_style=SheetStyle.columns,
+    for_each="data",
 )
 
 grep_count_sheet = Sheet(
@@ -1136,6 +1508,28 @@ grep_count_sheet = Sheet(
     default_style=SheetStyle.rows,
 )
 
+node_info_responses = Sheet(
+    (
+        node_field,
+        Field(
+            "Response",
+            Projectors.Exception("data", None, filter_exc=[ASInfoError]),
+            formatters=(
+                Formatters.green_alert(
+                    lambda edata: edata.value.startswith(ASINFO_RESPONSE_OK)
+                ),
+                Formatters.red_alert(
+                    lambda edata: not edata.value.startswith(ASINFO_RESPONSE_OK)
+                ),
+            ),
+        ),
+    ),
+    from_source=("data", "node_names"),
+    order_by="Node",
+    default_style=SheetStyle.columns,
+)
+
+# TODO
 # grep_diff_sheet = Sheet(
 #     (TitleField('Node', Projectors.String('node_ids', 'node')),
 #      DynamicFields('data.Total', required=True,
@@ -1146,6 +1540,7 @@ grep_count_sheet = Sheet(
 #     group_by='Node'
 # )
 
+# TODO
 # summary_list_sheet = Sheet(
 #     (Field('No', Projectors.Number('no', 'no')),
 #      Field('Item', Projectors.String('summary', 'item')),

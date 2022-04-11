@@ -1,0 +1,36 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+bcrypt = "==3.1.4"
+cryptography = "==3.4.7"
+distro = "==1.5.0"
+jsonschema = "==2.5.1"
+pexpect = "==4.4.0"
+ply = "==3.11"
+pyasn1 = "==0.4.2"
+toml = "==0.9.4"
+yappi = "==0.98"
+python-dateutil = "==2.8.1"
+pyOpenSSL = "==18.0.0"
+setuptools = "*"
+aiohttp = "==3.8.1"
+
+[dev-packages]
+pyinstaller = "==4.7"
+black = "*"
+flake8 = "*"
+pytest = "*"
+unittest2 = "*"
+mock = "*"
+coverage = "*"
+macholib = {version = "*", sys_platform = "== 'darwin'"}
+asynctest = "*"
+
+[requires]
+python_version = "3.9"
+
+[pipenv]
+allow_prereleases = true

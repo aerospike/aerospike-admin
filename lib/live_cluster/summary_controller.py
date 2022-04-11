@@ -1,3 +1,4 @@
+import asyncio
 from lib.utils import common, util
 from lib.base_controller import CommandHelp
 
@@ -27,12 +28,14 @@ from .live_cluster_command_controller import LiveClusterCommandController
     "                                          1.2.3.4:3232,uid,passphrase,key_path",
     "                                          [2001::1234:10],uid,pwd",
     "                                          [2001::1234:10]:3232,uid,,key_path",
+    "    --agent-host    <host>    - Host IP of the Unique-Data-Agent to collect license data usage.",
+    "    --agent-port    <int>     - Port of the Unique-Data-Agent. Default: 8080",
 )
 class SummaryController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with"])
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         enable_list_view = util.check_arg_and_delete_from_mods(
             line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -90,25 +93,33 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        service_stats = util.Future(
-            self.cluster.info_statistics, nodes=self.nodes
-        ).start()
-        namespace_stats = util.Future(
-            self.cluster.info_all_namespace_statistics, nodes=self.nodes
-        ).start()
-        set_stats = util.Future(
-            self.cluster.info_set_statistics, nodes=self.nodes
-        ).start()
+        agent_host = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--agent-host",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
 
-        service_configs = util.Future(
-            self.cluster.info_get_config, nodes=self.nodes, stanza="service"
-        ).start()
-        namespace_configs = util.Future(
-            self.cluster.info_get_config, nodes=self.nodes, stanza="namespace"
-        ).start()
-        cluster_configs = util.Future(
-            self.cluster.info_get_config, nodes=self.nodes, stanza="cluster"
-        ).start()
+        agent_port = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--agent-port",
+            return_type=str,
+            default="8080",
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        server_version = asyncio.create_task(
+            self.cluster.info("build", nodes=self.nodes)
+        )
+        server_edition = asyncio.create_task(
+            self.cluster.info("version", nodes=self.nodes)
+        )
+        cluster_name = asyncio.create_task(
+            self.cluster.info("cluster-name", nodes=self.nodes)
+        )
 
         os_version = self.cluster.info_system_statistics(
             nodes=self.nodes,
@@ -130,32 +141,40 @@ class SummaryController(LiveClusterCommandController):
             commands=["uname"],
             collect_remote_data=enable_ssh,
         )
-        server_version = util.Future(
-            self.cluster.info, "build", nodes=self.nodes
-        ).start()
 
-        server_edition = util.Future(
-            self.cluster.info, "version", nodes=self.nodes
-        ).start()
+        license_usage_future = None
 
-        cluster_name = util.Future(
-            self.cluster.info, "cluster-name", nodes=self.nodes
-        ).start()
+        if agent_host is not None:
+            # needs to be ensure_future because async_cache returns an awaitable, not
+            # a coroutine.
+            license_usage_future = asyncio.ensure_future(
+                common.request_license_usage(agent_host, agent_port)
+            )
 
-        service_stats = service_stats.result()
-        namespace_stats = namespace_stats.result()
-        set_stats = set_stats.result()
-        service_configs = service_configs.result()
-        namespace_configs = namespace_configs.result()
-        cluster_configs = cluster_configs.result()
-        server_version = server_version.result()
-        server_edition = server_edition.result()
-        cluster_name = cluster_name.result()
+        service_stats = asyncio.create_task(
+            self.cluster.info_statistics(nodes=self.nodes)
+        )
+        namespace_stats = asyncio.create_task(
+            self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+        )
+        xdr_dc_stats = asyncio.create_task(
+            self.cluster.info_all_dc_statistics(nodes=self.nodes)
+        )
+        service_configs = asyncio.create_task(
+            self.cluster.info_get_config(nodes=self.nodes, stanza="service")
+        )
+        namespace_configs = asyncio.create_task(
+            self.cluster.info_get_config(nodes=self.nodes, stanza="namespace")
+        )
 
         metadata = {}
         metadata["server_version"] = {}
         metadata["server_build"] = {}
         metadata["cluster_name"] = {}
+
+        server_version = await server_version
+        server_edition = await server_edition
+        cluster_name = await cluster_name
 
         for node, version in server_version.items():
             if not version or isinstance(version, Exception):
@@ -184,6 +203,9 @@ class SummaryController(LiveClusterCommandController):
                 and not isinstance(cluster_name[node], Exception)
             ):
                 metadata["cluster_name"][node] = cluster_name[node]
+
+        os_version = await os_version
+        kernel_version = await kernel_version
 
         try:
             try:
@@ -216,17 +238,32 @@ class SummaryController(LiveClusterCommandController):
             pass
 
         metadata["os_version"] = os_version
+        license_usage = {}
 
-        return util.Future(
-            self.view.print_summary,
+        if license_usage_future is not None:
+            license_usage, error = await license_usage_future
+
+            if error is not None:
+                self.logger.error(
+                    "Failed to retrieve license usage information : {}",
+                    str(error),
+                )
+
+        service_stats = await service_stats
+        namespace_stats = await namespace_stats
+        xdr_dc_stats = await xdr_dc_stats
+        service_configs = await service_configs
+        namespace_configs = await namespace_configs
+
+        return self.view.print_summary(
             common.create_summary(
                 service_stats=service_stats,
                 namespace_stats=namespace_stats,
-                set_stats=set_stats,
+                xdr_dc_stats=xdr_dc_stats,
                 metadata=metadata,
                 service_configs=service_configs,
                 ns_configs=namespace_configs,
-                cluster_configs=cluster_configs,
+                license_data_usage=license_usage,
             ),
             list_view=enable_list_view,
         )

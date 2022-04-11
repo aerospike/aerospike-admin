@@ -14,14 +14,15 @@
 
 import datetime
 import locale
+import logging
 import sys
 import time
 from io import StringIO
-from collections import OrderedDict
 from pydoc import pipepager
 
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
+from lib.live_cluster.client.node import ASInfoError
 from lib.utils import file_size, constants, util
 from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
@@ -32,9 +33,25 @@ H2_offset = 15
 H_width = 80
 
 
+# Helper that adds a '_' to the end of reserved words that are also modifiers.
+# This code improves readability.
+def reserved_modifiers(func):
+    def wrapper(*args, **kwargs):
+        if "with" in kwargs:
+            kwargs["with_"] = kwargs["with"]
+
+        if "for" in kwargs:
+            kwargs["for_"] = kwargs["for"]
+
+        func(*args, **kwargs)
+
+    return wrapper
+
+
 class CliView(object):
     NO_PAGER, LESS, MORE, SCROLL = range(4)
     pager = NO_PAGER
+    logger = logging.getLogger("asadm")
 
     @staticmethod
     def print_result(out):
@@ -71,41 +88,71 @@ class CliView(object):
         return " (" + str(timestamp) + ")"
 
     @staticmethod
+    @reserved_modifiers
     def info_network(
-        stats, cluster_names, versions, builds, cluster, timestamp="", **mods
+        stats,
+        cluster_names,
+        versions,
+        builds,
+        cluster,
+        timestamp="",
+        with_=None,
+        **ignore
     ):
-        prefixes = cluster.get_node_names(mods.get("with", []))
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         hosts = cluster.nodes
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Network Information" + title_suffix
         sources = dict(
             cluster_names=cluster_names,
-            prefixes=prefixes,
-            node_ids=dict(
-                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
-            ),
+            node_names=node_names,
+            node_ids=node_ids,
             hosts=dict(((k, h.sock_name(use_fqdn=False)) for k, h in hosts.items())),
             builds=builds,
             versions=versions,
             stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+
+        common_size = None
+        common_key = None
+        common_principal = None
+
+        cluster_sizes = util.get_value_from_second_level_of_dict(
+            stats, "cluster_size"
+        ).values()
+        cluster_keys = util.get_value_from_second_level_of_dict(
+            stats, "cluster_key"
+        ).values()
+        cluster_principals = util.get_value_from_second_level_of_dict(
+            stats, "paxos_principal"
+        ).values()
+
+        common_size = util.find_most_frequent(cluster_sizes)
+        common_key = util.find_most_frequent(cluster_keys)
+        common_principal = util.find_most_frequent(cluster_principals)
+
+        common = dict(
+            principal=cluster.get_expected_principal(),
+            common_size=common_size,
+            common_key=common_key,
+            common_principal=common_principal,
+        )
+
         CliView.print_result(
             sheet.render(templates.info_network_sheet, title, sources, common=common)
         )
 
     @staticmethod
-    def info_namespace_usage(stats, cluster, timestamp="", **mods):
-        prefixes = cluster.get_node_names(mods.get("with", []))
+    @reserved_modifiers
+    def info_namespace_usage(stats, cluster, timestamp="", with_=None, **ignore):
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Namespace Usage Information" + title_suffix
         sources = dict(
-            # TODO - collect cluster-name.
-            cluster_names=dict([(k, None) for k in stats.keys()]),
-            node_ids=dict(
-                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
-            ),
-            prefixes=prefixes,
+            node_ids=node_ids,
+            node_names=node_names,
             ns_stats=stats,
         )
         common = dict(principal=cluster.get_expected_principal())
@@ -117,17 +164,29 @@ class CliView(object):
         )
 
     @staticmethod
-    def info_namespace_object(stats, cluster, timestamp="", **mods):
-        prefixes = cluster.get_node_names(mods.get("with", []))
+    @reserved_modifiers
+    def info_namespace_object(
+        stats, rack_ids, cluster, timestamp="", with_=None, **ignore
+    ):
+        if not stats:
+            return
+
+        # ns_stats contains rack-id in config file which is different than effective rack-id.
+        # This overwrites rack-id with effective rack-id if avail.
+        if rack_ids:
+            for host, ns_stats in stats.items():
+                for ns, ns_stat in ns_stats.items():
+                    if host in rack_ids and ns in rack_ids[host]:
+                        if "rack-id" in ns_stat:
+                            ns_stat["rack-id"] = rack_ids[host][ns]
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Namespace Object Information" + title_suffix
         sources = dict(
-            # TODO - collect cluster-name.
-            cluster_names=dict([(k, None) for k in stats.keys()]),
-            node_ids=dict(
-                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
-            ),
-            prefixes=prefixes,
+            node_ids=node_ids,
+            node_names=node_names,
             ns_stats=stats,
         )
         common = dict(principal=cluster.get_expected_principal())
@@ -139,17 +198,15 @@ class CliView(object):
         )
 
     @staticmethod
-    def info_set(stats, cluster, timestamp="", **mods):
-        prefixes = cluster.get_node_names(mods.get("with", []))
+    @reserved_modifiers
+    def info_set(stats, cluster, timestamp="", with_=None, **ignore):
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Set Information%s" + title_suffix
         sources = dict(
-            # TODO - collect cluster-name.
-            cluster_names=dict([(k, None) for k in stats.keys()]),
-            node_ids=dict(
-                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
-            ),
-            prefixes=prefixes,
+            node_ids=node_ids,
+            node_names=node_names,
             set_stats=stats,
         )
         common = dict(principal=cluster.get_expected_principal())
@@ -160,16 +217,15 @@ class CliView(object):
 
     # pre 5.0
     @staticmethod
-    def info_dc(stats, cluster, timestamp="", **mods):
-        prefixes = cluster.get_node_names(mods.get("with", []))
-
+    @reserved_modifiers
+    def info_dc(stats, cluster, timestamp="", with_=None, **ignore):
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "DC Information%s" % (title_suffix)
         sources = dict(
-            node_ids=dict(
-                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
-            ),
-            prefixes=prefixes,
+            node_ids=node_ids,
+            node_names=node_names,
             dc_stats=stats,
         )
         common = dict(principal=cluster.get_expected_principal())
@@ -180,20 +236,21 @@ class CliView(object):
 
     # pre 5.0
     @staticmethod
-    def info_old_XDR(stats, builds, xdr_enable, cluster, timestamp="", **mods):
+    @reserved_modifiers
+    def info_old_XDR(
+        stats, builds, xdr_enable, cluster, timestamp="", with_=None, **ignore
+    ):
         if not max(xdr_enable.values()):
             return
 
-        prefixes = cluster.get_node_names(mods.get("with", []))
-
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "XDR Information" + title_suffix
         sources = dict(
             xdr_enable=xdr_enable,
-            node_ids=dict(
-                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
-            ),
-            prefixes=prefixes,
+            node_ids=node_ids,
+            node_names=node_names,
             builds=builds,
             xdr_stats=stats,
         )
@@ -209,10 +266,13 @@ class CliView(object):
     ):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
-        prefixes = cluster.get_node_names()
-        node_ids = dict(((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys()))
+        node_names = cluster.get_node_names()
+        node_ids = node_ids = cluster.get_node_ids()
         sources = dict(
-            xdr_enable=xdr_enable, node_ids=node_ids, prefixes=prefixes, xdr_stats=stats
+            xdr_enable=xdr_enable,
+            node_ids=node_ids,
+            node_names=node_names,
+            xdr_stats=stats,
         )
         common = dict(principal=cluster.get_expected_principal())
 
@@ -221,7 +281,8 @@ class CliView(object):
         )
 
     @staticmethod
-    def info_sindex(stats, cluster, timestamp="", **mods):
+    @reserved_modifiers
+    def info_sindex(stats, cluster, timestamp="", with_=None, **ignore):
         # return if sindex stats are empty.
         if not stats:
             return
@@ -234,14 +295,13 @@ class CliView(object):
                 sindex_stats[node] = node_stats = sindex_stats.get(node, {})
                 node_stats[iname] = values
 
-        prefixes = cluster.get_node_names(mods.get("with", []))
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Secondary Index Information" + title_suffix
         sources = dict(
-            node_ids=dict(
-                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
-            ),
-            prefixes=prefixes,
+            node_ids=node_ids,
+            node_names=node_names,
             sindex_stats=sindex_stats,
         )
         common = dict(principal=cluster.get_expected_principal())
@@ -251,8 +311,17 @@ class CliView(object):
         )
 
     @staticmethod
+    @reserved_modifiers
     def show_distribution(
-        title, histogram, unit, hist, cluster, like=None, timestamp="", **mods
+        title,
+        histogram,
+        unit,
+        hist,
+        cluster,
+        like=None,
+        with_=None,
+        timestamp="",
+        **ignore
     ):
         likes = util.compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
@@ -271,7 +340,7 @@ class CliView(object):
 
             this_title = "{} - {} in {}{}".format(namespace, title, unit, title_suffix)
             sources = dict(
-                prefixes=cluster.get_node_names(mods.get("with", [])),
+                node_names=cluster.get_node_names(with_),
                 histogram=dict((k, d["percentiles"]) for k, d in node_data.items()),
             )
 
@@ -285,6 +354,7 @@ class CliView(object):
             )
 
     @staticmethod
+    @reserved_modifiers
     def show_object_distribution(
         title,
         histogram,
@@ -294,11 +364,12 @@ class CliView(object):
         set_bucket_count,
         cluster,
         like=None,
+        with_=None,
         timestamp="",
         loganalyser_mode=False,
-        **mods
+        **ignore
     ):
-        prefixes = cluster.get_node_names(mods.get("with", []))
+        node_names = cluster.get_node_names(with_)
         likes = util.compile_likes(like)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         description = "Number of records having {} in the range ".format(
@@ -312,7 +383,7 @@ class CliView(object):
 
             ns_title = "{} - {} in {}{}".format(namespace, title, unit, title_suffix)
             sources = dict(
-                prefixes=prefixes,
+                node_names=node_names,
                 histogram={
                     h: d.get("data", {}) for h, d in node_data.items() if h != "columns"
                 },
@@ -335,48 +406,59 @@ class CliView(object):
 
         for hist, nodes_data in orig_latency.items():
             for node, node_data in nodes_data.items():
-                node_latency = latency[node] = latency.get(node, OrderedDict())
+                node_latency = latency[node] = latency.get(node, {})
 
-                for ns, ns_data in node_data["namespace"].items():
-                    for slice_id, values in enumerate(ns_data["values"]):
-                        node_latency[(ns, hist, slice_id)] = OrderedDict(
-                            zip(ns_data["columns"], values)
-                        )
+                if "namespace" in node_data:
+                    for ns, ns_data in node_data["namespace"].items():
+                        for slice_id, values in enumerate(ns_data["values"]):
+                            node_latency[(ns, hist, slice_id)] = dict(
+                                zip(ns_data["columns"], values)
+                            )
+                elif "total" in node_data:
+                    # batch-index is not under 'namespace'
+                    hist_data = node_data["total"]
+                    for slice_id, values in enumerate(hist_data["values"]):
+                        node_latency[
+                            (templates.show_latency_sheet.no_entry, hist, slice_id)
+                        ] = dict(zip(hist_data["columns"], values))
 
         return latency
 
     @staticmethod
-    def show_latency(latency, cluster, like=None, timestamp="", **mods):
+    @reserved_modifiers
+    def show_latency(latency, cluster, like=None, with_=None, timestamp="", **ignore):
         # TODO - May not need to converter now that dicts can be nested.
-        prefixes = cluster.get_node_names(mods.get("with", []))
+        node_names = cluster.get_node_names(with_)
         likes = util.compile_likes(like)
         title = "Latency " + CliView._get_timestamp_suffix(timestamp)
         keys = set(filter(likes.search, latency.keys()))
         latency = {k: v for k, v in latency.items() if k in keys}
         latency = CliView.format_latency(latency)
 
-        sources = dict(prefixes=prefixes, histogram=latency)
+        sources = dict(node_names=node_names, histogram=latency)
 
         CliView.print_result(sheet.render(templates.show_latency_sheet, title, sources))
 
     @staticmethod
+    @reserved_modifiers
     def show_config(
         title,
         service_configs,
         cluster,
         like=None,
         diff=False,
+        with_=None,
         show_total=False,
         title_every_nth=0,
         flip_output=False,
         timestamp="",
-        **mods
+        **ignore
     ):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
-        prefixes = cluster.get_node_names(mods.get("with", []))
-        node_ids = dict(((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys()))
-        sources = dict(prefixes=prefixes, data=service_configs, node_ids=node_ids)
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        sources = dict(node_names=node_names, data=service_configs, node_ids=node_ids)
         disable_aggregations = not show_total
         style = SheetStyle.columns if flip_output else None
         common = dict(principal=cluster.get_expected_principal())
@@ -404,26 +486,30 @@ class CliView(object):
         CliView.show_config(*args, **kwargs)
 
     @staticmethod
+    @reserved_modifiers
     def show_xdr5_config(
         title,
         service_configs,
         cluster,
         like=None,
         diff=None,
+        with_=None,
         title_every_nth=0,
         flip_output=False,
         timestamp="",
-        **mods
+        **ignore
     ):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = title + title_suffix
-        prefixes = cluster.get_node_names(mods.get("with", []))
-        node_ids = dict(((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys()))
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         common = dict(principal=cluster.get_expected_principal())
         style = SheetStyle.columns if flip_output else None
 
         sources = dict(
-            prefixes=prefixes, node_ids=node_ids, data=service_configs["xdr_configs"],
+            node_names=node_names,
+            node_ids=node_ids,
+            data=service_configs["xdr_configs"],
         )
 
         CliView.print_result(
@@ -443,7 +529,7 @@ class CliView(object):
         for dc in service_configs["dc_configs"]:
             title = "DC Configuration for {}{}".format(dc, title_suffix)
             sources = dict(
-                prefixes=prefixes,
+                node_names=node_names,
                 node_ids=node_ids,
                 data=service_configs["dc_configs"][dc],
             )
@@ -464,7 +550,7 @@ class CliView(object):
         for dc in service_configs["ns_configs"]:
             title = "Namespace Configuration for {}{}".format(dc, title_suffix)
             sources = dict(
-                prefixes=prefixes,
+                node_names=node_names,
                 node_ids=node_ids,
                 data=service_configs["ns_configs"][dc],
             )
@@ -747,15 +833,15 @@ class CliView(object):
         CliView.print_result(sheet.render(map_sheet, title, sources))
 
     @staticmethod
-    def show_pmap(pmap_data, cluster, timestamp="", **mods):
-        prefixes = cluster.get_node_names(mods.get("with", []))
+    @reserved_modifiers
+    def show_pmap(pmap_data, cluster, timestamp="", with_=None, **ignore):
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Partition Map Analysis" + title_suffix
         sources = dict(
-            prefixes=prefixes,
-            node_ids=dict(
-                ((k, cluster.get_node(k)[0].node_id) for k in prefixes.keys())
-            ),
+            node_names=node_names,
+            node_ids=node_ids,
             pmap=pmap_data,
         )
         common = dict(principal=cluster.get_expected_principal())
@@ -765,7 +851,7 @@ class CliView(object):
         )
 
     @staticmethod
-    def show_users(users_data, like, timestamp="", **ignore):
+    def show_users(users_data, like=None, timestamp="", **ignore):
         if not users_data:
             return
 
@@ -788,7 +874,7 @@ class CliView(object):
         CliView.print_result(sheet.render(templates.show_users, title, sources))
 
     @staticmethod
-    def show_roles(roles_data, like, timestamp="", **ignore):
+    def show_roles(roles_data, like=None, timestamp="", **ignore):
         if not roles_data:
             return
 
@@ -847,8 +933,160 @@ class CliView(object):
         title = "Secondary Indexes{}".format(title_timestamp)
         sources = dict(data=filtered_data)
 
+        CliView.print_result(sheet.render(templates.show_sindex, title, sources))
+
+    @staticmethod
+    @reserved_modifiers
+    def show_roster(
+        roster_data,
+        cluster,
+        diff=False,
+        for_=None,
+        with_=None,
+        flip=False,
+        timestamp="",
+        **ignore
+    ):
+        if not roster_data:
+            return
+
+        filtered_data = None
+
+        if for_:
+            filtered_data = dict(roster_data)
+            likes = util.compile_likes(for_)
+            for node_data in filtered_data.values():
+                for key in list(node_data.keys()):
+                    if not likes.search(key):
+                        del node_data[key]
+        else:
+            filtered_data = roster_data
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Roster{}".format(title_timestamp)
+
+        sources = dict(
+            node_names=node_names,
+            node_ids=node_ids,
+            data=roster_data,
+        )
+        common = dict(principal=cluster.get_expected_principal())
+        style = SheetStyle.columns
+
+        if flip:
+            style = SheetStyle.rows
+
         CliView.print_result(
-            sheet.render(templates.show_sindex, title, sources, selectors=like)
+            sheet.render(
+                templates.show_roster,
+                title,
+                sources,
+                common=common,
+                style=style,
+                dynamic_diff=diff,
+            )
+        )
+
+    @staticmethod
+    @reserved_modifiers
+    def show_best_practices(
+        cluster, failed_practices, timestamp="", with_=None, **ignore
+    ):
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Best Practices{}".format(title_timestamp)
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        common = dict(principal=cluster.get_expected_principal())
+        sources = dict(data=failed_practices, node_names=node_names, node_ids=node_ids)
+
+        CliView.print_result(
+            sheet.render(templates.show_best_practices, title, sources, common=common)
+        )
+        CliView.print_result(
+            "Following Aerospike's best-practices are required for optimal stability and performance.\n"
+            + "Descriptions of each can be found @ https://docs.aerospike.com/docs/operations/install/linux/bestpractices/index.html"
+        )
+
+    @staticmethod
+    @reserved_modifiers
+    def show_jobs(
+        title,
+        cluster,
+        jobs_data,
+        timestamp="",
+        trid=None,
+        like=None,
+        with_=None,
+        **ignore
+    ):
+        if jobs_data is None:
+            return
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "{}{}".format(title, title_timestamp)
+
+        filtered_data = dict(jobs_data)
+
+        for host, host_data in jobs_data.items():
+            if isinstance(host_data, ASInfoError):
+                del filtered_data[host]
+                continue
+            if trid:
+                for id in dict(host_data):
+                    if id not in trid:
+                        del filtered_data[host][id]
+
+        if not filtered_data:
+            return
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        sources = dict(data=filtered_data, node_names=node_names, node_ids=node_ids)
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(
+                templates.show_jobs, title, sources, common=common, selectors=like
+            )
+        )
+
+    @staticmethod
+    def show_racks(rack_data, timestamp="", **ignore):
+        if not rack_data:
+            return
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Racks{}".format(title_timestamp)
+
+        # Should only be one node (principal). Node key needed for sheets
+        for node, ns_data in rack_data.items():
+
+            formatted = {node: {}}
+            for ns, rack in ns_data.items():
+                for id, val in rack.items():
+                    formatted[node][(ns, id)] = val
+
+        sources = dict(data=formatted)
+
+        CliView.print_result(sheet.render(templates.show_racks, title, sources))
+
+    @staticmethod
+    def killed_jobs(cluster, jobs_data, timestamp="", **ignore):
+        if not jobs_data:
+            return
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Kill Jobs{}".format(title_timestamp)
+        hosts = list(jobs_data.keys())
+        node_names = cluster.get_node_names(hosts)
+        node_ids = cluster.get_node_ids(hosts)
+        sources = dict(data=jobs_data, node_names=node_names, node_ids=node_ids)
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(templates.kill_jobs, title, sources, common=common)
         )
 
     @staticmethod
@@ -1053,6 +1291,16 @@ class CliView(object):
         finally:
             sys.stdout = real_stdout
             print("")
+
+    @staticmethod
+    def print_info_responses(title, responses, cluster, **mods):
+        node_names = cluster.get_node_names(mods.get("with", []))
+        sources = dict(data=responses, node_names=node_names)
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(templates.node_info_responses, title, sources, common=common)
+        )
 
     # ##########################
     # ## Health Print functions
@@ -1590,8 +1838,8 @@ class CliView(object):
     @staticmethod
     def get_summary_line_prefix(index, key):
         s = " " * 3
-        s += str(index)
-        s += "." + (" " * 3)
+        s += (str(index) + ".").ljust(3)
+        s += " " * 2
         s += key.ljust(19)
         s += ":" + (" " * 2)
         return s
@@ -1630,7 +1878,7 @@ class CliView(object):
                     stats[ns]["devices_total"],
                     stats[ns]["devices_per_node"],
                     " (number differs across nodes)"
-                    if not stats[ns]["devices_count_same_across_nodes"]
+                    if not stats[ns]["device_count_same_across_nodes"]
                     else "",
                 )
             )
@@ -1641,26 +1889,65 @@ class CliView(object):
                 + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
                 % (
                     file_size.size(stats[ns]["memory_total"]).strip(),
-                    100.00 - stats[ns]["memory_available_pct"],
-                    file_size.size(
-                        stats[ns]["memory_total"] - stats[ns]["memory_aval"]
-                    ).strip(),
-                    stats[ns]["memory_available_pct"],
-                    file_size.size(stats[ns]["memory_aval"]).strip(),
+                    stats[ns]["memory_used_pct"],
+                    file_size.size(stats[ns]["memory_used"]).strip(),
+                    stats[ns]["memory_avail_pct"],
+                    file_size.size(stats[ns]["memory_avail"]).strip(),
                 )
             )
             index += 1
 
-            if stats[ns]["disk_total"]:
+            if "pmem_index_total" in stats[ns]:
                 print(
-                    CliView.get_summary_line_prefix(index, "Disk")
+                    CliView.get_summary_line_prefix(index, "Pmem Index")
+                    + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                    % (
+                        file_size.size(stats[ns]["pmem_index_total"]).strip(),
+                        stats[ns]["pmem_index_used_pct"],
+                        file_size.size(stats[ns]["pmem_index_used"]).strip(),
+                        stats[ns]["pmem_index_avail_pct"],
+                        file_size.size(stats[ns]["pmem_index_avail"]).strip(),
+                    )
+                )
+                index += 1
+
+            elif "flash_index_total" in stats[ns]:
+                print(
+                    CliView.get_summary_line_prefix(index, "Flash Index")
+                    + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                    % (
+                        file_size.size(stats[ns]["flash_index_total"]).strip(),
+                        stats[ns]["flash_index_used_pct"],
+                        file_size.size(stats[ns]["flash_index_used"]).strip(),
+                        stats[ns]["flash_index_avail_pct"],
+                        file_size.size(stats[ns]["flash_index_avail"]).strip(),
+                    )
+                )
+                index += 1
+
+            if "device_total" in stats[ns]:
+                print(
+                    CliView.get_summary_line_prefix(index, "Device")
                     + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
                     % (
-                        file_size.size(stats[ns]["disk_total"]).strip(),
-                        stats[ns]["disk_used_pct"],
-                        file_size.size(stats[ns]["disk_used"]).strip(),
-                        stats[ns]["disk_available_pct"],
-                        file_size.size(stats[ns]["disk_aval"]).strip(),
+                        file_size.size(stats[ns]["device_total"]).strip(),
+                        stats[ns]["device_used_pct"],
+                        file_size.size(stats[ns]["device_used"]).strip(),
+                        stats[ns]["device_avail_pct"],
+                        file_size.size(stats[ns]["device_avail"]).strip(),
+                    )
+                )
+                index += 1
+            elif "pmem_total" in stats[ns]:
+                print(
+                    CliView.get_summary_line_prefix(index, "Pmem")
+                    + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
+                    % (
+                        file_size.size(stats[ns]["pmem_total"]).strip(),
+                        stats[ns]["pmem_used_pct"],
+                        file_size.size(stats[ns]["pmem_used"]).strip(),
+                        stats[ns]["pmem_avail_pct"],
+                        file_size.size(stats[ns]["pmem_avail"]).strip(),
                     )
                 )
                 index += 1
@@ -1691,28 +1978,6 @@ class CliView(object):
                 + "%s"
                 % (file_size.size(stats[ns]["master_objects"], file_size.si_float))
             )
-            index += 1
-            s = ""
-
-            if (
-                "license_data_in_memory" in stats[ns]
-                and stats[ns]["license_data_in_memory"]
-            ):
-                s += "%s in-memory" % (
-                    file_size.size(stats[ns]["license_data_in_memory"])
-                )
-            elif (
-                "license_data_on_disk" in stats[ns]
-                and stats[ns]["license_data_on_disk"]
-            ):
-                if s:
-                    s += ", "
-                s += "%s on-device" % (
-                    file_size.size(stats[ns]["license_data_on_disk"])
-                )
-            else:
-                s += "None"
-            print(CliView.get_summary_line_prefix(index, "Usage (Unique Data)") + s)
             index += 1
 
             if "compression_ratio" in stats[ns]:
@@ -1777,10 +2042,10 @@ class CliView(object):
             CliView.get_summary_line_prefix(index, "Devices")
             + "Total %d, per-node %d%s"
             % (
-                summary["CLUSTER"]["device"]["count"],
-                summary["CLUSTER"]["device"]["count_per_node"],
+                summary["CLUSTER"]["device_count"],
+                summary["CLUSTER"]["device_count_per_node"],
                 " (number differs across nodes)"
-                if not summary["CLUSTER"]["device"]["count_same_across_nodes"]
+                if not summary["CLUSTER"]["device_count_same_across_nodes"]
                 else "",
             )
         )
@@ -1791,47 +2056,87 @@ class CliView(object):
             + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
             % (
                 file_size.size(summary["CLUSTER"]["memory"]["total"]).strip(),
-                100.00 - summary["CLUSTER"]["memory"]["aval_pct"],
-                file_size.size(
-                    summary["CLUSTER"]["memory"]["total"]
-                    - summary["CLUSTER"]["memory"]["aval"]
-                ).strip(),
-                summary["CLUSTER"]["memory"]["aval_pct"],
-                file_size.size(summary["CLUSTER"]["memory"]["aval"]).strip(),
+                summary["CLUSTER"]["memory"]["used_pct"],
+                file_size.size(summary["CLUSTER"]["memory"]["used"]).strip(),
+                summary["CLUSTER"]["memory"]["avail_pct"],
+                file_size.size(summary["CLUSTER"]["memory"]["avail"]).strip(),
             )
         )
         index += 1
 
-        print(
-            CliView.get_summary_line_prefix(index, "Disk")
-            + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
-            % (
-                file_size.size(summary["CLUSTER"]["device"]["total"]).strip(),
-                summary["CLUSTER"]["device"]["used_pct"],
-                file_size.size(summary["CLUSTER"]["device"]["used"]).strip(),
-                summary["CLUSTER"]["device"]["aval_pct"],
-                file_size.size(summary["CLUSTER"]["device"]["aval"]).strip(),
+        if "total" in summary["CLUSTER"]["pmem_index"]:
+            print(
+                CliView.get_summary_line_prefix(index, "Pmem Index")
+                + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                % (
+                    file_size.size(summary["CLUSTER"]["pmem_index"]["total"]).strip(),
+                    summary["CLUSTER"]["pmem_index"]["used_pct"],
+                    file_size.size(summary["CLUSTER"]["pmem_index"]["used"]).strip(),
+                    summary["CLUSTER"]["pmem_index"]["avail_pct"],
+                    file_size.size(summary["CLUSTER"]["pmem_index"]["avail"]).strip(),
+                )
             )
-        )
-        index += 1
+            index += 1
+
+        if "total" in summary["CLUSTER"]["flash_index"]:
+            print(
+                CliView.get_summary_line_prefix(index, "Flash Index")
+                + "Total %s, %.2f%% used (%s), %.2f%% available (%s)"
+                % (
+                    file_size.size(summary["CLUSTER"]["flash_index"]["total"]).strip(),
+                    summary["CLUSTER"]["flash_index"]["used_pct"],
+                    file_size.size(summary["CLUSTER"]["flash_index"]["used"]).strip(),
+                    summary["CLUSTER"]["flash_index"]["avail_pct"],
+                    file_size.size(summary["CLUSTER"]["flash_index"]["avail"]).strip(),
+                )
+            )
+            index += 1
+
+        if "total" in summary["CLUSTER"]["device"]:
+            print(
+                CliView.get_summary_line_prefix(index, "Device")
+                + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
+                % (
+                    file_size.size(summary["CLUSTER"]["device"]["total"]).strip(),
+                    summary["CLUSTER"]["device"]["used_pct"],
+                    file_size.size(summary["CLUSTER"]["device"]["used"]).strip(),
+                    summary["CLUSTER"]["device"]["avail_pct"],
+                    file_size.size(summary["CLUSTER"]["device"]["avail"]).strip(),
+                )
+            )
+            index += 1
+
+        if "total" in summary["CLUSTER"]["pmem"]:
+            print(
+                CliView.get_summary_line_prefix(index, "Pmem")
+                + "Total %s, %.2f%% used (%s), %.2f%% available contiguous space (%s)"
+                % (
+                    file_size.size(summary["CLUSTER"]["pmem"]["total"]).strip(),
+                    summary["CLUSTER"]["pmem"]["used_pct"],
+                    file_size.size(summary["CLUSTER"]["pmem"]["used"]).strip(),
+                    summary["CLUSTER"]["pmem"]["avail_pct"],
+                    file_size.size(summary["CLUSTER"]["pmem"]["avail"]).strip(),
+                )
+            )
+            index += 1
 
         data_summary = CliView.get_summary_line_prefix(index, "Usage (Unique Data)")
-        uniq_mem_used = summary["CLUSTER"]["license_data"]["memory_size"]
-        uniq_device_used = summary["CLUSTER"]["license_data"]["device_size"]
 
-        # Sum all "Usage" data whether on disk or in memory.
-        if uniq_mem_used or uniq_device_used:
-            total = 0
-
-            if uniq_mem_used:
-                total += uniq_mem_used
-            if uniq_device_used:
-                total += uniq_device_used
-
-            data_summary += "%s" % file_size.size(total)
-
+        if summary["CLUSTER"]["license_data"]["latest"] is None:
+            data_summary += "No data returned from agent."
         else:
-            data_summary += "None"
+            data_summary += "Latest: %s" % (
+                file_size.size(summary["CLUSTER"]["license_data"]["latest"])
+            )
+
+            try:
+                data_summary += " Min: %s Max: %s Avg: %s" % (
+                    file_size.size(summary["CLUSTER"]["license_data"]["min"]),
+                    file_size.size(summary["CLUSTER"]["license_data"]["max"]),
+                    file_size.size(summary["CLUSTER"]["license_data"]["avg"]),
+                )
+            except Exception:
+                pass
 
         print(data_summary)
         index += 1
@@ -1844,7 +2149,7 @@ class CliView(object):
         index += 1
 
         print(
-            CliView.get_summary_line_prefix(index, "Features")
+            CliView.get_summary_line_prefix(index, "Active Features")
             + ", ".join(sorted(summary["CLUSTER"]["active_features"]))
         )
 

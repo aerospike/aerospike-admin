@@ -23,8 +23,11 @@ from lib.view import view, terminal
 
 DEFAULT = "_do_default"
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
-class CommandHelp(object):
+
+class CommandHelp:
 
     """
     hide - If True then the help info of command and its children will not be
@@ -86,6 +89,28 @@ class CommandHelp(object):
             return False
 
 
+class CommandName:
+    def __init__(self, name):
+        self._assigned_name = name
+
+    def __call__(self, func):
+        func._assigned_name = self._assigned_name
+        return func
+
+    @staticmethod
+    def name(func):
+        return func._assigned_name
+
+    @staticmethod
+    def has_name(func):
+        try:
+            if func._assigned_name:
+                return True
+            return False
+        except Exception:
+            return False
+
+
 class DisableAutoComplete:
     """Decorator to disable tab completion and auto completion. e.g. if ShowController
     was decoracted it would not allow 'sho' **enter** to resolve to 'show'.
@@ -118,7 +143,7 @@ def create_disabled_controller(controller, command_):
     class DisableController(controller):
 
         # override
-        def execute(self, line):
+        async def execute(self, line):
             self.logger.error(
                 'User must be in privileged mode to issue "{}" commands.\n'
                 '       Type "enable" to enter privileged mode.'.format(command_)
@@ -142,6 +167,14 @@ class BaseController(object):
     # Here so each command controller does not need to define them
     modifiers = set()
     required_modifiers = set()
+    mods = {}
+    context = None
+
+    """
+        For when a parent controller takes an argument that needs parsing
+        before sending argument to child controllers
+    """
+    controller_arg = None
 
     def __init__(self, asadm_version=""):
         # Create static instances of view / health_checker / asadm_version /
@@ -160,45 +193,64 @@ class BaseController(object):
         self.commands = PrefixDict()
 
         for command in commands:
-            self.commands.add(command[1], getattr(self, command[0]))
+            func = getattr(self, command[0])
+            if CommandName.has_name(func):
+                self.commands.add(CommandName.name(func), func)
+            else:
+                self.commands.add(command[1], func)
 
         for command, controller in self.controller_map.items():
+            if self.context:
+                context_cpy = list(self.context) + [command]
+            else:
+                context_cpy = [command]
+
             try:
                 controller = controller()
-            except Exception:
-                pass
+                controller.context = context_cpy
+            except Exception as e:
+                print(e)
 
             self.commands.add(command, controller)
 
     def complete(self, line):
         self._init()
-
         command = line.pop(0) if line else ""
-
         commands = self.commands.get_key(command)
 
-        try:
-            if not DisableAutoComplete.has_auto_complete(self.commands[commands[0]][0]):
-                return []
-        except Exception:
-            import traceback
+        logger.debug("Auto-complete: command {}".format(command))
 
-            traceback.print_exc()
+        if not DisableAutoComplete.has_auto_complete(self.commands[commands[0]][0]):
+            return []
 
         if command != commands[0] and len(line) == 0:
             # if user has full command name and is hitting tab,
             # the user probably wants the next level
+            logger.debug("Auto-complete: results {}".format(commands))
             return sorted(commands)
 
         try:
-            return self.controller_map[commands[0]]().complete(line)
-        except Exception:
+            logger.debug(
+                "Auto-complete: going to next controller {}".format(commands[0])
+            )
+            return self.commands.get(commands[0])[0].complete(line)
+        except Exception as e:
+            logger.debug(
+                "Auto-complete: command is ambiguous or exact match {}, error: {}".format(
+                    commands[0], e
+                )
+            )
+
+            # TODO: Make modifiers auto-completable?
+            # if self.required_modifiers | self.modifiers:
+            #     return list(self.required_modifiers | self.modifiers)
+
             # The line contains an ambiguous entry
             # or exact match
             return []
 
-    def __call__(self, line):
-        return self.execute(line)
+    async def __call__(self, line):
+        return await self.execute(line)
 
     def _init_controller_map(self):
         try:  # define controller map if not defined
@@ -221,11 +273,13 @@ class BaseController(object):
             # Popped last element use default
             method = getattr(self, DEFAULT)
 
-        if method is not None:
-            return method
+            if method is not None:
+                return method
 
         try:
+            logger.debug("Looking for {} in command_map".format(command))
             method = self.commands[command]
+            logger.debug("Found method {} in command_map".format(method))
 
             if len(method) > 1:
                 # handle ambiguos commands
@@ -251,7 +305,6 @@ class BaseController(object):
 
         except KeyError:
             line.insert(0, command)
-
             # Maybe the controller understands the command from here
             # Have to forward it to the controller since some commands
             # may have strange options like asinfo
@@ -262,18 +315,21 @@ class BaseController(object):
     def _run_results(self, results):
         rv = []
         for result in results:
-            if isinstance(result, util.Future):
-                result.start()
-                rv.append(result.result())
+            if inspect.isfunction(result):
+                rv.append(result())
             elif isinstance(result, list) or isinstance(result, tuple):
                 rv.append(self._run_results(result))
             else:
                 rv.append(result)
         return rv
 
-    def execute(self, line):
+    async def execute(self, line):
         # Init all command controller objects
         self._init()
+
+        if self.controller_arg is not None:
+            self.pre_controller(line)
+
         method = self._find_method(line)
 
         if method:
@@ -283,13 +339,20 @@ class BaseController(object):
 
                 results = method(line)
 
-                if not isinstance(results, list) and not isinstance(results, tuple):
+                if inspect.iscoroutine(results):
+                    results = await results
 
-                    if isinstance(results, util.Future):
+                if not isinstance(results, list) and not isinstance(results, tuple):
+                    """
+                    returning view functions wrapped in coroutines to display allows
+                    multiple do_* func to run concurrently but display deterministicely.
+                    """
+                    if inspect.isfunction(results):
                         results = (results,)
                     else:
                         return results
 
+                # results is a tuple or list of coroutines
                 return self._run_results(results)
 
             except IOError as e:
@@ -297,7 +360,7 @@ class BaseController(object):
         else:
             raise ShellException("Method was not set? %s" % (line))
 
-    def execute_help(self, line, indent=0, method=None):
+    def execute_help(self, line, indent=0, method=None, print_modifiers=True):
         self._init()
 
         # Removes the need to call _find_method twice since it also happens
@@ -314,29 +377,31 @@ class BaseController(object):
 
                 if method_name == DEFAULT:  # Print controller help
                     CommandHelp.display(self, indent=indent)
-                    required_mods = [
-                        mod for mod in self.required_modifiers if mod != "line"
-                    ]
-                    if required_mods:
-                        CommandHelp.print_text(
-                            "%sRequired%s: %s"
-                            % (
-                                terminal.underline(),
-                                terminal.reset(),
-                                ", ".join(sorted(required_mods)),
-                            ),
-                            indent=indent,
-                        )
-                    if self.modifiers:
-                        CommandHelp.print_text(
-                            "%sModifiers%s: %s"
-                            % (
-                                terminal.underline(),
-                                terminal.reset(),
-                                ", ".join(sorted(self.modifiers)),
-                            ),
-                            indent=indent,
-                        )
+
+                    if print_modifiers:
+                        required_mods = [
+                            mod for mod in self.required_modifiers if mod != "line"
+                        ]
+                        if required_mods:
+                            CommandHelp.print_text(
+                                "%sRequired%s: %s"
+                                % (
+                                    terminal.underline(),
+                                    terminal.reset(),
+                                    ", ".join(sorted(required_mods)),
+                                ),
+                                indent=indent,
+                            )
+                        if self.modifiers:
+                            CommandHelp.print_text(
+                                "%sModifiers%s: %s"
+                                % (
+                                    terminal.underline(),
+                                    terminal.reset(),
+                                    ", ".join(sorted(self.modifiers)),
+                                ),
+                                indent=indent,
+                            )
 
                     if CommandHelp.has_help(method):
                         CommandHelp.display(method, indent=indent)
@@ -348,9 +413,17 @@ class BaseController(object):
                         if CommandHelp.has_help(
                             command_method
                         ) and not CommandHelp.is_hidden(command_method):
+                            arg = ""
+
+                            if (
+                                inspect.isclass(command_method)
+                                and command_method.controller_arg is not None
+                            ):
+                                arg = " <{}>".format(command_method.controller_arg)
+
                             CommandHelp.print_text(
-                                "- %s%s%s:"
-                                % (terminal.bold(), command, terminal.reset()),
+                                "- %s%s%s%s:"
+                                % (terminal.bold(), command, arg, terminal.reset()),
                                 indent=indent - 1,
                             )
 
@@ -375,12 +448,15 @@ class BaseController(object):
         else:
             raise ShellException("Method was not set? %s" % (line))
 
-    def _do_default(self, line):
+    async def _do_default(self, line):
         # Override method to provide default command behavior
         raise ShellException("%s: command not found." % (" ".join(line)))
 
     # Hook to be defined by subclasses
     def pre_command(self, line):
+        pass
+
+    def pre_controller(self, line):
         pass
 
 
@@ -421,7 +497,7 @@ class CommandController(BaseController):
 
     def _check_required_modifiers(self, line):
         for mod in self.required_modifiers:
-            if not len(self.mods[mod]):
+            if not self.mods[mod]:
                 self.execute_help(line)
                 if mod == "line":
                     raise IOError("Missing required argument")
@@ -429,19 +505,20 @@ class CommandController(BaseController):
                 raise IOError("{} is required".format(mod))
 
     def pre_command(self, line):
+        mods = self.modifiers | self.required_modifiers
         try:
             if self.nodes:
                 return
         except Exception:
-            self.mods = self.parse_modifiers(line)
+            self.mods.update(self.parse_modifiers(line))
             self._check_required_modifiers(line)
 
-            if not self.modifiers:
+            if not mods:
                 self.nodes = "all"
                 return
 
             try:
-                if "with" in self.modifiers:
+                if "with" in mods:
                     if len(self.mods["with"]) > 0:
                         self.nodes = self.mods["with"]
                     else:
@@ -450,3 +527,29 @@ class CommandController(BaseController):
                     self.nodes = self.default_nodes
             except Exception:
                 self.nodes = "all"  # default not set use all
+
+    def pre_controller(self, line):
+        if self.controller_arg is None:
+            return
+
+        mod = self.context[-1]
+
+        if mod not in self.mods:
+            self.mods[mod] = {}
+
+        # Used as the key to reference arg, normally the controllers "command".
+        try:
+            arg = line.pop(0)
+        except IndexError:
+            raise IOError("{} is required".format(mod))
+
+        if arg not in self.modifiers | self.required_modifiers:
+
+            if mod not in self.mods[mod]:
+                self.mods[mod] = []
+
+            self.mods[mod].append(arg)
+
+            return
+
+        raise IOError("{} is required".format(mod))

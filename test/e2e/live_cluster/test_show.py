@@ -174,18 +174,15 @@ class TestShowConfig(unittest.TestCase):
             "proto-slow-netio-sleep-ms",
             "query-batch-size",
             "query-buf-size",
-            "query-bufpool-size",
             "query-in-transaction-thread",
             "query-long-q-max-size",
             "query-microbenchmark",
-            "query-pre-reserve-partitions",
             "query-priority",
             "query-priority-sleep-us",
             "query-rec-count-bound",
             "query-req-in-query-thread",
             "query-req-max-inflight",
             "query-short-q-max-size",
-            "query-threads",
             "query-threshold",
             "query-untracked-time-ms",
             "query-worker-threads",
@@ -318,7 +315,6 @@ class TestShowConfig(unittest.TestCase):
             "migrate-order",
             "migrate-retransmit-ms",
             "migrate-sleep",
-            "nsid",
             "nsup-hist-period",
             "nsup-period",
             "nsup-threads",
@@ -401,7 +397,6 @@ class TestShowConfig(unittest.TestCase):
             "migrate-order",
             "migrate-retransmit-ms",
             "migrate-sleep",
-            "nsid",
             "nsup-hist-period",
             "nsup-period",
             "nsup-threads",
@@ -1220,15 +1215,7 @@ class TestShowStatistics(unittest.TestCase):
             "objects",
             "paxos_principal",
             "proxy_in_progress",
-            "query_long_running",
-            "query_short_running",
             "reaped_fds",
-            "sindex_gc_garbage_cleaned",
-            "sindex_gc_garbage_found",
-            "sindex_gc_list_creation_time",
-            "sindex_gc_list_deletion_time",
-            "sindex_gc_objects_validated",
-            "sindex_ucgarbage_found",
             "uptime",
         ]
 
@@ -1302,6 +1289,7 @@ class TestShowStatistics(unittest.TestCase):
         This test will assert <b> test Namespace Statistics </b> output for heading, header and parameters.
         TODO: test for values as well
         """
+        self.maxDiff = None
         exp_heading = "test Namespace Statistics"
 
         # TODO: Add possibly missing params.  This is only verified as a subset
@@ -1324,7 +1312,6 @@ class TestShowStatistics(unittest.TestCase):
             "batch_sub_read_timeout",
             "batch_sub_tsvc_error",
             "batch_sub_tsvc_timeout",
-            "cache_read_pct",
             "client_delete_error",
             "client_delete_filtered_out",
             "client_delete_not_found",
@@ -1353,20 +1340,19 @@ class TestShowStatistics(unittest.TestCase):
             "client_write_success",
             "client_write_timeout",
             "clock_skew_stop_writes",
+            "conflict-resolve-writes",
             "conflict-resolution-policy",
             "current_time",
             "data-in-index",
             "dead_partitions",
             "default-ttl",
             "deleted_last_bin",
-            "device_available_pct",
-            "device_compression_ratio",
-            "device_free_pct",
-            "device_total_bytes",
-            "device_used_bytes",
             "disable-cold-start-eviction",
             "disable-write-dup-res",
             "disallow-null-setname",
+            "dup_res_ask",
+            "dup_res_respond_no_read",
+            "dup_res_respond_read",
             "effective_is_quiesced",
             "effective_prefer_uniform_balance",
             "effective_replication_factor",
@@ -1482,28 +1468,11 @@ class TestShowStatistics(unittest.TestCase):
             "prefer-uniform-balance",
             "prole_objects",
             "prole_tombstones",
-            "query_agg",
-            "query_agg_abort",
-            "query_agg_avg_rec_count",
-            "query_agg_error",
-            "query_agg_success",
-            "query_fail",
-            "query_long_queue_full",
-            "query_long_reqs",
-            "query_lookup_abort",
-            "query_lookup_avg_rec_count",
-            "query_lookup_error",
-            "query_lookup_success",
-            "query_lookups",
-            "query_ops_bg_failure",
-            "query_ops_bg_success",
             "query_proto_compression_ratio",
             "query_proto_uncompressed_pct",
-            "query_reqs",
-            "query_short_queue_full",
-            "query_short_reqs",
-            "query_udf_bg_failure",
-            "query_udf_bg_success",
+            "query_udf_bg_error",
+            "query_udf_bg_abort",
+            "query_udf_bg_complete",
             "rack-id",
             "re_repl_error",
             "re_repl_success",
@@ -1526,20 +1495,6 @@ class TestShowStatistics(unittest.TestCase):
             "retransmit_ops_sub_repl_write",
             "retransmit_udf_sub_dup_res",
             "retransmit_udf_sub_repl_write",
-            "scan_aggr_abort",
-            "scan_aggr_complete",
-            "scan_aggr_error",
-            "scan_basic_abort",
-            "scan_basic_complete",
-            "scan_basic_error",
-            "scan_ops_bg_abort",
-            "scan_ops_bg_complete",
-            "scan_ops_bg_error",
-            "scan_proto_compression_ratio",
-            "scan_proto_uncompressed_pct",
-            "scan_udf_bg_abort",
-            "scan_udf_bg_complete",
-            "scan_udf_bg_error",
             "sindex.num-partitions",
             "single-bin",
             "single-scan-threads",
@@ -1568,6 +1523,7 @@ class TestShowStatistics(unittest.TestCase):
             "udf_sub_udf_timeout",
             "unavailable_partitions",
             "write-commit-level-override",
+            "xdr_bin_cemeteries",
             "xdr-bin-tombstone-ttl",
             "xdr-tomb-raider-period",
             "xdr-tomb-raider-threads",
@@ -1644,14 +1600,6 @@ class TestShowStatistics(unittest.TestCase):
         # self.assertTrue(test_util.check_for_subset(actual_data, exp_header))
 
 
-def capture_separate_and_parse_output(rc, commands):
-    actual_stdout = util.capture_stdout(rc.execute, commands)
-    separated_stdout = test_util.get_separate_output(actual_stdout)
-    result = test_util.parse_output(separated_stdout[0])
-
-    return result
-
-
 def get_data(exp_first, data):
     found_values = None
 
@@ -1698,9 +1646,13 @@ class TestShowUsers(unittest.TestCase):
             "Write Scan/Query Limitless",
         ]
 
-        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(
-            self.rc, ["show", "users"]
-        )
+        (
+            actual_title,
+            _,
+            actual_header,
+            _,
+            _,
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
@@ -1734,7 +1686,7 @@ class TestShowUsers(unittest.TestCase):
             "Write Scan/Query Limitless",
         ]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(
+        _, _, _, _, num_records = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "users"]
         )
 
@@ -1751,7 +1703,7 @@ class TestShowUsers(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_records,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         actual_roles = get_data(exp_user, actual_data)
 
@@ -1790,7 +1742,7 @@ class TestShowUsers(unittest.TestCase):
             "Write Scan/Query Limitless",
         ]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(
+        _, _, _, _, num_records = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "users"]
         )
 
@@ -1819,7 +1771,7 @@ class TestShowUsers(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_records,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         actual_data = get_data(exp_user, actual_data)
 
@@ -1846,7 +1798,7 @@ class TestShowUsers(unittest.TestCase):
             "Write Scan/Query Limitless",
         ]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(
+        _, _, _, _, num_records = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "users"]
         )
 
@@ -1865,7 +1817,7 @@ class TestShowUsers(unittest.TestCase):
             ],
         )
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(
+        _, _, _, _, num_records = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "users"]
         )
 
@@ -1881,7 +1833,7 @@ class TestShowUsers(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_records,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         for data in actual_data:
             self.assertNotIn(exp_user, data)
@@ -1936,7 +1888,7 @@ class TestShowUsers(unittest.TestCase):
             actual_header,
             actual_data,
             _,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "users"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "users"])
 
         actual_roles = get_data(exp_user, actual_data)
 
@@ -1995,9 +1947,13 @@ class TestShowRoles(unittest.TestCase):
             "Quotas Write",
         ]
 
-        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
+        (
+            actual_title,
+            _,
+            actual_header,
+            _,
+            _,
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
@@ -2011,7 +1967,7 @@ class TestShowRoles(unittest.TestCase):
         exp_title = "Roles"
         exp_header = ["Role", "Privileges", "Allowlist", "Quotas Read", "Quotas Write"]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(
+        _, _, _, _, num_records = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "roles"]
         )
 
@@ -2029,7 +1985,7 @@ class TestShowRoles(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_records,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         actual_data = get_data(exp_role, actual_data)
 
@@ -2053,7 +2009,7 @@ class TestShowRoles(unittest.TestCase):
             "Quotas Write",
         ]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(
+        _, _, _, _, num_records = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "roles"]
         )
 
@@ -2081,7 +2037,7 @@ class TestShowRoles(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_records,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         actual_data = get_data(exp_role, actual_data)
 
@@ -2102,7 +2058,7 @@ class TestShowRoles(unittest.TestCase):
             "Quotas Write",
         ]
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(
+        _, _, _, _, num_records = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "roles"]
         )
 
@@ -2112,7 +2068,7 @@ class TestShowRoles(unittest.TestCase):
         )
         time.sleep(0.25)
 
-        _, _, _, _, num_records = capture_separate_and_parse_output(
+        _, _, _, _, num_records = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "roles"]
         )
 
@@ -2129,7 +2085,7 @@ class TestShowRoles(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_records,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         for data in actual_data:
             self.assertNotIn(exp_role, data)
@@ -2171,7 +2127,7 @@ class TestShowRoles(unittest.TestCase):
             actual_header,
             actual_data,
             _,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         actual_privileges = get_data(exp_role, actual_data)
 
@@ -2198,7 +2154,7 @@ class TestShowRoles(unittest.TestCase):
             actual_header,
             actual_data,
             _,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         actual_data = get_data(exp_role, actual_data)
         self.assertIn(exp_title, actual_title)
@@ -2211,7 +2167,7 @@ class TestShowRoles(unittest.TestCase):
             [
                 "manage",
                 "acl",
-                "rate-limit",
+                "quotas",
                 "role",
                 exp_role,
                 "read",
@@ -2228,7 +2184,7 @@ class TestShowRoles(unittest.TestCase):
             actual_header,
             actual_data,
             _,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "roles"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "roles"])
 
         actual_data = get_data(exp_role, actual_data)
         self.assertIn(exp_title, actual_title)
@@ -2269,9 +2225,13 @@ class TestShowUdfs(unittest.TestCase):
         exp_title = "UDF Modules"
         exp_header = ["Filename", "Hash", "Type"]
 
-        actual_title, _, actual_header, _, _ = capture_separate_and_parse_output(
-            self.rc, ["show", "udfs"]
-        )
+        (
+            actual_title,
+            _,
+            actual_header,
+            _,
+            _,
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "udfs"])
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
@@ -2281,7 +2241,7 @@ class TestShowUdfs(unittest.TestCase):
         exp_header = ["Filename", "Hash", "Type"]
         exp_module = ["61e9c132a6a4c1a14852dc1641a35b420664c4a1", "LUA"]
 
-        _, _, _, _, num_rows = capture_separate_and_parse_output(
+        _, _, _, _, num_rows = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "udfs"]
         )
 
@@ -2300,7 +2260,7 @@ class TestShowUdfs(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_rows,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "udfs"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "udfs"])
 
         actual_module = get_data(self.exp_module, actual_data)
 
@@ -2318,7 +2278,7 @@ class TestShowUdfs(unittest.TestCase):
             ["manage", "udfs", "add", self.exp_module, "path", self.path],
         )
         time.sleep(0.50)
-        _, _, _, _, num_rows = capture_separate_and_parse_output(
+        _, _, _, _, num_rows = test_util.capture_separate_and_parse_output(
             self.rc, ["show", "udfs"]
         )
 
@@ -2335,7 +2295,7 @@ class TestShowUdfs(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_rows,
-        ) = capture_separate_and_parse_output(self.rc, ["show", "udfs"])
+        ) = test_util.capture_separate_and_parse_output(self.rc, ["show", "udfs"])
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)

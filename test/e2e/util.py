@@ -14,6 +14,7 @@
 
 import json
 import re
+from lib.utils import util
 
 
 def parse_record(parent_field, record):
@@ -81,6 +82,14 @@ def get_separate_output(in_str=""):
     return ls
 
 
+def capture_separate_and_parse_output(rc, commands):
+    actual_stdout = util.capture_stdout(rc.execute, commands)
+    separated_stdout = get_separate_output(actual_stdout)
+    result = parse_output(separated_stdout[0])
+
+    return result
+
+
 def get_merged_header(*lines):
     h = [[_f for _f in _h.split(" ") if _f] for _h in lines]
     header = []
@@ -137,7 +146,7 @@ def remove_escape_sequence(line):
 def check_for_types(actual_lists, expected_types):
     def is_float(x):
         try:
-            val = float(x)
+            float(x)
             if "." in x:
                 return True
             return False
@@ -146,7 +155,7 @@ def check_for_types(actual_lists, expected_types):
 
     def is_int(x):
         try:
-            val = int(x)
+            int(x)
             if "." in x:
                 return False
             return True
@@ -184,6 +193,6 @@ def check_for_types(actual_lists, expected_types):
         return False
 
     for actual_list in actual_lists:
-        if check_list_against_types(actual_list) == False:
+        if not check_list_against_types(actual_list):
             return False
     return True

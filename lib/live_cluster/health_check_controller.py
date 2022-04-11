@@ -1,8 +1,12 @@
+import asyncio
 import copy
 import time
 
 from lib.health import util as health_util
-from lib.get_controller import get_sindex_stats
+from lib.get_controller import (
+    GetConfigController,
+    get_sindex_stats,
+)
 from lib.utils import util
 from lib.base_controller import CommandHelp
 
@@ -21,49 +25,50 @@ class HealthCheckController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set()
 
-    def _get_asstat_data(self, stanza):
+    async def _get_asstat_data(self, stanza):
         if stanza == "service":
-            return self.cluster.info_statistics(nodes=self.nodes)
+            return await self.cluster.info_statistics(nodes=self.nodes)
         elif stanza == "namespace":
-            return self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+            return await self.cluster.info_all_namespace_statistics(nodes=self.nodes)
         elif stanza == "sets":
-            return self.cluster.info_set_statistics(nodes=self.nodes)
+            return await self.cluster.info_all_set_statistics(nodes=self.nodes)
         elif stanza == "bins":
-            return self.cluster.info_bin_statistics(nodes=self.nodes)
+            return await self.cluster.info_bin_statistics(nodes=self.nodes)
         elif stanza == "xdr":
-            return self.cluster.info_XDR_statistics(nodes=self.nodes)
+            return await self.cluster.info_XDR_statistics(nodes=self.nodes)
         elif stanza == "dc":
-            return self.cluster.info_all_dc_statistics(nodes=self.nodes)
+            return await self.cluster.info_all_dc_statistics(nodes=self.nodes)
         elif stanza == "sindex":
             return util.flip_keys(
-                get_sindex_stats(cluster=self.cluster, nodes=self.nodes)
+                await get_sindex_stats(cluster=self.cluster, nodes=self.nodes)
             )
         elif stanza == "udf":
-            return self.cluster.info_udf_list(nodes=self.nodes)
+            return await self.cluster.info_udf_list(nodes=self.nodes)
         elif stanza == "endpoints":
-            return self.cluster.info_service_list(nodes=self.nodes)
+            return await self.cluster.info_service_list(nodes=self.nodes)
         elif stanza == "services":
-            return self.cluster.info_peers_flat_list(nodes=self.nodes)
+            return await self.cluster.info_peers_flat_list(nodes=self.nodes)
 
-    def _get_asconfig_data(self, stanza):
+    async def _get_asconfig_data(self, stanza):
         if stanza == "xdr":
-            return self.cluster.info_XDR_get_config(nodes=self.nodes)
+            return await self.cluster.info_XDR_get_config(nodes=self.nodes)
         elif stanza == "dc":
-            return self.cluster.info_dc_get_config(nodes=self.nodes)
+            return await self.cluster.info_dc_get_config(nodes=self.nodes)
         elif stanza == "roster":
-            return self.cluster.info_roster(nodes=self.nodes)
+            getter = GetConfigController(self.cluster)
+            return await getter.get_roster(nodes=self.nodes)
         elif stanza == "racks":
-            return self.cluster.info_racks(nodes=self.nodes)
+            return await self.cluster.info_racks(nodes=self.nodes)
         else:
-            return self.cluster.info_get_config(nodes=self.nodes, stanza=stanza)
+            return await self.cluster.info_get_config(nodes=self.nodes, stanza=stanza)
 
-    def _get_as_meta_data(self, stanza):
+    async def _get_as_meta_data(self, stanza):
         if stanza == "build":
-            return self.cluster.info("build", nodes=self.nodes)
+            return await self.cluster.info("build", nodes=self.nodes)
         if stanza == "node_id":
-            return self.cluster.info("node", nodes=self.nodes)
+            return await self.cluster.info("node", nodes=self.nodes)
         elif stanza == "edition":
-            editions = self.cluster.info("edition", nodes=self.nodes)
+            editions = await self.cluster.info("edition", nodes=self.nodes)
             if not editions:
                 return editions
 
@@ -76,7 +81,7 @@ class HealthCheckController(LiveClusterCommandController):
 
             return editions_in_shortform
         elif stanza == "health":
-            return self.cluster.info_health_outliers(nodes=self.nodes)
+            return await self.cluster.info_health_outliers(nodes=self.nodes)
 
     @CommandHelp(
         "Displays health summary. If remote server System credentials provided, then it will collect remote system stats",
@@ -111,7 +116,7 @@ class HealthCheckController(LiveClusterCommandController):
         "                                          [2001::1234:10],uid,pwd",
         "                                          [2001::1234:10]:3232,uid,,key_path",
     )
-    def _do_default(self, line):
+    async def _do_default(self, line):
 
         output_file = util.get_arg_and_delete_from_mods(
             line=line,
@@ -286,8 +291,20 @@ class HealthCheckController(LiveClusterCommandController):
                                 ("CLUSTER", cluster_name),
                                 ("NODE", None),
                                 (None, None),
-                                ("NAMESPACE", ("ns_name", "ns",),),
-                                ("SET", ("set_name", "set",),),
+                                (
+                                    "NAMESPACE",
+                                    (
+                                        "ns_name",
+                                        "ns",
+                                    ),
+                                ),
+                                (
+                                    "SET",
+                                    (
+                                        "set_name",
+                                        "set",
+                                    ),
+                                ),
                             ],
                         ),
                         (
@@ -300,7 +317,16 @@ class HealthCheckController(LiveClusterCommandController):
                                 ("NAMESPACE", None),
                             ],
                         ),
-                        ("xdr", "XDR", [("CLUSTER", cluster_name), ("NODE", None)]),
+                        (
+                            "xdr",
+                            "XDR",
+                            [
+                                ("CLUSTER", cluster_name),
+                                ("NODE", None),
+                                (None, None),
+                                ("DC", None),
+                            ],
+                        ),
                         (
                             "dc",
                             "DC",
@@ -331,6 +357,11 @@ class HealthCheckController(LiveClusterCommandController):
                         (
                             "service",
                             "SERVICE",
+                            [("CLUSTER", cluster_name), ("NODE", None)],
+                        ),
+                        (
+                            "security",
+                            "SECURITY",
                             [("CLUSTER", cluster_name), ("NODE", None)],
                         ),
                         ("xdr", "XDR", [("CLUSTER", cluster_name), ("NODE", None)]),
@@ -681,23 +712,27 @@ class HealthCheckController(LiveClusterCommandController):
             while sn_ct < snap_count:
                 fetched_as_val = {}
 
-                # Collecting data
-                sys_stats = self.cluster.info_system_statistics(
-                    nodes=self.nodes,
-                    default_user=default_user,
-                    default_pwd=default_pwd,
-                    default_ssh_key=default_ssh_key,
-                    default_ssh_port=default_ssh_port,
-                    credential_file=credential_file,
-                    collect_remote_data=enable_ssh,
-                )
-
                 for _key, (info_function, stanza_list) in stanza_dict.items():
 
                     for stanza_item in stanza_list:
 
                         stanza = stanza_item[0]
-                        fetched_as_val[(_key, stanza)] = info_function(stanza)
+                        fetched_as_val[(_key, stanza)] = asyncio.create_task(
+                            info_function(stanza)
+                        )
+
+                # Collecting data
+                sys_stats = asyncio.create_task(
+                    self.cluster.info_system_statistics(
+                        nodes=self.nodes,
+                        default_user=default_user,
+                        default_pwd=default_pwd,
+                        default_ssh_key=default_ssh_key,
+                        default_ssh_port=default_ssh_port,
+                        credential_file=credential_file,
+                        collect_remote_data=enable_ssh,
+                    )
+                )
 
                 # Creating health input model
                 for _key, (info_function, stanza_list) in stanza_dict.items():
@@ -708,7 +743,7 @@ class HealthCheckController(LiveClusterCommandController):
                         component_name = stanza_item[1]
 
                         try:
-                            d = fetched_as_val[(_key, stanza)]
+                            d = await fetched_as_val[(_key, stanza)]
                         except Exception:
                             continue
 
@@ -727,7 +762,7 @@ class HealthCheckController(LiveClusterCommandController):
                             d, health_input, new_tuple_keys, new_component_keys
                         )
 
-                sys_stats = util.flip_keys(sys_stats)
+                sys_stats = util.flip_keys(await sys_stats)
 
                 for cmd_key, (sys_function, sys_cmd_list) in sys_cmd_dict.items():
 

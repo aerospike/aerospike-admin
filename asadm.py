@@ -14,103 +14,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import cmd
-import copy
 import getpass
 
 import os
 import re
 import shlex
 import sys
-import logging
-import traceback
+import asyncio
+import readline
+from lib.utils.async_object import AsyncObject
 
-if sys.version_info[0] < 3:
-    raise Exception(
-        "asadm requires Python 3. Use Aerospike tools package <= 3.27.x for Python 2 support."
-    )
 
-if "-e" not in sys.argv and "--asinfo" not in sys.argv:
-    # asinfo mode or non-interactive mode does not need readline
-    # if we import readline then it adds escape character, which breaks some of asinfo use-cases.
-    import readline
-
-    if "libedit" in readline.__doc__:
-        # BSD libedit style tab completion for OS X
-        readline.parse_and_bind("bind ^I rl_complete")
-    else:
-        readline.parse_and_bind("tab: complete")
+if "libedit" in readline.__doc__:
+    # BSD libedit style tab completion for OS X
+    readline.parse_and_bind("bind ^I rl_complete")
+else:
+    readline.parse_and_bind("tab: complete")
 
 # Setup logger before anything
 
-
-class BaseLogger(logging.Logger, object):
-    def __init__(self, name, level=logging.WARNING):
-        return super(BaseLogger, self).__init__(name, level=level)
-
-    def _handle_exception(self, msg):
-        if isinstance(msg, Exception) and not isinstance(msg, ShellException):
-            traceback.print_exc()
-
-    def _print_message(self, msg, level, red_color=False, *args, **kwargs):
-        try:
-            message = str(msg).format(*args, **kwargs)
-        except Exception:
-            message = str(msg)
-
-        message = level + ": " + message
-
-        if red_color:
-            message = terminal.fg_red() + message + terminal.fg_clear()
-
-        print(message)
-
-    def debug(self, msg, *args, **kwargs):
-        if self.level <= logging.DEBUG:
-            self._print_message(
-                msg=msg, level="DEBUG", red_color=False, *args, **kwargs
-            )
-
-    def info(self, msg, *args, **kwargs):
-        if self.level <= logging.INFO:
-            self._print_message(msg=msg, level="INFO", red_color=False, *args, **kwargs)
-
-    def warning(self, msg, *args, **kwargs):
-        if self.level <= logging.WARNING:
-            self._print_message(
-                msg=msg, level="WARNING", red_color=True, *args, **kwargs
-            )
-
-    def error(self, msg, *args, **kwargs):
-        if self.level <= logging.ERROR:
-            self._print_message(msg=msg, level="ERROR", red_color=True, *args, **kwargs)
-            self._handle_exception(msg)
-
-    def critical(self, msg, *args, **kwargs):
-        if self.level <= logging.CRITICAL:
-            self._print_message(msg=msg, level="ERROR", red_color=True, *args, **kwargs)
-            self._handle_exception(msg)
-        exit(1)
-
-
-logging.setLoggerClass(BaseLogger)
-logging.basicConfig(level=logging.WARNING)
-
-logger = logging.getLogger("asadm")
-logger.setLevel(logging.INFO)
-
+from lib.utils.logger import logger
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
-from lib.base_controller import ShellException
 from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
 from lib.live_cluster.client import info
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
+from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.utils import common, util, conf
 from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
-from lib.view import terminal, view
+from lib.view import terminal, view, sheet
+from time import sleep
+import yappi  # noqa F401
+
+# Do not remove this line.  It mitigates a race condition that occurs when using
+# pyinstaller and socket.getaddrinfo.  For some reason the idna codec is not registered
+# causing a lookup error to occur. Adding this line here makes sure that the proper
+# codec is registered well before it is used in getaddrinfo.
+# see https://bugs.python.org/issue29288, https://github.com/aws/aws-cli/blob/1.16.277/awscli/clidriver.py#L55,
+# and https://github.com/pyinstaller/pyinstaller/issues/1113 for more info :)
+u"".encode("idna")
 
 __version__ = "$$__version__$$"
 CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
@@ -123,8 +70,8 @@ DEFAULT_PROMPT = "Admin> "
 PRIVILEGED_PROMPT = "Admin+> "
 
 
-class AerospikeShell(cmd.Cmd):
-    def __init__(
+class AerospikeShell(cmd.Cmd, AsyncObject):
+    async def __init__(
         self,
         admin_version,
         seeds,
@@ -138,15 +85,14 @@ class AerospikeShell(cmd.Cmd):
         ssl_context=None,
         only_connect_seed=False,
         execute_only_mode=False,
-        timeout=5,
+        privileged_mode=False,
+        timeout=1,
     ):
-
         # indicates shell created successfully and connected to cluster/collectinfo/logfile
         self.connected = True
         self.admin_history = ADMIN_HOME + "admin_" + str(mode).lower() + "_history"
         self.execute_only_mode = execute_only_mode
         self.privileged_mode = False
-
         if mode == AdminMode.LOG_ANALYZER:
             self.name = "Aerospike Log Analyzer Shell"
         elif mode == AdminMode.COLLECTINFO_ANALYZER:
@@ -179,8 +125,8 @@ class AerospikeShell(cmd.Cmd):
                     logger.error(
                         "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>"
                     )
-                    self.do_exit("")
-                    exit(1)
+                    await self.do_exit("")
+                    sys.exit(1)
 
                 self.ctrl = CollectinfoRootController(
                     admin_version, clinfo_path=log_path
@@ -198,28 +144,25 @@ class AerospikeShell(cmd.Cmd):
                             password = sys.stdin.readline().strip()
 
                     if not info.hasbcrypt:
-                        self.do_exit("")
+                        await self.do_exit("")
                         logger.critical("Authentication failed: bcrypt not installed.")
 
-                self.ctrl = LiveClusterRootController(
-                    seed_nodes=seeds,
-                    user=user,
-                    password=password,
-                    auth_mode=auth_mode,
-                    use_services_alumni=use_services_alumni,
-                    use_services_alt=use_services_alt,
-                    ssl_context=ssl_context,
-                    asadm_version=admin_version,
-                    only_connect_seed=only_connect_seed,
+                self.ctrl = await LiveClusterRootController(
+                    seeds,
+                    user,
+                    password,
+                    auth_mode,
+                    use_services_alumni,
+                    use_services_alt,
+                    ssl_context,
+                    only_connect_seed,
                     timeout=timeout,
+                    asadm_version=admin_version,
                 )
 
                 if not self.ctrl.cluster.get_live_nodes():
-                    self.do_exit("")
+                    await self.do_exit("")
                     if self.execute_only_mode:
-                        logger.error(
-                            "Not able to connect any cluster with " + str(seeds) + "."
-                        )
                         self.connected = False
                         return
                     else:
@@ -227,9 +170,12 @@ class AerospikeShell(cmd.Cmd):
                             "Not able to connect any cluster with " + str(seeds) + "."
                         )
 
-                self.set_prompt(DEFAULT_PROMPT)
+                self.set_default_prompt()
                 self.intro = ""
-                if not execute_only_mode:
+                if execute_only_mode:
+                    if privileged_mode:
+                        self.ctrl.do_enable([])
+                else:
                     self.intro += str(self.ctrl.cluster) + "\n"
                     cluster_visibility_error_nodes = (
                         self.ctrl.cluster.get_visibility_error_nodes()
@@ -244,7 +190,7 @@ class AerospikeShell(cmd.Cmd):
                             + "\n"
                         )
 
-                    cluster_down_nodes = self.ctrl.cluster.get_down_nodes()
+                    cluster_down_nodes = await self.ctrl.cluster.get_down_nodes()
 
                     if cluster_down_nodes:
                         self.intro += (
@@ -256,7 +202,7 @@ class AerospikeShell(cmd.Cmd):
                         )
 
         except Exception as e:
-            self.do_exit("")
+            await self.do_exit("")
             logger.critical(str(e))
 
         if not execute_only_mode:
@@ -275,14 +221,23 @@ class AerospikeShell(cmd.Cmd):
             if command != "help":
                 self.commands.add(command)
 
-    def set_prompt(self, prompt):
+    def set_prompt(self, prompt, color="green"):
         self.prompt = prompt
 
         if self.use_rawinput:
+            if color == "green":
+                color_func = terminal.fg_green
+            elif color == "red":
+                color_func = terminal.fg_red
+            else:
+
+                def color_func():
+                    return ""
+
             self.prompt = (
                 "\001"
                 + terminal.bold()
-                + terminal.fg_red()
+                + color_func()
                 + "\002"
                 + self.prompt
                 + "\001"
@@ -290,6 +245,12 @@ class AerospikeShell(cmd.Cmd):
                 + terminal.fg_clear()
                 + "\002"
             )
+
+    def set_default_prompt(self):
+        self.set_prompt(DEFAULT_PROMPT, "green")
+
+    def set_privaliged_prompt(self):
+        self.set_prompt(PRIVILEGED_PROMPT, "red")
 
     def clean_line(self, line):
         # get rid of extra whitespace
@@ -300,7 +261,7 @@ class AerospikeShell(cmd.Cmd):
 
         command = []
         build_token = ""
-        lexer.wordchars += ".-:/_{}"
+        lexer.wordchars += ".*-:/_{}@"
         for token in lexer:
             build_token += token
             if token == "-":
@@ -321,10 +282,57 @@ class AerospikeShell(cmd.Cmd):
 
         return commands
 
-    def precmd(
+    # This was copied from the base class then turned async.
+    async def cmdloop(self, intro=None):
+        """Repeatedly issue a prompt, accept input, parse an initial prefix
+        off the received input, and dispatch to action methods, passing them
+        the remainder of the line as argument.
+
+        """
+
+        self.preloop()
+        if self.use_rawinput and self.completekey:
+            self.old_completer = readline.get_completer()
+            readline.set_completer(self.complete)
+            readline.parse_and_bind(self.completekey + ": complete")
+
+        try:
+            if intro is not None:
+                self.intro = intro
+            if self.intro:
+                self.stdout.write(str(self.intro) + "\n")
+            stop = None
+            while not stop:
+                if self.cmdqueue:
+                    line = self.cmdqueue.pop(0)
+                else:
+                    if self.use_rawinput:
+                        try:
+                            line = input(self.prompt)
+                        except EOFError:
+                            line = "EOF"
+                    else:
+                        self.stdout.write(self.prompt)
+                        self.stdout.flush()
+                        line = self.stdin.readline()
+                        if not len(line):
+                            line = "EOF"
+                        else:
+                            line = line.rstrip("\r\n")
+                line = await self.precmd(line)
+                stop = await self.onecmd(line)
+                stop = self.postcmd(stop, line)
+            self.postloop()
+        finally:
+            if self.use_rawinput and self.completekey:
+                try:
+                    readline.set_completer(self.old_completer)
+                except ImportError:
+                    pass
+
+    async def precmd(
         self, line, max_commands_to_print_header=1, command_index_to_print_from=1
     ):
-
         lines = None
 
         try:
@@ -358,63 +366,29 @@ class AerospikeShell(cmd.Cmd):
             sys.stdout.write(terminal.reset())
 
             try:
-                response = self.ctrl.execute(line)
+                response = await self.ctrl.execute(line)
 
                 if response == "EXIT":
                     return "exit"
 
                 elif response == "ENABLE":
-                    self.set_prompt(PRIVILEGED_PROMPT)
+                    self.set_privaliged_prompt()
 
                 elif response == "DISABLE":
-                    self.set_prompt(DEFAULT_PROMPT)
+                    self.set_default_prompt()
 
             except Exception as e:
                 logger.error(e)
         return ""  # line was handled by execute
 
-    def _listdir(self, root):
-        "List directory 'root' appending the path separator to subdirs."
-        res = []
-        for name in os.listdir(root):
-            path = os.path.join(root, name)
-            if os.path.isdir(path):
-                name += os.sep
-            res.append(name)
-        return res
+    # overloaded to support async
+    async def onecmd(self, line):
+        result = super().onecmd(line)
 
-    def _complete_path(self, path=None):
-        "Perform completion of filesystem path."
-        if not path:
-            return self._listdir(".")
-        dirname, rest = os.path.split(path)
-        tmp = dirname if dirname else "."
-        res = [
-            os.path.join(dirname, p) for p in self._listdir(tmp) if p.startswith(rest)
-        ]
-        # more than one match, or single match which does not exist (typo)
-        if len(res) > 1 or not os.path.exists(path):
-            return res
-        # resolved to a single directory, so return list of files below it
-        if os.path.isdir(path):
-            return [os.path.join(path, p) for p in self._listdir(path)]
-        # exact file match terminates this completion
-        return [path + " "]
+        if inspect.iscoroutine(result):
+            result = await result
 
-    def complete_path(self, args):
-        "Completions for the 'extra' command."
-        if not args:
-            return []
-
-        if args[-1].startswith("'"):
-            names = ["'" + v for v in self._complete_path(args[-1].split("'")[-1])]
-            return names
-        if args[-1].startswith('"'):
-            names = ['"' + v for v in self._complete_path(args[-1].split('"')[-1])]
-            return names
-
-        # treat the last arg as a path and complete it
-        return self._complete_path(args[-1])
+        return result
 
     def completenames(self, text, line, begidx, endidx):
         origline = line
@@ -443,12 +417,8 @@ class AerospikeShell(cmd.Cmd):
                         line.pop(0)
                 except Exception:
                     pass
-        line_copy = copy.deepcopy(line)
-        names = self.ctrl.complete(line)
 
-        if not names:
-            names = self.complete_path(line_copy) + [None]
-            return names
+        names = self.ctrl.complete(line)
 
         return ["%s " % n for n in names]
 
@@ -459,7 +429,7 @@ class AerospikeShell(cmd.Cmd):
         Otherwise try to call complete_<command> to get list of completions.
         """
 
-        if state >= 0:
+        if state <= 0:
             origline = readline.get_line_buffer()
             line = origline.lstrip()
             stripped = len(origline) - len(line)
@@ -477,22 +447,22 @@ class AerospikeShell(cmd.Cmd):
         # do nothing
         return
 
-    def close(self):
+    async def close(self):
         try:
-            self.ctrl.close()
+            await self.ctrl.close()
         except Exception:
             pass
 
     # Other
-    def do_exit(self, line):
-        self.close()
+    async def do_exit(self, line):
+        await self.close()
         if not self.execute_only_mode and readline.get_current_history_length() > 0:
             readline.write_history_file(self.admin_history)
 
         return True
 
-    def do_EOF(self, line):
-        return self.do_exit(line)
+    async def do_EOF(self, line):
+        return await self.do_exit(line)
 
     def do_cake(self, line):
         msg = """
@@ -526,7 +496,6 @@ class AerospikeShell(cmd.Cmd):
        `%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\'
            `%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\'
 """
-        from time import sleep
 
         s = 0.5
         for line in msg.split("\n"):
@@ -575,10 +544,10 @@ def parse_tls_input(cli_args):
 
     except Exception as e:
         logger.error("SSLContext creation Exception: " + str(e))
-        exit(1)
+        sys.exit(1)
 
 
-def execute_asinfo_commands(
+async def execute_asinfo_commands(
     commands_arg,
     seed,
     user=None,
@@ -607,16 +576,15 @@ def execute_asinfo_commands(
             logger.critical("Authentication failed: bcrypt not installed.")
 
     assock = ASSocket(seed[0], seed[1], seed[2], user, password, auth_mode, ssl_context)
-    if not assock.connect():
+    if not await assock.connect():
         logger.critical("Not able to connect any cluster with " + str(seed) + ".")
         return
 
-    if user is not None:
-        if not assock.login():
-            logger.critical(
-                "Not able to login and authenticate any cluster with " + str(seed) + "."
-            )
-            return
+    if not await assock.login():
+        logger.critical(
+            "Not able to login and authenticate any cluster with " + str(seed) + "."
+        )
+        return
 
     node_name = "%s:%s" % (seed[0], seed[1])
 
@@ -624,7 +592,7 @@ def execute_asinfo_commands(
         if command:
             command = util.strip_string(command)
 
-        result = assock.info(command)
+        result = await assock.info(command)
 
         if result == -1 or result is None:
             result = IOError("Error: Invalid command '%s'" % command)
@@ -634,26 +602,32 @@ def execute_asinfo_commands(
     return
 
 
-def main():
+async def main():
+    loop = asyncio.get_event_loop()
+
+    if get_version == "development":
+        loop.set_debug(True)
+    else:
+        # Do nothing in production. It is likely that another error occurred too that will be displayed.
+        loop.set_exception_handler(lambda loop, context: None)
+
     cli_args = conf.get_cli_args()
 
     admin_version = get_version()
 
     if cli_args.help:
         conf.print_config_help()
-        exit(0)
+        sys.exit(0)
 
     if cli_args.version:
         print("Aerospike Administration Shell")
         print("Version " + str(admin_version))
-        exit(0)
+        sys.exit(0)
 
     if cli_args.no_color:
         disable_coloring()
 
     if cli_args.pmap:
-        from lib.live_cluster.collectinfo_controller import CollectinfoController
-
         CollectinfoController.get_pmap = True
 
     mode = AdminMode.LIVE_CLUSTER
@@ -674,18 +648,22 @@ def main():
         os.makedirs(ADMIN_HOME)
 
     execute_only_mode = False
-    if cli_args.execute:
-        execute_only_mode = True
 
-    cli_args, seeds = conf.loadconfig(cli_args, logger)
+    if cli_args.execute is not None:
+        execute_only_mode = True
+        logger.execute_only_mode = True
+
+    cli_args, seeds = conf.loadconfig(cli_args)
 
     if cli_args.services_alumni and cli_args.services_alternate:
         logger.critical(
             "Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate."
         )
 
-    if cli_args.auth == AuthMode.EXTERNAL and not cli_args.tls_enable:
-        logger.critical("TLS is required for authentication mode: EXTERNAL")
+    if not cli_args.tls_enable and (
+        cli_args.auth == AuthMode.EXTERNAL or cli_args.auth == AuthMode.PKI
+    ):
+        logger.critical("TLS is required for authentication mode: " + cli_args.auth)
 
     ssl_context = parse_tls_input(cli_args)
 
@@ -701,7 +679,7 @@ def main():
             commands_arg = parse_commands(commands_arg)
 
         try:
-            execute_asinfo_commands(
+            await execute_asinfo_commands(
                 commands_arg,
                 seeds[0],
                 user=cli_args.user,
@@ -710,15 +688,14 @@ def main():
                 ssl_context=ssl_context,
                 line_separator=cli_args.line_separator,
             )
-            exit(0)
+            sys.exit(0)
         except Exception as e:
             logger.error(e)
-            exit(1)
+            sys.exit(1)
 
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
-
-    shell = AerospikeShell(
+    shell = await AerospikeShell(
         admin_version,
         seeds,
         user=cli_args.user,
@@ -731,20 +708,19 @@ def main():
         ssl_context=ssl_context,
         only_connect_seed=cli_args.single_node,
         execute_only_mode=execute_only_mode,
+        privileged_mode=cli_args.enable,
         timeout=cli_args.timeout,
     )
 
     use_yappi = False
     if cli_args.profile:
         try:
-            import yappi
-
             use_yappi = True
         except Exception as a:
             print("Unable to load profiler")
             print("Yappi Exception:")
             print(str(a))
-            exit(1)
+            sys.exit(1)
 
     func = None
     args = ()
@@ -752,7 +728,7 @@ def main():
     real_stdout = sys.stdout
     if not execute_only_mode:
         if not shell.connected:
-            exit(1)
+            sys.exit(1)
 
         func = shell.cmdloop
         single_command = False
@@ -776,26 +752,44 @@ def main():
             except Exception as e:
                 print(e)
 
+        def cleanup():
+            try:
+                sys.stdout = real_stdout
+                if f:
+                    f.close()
+            except Exception:
+                pass
+
         if shell.connected:
-            line = shell.precmd(
+            line = await shell.precmd(
                 commands_arg,
                 max_commands_to_print_header=max_commands_to_print_header,
                 command_index_to_print_from=command_index_to_print_from,
             )
 
-            shell.onecmd(line)
+            await shell.onecmd(line)
             func = shell.onecmd
             args = (line,)
 
         else:
             if "collectinfo" in commands_arg:
-                logger.info("Collecting only System data")
+                logger.warning(
+                    "Collecting only System data. Not able to connect any cluster with "
+                    + str(seeds)
+                    + "."
+                )
+
                 func = common.collect_sys_info(port=cli_args.port)
 
-            exit(1)
+                cleanup()
+                sys.exit(1)
 
-    cmdloop(shell, func, args, use_yappi, single_command)
-    shell.close()
+            cleanup()
+            logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
+
+    await cmdloop(shell, func, args, use_yappi, single_command)
+    await shell.close()
+
     try:
         sys.stdout = real_stdout
         if f:
@@ -805,27 +799,21 @@ def main():
 
 
 def disable_coloring():
-    from .lib.view import terminal
-
     terminal.enable_color(False)
 
 
 def output_json():
-    from lib.view.sheet import set_style_json
-
-    set_style_json()
+    sheet.set_style_json()
 
 
-def cmdloop(shell, func, args, use_yappi, single_command):
+async def cmdloop(shell, func, args, use_yappi, single_command):
     try:
         if use_yappi:
-            import yappi
-
             yappi.start()
             func(*args)
             yappi.get_func_stats().print_all()
         else:
-            func(*args)
+            await func(*args)
     except (KeyboardInterrupt, SystemExit):
         if not single_command:
             shell.intro = (
@@ -833,7 +821,7 @@ def cmdloop(shell, func, args, use_yappi, single_command):
                 + "\nTo exit asadm utility please run exit command."
                 + terminal.fg_clear()
             )
-        cmdloop(shell, func, args, use_yappi, single_command)
+        await cmdloop(shell, func, args, use_yappi, single_command)
 
 
 def parse_commands(file):
@@ -861,16 +849,13 @@ def parse_commands(file):
 
 def get_version():
     if __version__.startswith("$$"):
-        path = sys.argv[0].split("/")[:-1]
-        path.append("version.txt")
-        vfile = "/".join(path)
-        f = open(vfile)
-        version = f.readline()
-        f.close()
-        return str(version)
-    else:
-        return __version__
+        return "development"
+
+    return __version__
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except Exception:
+        pass

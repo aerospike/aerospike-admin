@@ -224,6 +224,14 @@ def _parse_context(
             break
 
 
+def _parse_security_context(parsed_map, fstream, line):
+    context = "security"
+    if context not in parsed_map:
+        parsed_map[context] = {}
+    dir_ptr = parsed_map[context]
+    _parse_context(parsed_map=dir_ptr, fstream=fstream)
+
+
 def _parse_service_context(parsed_map, fstream, line):
     context = "service"
     if context not in parsed_map:
@@ -232,7 +240,7 @@ def _parse_service_context(parsed_map, fstream, line):
     _parse_context(parsed_map=dir_ptr, fstream=fstream)
 
 
-def _parse_network_sub_context(parsed_map, fstream, subcontext):
+def _parse_network_subcontext(parsed_map, fstream, subcontext):
     _parse_context(
         parsed_map=parsed_map,
         fstream=fstream,
@@ -261,8 +269,8 @@ def _parse_network_context(parsed_output, fstream, line):
 
             line = line.split("#")[0].strip()
             if line[-1] == "{":
-                sub_context = line[:-1].strip()
-                _parse_network_sub_context(dir_ptr, fstream, sub_context)
+                subcontext = line[:-1].strip()
+                _parse_network_subcontext(dir_ptr, fstream, subcontext)
 
         except Exception:
             break
@@ -316,11 +324,11 @@ def _parse_xdr_context(parsed_output, fstream, line):
             line = line.split("#")[0].strip()
 
             if line[-1] == "{":
-                sub_context = line[:-1].strip().split()
-                if sub_context[0] != "datacenter" or len(sub_context) < 2:
+                subcontext = line[:-1].strip().split()
+                if subcontext[0] != "datacenter" or len(subcontext) < 2:
                     _ignore_context(fstream)
                 else:
-                    _parse_xdr_dc_context(dc_dir_ptr, fstream, sub_context[1])
+                    _parse_xdr_dc_context(dc_dir_ptr, fstream, subcontext[1])
 
             else:
                 _k, _v = _get_kv_from_line(line, value_separator=" ")
@@ -339,7 +347,7 @@ def _parse_xdr_context(parsed_output, fstream, line):
             break
 
 
-def _parse_namespace_sub_context(parsed_map, fstream, subcontext):
+def _parse_namespace_subcontext(parsed_map, fstream, subcontext):
     _parse_context(parsed_map=parsed_map, fstream=fstream, key_prefix=subcontext)
 
 
@@ -381,12 +389,12 @@ def _parse_namespace_context(parsed_output, fstream, line):
             line = line.split("#")[0].strip()
 
             if line[-1] == "{":
-                sub_context = line[:-1].strip().split()
-                if sub_context[0] != "storage-engine" or len(sub_context) < 2:
+                subcontext = line[:-1].strip().split()
+                if subcontext[0] != "storage-engine" or len(subcontext) < 2:
                     _ignore_context(fstream)
                 else:
-                    _parse_namespace_sub_context(
-                        namespace_dir_ptr, fstream, sub_context[0]
+                    _parse_namespace_subcontext(
+                        namespace_dir_ptr, fstream, subcontext[0]
                     )
 
             else:
@@ -450,7 +458,3 @@ def parse_file(file_path):
             pass
 
     return parsed_output
-
-
-# f = "/Users/aerospike/Downloads/tmp 28/collect_info_20171210_050702/20171210_050702_aerospike.conf"
-# print parse_file(f)

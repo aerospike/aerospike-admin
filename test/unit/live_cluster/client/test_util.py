@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
-import time
+import asyncio
+import warnings
 
-from lib.utils import timeout
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import asynctest
+
 from lib.live_cluster.client import client_util
 
 
-class UtilTest(unittest.TestCase):
+class UtilTest(asynctest.TestCase):
     def test_info_to_dict(self):
         value = "a=1;b=@;c=c;d=1@"
         expected = {"a": "1", "b": "@", "c": "c", "d": "1@"}
@@ -195,30 +198,18 @@ class UtilTest(unittest.TestCase):
             result, expected, "parse_peers_string did not return the expected result"
         )
 
-    def test_concurrent_map(self):
+    async def test_concurrent_map(self):
         value = range(10)
         expected = [v * v for v in value]
-        result = client_util.concurrent_map(lambda v: v * v, value)
+
+        async def wait(v):
+            await asyncio.sleep((11 - v) / 10)
+            return v * v
+
+        result = await client_util.concurrent_map(wait, value)
         self.assertEqual(
-            result, expected, "concurrent_map did not return the expected result"
+            list(result), expected, "concurrent_map did not return the expected result"
         )
-
-    def test_cached(self):
-        def tester(arg1, arg2, sleep):
-            time.sleep(sleep)
-            return arg1 + arg2
-
-        tester = client_util.cached(tester, ttl=5.0)
-
-        tester(1, 2, 0.2)
-        tester(2, 2, 0.2)
-        tester(3, 2, 0.2)
-
-        tester = timeout.call_with_timeout(tester, 0.1)
-        self.assertEqual(3, tester(1, 2, 0.2))
-        self.assertEqual(4, tester(2, 2, 0.2))
-        self.assertEqual(5, tester(3, 2, 0.2))
-        self.assertRaises(timeout.TimeoutException, tester, 1, 2, 5)
 
     def test_flatten(self):
         value = [

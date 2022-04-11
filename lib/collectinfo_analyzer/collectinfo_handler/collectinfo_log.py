@@ -17,7 +17,7 @@ import copy
 from lib.utils import common, util
 from lib.utils.lookup_dict import LookupDict
 
-from .collectinfo_parser import full_parser
+from .collectinfo_parser import collectinfo_parser
 
 
 class _CollectinfoNode(object):
@@ -25,7 +25,6 @@ class _CollectinfoNode(object):
         self.timestamp = timestamp
         self.node_name = node_name
         self.node_id = node_id
-        self.xdr_build = "N/E"
         self.asd_build = "N/E"
         self.asd_version = "N/E"
         self.cluster_name = "null"
@@ -45,9 +44,6 @@ class _CollectinfoNode(object):
             pass
         self.node_id = node_id
 
-    def set_xdr_build(self, xdr_build):
-        self.xdr_build = xdr_build
-
     def set_asd_build(self, asd_build):
         self.asd_build = asd_build
 
@@ -58,12 +54,13 @@ class _CollectinfoNode(object):
         self.asd_version = util.convert_edition_to_shortform(asd_version)
 
 
-class _CollectinfoSnapshot(object):
+class _CollectinfoSnapshot:
     def __init__(self, cluster_name, timestamp, cinfo_data, cinfo_file):
         self.cluster_name = cluster_name
         self.timestamp = timestamp
         self.nodes = {}
         self.node_names = {}
+        self.node_ids = {}
         self.cinfo_data = self.ns_name_fault_check(cinfo_data)
         self.cinfo_file = cinfo_file
         self.node_lookup = LookupDict()
@@ -74,7 +71,6 @@ class _CollectinfoSnapshot(object):
             self._set_nodes(self.get_node_names())
             self._set_node_id()
             self._set_ip()
-            self._set_xdr_build()
             self._set_asd_build()
             self._set_asd_version()
             self._set_cluster_name()
@@ -96,7 +92,7 @@ class _CollectinfoSnapshot(object):
             for node, node_data in value.items():
                 if not node or not node_data:
                     continue
-                if not "as_stat" in node_data:
+                if "as_stat" not in node_data:
                     continue
 
                 if "config" in node_data["as_stat"]:
@@ -157,6 +153,16 @@ class _CollectinfoSnapshot(object):
                 self.node_names[node_name] = node_name
         return copy.deepcopy(self.node_names)
 
+    def get_node_ids(self, nodes=None):
+        if not self.node_ids:
+            if not self.nodes:
+                return {}
+
+            for key, node in self.nodes.items():
+                self.node_ids[key] = node.node_id
+
+        return copy.deepcopy(self.node_ids)
+
     def get_data(self, type="", stanza=""):
         data = {}
 
@@ -170,7 +176,7 @@ class _CollectinfoSnapshot(object):
                     if not node or not node_data:
                         continue
 
-                    if not "as_stat" in node_data or type not in node_data["as_stat"]:
+                    if "as_stat" not in node_data or type not in node_data["as_stat"]:
                         continue
 
                     if node not in data:
@@ -281,7 +287,7 @@ class _CollectinfoSnapshot(object):
                         continue
 
                     if (
-                        not "sys_stat" in node_data
+                        "sys_stat" not in node_data
                         or stanza not in node_data["sys_stat"]
                     ):
                         continue
@@ -327,15 +333,6 @@ class _CollectinfoSnapshot(object):
             return principal
         except Exception:
             return "UNKNOWN_PRINCIPAL"
-
-    def get_xdr_build(self):
-        xdr_build = {}
-        try:
-            for node in self.nodes:
-                xdr_build[node] = self.nodes[node].xdr_build
-        except Exception:
-            pass
-        return xdr_build
 
     def get_asd_build(self):
         asd_build = {}
@@ -392,16 +389,6 @@ class _CollectinfoSnapshot(object):
             except Exception:
                 pass
 
-    def _set_xdr_build(self):
-
-        for node in self.nodes:
-            try:
-                self.nodes[node].set_xdr_build(
-                    self.cinfo_data[node]["as_stat"]["meta_data"]["xdr_build"]
-                )
-            except Exception:
-                pass
-
     def _set_asd_build(self):
 
         for node in self.nodes:
@@ -432,12 +419,14 @@ class _CollectinfoSnapshot(object):
 
 
 class CollectinfoLog(object):
-    def __init__(self, cinfo_path, files, reader):
+    def __init__(self, cinfo_path, files):
         self.files = files
-        self.reader = reader
         self.snapshots = {}
         self.data = {}
-        full_parser.parse_info_all(files, self.data, True)
+        self.license_data_usage = {}
+        collectinfo_parser.parse_collectinfo_files(
+            files, self.data, self.license_data_usage, True
+        )
 
         if self.data:
             for ts in sorted(self.data.keys(), reverse=True):
@@ -455,7 +444,6 @@ class CollectinfoLog(object):
     def destroy(self):
         try:
             del self.files
-            del self.reader
             for sn in self.snapshots:
                 self.snapshots[sn].destroy()
             del self.snapshots
