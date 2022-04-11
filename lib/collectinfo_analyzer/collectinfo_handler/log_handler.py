@@ -19,8 +19,6 @@ import tarfile
 import zipfile
 
 from lib.utils import common, log_util, util, constants
-
-from .collectinfo_reader import CollectinfoReader
 from .collectinfo_log import CollectinfoLog
 
 ###### Constants ######
@@ -42,6 +40,10 @@ COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
 
 
 class CollectinfoLogHandler(object):
+    """
+    Handles interaction with the ascinfo.json file to make it act more like live_cluster/cluster.
+    """
+
     all_cinfo_logs = {}
     selected_cinfo_logs = {}
 
@@ -54,7 +56,6 @@ class CollectinfoLogHandler(object):
         self.cinfo_timestamp = None
         self.logger = logging.getLogger("asadm")
 
-        self.reader = CollectinfoReader()
         try:
             self._add_cinfo_log_files(cinfo_path)
         except Exception as e:
@@ -255,24 +256,11 @@ class CollectinfoLogHandler(object):
             log_files = log_util.get_all_files(cinfo_path)
             valid_files = []
             for log_file in log_files:
-                try:
-                    if self.reader.is_cinfo_log_file(log_file):
-                        valid_files.append(log_file)
-                        continue
-                except Exception:
-                    pass
 
                 try:
                     # ToDo: It should be some proper check for asadm
                     # collectinfo json file.
                     if os.path.splitext(log_file)[1] == ".json":
-                        valid_files.append(log_file)
-                        continue
-                except Exception:
-                    pass
-
-                try:
-                    if self.reader.is_system_log_file(log_file):
                         valid_files.append(log_file)
                         continue
                 except Exception:
@@ -324,7 +312,7 @@ class CollectinfoLogHandler(object):
         if not files:
             raise Exception("No valid Aerospike collectinfo log available.")
 
-        cinfo_log = CollectinfoLog(cinfo_path, files, self.reader)
+        cinfo_log = CollectinfoLog(cinfo_path, files)
         self.selected_cinfo_logs = cinfo_log.snapshots
         self.all_cinfo_logs = cinfo_log.snapshots
         self.license_data_usage = cinfo_log.license_data_usage

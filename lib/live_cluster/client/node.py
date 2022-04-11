@@ -21,15 +21,14 @@ import threading
 import time
 import base64
 
-from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import conf_parser
-from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import full_parser
-from lib.utils import common, constants, util, version, logger_debug
+from lib.utils import common, constants, util, version, conf_parser
+from lib.utils import common, constants, util, version, logger_debug, conf_parser
 from lib.utils.async_object import AsyncObject
-
 
 from .assocket import ASSocket
 from .config_handler import JsonDynamicConfigHandler
 from . import client_util
+from . import sys_cmd_parser
 from .types import (
     ASInfoConfigError,
     ASInfoError,
@@ -2931,6 +2930,14 @@ class Node(AsyncObject):
         self.sys_ssh_key = self.sys_default_ssh_key
         self.sys_ssh_port = self.sys_default_ssh_port
 
+    def parse_system_live_command(self, command, command_raw_output, parsed_map):
+        # Parse live cmd output and create imap
+        imap = {}
+        sys_cmd_parser.extract_section_from_live_cmd(command, command_raw_output, imap)
+        sectionlist = []
+        sectionlist.append(command)
+        sys_cmd_parser.parse_sys_section(sectionlist, imap, parsed_map)
+
     @return_exceptions
     def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
@@ -2956,7 +2963,7 @@ class Node(AsyncObject):
                     continue
 
                 try:
-                    full_parser.parse_system_live_command(_key, o, sys_stats)
+                    self.parse_system_live_command(_key, o, sys_stats)
                 except Exception:
                     pass
 
@@ -3078,7 +3085,7 @@ class Node(AsyncObject):
                             status, o = self._execute_system_command(s, cmd)
                             if status or not o or isinstance(o, Exception):
                                 continue
-                            full_parser.parse_system_live_command(_key, o, sys_stats)
+                            self.parse_system_live_command(_key, o, sys_stats)
                             break
 
                         except Exception:
