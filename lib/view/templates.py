@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import itertools
-from lib.view.sheet.decleration import ComplexAggregator
+from unicodedata import numeric
+from lib.view.sheet.decleration import ComplexAggregator, EntryData
 from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoError
 from lib.view.sheet import (
     Aggregators,
@@ -62,6 +63,26 @@ def project_xdr_req_shipped_errors(s, esc, ess):
         return s
 
     return esc + ess
+
+
+#
+# Aggregator helpers
+#
+
+
+def weighted_avg(weights: list[numeric], values: list[numeric]):
+    total = 0.0
+    weighted_avg = 0.0
+
+    for w, v in zip(weights, values):
+        weighted_avg += w * v
+        total += v
+
+    if not total:
+        return 0.0
+
+    weighted_avg /= total
+    return weighted_avg
 
 
 #
@@ -180,6 +201,16 @@ info_network_sheet = Sheet(
     order_by="Node",
 )
 
+
+def create_usage_weighted_avg(type: str):
+    def usage_weighted_avg(edatas: EntryData):
+        pcts = map(lambda edata: edata.value, edatas)
+        byte_values = map(lambda edata: edata.record[type]["Used"], edatas)
+        return weighted_avg(pcts, byte_values)
+
+    return usage_weighted_avg
+
+
 info_namespace_usage_sheet = Sheet(
     (
         namespace_field,
@@ -216,7 +247,7 @@ info_namespace_usage_sheet = Sheet(
             formatters=(Formatters.red_alert(lambda edata: edata.value),),
         ),
         Subgroup(
-            "Disk",
+            "Device",
             (
                 Field(
                     "Used",
@@ -228,12 +259,19 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.Percent(
-                        "ns_stats", "device_free_pct", "free_pct_disk", invert=True
+                    Projectors.PercentCompute(
+                        Projectors.Number("ns_stats", "device_used_bytes"),
+                        Projectors.Number("ns_stats", "device_total_bytes"),
+                    ),
+                    converter=Converters.round(2),
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Device"),
+                        converter=Converters.round(2),
                     ),
                     formatters=(
                         Formatters.yellow_alert(
-                            lambda edata: edata.value >= edata.record["Disk"]["HWM%"]
+                            lambda edata: edata.value >= edata.record["Device"]["HWM%"]
+                            and edata.record["Device"]["HWM%"] != 0
                         ),
                     ),
                 ),
@@ -258,12 +296,19 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.Percent(
-                        "ns_stats", "memory_free_pct", "free_pct_memory", invert=True
+                    Projectors.PercentCompute(
+                        Projectors.Number("ns_stats", "memory_used_bytes"),
+                        Projectors.Number("ns_stats", "memory-size"),
+                    ),
+                    converter=Converters.round(2),
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Memory"),
+                        converter=Converters.round(2),
                     ),
                     formatters=(
                         Formatters.yellow_alert(
                             lambda edata: edata.value > edata.record["Memory"]["HWM%"]
+                            and edata.record["Memory"]["HWM%"] != 0
                         ),
                     ),
                 ),
@@ -285,13 +330,24 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.Percent(
-                        "ns_stats", "index_flash_used_pct", "index_pmem_used_pct"
+                    Projectors.PercentCompute(
+                        Projectors.Number(
+                            "ns_stats",
+                            "index_flash_used_bytes",
+                            "index_pmem_used_bytes",
+                        ),
+                        Projectors.Number("ns_stats", "index-type.mounts-size-limit"),
+                    ),
+                    converter=Converters.round(2),
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Primary Index"),
+                        converter=Converters.round(2),
                     ),
                     formatters=(
                         Formatters.yellow_alert(
                             lambda edata: edata.value
                             >= edata.record["Primary Index"]["HWM%"]
+                            and edata.record["Primary Index"]["HWM%"] != 0
                         ),
                     ),
                 ),
@@ -693,6 +749,7 @@ info_sindex_sheet = Sheet(
             converter=sindex_state_converter,
         ),  # new
         Field("Sync State", Projectors.String("sindex_stats", "sync_state")),  # old
+        # removed 6.0
         Field("Keys", Projectors.Number("sindex_stats", "keys")),
         Field(
             "Entries",
@@ -702,9 +759,14 @@ info_sindex_sheet = Sheet(
         ),
         Field(
             "Memory Used",
-            Projectors.Sum(
-                Projectors.Number("sindex_stats", "ibtr_memory_used"),
-                Projectors.Number("sindex_stats", "nbtr_memory_used"),
+            # removed in 6.0
+            Projectors.Any(
+                FieldType.number,
+                Projectors.Number("sindex_stats", "memory_used"),
+                Projectors.Sum(
+                    Projectors.Number("sindex_stats", "ibtr_memory_used"),
+                    Projectors.Number("sindex_stats", "nbtr_memory_used"),
+                ),
             ),
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
@@ -716,7 +778,7 @@ info_sindex_sheet = Sheet(
                     "Requests",
                     Projectors.Any(
                         FieldType.number,
-                        # query_basic_* added 5.7
+                        # query_basic_* added 5.7, removed in 6.0
                         Projectors.Sum(
                             Projectors.Number("sindex_stats", "query_basic_complete"),
                             Projectors.Number("sindex_stats", "query_basic_error"),
@@ -732,7 +794,7 @@ info_sindex_sheet = Sheet(
                     "Avg Num Recs",
                     Projectors.Number(
                         "sindex_stats",
-                        "query_basic_avg_rec_count",  # query_basic_* added 5.7
+                        "query_basic_avg_rec_count",  # query_basic_* added 5.7, removed 6.0
                         "query_avg_rec_count",  # removed in 5.7
                     ),
                     converter=Converters.scientific_units,
@@ -745,6 +807,7 @@ info_sindex_sheet = Sheet(
             (
                 Field(
                     "Writes",
+                    # write_success removed in 6.0
                     Projectors.Number(
                         "sindex_stats", "write_success", "stat_write_success"
                     ),
@@ -753,6 +816,7 @@ info_sindex_sheet = Sheet(
                 ),
                 Field(
                     "Deletes",
+                    # delete_success removed in 6.0
                     Projectors.Number(
                         "sindex_stats", "delete_success", "stat_delete_success"
                     ),
@@ -919,7 +983,7 @@ summary_namespace_sheet = Sheet(
             Projectors.Number("ns_stats", "master_objects"),
             Converters.scientific_units,
         ),
-        Field("Compression Ratio", Projectors.Float("ns_stats", "compression-ratio")),
+        Field("Compression Ratio", Projectors.Float("ns_stats", "compression_ratio")),
     ),
     from_source="ns_stats",
     for_each="ns_stats",
@@ -1029,22 +1093,10 @@ show_object_distribution_sheet = Sheet(
 )
 
 
-def latency_weighted_avg(edatas):
-    total_ops_sec = 0.0
-    weighted_avg = 0.0
-
-    for edata in edatas:
-        latency = edata.value
-        ops_sec = edata.record["ops/sec"]
-
-        weighted_avg += latency * ops_sec
-        total_ops_sec += ops_sec
-
-    if not total_ops_sec:
-        return 0.0
-
-    weighted_avg /= total_ops_sec
-    return weighted_avg
+def latency_weighted_avg(edatas: EntryData):
+    pcts = map(lambda edata: edata.value, edatas)
+    ops_sec_values = map(lambda edata: edata.record["ops/sec"], edatas)
+    return weighted_avg(pcts, ops_sec_values)
 
 
 weightedAvgAggregator = ComplexAggregator(

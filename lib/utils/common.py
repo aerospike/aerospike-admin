@@ -48,6 +48,9 @@ comp_ops = {
     "!=": operator.ne,
 }
 
+# TODO:  This needs to be a data structure of some kind other than a map. Currently,
+# TODO:  it is difficult to read and reference values.  A dictionary of string -> tuple
+# TODO:  -> tuple.
 # Dictionary to contain feature and related stats to identify state of that feature.
 # xdr/dc stats are not coupled with xdr-dc configs because at this time it is not required.
 # In the future xdr, xdr/dc, and xdr/dc/namespace configs might need to be included.
@@ -83,6 +86,7 @@ FEATURE_KEYS = {
             "udf_bg_scans_failed",
         ),
         (
+            # pre 6.0, all of these stats have an equivalent Query stat post 6.0
             "scan_basic_complete",
             "scan_basic_error",
             "scan_aggr_complete",
@@ -93,7 +97,48 @@ FEATURE_KEYS = {
         None,
     ),
     "SIndex": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes"), None),
-    "Query": (("query_reqs", "query_success"), ("query_reqs", "query_success"), None),
+    "Query": (
+        ("query_reqs", "query_success"),
+        (
+            "query_reqs",
+            "query_success",
+        ),
+        None,
+    ),
+    "Primary Index Query": (
+        None,
+        (
+            # post 6.0 when queries and scans were unified into just queries
+            "pi_query_long_basic_complete",
+            "pi_query_long_basic_error",
+            "pi_query_short_basic_complete",
+            "pi_query_short_basic_error",
+            "pi_query_aggr_complete",
+            "pi_query_aggr_error",
+            "pi_query_udf_bg_complete",
+            "pi_query_udf_bg_error",
+            "pi_query_ops_bg_complete",
+            "pi_query_ops_bg_error",
+        ),
+        None,
+    ),
+    "SIndex Query": (
+        None,
+        (
+            # post 6.0 when queries and scans were unified into just queries
+            "si_query_long_basic_complete",
+            "si_query_long_basic_error",
+            "si_query_short_basic_complete",
+            "si_query_short_basic_error",
+            "si_query_aggr_complete",
+            "si_query_aggr_error",
+            "si_query_udf_bg_complete",
+            "si_query_udf_bg_error",
+            "si_query_ops_bg_complete",
+            "si_query_ops_bg_error",
+        ),
+        None,
+    ),
     "Aggregation": (
         ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
         ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
@@ -523,7 +568,7 @@ async def request_license_usage(agent_host, agent_port):
     timeout = aiohttp.ClientTimeout(total=10)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        entries_params = {"start", a_year_ago}
+        entries_params = {"start": a_year_ago}
         res_entries, res_health = await asyncio.gather(
             session.get(
                 "http://"
@@ -880,7 +925,7 @@ def create_summary(
             flash_index_used = sum(
                 util.get_value_from_second_level_of_dict(
                     ns_stats,
-                    ("index_pmem_used_bytes",),
+                    ("index_flash_used_bytes",),
                     default_value=0,
                     return_type=int,
                 ).values()

@@ -145,8 +145,9 @@ class SummaryController(LiveClusterCommandController):
         license_usage_future = None
 
         if agent_host is not None:
-            # Should happen synchronously so that we can cancel an notify in case of error.
-            license_usage_future = asyncio.create_task(
+            # needs to be ensure_future because async_cache returns an awaitable, not
+            # a coroutine.
+            license_usage_future = asyncio.ensure_future(
                 common.request_license_usage(agent_host, agent_port)
             )
 

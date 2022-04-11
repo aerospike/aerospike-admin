@@ -615,6 +615,14 @@ async def execute_asinfo_commands(
 
 
 async def main():
+    loop = asyncio.get_event_loop()
+
+    if get_version == "development":
+        loop.set_debug(True)
+    else:
+        # Do nothing in production. It is likely that another error occurred too that will be displayed.
+        loop.set_exception_handler(lambda loop, context: None)
+
     cli_args = conf.get_cli_args()
 
     admin_version = get_version()
@@ -807,7 +815,7 @@ async def main():
 
 
 def disable_coloring():
-    from .lib.view import terminal
+    from lib.view import terminal
 
     terminal.enable_color(False)
 
@@ -869,4 +877,7 @@ def get_version():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception:
+        pass

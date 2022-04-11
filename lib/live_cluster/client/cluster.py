@@ -19,19 +19,17 @@ import re
 import logging
 import inspect
 from time import time
-from typing import List
 from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
+from lib.live_cluster.client.types import Addr_Port_TLSName
 from lib.utils.async_object import AsyncObject
 
 from lib.utils.lookup_dict import LookupDict
-from lib.utils import util, constants
+from lib.utils import logger_debug, util, constants
 
 from . import client_util
 from .node import Node
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
-
+logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
 
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
@@ -44,7 +42,7 @@ class Cluster(AsyncObject):
 
     async def __init__(
         self,
-        seed_nodes,
+        seed_nodes: Addr_Port_TLSName,
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,
@@ -70,7 +68,7 @@ class Cluster(AsyncObject):
         self.use_services_alt = use_services_alt
 
         # self.nodes is a dict from Node ID -> Node objects
-        self.nodes = {}
+        self.nodes: dict[str, Node] = {}
 
         # to avoid multiple entries of endpoints for same server we are keeping
         # this pointers
@@ -80,8 +78,8 @@ class Cluster(AsyncObject):
         # and (ip, port) -> Node, and node.node_id -> Node
         self.node_lookup = LookupDict(LookupDict.PREFIX_MODE)
 
-        self._seed_nodes = set(seed_nodes)
-        self._live_nodes = set()
+        self._seed_nodes: set[Addr_Port_TLSName] = set(seed_nodes)
+        self._live_nodes: set[Addr_Port_TLSName] = set()
         self.ssl_context = ssl_context
 
         # crawl the cluster search for nodes in addition to the seed nodes.
@@ -190,7 +188,8 @@ class Cluster(AsyncObject):
             self.logger.error(e)
             return ""
 
-    def get_live_nodes(self):
+    def get_live_nodes(self) -> set[Addr_Port_TLSName]:
+        # TODO: why not return a reference to Node objects instead?
         return self._live_nodes
 
     def get_visibility_error_nodes(self):
@@ -221,12 +220,13 @@ class Cluster(AsyncObject):
                     # nodes which can't detect online nodes
                     continue
 
-                alumni_peers, peers = await asyncio.gather(
-                    node.get_alumni_peers(), node.get_peers(all=True)
+                alumni_peers, peers, alt_peers = await asyncio.gather(
+                    node.info_peers_alumni(), node.info_peers(), node.info_peers_alt()
                 )
                 alumni_peers = client_util.flatten(alumni_peers)
                 peers = client_util.flatten(peers)
-                not_visible = set(alumni_peers) - set(peers)
+                alt_peers = client_util.flatten(alt_peers)
+                not_visible = set(alumni_peers) - set(peers) - set(alt_peers)
 
                 if len(not_visible) >= 1:
                     for n in not_visible:
@@ -299,7 +299,7 @@ class Cluster(AsyncObject):
         """
         nodes_to_add = await self.find_new_nodes()
 
-        logger.debug("Nodes to add to cluster: %s", str(nodes_to_add))
+        logger.debug("Nodes to add to cluster: %s", nodes_to_add)
 
         if not nodes_to_add or len(nodes_to_add) == 0:
             return
@@ -310,6 +310,7 @@ class Cluster(AsyncObject):
 
             while unvisited - visited:
                 l_unvisited = list(unvisited)
+                logger.debug("Register nodes in cluster: %s", l_unvisited)
                 nodes = await client_util.concurrent_map(
                     self._register_node, l_unvisited
                 )
@@ -318,24 +319,37 @@ class Cluster(AsyncObject):
                     for node in nodes
                     if (node is not None and node.alive and node not in visited)
                 ]
+
+                # In the LB case, the LB seed node will be in unvisited but the actual AS node
+                # will be in "nodes".  This ensures we don't visit the same node twice.
+                visited |= set(
+                    [
+                        (node.ip, node.port, node.tls_name)
+                        for node in nodes
+                        if node is not None
+                    ]
+                )
                 visited |= unvisited
                 unvisited.clear()
 
                 if not self.only_connect_seed:
-                    services_list = map(self._get_services, live_nodes)
+                    visted_nodes_peers = map(self._get_peers, live_nodes)
 
-                    for node, services in zip(live_nodes, services_list):
-                        if isinstance(services, Exception):
+                    for node, peers in zip(live_nodes, visted_nodes_peers):
+                        if isinstance(peers, Exception):
                             continue
 
-                        for service in services:
-                            # service can be a list of tuples. Most likely just
+                        for peer in peers:
+                            # peer can be a list of tuples. Most likely just
                             # as single tuple though.
-                            for s in service:
+                            for s in peer:
                                 all_services.add(s)
 
                         all_services.add((node.ip, node.port, node.tls_name))
+
                 unvisited = all_services - visited
+                logger.debug("Peers to add to cluster: %s", unvisited)
+
             self._refresh_node_liveliness()
         except Exception:
             pass
@@ -366,7 +380,7 @@ class Cluster(AsyncObject):
         if node.alive:
             self.node_lookup[node.node_id] = node
 
-    def get_node(self, node) -> List[Node]:
+    def get_node(self, node) -> list[Node]:
         """
         node: str, either a nodes ip, id, fqdn, or a prefix of them.
         If ends with '*' then do a prefix match which can return multiple nodes.
@@ -529,7 +543,7 @@ class Cluster(AsyncObject):
         return None
 
     @staticmethod
-    def _get_services(node):
+    def _get_peers(node):
         """
         Given a node object return its services list / peers list
         """

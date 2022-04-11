@@ -158,7 +158,6 @@ class ASSocket:
             )
 
         if resp_code != ASResponse.OK:
-            self.sock.close()
             raise ASProtocolError(resp_code, "Unable to authenticate")
 
         return True

@@ -460,7 +460,9 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
         if read_quota is not None or write_quota is not None:
             if not await self._supports_quotas("principal"):
                 self.logger.warning(
-                    "'read' and 'write' modifiers are not supported on aerospike versions <= 5.5"
+                    "'read' and 'write' quotas are only supported on server v. {} and later.".format(
+                        constants.SERVER_QUOTAS_FIRST_VERSION
+                    )
                 )
 
         try:
@@ -2700,6 +2702,7 @@ class ManageJobsKillTridController(ManageLeafCommandController):
 class ManageJobsKillAllController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
+            "queries": ManageJobsKillAllQueriesController,
             "scans": ManageJobsKillAllScansController,
         }
 
@@ -2707,15 +2710,43 @@ class ManageJobsKillAllController(LiveClusterCommandController):
         self.execute_help(line)
 
 
+class ManageJobsKillAllLeafCommandController(ManageLeafCommandController):
+    async def _queries_supported(self):
+        builds = await self.cluster.info_build(nodes=self.nodes)
+
+        # TODO: This should be a utility
+        for build in builds.values():
+            if not isinstance(build, Exception) and version.LooseVersion(
+                build
+            ) >= version.LooseVersion(constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION):
+                return True
+
+        return False
+
+    async def _scans_supported(self):
+        return not await self._queries_supported()
+
+
 @CommandHelp(
-    '"manage jobs kill all scans" is used to abort all scan jobs.',
+    '"manage jobs kill all scans" is used to abort all scan jobs. Removed in server v.',
+    '{} and later. Use "manage jobs kill all queries" instead.'.format(
+        constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION
+    ),
     "Usage: kill all scans",
 )
-class ManageJobsKillAllScansController(ManageLeafCommandController):
+class ManageJobsKillAllScansController(ManageJobsKillAllLeafCommandController):
     def __init__(self):
         self.modifiers = {"with"}
 
     async def _do_default(self, line):
+        if not await self._scans_supported():
+            self.logger.error(
+                "Killing scans is not supported on server v. {} and later.".format(
+                    str(constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION)
+                )
+            )
+            return
+
         if self.warn:
             if self.nodes == "all":
                 if not self.prompt_challenge(
@@ -2731,5 +2762,42 @@ class ManageJobsKillAllScansController(ManageLeafCommandController):
                     return
 
         resp = await self.cluster.info_scan_abort_all(nodes=self.nodes)
+
+        self.view.print_info_responses("Kill Jobs", resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    '"manage jobs kill all queries" is used to abort all query jobs. Supported on',
+    "server v. {} and later.".format(constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION),
+    "Usage: kill all queries",
+)
+class ManageJobsKillAllQueriesController(ManageJobsKillAllLeafCommandController):
+    def __init__(self):
+        self.modifiers = {"with"}
+
+    async def _do_default(self, line):
+        if not await self._queries_supported():
+            self.logger.error(
+                "Killing all queries is only supported on server v. {} and later.".format(
+                    str(constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION)
+                )
+            )
+            return
+
+        if self.warn:
+            if self.nodes == "all":
+                if not self.prompt_challenge(
+                    "You're about to kill all query jobs on all nodes."
+                ):
+                    return
+            else:
+                if not self.prompt_challenge(
+                    "You're about to kill all query jobs on node(s): {}.".format(
+                        ", ".join(self.nodes)
+                    )
+                ):
+                    return
+
+        resp = await self.cluster.info_query_abort_all(nodes=self.nodes)
 
         self.view.print_info_responses("Kill Jobs", resp, self.cluster, **self.mods)
