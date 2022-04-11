@@ -28,8 +28,7 @@ def extract_section_from_live_cmd(command, command_raw_output, imap):
 
     sectionName = ""
     sectionId = "0"
-    for key in FILTER_LIST:
-        section = FILTER_LIST[key]
+    for key, section in FILTER_LIST.items():
         if "final_section_name" in section and section["final_section_name"] == command:
             sectionName = section["raw_section_name"]
             sectionId = key
@@ -1240,7 +1239,7 @@ def _parse_awsdata_section(imap, parsed_map):
 # Utils
 ##########
 
-# Assumption - Always a valid number is passed to convert to integer/float
+
 def change_key_name_in_map(datamap, old_keys, new_key):
     for key in old_keys:
         if key in datamap:

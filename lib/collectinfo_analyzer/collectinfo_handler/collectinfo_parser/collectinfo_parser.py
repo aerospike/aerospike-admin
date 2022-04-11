@@ -302,9 +302,6 @@ def _add_missing_config_data(
 
         conf_map = {}
         conf_map[node] = parsed_conf_map
-        # _add_missing_original_config_data(
-        #     conf_map, parsed_map, timestamps, node_to_ip_mapping, ignore_exception
-        # )
 
         _merge_nodelevel_map_to_mainmap(
             parsed_map,
