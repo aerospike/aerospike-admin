@@ -178,11 +178,13 @@ class RowRSheet(BaseRSheetCLI):
                 if has_aggregate:
                     row.append(render_field.aggregate_cell(group_ix))
 
-                render.append(self.decleration.formatted_vertical_separator.join(row))
+                render.append(
+                    self.decleration.formatted_vertical_separator_func().join(row)
+                )
 
             if num_groups > 1 and group_ix < num_groups - 1:
                 render.append(
-                    self.decleration.formatted_horizontal_seperator * title_width
+                    self.decleration.formatted_vertical_separator_func() * title_width
                 )
 
         num_rows = len(render_fields) * num_groups - hidden_count

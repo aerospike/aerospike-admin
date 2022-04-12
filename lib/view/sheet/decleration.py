@@ -14,6 +14,7 @@
 
 from collections import Counter
 import logging
+from typing import Callable
 
 from lib.utils import file_size
 from lib.view import terminal
@@ -78,10 +79,10 @@ class Sheet(object):
 
         self.vertical_separator = vertical_separator
         self.horizontal_seperator = horizontal_seperator
-        self.formatted_vertical_separator = (
+        self.formatted_vertical_separator_func: Callable[[], str] = lambda: (
             terminal.dim() + vertical_separator + terminal.undim()
         )
-        self.formatted_horizontal_seperator = (
+        self.formatted_horizontal_seperator_func: Callable[[], str] = lambda: (
             terminal.dim() + horizontal_seperator + terminal.undim()
         )
         self.title_fill = title_fill

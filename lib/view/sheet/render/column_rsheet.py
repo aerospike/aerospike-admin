@@ -84,7 +84,7 @@ class ColumnRSheet(BaseRSheetCLI):
 
         # Render fields.
         title_lines = [
-            self.decleration.formatted_vertical_separator.join(
+            self.decleration.formatted_vertical_separator_func().join(
                 rfield.get_title_line(line_num) for rfield in rfields
             )
             for line_num in range(n_title_lines)
@@ -110,7 +110,9 @@ class ColumnRSheet(BaseRSheetCLI):
 
                 num_lines += 1
                 row = [rfield.entry_cell(group_ix, entry_ix) for rfield in rfields]
-                render.append(self.decleration.formatted_vertical_separator.join(row))
+                render.append(
+                    self.decleration.formatted_vertical_separator_func().join(row)
+                )
 
             if has_aggregates:
                 if self.title_repeat and num_lines % repeats_every == 0:
@@ -118,7 +120,9 @@ class ColumnRSheet(BaseRSheetCLI):
 
                 num_lines += 1
                 row = [rfield.aggregate_cell(group_ix) for rfield in rfields]
-                render.append(self.decleration.formatted_vertical_separator.join(row))
+                render.append(
+                    self.decleration.formatted_vertical_separator_func().join(row)
+                )
 
         self._do_render_n_rows(render, self.n_records)
 
@@ -221,7 +225,7 @@ class RSubgroupColumn(BaseRSubgroup):
             line = self.title_lines[line_num]
         except IndexError:
             sub_line = line_num - len(self.title_lines)
-            line = self.rsheet.decleration.formatted_vertical_separator.join(
+            line = self.rsheet.decleration.formatted_vertical_separator_func().join(
                 sub.get_title_line(sub_line) for sub in self.visible
             )
 
@@ -231,12 +235,12 @@ class RSubgroupColumn(BaseRSubgroup):
         return terminal.bold() + line + terminal.unbold()
 
     def entry_cell(self, group_ix, entry_ix):
-        return self.rsheet.decleration.formatted_vertical_separator.join(
+        return self.rsheet.decleration.formatted_vertical_separator_func().join(
             sub.entry_cell(group_ix, entry_ix) for sub in self.visible
         )
 
     def aggregate_cell(self, group_ix):
-        return self.rsheet.decleration.formatted_vertical_separator.join(
+        return self.rsheet.decleration.formatted_vertical_separator_func().join(
             sub.aggregate_cell(group_ix) for sub in self.visible
         )
 

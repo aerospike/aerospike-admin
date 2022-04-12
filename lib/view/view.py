@@ -1169,7 +1169,7 @@ class CliView(object):
             yield val
 
     @staticmethod
-    def watch(ctrl, line):
+    async def watch(ctrl, line):
         diff_highlight = True
         sleep = 2.0
         num_iterations = False
@@ -1201,7 +1201,7 @@ class CliView(object):
 
             while True:
                 highlight = False
-                ctrl.execute(line[:])
+                await ctrl.execute(line[:])
                 output = mystdout.getvalue()
                 mystdout.truncate(0)
                 mystdout.seek(0)
