@@ -1922,7 +1922,7 @@ class ManageTruncateController(ManageLeafCommandController):
             nanoseconds = []
 
             if len(before) != 2:
-                raise ValueError(
+                raise ShellException(
                     'Last update time must be followed by "unix-epoch" or "iso-8601".'
                 )
 

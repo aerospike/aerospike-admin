@@ -15,6 +15,7 @@
 import inspect
 import re
 import logging
+from typing import Optional, Union
 
 from lib.health.health_checker import HealthChecker
 from lib.utils import util
@@ -316,7 +317,7 @@ class BaseController(object):
                 rv.append(result)
         return rv
 
-    async def execute(self, line):
+    async def execute(self, line) -> Union[None, str, list[None]]:
         # Init all command controller objects
         self._init()
 
@@ -324,6 +325,7 @@ class BaseController(object):
             self.pre_controller(line)
 
         method = self._find_method(line)
+        results = None
 
         if method:
             try:
@@ -350,8 +352,8 @@ class BaseController(object):
 
             except IOError as e:
                 raise ShellException(str(e))
-        else:
-            raise ShellException("Method was not set? %s" % (line))
+
+        raise ShellException("Method was not set? %s" % (line))
 
     def execute_help(self, line, indent=0, method=None, print_modifiers=True):
         self._init()

@@ -672,7 +672,7 @@ class Cluster(AsyncObject):
         if self.need_to_refresh_cluster():
             await self._refresh_cluster()
         ip_map = {}
-        for addr, other_addr in self.aliases.keys():
+        for addr, other_addr in self.aliases.items():
             try:
                 node = self.nodes.get(other_addr)
 

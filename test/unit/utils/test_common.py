@@ -36,7 +36,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
         test_cases = [
             {
                 "ns_stats": {},
-                "license_data": {},
+                "license_data": None,
                 "allow_unstable": False,
                 "exp_summary_dict": {},
             },
@@ -50,7 +50,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         }
                     }
                 },
-                "license_data": {},
+                "license_data": None,
                 "allow_unstable": False,
                 "exp_summary_dict": {
                     "CLUSTER": {"license_data": {"latest": 46000}},
@@ -67,7 +67,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         }
                     }
                 },
-                "license_data": {},
+                "license_data": None,
                 "allow_unstable": False,
                 "exp_summary_dict": {
                     "CLUSTER": {"license_data": {"latest": 100}},
@@ -93,7 +93,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         }
                     },
                 },
-                "license_data": {},
+                "license_data": None,
                 "allow_unstable": False,
                 "exp_summary_dict": {
                     "CLUSTER": {"license_data": {"latest": 500 + 250}},
@@ -132,7 +132,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         },
                     },
                 },
-                "license_data": {},
+                "license_data": None,
                 "allow_unstable": False,
                 "exp_summary_dict": {
                     "CLUSTER": {
