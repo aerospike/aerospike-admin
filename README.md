@@ -1,4 +1,8 @@
+# citrusleaf/aerospike-admin is now archived
+Future development will occur in our public [aerospike/aerospike-admin](https://github.com/aerospike/aerospike-admin) repo.
+
 # Aerospike Admin
+
 ## Description
 Aerospike Admin provides an interface for Aerospike users to view the stat
 of their Aerospike Cluster by fetching information from a running cluster (Cluster mode) 
