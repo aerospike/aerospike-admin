@@ -319,7 +319,7 @@ class ClusterTest(asynctest.TestCase):
 
     async def test_get_node_displaynames(self):
         cl = await self.get_cluster_mock(1)
-        expected = {"127.0.0.0:3000": "host.domain.local:3000"}
+        expected = {"127.0.0.0:3000": "host.domain.local:30"}
         self.assertEqual(
             cl.get_node_displaynames(),
             expected,

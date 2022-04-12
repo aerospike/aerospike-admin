@@ -2,13 +2,13 @@ import asyncio
 import os
 import logging
 from datetime import datetime
-from dateutil import parser as date_parser
+from typing import Optional
 from getpass import getpass
 from functools import reduce
 
 from lib.view import terminal
 from lib.utils import constants, util, version
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ShellException
 from lib.utils.lookup_dict import PrefixDict
 from .client import (
     ASInfoClusterStableError,
@@ -1911,7 +1911,7 @@ class ManageTruncateController(ManageLeafCommandController):
         self.required_modifiers = {"ns"}
         self.modifiers = {"set", "before", "undo"}
 
-    def _parse_lut(self):
+    def _parse_lut(self) -> tuple[Optional[datetime], Optional[str]]:
         lut_datetime = None  # datetime object
         lut_epoch_time = None  #
         error = None
@@ -1919,13 +1919,12 @@ class ManageTruncateController(ManageLeafCommandController):
 
         if len(before):
             seconds = None
-            nanoseconds = None
+            nanoseconds = []
 
             if len(before) != 2:
-                error = (
+                raise ValueError(
                     'Last update time must be followed by "unix-epoch" or "iso-8601".'
                 )
-                return lut_datetime, lut_epoch_time, error
 
             if "unix-epoch" in before:
                 before.remove("unix-epoch")
@@ -1934,9 +1933,8 @@ class ManageTruncateController(ManageLeafCommandController):
                 try:
                     # Create a naive datetime object.
                     lut_datetime = datetime.utcfromtimestamp(float(lut_time))
-                except ValueError:
-                    error = "Invalid unix-epoch format."
-                    return lut_datetime, lut_epoch_time, error
+                except ValueError as e:
+                    raise ShellException(e)
 
                 lut_time = lut_time.split(".")
                 seconds = lut_time[0]
@@ -1947,14 +1945,12 @@ class ManageTruncateController(ManageLeafCommandController):
                 lut_time = before[0]
 
                 try:
-                    lut_datetime = date_parser.isoparse(lut_time)
-                except ValueError:
-                    error = "Invalid iso-8601 format."
-                    return lut_datetime, lut_epoch_time, error
+                    lut_datetime = datetime.fromisoformat(lut_time)
+                except ValueError as e:
+                    raise ShellException(e)
 
                 if lut_datetime.tzinfo is None:
-                    error = "iso-8601 format must contain a timezone."
-                    return lut_datetime, lut_epoch_time, error
+                    raise ShellException("iso-8601 format must contain a timezone.")
 
                 lut_time = str(lut_datetime.timestamp())
                 lut_time = lut_time.split(".")
@@ -1962,19 +1958,15 @@ class ManageTruncateController(ManageLeafCommandController):
 
             else:
                 # They used something besides "unix-epoch" or "iso-8601"
-                error = (
+                raise ShellException(
                     'Last update time must be followed by "unix-epoch" or "iso-8601".'
                 )
-                return lut_datetime, lut_epoch_time, error
-
             # server gives ambiguous error when not exactly the right num of digits.
             if len(seconds) > 10:
-                error = "Date provided is too far in the future."
-                return lut_datetime, lut_epoch_time, error
+                raise ShellException("Date provided is too far in the future.")
 
             if len(seconds) < 10:
-                error = "Date provided is too far in the past."
-                return lut_datetime, lut_epoch_time, error
+                raise ShellException("Date provided is too far in the past.")
 
             if len(lut_time) == 2:
                 nanoseconds = list(lut_time[1])
@@ -1986,7 +1978,7 @@ class ManageTruncateController(ManageLeafCommandController):
 
             logger.debug("ManageTruncate epoch time %s", lut_epoch_time)
 
-        return lut_datetime, lut_epoch_time, error
+        return lut_datetime, lut_epoch_time
 
     async def _get_namespace_master_objects(self, namespace):
         """
@@ -2109,11 +2101,7 @@ class ManageTruncateController(ManageLeafCommandController):
             self.logger.error('"undo" and "before" are mutually exclusive.')
             return
 
-        lut_datetime, lut_epoch_time, error = self._parse_lut()
-
-        if error is not None:
-            self.logger.error(error)
-            return
+        lut_datetime, lut_epoch_time = self._parse_lut()
 
         if warn:
             prompt = None

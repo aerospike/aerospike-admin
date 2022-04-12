@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import sys
+from typing import Union
 
 _add_it = None
 _remove_it = None
@@ -48,7 +49,7 @@ esc = None
 term = None
 
 sclear_code = None
-cur_format = None
+cur_format: Union[list[str], set[str], None] = None
 
 
 def enable_color(is_enable):
@@ -146,14 +147,14 @@ def enable_color(is_enable):
         sclear_code = ""
         cur_format = list()
 
-        def _add_it(decoration):
+        def _add_it(decoration) -> str:
             if decoration in cur_format:
                 return ""  # nothing to do
             else:
                 cur_format.append(decoration)
                 return decoration
 
-        def _remove_it(decoration, decoration_clear=""):
+        def _remove_it(decoration, decoration_clear="") -> str:
             if decoration in cur_format:
                 cur_format.remove(decoration)
                 return decoration

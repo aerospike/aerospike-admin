@@ -285,7 +285,7 @@ class SSLContext(object):
     def _verify_none_cb(self, conn, cert, errnum, depth, ok):
         return ok
 
-    def _cert_blacklist_check(self, cert=None):
+    def _cert_blacklist_check(self, cert: crypto.X509=None):
         if not cert:
             raise ValueError("Empty or no Server Certificate for authentication")
         if not self._cert_blacklist:

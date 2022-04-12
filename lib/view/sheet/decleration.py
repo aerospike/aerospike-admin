@@ -12,335 +12,240 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from ast import Call
 from collections import Counter
 import logging
+from tkinter import Entry
+from typing import Any, Callable, Generic, Optional, Tuple, TypeVar, Union
 
 from lib.utils import file_size
 from lib.view import terminal
 
-from .const import DynamicFieldOrder, FieldType, SheetStyle
+from .const import DynamicFieldOrder, FieldAlignment, FieldType, SheetStyle
 from .source import source_lookup, source_root
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
 
 
-class Sheet(object):
+class NoEntryException(Exception):
+    pass
+
+
+class ErrorEntryException(Exception):
+    def __init__(self, error, *args):
+        self.exc = error
+        super().__init__(*args)
+
+
+class EntryValue:
+    def __init__(self, value):
+        self.value = value
+
+
+class EntryData(EntryValue):
     def __init__(
         self,
-        fields,
-        from_source=None,
-        for_each=None,
-        where=None,
-        group_by=None,
-        order_by=None,
-        default_style=SheetStyle.columns,
-        title_fill="~",
-        subtitle_fill="~",
-        subtitle_empty_line="",
-        vertical_separator="|",
-        horizontal_seperator="-",
-        no_entry="--",
-        error_entry="~~",
-    ):
-        """Instantiates a sheet definition.
-        Arguments:
-        fields -- Sequence of fields to present.
-
-        Keyword Arguments:
-        from_sources  -- (Required) A sequence of source names that are
-                         required for rendering (used for sanity checks only).
-        for_each      -- A field who's data-source contains multiple sets of
-                         values.
-        where         -- Function to determine if a record should be shown.
-        group_by      -- Field or sequence of fields to group records by.
-        order_by      -- Field or sequence of fields sort the records by.
-        title_fill    --
-        subtitle_fill --
-        subtitle_empty_line --
-        separator     -- String used to separate fields.
-        no_entry      -- String used when a field is present but a particular
-                         key is missing.
-        error_entry   -- String used when a field's data-source is not a dict
-                         or sequence.
-        """
-        self.fields = fields
-        # XXX - Support TitleFields in SubGroups?
-        self.title_field_keys = set(
-            field.key for field in fields if isinstance(field, TitleField)
-        )
-        self.from_sources = self._arg_as_tuple(from_source)
-        self.where = where
-        self.for_each = self._arg_as_tuple(for_each)
-        self.group_bys = self._arg_as_tuple(group_by)
-        self.order_bys = self._arg_as_tuple(order_by)
-        self.default_style = default_style
-
-        self.vertical_separator = vertical_separator
-        self.horizontal_seperator = horizontal_seperator
-        self.formatted_vertical_separator = (
-            terminal.dim() + vertical_separator + terminal.undim()
-        )
-        self.formatted_horizontal_seperator = (
-            terminal.dim() + horizontal_seperator + terminal.undim()
-        )
-        self.title_fill = title_fill
-        self.subtitle_fill = subtitle_fill
-        self.subtitle_empty_line = subtitle_empty_line
-
-        self.no_entry = no_entry
-        self.error_entry = error_entry
-
-        self.has_aggregates = any(f.has_aggregate for f in fields)
-
-        self._init_sanity_check()
-
-    def _arg_as_tuple(self, arg):
-        if arg is None:
-            return tuple()
-        elif isinstance(arg, tuple):
-            return arg
-        elif isinstance(arg, list):
-            return tuple(arg)
-        elif isinstance(arg, str):
-            return (arg,)
-
-        raise ValueError(
-            "Expected tuple, list or string - instead {}".format(type(arg))
-        )
-
-    def _init_sanity_check(self):
-        # Ensure 'group_bys' and 'sort_bys' are in 'fields'.
-        # NOTE - currently cannot group_by/sort_by a member of a Subgroup.
-        static_fields = [
-            field for field in self.fields if not isinstance(field, DynamicFields)
-        ]
-        field_set = set(field.key for field in static_fields)
-
-        if len(field_set) != len(static_fields):
-            field_keys = ",".join(
-                (
-                    "{} appears {} times".format(key, count)
-                    for count, key in Counter(
-                        field.key for field in static_fields
-                    ).items()
-                    if count > 1
-                )
-            )
-
-            assert False, "Field keys are not unique: {}".format(field_keys)
-
-        if self.group_bys:
-            group_by_set = set(self.group_bys)
-            assert len(group_by_set) == len(self.group_bys)
-        else:
-            group_by_set = set()
-
-        if self.order_bys:
-            order_by_set = set(self.order_bys)
-            assert len(order_by_set) == len(self.order_bys)
-        else:
-            order_by_set = set()
-
-        error_groups = group_by_set - field_set
-        error_orders = order_by_set - field_set
-
-        assert not error_groups, error_groups
-        assert not error_orders, error_orders
-
-        assert self.from_sources, "require a list of expected field sources"
-
-        sources_set = set(source_root(s) for s in self.from_sources)
-
-        assert len(sources_set) == len(self.from_sources)
-
-        seen_sources_set = set()
-
-        def populate_seen_sources(fields):
-            for field in fields:
-                if isinstance(field, Subgroup):
-                    return populate_seen_sources(field.fields)
-
-                assert not isinstance(
-                    field, DynamicFields
-                ), "DynamicFields cannot be members of Subgroups."
-
-                try:
-                    sources = field.projector.sources
-                except AttributeError:
-                    sources = set([field.projector.source])
-
-                assert sources - sources_set == set(), "{} not subset of {}".format(
-                    sources, sources_set
-                )
-
-                seen_sources_set.update(sources)
-
-        populate_seen_sources(static_fields)
-
-        for field in self.fields:
-            if isinstance(field, DynamicFields):
-                seen_sources_set.add(source_root(field.source))
-
-        assert len(seen_sources_set) == len(sources_set)
-
-        if self.for_each:
-            for_each_set = set(self.for_each)
-            assert len(for_each_set) == len(self.for_each)
-        else:
-            for_each_set = set()
-
-        assert for_each_set - sources_set == set()
-
-
-class Subgroup(object):
-    def __init__(self, title, fields, key=None):
-        """
-        Arguments:
-        title  -- Name in this Field's heading
-        fields -- Sequence of sub-fields.
-
-        Keyword Arguments:
-        key -- Alternative key to access this key from the parent sheet.
-        """
-        self.title = title
-        self.fields = fields
-        self.key = title if key is None else key
-
-        self.has_aggregate = any(f.has_aggregate for f in fields)
-
-
-class Field(object):
-    def __init__(
-        self,
-        title,
-        projector,
-        converter=None,
-        formatters=None,
-        aggregator=None,
-        align=None,
-        key=None,
-        hidden=None,
-        dynamic_field_decl=None,
-        allow_diff=False,
+        value: Any,
+        values,
+        record: dict[str, Any],
+        common,
+        is_error: bool,
+        is_no_entry: bool,
     ):
         """
-        Arguments:
-        title     -- Name in this Field's heading
-        projector -- How to retrieve a field entry from the fields data_source.
-
         Keyword Arguments:
-        converter  -- Typically used to convert numbers to SI formats.
-        formatters -- List of cell formatters functions, evaluated in order,
-                      first format to not return None is applied - rest will be
-                      ignored. These may *not* change the length of the
-                      rendered value.
-        aggregator -- Function that generates an aggregate value to be
-                      displayed at the end of a group.
-        align      -- None    : Allow sheet to choose alignment.
-                      'left'  : Always align left.
-                      'right' : Always align right.
-                      'center': Always align center.
-        key        -- Alternative key to access this key from the parent sheet.
-        hidden     -- None : Visible if there are any entries.
-                      True : Always visible.
-                      False: Always hidden.
-        dynamic_field_decl -- None if not from DynamicFields.
-                              Otherwise DynamicFields instance.
-        allow_diff -- A non dynamic field by default does not allow diff and is always
-                      displayed. This is mutally exclusive with dynamic_field_decl.
-                      True: Allow diff.
-                      False: Don't diff.
-                      Default: False
+        value  -- Unconverted entry of a field.
+        values -- Sequence of unconverted values for the current group or a
+                  field.
+        record -- Cross-section of all fields at this entry's position.
+        common -- A dictionary of common data supplied to all fields.
         """
-        self.title = title
-        self.projector = projector
-        self.converter = Converters.standard if converter is None else converter
-        self.formatters = [] if formatters is None else formatters
-        self.aggregator = aggregator
-        self.align = align
-        self.key = title if key is None else key
-        self.hidden = hidden
-        self.dynamic_field_decl = dynamic_field_decl
-        self.allow_diff = allow_diff
-
-        self.has_aggregate = self.aggregator is not None
-
-        # Pre-compute commonly accessed data.
-        self.title_words = tuple(title.split(" "))
-        self.min_title_width = max(map(len, self.title_words))
+        super().__init__(value)
+        self.values = values
+        self.record = record
+        self.common = common
+        self.is_error = is_error
+        self.is_no_entry = is_no_entry
 
 
-class TitleField(Field):
-    def __init__(
-        self,
-        title,
-        projector,
-        converter=None,
-        formatters=None,
-        aggregator=None,
-        align=None,
-        key=None,
-    ):
-        if formatters is None:
-            formatters = (Formatters.bold(lambda _: True),)
+ConverterType = Callable[[EntryData], Any]
 
-        super(TitleField, self).__init__(
-            title,
-            projector,
-            converter=converter,
-            formatters=formatters,
-            aggregator=aggregator,
-            align=align,
-            key=key,
+
+class Converters:
+    @staticmethod
+    def _file_size(value, unit):
+        try:
+            return file_size.size(value, unit)
+        except Exception:
+            return value
+
+    @staticmethod
+    def byte(edata: EntryValue):
+        """
+        Arguments:
+        edata -- Take an 'EntryData' and returns the value as byte units.
+        """
+        return Converters._file_size(edata.value, file_size.byte)
+
+    @staticmethod
+    def scientific_units(edata: EntryValue):
+        """
+        Arguments:
+        edata -- Take an 'EntryData' and returns the value as floating pint
+                 International System Units.
+        """
+        return Converters._file_size(edata.value, file_size.si_float)
+
+    @staticmethod
+    def time_seconds(edata: EntryValue):
+        """
+        Arguments:
+        edata -- Take an 'EntryData' and returns the value as time with format
+                 HH:MM:SS.
+        """
+        time_stamp = int(edata.value)
+        hours = time_stamp // 3600
+        minutes = (time_stamp % 3600) // 60
+        seconds = time_stamp % 60
+
+        return "{:02}:{:02}:{:02}".format(hours, minutes, seconds)
+
+    @staticmethod
+    def time_milliseconds(edata: EntryValue):
+        """
+        Arguments:
+        edata -- Take an 'EntryData' and returns the value as time with format
+                 HH:MM:SS.
+        """
+        edata.value = int(edata.value) / 1000
+        return Converters.time_seconds(edata)
+
+    @staticmethod
+    def standard(edata: EntryValue):
+        """
+        Arguments:
+        edata -- Take an 'EntryData' and returns the value as a string.
+        """
+        return str(edata.value)
+
+    @staticmethod
+    def _list_to_str(edataVal: list[Union[str, int]], separator: str):
+        return ",".join(str(val) for val in edataVal)
+
+    @staticmethod
+    def list_to_comma_sep_str(edata: EntryValue):
+        if edata.value:
+            return Converters._list_to_str(edata.value, ", ")
+
+        return "--"
+
+    @staticmethod
+    def round(decimal: int):
+        def fun(edata: EntryValue):
+            return round(float(edata.value), decimal)
+
+        return fun
+
+
+FormatterPredicateFnType = Callable[[EntryData], bool]
+FormatterType = tuple[str, Callable[[EntryData], Union[Callable[[str], str], None]]]
+FormatterCreatorType = Callable[
+    [FormatterPredicateFnType],
+    FormatterType,
+]
+
+
+class Formatters(object):
+    @staticmethod
+    def _apply_style(
+        style: Callable[[], str], not_style: Callable[[], str]
+    ) -> Callable[[str], str]:
+        return lambda unformatted: style() + unformatted + not_style()
+
+    @staticmethod
+    def _should_apply(
+        predicate_fn: FormatterPredicateFnType,
+        style: Callable[[], str],
+        not_style: Callable[[], str],
+    ) -> Callable[[EntryData], Union[Callable[[str], str], None]]:
+        def _should_apply_helper(edata: EntryData) -> Union[Callable[[str], str], None]:
+            if edata.value is None:
+                return None
+
+            try:
+                if predicate_fn(edata):
+                    return Formatters._apply_style(style, not_style)
+                else:
+                    return None
+            except Exception:
+                return None
+
+        return _should_apply_helper
+
+    @staticmethod
+    def red_alert(
+        predicate_fn: FormatterPredicateFnType,
+    ) -> FormatterType:
+        """
+        Arguments:
+        predicate_fn -- A function that accepts an 'EntryData' and if true sets
+                        the foreground color to red for the entry.
+
+        Return:
+        A tuple containing the string form of the alert and the function to
+        apply to formatting to a cell.
+        """
+        return (
+            "red-alert",
+            Formatters._should_apply(
+                predicate_fn, terminal.fg_red, terminal.fg_not_red
+            ),
+        )
+
+    @staticmethod
+    def yellow_alert(
+        predicate_fn: FormatterPredicateFnType,
+    ) -> FormatterType:
+        """Similar to red_alert but yellow instead of red."""
+
+        return (
+            "yellow-alert",
+            Formatters._should_apply(
+                predicate_fn, terminal.fg_yellow, terminal.fg_not_yellow
+            ),
+        )
+
+    @staticmethod
+    def green_alert(
+        predicate_fn: FormatterPredicateFnType,
+    ) -> FormatterType:
+        """Similar to red_alert but green instead of red."""
+        return (
+            "green-alert",
+            Formatters._should_apply(
+                predicate_fn, terminal.fg_green, terminal.fg_not_green
+            ),
+        )
+
+    @staticmethod
+    def bold(
+        predicate_fn: FormatterPredicateFnType,
+    ) -> FormatterType:
+        """Applies bold formatting if predicate evaluates to True."""
+        return (
+            "bold",
+            Formatters._should_apply(predicate_fn, terminal.bold, terminal.unbold),
         )
 
 
-class DynamicFields(object):
-    def __init__(
-        self,
-        source,
-        infer_projectors=True,
-        required=False,
-        aggregator_selector=None,
-        projector_selector=None,
-        converter_selector=None,
-        order=DynamicFieldOrder.ascending,
-    ):
-        """
-        Arguments:
-        source -- Data source to project fields from.
-
-        Keyword Arguments:
-        infer_projectors -- True : If true, will try to infer a projector for a
-                            field.
-        aggregator_selector -- None: Function used to select aggregator.  Function
-                               will take the form (key, is_numeric) -> Aggregator.
-                               Key is the row or column header.  is_numeric is passed
-                               in by the rendering function and allows the developer
-                               to know if the the projected value is a numeric value,
-                               i.e. you can use arithmetic aggregators. If none,
-                               no aggregation is used.
-        projector_selector -- None: Function used to select a projector. Function
-                              will take the form (key) -> Projector.  If none and
-                              infer_projector is false String projection is used.
-
-        Note: If a preceding non-dynamic Field uses the same key it will not be rendered
-              by a proceding DynamicField.
-        """
-        self.source = source
-        self.infer_projectors = infer_projectors
-        self.required = required
-        self.projector_selector = projector_selector
-        self.aggregator_selector = aggregator_selector
-        self.converter_selector = converter_selector
-        self.order = order
-
-        self.has_aggregate = False  # XXX - hack
+AggregatorFunc = Callable[..., Any]
 
 
 class Aggregator(object):
-    def __init__(self, aggregate_func, converter=None):
+    def __init__(
+        self, aggregate_func: AggregatorFunc, converter: Optional[ConverterType] = None
+    ):
         """
         Arguments:
         aggregate_func -- aggregate function. Type determined by subclass
@@ -357,8 +262,17 @@ class Aggregator(object):
         raise NotImplementedError("override compute")
 
 
-class ReduceAggregator(Aggregator):
-    def __init__(self, aggregate_func, initializer=None, converter=None):
+ReduceAggregatorReturnType = TypeVar("ReduceAggregatorReturnType")
+ReduceAggregatorFunc = Callable[[Any, Any], ReduceAggregatorReturnType]
+
+
+class ReduceAggregator(Aggregator, Generic[ReduceAggregatorReturnType]):
+    def __init__(
+        self,
+        aggregate_func: ReduceAggregatorFunc,
+        initializer=None,
+        converter: Optional[ConverterType] = None,
+    ):
         """
         Arguments:
         aggregate_func -- function accepts 2 arguments and returns a value.
@@ -366,10 +280,14 @@ class ReduceAggregator(Aggregator):
         self.initializer = initializer
         super().__init__(aggregate_func, converter=converter)
 
-    def compute(self, values):
-        return self.reduce(values)
+    def compute(
+        self, edatas: list[EntryValue]
+    ) -> Union[ReduceAggregatorReturnType, None]:
+        return self._reduce(edatas)
 
-    def reduce(self, edatas):
+    def _reduce(
+        self, edatas: list[EntryValue]
+    ) -> Union[ReduceAggregatorReturnType, None]:
         initialized = False
         result = None
 
@@ -394,7 +312,11 @@ class ReduceAggregator(Aggregator):
 
 
 class ComplexAggregator(Aggregator):
-    def __init__(self, aggregate_func, converter=None):
+    def __init__(
+        self,
+        aggregate_func: Callable[[list[EntryData]], Any],
+        converter: Optional[ConverterType] = None,
+    ):
         """
         An aggregator that takes all the entires in a group for a more complex calculation.
 
@@ -404,8 +326,14 @@ class ComplexAggregator(Aggregator):
         """
         super().__init__(aggregate_func, converter=converter)
 
-    def compute(self, edatas):
+    def compute(self, edatas: list[EntryData]):
         return self.func(edatas)
+
+
+AggregatorCreatorType = Callable[
+    [Any, Optional[ConverterType]],
+    ReduceAggregator,
+]
 
 
 class Aggregators(object):
@@ -581,7 +509,7 @@ class Projectors(object):
     class Number(String):
         field_type = FieldType.number
 
-        def do_project(self, sheet, sources):
+        def do_project(self, sheet, sources) -> Any:
             """
             Arguments:
             source -- A set of sources to project a number from.
@@ -791,169 +719,317 @@ class Projectors(object):
             return row
 
 
-class EntryData(object):
-    def __init__(self, **kwargs):
+class Field(object):
+    def __init__(
+        self,
+        title: str,
+        projector: BaseProjector,
+        converter: Optional[ConverterType] = None,
+        formatters: Optional[tuple[FormatterType, ...]] = None,
+        aggregator: Optional[Aggregator] = None,
+        align: Optional[str] = None,
+        key: Optional[str] = None,
+        hidden: Optional[bool] = None,
+        dynamic_field_decl: Optional[bool] = None,
+        allow_diff: bool = False,
+    ):
         """
+        Arguments:
+        title     -- Name in this Field's heading
+        projector -- How to retrieve a field entry from the fields data_source.
+
         Keyword Arguments:
-        value  -- Unconverted entry of a field.
-        values -- Sequence of unconverted values for the current group or a
-                  field.
-        record -- Cross-section of all fields at this entry's position.
-        common -- A dictionary of common data supplied to all fields.
+        converter  -- Typically used to convert numbers to SI formats.
+        formatters -- List of cell formatters functions, evaluated in order,
+                      first format to not return None is applied - rest will be
+                      ignored. These may *not* change the length of the
+                      rendered value.
+        aggregator -- Function that generates an aggregate value to be
+                      displayed at the end of a group.
+        align      -- None    : Allow sheet to choose alignment.
+                      'left'  : Always align left.
+                      'right' : Always align right.
+                      'center': Always align center.
+        key        -- Alternative key to access this key from the parent sheet.
+        hidden     -- None : Visible if there are any entries.
+                      True : Always visible.
+                      False: Always hidden.
+        dynamic_field_decl -- None if not from DynamicFields.
+                              Otherwise DynamicFields instance.
+        allow_diff -- A non dynamic field by default does not allow diff and is always
+                      displayed. This is mutally exclusive with dynamic_field_decl.
+                      True: Allow diff.
+                      False: Don't diff.
+                      Default: False
         """
-        self.__dict__.update(kwargs)
+        self.title = title
+        self.projector = projector
+        self.converter = Converters.standard if converter is None else converter
+        self.formatters = [] if formatters is None else formatters
+        self.aggregator = aggregator
+        self.align = align
+        self.key = title if key is None else key
+        self.hidden = hidden
+        self.dynamic_field_decl = dynamic_field_decl
+        self.allow_diff = allow_diff
+
+        self.has_aggregate = self.aggregator is not None
+
+        # Pre-compute commonly accessed data.
+        self.title_words = tuple(title.split(" "))
+        self.min_title_width = max(map(len, self.title_words))
 
 
-class Converters(object):
-    @staticmethod
-    def _file_size(value, unit):
-        try:
-            return file_size.size(value, unit)
-        except Exception:
-            return value
+class TitleField(Field):
+    def __init__(
+        self,
+        title,
+        projector,
+        converter=None,
+        formatters=None,
+        aggregator=None,
+        align=None,
+        key=None,
+    ):
+        if formatters is None:
+            formatters = (Formatters.bold(lambda _: True),)
 
-    @staticmethod
-    def byte(edata):
-        """
-        Arguments:
-        edata -- Take an 'EntryData' and returns the value as byte units.
-        """
-        return Converters._file_size(edata.value, file_size.byte)
-
-    @staticmethod
-    def scientific_units(edata):
-        """
-        Arguments:
-        edata -- Take an 'EntryData' and returns the value as floating pint
-                 International System Units.
-        """
-        return Converters._file_size(edata.value, file_size.si_float)
-
-    @staticmethod
-    def time_seconds(edata):
-        """
-        Arguments:
-        edata -- Take an 'EntryData' and returns the value as time with format
-                 HH:MM:SS.
-        """
-        time_stamp = int(edata.value)
-        hours = time_stamp // 3600
-        minutes = (time_stamp % 3600) // 60
-        seconds = time_stamp % 60
-
-        return "{:02}:{:02}:{:02}".format(hours, minutes, seconds)
-
-    @staticmethod
-    def time_milliseconds(edata):
-        """
-        Arguments:
-        edata -- Take an 'EntryData' and returns the value as time with format
-                 HH:MM:SS.
-        """
-        edata.value = int(edata.value) / 1000
-        return Converters.time_seconds(edata)
-
-    @staticmethod
-    def standard(edata):
-        """
-        Arguments:
-        edata -- Take an 'EntryData' and returns the value as a string.
-        """
-        return str(edata.value)
-
-    @staticmethod
-    def _list_to_str(edata, separator):
-        return separator.join(edata)
-
-    @staticmethod
-    def list_to_comma_sep_str(edata):
-        if len(edata.value):
-            return Converters._list_to_str(edata.value, ", ")
-
-        return "--"
-
-    @staticmethod
-    def round(decimal):
-        def fun(edata):
-            return round(float(edata.value), decimal)
-
-        return fun
-
-
-class Formatters(object):
-    @staticmethod
-    def _apply_style(style, not_style):
-        return lambda unformatted: style() + unformatted + not_style()
-
-    @staticmethod
-    def _should_apply(predicate_fn, style, not_style):
-        def _should_apply_helper(edata):
-            if edata.value is None:
-                return None
-
-            try:
-                if predicate_fn(edata):
-                    return Formatters._apply_style(style, not_style)
-                else:
-                    return None
-            except Exception:
-                return None
-
-        return _should_apply_helper
-
-    @staticmethod
-    def red_alert(predicate_fn):
-        """
-        Arguments:
-        predicate_fn -- A function that accepts an 'EntryData' and if true sets
-                        the foreground color to red for the entry.
-
-        Return:
-        A tuple containing the string form of the alert and the function to
-        apply to formatting to a cell.
-        """
-        return (
-            "red-alert",
-            Formatters._should_apply(
-                predicate_fn, terminal.fg_red, terminal.fg_not_red
-            ),
-        )
-
-    @staticmethod
-    def yellow_alert(predicate_fn):
-        """Similar to red_alert but yellow instead of red."""
-
-        return (
-            "yellow-alert",
-            Formatters._should_apply(
-                predicate_fn, terminal.fg_yellow, terminal.fg_not_yellow
-            ),
-        )
-
-    @staticmethod
-    def green_alert(predicate_fn):
-        """Similar to red_alert but green instead of red."""
-        return (
-            "green-alert",
-            Formatters._should_apply(
-                predicate_fn, terminal.fg_green, terminal.fg_not_green
-            ),
-        )
-
-    @staticmethod
-    def bold(predicate_fn):
-        """Applies bold formatting if predicate evaluates to True."""
-        return (
-            "bold",
-            Formatters._should_apply(predicate_fn, terminal.bold, terminal.unbold),
+        super(TitleField, self).__init__(
+            title,
+            projector,
+            converter=converter,
+            formatters=formatters,
+            aggregator=aggregator,
+            align=align,
+            key=key,
         )
 
 
-class NoEntryException(Exception):
-    pass
+class Subgroup(object):
+    def __init__(
+        self, title: str, fields: tuple[Field, ...], key: Optional[str] = None
+    ):
+        """
+        Arguments:
+        title  -- Name in this Field's heading
+        fields -- Sequence of sub-fields.
+
+        Keyword Arguments:
+        key -- Alternative key to access this key from the parent sheet.
+        """
+        self.title = title
+        self.fields = fields
+        self.key = title if key is None else key
+
+        self.has_aggregate = any(f.has_aggregate for f in fields)
 
 
-class ErrorEntryException(Exception):
-    def __init__(self, error, *args):
-        self.exc = error
-        super().__init__(*args)
+class DynamicFields(object):
+    def __init__(
+        self,
+        source,
+        infer_projectors=True,
+        required=False,
+        aggregator_selector=None,
+        projector_selector=None,
+        converter_selector=None,
+        order=DynamicFieldOrder.ascending,
+    ):
+        """
+        Arguments:
+        source -- Data source to project fields from.
+
+        Keyword Arguments:
+        infer_projectors -- True : If true, will try to infer a projector for a
+                            field.
+        aggregator_selector -- None: Function used to select aggregator.  Function
+                               will take the form (key, is_numeric) -> Aggregator.
+                               Key is the row or column header.  is_numeric is passed
+                               in by the rendering function and allows the developer
+                               to know if the the projected value is a numeric value,
+                               i.e. you can use arithmetic aggregators. If none,
+                               no aggregation is used.
+        projector_selector -- None: Function used to select a projector. Function
+                              will take the form (key) -> Projector.  If none and
+                              infer_projector is false String projection is used.
+
+        Note: If a preceding non-dynamic Field uses the same key it will not be rendered
+              by a proceding DynamicField.
+        """
+        self.source = source
+        self.infer_projectors = infer_projectors
+        self.required = required
+        self.projector_selector = projector_selector
+        self.aggregator_selector = aggregator_selector
+        self.converter_selector = converter_selector
+        self.order = order
+
+        self.has_aggregate = False  # XXX - hack
+
+
+class Sheet(object):
+    def __init__(
+        self,
+        fields: tuple[Union[Field, Subgroup, DynamicFields], ...],
+        from_source=None,
+        for_each=None,
+        where=None,
+        group_by=None,
+        order_by=None,
+        default_style=SheetStyle.columns,
+        title_fill="~",
+        subtitle_fill="~",
+        subtitle_empty_line="",
+        vertical_separator="|",
+        horizontal_seperator="-",
+        no_entry="--",
+        error_entry="~~",
+    ):
+        """Instantiates a sheet definition.
+        Arguments:
+        fields -- Sequence of fields to present.
+
+        Keyword Arguments:
+        from_sources  -- (Required) A sequence of source names that are
+                         required for rendering (used for sanity checks only).
+        for_each      -- A field who's data-source contains multiple sets of
+                         values.
+        where         -- Function to determine if a record should be shown.
+        group_by      -- Field or sequence of fields to group records by.
+        order_by      -- Field or sequence of fields sort the records by.
+        title_fill    --
+        subtitle_fill --
+        subtitle_empty_line --
+        separator     -- String used to separate fields.
+        no_entry      -- String used when a field is present but a particular
+                         key is missing.
+        error_entry   -- String used when a field's data-source is not a dict
+                         or sequence.
+        """
+        self.fields = fields
+        # XXX - Support TitleFields in SubGroups?
+        self.title_field_keys = set(
+            field.key for field in fields if isinstance(field, TitleField)
+        )
+        self.from_sources = self._arg_as_tuple(from_source)
+        self.where = where
+        self.for_each = self._arg_as_tuple(for_each)
+        self.group_bys = self._arg_as_tuple(group_by)
+        self.order_bys = self._arg_as_tuple(order_by)
+        self.default_style = default_style
+
+        self.vertical_separator = vertical_separator
+        self.horizontal_seperator = horizontal_seperator
+        self.formatted_vertical_separator_func = lambda: (
+            terminal.dim() + vertical_separator + terminal.undim()
+        )
+        self.formatted_horizontal_seperator_func = lambda: (
+            terminal.dim() + horizontal_seperator + terminal.undim()
+        )
+        self.title_fill = title_fill
+        self.subtitle_fill = subtitle_fill
+        self.subtitle_empty_line = subtitle_empty_line
+
+        self.no_entry = no_entry
+        self.error_entry = error_entry
+
+        self.has_aggregates = any(f.has_aggregate for f in fields)
+
+        self._init_sanity_check()
+
+    def _arg_as_tuple(self, arg):
+        if arg is None:
+            return tuple()
+        elif isinstance(arg, tuple):
+            return arg
+        elif isinstance(arg, list):
+            return tuple(arg)
+        elif isinstance(arg, str):
+            return (arg,)
+
+        raise ValueError(
+            "Expected tuple, list or string - instead {}".format(type(arg))
+        )
+
+    def _init_sanity_check(self):
+        # Ensure 'group_bys' and 'sort_bys' are in 'fields'.
+        # NOTE - currently cannot group_by/sort_by a member of a Subgroup.
+        static_fields = [
+            field for field in self.fields if not isinstance(field, DynamicFields)
+        ]
+        field_set = set(field.key for field in static_fields)
+
+        if len(field_set) != len(static_fields):
+            field_keys = ",".join(
+                (
+                    "{} appears {} times".format(key, count)
+                    for key, count in Counter(
+                        field.key for field in static_fields
+                    ).items()
+                    if count > 1
+                )
+            )
+
+            assert False, "Field keys are not unique: {}".format(field_keys)
+
+        if self.group_bys:
+            group_by_set = set(self.group_bys)
+            assert len(group_by_set) == len(self.group_bys)
+        else:
+            group_by_set = set()
+
+        if self.order_bys:
+            order_by_set = set(self.order_bys)
+            assert len(order_by_set) == len(self.order_bys)
+        else:
+            order_by_set = set()
+
+        error_groups = group_by_set - field_set
+        error_orders = order_by_set - field_set
+
+        assert not error_groups, error_groups
+        assert not error_orders, error_orders
+
+        assert self.from_sources, "require a list of expected field sources"
+
+        sources_set = set(source_root(s) for s in self.from_sources)
+
+        assert len(sources_set) == len(self.from_sources)
+
+        seen_sources_set = set()
+
+        def populate_seen_sources(fields):
+            for field in fields:
+                if isinstance(field, Subgroup):
+                    return populate_seen_sources(field.fields)
+
+                assert not isinstance(
+                    field, DynamicFields
+                ), "DynamicFields cannot be members of Subgroups."
+
+                try:
+                    sources = field.projector.sources
+                except AttributeError:
+                    sources = set([field.projector.source])
+
+                assert sources - sources_set == set(), "{} not subset of {}".format(
+                    sources, sources_set
+                )
+
+                seen_sources_set.update(sources)
+
+        populate_seen_sources(static_fields)
+
+        for field in self.fields:
+            if isinstance(field, DynamicFields):
+                seen_sources_set.add(source_root(field.source))
+
+        assert len(seen_sources_set) == len(sources_set)
+
+        if self.for_each:
+            for_each_set = set(self.for_each)
+            assert len(for_each_set) == len(self.for_each)
+        else:
+            for_each_set = set()
+
+        assert for_each_set - sources_set == set()

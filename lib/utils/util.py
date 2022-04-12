@@ -23,6 +23,21 @@ import subprocess
 import sys
 import logging
 from time import time
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Generator,
+    Generic,
+    Iterable,
+    Literal,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    overload,
+)
 
 from lib.utils import logger_debug
 
@@ -36,7 +51,7 @@ def callable(func, *args, **kwargs):
     return lambda: func(*args, **kwargs)
 
 
-def shell_command(command):
+def shell_command(command) -> tuple[str, str]:
     """
     command is a list of ['cmd','arg1','arg2',...]
     """
@@ -52,7 +67,7 @@ def shell_command(command):
         return bytes_to_str(out), bytes_to_str(err)
 
 
-async def capture_stdout(func, line=""):
+async def capture_stdout(func, *args, **kwargs):
     """
     Redirecting the stdout to use the output elsewhere
     """
@@ -63,9 +78,9 @@ async def capture_stdout(func, line=""):
     sys.stdout = capturer
 
     if inspect.iscoroutinefunction(func):
-        await func(line)
+        await func(*args, **kwargs)
     else:
-        tmp_output = func(line)
+        tmp_output = func(*args, **kwargs)
 
         if inspect.iscoroutine(tmp_output):
             tmp_output = await tmp_output
@@ -75,7 +90,7 @@ async def capture_stdout(func, line=""):
     return output
 
 
-def capture_stderr(func, line=""):
+def capture_stderr(func, *args, **kwargs):
     """
     Redirecting the stderr to use the output elsewhere
     """
@@ -85,14 +100,14 @@ def capture_stderr(func, line=""):
     capturer = io.StringIO()
     sys.stderr = capturer
 
-    func(line)
+    func(*args, **kwargs)
 
     output = capturer.getvalue()
     sys.stderr = old
     return output
 
 
-def capture_stdout_and_stderr(func, line=""):
+def capture_stdout_and_stderr(func, *args, **kwargs):
     sys.stdout.flush()
     stdout_old = sys.stdout
     stdout_capturer = io.StringIO()
@@ -103,7 +118,7 @@ def capture_stdout_and_stderr(func, line=""):
     stderr_capturer = io.StringIO()
     sys.stderr = stderr_capturer
 
-    func(line)
+    func(*args, **kwargs)
 
     stdout_output = stdout_capturer.getvalue()
     sys.stdout = stdout_old
@@ -114,7 +129,7 @@ def capture_stdout_and_stderr(func, line=""):
     return stdout_output, stderr_output
 
 
-async def capture_stdout_and_stderr_async(func, line=""):
+async def capture_stdout_and_stderr_async(func, *args, **kwargs):
     sys.stdout.flush()
     stdout_old = sys.stdout
     stdout_capturer = io.StringIO()
@@ -125,7 +140,7 @@ async def capture_stdout_and_stderr_async(func, line=""):
     stderr_capturer = io.StringIO()
     sys.stderr = stderr_capturer
 
-    await func(line)
+    await func(*args, **kwargs)
 
     stdout_output = stdout_capturer.getvalue()
     sys.stdout = stdout_old
@@ -159,7 +174,13 @@ def clear_val_from_list_in_dict(keys, d, val):
             d[key].remove(val)
 
 
-def fetch_argument(line, arg, default):
+ReturnType = TypeVar("ReturnType")
+DefaultType = TypeVar("DefaultType")
+
+
+def fetch_argument(
+    line, arg, default: DefaultType
+) -> Union[tuple[Literal[True], str], tuple[Literal[False], DefaultType]]:
     success = True
     try:
         if arg in line:
@@ -171,7 +192,9 @@ def fetch_argument(line, arg, default):
     return not success, default
 
 
-def _fetch_line_clear_dict(line, arg, return_type, default, keys, d):
+def _fetch_line_clear_dict(
+    line, arg, return_type: Type[ReturnType], default: DefaultType, keys, d
+) -> Union[DefaultType, ReturnType]:
     if not line:
         return default
     try:
@@ -190,7 +213,9 @@ def _fetch_line_clear_dict(line, arg, return_type, default, keys, d):
     return val
 
 
-def get_arg_and_delete_from_mods(line, arg, return_type, default, modifiers, mods):
+def get_arg_and_delete_from_mods(
+    line, arg, return_type: Type[ReturnType], default: DefaultType, modifiers, mods
+) -> Union[DefaultType, ReturnType]:
     try:
         val = _fetch_line_clear_dict(
             line=line,
@@ -285,7 +310,28 @@ def set_value_in_dict(d, key, value):
     d[key] = value
 
 
-def _cast(value, return_type=None):
+@overload
+def _cast(value: str, return_type: None) -> Tuple[str, Literal[True]]:
+    pass
+
+
+@overload
+def _cast(value: str, return_type: Type[bool]) -> Tuple[bool, bool]:
+    pass
+
+
+@overload
+def _cast(
+    value: str, return_type: Type[ReturnType]
+) -> Tuple[Union[ReturnType, None], bool]:
+    pass
+
+
+def _cast(
+    value: str, return_type: Union[Type[ReturnType], None, Type[bool]] = str
+) -> Union[
+    Tuple[Union[ReturnType, None], bool], Tuple[str, Literal[True]], Tuple[bool, bool]
+]:
     """
     Function takes value and data type to cast.
     Returns result of casting and success status
@@ -311,7 +357,9 @@ def _cast(value, return_type=None):
     return None, False
 
 
-def get_value_from_dict(d, keys, default_value=None, return_type=None):
+def get_value_from_dict(
+    d, keys, default_value: DefaultType = None, return_type: Type[ReturnType] = None
+) -> Union[DefaultType, ReturnType]:
     """
     Function takes dictionary and keys to find values inside dictionary.
     Returns value of first matching key from keys which is available in d else returns default_value
@@ -330,7 +378,9 @@ def get_value_from_dict(d, keys, default_value=None, return_type=None):
     return default_value
 
 
-def get_values_from_dict(d, re_keys, return_type=None):
+def get_values_from_dict(
+    d, re_keys, return_type: Type[ReturnType] = str
+) -> list[ReturnType]:
     """
     Function takes dictionary and regular expressions for keys to find values inside dictionary.
     Returns list of values for all matching keys with any of regular expression keys else returns empty list
@@ -476,8 +526,8 @@ def restructure_sys_data(content, cmd):
 
 
 def get_value_from_second_level_of_dict(
-    data, keys, default_value=None, return_type=None
-):
+    data, keys, default_value: DefaultType = None, return_type: Type[ReturnType] = str
+) -> dict[str, Union[ReturnType, DefaultType]]:
     """
     Function takes dictionary and subkeys to find values inside all keys of dictionary.
     Returns dictionary containing key and value of input keys
@@ -498,7 +548,9 @@ def get_value_from_second_level_of_dict(
     return res_dict
 
 
-def get_values_from_second_level_of_dict(data, re_keys, return_type=None):
+def get_values_from_second_level_of_dict(
+    data, re_keys, return_type: Type[ReturnType] = str
+) -> dict[str, ReturnType]:
     """
     Function takes dictionary and regular expression subkeys to find values inside all keys of dictionary.
     Returns dictionary containing key and all values for matching input keys
@@ -517,7 +569,32 @@ def get_values_from_second_level_of_dict(data, re_keys, return_type=None):
     return res_dict
 
 
-def get_nested_value_from_dict(data, keys, default_value=None, return_type=None):
+@overload
+def get_nested_value_from_dict(
+    data: dict[str, Any],
+    keys: list[str],
+    default_value: None = None,
+    return_type: Type[ReturnType] = str,
+) -> Union[ReturnType, None]:
+    pass
+
+
+@overload
+def get_nested_value_from_dict(
+    data: dict[str, Any],
+    keys: list[str],
+    default_value: None = None,
+    return_type: Type[ReturnType] = str,
+) -> Union[ReturnType, None]:
+    pass
+
+
+def get_nested_value_from_dict(
+    data: dict[str, Any],
+    keys: list[str],
+    default_value=None,
+    return_type: Type[ReturnType] = str,
+) -> Union[ReturnType, None]:
     """
     Given a list of keys, returns the nested value in a dict.
     """
@@ -681,33 +758,30 @@ def _is_valid_ipv6_address(address):
 
 
 def is_str(data):
-    if data is None:
-        return False
 
     return isinstance(data, str)
 
 
-def bytes_to_str(data):
-    if data is None:
+def bytes_to_str(data: Union[bytes, str]) -> str:
+    if isinstance(data, str):
         return data
 
-    if not is_str(data):
-        return data.decode("utf-8")
-
-    return data
+    return data.decode("utf-8")
 
 
-def str_to_bytes(data):
-    if data is None:
+def str_to_bytes(data: Union[bytes, str]) -> bytes:
+    if isinstance(data, bytes):
         return data
 
-    if is_str(data):
-        return str.encode(data, "utf-8")
-
-    return data
+    return str.encode(data, "utf-8")
 
 
-def find_most_frequent(list_):
+ItemsType = TypeVar("ItemsType")
+
+
+def find_most_frequent(
+    list_: Iterable[ItemsType],
+) -> Union[None, ItemsType]:
     count = {}
     most_freq = None
 
@@ -727,25 +801,30 @@ def find_most_frequent(list_):
     return most_freq
 
 
-class async_cached(object):
+AwaitableType = TypeVar("AwaitableType")
+AwaitableReturnType = TypeVar("AwaitableReturnType")
+
+
+class async_cached(Generic[AwaitableType]):
     """
     Doesn't support lists, dicts and other unhashables
     Also doesn't support kwargs for reasons above.
     """
 
-    class _CacheableCoroutine:
+    class _CacheableCoroutine(Generic[AwaitableReturnType]):
         """
         Allow a coroutine to be awaited multipul times. The lock makes sure multiple
         methods do not call await on the coroutine.
         """
 
-        def __init__(self, co):
+        result: AwaitableReturnType
+
+        def __init__(self, co: Awaitable[AwaitableReturnType]):
             self.co = co
             self.done = False
-            self.result = None
             self.lock = asyncio.Lock()
 
-        def __await__(self):
+        def __await__(self) -> Generator[Any, None, AwaitableReturnType]:
             yield from self.lock.acquire().__await__()
             try:
                 if self.done:
@@ -756,15 +835,15 @@ class async_cached(object):
             finally:
                 self.lock.release()
 
-    def __init__(self, func, ttl=0.5):
+    def __init__(self, func: Callable[[Any, Any], Awaitable[AwaitableType]], ttl=0.5):
         self.func = func
         self.ttl = ttl
         self.cache = {}
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value: _CacheableCoroutine):
         self.cache[key] = (value, time() + self.ttl)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> Awaitable[AwaitableType]:
         if key in self.cache:
             value, eol = self.cache[key]
             if eol > time():

@@ -1,4 +1,5 @@
 import asyncio
+from typing import Union
 from lib.utils import common, util
 from lib.base_controller import CommandHelp
 
@@ -28,8 +29,9 @@ from .live_cluster_command_controller import LiveClusterCommandController
     "                                          1.2.3.4:3232,uid,passphrase,key_path",
     "                                          [2001::1234:10],uid,pwd",
     "                                          [2001::1234:10]:3232,uid,,key_path",
-    "    --agent-host    <host>    - Host IP of the Unique-Data-Agent to collect license data usage.",
-    "    --agent-port    <int>     - Port of the Unique-Data-Agent. Default: 8080",
+    "    --agent-host    <host>    - Host IP of the Unique-Data-Agent (UDA) to collect license data usage.",
+    "    --agent-port    <int>     - Port of the UDA. Default: 8080",
+    "    --agent-unstable          - When processing UDA entries allow instances where the cluster is unstable.",
 )
 class SummaryController(LiveClusterCommandController):
     def __init__(self):
@@ -107,6 +109,14 @@ class SummaryController(LiveClusterCommandController):
             arg="--agent-port",
             return_type=str,
             default="8080",
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        agent_unstable = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--agent-unstable",
+            default=False,
             modifiers=self.modifiers,
             mods=self.mods,
         )
@@ -238,7 +248,7 @@ class SummaryController(LiveClusterCommandController):
             pass
 
         metadata["os_version"] = os_version
-        license_usage = {}
+        license_usage: Union[common.UDAResponsesDict, None] = None
 
         if license_usage_future is not None:
             license_usage, error = await license_usage_future
@@ -246,7 +256,7 @@ class SummaryController(LiveClusterCommandController):
             if error is not None:
                 self.logger.error(
                     "Failed to retrieve license usage information : {}",
-                    str(error),
+                    error,
                 )
 
         service_stats = await service_stats
@@ -264,6 +274,7 @@ class SummaryController(LiveClusterCommandController):
                 service_configs=service_configs,
                 ns_configs=namespace_configs,
                 license_data_usage=license_usage,
+                license_allow_unstable=agent_unstable,
             ),
             list_view=enable_list_view,
         )
