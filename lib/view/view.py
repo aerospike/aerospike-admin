@@ -15,6 +15,7 @@
 import datetime
 import locale
 import logging
+from os import path
 import sys
 import time
 from io import StringIO
@@ -61,7 +62,13 @@ class CliView(object):
         if type(out) is not str:
             out = str(out)
         if CliView.pager == CliView.LESS:
-            pipepager(out, cmd="less -RSX")
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                # We are running in a bundled app
+                less_cmd = path.join(sys._MEIPASS, "less") + " -RSX"  # type: ignore MEIPASS is set by pyinstaller.
+            else:
+                less_cmd = "less -RSX"
+
+            pipepager(out, less_cmd)
         elif CliView.pager == CliView.SCROLL:
             for i in out.split("\n"):
                 print(i)
@@ -203,7 +210,7 @@ class CliView(object):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Set Information%s" + title_suffix
+        title = "Set Information%s" % title_suffix
         sources = dict(
             node_ids=node_ids,
             node_names=node_names,
