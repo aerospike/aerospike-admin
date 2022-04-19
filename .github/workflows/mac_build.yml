@@ -41,31 +41,7 @@ jobs:
           # CODESIGNMAC: 1
           # NOTARIZE: 1
         run: |
-          # security create-keychain -p mysecretpassword build.keychain
-          # security default-keychain -s build.keychain
-          # security unlock-keychain -p mysecretpassword build.keychain
-          # echo "$APPLICATIONP12" > app_64.p12
-          # base64 -d app_64.p12 > app.p12
-          # echo "$INSTALLERP12" > install_64.p12
-          # base64 -d install_64.p12 > install.p12
-          # echo "$APPLEPW" > APPLEPW
-          # security import app.p12 -k build.keychain -P "$(< ./APPLEPW)" -A
-          # ls -lat
-          # ./set-key-partition-list.sh
-          # security find-identity -v -p codesigning  
-      
           make
-
-          # ls -lat
-          # security unlock-keychain -p mysecretpassword build.keychain
-          # security import app.p12 -k build.keychain -P "$(< ./APPLEPW)" -A
-          # security import install.p12 -k build.keychain -P "$(< ./APPLEPW)" -A
-          # ls -lat
-          # ./set-key-partition-list.sh
-          # make mac-sign
-          # echo "$APPLEUSER" > APPLEUSER
-          # echo "$APPLICATIONPW" > APPLICATIONPW
-          # ./notarize.sh
       - name: Sanity Test tools
         run: |
           make install
