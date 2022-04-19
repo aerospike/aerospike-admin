@@ -32,7 +32,12 @@ define make_build
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	cp -f *.spec $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
-	sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm/asadm.py
+
+	$(if $(filter $(OS),Darwin),
+	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm/asadm.py) || true
+	)
+	
 
 endef
 
