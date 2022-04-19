@@ -1,6 +1,3 @@
-# citrusleaf/aerospike-admin is now archived
-Future development will occur in our public [aerospike/aerospike-admin](https://github.com/aerospike/aerospike-admin) repo.
-
 # Aerospike Admin
 
 ## Description
