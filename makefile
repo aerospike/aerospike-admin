@@ -12,16 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-OS = $(shell uname)
 SOURCE_ROOT = $(realpath .)
 BUILD_ROOT = $(SOURCE_ROOT)/build/
 INSTALL_ROOT = /opt/aerospike/bin/
 SYMLINK = /usr/bin/asadm
 INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
-INSTALL = "install -o aerospike -g aerospike"
 
-REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements.txt
 
 SHELL := /bin/bash
 

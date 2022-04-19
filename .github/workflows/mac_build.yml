@@ -1,0 +1,73 @@
+name: Mac Build CI
+
+on:
+  repository_dispatch:
+    types: mac-build
+  push:
+    branches: [actionsHub, master, test-ready]
+  pull_request:
+    branches: [actionsHub]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      - name: Pipenv setup
+        run: |
+          brew update
+          brew install pipenv
+          pipenv check
+      # - name: Fetch source tarball from internal build system
+      #   env:
+      #     BUILD_CONDUIT_CREDENTIALS: ${{ secrets.BUILDCONDUITCREDENTIALS }}
+      #   run: |
+      #     pip install awscli --upgrade
+      #     echo "$BUILD_CONDUIT_CREDENTIALS" > build-conduit.credentials
+      #     ls -lat build-conduit.credentials
+      #     AWS_SHARED_CREDENTIALS_FILE=build-conduit.credentials aws --region=us-west-1 s3 cp s3://aerospike-qe-build-conduit/mac_tools/source.tar.gz .
+      #     tar -xf source.tar.gz
+      - name: Build asadm
+        env:
+          # APPLEUSER: ${{ secrets.APPLEUSER }}
+          # APPLEPW: ${{ secrets.APPLEPW }}
+          # APPLICATIONPW: ${{ secrets.APPLICATIONPW }}
+          # INSTALLERP12: ${{ secrets.INSTALLERP12 }}
+          # APPLICATIONP12: ${{ secrets.APPLICATIONP12 }}
+          # CODESIGNMAC: 1
+          # NOTARIZE: 1
+        run: |
+          # security create-keychain -p mysecretpassword build.keychain
+          # security default-keychain -s build.keychain
+          # security unlock-keychain -p mysecretpassword build.keychain
+          # echo "$APPLICATIONP12" > app_64.p12
+          # base64 -d app_64.p12 > app.p12
+          # echo "$INSTALLERP12" > install_64.p12
+          # base64 -d install_64.p12 > install.p12
+          # echo "$APPLEPW" > APPLEPW
+          # security import app.p12 -k build.keychain -P "$(< ./APPLEPW)" -A
+          # ls -lat
+          # ./set-key-partition-list.sh
+          # security find-identity -v -p codesigning  
+      
+          make
+
+          # ls -lat
+          # security unlock-keychain -p mysecretpassword build.keychain
+          # security import app.p12 -k build.keychain -P "$(< ./APPLEPW)" -A
+          # security import install.p12 -k build.keychain -P "$(< ./APPLEPW)" -A
+          # ls -lat
+          # ./set-key-partition-list.sh
+          # make mac-sign
+          # echo "$APPLEUSER" > APPLEUSER
+          # echo "$APPLICATIONPW" > APPLICATIONPW
+          # ./notarize.sh
+      - name: Sanity Test tools
+        run: |
+          make install
+          asadm -e "info" 2>&1 | grep "Not able to connect"
+
