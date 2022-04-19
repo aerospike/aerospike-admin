@@ -32,7 +32,7 @@ jobs:
       #     AWS_SHARED_CREDENTIALS_FILE=build-conduit.credentials aws --region=us-west-1 s3 cp s3://aerospike-qe-build-conduit/mac_tools/source.tar.gz .
       #     tar -xf source.tar.gz
       - name: Build asadm
-        env:
+        # env:
           # APPLEUSER: ${{ secrets.APPLEUSER }}
           # APPLEPW: ${{ secrets.APPLEPW }}
           # APPLICATIONPW: ${{ secrets.APPLICATIONPW }}

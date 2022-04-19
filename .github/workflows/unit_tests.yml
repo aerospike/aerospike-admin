@@ -3,9 +3,9 @@ on:
   pull_request:
     branches:
       - master
-  push:
-    branches-ignore:
-      - master
+  # push:
+  #   branches-ignore:
+  #     - master
 jobs:
   build:
     runs-on: ubuntu-latest
