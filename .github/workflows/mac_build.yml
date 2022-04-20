@@ -45,6 +45,6 @@ jobs:
           make
       - name: Sanity Test tools
         run: |
-          make install
+          sudo make install
           asadm -e "info" 2>&1 | grep "Not able to connect"
 
