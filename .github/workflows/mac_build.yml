@@ -46,4 +46,7 @@ jobs:
       - name: Sanity Test tools
         run: |
           build/bin/asadm -e "info" 2>&1 | grep "Not able to connect"
-
+      - uses: actions/upload-artifact@v3
+        with:
+          name: asadm
+          path: build/bin/asadm
