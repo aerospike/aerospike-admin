@@ -48,6 +48,6 @@ all:
 	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
 
 install:
-	install -o $(INSTALL_USER) -g $(INSTALL_GROUP) -d -m 755 $(INSTALL_ROOT)
-	install -o $(INSTALL_USER) -g $(INSTALL_GROUP) -m 755 $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
+	install -d -m 755 $(INSTALL_ROOT)
+	install -m 755 $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
 	ln -sf $(INSTALL_ROOT)asadm $(SYMLINK)
