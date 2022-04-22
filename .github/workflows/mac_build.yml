@@ -11,7 +11,6 @@ on:
 jobs:
   build:
     runs-on: macos-latest
-
     steps:
       - uses: actions/checkout@v2
       - name: Setup Python
@@ -23,30 +22,20 @@ jobs:
           brew update
           brew install pipenv
           pipenv check
-      # - name: Fetch source tarball from internal build system
-      #   env:
-      #     BUILD_CONDUIT_CREDENTIALS: ${{ secrets.BUILDCONDUITCREDENTIALS }}
-      #   run: |
-      #     pip install awscli --upgrade
-      #     echo "$BUILD_CONDUIT_CREDENTIALS" > build-conduit.credentials
-      #     ls -lat build-conduit.credentials
-      #     AWS_SHARED_CREDENTIALS_FILE=build-conduit.credentials aws --region=us-west-1 s3 cp s3://aerospike-qe-build-conduit/mac_tools/source.tar.gz .
-      #     tar -xf source.tar.gz
       - name: Build asadm
-        # env:
-          # APPLEUSER: ${{ secrets.APPLEUSER }}
-          # APPLEPW: ${{ secrets.APPLEPW }}
-          # APPLICATIONPW: ${{ secrets.APPLICATIONPW }}
-          # INSTALLERP12: ${{ secrets.INSTALLERP12 }}
-          # APPLICATIONP12: ${{ secrets.APPLICATIONP12 }}
-          # CODESIGNMAC: 1
-          # NOTARIZE: 1
         run: |
           make
       - name: Sanity Test tools
         run: |
           build/bin/asadm -e "info" 2>&1 | grep "Not able to connect"
+          build/bin/asinfo -e "info" 2>&1 | grep "Not able to connect"
       - uses: actions/upload-artifact@v3
         with:
           name: asadm
           path: build/bin/asadm
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v3
+        with:
+          name: asinfo
+          path: build/bin/asinfo
+          if-no-files-found: error

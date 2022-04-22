@@ -31,6 +31,7 @@ define make_build
 	mkdir $(BUILD_ROOT)tmp/asadm
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	cp -f *.spec $(BUILD_ROOT)tmp/asadm
+	cp -f asinfo/asinfo.py $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
 	$(if $(filter $(OS),Darwin),
@@ -45,7 +46,7 @@ all:
 	$(call make_build)
 	pipenv install --dev
 	pipenv graph
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
 
 install:
 	install -d -m 755 $(INSTALL_ROOT)

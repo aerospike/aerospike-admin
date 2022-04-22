@@ -14,7 +14,7 @@ added_files = [
 
 block_cipher = None
 
-a = Analysis(['asadm.py'],
+a = Analysis(['asadm.py', 'asinfo.py'],
              pathex=[],
              binaries=binaries,
              datas=datas,
