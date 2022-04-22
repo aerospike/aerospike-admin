@@ -8,15 +8,19 @@ on:
   pull_request:
     branches: [actionsHub]
 
+
 jobs:
   build:
     runs-on: macos-10.15
+    env:
+      PYTHON_VERSION: 3.9
     steps:
       - uses: actions/checkout@v2
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
-          python-version: 3.9
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pipenv'
       - name: Pipenv setup
         run: |
           brew install pipenv
@@ -29,7 +33,7 @@ jobs:
         with:
           path: |
             build/bin
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.py') }}-${{ hashFiles('**/*.json') }}
+          key: ${{ runner.os }}-build-${{ env.PYTHON_VERSION }}-${{ env.cache-name }}-${{ hashFiles('**/*.py') }}-${{ hashFiles('**/*.json') }}
       - name: Build asadm
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         run: |
@@ -37,6 +41,7 @@ jobs:
       - name: Sanity Test tools
         run: |
           cd build/bin
+          ls
           asadm -e "info" 2>&1 | grep "Not able to connect"
           asinfo 2>&1 | grep "Not able to connect"
           cd -
