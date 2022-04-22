@@ -44,7 +44,7 @@ jobs:
           ls
           ./asadm -e "info" 2>&1 | grep "Not able to connect"
           echo $(pwd) >> $GITHUB_PATH
-          sudo install -t asadm /usr/local/bin
+          sudo install asadm /usr/local/bin
           ./asinfo 2>&1 | grep "Not able to connect"
           # ./asinfo
           cd -
