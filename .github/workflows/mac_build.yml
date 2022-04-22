@@ -12,10 +12,10 @@ on:
 jobs:
   build:
     runs-on: macos-10.15
-    env:
-      PYTHON_VERSION: 3.9
     steps:
       - uses: actions/checkout@v2
+      - name: Get Python version from Pipfile
+        run: echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
@@ -42,11 +42,9 @@ jobs:
         run: |
           cd build/bin
           ls
+          sudo install asadm /usr/local/bin
           ./asadm -e "info" 2>&1 | grep "Not able to connect"
-          echo $(pwd) >> $GITHUB_PATH
-          # sudo install asadm /usr/local/bin
           ./asinfo 2>&1 | grep "Not able to connect"
-          # ./asinfo
           cd -
       - uses: actions/upload-artifact@v3
         with:
