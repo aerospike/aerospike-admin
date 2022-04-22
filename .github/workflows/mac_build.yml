@@ -21,12 +21,23 @@ jobs:
         run: |
           brew install pipenv
           pipenv check
+      - name: Cache asadm and asinfo
+        uses: actions/cache@v3
+        id: cache-asadm-asinfo
+        env:
+          cache-name: cache-asadm-asinfo
+        with:
+          path: |
+            build/bin
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('build/tmp') }}
       - name: Build asadm
+        if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         run: |
           make
       - name: Sanity Test tools
         run: |
           build/bin/asadm -e "info" 2>&1 | grep "Not able to connect"
+          build/bin/asinfo 
           build/bin/asinfo 2>&1 | grep "Not able to connect"
       - uses: actions/upload-artifact@v3
         with:
