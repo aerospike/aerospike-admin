@@ -19,7 +19,6 @@ jobs:
           python-version: 3.9
       - name: Pipenv setup
         run: |
-          brew update
           brew install pipenv
           pipenv check
       - name: Build asadm
@@ -28,7 +27,7 @@ jobs:
       - name: Sanity Test tools
         run: |
           build/bin/asadm -e "info" 2>&1 | grep "Not able to connect"
-          build/bin/asinfo -e "info" 2>&1 | grep "Not able to connect"
+          build/bin/asinfo 2>&1 | grep "Not able to connect"
       - uses: actions/upload-artifact@v3
         with:
           name: asadm
