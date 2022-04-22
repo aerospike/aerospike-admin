@@ -29,13 +29,14 @@ jobs:
         with:
           path: |
             build/bin
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('build/tmp') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.py') }}-${{ hashFiles('**/*.json') }}
       - name: Build asadm
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         run: |
           make
       - name: Sanity Test tools
         run: |
+          sudo ln -s build/bin/asadm /usr/bin/asadm
           build/bin/asadm -e "info" 2>&1 | grep "Not able to connect"
           build/bin/asinfo 
           build/bin/asinfo 2>&1 | grep "Not able to connect"
