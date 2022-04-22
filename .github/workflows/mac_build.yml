@@ -36,12 +36,10 @@ jobs:
           make
       - name: Sanity Test tools
         run: |
-          echo $(pwd)/build/bin >> $GITHUB_PATH
+          cd build/bin
           build/bin/asadm -e "info" 2>&1 | grep "Not able to connect"
-          mv build/bin/asadm asadm
-          build/bin/asinfo 
           build/bin/asinfo 2>&1 | grep "Not able to connect"
-          mv asadm build/bin/asadm 
+          cd -
       - uses: actions/upload-artifact@v3
         with:
           name: asadm
