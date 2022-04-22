@@ -43,6 +43,7 @@ jobs:
           cd build/bin
           ls
           ./asadm -e "info" 2>&1 | grep "Not able to connect"
+          ./asinfo
           ./asinfo 2>&1 | grep "Not able to connect"
           cd -
       - uses: actions/upload-artifact@v3
