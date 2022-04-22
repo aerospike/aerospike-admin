@@ -36,7 +36,7 @@ jobs:
           make
       - name: Sanity Test tools
         run: |
-          $(pwd) >> $GITHUB_PATH
+          echo $(pwd)/build/bin >> $GITHUB_PATH
           build/bin/asadm -e "info" 2>&1 | grep "Not able to connect"
           build/bin/asinfo 
           build/bin/asinfo 2>&1 | grep "Not able to connect"
