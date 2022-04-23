@@ -21,10 +21,12 @@ jobs:
     runs-on: macos-10.15
     steps:
       - uses: actions/checkout@v2
-      - if: inputs.submodule
-        run: |
-          git submodule update --recursive -- ${{ inputs.submodule }}
-          cd ${{ inputs.submodule }}
+        with:
+          submodules: recursive # for when inputs.submodule is populated
+      # - if: inputs.submodule
+      #   run: |
+      #     git submodule update --recursive -- ${{ inputs.submodule }}
+      #     cd ${{ inputs.submodule }}
       - name: Get Python version from Pipfile
         run: |
           cd ${{ inputs.submodule || '.' }}
@@ -34,11 +36,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pipenv'
-      - name: Pipenv setup
-        run: |
-          cd ${{ inputs.submodule || '.' }}
-          brew install pipenv
-          pipenv check
       - name: Cache asadm and asinfo
         uses: actions/cache@v3
         id: cache-asadm-asinfo
@@ -48,6 +45,12 @@ jobs:
           path: |
             build/bin
           key: ${{ runner.os }}-build-${{ env.PYTHON_VERSION }}-${{ env.cache-name }}-${{ hashFiles('**/*.py') }}-${{ hashFiles('**/*.json') }}
+      - name: Pipenv setup
+        if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ inputs.submodule || '.' }}
+          brew install pipenv
+          pipenv check
       - name: Build asadm
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         run: |
