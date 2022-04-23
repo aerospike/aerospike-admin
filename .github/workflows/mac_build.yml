@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v2
       - if: inputs.submodule
         run: |
-          git submodule update --init --recursive -- ${{ inputs.submodule }}
+          git submodule update --recursive -- ${{ inputs.submodule }}
           cd ${{ inputs.submodule }}
       - name: Get Python version from Pipfile
         run: echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
