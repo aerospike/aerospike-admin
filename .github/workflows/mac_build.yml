@@ -59,7 +59,6 @@ jobs:
           make
       - name: Sanity Test tools
         run: |
-          cd ${{ inputs.submodule || '.' }}
           cd ${{ inputs.submodule || '.' }}/build/bin
           ls
           sudo install asadm /usr/local/bin
