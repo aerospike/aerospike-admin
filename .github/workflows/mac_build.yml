@@ -60,7 +60,7 @@ jobs:
       - name: Sanity Test tools
         run: |
           cd ${{ inputs.submodule || '.' }}
-          cd ${{ inputs.submodule || '.' }}build/bin
+          cd ${{ inputs.submodule || '.' }}/build/bin
           ls
           sudo install asadm /usr/local/bin
           ./asadm -e "info" 2>&1 | grep "Not able to connect"
