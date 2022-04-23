@@ -26,7 +26,9 @@ jobs:
           git submodule update --recursive -- ${{ inputs.submodule }}
           cd ${{ inputs.submodule }}
       - name: Get Python version from Pipfile
-        run: echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+        run: |
+          cd ${{ inputs.submodule || "." }}
+          echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
@@ -34,6 +36,7 @@ jobs:
           cache: 'pipenv'
       - name: Pipenv setup
         run: |
+          cd ${{ inputs.submodule || "." }}
           brew install pipenv
           pipenv check
       - name: Cache asadm and asinfo
@@ -48,9 +51,11 @@ jobs:
       - name: Build asadm
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         run: |
+          cd ${{ inputs.submodule || "." }}
           make
       - name: Sanity Test tools
         run: |
+          cd ${{ inputs.submodule || "." }}
           cd build/bin
           ls
           sudo install asadm /usr/local/bin
@@ -60,10 +65,10 @@ jobs:
       - uses: actions/upload-artifact@v3
         with:
           name: asadm
-          path: build/bin/asadm
+          path: ${{ inputs.submodule || "." }}/build/bin/asadm
           if-no-files-found: error
       - uses: actions/upload-artifact@v3
         with:
           name: asinfo
-          path: build/bin/asinfo
+          path: ${{ inputs.submodule || "." }}/build/bin/asinfo
           if-no-files-found: error
