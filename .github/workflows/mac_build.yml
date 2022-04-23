@@ -7,6 +7,8 @@ on:
     branches: [actionsHub, master, test-ready, TOOLS-1993-mac-build]
   pull_request:
     branches: [actionsHub]
+  workflow_call:
+    
 
 
 jobs:
