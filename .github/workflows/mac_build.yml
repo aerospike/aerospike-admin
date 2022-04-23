@@ -60,12 +60,11 @@ jobs:
       - name: Sanity Test tools
         run: |
           cd ${{ inputs.submodule || '.' }}
-          cd build/bin
+          cd ${{ inputs.submodule || '.' }}build/bin
           ls
           sudo install asadm /usr/local/bin
           ./asadm -e "info" 2>&1 | grep "Not able to connect"
           ./asinfo 2>&1 | grep "Not able to connect"
-          cd -
       - uses: actions/upload-artifact@v3
         with:
           name: asadm
