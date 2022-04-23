@@ -8,6 +8,11 @@ on:
   pull_request:
     branches: [actionsHub]
   workflow_call:
+    inputs:
+      submodule:
+        description: The directory of the submodule, if this workflow is being called on a submodule
+        required: false
+        type: string
     
 
 
@@ -16,6 +21,10 @@ jobs:
     runs-on: macos-10.15
     steps:
       - uses: actions/checkout@v2
+      - if: inputs.submodule
+        run: |
+          git submodule update --init --recursive -- ${{ inputs.submodule }}
+          cd ${{ inputs.submodule }}
       - name: Get Python version from Pipfile
         run: echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
       - name: Setup Python
