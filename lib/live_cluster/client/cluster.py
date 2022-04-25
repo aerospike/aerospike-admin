@@ -255,7 +255,7 @@ class Cluster(AsyncObject):
                         node = self.nodes[aliases_node_key]
                         if not node.alive:
                             aliases[node_key] = key
-            except Exception:
+            except Exception as e:
                 self.logger.debug(e, include_traceback=True)
 
     async def find_new_nodes(self):

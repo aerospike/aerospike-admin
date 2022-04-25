@@ -189,7 +189,7 @@ class ASSocket:
             if result is None or result == -1:
                 return False
 
-        except Exception:
+        except Exception as e:
             self.logger.debug(e, include_traceback=True)
             return False
 

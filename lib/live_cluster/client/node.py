@@ -429,7 +429,9 @@ class Node(AsyncObject):
         self.socket_pool[self.port].add(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
-        self.logger.debug("%s:%s successful login to socket %s", self.ip, self.port, sock)
+        self.logger.debug(
+            "%s:%s successful login to socket %s", self.ip, self.port, sock
+        )
         return True
 
     @property
@@ -569,7 +571,9 @@ class Node(AsyncObject):
                     self.perform_login = True
                     await self.login()
                     if await sock.authenticate(self.session_token):
-                        self.logger.debug("sock auth successful on second try %s", id(sock))
+                        self.logger.debug(
+                            "sock auth successful on second try %s", id(sock)
+                        )
                         return sock
 
                 await sock.close()
