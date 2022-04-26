@@ -850,7 +850,7 @@ class Node(AsyncObject):
     # post 3.10 services
 
     # @return_exceptions
-    def _info_service_helper(self, service, delimiter=";"):
+    def _info_service_helper(self, service, delimiter=","):
         if not service or isinstance(service, Exception):
             return []
         s = [
@@ -886,9 +886,7 @@ class Node(AsyncObject):
         Returns:
         list -- [(ip,port,tls_name),...]
         """
-        return self._info_service_helper(
-            await self.info(self._get_service_info_call()), ","
-        )
+        return self._info_service_helper(await self.info(self._get_service_info_call()))
 
     ###### Service End ######
 
