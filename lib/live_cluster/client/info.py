@@ -42,8 +42,7 @@ except Exception:
     # fatal when authentication is required.
     hasbcrypt = False
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
+logger = logging.getLogger("asadm")
 
 
 # There are three different headers referenced here in the code. I am adding
@@ -1320,6 +1319,13 @@ async def info(reader, writer, names=None):
         if name != names:
             if "not authenticated" in name.lower():
                 return ASInfoNotAuthenticatedError("Connection failed", name)
+            else:
+                logger.debug(
+                    "Unexpected key %s in info response %s. Expected key: %s",
+                    name,
+                    lines,
+                    names,
+                )
         return value
 
     else:
@@ -1331,6 +1337,15 @@ async def info(reader, writer, names=None):
                 # this accounts for the trailing '\n' - cheaper than chomp
                 continue
             name, sep, value = line.partition("\t")
+
+            if name not in names:
+                logger.debug(
+                    "Unexpected key %s in info response %s. Exceptable keys: %s",
+                    name,
+                    line,
+                    names,
+                )
+
             rdict[name] = value
         return rdict
 
