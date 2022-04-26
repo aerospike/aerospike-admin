@@ -60,9 +60,9 @@ class ClusterTest(asynctest.TestCase):
                         str(ip)
                         + ":"
                         + str(port)
-                        + ";172.17.0.1:"
+                        + ",172.17.0.1:"
                         + str(port)
-                        + ";172.17.1.1:"
+                        + ",172.17.1.1:"
                         + str(port)
                     ),
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
@@ -74,7 +74,7 @@ class ClusterTest(asynctest.TestCase):
                     str(ip)
                     + ":"
                     + str(port)
-                    + ";192.168.120."
+                    + ",192.168.120."
                     + ip_last_digit
                     + ":3000"
                 )
@@ -84,7 +84,7 @@ class ClusterTest(asynctest.TestCase):
                     str(ip)
                     + ":"
                     + str(port)
-                    + ";172.17.0.1:"
+                    + ",172.17.0.1:"
                     + str(port)
                     + ",172.17.1.1:"
                     + str(port)
