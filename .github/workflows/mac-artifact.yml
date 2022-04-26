@@ -1,4 +1,4 @@
-name: Mac Build CI
+name: Mac Artifact
 
 on:
   repository_dispatch:
