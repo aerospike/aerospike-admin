@@ -75,8 +75,8 @@ jobs:
         id: artifact-name
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: ${{ inputs.submodule }}-binaries.tgz
-          if_false: binaries.tgz
+          if_true: ${{ inputs.submodule }}-binaries
+          if_false: binaries
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.artifact-name.outputs.value }}
