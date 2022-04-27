@@ -65,7 +65,7 @@ jobs:
           sudo install asadm /usr/local/bin
           ./asadm -e "info" 2>&1 | grep "Not able to connect"
           ./asinfo 2>&1 | grep "Not able to connect"
-      - name: Move artifacts to target dir HACK
+      - name: Move artifacts to target dir HACK # This could be done in the makefile
         run: |
           cd ${{ inputs.submodule || '.' }}
           mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
@@ -74,7 +74,7 @@ jobs:
         uses: haya14busa/action-cond@v1
         id: artifact-name
         with:
-          cond: ${{ inputs.submodule }}
+          cond: ${{ inputs.submodule != ""}}
           if_true: ${{ inputs.submodule }}-binaries.tgz
           if_false: binaries.tgz
       - uses: actions/upload-artifact@v3
