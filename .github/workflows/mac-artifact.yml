@@ -68,7 +68,7 @@ jobs:
       - name: Move artifacts to target dir HACK
         run: |
           cd ${{ inputs.submodule || '.' }}
-          mkdir target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+          mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
           mv build/bin/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
       - uses: actions/upload-artifact@v3
         with:
