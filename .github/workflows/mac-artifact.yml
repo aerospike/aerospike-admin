@@ -74,7 +74,7 @@ jobs:
         uses: haya14busa/action-cond@v1
         id: artifact-name
         with:
-          cond: ${{ inputs.submodule != ""}}
+          cond: ${{ inputs.submodule != '' }}
           if_true: ${{ inputs.submodule }}-binaries.tgz
           if_false: binaries.tgz
       - uses: actions/upload-artifact@v3
