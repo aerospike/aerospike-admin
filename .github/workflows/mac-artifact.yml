@@ -70,8 +70,14 @@ jobs:
           cd ${{ inputs.submodule || '.' }}
           mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
           mv build/bin/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+      - name: Get artifact name
+        uses: haya14busa/action-cond@v1
+        id: artifact-name
+        with:
+          cond: ${{ inputs.submodule }}
+          if_true: ${{ inputs.submodule }}-binaries.tgz
+          if_false: binaries.tgz
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{${{ inputs.submodule }}-binaries.tgz || "binaries.tgz" }}
+          name: ${{ steps.artifact-name.outputs.value }}
           path: ${{ inputs.submodule || '.' }}/target
-          if-no-files-found: error
