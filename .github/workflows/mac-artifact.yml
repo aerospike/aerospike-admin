@@ -30,6 +30,9 @@ jobs:
           cd ${{ inputs.submodule || '.' }}
           git rev-parse HEAD
           echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+          echo ${{ steps.system-info.outputs.name }}
+          echo ${{ steps.system-info.outputs.kernel-release }}
+          echo ${{ steps.system-info.outputs.platform }}
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
