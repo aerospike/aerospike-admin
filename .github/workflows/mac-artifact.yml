@@ -43,7 +43,7 @@ jobs:
         with:
           path: |
             ${{ inputs.submodule || '.' }}/build/bin
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ runner.name }}-build-${{ env.PYTHON_VERSION }}-${{ env.cache-name }}-${{ hashFiles('**/*.py') }}-${{ hashFiles('**/*.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.PYTHON_VERSION }}-${{ env.cache-name }}-${{ hashFiles('**/*.py') }}-${{ hashFiles('**/*.json') }}
       - name: Pipenv setup
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         run: |
