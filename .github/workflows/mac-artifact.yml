@@ -65,12 +65,18 @@ jobs:
           sudo install asadm /usr/local/bin
           ./asadm -e "info" 2>&1 | grep "Not able to connect"
           ./asinfo 2>&1 | grep "Not able to connect"
-      - name: Move artifacts to target dir HACK
-        run: |
-          cd ${{ inputs.submodule || '.' }}
-          mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-          mv build/bin/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+      # - name: Move artifacts to target dir HACK
+      #   run: |
+      #     cd ${{ inputs.submodule || '.' }}
+      #     mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+      #     mv build/bin/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
       - uses: actions/upload-artifact@v3
         with:
-          path: ${{ inputs.submodule || '.' }}/target
+          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asadm
+          path: ${{ inputs.submodule || '.' }}/build/bin/asadm
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asinfo
+          path: ${{ inputs.submodule || '.' }}/build/bin/asinfo
           if-no-files-found: error
