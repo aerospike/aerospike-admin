@@ -28,7 +28,6 @@ jobs:
           if_true: ${{ inputs.submodule }}
           if_false: asadm
       - uses: actions/checkout@v2
-        if: inputs.submodule == ''
         with:
           submodules: recursive # for when inputs.submodule is populated
           path: ${{ steps.asadm-wd.outputs.value }}
