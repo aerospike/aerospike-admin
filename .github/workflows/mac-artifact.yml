@@ -20,17 +20,24 @@ jobs:
   build:
     runs-on: macos-10.15
     steps:
-      - name: Get aql working directory
+      - name: Get checkout directory
+        uses: haya14busa/action-cond@v1
+        id: checkout-dir
+        with:
+          cond: ${{ inputs.submodule != '' }}
+          if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.  
+          if_false: '.'
+      - name: Get asadm working directory
         uses: haya14busa/action-cond@v1
         id: asadm-wd
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: ${{ inputs.submodule }}
-          if_false: asadm
+          if_true: tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
+          if_false: admin
       - uses: actions/checkout@v2
         with:
           submodules: recursive # for when inputs.submodule is populated
-          path: ${{ steps.asadm-wd.outputs.value }}
+          path: ${{ steps.checkout-dir.outputs.value }}
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Get Python version from Pipfile
