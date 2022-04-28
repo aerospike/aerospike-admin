@@ -20,14 +20,22 @@ jobs:
   build:
     runs-on: macos-10.15
     steps:
+      - name: Get aql working directory
+        uses: haya14busa/action-cond@v1
+        id: asadm-wd
+        with:
+          cond: ${{ inputs.submodule != '' }}
+          if_true: ${{ inputs.submodule }}/asadm
+          if_false: asadm
       - uses: actions/checkout@v2
         with:
           submodules: recursive # for when inputs.submodule is populated
+          path: ${{ steps.asadm-wd.outputs.value }}
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Get Python version from Pipfile
+        working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
-          cd ${{ inputs.submodule || '.' }}
           git rev-parse HEAD
           echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
           echo ${{ steps.system-info.outputs.name }}
@@ -43,41 +51,35 @@ jobs:
         id: cache-asadm-asinfo
         env:
           cache-name: cache-asadm-asinfo
+          cache-index: "1"
         with:
           path: |
-            ${{ inputs.submodule || '.' }}/build/bin
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.PYTHON_VERSION }}-${{ env.cache-name }}-${{ hashFiles('**/*.py') }}-${{ hashFiles('**/*.json') }}
+            ${{ steps.asadm-wd.outputs.value }}/build/bin
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}--${{ hashFiles('**/*.py') }}-${{ hashFiles('**/*.json') }}
       - name: Pipenv setup
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
-          cd ${{ inputs.submodule || '.' }}
           brew install pipenv
           pipenv check
       - name: Build asadm
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
-          cd ${{ inputs.submodule || '.' }}
           make
       - name: Sanity Test tools
+        working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
-          cd ${{ inputs.submodule || '.' }}/build/bin
+          cd build/bin
           ls
           sudo install asadm /usr/local/bin
           ./asadm -e "info" 2>&1 | grep "Not able to connect"
           ./asinfo 2>&1 | grep "Not able to connect"
-      - name: Move artifacts to target dir HACK # This could be done in the makefile
-        run: |
-          cd ${{ inputs.submodule || '.' }}
-          mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-          mv build/bin/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-      - name: Get artifact name
-        uses: haya14busa/action-cond@v1
-        id: artifact-name
-        with:
-          cond: ${{ inputs.submodule != '' }}
-          if_true: ${{ inputs.submodule }}-binaries
-          if_false: binaries
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ steps.artifact-name.outputs.value }}
-          path: ${{ inputs.submodule || '.' }}/target
+          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asadm
+          path: ${{ steps.asadm-wd.outputs.value }}/build/bin/asadm
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asinfo
+          path: ${{ steps.asadm-wd.outputs.value }}/build/bin/asinfo
