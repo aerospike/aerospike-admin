@@ -26,13 +26,13 @@ jobs:
         with:
           cond: ${{ inputs.submodule != '' }}
           if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.  
-          if_false: '.'
+          if_false: admin
       - name: Get asadm working directory
         uses: haya14busa/action-cond@v1
         id: asadm-wd
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
+          if_true: aerospike-tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
           if_false: admin
       - uses: actions/checkout@v2
         with:
