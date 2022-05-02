@@ -38,6 +38,11 @@ define make_build
 	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py) || true ,
 	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm/asadm.py) || true
 	)
+
+	$(if $(filter $(OS),Darwin),
+	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asinfo.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm/asinfo.py) || true
+	)
 	
 
 endef
