@@ -40,7 +40,7 @@ jobs:
           path: ${{ steps.checkout-dir.outputs.value }}
           fetch-depth: 0
       - name: Print version
-        working-directory: ${{ steps.checkout-dir.outputs.value }}
+        working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
           git describe --tags --always
       - uses: kenchan0130/actions-system-info@master
