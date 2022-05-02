@@ -38,6 +38,10 @@ jobs:
         with:
           submodules: recursive # for when inputs.submodule is populated
           path: ${{ steps.checkout-dir.outputs.value }}
+          fetch-depth: 0
+      - name: Print version
+        run: |
+          git describe --tags --always
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Get Python version from Pipfile
