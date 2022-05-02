@@ -28,7 +28,7 @@ asadm_a = Analysis(['asadm.py'],
              cipher=block_cipher,
              noarchive=False)
 
-asinfo_a = Analysis(['asinfo.py'],
+asinfo_a = Analysis(['asinfo/asinfo.py'],
              pathex=[],
              binaries=[],
              datas=[],

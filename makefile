@@ -29,9 +29,10 @@ define make_build
 	rm -rf $(BUILD_ROOT)bin/*
 	rm -f `find . -type f -name '*.pyc' | xargs`
 	mkdir $(BUILD_ROOT)tmp/asadm
+	mkdir $(BUILD_ROOT)tmp/asinfo
 	cp -f *.py $(BUILD_ROOT)tmp/asadm
 	cp -f *.spec $(BUILD_ROOT)tmp/asadm
-	cp -f asinfo/asinfo.py $(BUILD_ROOT)tmp/asadm
+	cp -r asinfo/ $(BUILD_ROOT)tmp/asinfo
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
 
 	$(if $(filter $(OS),Darwin),
@@ -40,8 +41,8 @@ define make_build
 	)
 
 	$(if $(filter $(OS),Darwin),
-	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asinfo.py) || true ,
-	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm/asinfo.py) || true
+	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asinfo/asinfo.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asinfo/asinfo.py) || true
 	)
 	
 
