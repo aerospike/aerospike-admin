@@ -28,12 +28,11 @@ define make_build
 	rm -rf $(BUILD_ROOT)tmp/*
 	rm -rf $(BUILD_ROOT)bin/*
 	rm -f `find . -type f -name '*.pyc' | xargs`
-	mkdir $(BUILD_ROOT)tmp/asadm
-	mkdir $(BUILD_ROOT)tmp/asinfo
-	cp -f *.spec $(BUILD_ROOT)tmp/
-	cp -f asadm.py $(BUILD_ROOT)tmp/asadm
+	mkdir -p $(BUILD_ROOT)tmp/asadm
+	cp -f *.spec $(BUILD_ROOT)tmp/asadm
+	cp -f *.py $(BUILD_ROOT)tmp/asadm
+	cp -r asinfo/* $(BUILD_ROOT)tmp/asadm
 	rsync -aL lib $(BUILD_ROOT)tmp/asadm
-	cp -rf asinfo/* $(BUILD_ROOT)tmp/asinfo
 
 	$(if $(filter $(OS),Darwin),
 	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asadm.py) || true ,
@@ -41,8 +40,8 @@ define make_build
 	)
 
 	$(if $(filter $(OS),Darwin),
-	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asinfo/asinfo.py) || true ,
-	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asinfo/asinfo.py) || true
+	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm/asinfo.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm/asinfo.py) || true
 	)
 	
 
@@ -52,7 +51,7 @@ all:
 	$(call make_build)
 	pipenv install --dev
 	pipenv graph
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
 
 install:
 	install -d -m 755 $(INSTALL_ROOT)

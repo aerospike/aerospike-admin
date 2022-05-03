@@ -6,7 +6,7 @@ from PyInstaller.utils.hooks import collect_all
 datas = []
 binaries = [('/usr/bin/less','.')]
 hiddenimports = ['pipes', 'json', 'distro', 'dateutil.parser', 'toml', 'jsonschema', 'fcntl', 'bcrypt', "ply.yacc", "ply.lex", "pexpect.pxssh"]
-tmp_ret = collect_all('asadm.lib')
+tmp_ret = collect_all('lib')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 added_files = [
@@ -14,7 +14,7 @@ added_files = [
 
 block_cipher = None
 
-asadm_a = Analysis(['asadm/asadm.py'],
+asadm_a = Analysis(['asadm.py'],
              pathex=[],
              binaries=binaries,
              datas=datas,
@@ -28,7 +28,7 @@ asadm_a = Analysis(['asadm/asadm.py'],
              cipher=block_cipher,
              noarchive=False)
 
-asinfo_a = Analysis(['asinfo/asinfo.py'],
+asinfo_a = Analysis(['asinfo.py'],
              pathex=[],
              binaries=[],
              datas=[],
@@ -36,7 +36,7 @@ asinfo_a = Analysis(['asinfo/asinfo.py'],
              hookspath=[],
              hooksconfig={},
              runtime_hooks=[],
-             excludes=["zlib.cpython*"],
+             excludes=[],
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher,
