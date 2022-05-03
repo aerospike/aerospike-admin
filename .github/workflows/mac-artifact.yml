@@ -42,9 +42,11 @@ jobs:
         run: |
           git describe --tags --always
       - name: Get SHA
+        working-directory: ${{ steps.asadm-wd.outputs.value }}
         id: sha
         run: |
           echo ::setoutput name=sha::$(git rev-parse head)
+          git rev-parse head
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Get Python version from Pipfile
