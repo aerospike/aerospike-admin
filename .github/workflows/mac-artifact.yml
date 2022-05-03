@@ -13,8 +13,6 @@ on:
         description: The directory of the submodule, if this workflow is being called on a submodule
         required: false
         type: string
-    
-
 
 jobs:
   build:
@@ -25,14 +23,14 @@ jobs:
         id: checkout-dir
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.  
+          if_true: aerospike-tools # In this case we are expecting to checkout the tools package.
           if_false: admin
       - name: Get asadm working directory
         uses: haya14busa/action-cond@v1
         id: asadm-wd
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: aerospike-tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
+          if_true: aerospike-tools/${{ inputs.submodule }} # In this case we are expecting to checkout the tools package.
           if_false: admin
       - uses: actions/checkout@v2
         with:
@@ -61,17 +59,17 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pipenv'
+          cache: "pipenv"
       - name: Cache asadm and asinfo
         uses: actions/cache@v3
         id: cache-asadm-asinfo
         env:
           cache-name: cache-asadm-asinfo
-          cache-index: "2"
+          cache-index: "3"
         with:
           path: |
             ${{ steps.asadm-wd.outputs.value }}/build/bin
-          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}--${{ steps.sha.outputs.sha }}
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ steps.sha.outputs.sha }}
       - name: Pipenv setup
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         working-directory: ${{ steps.asadm-wd.outputs.value }}
