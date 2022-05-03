@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+OS = $(shell uname)
 SOURCE_ROOT = $(realpath .)
 BUILD_ROOT = $(SOURCE_ROOT)/build/
 INSTALL_ROOT = /opt/aerospike/bin/
@@ -49,9 +50,9 @@ endef
 
 all:
 	$(call make_build)
-	pipenv install --dev
-	pipenv graph
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
+	# pipenv install --dev
+	# pipenv graph
+	# pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
 
 install:
 	install -d -m 755 $(INSTALL_ROOT)
