@@ -93,7 +93,7 @@ jobs:
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asadm
           path: ${{ steps.asadm-wd.outputs.value }}/build/bin/asadm
-      - uses: actions/upload-artifact@v3
-        with:
-          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asinfo
-          path: ${{ steps.asadm-wd.outputs.value }}/build/bin/asinfo
+      # - uses: actions/upload-artifact@v3
+      #   with:
+      #     name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asinfo
+      #     path: ${{ steps.asadm-wd.outputs.value }}/build/bin/asinfo

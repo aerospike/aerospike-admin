@@ -15,8 +15,8 @@
 OS = $(shell uname)
 SOURCE_ROOT = $(realpath .)
 BUILD_ROOT = $(SOURCE_ROOT)/build/
-SYMLINK_ASADM = /usr/bin/asadm
-SYMLINK_ASINFO = /usr/bin/asinfo
+SYMLINK_ASADM = /usr/local/bin/asadm
+SYMLINK_ASINFO = /usr/local/bin/asinfo
 INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
 
