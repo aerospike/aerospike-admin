@@ -15,15 +15,15 @@
 OS = $(shell uname)
 SOURCE_ROOT = $(realpath .)
 BUILD_ROOT = $(SOURCE_ROOT)/build/
-SYMLINK_ASADM = /usr/bin/asadm-test
-SYMLINK_ASINFO = /usr/bin/asinfo-test
+SYMLINK_ASADM = /usr/bin/asadm
+SYMLINK_ASINFO = /usr/bin/asinfo
 INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
 
 ifneq (,$(filter $(OS),Darwin))
-INSTALL_ROOT = /usr/local/aerospike/bin
+INSTALL_ROOT = /usr/local/aerospike/bin/
 else
-INSTALL_ROOT = /opt/aerospike-tmp/bin/
+INSTALL_ROOT = /opt/aerospike/bin/
 endif
 
 SHELL := /bin/bash
@@ -69,6 +69,7 @@ init:
 
 .PHONY: install
 install: uninstall
+	install -d -m 755 $(INSTALL_ROOT)
 ifneq ($(wildcard $(BUILD_ROOT)bin/asadm/*),)
 	@echo "Asadm and Asinfo were built in one-dir mode"
 	cp -r $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
@@ -86,9 +87,9 @@ endif
 uninstall:
 	rm -r $(INSTALL_ROOT)asadm || true
 	rm -r $(INSTALL_ROOT)asinfo || true
-	rm $(SYMLINK_ASADM)
-	rm $(SYMLINK_ASINFO)
-	install -d -m 755 $(INSTALL_ROOT)
+	rm $(SYMLINK_ASADM) || true
+	rm $(SYMLINK_ASINFO) || true
+	
 
 .PHONY: clean
 clean:
