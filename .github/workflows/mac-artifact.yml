@@ -82,12 +82,12 @@ jobs:
         working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
           make one-dir
+          ls -al build/bin/asadm || true
       # - name: Setup tmate session
       #   uses: mxschmitt/action-tmate@v3
       - name: Sanity Test tools
         working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
-          ls build/bin/asadm || true
           sudo make install
           asadm -e "info" 2>&1 | grep "Not able to connect"
           asinfo 2>&1 | grep "Not able to connect"
