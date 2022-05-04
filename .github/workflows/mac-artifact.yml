@@ -94,7 +94,7 @@ jobs:
       - name: Create .tgz
         working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
-          tar -cvf asadm.tar build/bin/asadm
+          tar -C build/bin/ -cvf asadm.tar asadm
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asadm
