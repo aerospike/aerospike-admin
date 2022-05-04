@@ -91,10 +91,14 @@ jobs:
           sudo make install
           asadm -e "info" 2>&1 | grep "Not able to connect"
           asinfo 2>&1 | grep "Not able to connect"
+      - name: Create .tgz
+        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        run: |
+          tar -cvf asadm.tar ${{ steps.asadm-wd.outputs.value }}/build/bin/asadm
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asadm
-          path: ${{ steps.asadm-wd.outputs.value }}/build/bin/asadm
+          path: ${{ steps.asadm-wd.outputs.value }}/asadm.tar
       # - uses: actions/upload-artifact@v3
       #   with:
       #     name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asinfo
