@@ -91,7 +91,7 @@ jobs:
           sudo make install
           asadm -e "info" 2>&1 | grep "Not able to connect"
           asinfo 2>&1 | grep "Not able to connect"
-      - name: Create .tgz
+      - name: Create .tar
         working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
           tar -C build/bin/ -cvf asadm.tar asadm
