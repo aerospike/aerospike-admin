@@ -1,9 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
 
+datas = []
+binaries = [('/usr/bin/less','.')]
+hiddenimports = ['pipes', 'json', 'distro', 'dateutil.parser', 'toml', 'jsonschema', 'fcntl', 'bcrypt', "ply.yacc", "ply.lex", "pexpect.pxssh"]
+tmp_ret = collect_all('lib')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+added_files = [
+]
 
 block_cipher = None
 
-a_B = Analysis(['asinfo.py'],
+asinfo_a = Analysis(['asinfo.py'],
              pathex=[],
              binaries=[],
              datas=[],
@@ -17,10 +26,10 @@ a_B = Analysis(['asinfo.py'],
              cipher=block_cipher,
              noarchive=False)
 
-a = Analysis(['asadm.py'],
+asadm_a = Analysis(['asadm.py'],
              pathex=[],
-             binaries=[],
-             datas=[],
+             binaries=binaries,
+             datas=datas,
              hiddenimports=[],
              hookspath=[],
              hooksconfig={},
@@ -31,13 +40,13 @@ a = Analysis(['asadm.py'],
              cipher=block_cipher,
              noarchive=False)
 
-MERGE((a, "asadm", "asadm"), (a_B, "asinfo", "asinfo"))
+MERGE((asadm_a, "asadm", "asadm"), (asinfo_a, "asinfo", "asinfo"))
 
-pyz = PYZ(a.pure, a.zipped_data,
+asadm_pyz = PYZ(asadm_a.pure, asadm_a.zipped_data,
              cipher=block_cipher)
 
-exe = EXE(pyz,
-          a.scripts, 
+asadm_exe = EXE(asadm_pyz,
+          asadm_a.scripts, 
           [],
           exclude_binaries=True,
           name='asadm',
@@ -51,11 +60,11 @@ exe = EXE(pyz,
           codesign_identity=None,
           entitlements_file=None )
 
-pyz_B = PYZ(a_B.pure, a_B.zipped_data,
+asinfo_pyz = PYZ(asinfo_a.pure, asinfo_a.zipped_data,
              cipher=block_cipher)
 
-exe_B = EXE(pyz_B,
-          a_B.scripts, 
+asinfo_exe = EXE(asinfo_pyz,
+          asinfo_a.scripts, 
           [],
           exclude_binaries=True,
           name='asinfo',
@@ -69,19 +78,19 @@ exe_B = EXE(pyz_B,
           codesign_identity=None,
           entitlements_file=None )
 
-coll = COLLECT(exe,
-               a.binaries,
-               a.zipfiles,
-               a.datas, 
+asadm_coll = COLLECT(asadm_exe,
+               asadm_a.binaries,
+               asadm_a.zipfiles,
+               asadm_a.datas, 
                strip=False,
                upx=True,
                upx_exclude=[],
                name='asadm')
 
-coll_B = COLLECT(exe_B,
-               a_B.binaries,
-               a_B.zipfiles,
-               a_B.datas, 
+asinfo_coll = COLLECT(asinfo_exe,
+               asinfo_a.binaries,
+               asinfo_a.zipfiles,
+               asinfo_a.datas, 
                strip=False,
                upx=True,
                upx_exclude=[],
