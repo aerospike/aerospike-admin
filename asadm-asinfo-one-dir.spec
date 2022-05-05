@@ -1,9 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
+#
+# Creates a bundled directory as apposed to a single executable file. This allows for
+# faster startup but is a bit more difficult to distribute. On Linux, the performance at 
+# startup is negligible, however on MacOS the benefits are substantial. This is because
+# MacOS codesign verification phones home when a new executable is ran.  In onefile mode
+# the OS can not determine whether asadm/asinfo were previously verified so it will
+# verify again.
+#
+# TLDR; Use onedir for MacOS.
+#
+
 datas = []
 binaries = [('/usr/bin/less','.')]
-hiddenimports = ['pipes', 'json', 'distro', 'dateutil.parser', 'toml', 'jsonschema', 'fcntl', 'bcrypt', "ply.yacc", "ply.lex", "pexpect.pxssh"]
 tmp_ret = collect_all('lib')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

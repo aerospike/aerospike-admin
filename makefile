@@ -50,17 +50,23 @@ define make_build
 
 endef
 
+.PHONY: default
+default: one-file
 
-.PHONY: all
-all: init
+.PHONY: one-file
+one-file: init
 	$(call make_build)
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin)"
+	@echo Check $(BUILD_ROOT)bin for asadm and asinfo executables
 
+# For macOS but can be used for any OS.
+.PHONY: one-dir
 one-dir: init
 	$(call make_build)
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller $(BUILD_ROOT)tmp/asadm-asinfo-one-dir.spec --distpath $(BUILD_ROOT)bin --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo-one-dir.spec --distpath $(BUILD_ROOT)bin)"
 	mv $(BUILD_ROOT)bin/asinfo/asinfo $(BUILD_ROOT)bin/asadm/asinfo 
 	rm -r $(BUILD_ROOT)bin/asinfo
+	@echo Check $(BUILD_ROOT)bin for bundle
 
 .PHONY: init
 init:
