@@ -14,6 +14,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = [('/usr/bin/less','.')]
+hiddenimports
 tmp_ret = collect_all('lib')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
@@ -40,7 +41,7 @@ asadm_a = Analysis(['asadm.py'],
              pathex=[],
              binaries=binaries,
              datas=datas,
-             hiddenimports=[],
+             hiddenimports=hiddenimports,
              hookspath=[],
              hooksconfig={},
              runtime_hooks=[],
