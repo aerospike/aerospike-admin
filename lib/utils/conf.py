@@ -651,6 +651,7 @@ def get_cli_args():
     add_fn("-f", "--log-path")
     add_fn("-j", "--json", action="store_true")
     add_fn("--no-color", action="store_true")
+    add_fn("--debug", action="store_true")
     add_fn("--profile", action="store_true")
     add_fn("--single-node", action="store_true")
     add_fn("--line-separator", action="store_true")
