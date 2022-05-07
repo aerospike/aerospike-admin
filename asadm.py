@@ -17,6 +17,7 @@
 import inspect
 import cmd
 import getpass
+import logging
 
 import os
 import re
@@ -65,7 +66,7 @@ u"".encode("idna")
 # codec is registered well before it is used in getaddrinfo.
 # see https://bugs.python.org/issue29288, https://github.com/aws/aws-cli/blob/1.16.277/awscli/clidriver.py#L55,
 # and https://github.com/pyinstaller/pyinstaller/issues/1113 for more info :)
-u"".encode("idna")
+"".encode("idna")
 
 __version__ = "$$__version__$$"
 CMD_FILE_SINGLE_LINE_COMMENT_START = "//"
@@ -211,7 +212,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
         except Exception as e:
             await self.do_exit("")
-            logger.critical(str(e))
+            logger.critical(e)
 
         if not execute_only_mode:
 
@@ -622,6 +623,9 @@ async def main():
     cli_args = conf.get_cli_args()
 
     admin_version = get_version()
+
+    if cli_args.debug:
+        logger.setLevel(logging.DEBUG)
 
     if cli_args.help:
         conf.print_config_help()

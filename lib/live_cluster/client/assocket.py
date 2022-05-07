@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import socket
 import warnings
 import asyncio
@@ -53,6 +54,8 @@ except ImportError:
 
 
 class ASSocket:
+    logger = logging.getLogger("asadm")
+
     def __init__(
         self, ip, port, tls_name, user, password, auth_mode, ssl_context, timeout=5
     ):
@@ -171,7 +174,8 @@ class ASSocket:
             if not self.sock:
                 return False
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
-        except Exception:
+        except Exception as e:
+            self.logger.debug(e, include_traceback=True)
             return False
         return True
 
@@ -185,7 +189,8 @@ class ASSocket:
             if result is None or result == -1:
                 return False
 
-        except Exception:
+        except Exception as e:
+            self.logger.debug(e, include_traceback=True)
             return False
 
         return True
