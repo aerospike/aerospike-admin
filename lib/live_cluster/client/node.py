@@ -211,6 +211,13 @@ class Node(AsyncObject):
                 False,
                 ["curl -m 1 -s http://169.254.169.254/1.0/", "uname"],
             ),
+            (
+                "ethtool",
+                False,
+                [
+                    'sudo netstat -i | tr -s [:blank:] | cut -d" " -f1 | tail -n +3 | grep -v -E "lo|docker" | xargs --max-lines=1 -i{} sh -c "echo ethtool -S {}; ethtool -S {}"'
+                ],
+            ),
         ]
 
         # hack, _key needs to be defines before info calls... but may have

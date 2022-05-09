@@ -101,6 +101,8 @@ def parse_sys_section(section_list, imap, parsed_map):
 
         elif section == "scheduler":
             _parse_scheduler_section(imap, parsed_map)
+        elif section == "ethtool":
+            _parse_ethtool_section(imap, parsed_map)
 
         else:
             logger.warning(
@@ -957,6 +959,59 @@ def _parse_scheduler_section(imap, parsed_map):
         parsed_map[final_section_name] = {}
 
     parsed_map[final_section_name]["scheduler_stat"] = schedulers
+
+
+def _parse_ethtool_section(imap, parsed_map):
+    sec_id_1 = "ID_114"
+    final_section_name_1 = "ethtool"
+    raw_section_name_1, final_section_name_1, _ = get_section_name_from_id(sec_id_1)
+
+    logger.info("Parsing section: " + final_section_name_1)
+    if not imap:
+        logger.warning("Null section json")
+        return
+
+    ethtool_data = {}
+
+    ethtool_section_list = None
+
+    if raw_section_name_1 in imap:
+        ethtool_section_list = imap[raw_section_name_1]
+    else:
+        logger.warning(raw_section_name_1 + " section is not present in section json.")
+        return
+
+    ethtool_section = ethtool_section_list[0]
+    current_device = None
+
+    for line in ethtool_section:
+        line = line.lower()
+
+        if "ethtool" in line:
+            current_device = line.split()[-1]
+            ethtool_data[current_device] = {}
+            continue
+
+        if "nic statistics" in line:
+            continue
+
+        if current_device is None:
+            continue
+
+        line = line.replace(" ", "")
+        line = line.split(":")
+
+        if len(line) != 2:
+            continue
+
+        key, val = line
+
+        try:
+            ethtool_data[current_device][key] = int(val)
+        except:
+            ethtool_data[current_device][key] = val
+
+    parsed_map[final_section_name_1] = ethtool_data
 
 
 ### "iostat -x 1 10\n",
