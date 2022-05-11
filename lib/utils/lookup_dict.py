@@ -52,21 +52,25 @@ class LookupDict:
     def _filter(self, k, keys):
         return [key for key in keys if k in key]
 
-    def _get_prefix(self, key, min_prefix_len=1):
+    def _get_prefix(self, key_chars, min_prefix_len=1):
         # There should only be one key found
-        keys = self._get_key_by_filter(key, self._prefix_filter)
+        keys = self._get_key_by_filter(key_chars, self._prefix_filter)
         if len(keys) > 1:
-            raise KeyError("Unable to get prefix for an ambiguous key: '%s'" % (key))
+            raise KeyError(
+                "Unable to get prefix for an ambiguous key: '%s'" % (key_chars)
+            )
 
         if min_prefix_len == 0:
             return ""
 
         # Filter these keys
-        keys = self._kv.keys()
-        key = list(key)
+        keys = list(self._kv.keys())
+        key_chars = list(key_chars)
         prefix = ""
+
+        # Find the minimum unique prefix
         while len(keys) > 1:
-            prefix += key.pop(0)
+            prefix += key_chars.pop(0)
             keys = self._prefix_filter(prefix, keys)
 
         if len(prefix) >= min_prefix_len:
@@ -81,7 +85,7 @@ class LookupDict:
         except Exception:
             return prefix
 
-    def _prefix_filter(self, prefix, keys):
+    def _prefix_filter(self, prefix, keys) -> list[str]:
         return [key for key in keys if key.startswith(prefix)]
 
     def _get_suffix(self, key, min_suffix_len=1):
@@ -94,7 +98,7 @@ class LookupDict:
             return ""
 
         # Filter these keys
-        keys = self._kv.keys()
+        keys = list(self._kv.keys())
         key = list(key)
         suffix = ""
         while len(keys) > 1:
@@ -113,7 +117,7 @@ class LookupDict:
         except Exception:
             return suffix
 
-    def _suffix_filter(self, suffix, keys):
+    def _suffix_filter(self, suffix, keys) -> list[str]:
         return [key for key in keys if key.endswith(suffix)]
 
     def _get_key_by_filter(self, k, f):

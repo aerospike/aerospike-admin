@@ -5,8 +5,9 @@ import logging
 import pprint
 import shutil
 import time
-from os import sys
+import sys
 import traceback
+from typing import Any, Callable, Optional
 
 from lib.view.sheet.render import get_style_json, set_style_json
 from lib.view.terminal import terminal
@@ -39,8 +40,8 @@ class CollectinfoController(LiveClusterCommandController):
 
     def __init__(self):
         self.modifiers = set(["with"])
-        self.aslogfile = ""
-        self.aslogdir = ""
+        self.ignore_errors = False
+        self.collectinfo_root_controller = None
 
     def _collect_local_file(self, src, dest_dir):
         self.logger.info("Copying file %s to %s" % (src, dest_dir))
@@ -49,38 +50,41 @@ class CollectinfoController(LiveClusterCommandController):
         except Exception as e:
             raise e
 
-    async def _collectinfo_content(self, func, parm="", alt_parms=""):
+    async def _collectinfo_capture_and_write_to_file(
+        self, filename: str, func: Callable, param: list[str] = []
+    ):
+        if self.nodes and isinstance(self.nodes, list):
+            param += ["with"] + self.nodes
+
+        o = await util.capture_stdout(func, param[:])
+
+        self._write_func_output_to_file(filename, func, param, o)
+
+    def _write_func_output_to_file(
+        self, filename: str, func: Callable, param: list[str], content: str
+    ):
         name = ""
-        capture_stdout = util.capture_stdout
         sep = constants.COLLECTINFO_SEPERATOR
 
         old_style_json = get_style_json()
-        set_style_json()
+        set_style_json(False)
 
         try:
             name = func.__name__
-        except Exception:
+        except Exception as e:
             pass
 
         info_line = constants.COLLECTINFO_PROGRESS_MSG % (
             name,
-            "%s" % (" %s" % (str(parm)) if parm else ""),
+            "%s" % (" %s" % (str(param)) if param else ""),
         )
         self.logger.info(info_line)
-        if parm:
-            sep += str(parm) + "\n"
+        if param:
+            sep += " ".join(param) + "\n"
 
-        if func == "cluster":
-            o = await self.cluster.info(parm)
-        else:
-            if self.nodes and isinstance(self.nodes, list):
-                parm += ["with"] + self.nodes
-            o = await capture_stdout(func, parm)
-        util.write_to_file(self.aslogfile, sep + str(o))
+        util.write_to_file(filename, sep + str(content))
 
         set_style_json(old_style_json)
-
-        return ""
 
     def _write_version(self, line):
         print("asadm version " + str(self.asadm_version))
@@ -250,8 +254,8 @@ class CollectinfoController(LiveClusterCommandController):
             best_practices,
             jobs,
         ) = await asyncio.gather(
-            self.cluster.info("build", nodes=self.nodes),
-            self.cluster.info("version", nodes=self.nodes),
+            self.cluster.info_build(nodes=self.nodes),
+            self.cluster.info_version(nodes=self.nodes),
             self.cluster.info_node(nodes=self.nodes),
             self.cluster.info_ip_port(nodes=self.nodes),
             self.cluster.info_service_list(nodes=self.nodes),
@@ -351,20 +355,6 @@ class CollectinfoController(LiveClusterCommandController):
 
         return acl_map
 
-    def _dump_in_json_file(self, as_logfile_prefix, filename, dump, ignore_errors):
-        self.logger.info("Dumping collectinfo {}.", filename)
-        self.aslogfile = as_logfile_prefix + filename
-
-        try:
-            json_dump = json.dumps(dump, indent=2, separators=(",", ":"))
-            with open(self.aslogfile, "w") as f:
-                f.write(json_dump)
-        except Exception as e:
-            self.logger.warning("Failed to write JSON file: " + str(e))
-            pretty_json = pprint.pformat(dump, indent=1)
-            self.logger.debug(pretty_json)
-            raise
-
     async def _get_collectinfo_data_json(
         self,
         default_user,
@@ -403,6 +393,7 @@ class CollectinfoController(LiveClusterCommandController):
         )
 
         cluster_names = asyncio.create_task(self.cluster.info("cluster-name"))
+        pmap_map = None
 
         if CollectinfoController.get_pmap:
             pmap_map = await self._get_as_pmap()
@@ -421,7 +412,7 @@ class CollectinfoController(LiveClusterCommandController):
             if node in latency_map:
                 dump_map[node]["as_stat"]["latency"] = latency_map[node]
 
-            if CollectinfoController.get_pmap and node in pmap_map:
+            if pmap_map and node in pmap_map:
                 dump_map[node]["as_stat"]["pmap"] = pmap_map[node]
 
             # ACL requests only go to principal therefor we are storing it only
@@ -445,6 +436,15 @@ class CollectinfoController(LiveClusterCommandController):
         snp_map[cluster_name] = dump_map
         return snp_map
 
+    def _dump_in_json_file(self, complete_name, dump):
+        try:
+            json_dump = json.dumps(dump, indent=2, separators=(",", ":"))
+            self._dump_collectinfo_file(complete_name, json_dump)
+        except Exception:
+            pretty_json = pprint.pformat(dump, indent=1)
+            self.logger.debug(pretty_json)
+            raise
+
     async def _dump_collectinfo_json(
         self,
         timestamp,
@@ -457,7 +457,6 @@ class CollectinfoController(LiveClusterCommandController):
         enable_ssh,
         snp_count,
         wait_time,
-        ignore_errors,
     ):
         snpshots = {}
 
@@ -479,39 +478,269 @@ class CollectinfoController(LiveClusterCommandController):
 
             time.sleep(wait_time)
 
-        self._dump_in_json_file(
-            as_logfile_prefix, "ascinfo.json", snpshots, ignore_errors
-        )
+        self._dump_in_json_file(as_logfile_prefix + "ascinfo.json", snpshots)
 
-    async def _dump_collectinfo_license_json(
-        self, as_logfile_prefix, agent_host, agent_port, ignore_errors
-    ):
+    def _dump_collectinfo_file(self, filename: str, dump: str):
+        self.logger.info("Dumping collectinfo {}.", filename)
+
+        try:
+            util.write_to_file(filename, dump)
+        except Exception as e:
+            self.logger.warning("Failed to write file {}: {}", filename, str(e))
+            raise
+
+    async def _dump_collectinfo_license_data(
+        self,
+        as_logfile_prefix: str,
+        agent_host: str,
+        agent_port: str,
+        get_store: bool,
+    ) -> None:
         self.logger.info("Data collection license usage in progress...")
         self.logger.info("Requesting data usage for past 365 days...")
-        self.aslogfile = as_logfile_prefix + "aslicenseusage.json"
 
-        resp, error = await common.request_license_usage(agent_host, agent_port)
+        resp, error = await common.request_license_usage(
+            agent_host, agent_port, get_store
+        )
 
         if error is not None:
             self.logger.error(
-                "Failed to retrieve license usage information : {}",
-                str(error),
+                "Failed to retrieve license usage information : %s",
+                error,
             )
-            return False
+            raise error
 
-        self._dump_in_json_file(
-            as_logfile_prefix, "aslicenseusage.json", resp, ignore_errors
-        )
-        return True
+        if "raw_store" in resp:
+            filename = "aslicenseraw.store"
+            complete_filename = as_logfile_prefix + filename
+            raw_store = resp["raw_store"]
+            try:
+                self._dump_collectinfo_file(complete_filename, raw_store)
+            except Exception as e:
+                error = e  # store error for after json file write so we don't skip it
+
+            del resp["raw_store"]
+
+        complete_filename = as_logfile_prefix + "aslicenseusage.json"
+        self._dump_in_json_file(complete_filename, resp)
+
+        if error:
+            raise error
 
     ###########################################################################
     # Functions for dumping pretty print files
 
-    async def _dump_collectinfo_pretty_print(
-        self, timestamp, as_logfile_prefix, config_path=""
-    ):
+    async def _dump_collectinfo_ascollectinfo(
+        self, as_logfile_prefix, file_header
+    ) -> None:
         ####### Dignostic info ########
-        self.aslogfile = as_logfile_prefix + "ascollectinfo.log"
+        complete_filename = as_logfile_prefix + "ascollectinfo.log"
+
+        try:
+            dignostic_info_params = [
+                "network",
+                "namespace",
+                "set",
+                "xdr",
+                "dc",
+                "sindex",
+            ]
+
+            dignostic_features_params = ["features"]
+
+            dignostic_show_params = [
+                "config",
+                "config xdr",
+                "config dc",
+                "config cluster",
+                "distribution",
+                "distribution eviction",
+                "distribution object_size -b",
+                "latencies -v -e 1 -b 17",
+                "statistics",
+                "statistics xdr",
+                "statistics dc",
+                "statistics sindex",
+            ]
+
+            if CollectinfoController.get_pmap:
+                dignostic_show_params.append("pmap")
+
+            dignostic_aerospike_info_commands = [
+                "service",
+                "services",
+                "peers-clear-std",
+                "peers-clear-alt",
+                "peers-tls-std",
+                "peers-tls-alt",
+                "alumni-clear-std",
+                "alumni-tls-std",
+                "peers-generation",
+                "roster:",
+            ]
+
+            as_version = asyncio.create_task(self.cluster.info("build"))
+            namespaces = asyncio.create_task(self.cluster.info("namespaces"))
+
+            # find version
+            try:
+                as_version = await as_version
+                as_version = as_version.popitem()[1]
+            except Exception:
+                as_version = None
+
+            if isinstance(as_version, Exception):
+                as_version = None
+
+            # find all namespaces
+            try:
+                namespaces = self._parse_namespace(await namespaces)
+            except Exception:
+                namespaces = []
+
+            # add hist-dump or histogram command to collect list
+
+            hist_list = ["ttl", "object-size", "object-size-linear"]
+            hist_dump_info_str = "histogram:namespace=%s;type=%s"
+
+            try:
+                if version.LooseVersion(as_version) < version.LooseVersion("4.2.0"):
+                    # histogram command introduced in 4.2.0
+                    # use hist-dump command for older versions
+                    hist_list = ["ttl", "objsz"]
+                    hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
+            except Exception:  # probably failed to get build version, node may be down
+                pass
+
+            for ns in namespaces:
+                for hist in hist_list:
+                    dignostic_aerospike_info_commands.append(
+                        hist_dump_info_str % (ns, hist)
+                    )
+
+            util.write_to_file(complete_filename, file_header)
+
+            # All these calls to collectinfo_content must happen synchronously because they
+            # capture std output.
+            try:
+                await self._collectinfo_capture_and_write_to_file(
+                    complete_filename, self._write_version
+                )
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+
+            try:
+                info_controller = InfoController()
+                for info_param in dignostic_info_params:
+                    await self._collectinfo_capture_and_write_to_file(
+                        complete_filename, info_controller, info_param.split()
+                    )
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+
+            try:
+                show_controller = ShowController()
+                for show_param in dignostic_show_params:
+                    await self._collectinfo_capture_and_write_to_file(
+                        complete_filename, show_controller, show_param.split()
+                    )
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+
+            try:
+                features_controller = FeaturesController()
+                for cmd in dignostic_features_params:
+                    await self._collectinfo_capture_and_write_to_file(
+                        complete_filename, features_controller, cmd.split()
+                    )
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+
+            try:
+                for cmd in dignostic_aerospike_info_commands:
+                    result = await self.cluster.info(cmd)
+                    self._write_func_output_to_file(
+                        complete_filename, self.cluster.info, [cmd], result
+                    )
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+        except Exception as e:
+            util.write_to_file(complete_filename, str(e))
+            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.debug(traceback.format_exc())
+            raise
+
+    async def _dump_collectinfo_summary(self, as_logfile_prefix: str, fileHeader: str):
+        complete_filename = as_logfile_prefix + "summary.log"
+
+        try:
+            util.write_to_file(complete_filename, fileHeader)
+
+            summary_params = ["summary"]
+            summary_info_params = ["network", "namespace", "set", "xdr", "dc", "sindex"]
+
+            try:
+                await self._collectinfo_capture_and_write_to_file(
+                    complete_filename, self._write_version
+                )
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+
+            if self.collectinfo_root_controller is None:
+                self.logger.critical("Collectinfo root controller is not initialized.")
+                return
+
+            try:
+                for summary_param in summary_params:
+                    await self._collectinfo_capture_and_write_to_file(
+                        complete_filename,
+                        self.collectinfo_root_controller.execute,
+                        summary_param.split(),
+                    )
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+
+            try:
+                info_controller = InfoController()
+                for info_param in summary_info_params:
+                    await self._collectinfo_capture_and_write_to_file(
+                        complete_filename, info_controller, info_param.split()
+                    )
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+
+        except Exception as e:
+            util.write_to_file(complete_filename, str(e))
+            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.debug(traceback.format_exc())
+            raise
+
+    async def _dump_collectinfo_health(self, as_logfile_prefix: str, fileHeader: str):
+        if self.collectinfo_root_controller is None:
+            self.logger.critical("Collectinfo root controller is not initialized.")
+            return
+
+        complete_filename = as_logfile_prefix + "health.log"
+
+        health_params = ["health -v"]
+
+        try:
+            util.write_to_file(complete_filename, fileHeader)
+
+            for health_param in health_params:
+                await self._collectinfo_capture_and_write_to_file(
+                    complete_filename,
+                    self.collectinfo_root_controller.execute,
+                    health_param.split(),
+                )
+        except Exception as e:
+            util.write_to_file(complete_filename, str(e))
+            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.debug(traceback.format_exc())
+            raise
+
+    async def _dump_collectinfo_sysinfo(self, as_logfile_prefix: str, fileHeader: str):
+        complete_filename = as_logfile_prefix + "sysinfo.log"
 
         # getting service port to use in ss/netstat command
         port = 3000
@@ -520,222 +749,51 @@ class CollectinfoController(LiveClusterCommandController):
         except Exception:
             port = 3000
 
-        collect_output = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
-
-        dignostic_info_params = ["network", "namespace", "set", "xdr", "dc", "sindex"]
-
-        dignostic_features_params = ["features"]
-
-        dignostic_show_params = [
-            "config",
-            "config xdr",
-            "config dc",
-            "config cluster",
-            "distribution",
-            "distribution eviction",
-            "distribution object_size -b",
-            "latencies -v -e 1 -b 17",
-            "statistics",
-            "statistics xdr",
-            "statistics dc",
-            "statistics sindex",
-        ]
-
-        if CollectinfoController.get_pmap:
-            dignostic_show_params.append("pmap")
-
-        dignostic_aerospike_info_commands = [
-            "service",
-            "services",
-            "peers-clear-std",
-            "peers-clear-alt",
-            "peers-tls-std",
-            "peers-tls-alt",
-            "alumni-clear-std",
-            "alumni-tls-std",
-            "peers-generation",
-            "roster:",
-        ]
-
-        summary_params = ["summary"]
-        summary_info_params = ["network", "namespace", "set", "xdr", "dc", "sindex"]
-        health_params = ["health -v"]
-
-        as_version = asyncio.create_task(self.cluster.info("build"))
-        namespaces = asyncio.create_task(self.cluster.info("namespaces"))
-
-        # find version
         try:
-            as_version = await as_version
-            as_version = as_version.popitem()[1]
-        except Exception:
-            as_version = None
-
-        if isinstance(as_version, Exception):
-            as_version = None
-
-        # find all namespaces
-        try:
-            namespaces = self._parse_namespace(await namespaces)
-        except Exception:
-            namespaces = []
-
-        # add hist-dump or histogram command to collect list
-
-        hist_list = ["ttl", "object-size", "object-size-linear"]
-        hist_dump_info_str = "histogram:namespace=%s;type=%s"
-
-        try:
-            if version.LooseVersion(as_version) < version.LooseVersion("4.2.0"):
-                # histogram command introduced in 4.2.0
-                # use hist-dump command for older versions
-                hist_list = ["ttl", "objsz"]
-                hist_dump_info_str = "hist-dump:ns=%s;hist=%s"
-        except Exception:  # probably failed to get build version, node may be down
-            pass
-
-        for ns in namespaces:
-            for hist in hist_list:
-                dignostic_aerospike_info_commands.append(
-                    hist_dump_info_str % (ns, hist)
-                )
-
-        util.write_to_file(self.aslogfile, collect_output)
-
-        # All these calls to collectinfo_content must happen synchronously because they
-        # capture std output.
-        try:
-            await self._collectinfo_content(self._write_version)
+            self.failed_cmds = common.collect_sys_info(
+                port=port, timestamp=fileHeader, outfile=complete_filename
+            )
         except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
+            util.write_to_file(complete_filename, str(e))
+            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.debug(traceback.format_exc())
+            raise
 
-        try:
-            info_controller = InfoController()
-            for info_param in dignostic_info_params:
-                await self._collectinfo_content(info_controller, [info_param])
-        except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            show_controller = ShowController()
-            for show_param in dignostic_show_params:
-                await self._collectinfo_content(show_controller, show_param.split())
-        except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            features_controller = FeaturesController()
-            for cmd in dignostic_features_params:
-                await self._collectinfo_content(features_controller, [cmd])
-        except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            for cmd in dignostic_aerospike_info_commands:
-                await self._collectinfo_content("cluster", cmd)
-        except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
-
-        ####### Summary ########
-
-        collectinfo_root_controller = CollectinfoRootController(
-            asadm_version=self.asadm_version, clinfo_path=self.aslogdir
-        )
-
-        self.aslogfile = as_logfile_prefix + "summary.log"
-        util.write_to_file(self.aslogfile, collect_output)
-
-        try:
-            await self._collectinfo_content(self._write_version)
-        except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            for summary_param in summary_params:
-                await self._collectinfo_content(
-                    collectinfo_root_controller.execute, [summary_param]
-                )
-        except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
-
-        try:
-            info_controller = InfoController()
-            for info_param in summary_info_params:
-                await self._collectinfo_content(info_controller, [info_param])
-        except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
-
-        ####### Health ########
-
-        self.aslogfile = as_logfile_prefix + "health.log"
-        util.write_to_file(self.aslogfile, collect_output)
-
-        try:
-            for health_param in health_params:
-                await self._collectinfo_content(
-                    collectinfo_root_controller.execute, health_param.split()
-                )
-        except Exception as e:
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
-
-        ####### System info ########
-
-        self.aslogfile = as_logfile_prefix + "sysinfo.log"
-        self.failed_cmds = common.collect_sys_info(
-            port=port, timestamp=collect_output, outfile=self.aslogfile
-        )
-
-        ##### aerospike conf file #####
-
-        conf_path = config_path
-        self.aslogfile = as_logfile_prefix + "aerospike.conf"
+    async def _dump_collectinfo_aerospike_conf(
+        self, as_logfile_prefix: str, conf_path: Optional[str] = None
+    ):
+        complete_filename = as_logfile_prefix + "aerospike.conf"
 
         if not conf_path:
             conf_path = "/etc/aerospike/aerospike.conf"
 
-            # Comparing with this version because prior to this it was
-            # citrusleaf.conf
-            try:
-                if version.LooseVersion(as_version) <= version.LooseVersion("3.0.0"):
-                    conf_path = "/etc/citrusleaf/citrusleaf.conf"
-                    self.aslogfile = as_logfile_prefix + "citrusleaf.conf"
-            except Exception:  # probably failed to get build version, node may be down
-                pass
-
         try:
-            self._collect_local_file(conf_path, self.aslogfile)
+            self._collect_local_file(conf_path, complete_filename)
         except Exception as e:
+            self.logger.debug(traceback.format_exc())
+            self.logger.warning("Failed to generate {} file.", complete_filename)
             self.logger.warning(str(e))
-            util.write_to_file(self.aslogfile, str(e))
-            sys.stdout = sys.__stdout__
+            util.write_to_file(complete_filename, str(e))
 
     ###########################################################################
     # Collectinfo caller functions
 
     async def _run_collectinfo(
         self,
-        default_user,
-        default_pwd,
-        default_ssh_port,
-        default_ssh_key,
-        credential_file,
-        snp_count,
-        wait_time,
-        ignore_errors,
-        agent_host=None,
-        agent_port=None,
-        enable_ssh=False,
-        output_prefix="",
-        config_path="",
+        default_user: Optional[str],
+        default_pwd: Optional[str],
+        default_ssh_port: Optional[int],
+        default_ssh_key: Optional[str],
+        credential_file: Optional[str],
+        snp_count: int,
+        wait_time: int,
+        ignore_errors: bool,
+        agent_host: Optional[str] = None,
+        agent_port: Optional[str] = None,
+        agent_store: bool = False,
+        enable_ssh: bool = False,
+        output_prefix: str = "",
+        config_path: str = "",
     ):
 
         # JSON collectinfo snapshot count check
@@ -744,7 +802,7 @@ class CollectinfoController(LiveClusterCommandController):
             return
 
         timestamp = time.gmtime()
-        self.aslogdir, as_logfile_prefix = common.set_collectinfo_path(
+        aslogdir, as_logfile_prefix = common.set_collectinfo_path(
             timestamp, output_prefix=output_prefix
         )
 
@@ -753,15 +811,32 @@ class CollectinfoController(LiveClusterCommandController):
         debug_output_handler.setLevel(logging.DEBUG)
         debug_output_handler.setFormatter(logger.LogFormatter())
         self.logger.addHandler(debug_output_handler)
+        ignore_errors_msg = "Aborting collectinfo. To bypass use --ignore-errors."
 
         # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
         terminal.enable_color(False)
 
-        # list of failed system commands
+        try:
+            if agent_host is not None and agent_port is not None:
+                await self._dump_collectinfo_license_data(
+                    as_logfile_prefix,
+                    agent_host,
+                    agent_port,
+                    agent_store,
+                )
+
+        except Exception:
+            exc = traceback.format_exc()
+            self.logger.debug(exc)
+
+            if not ignore_errors:
+                self.logger.error(ignore_errors_msg)
+                return
+
+        file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
         self.failed_cmds = []
 
         try:
-            # JSON collectinfo
             await self._dump_collectinfo_json(
                 timestamp,
                 as_logfile_prefix,
@@ -773,57 +848,48 @@ class CollectinfoController(LiveClusterCommandController):
                 enable_ssh,
                 snp_count,
                 wait_time,
-                ignore_errors,
             )
-        except Exception:
-            exc = traceback.format_exc()
-            self.logger.debug(exc)
-
-            if not ignore_errors:
-                self.logger.error(
-                    "Aborting collectinfo. To bypass use --ignore-errors."
-                )
+        except:
+            if not self.ignore_errors:
+                self.logger.error(ignore_errors_msg)
                 return
 
-        try:
-            if agent_host is not None:
-                if not await self._dump_collectinfo_license_json(
-                    as_logfile_prefix, agent_host, agent_port, ignore_errors
-                ):
+        # Must happen after json dump and before summary and health. The json data is used
+        # to generate the summary and health output.
+        self.collectinfo_root_controller = CollectinfoRootController(
+            asadm_version=self.asadm_version, clinfo_path=aslogdir
+        )
+
+        coroutines = [
+            self._dump_collectinfo_ascollectinfo(as_logfile_prefix, file_header),
+            self._dump_collectinfo_summary(as_logfile_prefix, file_header),
+            self._dump_collectinfo_health(as_logfile_prefix, file_header),
+            self._dump_collectinfo_sysinfo(as_logfile_prefix, file_header),
+            self._dump_collectinfo_aerospike_conf(as_logfile_prefix, config_path),
+        ]
+
+        for i, co in enumerate(coroutines):
+            try:
+                await co
+            except:
+                if not ignore_errors:
+                    self.logger.error(ignore_errors_msg)
+
+                    # close remaining coroutines.  An error will be raised if they are not
+                    # awaited.
+                    if i < len(coroutines) - 1:
+                        for co in coroutines[i + 1 :]:
+                            co.close()
+
                     return
-        except Exception:
-            exc = traceback.format_exc()
-            self.logger.debug(exc)
-
-            if not ignore_errors:
-                self.logger.error(
-                    "Aborting collectinfo. To bypass use --ignore-errors."
-                )
-                return
-
-        try:
-            # Pretty print collectinfo
-            await self._dump_collectinfo_pretty_print(
-                timestamp, as_logfile_prefix, config_path=config_path
-            )
-        except Exception:
-            exc = traceback.format_exc()
-            self.logger.warning("Failed to generate {} file.", self.aslogfile)
-            self.logger.debug(exc)
-
-            if not ignore_errors:
-                self.logger.error(
-                    "Aborting collectinfo. To bypass use --ignore-errors."
-                )
-                return
 
         self.logger.removeHandler(debug_output_handler)
 
         # Archive collectinfo directory
-        common.archive_log(self.aslogdir)
+        common.archive_log(aslogdir)
 
         # printing collectinfo summary
-        common.print_collectinfo_summary(self.aslogdir, failed_cmds=self.failed_cmds)
+        common.print_collectinfo_summary(aslogdir, failed_cmds=self.failed_cmds)
         terminal.enable_color(True)
 
     @CommandHelp(
@@ -852,8 +918,9 @@ class CollectinfoController(LiveClusterCommandController):
         "                                             1.2.3.4:3232,uid,passphrase,key_path",
         "                                             [2001::1234:10],uid,pwd",
         "                                             [2001::1234:10]:3232,uid,,key_path",
-        "    --agent-host    <host>       - Host IP of the Unique-Data-Agent to collect license data usage.",
-        "    --agent-port    <int>        - Port of the Unique-Data-Agent. Default: 8080",
+        "    --agent-host    <host>       - Host IP of the Unique Data Agent to collect license data usage.",
+        "    --agent-port    <int>        - Port of the UDA. Default: 8080",
+        "    --agent-store                - Collect the raw datastore of the UDA."
         "    --output-prefix <string>     - Output directory name prefix.",
         "    --asconfig-file <string>     - Aerospike config file path to collect.",
         "                                   Default: /etc/aerospike/aerospike.conf",
@@ -891,6 +958,14 @@ class CollectinfoController(LiveClusterCommandController):
             arg="--agent-port",
             default="8080",
             return_type=str,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        agent_store = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--agent-store",
+            default=False,
             modifiers=self.modifiers,
             mods=self.mods,
         )
@@ -990,6 +1065,7 @@ class CollectinfoController(LiveClusterCommandController):
             ignore_errors,
             agent_host=agent_host,
             agent_port=agent_port,
+            agent_store=agent_store,
             enable_ssh=enable_ssh,
             output_prefix=output_prefix,
             config_path=config_path,

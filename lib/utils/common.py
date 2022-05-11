@@ -22,6 +22,7 @@ import json
 import logging
 import operator
 import os
+from typing import Literal, Optional, TypeVar, TypedDict, Union
 import distro
 import socket
 import time
@@ -395,6 +396,311 @@ def _round_up(value, rounding_factor):
     return d * rounding_factor
 
 
+class UDAEntryNamespaceDict(TypedDict):
+    master_objects: int
+    unique_data_bytes: int
+
+
+T = TypeVar("T")
+NamespaceDict = dict[str, T]
+UDAEntryNamespacesDict = NamespaceDict[UDAEntryNamespaceDict]
+
+
+class UDAEntryDict(TypedDict):
+    cluster_name: str
+    cluster_generation: int
+    node_count: int
+    hours_since_start: int
+    time: str
+    level: Union[Literal["info"], Literal["error"]]
+    master_objects: int
+    unique_data_bytes: int
+    namespaces: UDAEntryNamespacesDict
+    cluster_stable: bool
+    errors: list[str]
+
+
+class UDAEntriesRespDict(TypedDict):
+    count: int
+    entries: list[UDAEntryDict]
+
+
+class UDAResponsesRequiredDict(TypedDict):
+    # TODO: Maybe get rid of possible str type
+    license_usage: UDAEntriesRespDict
+    health: dict
+
+
+class UDAResponsesOptionalDict(TypedDict, total=False):
+    raw_store: str
+
+
+class UDAResponsesDict(UDAResponsesRequiredDict, UDAResponsesOptionalDict):
+    pass
+
+
+async def _request_license_usage(
+    agent_host: str, agent_port: str, get_store: bool = False
+) -> tuple[UDAResponsesDict, Union[Exception, None]]:
+    json_data: UDAResponsesDict = {
+        "license_usage": {"count": 0, "entries": []},
+        "health": {},
+    }
+    error = None
+
+    a_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        days=365
+    )
+    a_year_ago = a_year_ago.isoformat()
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        entries_params = {"start": a_year_ago}
+        agent_req_base = "http://" + agent_host + ":" + str(agent_port) + "/v1/"
+        requests = [
+            session.get(
+                agent_req_base + "entries/range/time",
+                params=entries_params,
+            ),
+            session.get(
+                agent_req_base + "health",
+                params=entries_params,
+            ),
+        ]
+
+        res_entries = res_health = res_store = None
+
+        if get_store:
+            requests.append(session.get(agent_req_base + "raw-store"))
+            (
+                res_entries,
+                res_health,
+                res_store,
+            ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
+                *requests
+            )
+        else:
+            (
+                res_entries,
+                res_health,
+            ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
+                *requests
+            )
+
+        try:
+            res_health = await res_health.json()
+
+            if res_health is not None:
+                json_data["health"] = res_health
+            else:
+                error = Exception("Unable to connect")
+        except Exception as e:
+            # TODO: Maybe use a different type
+            error = e
+
+        try:
+            res_entries = await res_entries.json()
+
+            if res_entries is not None:
+                json_data["license_usage"] = res_entries
+            else:
+                error = Exception("Unable to connect")
+        except Exception as e:
+
+            if error is None:
+                error = e
+
+        if res_store is not None:
+            try:
+
+                res_store = await res_store.text()
+
+                if res_store is not None:
+                    json_data["raw_store"] = res_store
+                else:
+                    error = Exception("Unable to connect")
+                    json_data["raw_store"] = str(error)
+            except Exception as e:
+                # TODO: Maybe use a different type
+                json_data["raw_store"] = str(e)
+
+                if error is None:
+                    error = e
+
+    return json_data, error
+
+
+request_license_usage = util.async_cached(_request_license_usage, ttl=30)
+
+
+def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
+    """
+    Function takes dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
+    Function finds migration status per namespace, and per cluster and updates output dictionaries.
+    """
+
+    if not namespace_stats:
+        return
+
+    for ns, ns_stats in namespace_stats.items():
+        if not ns_stats or isinstance(ns_stats, Exception):
+            continue
+
+        migrations_in_progress = any(
+            util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("migrate_tx_partitions_remaining", "migrate-tx-partitions-remaining"),
+                default_value=0,
+                return_type=int,
+            ).values()
+        )
+        if migrations_in_progress:
+            ns_dict[ns]["migrations_in_progress"] = True
+            cluster_dict["migrations_in_progress"] = True
+
+
+class SummaryClusterLicenseAggOptionalDict(TypedDict, total=False):
+    min: int
+    max: int
+    avg: int
+    latest_time: datetime.datetime
+
+
+class SummaryClusterLicenseAggRequiredDict(TypedDict):
+    latest: int
+
+
+class SummaryClusterLicenseAggDict(
+    SummaryClusterLicenseAggOptionalDict, SummaryClusterLicenseAggRequiredDict
+):
+    pass
+
+
+class SummaryStorageUsageDict(TypedDict):
+    total: int
+    avail: int
+    avail_pct: float
+    used: int
+    used_pct: float
+
+
+class SummaryClusterOptionalDict(TypedDict, total=False):
+    device: SummaryStorageUsageDict
+    pmem: SummaryStorageUsageDict
+    pmem_index: SummaryStorageUsageDict
+    flash_index: SummaryStorageUsageDict
+
+
+class SummaryClusterRequiredDict(TypedDict):
+    server_version: list[str]
+    os_version: list[str]
+    cluster_size: list[int]
+    cluster_name: list[str]
+    device_count: int
+    device_count_per_node: int
+    device_count_same_across_nodes: bool
+    active_features: list[str]
+    migrations_in_progress: bool
+    active_ns: int
+    ns_count: int
+    license_data: SummaryClusterLicenseAggDict
+    memory: SummaryStorageUsageDict
+
+
+class SummaryClusterDict(SummaryClusterOptionalDict, SummaryClusterRequiredDict):
+    pass
+
+
+class SummaryNamespaceOptionalDict(TypedDict, total=False):
+    compression_ratio: float
+    cache_read_pct: int
+    device: SummaryStorageUsageDict
+    pmem: SummaryStorageUsageDict
+    pmem_index: SummaryStorageUsageDict
+    flash_index: SummaryStorageUsageDict
+
+
+class SummaryNamespaceRequiredDict(TypedDict):
+    devices_total: int
+    devices_per_node: int
+    device_count_same_across_nodes: bool
+    repl_factor: list[int]
+    master_objects: int
+    migrations_in_progress: bool
+    index_type: str  # TODO: should be Union[Literal["pmem"], Literal["flash"], Literal["shmem"]]
+    memory: SummaryStorageUsageDict
+    rack_aware: bool
+    license_data: SummaryClusterLicenseAggDict
+
+
+class SummaryNamespaceDict(SummaryNamespaceOptionalDict, SummaryNamespaceRequiredDict):
+    pass
+
+
+SummaryNamespacesDict = NamespaceDict[SummaryNamespaceDict]
+
+
+class SummaryDict(TypedDict):
+    CLUSTER: SummaryClusterDict
+    NAMESPACES: SummaryNamespacesDict
+
+
+def _initialize_summary_output(ns_list) -> SummaryDict:
+    """
+    Function takes list of namespace names.
+    Returns dictionary with summary fields set.
+    """
+
+    summary_dict: SummaryDict = {
+        "CLUSTER": {
+            "server_version": [],
+            "os_version": [],
+            "active_features": [],
+            "cluster_size": [],
+            "cluster_name": [],
+            "migrations_in_progress": False,
+            "device_count": 0,
+            "device_count_per_node": 0,
+            "device_count_same_across_nodes": True,
+            "memory": {
+                "total": 0,
+                "used": 0,
+                "used_pct": 0.0,
+                "avail": 0,
+                "avail_pct": 0.0,
+            },
+            "active_ns": 0,
+            "ns_count": 0,
+            "license_data": {"latest": 0},
+        },
+        "NAMESPACES": {},
+    }
+
+    for ns in ns_list:
+        ns_dict: SummaryNamespaceDict = {
+            "devices_total": 0,
+            "devices_per_node": 0,
+            "device_count_same_across_nodes": True,
+            "repl_factor": [],
+            "master_objects": 0,
+            "migrations_in_progress": False,
+            # Memory is always used regardless of configuration
+            "memory": {
+                "total": 0,
+                "used": 0,
+                "used_pct": 0.0,
+                "avail": 0,
+                "avail_pct": 0.0,
+            },
+            "index_type": "shmem",
+            "rack_aware": False,
+            "license_data": {"latest": 0},
+        }
+        summary_dict["NAMESPACES"][ns] = ns_dict
+
+    return summary_dict
+
+
 def _license_data_usage_adjustment(effective_repl, master_objects, used_bytes):
     if effective_repl == 0:
         return 0
@@ -404,7 +710,105 @@ def _license_data_usage_adjustment(effective_repl, master_objects, used_bytes):
     return round((used_bytes / effective_repl) - (record_overhead * master_objects))
 
 
-def _manually_compute_license_data_size(namespace_stats, cluster_dict):
+class AggregateLicenseUsage:
+    """
+    A helper object for calculating min, max, avg and storing latest and latest_time.
+    It simply cleans up the code.  It is used to calculate total license usage for the
+    cluster and for each namespace.
+    """
+
+    def __init__(self):
+        """
+        If val is None then the instance is init with defaults
+        """
+        self.initialized = False
+        self.min = float("inf")
+        self.max = 0
+        self.avg = 0
+        self.latest = 0
+        self.latest_time = datetime.datetime.now()
+        self.count = 0
+
+    def update(self, val, time=None):
+        self.min = min(self.min, val)
+        self.max = max(self.max, val)
+        self.count += 1
+        self.avg = (
+            (self.avg * (self.count - 1)) + val
+        ) / self.count  # get old average first
+        self.latest = val
+
+        if time != None:
+            self.latest_time = datetime.datetime.fromisoformat(time)
+
+    def __dict__(self) -> SummaryClusterLicenseAggDict:
+        d: SummaryClusterLicenseAggDict = {"latest": self.latest}
+        d["latest_time"] = self.latest_time
+        d["min"] = self.min  # type: ignore
+        d["max"] = self.max
+        d["avg"] = round(self.avg)
+
+        return d
+
+
+def _parse_agent_response(
+    license_usage: UDAEntriesRespDict,
+    summary_dict: SummaryDict,
+    allow_unstable: bool,
+):
+    """
+    license_usage - a combination of responses from the unique-data-agent.
+    cluster_dict - A dictionary in which to store the result.
+    filter_cluster_stable - Ignore entries where the cluster is unstable because
+                              the computation may not be accurate. Default=True
+    """
+    entries = license_usage["entries"]
+    cluster_result = AggregateLicenseUsage()
+    namespaces_result: dict[str, AggregateLicenseUsage] = {}
+
+    for entry in entries:
+        if entry["level"] == "info":
+            # Pre-release v. of uda did not have cluster-stable
+            if not allow_unstable and not entry["cluster_stable"]:
+                continue
+
+            time_ = entry["time"]
+
+            total_data_bytes = entry["unique_data_bytes"]
+            cluster_result.update(total_data_bytes, time_)
+
+            if "namespaces" in entry:
+                for ns, usage in entry["namespaces"].items():
+                    ns_data_bytes = usage["unique_data_bytes"]
+                    if ns not in namespaces_result:
+                        namespaces_result[ns] = AggregateLicenseUsage()
+
+                    namespaces_result[ns].update(ns_data_bytes, time_)
+
+    if cluster_result.count != 0:
+        summary_dict["CLUSTER"][
+            "license_data"
+        ] = (
+            cluster_result.__dict__()
+        )  # allows type checker to view type rather than generic dict
+    else:
+        raise ValueError("No processable data was received from the UDA.")
+
+    for ns, ns_result in namespaces_result.items():
+        if ns_result.count != 0:
+            if ns in summary_dict["NAMESPACES"]:
+                summary_dict["NAMESPACES"][ns][
+                    "license_data"
+                ] = (
+                    ns_result.__dict__()
+                )  # allows type checker to view type rather than generic dict
+            else:
+                logger.warning(
+                    "Namespace %s found in UDA response but not in current cluster.", ns
+                )
+
+
+def _manually_compute_license_data_size(namespace_stats, summary_dict: SummaryDict):
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
@@ -499,212 +903,36 @@ def _manually_compute_license_data_size(namespace_stats, cluster_dict):
         ns_unique_data = _license_data_usage_adjustment(
             ns_repl_factor, ns_master_objects, ns_unique_data
         )
+        summary_dict["NAMESPACES"][ns]["license_data"]["latest"] = int(
+            round(ns_unique_data)
+        )
 
         cl_unique_data += ns_unique_data
 
-    cluster_dict["license_data"] = {}
-    cluster_dict["license_data"]["latest"] = int(round(cl_unique_data))
+    summary_dict["CLUSTER"]["license_data"]["latest"] = int(round(cl_unique_data))
 
 
-def _parse_agent_response(license_usage, cluster_dict):
-    entries = license_usage["entries"]
-    count = 0
-    avg_usage = 0
-    min_usage = float("inf")
-    max_usage = 0
-    latest_usage = 0
+def _compute_license_data_size(
+    namespace_stats,
+    license_data_usage: Optional[UDAResponsesDict],
+    allow_unstable: bool,
+    summary_dict: SummaryDict,
+):
 
-    for entry in entries:
-        if entry["level"] == "info":
-            count += 1
-            data_bytes = entry["unique_data_bytes"]
-            avg_usage += data_bytes
-            min_usage = min(data_bytes, min_usage)
-            max_usage = max(data_bytes, max_usage)
-            latest_usage = data_bytes
-
-    if count != 0:
-        avg_usage /= count
+    if license_data_usage is None:
+        _manually_compute_license_data_size(namespace_stats, summary_dict)
+        return
     else:
-        latest_usage = None
-        avg_usage = None
-        min_usage = None
-        max_usage = None
-
-    cluster_dict["license_data"] = {}
-    cluster_dict["license_data"]["latest"] = latest_usage
-    cluster_dict["license_data"]["avg"] = avg_usage
-    cluster_dict["license_data"]["min"] = min_usage
-    cluster_dict["license_data"]["max"] = max_usage
-
-
-def compute_license_data_size(namespace_stats, license_data_usage, cluster_dict):
-    try:
-        license_usage = license_data_usage["license_usage"]
-
-        if license_usage["count"] != 0:
-            _parse_agent_response(license_usage, cluster_dict)
-        else:
-            _manually_compute_license_data_size(namespace_stats, cluster_dict)
+        try:
+            license_usage = license_data_usage["license_usage"]
+            _parse_agent_response(license_usage, summary_dict, allow_unstable)
             return
 
-    # KeyError if unique_data_usage == {} or an error was returned from request
-    except (KeyError, TypeError):
-        _manually_compute_license_data_size(namespace_stats, cluster_dict)
-        return
-
-
-async def request_license_usage(agent_host, agent_port):
-    json_data = {
-        "license_usage": {},
-        "agent_health": {},
-    }
-    error = None
-
-    a_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-        days=365
-    )
-    a_year_ago = a_year_ago.isoformat()
-    timeout = aiohttp.ClientTimeout(total=10)
-
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        entries_params = {"start": a_year_ago}
-        res_entries, res_health = await asyncio.gather(
-            session.get(
-                "http://"
-                + agent_host
-                + ":"
-                + str(agent_port)
-                + "/v1/entries/range/time",
-                params=entries_params,
-            ),
-            session.get(
-                "http://" + agent_host + ":" + str(agent_port) + "/v1/health",
-                params=entries_params,
-            ),
-        )
-
-        try:
-            res_health = await res_health.json()
-
-            if res_health is not None:
-                json_data["agent_health"] = res_health
-            else:
-                json_data["agent_health"] = {}
-                error = "Unable to connect"
-        except Exception as e:
-            json_data["agent_health"] = str(e)
-            error = e
-
-        try:
-            res_entries = await res_entries.json()
-
-            if res_entries is not None:
-                json_data["license_usage"] = res_entries
-            else:
-                json_data["license_usage"] = {}
-                error = "Unable to connect"
-        except Exception as e:
-            json_data["license_usage"] = str(e)
-
-            if error is None:
-                error = e
-
-    return json_data, error
-
-
-request_license_usage = util.async_cached(request_license_usage, ttl=30)
-
-
-def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
-    """
-    Function takes dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
-    Function finds migration status per namespace, and per cluster and updates output dictionaries.
-    """
-
-    if not namespace_stats:
-        return
-
-    for ns, ns_stats in namespace_stats.items():
-        if not ns_stats or isinstance(ns_stats, Exception):
-            continue
-
-        migrations_in_progress = any(
-            util.get_value_from_second_level_of_dict(
-                ns_stats,
-                ("migrate_tx_partitions_remaining", "migrate-tx-partitions-remaining"),
-                default_value=0,
-                return_type=int,
-            ).values()
-        )
-        if migrations_in_progress:
-            ns_dict[ns]["migrations_in_progress"] = True
-            cluster_dict["migrations_in_progress"] = True
-
-
-def _initialize_summary_output(ns_list):
-    """
-    Function takes list of namespace names.
-    Returns dictionary with summary fields set.
-    """
-
-    summary_dict = {}
-    summary_dict["CLUSTER"] = {}
-
-    summary_dict["CLUSTER"]["server_version"] = []
-    summary_dict["CLUSTER"]["os_version"] = []
-    summary_dict["CLUSTER"]["active_features"] = []
-    summary_dict["CLUSTER"]["migrations_in_progress"] = False
-
-    # Could be pmem or ssd devices
-    summary_dict["CLUSTER"]["device_count"] = 0
-    summary_dict["CLUSTER"]["device_count_per_node"] = 0
-    summary_dict["CLUSTER"]["device_count_same_across_nodes"] = True
-
-    summary_dict["CLUSTER"]["device"] = {}
-
-    summary_dict["CLUSTER"]["pmem"] = {}
-
-    summary_dict["CLUSTER"]["memory"] = {}
-    summary_dict["CLUSTER"]["memory"]["total"] = 0
-    summary_dict["CLUSTER"]["memory"]["used"] = 0
-    summary_dict["CLUSTER"]["memory"]["used_pct"] = 0
-    summary_dict["CLUSTER"]["memory"]["avail"] = 0
-    summary_dict["CLUSTER"]["memory"]["avail_pct"] = 0
-
-    summary_dict["CLUSTER"]["pmem_index"] = {}
-    summary_dict["CLUSTER"]["flash_index"] = {}
-
-    summary_dict["CLUSTER"]["active_ns"] = 0
-    summary_dict["CLUSTER"]["ns_count"] = 0
-
-    summary_dict["CLUSTER"]["license_data"] = 0
-
-    summary_dict["FEATURES"] = {}
-    summary_dict["FEATURES"]["NAMESPACE"] = {}
-
-    for ns in ns_list:
-        summary_dict["FEATURES"]["NAMESPACE"][ns] = {}
-
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_total"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns][
-            "device_count_same_across_nodes"
-        ] = True
-
-        # Memory is always used regardless of configuration
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used_pct"] = 0.0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail_pct"] = 0.0
-
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = 0
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["master_objects"] = 0
-
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["migrations_in_progress"] = False
-
-    return summary_dict
+        #  an error was returned from request
+        except (TypeError, ValueError) as e:
+            logger.error("Issue parsing agent response: %s.", e)
+            _manually_compute_license_data_size(namespace_stats, summary_dict)
+            return
 
 
 def create_summary(
@@ -712,9 +940,10 @@ def create_summary(
     namespace_stats,
     xdr_dc_stats,
     metadata,
+    license_allow_unstable: bool,
     service_configs={},
     ns_configs={},
-    license_data_usage={},
+    license_data_usage: Optional[UDAResponsesDict] = None,
 ):
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
@@ -736,12 +965,12 @@ def create_summary(
 
     total_nodes = len(service_stats.keys())
 
-    cl_memory_size_total = 0.0
-    cl_memory_size_avail = 0.0
-    cl_pmem_index_size_total = 0.0
-    cl_pmem_index_size_avail = 0.0
-    cl_flash_index_size_total = 0.0
-    cl_flash_index_size_avail = 0.0
+    cl_memory_size_total = 0
+    cl_memory_size_avail = 0
+    cl_pmem_index_size_total = 0
+    cl_pmem_index_size_avail = 0
+    cl_flash_index_size_total = 0
+    cl_flash_index_size_avail = 0
 
     cl_nodewise_device_counts = {}
 
@@ -753,13 +982,14 @@ def create_summary(
     cl_nodewise_pmem_used = {}
     cl_nodewise_pmem_avail = {}
 
-    compute_license_data_size(
+    _compute_license_data_size(
         namespace_stats,
         license_data_usage,
-        summary_dict["CLUSTER"],
+        license_allow_unstable,
+        summary_dict,
     )
     _set_migration_status(
-        namespace_stats, summary_dict["CLUSTER"], summary_dict["FEATURES"]["NAMESPACE"]
+        namespace_stats, summary_dict["CLUSTER"], summary_dict["NAMESPACES"]
     )
 
     summary_dict["CLUSTER"]["active_features"] = features
@@ -824,48 +1054,42 @@ def create_summary(
         ns_total_nodes = len(ns_stats.keys())
 
         if ns_total_devices:
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "devices_total"
-            ] = ns_total_devices
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["devices_per_node"] = round(
+            summary_dict["NAMESPACES"][ns]["devices_total"] = ns_total_devices
+            summary_dict["NAMESPACES"][ns]["devices_per_node"] = round(
                 ns_total_devices / ns_total_nodes
             )
             if len(set(device_counts.values())) > 1:
-                summary_dict["FEATURES"]["NAMESPACE"][ns][
-                    "device_count_same_across_nodes"
-                ] = False
+                summary_dict["NAMESPACES"][ns]["device_count_same_across_nodes"] = False
 
         # Memory
-        mem_size = sum(
+        mem_size: int = sum(
             util.get_value_from_second_level_of_dict(
                 ns_stats, ("memory-size",), default_value=0, return_type=int
             ).values()
         )
-        mem_used = sum(
+        mem_used: int = sum(
             util.get_value_from_second_level_of_dict(
                 ns_stats, ("memory_used_bytes",), default_value=0, return_type=int
             ).values()
         )
         mem_avail = mem_size - mem_used
+        mem_avail_pct = (mem_avail / mem_size) * 100.0
+        mem_used_pct = 100.00 - mem_avail_pct
         cl_memory_size_total += mem_size
         cl_memory_size_avail += mem_avail
 
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_total"] = mem_size
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail"] = mem_avail
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used"] = mem_used
+        ns_mem_usage: SummaryStorageUsageDict = {
+            "total": mem_size,
+            "used": mem_used,
+            "used_pct": mem_used_pct,
+            "avail": mem_avail,
+            "avail_pct": mem_avail_pct,
+        }
+        summary_dict["NAMESPACES"][ns]["memory"] = ns_mem_usage
 
-        if mem_size != 0:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail_pct"] = (
-                mem_avail / mem_size
-            ) * 100.0
-
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_used_pct"] = (
-            100.00 - summary_dict["FEATURES"]["NAMESPACE"][ns]["memory_avail_pct"]
-        )
-
-        index_type = list(
+        index_type = summary_dict["NAMESPACES"][ns]["index_type"] = list(
             util.get_value_from_second_level_of_dict(
-                ns_stats, ("index-type",), default_value="", return_type=str
+                ns_stats, ("index-type",), default_value="shmem", return_type=str
             ).values()
         )[0]
 
@@ -887,30 +1111,22 @@ def create_summary(
                     return_type=int,
                 ).values()
             )
-            pmem_index_avail = pmem_index_size - pmem_index_used
-            cl_pmem_index_size_total += pmem_index_size
-            cl_pmem_index_size_avail += pmem_index_avail
 
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "pmem_index_total"
-            ] = pmem_index_size
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "pmem_index_avail"
-            ] = pmem_index_avail
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "pmem_index_used"
-            ] = pmem_index_used
-            pmem_index_avail_pct = 0
-
-            if pmem_index_size != 0:
+            if pmem_index_size > 0:
+                pmem_index_avail = pmem_index_size - pmem_index_used
                 pmem_index_avail_pct = (pmem_index_avail / pmem_index_size) * 100.0
+                pmem_index_used_pct = 100.00 - pmem_index_avail_pct
+                cl_pmem_index_size_total += pmem_index_size
+                cl_pmem_index_size_avail += pmem_index_avail
 
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "pmem_index_avail_pct"
-            ] = pmem_index_avail_pct
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_index_used_pct"] = (
-                100.00 - pmem_index_avail_pct
-            )
+                ns_pmem_index_usage: SummaryStorageUsageDict = {
+                    "total": pmem_index_size,
+                    "used": pmem_index_used,
+                    "used_pct": pmem_index_used_pct,
+                    "avail": pmem_index_avail,
+                    "avail_pct": pmem_index_avail_pct,
+                }
+                summary_dict["NAMESPACES"][ns]["pmem_index"] = ns_pmem_index_usage
 
         # Flash Index
         elif index_type == "flash":
@@ -930,30 +1146,22 @@ def create_summary(
                     return_type=int,
                 ).values()
             )
-            flash_index_avail = flash_index_size - flash_index_used
-            cl_flash_index_size_total += flash_index_size
-            cl_flash_index_size_avail += flash_index_avail
 
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "flash_index_total"
-            ] = flash_index_size
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "flash_index_used"
-            ] = flash_index_used
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "flash_index_avail"
-            ] = flash_index_avail
-            flash_index_avail_pct = 0
-
-            if flash_index_size != 0:
+            if flash_index_size > 0:
+                flash_index_avail = flash_index_size - flash_index_used
                 flash_index_avail_pct = (flash_index_avail / flash_index_size) * 100.0
+                flash_index_used_pct = 100.00 - flash_index_avail_pct
+                cl_flash_index_size_total += flash_index_size
+                cl_flash_index_size_avail += flash_index_avail
 
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "flash_index_avail_pct"
-            ] = flash_index_avail_pct
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["flash_index_used_pct"] = (
-                100.00 - flash_index_avail_pct
-            )
+                ns_flash_index_usage: SummaryStorageUsageDict = {
+                    "total": flash_index_size,
+                    "used": flash_index_used,
+                    "used_pct": flash_index_used_pct,
+                    "avail": flash_index_avail,
+                    "avail_pct": flash_index_avail_pct,
+                }
+                summary_dict["NAMESPACES"][ns]["flash_index"] = ns_flash_index_usage
 
         storage_engine_type = list(
             util.get_value_from_second_level_of_dict(
@@ -992,21 +1200,20 @@ def create_summary(
             )
             device_size_total = sum(device_size.values())
 
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "device_total"
-            ] = device_size_total
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device_used"] = sum(
-                device_used.values()
-            )
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device_avail"] = sum(
-                device_avail.values()
-            )
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device_used_pct"] = (
-                sum(device_used.values()) / device_size_total
-            ) * 100.0
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["device_avail_pct"] = (
-                sum(device_avail.values()) / device_size_total
-            ) * 100.0
+            if device_size_total > 0:
+                device_size_used = sum(device_used.values())
+                device_size_avail = sum(device_avail.values())
+                device_size_avail_pct = (device_size_avail / device_size_total) * 100.0
+                device_size_used_pct = (device_size_used / device_size_total) * 100.0
+
+                ns_device_usage: SummaryStorageUsageDict = {
+                    "total": device_size_total,
+                    "used": device_size_used,
+                    "used_pct": device_size_used_pct,
+                    "avail": device_size_avail,
+                    "avail_pct": device_size_avail_pct,
+                }
+                summary_dict["NAMESPACES"][ns]["device"] = ns_device_usage
 
         elif storage_engine_type == "pmem":
             pmem_size = util.get_value_from_second_level_of_dict(
@@ -1033,19 +1240,20 @@ def create_summary(
             cl_nodewise_pmem_avail = util.add_dicts(cl_nodewise_pmem_avail, pmem_avail)
             pmem_size_total = sum(pmem_size.values())
 
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_total"] = pmem_size_total
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_used"] = sum(
-                pmem_used.values()
-            )
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_avail"] = sum(
-                pmem_avail.values()
-            )
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_used_pct"] = (
-                sum(pmem_used.values()) / pmem_size_total
-            ) * 100.0
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["pmem_avail_pct"] = (
-                sum(pmem_avail.values()) / pmem_size_total
-            ) * 100.0
+            if pmem_size_total > 0:
+                pmem_size_used = sum(pmem_used.values())
+                pmem_size_avail = sum(pmem_avail.values())
+                pmem_size_avail_pct = (pmem_size_avail / pmem_size_total) * 100.0
+                pmem_size_used_pct = (pmem_size_used / pmem_size_total) * 100.0
+
+                ns_pmem_usage: SummaryStorageUsageDict = {
+                    "total": pmem_size_total,
+                    "used": pmem_size_used,
+                    "used_pct": pmem_size_used_pct,
+                    "avail": pmem_size_avail,
+                    "avail_pct": pmem_size_avail_pct,
+                }
+                summary_dict["NAMESPACES"][ns]["pmem"] = ns_pmem_usage
 
         compression_ratio = max(
             util.get_value_from_second_level_of_dict(
@@ -1057,11 +1265,9 @@ def create_summary(
         )
 
         if compression_ratio > 0:
-            summary_dict["FEATURES"]["NAMESPACE"][ns][
-                "compression_ratio"
-            ] = compression_ratio
+            summary_dict["NAMESPACES"][ns]["compression_ratio"] = compression_ratio
 
-        summary_dict["FEATURES"]["NAMESPACE"][ns]["repl_factor"] = list(
+        summary_dict["NAMESPACES"][ns]["repl_factor"] = list(
             set(
                 util.get_value_from_second_level_of_dict(
                     ns_stats,
@@ -1086,13 +1292,13 @@ def create_summary(
                 util.get_value_from_second_level_of_dict(
                     ns_stats,
                     ("cache_read_pct", "cache-read-pct"),
-                    default_value="N/E",
+                    default_value=None,
                     return_type=int,
                 ).values()
             )
             if cache_read_pcts:
                 try:
-                    summary_dict["FEATURES"]["NAMESPACE"][ns]["cache_read_pct"] = sum(
+                    summary_dict["NAMESPACES"][ns]["cache_read_pct"] = sum(
                         cache_read_pcts
                     ) // len(cache_read_pcts)
                 except Exception:
@@ -1106,22 +1312,20 @@ def create_summary(
             ).values()
         )
         summary_dict["CLUSTER"]["ns_count"] += 1
+
         if master_objects > 0:
-            summary_dict["FEATURES"]["NAMESPACE"][ns]["master_objects"] = master_objects
+            summary_dict["NAMESPACES"][ns]["master_objects"] = master_objects
             summary_dict["CLUSTER"]["active_ns"] += 1
 
-        try:
-            rack_ids = util.get_value_from_second_level_of_dict(
-                ns_stats, ("rack-id",), default_value=None, return_type=int
-            )
+        rack_ids = util.get_value_from_second_level_of_dict(
+            ns_stats, ("rack-id",), default_value=None, return_type=int
+        )
+
+        if rack_ids:
             rack_ids = list(set(rack_ids.values()))
             if len(rack_ids) > 1 or rack_ids[0] is not None:
                 if any((i is not None and i > 0) for i in rack_ids):
-                    summary_dict["FEATURES"]["NAMESPACE"][ns]["rack_aware"] = True
-                else:
-                    summary_dict["FEATURES"]["NAMESPACE"][ns]["rack_aware"] = False
-        except Exception:
-            pass
+                    summary_dict["NAMESPACES"][ns]["rack_aware"] = True
 
     cl_device_counts = sum(cl_nodewise_device_counts.values())
     if cl_device_counts:
@@ -1133,77 +1337,67 @@ def create_summary(
             summary_dict["CLUSTER"]["device_count_same_across_nodes"] = False
 
     if cl_memory_size_total > 0:
-        summary_dict["CLUSTER"]["memory"]["total"] = cl_memory_size_total
-        summary_dict["CLUSTER"]["memory"]["avail"] = cl_memory_size_avail
-        summary_dict["CLUSTER"]["memory"]["avail_pct"] = (
-            cl_memory_size_avail / cl_memory_size_total
-        ) * 100.0
-        summary_dict["CLUSTER"]["memory"]["used"] = (
-            cl_memory_size_total - cl_memory_size_avail
-        )
-        summary_dict["CLUSTER"]["memory"]["used_pct"] = (
-            100.0 - summary_dict["CLUSTER"]["memory"]["avail_pct"]
-        )
+        memory_avail_pct = (cl_memory_size_avail / cl_memory_size_total) * 100.0
+        cluster_memory: SummaryStorageUsageDict = {
+            "total": cl_memory_size_total,
+            "avail": cl_memory_size_avail,
+            "avail_pct": memory_avail_pct,
+            "used": cl_memory_size_total - cl_memory_size_avail,
+            "used_pct": 100.0 - memory_avail_pct,
+        }
+        summary_dict["CLUSTER"]["memory"] = cluster_memory
 
     if cl_pmem_index_size_total > 0:
         cl_pmem_index_size_avail_pct = (
             cl_pmem_index_size_avail / cl_pmem_index_size_total
         ) * 100.0
-        summary_dict["CLUSTER"]["pmem_index"]["total"] = cl_pmem_index_size_total
-        summary_dict["CLUSTER"]["pmem_index"]["avail"] = cl_pmem_index_size_avail
-        summary_dict["CLUSTER"]["pmem_index"][
-            "avail_pct"
-        ] = cl_pmem_index_size_avail_pct
-        summary_dict["CLUSTER"]["pmem_index"]["used"] = (
-            cl_pmem_index_size_total - cl_pmem_index_size_avail
-        )
-        summary_dict["CLUSTER"]["pmem_index"]["used_pct"] = (
-            100.0 - cl_pmem_index_size_avail_pct
-        )
+        cluster_pmem_index: SummaryStorageUsageDict = {
+            "total": cl_pmem_index_size_total,
+            "avail": cl_pmem_index_size_avail,
+            "avail_pct": cl_pmem_index_size_avail_pct,
+            "used": cl_pmem_index_size_total - cl_pmem_index_size_avail,
+            "used_pct": 100.0 - cl_pmem_index_size_avail_pct,
+        }
+        summary_dict["CLUSTER"]["pmem_index"] = cluster_pmem_index
 
     if cl_flash_index_size_total > 0:
         cl_flash_index_size_avail_pct = (
             cl_flash_index_size_avail / cl_flash_index_size_total
         ) * 100.0
-        summary_dict["CLUSTER"]["flash_index"]["total"] = cl_flash_index_size_total
-        summary_dict["CLUSTER"]["flash_index"]["avail"] = cl_flash_index_size_avail
-        summary_dict["CLUSTER"]["flash_index"][
-            "avail_pct"
-        ] = cl_flash_index_size_avail_pct
-        summary_dict["CLUSTER"]["flash_index"]["used"] = (
-            cl_flash_index_size_total - cl_flash_index_size_avail
-        )
-        summary_dict["CLUSTER"]["flash_index"]["used_pct"] = (
-            100.0 - cl_flash_index_size_avail_pct
-        )
+        cluster_flash_index: SummaryStorageUsageDict = {
+            "total": cl_flash_index_size_total,
+            "avail": cl_flash_index_size_avail,
+            "avail_pct": cl_flash_index_size_avail_pct,
+            "used": cl_flash_index_size_total - cl_flash_index_size_avail,
+            "used_pct": 100.0 - cl_flash_index_size_avail_pct,
+        }
+        summary_dict["CLUSTER"]["flash_index"] = cluster_flash_index
 
     cl_device_size_total = sum(cl_nodewise_device_size.values())
     if cl_device_size_total > 0:
-        summary_dict["CLUSTER"]["device"]["total"] = cl_device_size_total
-        summary_dict["CLUSTER"]["device"]["used"] = sum(
-            cl_nodewise_device_used.values()
-        )
-        summary_dict["CLUSTER"]["device"]["avail"] = sum(
-            cl_nodewise_device_avail.values()
-        )
-        summary_dict["CLUSTER"]["device"]["used_pct"] = (
-            sum(cl_nodewise_device_used.values()) / cl_device_size_total
-        ) * 100.0
-        summary_dict["CLUSTER"]["device"]["avail_pct"] = (
-            sum(cl_nodewise_device_avail.values()) / cl_device_size_total
-        ) * 100.0
+        cluster_device_used = sum(cl_nodewise_device_used.values())
+        cluster_device_avail = sum(cl_nodewise_device_avail.values())
+        cluster_device_index: SummaryStorageUsageDict = {
+            "total": cl_device_size_total,
+            "avail": cluster_device_avail,
+            "avail_pct": (cluster_device_avail / cl_device_size_total) * 100.0,
+            "used": cluster_device_used,
+            "used_pct": (cluster_device_used / cl_device_size_total) * 100.0,
+        }
+        summary_dict["CLUSTER"]["device"] = cluster_device_index
 
     cl_pmem_size_total = sum(cl_nodewise_pmem_size.values())
     if cl_pmem_size_total > 0:
-        summary_dict["CLUSTER"]["pmem"]["total"] = cl_pmem_size_total
-        summary_dict["CLUSTER"]["pmem"]["used"] = sum(cl_nodewise_pmem_used.values())
-        summary_dict["CLUSTER"]["pmem"]["avail"] = sum(cl_nodewise_pmem_avail.values())
-        summary_dict["CLUSTER"]["pmem"]["used_pct"] = (
-            sum(cl_nodewise_pmem_used.values()) / cl_pmem_size_total
-        ) * 100.0
-        summary_dict["CLUSTER"]["pmem"]["avail_pct"] = (
-            sum(cl_nodewise_pmem_avail.values()) / cl_pmem_size_total
-        ) * 100.0
+        cluster_pmem_used = sum(cl_nodewise_pmem_used.values())
+        cluster_pmem_avail = sum(cl_nodewise_pmem_avail.values())
+        cluster_pmem_index: SummaryStorageUsageDict = {
+            "total": cl_pmem_size_total,
+            "avail": cluster_pmem_avail,
+            "avail_pct": (cluster_pmem_avail / cl_pmem_size_total) * 100.0,
+            "used": cluster_pmem_used,
+            "used_pct": (cluster_pmem_used / cl_pmem_size_total) * 100.0,
+        }
+        summary_dict["CLUSTER"]["pmem"] = cluster_pmem_index
 
     return summary_dict
 
@@ -1420,12 +1614,12 @@ def _string_to_bytes(k):
     k = k.split(" to ")
     s = k[0]
     b = {
-        "K": 1024 ** 1,
-        "M": 1024 ** 2,
-        "G": 1024 ** 3,
-        "T": 1024 ** 4,
-        "P": 1024 ** 5,
-        "E": 1024 ** 6,
+        "K": 1024**1,
+        "M": 1024**2,
+        "G": 1024**3,
+        "T": 1024**4,
+        "P": 1024**5,
+        "E": 1024**6,
     }
 
     for suffix, val in b.items():
@@ -2021,7 +2215,10 @@ def _collect_ip_link_details(cmd=""):
     return out, None
 
 
-def _collectinfo_content(func, cmd="", alt_cmds=[]):
+def _collectinfo_content(func, cmd=None, alt_cmds=[]):
+    if cmd is None:
+        cmd = []
+        
     fname = ""
     try:
         fname = func.__name__

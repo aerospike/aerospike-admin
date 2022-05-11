@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import traceback
 from collections import defaultdict
+import logging
+from typing import Any
+
+from lib.view.sheet.decleration import Sheet
 
 from ..const import SheetStyle
 from .column_rsheet import ColumnRSheet
@@ -26,6 +29,8 @@ render_class = {
     SheetStyle.rows: RowRSheet,
     SheetStyle.json: JSONRSheet,
 }
+
+logger = logging.getLogger(__name__)
 
 use_json = False
 
@@ -41,9 +46,9 @@ def get_style_json():
 
 
 def render(
-    sheet,
-    title,
-    data_source,
+    sheet: Sheet,
+    title: str,
+    data_source: dict[str, Any],
     style=None,
     common=None,
     description=None,
@@ -75,7 +80,11 @@ def render(
     if common is not None:
         tcommon.update(common)
 
-    assert set(sheet.from_sources) - set(data_source.keys()) == set()
+    assert (
+        set(sheet.from_sources) - set(data_source.keys()) == set()
+    ), "Mismatched sheet sources and data sources. Sheet: {}, Data: {}".format(
+        set(sheet.from_sources), set(data_source.keys())
+    )
 
     if use_json:
         style = SheetStyle.json

@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = [('/usr/bin/less','.')]
-hiddenimports = ['pipes', 'json', 'distro', 'dateutil.parser', 'toml', 'jsonschema', 'fcntl', 'bcrypt', "ply.yacc", "ply.lex", "pexpect.pxssh"]
+hiddenimports = ['pipes', 'json', 'distro', 'toml', 'jsonschema', 'fcntl', 'bcrypt', "ply.yacc", "ply.lex", "pexpect.pxssh"]
 tmp_ret = collect_all('lib')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

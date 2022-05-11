@@ -1299,105 +1299,88 @@ class ManageTruncateControllerTest(asynctest.TestCase):
     async def test_parse_lut_with_incorrect_before_len(self):
         self.controller.mods = {"before": ["12344352"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual(
+        self.assertRaisesRegex(
+            ShellException,
             'Last update time must be followed by "unix-epoch" or "iso-8601".',
-            error,
+            self.controller._parse_lut,
         )
 
         self.controller.mods = {"before": ["12344352", "unix-epoch", "extra"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual(
+        self.assertRaisesRegex(
+            ShellException,
             'Last update time must be followed by "unix-epoch" or "iso-8601".',
-            error,
+            self.controller._parse_lut,
         )
 
     async def test_parse_lut_with_incorrect_epoch_format(self):
         self.controller.mods = {"before": ["12345v6789", "unix-epoch"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual("Invalid unix-epoch format.", error)
+        self.assertRaises(ShellException, self.controller._parse_lut)
 
     async def test_parse_lut_with_date_too_new(self):
         self.controller.mods = {"before": ["12345678900", "unix-epoch"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNotNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual("Date provided is too far in the future.", error)
+        self.assertRaisesRegex(
+            ShellException,
+            "Date provided is too far in the future.",
+            self.controller._parse_lut,
+        )
 
         self.controller.mods = {"before": ["2483-05-30T04:26:40Z", "iso-8601"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNotNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual("Date provided is too far in the future.", error)
+        self.assertRaisesRegex(
+            ShellException,
+            "Invalid isoformat string",
+            self.controller._parse_lut,
+        )
 
     async def test_parse_lut_with_date_too_old(self):
         self.controller.mods = {"before": ["123456789", "unix-epoch"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNotNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual("Date provided is too far in the past.", error)
+        self.assertRaisesRegex(
+            ShellException,
+            "Date provided is too far in the past.",
+            self.controller._parse_lut,
+        )
 
         self.controller.mods = {"before": ["1970-05-30T04:26:40Z", "iso-8601"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNotNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual("Date provided is too far in the past.", error)
+        self.assertRaises(
+            ShellException,
+            self.controller._parse_lut,
+        )
 
     async def test_parse_lut_with_incorrect_iso_format(self):
         self.controller.mods = {"before": ["123", "iso-8601"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual("Invalid iso-8601 format.", error)
+        self.assertRaises(ShellException, self.controller._parse_lut)
 
     async def test_parse_lut_with_iso_without_timezone(self):
         self.controller.mods = {"before": ["2020-05-04T04:20:40", "iso-8601"]}
 
-        lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
-
-        self.assertIsNotNone(lut_datetime)
-        self.assertIsNone(lut_epoch_time)
-        self.assertEqual("iso-8601 format must contain a timezone.", error)
+        self.assertRaisesRegex(
+            ShellException,
+            "iso-8601 format must contain a timezone.",
+            self.controller._parse_lut,
+        )
 
     async def test_parse_lut_iso_gives_correct_epoch_time(self):
         input_output = [
-            ("2021-05-04T22:44:05Z", "1620168245000000000"),
+            ("2021-05-04T22:44:05+00:00", "1620168245000000000"),
             ("2021-05-04T22:44:05-07:00", "1620193445000000000"),
             ("2021-05-04T23:54:30.123456+00:00", "1620172470123456000"),
             ("2021-05-04T22:54:30.123456-01:00", "1620172470123456000"),
             ("2021-05-04T00:54:30.123456+01:00", "1620086070123456000"),
-            ("20210503T195430.123456-0400", "1620086070123456000"),
             ("2021-05-04T11:40:34.100-12:00", "1620171634100000000"),
         ]
 
         for input, output in input_output:
-            self.controller.mods = {"before": [input, "iso-8601"]}
-            lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+            with self.subTest(input_output):
+                self.controller.mods = {"before": [input, "iso-8601"]}
+                lut_datetime, lut_epoch_time = self.controller._parse_lut()
 
-            self.logger_mock.error.assert_not_called()
-            self.assertEqual(lut_epoch_time, output)
-            self.assertFalse(error)
+                self.assertEqual(lut_epoch_time, output)
 
     async def test_parse_lut_epoch_gives_correct_epoch_time(self):
         input_output = [
@@ -1408,11 +1391,9 @@ class ManageTruncateControllerTest(asynctest.TestCase):
 
         for input, output in input_output:
             self.controller.mods = {"before": [input, "unix-epoch"]}
-            lut_datetime, lut_epoch_time, error = self.controller._parse_lut()
+            lut_datetime, lut_epoch_time = self.controller._parse_lut()
 
-            self.logger_mock.error.assert_not_called()
             self.assertEqual(lut_epoch_time, output)
-            self.assertFalse(error)
 
     async def test_get_namespace_master_objects(self):
         self.cluster_mock.info_namespace_statistics.return_value = {
@@ -1499,12 +1480,12 @@ class ManageTruncateControllerTest(asynctest.TestCase):
 
     async def test_returns_on_lut_error(self):
         line = "ns test before 123456789 unix-epoch"
-
-        await self.controller.execute(line.split())
-
-        self.logger_mock.error.assert_called_with(
-            "Date provided is too far in the past."
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Date provided is too far in the past.",
+            self.controller.execute(line.split()),
         )
+        # await awaitable
         self.cluster_mock.info_truncate.assert_not_called()
 
     @patch(

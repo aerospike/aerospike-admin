@@ -2274,6 +2274,16 @@ class Node(AsyncObject):
         """
         return await self.info("build")
 
+    @async_return_exceptions
+    async def info_version(self):
+        """
+        Get Build Version
+
+        Returns:
+        string -- build version
+        """
+        return await self.info("version")
+
     async def _use_new_truncate_command(self):
         """
         A new truncate-namespace and truncate-namespace-undo was added to some
