@@ -437,8 +437,6 @@ class CollectinfoController(LiveClusterCommandController):
         return snp_map
 
     def _dump_in_json_file(self, complete_name, dump):
-        self.logger.info("Dumping collectinfo {}.", complete_name)
-
         try:
             json_dump = json.dumps(dump, indent=2, separators=(",", ":"))
             self._dump_collectinfo_file(complete_name, json_dump)

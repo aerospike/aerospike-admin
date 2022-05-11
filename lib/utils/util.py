@@ -804,22 +804,34 @@ class async_cached(Generic[AwaitableType]):
         result: AwaitableReturnType
 
         def __init__(self, co: Awaitable[AwaitableReturnType]):
-            self.co = co
-            self.done = False
-            self.lock = asyncio.Lock()
+            self._co = co
+            self._done = False
+            self._lock = asyncio.Lock()
+            self._raised = False
 
         def __await__(self) -> Generator[Any, None, AwaitableReturnType]:
-            yield from self.lock.acquire().__await__()
+            yield from self._lock.acquire().__await__()
             try:
-                if self.done:
+                if not self._done:
+                    self.result = yield from self._co.__await__()
+                    self._done = True
                     return self.result
-                self.result = yield from self.co.__await__()
-                self.done = True
-                return self.result
+                elif isinstance(self.result, Exception):
+                    raise self.result
+                else:
+                    return self.result
+            except Exception as e:
+                self.result = e  # redundant in the case of re-raising the exception
+                self._done = True
+                self._raised = True
+                raise
             finally:
-                self.lock.release()
+                self._lock.release()
 
-    def __init__(self, func: Callable[[Any, Any], Awaitable[AwaitableType]], ttl=0.5):
+        def raised(self) -> bool:
+            return self._raised
+
+    def __init__(self, func: Callable[..., Awaitable[AwaitableType]], ttl=0.5):
         self.func = func
         self.ttl = ttl
         self.cache = {}
@@ -829,10 +841,12 @@ class async_cached(Generic[AwaitableType]):
 
     def __getitem__(self, key) -> Awaitable[AwaitableType]:
         if key in self.cache:
-            value, eol = self.cache[key]
-            if eol > time():
-                logger.debug("return cached %s: %s", key[1:], value)
-                return value
+            # This effectively clear the key if the coroutine raises an exception.
+            if not self.cache[key][0].raised():
+                value, eol = self.cache[key]
+                if eol > time():
+                    logger.debug("return cached %s: %s", key[1:], value)
+                    return value
 
         self[key] = self._CacheableCoroutine(self.func(*key))
         return self.cache[key][0]
