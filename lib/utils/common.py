@@ -456,17 +456,14 @@ async def _request_license_usage(
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         entries_params = {"start": a_year_ago}
+        agent_req_base = "http://" + agent_host + ":" + str(agent_port) + "/v1/"
         requests = [
             session.get(
-                "http://"
-                + agent_host
-                + ":"
-                + str(agent_port)
-                + "/v1/entries/range/time",
+                agent_req_base + "entries/range/time",
                 params=entries_params,
             ),
             session.get(
-                "http://" + agent_host + ":" + str(agent_port) + "/v1/health",
+                agent_req_base + "health",
                 params=entries_params,
             ),
         ]
@@ -474,11 +471,7 @@ async def _request_license_usage(
         res_entries = res_health = res_store = None
 
         if get_store:
-            requests.append(
-                session.get(
-                    "http://" + agent_host + ":" + str(agent_port) + "/v1/raw-store"
-                )
-            )
+            requests.append(session.get(agent_req_base + "raw-store"))
             (
                 res_entries,
                 res_health,
@@ -724,7 +717,7 @@ class AggregateLicenseUsage:
     cluster and for each namespace.
     """
 
-    def __init__(self, val=None, time=None):
+    def __init__(self):
         """
         If val is None then the instance is init with defaults
         """
@@ -736,25 +729,7 @@ class AggregateLicenseUsage:
         self.latest_time = datetime.datetime.now()
         self.count = 0
 
-        if val != None:
-            self.min = val
-            self.max = val
-            self.avg = val
-            self.latest = val
-            self.count = 1
-
-            if time != None:
-                self.latest_time: datetime.datetime = datetime.datetime.fromisoformat(
-                    time
-                )
-
-            else:
-                self.latest_time = datetime.datetime.now()
-
-            self.initialized = True
-
     def update(self, val, time=None):
-        self.initialized = True
         self.min = min(self.min, val)
         self.max = max(self.max, val)
         self.count += 1
@@ -767,15 +742,11 @@ class AggregateLicenseUsage:
             self.latest_time = datetime.datetime.fromisoformat(time)
 
     def __dict__(self) -> SummaryClusterLicenseAggDict:
-        d: SummaryClusterLicenseAggDict = {
-            "latest": self.latest,
-            "latest_time": self.latest_time,
-        }
-
-        if self.initialized:
-            d["min"] = self.min  # type: ignore
-            d["max"] = self.max
-            d["avg"] = round(self.avg)
+        d: SummaryClusterLicenseAggDict = {"latest": self.latest}
+        d["latest_time"] = self.latest_time
+        d["min"] = self.min  # type: ignore
+        d["max"] = self.max
+        d["avg"] = round(self.avg)
 
         return d
 
@@ -810,10 +781,7 @@ def _parse_agent_response(
                 for ns, usage in entry["namespaces"].items():
                     ns_data_bytes = usage["unique_data_bytes"]
                     if ns not in namespaces_result:
-                        namespaces_result[ns] = AggregateLicenseUsage(
-                            ns_data_bytes, time_
-                        )
-                        continue
+                        namespaces_result[ns] = AggregateLicenseUsage()
 
                     namespaces_result[ns].update(ns_data_bytes, time_)
 
@@ -1646,12 +1614,12 @@ def _string_to_bytes(k):
     k = k.split(" to ")
     s = k[0]
     b = {
-        "K": 1024 ** 1,
-        "M": 1024 ** 2,
-        "G": 1024 ** 3,
-        "T": 1024 ** 4,
-        "P": 1024 ** 5,
-        "E": 1024 ** 6,
+        "K": 1024**1,
+        "M": 1024**2,
+        "G": 1024**3,
+        "T": 1024**4,
+        "P": 1024**5,
+        "E": 1024**6,
     }
 
     for suffix, val in b.items():
@@ -2247,7 +2215,10 @@ def _collect_ip_link_details(cmd=""):
     return out, None
 
 
-def _collectinfo_content(func, cmd=[], alt_cmds=[]):
+def _collectinfo_content(func, cmd=None, alt_cmds=[]):
+    if cmd is None:
+        cmd = []
+        
     fname = ""
     try:
         fname = func.__name__

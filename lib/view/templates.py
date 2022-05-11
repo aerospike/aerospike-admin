@@ -1154,33 +1154,9 @@ summary_namespace_sheet = Sheet(
         Subgroup(
             "Memory",
             (
-                Field(
-                    "Total",
-                    Projectors.Func(
-                        FieldType.number,
-                        extract_value_from_dict("total"),
-                        Projectors.Identity("ns_stats", "memory"),
-                    ),
-                    converter=Converters.byte,
-                ),
-                Field(
-                    "Used%",
-                    Projectors.Func(
-                        FieldType.number,
-                        extract_value_from_dict("used_pct"),
-                        Projectors.Identity("ns_stats", "memory"),
-                    ),
-                    converter=Converters.round(2),
-                ),
-                Field(
-                    "Avail%",
-                    Projectors.Func(
-                        FieldType.number,
-                        extract_value_from_dict("avail_pct"),
-                        Projectors.Identity("ns_stats", "memory"),
-                    ),
-                    converter=Converters.round(2),
-                ),
+                create_summary_total("ns_stats", "memory", subgroup=True),
+                create_summary_used_pct("ns_stats", "memory", subgroup=True),
+                create_summary_avail_pct("ns_stats", "memory", subgroup=True),
             ),
         ),
         Subgroup(

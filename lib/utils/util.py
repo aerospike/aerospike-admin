@@ -74,19 +74,23 @@ async def capture_stdout(func, *args, **kwargs):
 
     sys.stdout.flush()
     old = sys.stdout
-    capturer = io.StringIO()
-    sys.stdout = capturer
 
-    if inspect.iscoroutinefunction(func):
-        await func(*args, **kwargs)
-    else:
-        tmp_output = func(*args, **kwargs)
+    try:
+        capturer = io.StringIO()
+        sys.stdout = capturer
 
-        if inspect.iscoroutine(tmp_output):
-            tmp_output = await tmp_output
+        if inspect.iscoroutinefunction(func):
+            await func(*args, **kwargs)
+        else:
+            tmp_output = func(*args, **kwargs)
 
-    output = capturer.getvalue()
-    sys.stdout = old
+            if inspect.iscoroutine(tmp_output):
+                tmp_output = await tmp_output
+
+        output = capturer.getvalue()
+    finally:
+        sys.stdout = old
+
     return output
 
 
@@ -567,26 +571,6 @@ def get_values_from_second_level_of_dict(
         res_dict[_k] = get_values_from_dict(data[_k], re_keys, return_type=return_type)
 
     return res_dict
-
-
-@overload
-def get_nested_value_from_dict(
-    data: dict[str, Any],
-    keys: list[str],
-    default_value: None = None,
-    return_type: Type[ReturnType] = str,
-) -> Union[ReturnType, None]:
-    pass
-
-
-@overload
-def get_nested_value_from_dict(
-    data: dict[str, Any],
-    keys: list[str],
-    default_value: None = None,
-    return_type: Type[ReturnType] = str,
-) -> Union[ReturnType, None]:
-    pass
 
 
 def get_nested_value_from_dict(

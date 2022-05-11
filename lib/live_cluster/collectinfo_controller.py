@@ -51,7 +51,7 @@ class CollectinfoController(LiveClusterCommandController):
             raise e
 
     async def _collectinfo_capture_and_write_to_file(
-        self, filename: str, func: Callable, param: list[Any] = []
+        self, filename: str, func: Callable, param: list[str] = []
     ):
         if self.nodes and isinstance(self.nodes, list):
             param += ["with"] + self.nodes
@@ -441,10 +441,8 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             json_dump = json.dumps(dump, indent=2, separators=(",", ":"))
-            with open(complete_name, "w") as f:
-                f.write(json_dump)
-        except Exception as e:
-            self.logger.warning("Failed to write JSON file: " + str(e))
+            self._dump_collectinfo_file(complete_name, json_dump)
+        except Exception:
             pretty_json = pprint.pformat(dump, indent=1)
             self.logger.debug(pretty_json)
             raise
@@ -490,7 +488,7 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             util.write_to_file(filename, dump)
         except Exception as e:
-            self.logger.warning("Failed to write file: " + str(e))
+            self.logger.warning("Failed to write file {}: {}", filename, str(e))
             raise
 
     async def _dump_collectinfo_license_data(
@@ -519,9 +517,8 @@ class CollectinfoController(LiveClusterCommandController):
             complete_filename = as_logfile_prefix + filename
             raw_store = resp["raw_store"]
             try:
-                util.write_to_file(complete_filename, raw_store)
+                self._dump_collectinfo_file(complete_filename, raw_store)
             except Exception as e:
-                self.logger.error("Failed to write %s file: %s", filename, e)
                 error = e  # store error for after json file write so we don't skip it
 
             del resp["raw_store"]
@@ -633,7 +630,6 @@ class CollectinfoController(LiveClusterCommandController):
                 )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
-                sys.stdout = sys.__stdout__
 
             try:
                 info_controller = InfoController()
@@ -643,7 +639,6 @@ class CollectinfoController(LiveClusterCommandController):
                     )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
-                sys.stdout = sys.__stdout__
 
             try:
                 show_controller = ShowController()
@@ -653,7 +648,6 @@ class CollectinfoController(LiveClusterCommandController):
                     )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
-                sys.stdout = sys.__stdout__
 
             try:
                 features_controller = FeaturesController()
@@ -663,7 +657,6 @@ class CollectinfoController(LiveClusterCommandController):
                     )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
-                sys.stdout = sys.__stdout__
 
             try:
                 for cmd in dignostic_aerospike_info_commands:
@@ -673,10 +666,8 @@ class CollectinfoController(LiveClusterCommandController):
                     )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
-                sys.stdout = sys.__stdout__
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            sys.stdout = sys.__stdout__
             self.logger.warning("Failed to generate {} file.", complete_filename)
             self.logger.debug(traceback.format_exc())
             raise
@@ -696,7 +687,6 @@ class CollectinfoController(LiveClusterCommandController):
                 )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
-                sys.stdout = sys.__stdout__
 
             if self.collectinfo_root_controller is None:
                 self.logger.critical("Collectinfo root controller is not initialized.")
@@ -711,7 +701,6 @@ class CollectinfoController(LiveClusterCommandController):
                     )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
-                sys.stdout = sys.__stdout__
 
             try:
                 info_controller = InfoController()
@@ -721,11 +710,9 @@ class CollectinfoController(LiveClusterCommandController):
                     )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
-                sys.stdout = sys.__stdout__
 
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            sys.stdout = sys.__stdout__
             self.logger.warning("Failed to generate {} file.", complete_filename)
             self.logger.debug(traceback.format_exc())
             raise
@@ -750,7 +737,6 @@ class CollectinfoController(LiveClusterCommandController):
                 )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            sys.stdout = sys.__stdout__
             self.logger.warning("Failed to generate {} file.", complete_filename)
             self.logger.debug(traceback.format_exc())
             raise
@@ -771,7 +757,6 @@ class CollectinfoController(LiveClusterCommandController):
             )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            sys.stdout = sys.__stdout__
             self.logger.warning("Failed to generate {} file.", complete_filename)
             self.logger.debug(traceback.format_exc())
             raise
@@ -791,7 +776,6 @@ class CollectinfoController(LiveClusterCommandController):
             self.logger.warning("Failed to generate {} file.", complete_filename)
             self.logger.warning(str(e))
             util.write_to_file(complete_filename, str(e))
-            sys.stdout = sys.__stdout__
 
     ###########################################################################
     # Collectinfo caller functions
@@ -939,8 +923,6 @@ class CollectinfoController(LiveClusterCommandController):
         "    --agent-host    <host>       - Host IP of the Unique Data Agent to collect license data usage.",
         "    --agent-port    <int>        - Port of the UDA. Default: 8080",
         "    --agent-store                - Collect the raw datastore of the UDA."
-        "    --agent-unstable             - When processing UDA entries allow instances where the cluster is",
-        "                                   unstable.",
         "    --output-prefix <string>     - Output directory name prefix.",
         "    --asconfig-file <string>     - Aerospike config file path to collect.",
         "                                   Default: /etc/aerospike/aerospike.conf",
