@@ -15,13 +15,12 @@
 from ast import Call
 from collections import Counter
 import logging
-from tkinter import Entry
-from typing import Any, Callable, Generic, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
 from lib.utils import file_size
 from lib.view import terminal
 
-from .const import DynamicFieldOrder, FieldAlignment, FieldType, SheetStyle
+from .const import DynamicFieldOrder, FieldType, SheetStyle
 from .source import source_lookup, source_root
 
 logger = logging.getLogger(__name__)

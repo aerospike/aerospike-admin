@@ -25,12 +25,11 @@ from lib.live_cluster.client.types import Addr_Port_TLSName
 from lib.utils.async_object import AsyncObject
 
 from lib.utils.lookup_dict import LookupDict
-from lib.utils import logger_debug, util, constants
+from lib.utils import util, constants
 
 from . import client_util
 from .node import Node
 
-logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
 
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
@@ -254,8 +253,8 @@ class Cluster(AsyncObject):
                         _key = Node.create_key(n[0], n[1])
                         if _key not in cluster_down_nodes:
                             cluster_down_nodes.append(_key)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(e, include_traceback=True)
 
         return cluster_down_nodes
 
@@ -277,8 +276,8 @@ class Cluster(AsyncObject):
                         node = self.nodes[aliases_node_key]
                         if not node.alive:
                             aliases[node_key] = key
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(e, include_traceback=True)
 
     async def find_new_nodes(self):
         added_endpoints = []
@@ -320,7 +319,7 @@ class Cluster(AsyncObject):
         """
         nodes_to_add = await self.find_new_nodes()
 
-        logger.debug("Nodes to add to cluster: %s", nodes_to_add)
+        self.logger.debug("Unvisited nodes: %s", nodes_to_add)
 
         if not nodes_to_add or len(nodes_to_add) == 0:
             return
@@ -331,7 +330,9 @@ class Cluster(AsyncObject):
 
             while unvisited - visited:
                 l_unvisited = list(unvisited)
-                logger.debug("Register nodes in cluster: %s", l_unvisited)
+                self.logger.debug(
+                    "Attempting to add nodes to the cluster: %s", l_unvisited
+                )
                 nodes = await client_util.concurrent_map(
                     self._register_node, l_unvisited
                 )
@@ -369,11 +370,12 @@ class Cluster(AsyncObject):
                         all_services.add((node.ip, node.port, node.tls_name))
 
                 unvisited = all_services - visited
-                logger.debug("Peers to add to cluster: %s", unvisited)
+                self.logger.debug("Peers to add to cluster: %s", unvisited)
 
             self._refresh_node_liveliness()
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(e, include_traceback=True)
+
         finally:
             self.clear_node_list()
 
@@ -564,8 +566,8 @@ class Cluster(AsyncObject):
             return new_node
         except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
             self.logger.error(e)
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(e, include_traceback=True)
         return None
 
     @staticmethod

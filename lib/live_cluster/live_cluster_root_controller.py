@@ -125,8 +125,8 @@ class LiveClusterRootController(BaseController, AsyncObject):
         "           watch 5 info namespace",
     )
     @DisableAutoComplete()
-    def do_watch(self, line):
-        self.view.watch(self, line)
+    async def do_watch(self, line):
+        await self.view.watch(self, line)
 
     @DisableAutoComplete()
     @CommandHelp(
