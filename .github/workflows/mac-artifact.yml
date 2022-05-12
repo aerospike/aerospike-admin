@@ -40,9 +40,10 @@ jobs:
       - name: Change .gitmodules from ssh to https
         working-directory: ${{ steps.checkout-dir.outputs.value }}
         run: |
-          git config --file=.gitmodules --get-regexp url | while read url; do
-            git config --file=.gitmodules $(echo "$url" | sed -E "s/git@github.com:|https:\/\/github.com\//https:\/\/github.com\//")
-          done
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          # git config --file=.gitmodules --get-regexp url | while read url; do
+          #   git config --file=.gitmodules $(echo "$url" | sed -E "s/git@github.com:|https:\/\/github.com\//https:\/\/github.com\//")
+          # done
       - name: Checkout ${{ steps.asadm-wd.outputs.value }}
         working-directory: ${{ steps.checkout-dir.outputs.value }}
         run: git submodule update --init -- ${{ inputs.submodule || '.' }}
