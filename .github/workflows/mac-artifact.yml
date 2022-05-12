@@ -37,6 +37,12 @@ jobs:
           # submodules: recursive # for when inputs.submodule is populated
           path: ${{ steps.checkout-dir.outputs.value }}
           fetch-depth: 0
+      - name: Change .gitmodules from ssh to https
+        working-directory: ${{ steps.checkout-dir.outputs.value }}
+        run: |
+          git config --file=.gitmodules --get-regexp url | while read url; do
+            git config --file=.gitmodules $(echo "$url" | sed -E "s/git@github.com:|https:\/\/github.com\//https:\/\/github.com\//")
+          done
       - name: Checkout ${{ steps.asadm-wd.outputs.value }}
         working-directory: ${{ steps.checkout-dir.outputs.value }}
         run: git submodule update --init -- ${{ inputs.submodule || '.' }}
