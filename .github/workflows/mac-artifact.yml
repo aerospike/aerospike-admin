@@ -34,9 +34,11 @@ jobs:
           if_false: admin
       - uses: actions/checkout@v2
         with:
-          submodules: recursive # for when inputs.submodule is populated
+          # submodules: recursive # for when inputs.submodule is populated
           path: ${{ steps.checkout-dir.outputs.value }}
           fetch-depth: 0
+      - name: Checkout admin submodules
+        run: git submodule update --init -- ${{ inputs.submodule || '.' }}
       - name: Print version
         working-directory: ${{ steps.asadm-wd.outputs.value }}
         run: |
