@@ -27,39 +27,33 @@ jobs:
           if_false: admin
       - name: Get asadm working directory
         uses: haya14busa/action-cond@v1
-        id: asadm-wd
+        id: working-dir
         with:
           cond: ${{ inputs.submodule != '' }}
           if_true: aerospike-tools/${{ inputs.submodule }} # In this case we are expecting to checkout the tools package.
           if_false: admin
       - uses: actions/checkout@v2
         with:
-          # submodules: recursive # for when inputs.submodule is populated
           path: ${{ steps.checkout-dir.outputs.value }}
           fetch-depth: 0
-      - name: Change .gitmodules from ssh to https
+      - name: Checkout ${{ steps.working-dir.outputs.value }}
         working-directory: ${{ steps.checkout-dir.outputs.value }}
-        run: |
+        run: | 
           git config --global url."https://github.com/".insteadOf "git@github.com:"
-          # git config --file=.gitmodules --get-regexp url | while read url; do
-          #   git config --file=.gitmodules $(echo "$url" | sed -E "s/git@github.com:|https:\/\/github.com\//https:\/\/github.com\//")
-          # done
-      - name: Checkout ${{ steps.asadm-wd.outputs.value }}
-        working-directory: ${{ steps.checkout-dir.outputs.value }}
-        run: git submodule update --init -- ${{ inputs.submodule || '.' }}
+          git submodule update --init -- ${{ inputs.submodule || '.' }}
       - name: Print version
-        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           git describe --tags --always
       - name: Get SHA
-        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        working-directory: ${{ steps.working-dir.outputs.value }}
         id: sha
         run: |
           echo "::set-output name=sha::$(git rev-parse head)"
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Get Python version from Pipfile
-        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           git rev-parse HEAD
           echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
@@ -79,34 +73,34 @@ jobs:
           cache-index: "4"
         with:
           path: |
-            ${{ steps.asadm-wd.outputs.value }}/build/bin
+            ${{ steps.working-dir.outputs.value }}/build/bin
           key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ steps.sha.outputs.sha }}
       - name: Pipenv setup
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
-        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           brew install pipenv
           pipenv check
       - name: Build asadm
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
-        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           make one-dir
           ls -al build/bin/asadm || true
       # - name: Setup tmate session
       #   uses: mxschmitt/action-tmate@v3
       - name: Sanity Test tools
-        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           sudo make install
           asadm -e "info" 2>&1 | grep "Not able to connect"
           asinfo 2>&1 | grep "Not able to connect"
       - name: Create .tar
-        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           tar -C build/bin/ -cvf asadm.tar asadm
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asadm
-          path: ${{ steps.asadm-wd.outputs.value }}/asadm.tar
+          path: ${{ steps.working-dir.outputs.value }}/asadm.tar
           if-no-files-found: error
