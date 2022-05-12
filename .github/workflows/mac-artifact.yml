@@ -38,7 +38,7 @@ jobs:
           path: ${{ steps.checkout-dir.outputs.value }}
           fetch-depth: 0
       - name: Checkout ${{ steps.asadm-wd.outputs.value }}
-        working-directory: ${{ steps.asadm-wd.outputs.value }}
+        working-directory: ${{ steps.checkout-dir.outputs.value }}
         run: git submodule update --init -- ${{ inputs.submodule || '.' }}
       - name: Print version
         working-directory: ${{ steps.asadm-wd.outputs.value }}
