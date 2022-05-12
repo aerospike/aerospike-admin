@@ -47,7 +47,7 @@ class SummaryController(CollectinfoCommandController):
         last_timestamp = sorted(service_stats.keys())[-1]
 
         cluster_name = {}
-        license_data_usage = {}
+        license_data_usage = None
 
         try:
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=last_timestamp)

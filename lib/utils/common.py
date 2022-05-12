@@ -929,7 +929,7 @@ def _compute_license_data_size(
             return
 
         #  an error was returned from request
-        except (TypeError, ValueError) as e:
+        except (TypeError, ValueError, KeyError) as e:
             logger.error("Issue parsing agent response: %s.", e)
             _manually_compute_license_data_size(namespace_stats, summary_dict)
             return
