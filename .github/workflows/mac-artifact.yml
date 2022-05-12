@@ -40,7 +40,7 @@ jobs:
         working-directory: ${{ steps.checkout-dir.outputs.value }}
         run: | 
           git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule update --init -- ${{ inputs.submodule || '.' }}
+          git submodule update --init --recursive-- ${{ inputs.submodule || '.' }}
       - name: Print version
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
