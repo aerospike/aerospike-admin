@@ -2,6 +2,7 @@ import asyncio
 import os
 import logging
 from datetime import datetime
+from dateutil import parser as date_parser
 from typing import Optional
 from getpass import getpass
 from functools import reduce
@@ -1945,7 +1946,7 @@ class ManageTruncateController(ManageLeafCommandController):
                 lut_time = before[0]
 
                 try:
-                    lut_datetime = datetime.fromisoformat(lut_time)
+                    lut_datetime = date_parser.isoparse(lut_time)
                 except ValueError as e:
                     raise ShellException(e)
 

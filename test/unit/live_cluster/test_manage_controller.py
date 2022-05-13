@@ -1331,7 +1331,7 @@ class ManageTruncateControllerTest(asynctest.TestCase):
 
         self.assertRaisesRegex(
             ShellException,
-            "Invalid isoformat string",
+            "Date provided is too far in the future.",
             self.controller._parse_lut,
         )
 
@@ -1346,8 +1346,9 @@ class ManageTruncateControllerTest(asynctest.TestCase):
 
         self.controller.mods = {"before": ["1970-05-30T04:26:40Z", "iso-8601"]}
 
-        self.assertRaises(
+        self.assertRaisesRegex(
             ShellException,
+            "Date provided is too far in the past.",
             self.controller._parse_lut,
         )
 
@@ -1367,11 +1368,13 @@ class ManageTruncateControllerTest(asynctest.TestCase):
 
     async def test_parse_lut_iso_gives_correct_epoch_time(self):
         input_output = [
+            ("2021-05-04T22:44:05Z", "1620168245000000000"),
             ("2021-05-04T22:44:05+00:00", "1620168245000000000"),
             ("2021-05-04T22:44:05-07:00", "1620193445000000000"),
             ("2021-05-04T23:54:30.123456+00:00", "1620172470123456000"),
             ("2021-05-04T22:54:30.123456-01:00", "1620172470123456000"),
             ("2021-05-04T00:54:30.123456+01:00", "1620086070123456000"),
+            ("20210503T195430.123456-0400", "1620086070123456000"),
             ("2021-05-04T11:40:34.100-12:00", "1620171634100000000"),
         ]
 
