@@ -16,6 +16,7 @@ yappi = "==0.98"
 pyOpenSSL = "==18.0.0"
 setuptools = "*"
 aiohttp = "==3.8.1"
+python-dateutil = "*"
 
 [dev-packages]
 pyinstaller = "==4.7"
