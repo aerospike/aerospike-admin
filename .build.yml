@@ -10,3 +10,4 @@ build:
       - make
     artifact:
       - /work/source/build/bin/asadm
+      - /work/source/build/bin/asinfo
