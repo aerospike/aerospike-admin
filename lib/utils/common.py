@@ -919,7 +919,7 @@ def _compute_license_data_size(
     summary_dict: SummaryDict,
 ):
 
-    if license_data_usage is None:
+    if not license_data_usage:
         _manually_compute_license_data_size(namespace_stats, summary_dict)
         return
     else:
@@ -930,7 +930,7 @@ def _compute_license_data_size(
 
         #  an error was returned from request
         except (TypeError, ValueError, KeyError) as e:
-            logger.error("Issue parsing agent response: %s.", e)
+            logger.error("Issue parsing agent response: {}.", e)
             _manually_compute_license_data_size(namespace_stats, summary_dict)
             return
 
@@ -2218,7 +2218,7 @@ def _collect_ip_link_details(cmd=""):
 def _collectinfo_content(func, cmd=None, alt_cmds=[]):
     if cmd is None:
         cmd = []
-        
+
     fname = ""
     try:
         fname = func.__name__
