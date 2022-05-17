@@ -722,7 +722,7 @@ async def main():
         execute_only_mode=execute_only_mode,
         privileged_mode=cli_args.enable,
         timeout=cli_args.timeout,
-    )
+    )  # type: ignore
 
     use_yappi = False
     if cli_args.profile:

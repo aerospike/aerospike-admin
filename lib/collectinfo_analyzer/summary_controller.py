@@ -7,7 +7,8 @@ from .collectinfo_command_controller import CollectinfoCommandController
 @CommandHelp(
     "Displays summary of Aerospike cluster.",
     "  Options:",
-    "    -l    - Enable to display namespace output in List view. Default: Table view",
+    "    -l                  - Enable to display namespace output in List view. Default: Table view",
+    "    --agent-unstable    - When processing UDA entries allow instances where the cluster is unstable.",
 )
 class SummaryController(CollectinfoCommandController):
     def __init__(self):
@@ -16,6 +17,13 @@ class SummaryController(CollectinfoCommandController):
     def _do_default(self, line):
         enable_list_view = util.check_arg_and_delete_from_mods(
             line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+        agent_unstable = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--agent-unstable",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
         service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
@@ -39,7 +47,7 @@ class SummaryController(CollectinfoCommandController):
         last_timestamp = sorted(service_stats.keys())[-1]
 
         cluster_name = {}
-        license_data_usage = {}
+        license_data_usage = None
 
         try:
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=last_timestamp)
@@ -125,6 +133,7 @@ class SummaryController(CollectinfoCommandController):
                 service_configs=service_configs[last_timestamp],
                 ns_configs=namespace_configs[last_timestamp],
                 license_data_usage=license_data_usage,
+                license_allow_unstable=agent_unstable,
             ),
             list_view=enable_list_view,
         )

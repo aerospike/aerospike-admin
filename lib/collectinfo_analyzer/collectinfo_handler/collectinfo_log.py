@@ -129,7 +129,7 @@ class _CollectinfoSnapshot:
             pass
         return value
 
-    def get_node_displaynames(self):
+    def get_node_displaynames(self, nodes=None):
         node_names = {}
 
         for key in self.get_node_names():

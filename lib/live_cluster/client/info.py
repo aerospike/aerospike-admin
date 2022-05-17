@@ -1306,10 +1306,11 @@ async def info(reader, writer, names=None):
         offset = _pack_info_field(buf, offset, namestr)
 
     rsp_data = await _info_request(reader, writer, buf)
-    rsp_data = util.bytes_to_str(rsp_data)
 
     if rsp_data == -1 or rsp_data is None:
         return -1
+
+    rsp_data = util.bytes_to_str(rsp_data)
 
     # if the original request was a single string, return a single string
     if isinstance(names, str):

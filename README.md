@@ -69,7 +69,6 @@ Admin> help
 - pyasn1 = "==0.4.2"
 - toml = "==0.9.4"
 - yappi = "==0.98"
-- python-dateutil = "==2.8.1"
 - pyOpenSSL = "==18.0.0"
 - setuptools = "*"
 - aiohttp = "==3.8.1"
