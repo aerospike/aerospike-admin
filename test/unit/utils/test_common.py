@@ -4,12 +4,15 @@ from lib.utils import common
 
 
 class ComputeLicenseDataSizeTest(unittest.TestCase):
-    def run_test_case(self, namespace_stats, license_data_usage, expected_cluster_dict):
+    def run_test_case(
+        self, namespace_stats, server_builds, license_data_usage, expected_cluster_dict
+    ):
         summary_dict = common._initialize_summary_output(namespace_stats.keys())
         cluster_dict = summary_dict["CLUSTER"]
 
         common.compute_license_data_size(
             namespace_stats=namespace_stats,
+            server_builds=server_builds,
             cluster_dict=cluster_dict,
             license_data_usage=license_data_usage,
         )
@@ -20,6 +23,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
         test_cases = [
             {
                 "ns_stats": {},
+                "server_builds": {},
                 "license_data": {},
                 "exp_cluster_dict": {},
             },
@@ -33,8 +37,56 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         }
                     }
                 },
+                "server_builds": {"1.1.1.1": "5.0.0.0"},
                 "license_data": {},
-                "exp_cluster_dict": {"license_data": {"latest": 46000}},
+                "exp_cluster_dict": {
+                    "license_data": {"latest": ((99000 / 2) - (35 * 100))}
+                },
+            },
+            {
+                "ns_stats": {
+                    "foo": {
+                        "1.1.1.1": {
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,
+                            "pmem_used_bytes": 99000,
+                        },
+                        "2.2.2.2": {
+                            "master_objects": 100,
+                            "effective_replication_factor": 0,  # tie-breaker node
+                            "pmem_used_bytes": 99000,
+                        },
+                    }
+                },
+                "server_builds": {"1.1.1.1": "5.0.0.0"},
+                "license_data": {},
+                "exp_cluster_dict": {
+                    "license_data": {"latest": ((99000 / 2) - (35 * 100))}
+                },
+            },
+            {
+                "ns_stats": {
+                    "foo": {
+                        "1.1.1.1": {
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,
+                            "pmem_used_bytes": 99000,
+                        },
+                        "2.2.2.2": {
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,  # tie-breaker node
+                            "pmem_used_bytes": 99000,
+                        },
+                    }
+                },
+                "server_builds": {"1.1.1.1": "5.0.0.0", "2.2.2.2": "6.0.0.0"},
+                "license_data": {},
+                "exp_cluster_dict": {
+                    "license_data": {
+                        "latest": ((99000 / 2) - (35 * 100))
+                        + ((99000 / 2) - (39 * 100))
+                    }
+                },
             },
             {
                 "ns_stats": {
@@ -46,6 +98,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         }
                     }
                 },
+                "server_builds": {"1.1.1.1": "5.0.0.0"},
                 "license_data": {},
                 "exp_cluster_dict": {"license_data": {"latest": 100}},
             },
@@ -68,6 +121,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         }
                     },
                 },
+                "server_builds": {"1.1.1.1": "5.0.0.0"},
                 "license_data": {},
                 "exp_cluster_dict": {"license_data": {"latest": 500 + 250}},
             },
@@ -100,6 +154,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         },
                     },
                 },
+                "server_builds": {"1.1.1.1": "5.0.0.0", "2.2.2.2": "5.0.0.0"},
                 "license_data": {},
                 "exp_cluster_dict": {
                     "license_data": {
@@ -117,6 +172,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
 
             self.run_test_case(
                 tc["ns_stats"],
+                tc["server_builds"],
                 tc["license_data"],
                 summary_dict["CLUSTER"],
             )
@@ -197,6 +253,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
 
             self.run_test_case(
                 tc["ns_stats"],
+                {},
                 tc["license_data"],
                 summary_dict["CLUSTER"],
             )
