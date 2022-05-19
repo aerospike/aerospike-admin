@@ -8,5 +8,6 @@ build:
   - name: build
     script:
       - make
+      - tar -C /work/source/build/bin -czf /work/source/build/bin/asadm.tgz asadm/
     artifact:
-      - /work/source/build/bin/asadm
+      - /work/source/build/bin/asadm.tgz
