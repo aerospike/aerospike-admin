@@ -19,7 +19,7 @@ aiohttp = "==3.8.1"
 python-dateutil = "*"
 
 [dev-packages]
-pyinstaller = "==4.7"
+pyinstaller = "==4.10"
 black = "*"
 flake8 = "*"
 pytest = "*"

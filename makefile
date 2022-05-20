@@ -15,38 +15,91 @@
 OS = $(shell uname)
 SOURCE_ROOT = $(realpath .)
 BUILD_ROOT = $(SOURCE_ROOT)/build/
-INSTALL_ROOT = /opt/aerospike/bin/
-SYMLINK = /usr/bin/asadm
+SYMLINK_ASADM = /usr/local/bin/asadm
+SYMLINK_ASINFO = /usr/local/bin/asinfo
 INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
-INSTALL = "install -o aerospike -g aerospike"
 
-REQUIREMENT_FILE = $(SOURCE_ROOT)/requirements.txt
+ifneq (,$(filter $(OS),Darwin))
+INSTALL_ROOT = /usr/local/aerospike/bin/
+else
+INSTALL_ROOT = /opt/aerospike/bin/
+endif
 
 SHELL := /bin/bash
 
 define make_build
 	mkdir -p $(BUILD_ROOT)tmp
 	mkdir -p $(BUILD_ROOT)bin
-	rm -rf $(BUILD_ROOT)tmp/*
-	rm -rf $(BUILD_ROOT)bin/*
-	rm -f `find . -type f -name '*.pyc' | xargs`
-	mkdir $(BUILD_ROOT)tmp/asadm
-	cp -f *.py $(BUILD_ROOT)tmp/asadm
-	cp -f *.spec $(BUILD_ROOT)tmp/asadm
-	rsync -aL lib $(BUILD_ROOT)tmp/asadm
-	sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm/asadm.py
+	make clean
+	cp -f *.spec $(BUILD_ROOT)tmp/
+	cp -f *.py $(BUILD_ROOT)tmp/
+	cp -rf asinfo/* $(BUILD_ROOT)tmp/
+	rsync -aL lib $(BUILD_ROOT)tmp/
+
+	$(if $(filter $(OS),Darwin),
+	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm.py) || true
+	)
+
+	$(if $(filter $(OS),Darwin),
+	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
+	)
+	
 
 endef
 
-all:
+.PHONY: default
+default: one-file
+
+.PHONY: one-file
+one-file: init
 	$(call make_build)
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin)"
+	@echo Check $(BUILD_ROOT)bin for asadm and asinfo executables
+
+# For macOS but can be used for any OS.
+.PHONY: one-dir
+one-dir: init
+	$(call make_build)
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo-one-dir.spec --distpath $(BUILD_ROOT)bin)"
+	mv $(BUILD_ROOT)bin/asinfo/asinfo $(BUILD_ROOT)bin/asadm/asinfo 
+	rm -r $(BUILD_ROOT)bin/asinfo
+	@echo Check $(BUILD_ROOT)bin for bundle
+
+.PHONY: init
+init:
 	pipenv clean
 	pipenv install --dev
 	pipenv graph
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp/asadm && pyinstaller asadm.spec --distpath $(BUILD_ROOT)bin --workpath $(BUILD_ROOT)tmp/ --codesign-identity 'Developer ID Application: Aerospike, Inc.')"
 
-install:
-	install -o $(INSTALL_USER) -g $(INSTALL_GROUP) -d -m 755 $(INSTALL_ROOT)
-	install -o $(INSTALL_USER) -g $(INSTALL_GROUP) -m 755 $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
-	ln -sf $(INSTALL_ROOT)asadm $(SYMLINK)
+.PHONY: install
+install: uninstall
+	install -d -m 755 $(INSTALL_ROOT)
+ifneq ($(wildcard $(BUILD_ROOT)bin/asadm/*),)
+	@echo "Asadm and Asinfo were built in one-dir mode"
+	cp -r $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
+	ln -sf $(INSTALL_ROOT)asadm/asadm $(SYMLINK_ASADM)
+	ln -sf $(INSTALL_ROOT)asadm/asinfo $(SYMLINK_ASINFO)
+else
+	@echo "Asadm and Asinfo were built in one-file mode"
+	install -m 755 $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
+	install -m 755 $(BUILD_ROOT)bin/asinfo $(INSTALL_ROOT)asinfo
+	ln -sf $(INSTALL_ROOT)asadm $(SYMLINK_ASADM)
+	ln -sf $(INSTALL_ROOT)asinfo $(SYMLINK_ASINFO)
+endif
+
+.PHONY: uninstall
+uninstall:
+	rm -r $(INSTALL_ROOT)asadm || true
+	rm -r $(INSTALL_ROOT)asinfo || true
+	rm $(SYMLINK_ASADM) || true
+	rm $(SYMLINK_ASINFO) || true
+	
+
+.PHONY: clean
+clean:
+	rm -rf $(BUILD_ROOT)tmp/*
+	rm -rf $(BUILD_ROOT)bin/*
+	rm -f `find . -type f -name '*.pyc' | xargs`

@@ -4,9 +4,16 @@
 Aerospike Admin provides an interface for Aerospike users to view the stat
 of their Aerospike Cluster by fetching information from a running cluster (Cluster mode) 
 a collectinfo file (Collectinfo-Analyzer), or logs (Log-analyser mode).
-Start the tool with *asadm* and run the *help* command to get started.
+To get started run `asadm` and issue the `help` command. The
+full documentation can be found [here](https://docs.aerospike.com/tools/asadm).
 
-## Installing Aerospike Admin
+## Asinfo
+The Aerospike Admin repo now contains asinfo. Asinfo has been a long time member of the
+Aerospike Tools package but is now build together with asadm. Asinfo provides a raw
+interface to Aerospike info protocol and is useful for debugging and development. The
+full documentation can be found [here](https://docs.aerospike.com/tools/asinfo).
+
+## Build and Install Aerospike Admin
 ### Runtime Dependencies
 There are no runtime dependencies.  This is because the python interpreter is now 
 bundled with asadm version 2.6 and later.
@@ -18,12 +25,20 @@ bundled with asadm version 2.6 and later.
 ### Build and Install Asadm
 1. Install python 3.9
 2. Install [pipenv](https://pypi.org/project/pipenv/)
-3. Run
+3. Build
+    - Linux
+    ```
+    make
+    ```
+    - MacOS
+    ```
+    make one-dir
+    ```
+
+4. Install
 ```
-sudo make
 sudo make install
 ```
-
 ## Running Aerospike Admin in Live Cluster Mode.
 ```
 asadm -h <Aerospike Server Address\>

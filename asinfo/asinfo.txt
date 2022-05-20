@@ -1,0 +1,131 @@
+The asinfo script allows access to the services port on the server. 
+This allows the user to query the server for any statistics available, 
+and set any dynamic configuration values. This list is extensive, 
+please contact support for a full list. 
+
+Usage: asinfo [OPTIONS]
+---------------------------------------------------------------------------------------
+
+ -V --version         Show the version of asinfo and exit
+ -E --help            Show program usage.
+ -v --value           Fetch single value (Default: all).
+ -l --line-separator  Print in separate lines (Default: False).
+ --timeout=value      Set timeout value in seconds. 
+                      TLS connection does not support timeout. Default: 5 seconds
+
+
+Configuration File Allowed Options
+----------------------------------
+
+[cluster]
+ -h HOST, --host=HOST
+                      HOST is "<host1>[:<tlsname1>][:<port1>],..." 
+                      Server seed hostnames or IP addresses. The tlsname is 
+                      only used when connecting with a secure TLS enabled 
+                      server. Default: localhost:3000
+                      Examples:
+                        host1
+                        host1:3000,host2:3000
+                        192.168.1.10:cert1:3000,192.168.1.20:cert2:3000
+ -p PORT, --port=PORT 
+                      Server default port. Default: 3000
+ -U USER, --user=USER 
+                      User name used to authenticate with cluster. Default: none
+ -P, --password
+                      Password used to authenticate with cluster. Default: none
+                      User will be prompted on command line if -P specified and no
+                      password is given.
+ --auth=AUTHENTICATION_MODE 
+                      Authentication mode. Values: ['EXTERNAL', 'EXTERNAL_INSECURE', 'INTERNAL', 'PKI'].
+                      Default: INTERNAL
+ --tls-enable 
+                      Enable TLS on connections. By default TLS is disabled.
+ -t TLS_NAME, --tls-name=TLS_NAME 
+                      Specify host tlsname.
+ --tls-cafile=TLS_CAFILE <path>
+                      Path to a trusted CA certificate file.
+ --tls-capath=TLS_CAPATH <path>
+                      Path to a directory of trusted CA certificates.
+ --tls-protocols=TLS_PROTOCOLS
+                      Set the TLS protocol selection criteria. This format
+                      is the same as Apache's SSLProtocol documented at http
+                      s://httpd.apache.org/docs/current/mod/mod_ssl.html#ssl
+                      protocol . If not specified the asinfo will use '-all
+                      +TLSv1.2' if has support for TLSv1.2,otherwise it will
+                      be '-all +TLSv1'.
+ --tls-cipher-suite=TLS_CIPHER_SUITE
+                      Set the TLS cipher selection criteria. The format is
+                      the same as Open_sSL's Cipher List Format documented
+                      at https://www.openssl.org/docs/man1.0.1/apps/ciphers.
+                      html
+ --tls-keyfile=TLS_KEYFILE <path>
+                      Path to the key for mutual authentication (if
+                      Aerospike Cluster is supporting it).
+ --tls-keyfile-password=password
+                      Password to load protected tls-keyfile.
+                      It can be one of the following:
+                      1) Environment variable: 'env:<VAR>'
+                      2) File: 'file:<PATH>'
+                      3) String: 'PASSWORD'
+                      Default: none
+                      User will be prompted on command line if --tls-keyfile-password specified and no
+                      password is given.
+ --tls-certfile=TLS_CERTFILE <path>
+                      Path to the chain file for mutual authentication (if
+                      Aerospike Cluster is supporting it).
+ --tls-cert-blacklist <path>
+                      Path to a certificate blacklist file. The file should
+                      contain one line for each blacklisted certificate.
+                      Each line starts with the certificate serial number
+                      expressed in hex. Each entry may optionally specify
+                      the issuer name of the certificate (serial numbers are
+                      only required to be unique per issuer).Example:
+                      867EC87482B2
+                      /C=US/ST=CA/O=Acme/OU=Engineering/CN=TestChainCA
+ --tls-crl-check      Enable CRL checking for leaf certificate. An error
+                      occurs if a valid CRL files cannot be found in
+                      tls_capath.
+ --tls-crl-check-all  Enable CRL checking for entire certificate chain. An
+                      error occurs if a valid CRL files cannot be found in
+                      tls_capath.
+
+
+
+
+Default configuration files are read from the following files in the given order:
+/etc/aerospike/astools.conf ~/.aerospike/astools.conf
+The following sections are read: (cluster include)
+The following options effect configuration file behavior
+
+ --no-config-file
+                      Do not read any config file. Default: disabled
+ --instance <name>
+                      Section with these instance is read. e.g in case instance 
+                      `a` is specified section cluster_a is read.
+ --config-file <path>
+                      Read this file after default configuration file.
+ --only-config-file <path>
+                      Read only this configuration file.
+
+
+Here are some basic commands that are often used:
+
+This command lists all the nodes listed as available for this node
+in it's services list
+
+	asinfo -v 'services'
+
+This queries for information on the namespace named "users":
+
+	asinfo -v 'namespace/users' 
+
+This command queries for the same information as above, 
+but on a remote node specified by -h and on port 3000 specified by -p:
+
+	asinfo -h 192.168.120.101 -p 3000 -v 'namespace/users'
+
+This command queries for the same information as above,
+but on a remote node and tls connection enabled:
+
+	asinfo -h 192.168.120.101 -p 3000 -t t3.t-cluster.aerospike.com --tls_enable --tls_cafile ~/x509_certificates/Platinum/cacert.pem -v 'namespace/users'
+
