@@ -808,7 +808,9 @@ def _parse_agent_response(
                 )
 
 
-def _manually_compute_license_data_size(namespace_stats, summary_dict: SummaryDict):
+def _manually_compute_license_data_size(
+    namespace_stats, server_builds, summary_dict: SummaryDict
+):
     """
     Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
     Function finds license data size per namespace, and per cluster and updates output dictionaries.
@@ -828,26 +830,39 @@ def _manually_compute_license_data_size(namespace_stats, summary_dict: SummaryDi
         ns_unique_data = 0.0
         ns_master_objects = 0
         ns_repl_factor = 1
+        ns_record_overhead = 0.0
 
         for host_id, host_stats in ns_stats.items():
             host_memory_bytes = 0.0
             host_device_bytes = 0.0
             host_pmem_bytes = 0.0
+            host_master_objects = 0
 
             if not host_stats or isinstance(host_stats, Exception):
                 continue
 
-            ns_master_objects += util.get_value_from_dict(
-                host_stats,
-                ("master_objects", "master-objects"),
-                default_value=0,
-                return_type=int,
-            )
-
-            ns_repl_factor = util.get_value_from_dict(
+            repl_factor = util.get_value_from_dict(
                 host_stats,
                 ("effective_replication_factor", "replication-factor"),
                 default_value=1,
+                return_type=int,
+            )
+
+            if repl_factor == 0:
+                continue
+
+            if ns_repl_factor != 1 and repl_factor != ns_repl_factor:
+                raise Exception(
+                    "different replication factor found across nodes for namespace %s"
+                    % ns
+                )
+
+            ns_repl_factor = repl_factor
+
+            host_master_objects += util.get_value_from_dict(
+                host_stats,
+                ("master_objects", "master-objects"),
+                default_value=0,
                 return_type=int,
             )
 
@@ -898,30 +913,49 @@ def _manually_compute_license_data_size(namespace_stats, summary_dict: SummaryDi
                     return_type=float,
                 )
 
-            ns_unique_data += host_memory_bytes + host_pmem_bytes + host_device_bytes
+            host_build_version = util.get_value_from_dict(
+                server_builds,
+                host_id,
+                default_value=None,
+                return_type=str,
+            )
 
-        ns_unique_data = _license_data_usage_adjustment(
-            ns_repl_factor, ns_master_objects, ns_unique_data
-        )
+            if host_build_version is None:
+                raise Exception("could not find host %s in build responses" % host_id)
+
+            host_record_overhead = 35
+
+            if version.LooseVersion(
+                constants.SERVER_39_BYTE_OVERHEAD_FIRST_VERSION
+            ) <= version.LooseVersion(host_build_version):
+                host_record_overhead = 39
+
+            host_unique_data = host_memory_bytes + host_pmem_bytes + host_device_bytes
+            ns_unique_data += host_unique_data
+            ns_record_overhead += host_master_objects * host_record_overhead
+            ns_master_objects += host_master_objects
+
+        ns_unique_data = round((ns_unique_data / ns_repl_factor) - ns_record_overhead)
         summary_dict["NAMESPACES"][ns]["license_data"]["latest"] = int(
             round(ns_unique_data)
         )
-
         cl_unique_data += ns_unique_data
 
     summary_dict["CLUSTER"]["license_data"]["latest"] = int(round(cl_unique_data))
 
 
-def _compute_license_data_size(
+def compute_license_data_size(
     namespace_stats,
     license_data_usage: Optional[UDAResponsesDict],
+    server_builds: dict[str, str],
     allow_unstable: bool,
     summary_dict: SummaryDict,
 ):
 
     if not license_data_usage:
-        _manually_compute_license_data_size(namespace_stats, summary_dict)
-        return
+        _manually_compute_license_data_size(
+            namespace_stats, server_builds, summary_dict
+        )
     else:
         try:
             license_usage = license_data_usage["license_usage"]
@@ -931,7 +965,9 @@ def _compute_license_data_size(
         #  an error was returned from request
         except (TypeError, ValueError, KeyError) as e:
             logger.error("Issue parsing agent response: %s.", e)
-            _manually_compute_license_data_size(namespace_stats, summary_dict)
+            _manually_compute_license_data_size(
+                namespace_stats, server_builds, summary_dict
+            )
             return
 
 
@@ -984,6 +1020,7 @@ def create_summary(
 
     _compute_license_data_size(
         namespace_stats,
+        metadata["server_build"],
         license_data_usage,
         license_allow_unstable,
         summary_dict,

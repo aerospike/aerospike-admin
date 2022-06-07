@@ -25,20 +25,27 @@ bundled with asadm version 2.6 and later.
 ### Build and Install Asadm
 1. Install python 3.9
 2. Install [pipenv](https://pypi.org/project/pipenv/)
-3. Build
-    - Linux
+3. Build Asadm
+    There are two ways asadm can be bundled: one-file and one-dir. Both, are related to
+    pyinstaller's two methods of bundling. The one-file build is great if you want a single 
+    executable artifact. The downside of one-file is that it must decompress into a /tmp
+    directory in order to execute.  This causes a number of problems.  On macOS, the startup
+    time is drastically increased because of the codesigning mechanism. The /tmp directory
+    must be mounted with the the exec option. If the above scenarios describe your environment
+    then use the one-dir build.
+    * one-dir (default)
+        ```
+        make one-dir
+        ```
+    * one-file
+        ```
+        make one-file
+        ```
+4. Install asadm
     ```
-    make
-    ```
-    - MacOS
-    ```
-    make one-dir
+    sudo make install
     ```
 
-4. Install
-```
-sudo make install
-```
 ## Running Aerospike Admin in Live Cluster Mode.
 ```
 asadm -h <Aerospike Server Address\>
@@ -57,36 +64,6 @@ asadm -c [-f <location of collectinfo\>]
 Admin> help
 ```
 
-
-### Python Modules
-#### Runtime
-- bcrypt = "==3.1.4"
-- cryptography = "==3.4.7"
-- distro = "==1.5.0"
-- jsonschema = "==2.5.1"
-- pexpect = "==4.4.0"
-- ply = "==3.11"
-- pyasn1 = "==0.4.2"
-- toml = "==0.9.4"
-- yappi = "==0.98"
-- pyOpenSSL = "==18.0.0"
-- setuptools = "*"
-- aiohttp = "==3.8.1"
-
-
-#### Build
-- pyinstaller = "==4.7"
-- macholib = * **for mac build only**
-
-#### Test
-- pytest = "*"
-- unittest2 = "*"
-- mock = "*"
-- asynctest = "*"
-
-#### Dev
-black = "*"
-flake8 = "*"
 
 ## Tests
 

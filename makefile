@@ -34,13 +34,13 @@ define make_build
 	make clean
 	cp -f *.spec $(BUILD_ROOT)tmp/
 	cp -f *.py $(BUILD_ROOT)tmp/
-	cp -rf asinfo/* $(BUILD_ROOT)tmp/
 	rsync -aL lib $(BUILD_ROOT)tmp/
 
 	$(if $(filter $(OS),Darwin),
 	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm.py) || true ,
 	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm.py) || true
 	)
+	
 
 	$(if $(filter $(OS),Darwin),
 	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,

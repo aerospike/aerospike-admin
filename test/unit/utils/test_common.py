@@ -10,6 +10,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
     def run_test_case(
         self,
         namespace_stats,
+        server_builds,
         license_data_usage,
         allow_unstable,
         expected_summary_dict: common.SummaryDict,
@@ -23,20 +24,24 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
 
         summary_dict = common._initialize_summary_output(namespace_stats.keys())
 
-        common._compute_license_data_size(
-            namespace_stats,
-            license_data_usage,
-            allow_unstable,
-            summary_dict,
+        common.compute_license_data_size(
+            namespace_stats=namespace_stats,
+            license_data_usage=license_data_usage,
+            server_builds=server_builds,
+            allow_unstable=allow_unstable,
+            summary_dict=summary_dict,
         )
 
-        self.assertDictEqual(expected_summary_dict, summary_dict)
+        self.assertDictEqual(
+            expected_summary_dict, summary_dict, "Input: " + str(namespace_stats)
+        )
 
     def test_success_with_out_agent(self):
         test_cases = [
             {
                 "ns_stats": {},
                 "license_data": None,
+                "server_builds": {},
                 "allow_unstable": False,
                 "exp_summary_dict": {},
             },
@@ -51,6 +56,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                     }
                 },
                 "license_data": None,
+                "server_builds": {"1.1.1.1": "5.0.0.0"},
                 "allow_unstable": False,
                 "exp_summary_dict": {
                     "CLUSTER": {"license_data": {"latest": 46000}},
@@ -63,10 +69,78 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                         "1.1.1.1": {
                             "master_objects": 100,
                             "effective_replication_factor": 2,
+                            "pmem_used_bytes": 99000,
+                        },
+                        "2.2.2.2": {
+                            "master_objects": 100,
+                            "effective_replication_factor": 0,  # tie-breaker node
+                            "pmem_used_bytes": 99000,
+                        },
+                    }
+                },
+                "server_builds": {"1.1.1.1": "5.0.0.0"},
+                "license_data": {},
+                "allow_unstable": False,
+                "exp_summary_dict": {
+                    "CLUSTER": {
+                        "license_data": {"latest": int((99000 / 2) - (35 * 100))}
+                    },
+                    "NAMESPACES": {
+                        "foo": {
+                            "license_data": {"latest": int((99000 / 2) - (35 * 100))}
+                        }
+                    },
+                },
+            },
+            {
+                "ns_stats": {
+                    "foo": {
+                        "1.1.1.1": {
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,
+                            "pmem_used_bytes": 99000,
+                        },
+                        "2.2.2.2": {
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,  # tie-breaker node
+                            "pmem_used_bytes": 99000,
+                        },
+                    }
+                },
+                "server_builds": {"1.1.1.1": "5.0.0.0", "2.2.2.2": "6.0.0.0"},
+                "license_data": {},
+                "allow_unstable": False,
+                "exp_summary_dict": {
+                    "CLUSTER": {
+                        "license_data": {
+                            "latest": int(
+                                ((99000 / 2) - (35 * 100)) + ((99000 / 2) - (39 * 100))
+                            )
+                        }
+                    },
+                    "NAMESPACES": {
+                        "foo": {
+                            "license_data": {
+                                "latest": int(
+                                    ((99000 / 2) - (35 * 100))
+                                    + ((99000 / 2) - (39 * 100))
+                                )
+                            }
+                        }
+                    },
+                },
+            },
+            {
+                "ns_stats": {
+                    "foo": {
+                        "1.1.1.1": {
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,
                             "device_used_bytes": 7200,
                         }
                     }
                 },
+                "server_builds": {"1.1.1.1": "5.0.0.0"},
                 "license_data": None,
                 "allow_unstable": False,
                 "exp_summary_dict": {
@@ -94,6 +168,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                     },
                 },
                 "license_data": None,
+                "server_builds": {"1.1.1.1": "5.0.0.0"},
                 "allow_unstable": False,
                 "exp_summary_dict": {
                     "CLUSTER": {"license_data": {"latest": 500 + 250}},
@@ -134,22 +209,27 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                 },
                 "license_data": None,
                 "allow_unstable": False,
+                "server_builds": {"1.1.1.1": "5.0.0.0", "2.2.2.2": "5.0.0.0"},
                 "exp_summary_dict": {
                     "CLUSTER": {
                         "license_data": {
-                            "latest": ((7200 + 3200) / 2)
-                            - (110 * 35)
-                            + ((50000 + 10000) / 3)
-                            - (35 * 60)
+                            "latest": int(
+                                ((7200 + 3200) / 2)
+                                - (110 * 35)
+                                + ((50000 + 10000) / 3)
+                                - (35 * 60)
+                            )
                         },
                     },
                     "NAMESPACES": {
                         "foo": {
-                            "license_data": {"latest": ((7200 + 3200) / 2) - (110 * 35)}
+                            "license_data": {
+                                "latest": int(((7200 + 3200) / 2) - (110 * 35))
+                            }
                         },
                         "bar": {
                             "license_data": {
-                                "latest": ((50000 + 10000) / 3) - (35 * 60)
+                                "latest": int(((50000 + 10000) / 3) - (35 * 60))
                             }
                         },
                     },
@@ -158,14 +238,13 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
         ]
 
         for tc in test_cases:
-
-            with self.subTest("msg"):
-                self.run_test_case(
-                    tc["ns_stats"],
-                    tc["license_data"],
-                    tc["allow_unstable"],
-                    tc["exp_summary_dict"],
-                )
+            self.run_test_case(
+                tc["ns_stats"],
+                tc["server_builds"],
+                tc["license_data"],
+                tc["allow_unstable"],
+                tc["exp_summary_dict"],
+            )
 
     def test_success_with_agent(self):
 
@@ -487,10 +566,10 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
         ]
 
         for tc in test_cases:
-            with self.subTest():
-                self.run_test_case(
-                    tc["ns_stats"],
-                    tc["license_data"],
-                    tc["allow_unstable"],
-                    tc["exp_summary_dict"],
-                )
+            self.run_test_case(
+                tc["ns_stats"],
+                {"1.1.1.1": "5.0.0.0"},
+                tc["license_data"],
+                tc["allow_unstable"],
+                tc["exp_summary_dict"],
+            )
