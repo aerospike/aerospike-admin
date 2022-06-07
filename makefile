@@ -52,7 +52,7 @@ define make_build
 endef
 
 .PHONY: default
-default: one-file
+default: one-dir
 
 .PHONY: one-file
 one-file: init
