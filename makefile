@@ -34,6 +34,7 @@ define make_build
 	make clean
 	cp -f *.spec $(BUILD_ROOT)tmp/
 	cp -f *.py $(BUILD_ROOT)tmp/
+	cp -rf asinfo/* $(BUILD_ROOT)tmp/
 	rsync -aL lib $(BUILD_ROOT)tmp/
 
 	$(if $(filter $(OS),Darwin),
