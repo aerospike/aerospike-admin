@@ -1018,10 +1018,10 @@ def create_summary(
     cl_nodewise_pmem_used = {}
     cl_nodewise_pmem_avail = {}
 
-    _compute_license_data_size(
+    compute_license_data_size(
         namespace_stats,
-        metadata["server_build"],
         license_data_usage,
+        metadata["server_build"],
         license_allow_unstable,
         summary_dict,
     )
