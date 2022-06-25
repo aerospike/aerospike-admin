@@ -32,6 +32,7 @@ import urllib.parse
 import aiohttp
 import zipfile
 from collections import OrderedDict
+from dateutil import parser as date_parser
 
 from lib.utils import constants, file_size, util, version, data
 from lib.view import terminal
@@ -739,7 +740,7 @@ class AggregateLicenseUsage:
         self.latest = val
 
         if time != None:
-            self.latest_time = datetime.datetime.fromisoformat(time)
+            self.latest_time = date_parser.isoparse(time)
 
     def __dict__(self) -> SummaryClusterLicenseAggDict:
         d: SummaryClusterLicenseAggDict = {"latest": self.latest}
