@@ -14,9 +14,6 @@ from lib.view import terminal
 class BaseLogger(logging.Logger, object):
     execute_only_mode = False
 
-    def __init__(self, name, level=logging.WARNING):
-        return super().__init__(name, level=level)
-
     def _handle_exception(self, msg):
         if (
             isinstance(msg, Exception)
@@ -70,9 +67,9 @@ class LogFormatter(DebugFormatter):
     def __init__(self, fmt="%(levelno)s: %(msg)s"):
         super().__init__(fmt=fmt)
 
-    def _format_message(self, msg, level, color: _LogColors, *args):
+    def _format_message(self, msg, level, color: Optional[_LogColors], args):
         try:
-            message = str(msg).format(*args)
+            message = str(msg) % args
         except Exception:
             message = str(msg)
 
@@ -90,18 +87,18 @@ class LogFormatter(DebugFormatter):
         if record.levelno == logging.DEBUG:
             return super().format(record)
         if record.levelno == logging.INFO:
-            return self._format_message(record.msg, "INFO", None, *record.args)
+            return self._format_message(record.msg, "INFO", None, record.args)
         elif record.levelno == logging.WARNING:
             return self._format_message(
-                record.msg, "WARNING", _LogColors.yellow, *record.args
+                record.msg, "WARNING", _LogColors.yellow, record.args
             )
         elif record.levelno == logging.ERROR:
             return self._format_message(
-                record.msg, "ERROR", _LogColors.red, *record.args
+                record.msg, "ERROR", _LogColors.red, record.args
             )
         elif record.levelno == logging.CRITICAL:
             return self._format_message(
-                record.msg, "ERROR", _LogColors.red, *record.args
+                record.msg, "ERROR", _LogColors.red, record.args
             )
 
         formatter = logging.Formatter(self._style._fmt)

@@ -951,7 +951,6 @@ def compute_license_data_size(
     allow_unstable: bool,
     summary_dict: SummaryDict,
 ):
-
     if not license_data_usage:
         _manually_compute_license_data_size(
             namespace_stats, server_builds, summary_dict
