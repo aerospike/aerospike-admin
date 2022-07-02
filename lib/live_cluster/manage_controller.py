@@ -2,10 +2,12 @@ import asyncio
 import os
 import logging
 from datetime import datetime
+import re
 from dateutil import parser as date_parser
 from typing import Optional
 from getpass import getpass
 from functools import reduce
+from lib.live_cluster.client.ctx import ASValues, CTXItems
 
 from lib.view import terminal
 from lib.utils import constants, util, version
@@ -19,6 +21,7 @@ from .client import (
     EnumConfigType,
     StringConfigType,
     IntConfigType,
+    CDTContext,
 )
 from .live_cluster_command_controller import LiveClusterCommandController
 from lib.get_controller import GetJobsController
@@ -921,7 +924,7 @@ class ManageSIndexController(LiveClusterCommandController):
 
 @CommandHelp(
     "Usage: create <bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>]",
-    "  bin-type    - The bin type of the provided <bin-name>. Should be one of the following values:",
+    "  bin-type      - The bin type of the provided <bin-name>. Should be one of the following values:",
     "                  numeric, string, or geo2dsphere",
     "  index-name    - Name of the secondary index to be created. Should be 20 characters",
     '                  or less and not contain ":" or ";".',
@@ -941,6 +944,69 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
     def _do_default(self, line):
         self.execute_help(line)
+
+    def _str_to_cdt_ctx(self, ctx_str: str) -> CDTContext:
+        ctx_str = ctx_str.strip("[]")
+        ctx_list = ctx_str.split(",")
+        cdt_ctx: CDTContext = CDTContext()
+
+        int_double_str_pattern = (
+            r"(?:"
+            + r"(\d+\.{1}\d+)"
+            + r"|(\d)+"
+            + r"|(?:[\'\"]{1})([A-Za-z\d\{\}\[\]\!@#\$%\^&\*\(\)_\-\+=\|:/\?.>,<`\~\\]+)(?:[\'\"]{1})"
+            + r")"
+        )
+
+        str_to_ctx = {
+            re.compile(r"^list_by_index\((\d+)\)"): CTXItems.ListIndex,
+            re.compile(r"^list_by_rank\((\d+)\)"): CTXItems.ListRank,
+            re.compile(r"^map_by_index\((\d+)\)"): CTXItems.MapIndex,
+            re.compile(r"^map_by_rank\((\d+)\)"): CTXItems.MapRank,
+            re.compile(
+                r"map_by_key\(" + int_double_str_pattern + r"\)"
+            ): CTXItems.MapKey,
+        }
+
+        for ctx_item_str in ctx_list:
+            found = False
+            ctx_item = None
+
+            for key, ctx_cls in str_to_ctx.items():
+                match = key.search(ctx_item_str)
+
+                if match is not None:
+                    ctx_arg = None
+
+                    if ctx_cls == CTXItems.MapKey:
+                        groups = match.groups()
+                        double_arg, int_arg, str_arg = groups
+
+                        if double_arg is not None:
+                            ctx_arg = float(double_arg)
+                            as_val = ASValues.ASDouble(ctx_arg)
+                        elif int_arg is not None:
+                            ctx_arg = int(int_arg)
+                            as_val = ASValues.ASInt(ctx_arg)
+                        elif str_arg is not None:
+                            as_val = ASValues.ASString(str_arg)
+                        else:
+                            raise Exception("All ctx args are None?")
+
+                    else:
+                        ctx_arg = match.group(0)
+                        int_arg = int(ctx_arg)
+                        as_val = ASValues.ASInt(int_arg)
+
+                    found = True
+                    cdt_ctx.append(ctx_cls(as_val))
+
+                    break
+
+            if not found:
+                raise ShellException("Unable to parse ctx item {}".format(ctx_item_str))
+
+        return cdt_ctx
 
     async def _do_create(self, line, bin_type):
         index_name = line.pop(0)
@@ -977,6 +1043,20 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             mods=self.mods,
         )
 
+        ctx_str = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="ctx",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        cdt_ctx = None
+
+        if ctx_str is not None:
+            cdt_ctx = self._str_to_cdt_ctx(ctx_str)
+
         index_type = index_type.lower() if index_type else None
         bin_type = bin_type.lower()
 
@@ -992,6 +1072,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             bin_type,
             index_type,
             set_,
+            cdt_ctx,
             nodes="principal",
         )
         resp = list(resp.values())[0]

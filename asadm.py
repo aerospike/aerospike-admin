@@ -25,6 +25,7 @@ import shlex
 import sys
 import asyncio
 import readline
+from lib.live_cluster.client.msgpack import ASPacker
 from lib.utils.async_object import AsyncObject
 
 
@@ -58,7 +59,7 @@ import yappi  # noqa F401
 # codec is registered well before it is used in getaddrinfo.
 # see https://bugs.python.org/issue29288, https://github.com/aws/aws-cli/blob/1.16.277/awscli/clidriver.py#L55,
 # and https://github.com/pyinstaller/pyinstaller/issues/1113 for more info :)
-u"".encode("idna")
+"".encode("idna")
 
 # Do not remove this line.  It mitigates a race condition that occurs when using
 # pyinstaller and socket.getaddrinfo.  For some reason the idna codec is not registered
@@ -77,6 +78,9 @@ MULTILEVEL_COMMANDS = ["show", "info", "manage"]
 
 DEFAULT_PROMPT = "Admin> "
 PRIVILEGED_PROMPT = "Admin+> "
+
+
+packer = ASPacker()
 
 
 class AerospikeShell(cmd.Cmd, AsyncObject):
@@ -270,7 +274,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
         command = []
         build_token = ""
-        lexer.wordchars += ".*-:/_{}@"
+        lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|\:''\"<>,./?"
         for token in lexer:
             build_token += token
             if token == "-":

@@ -17,6 +17,7 @@ pyOpenSSL = "==18.0.0"
 setuptools = "*"
 aiohttp = "==3.8.1"
 python-dateutil = "*"
+msgpack = "*"
 
 [dev-packages]
 pyinstaller = "==4.10"

@@ -20,6 +20,9 @@ import socket
 import threading
 import time
 import base64
+from typing import Optional
+from lib.live_cluster.client.ctx import CDTContext
+from lib.live_cluster.client.msgpack import ASPacker
 
 from lib.utils import common, constants, util, version, conf_parser
 from lib.utils import common, constants, util, version, logger_debug, conf_parser
@@ -38,6 +41,7 @@ from .types import (
     ASProtocolError,
     ASResponse,
     Addr_Port_TLSName,
+    SIndexBinType,
 )
 
 logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
@@ -2217,7 +2221,14 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_sindex_create(
-        self, index_name, namespace, bin_name, bin_type, index_type=None, set_=None
+        self,
+        index_name: str,
+        namespace: str,
+        bin_name: str,
+        bin_type: SIndexBinType,
+        index_type: Optional[str] = None,
+        set_: Optional[str] = None,
+        ctx: Optional[CDTContext] = None,
     ):
         """
         Create a new secondary index. index_type and set are optional.
@@ -2234,7 +2245,17 @@ class Node(AsyncObject):
         if set_:
             command += "set={};".format(set_)
 
+        if ctx:
+            packer = ASPacker()
+            packer.pack(ctx)
+            ctx_bytes: bytes = packer.bytes()
+            ctx_b64 = base64.encodebytes(ctx_bytes)
+            ctx_b64 = util.bytes_to_str(ctx_b64).strip("\n")
+
+            command += "context={};".format(ctx_b64)
+
         command += "indexdata={},{}".format(bin_name, bin_type)
+
         resp = await self.info(command)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
