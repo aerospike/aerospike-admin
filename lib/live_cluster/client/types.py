@@ -1,5 +1,6 @@
 from enum import IntEnum, unique
 import logging
+from typing import Literal, Union
 
 Addr_Port_TLSName = tuple[str, int, str]
 
@@ -248,3 +249,6 @@ class ASInfoNotAuthenticatedError(ASInfoError):
 
 class ASInfoClusterStableError(ASInfoError):
     pass
+
+
+SIndexBinType = Union[Literal["NUMERIC"], Literal["GEO2DSPHERE"], Literal["STRING"]]
