@@ -1339,14 +1339,6 @@ async def info(reader, writer, names=None):
                 continue
             name, sep, value = line.partition("\t")
 
-            if name not in names:
-                logger.debug(
-                    "Unexpected key %s in info response %s. Exceptable keys: %s",
-                    name,
-                    line,
-                    names,
-                )
-
             rdict[name] = value
         return rdict
 
