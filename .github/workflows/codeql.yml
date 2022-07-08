@@ -68,11 +68,11 @@ jobs:
     # - run: |
     #   echo "Run, Build Application using script"
     #   ./location_of_script_within_repo/buildscript.sh
-    - name: Build Python
+    - name: Install Python
+      uses: py-actions/py-dependency-install@v3
+    - name: Build python   
       run: |
-       apt install python 3.9
-       apt install pipenv
-       make one-dir
+        make one-dir
        
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2
