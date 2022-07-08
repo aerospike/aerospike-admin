@@ -70,6 +70,8 @@ jobs:
     #   ./location_of_script_within_repo/buildscript.sh
     - name: Build Python
       run: |
+       sudo apt install python 3.9
+       sudo apt install pipenv
        make one-dir
        
     - name: Perform CodeQL Analysis
