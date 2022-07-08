@@ -56,8 +56,8 @@ jobs:
         
     # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
     # If this step fails, then you should remove it and run the build manually (see below)
-  #  - name: Autobuild
-   #   uses: github/codeql-action/autobuild@v2
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
    
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
@@ -68,11 +68,6 @@ jobs:
     # - run: |
     #   echo "Run, Build Application using script"
     #   ./location_of_script_within_repo/buildscript.sh
-    - name: Install Python
-      uses: py-actions/py-dependency-install@v3
-    - name: Build python   
-      run: |
-        make one-dir
        
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2
