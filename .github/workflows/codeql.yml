@@ -70,5 +70,6 @@ jobs:
     - name: Build Python
       run: |
        make one-dir
+       
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2
