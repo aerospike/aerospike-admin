@@ -3,7 +3,7 @@ from .client import Cluster
 
 
 class LiveClusterCommandController(CommandController):
-    cluster = None
+    cluster: Cluster = None
 
     def __init__(self, cluster: Cluster):
         LiveClusterCommandController.cluster = cluster

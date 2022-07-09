@@ -24,6 +24,7 @@ import unittest
 from mock.mock import AsyncMock, Mock
 
 import lib
+from lib.live_cluster.client.ctx import CDTContext, CTXItem, CTXItems
 from lib.live_cluster.client.types import ASProtocolError, ASResponse
 from test.unit import util
 from lib.utils import constants
@@ -3195,8 +3196,8 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_sindex_create_success(self):
         self.info_mock.return_value = "OK"
-        expected_call = "sindex-create:indexname={};ns={};indexdata={},{}".format(
-            "iname", "ns", "data1", "data2"
+        expected_call = (
+            "sindex-create:indexname=iname;ns=ns;indexdata=data1,data2".format()
         )
 
         actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2")
@@ -3205,12 +3206,16 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
         self.info_mock.return_value = "OK"
-        expected_call = "sindex-create:indexname={};indextype={};ns={};set={};indexdata={},{}".format(
-            "iname", "itype", "ns", "set", "data1", "data2"
-        )
+        expected_call = "sindex-create:indexname=iname;indextype=itype;ns=ns;set=set;context=khAB;indexdata=data1,data2"
 
         actual = await self.node.info_sindex_create(
-            "iname", "ns", "data1", "data2", index_type="itype", set_="set"
+            "iname",
+            "ns",
+            "data1",
+            "data2",
+            index_type="itype",
+            set_="set",
+            ctx=CDTContext([CTXItems.ListIndex(1)]),
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)

@@ -158,26 +158,26 @@ ASINFO_RESPONSE_OK = "ok"
 class ASInfoError(Exception):
     generic_error = "Unknown error occurred"
 
-    def __init__(self, message, response):
+    def __init__(self, message: str, server_resp: str):
         self.message = message
-        self.raw_response = response
+        self.raw_response = server_resp
 
         # Success can either be "ok", "OK", or "" :(
-        if response.lower() in {ASINFO_RESPONSE_OK, ""}:
+        if server_resp.lower() in {ASINFO_RESPONSE_OK, ""}:
             raise ValueError('info() returned value "ok" which is not an error.')
 
         try:
             # sometimes there is a message with 'error' and sometimes not. i.e. set-config, udf-put
-            if response.startswith("error") or response.startswith("ERROR"):
+            if server_resp.startswith("error") or server_resp.startswith("ERROR"):
                 try:
-                    response = response.split("=")[1]
+                    server_resp = server_resp.split("=")[1]
                 except IndexError:
-                    response = response.split(":")[2]
+                    server_resp = server_resp.split(":")[2]
 
-            elif response.startswith("fail") or response.startswith("FAIL"):
-                response = response.split(":")[2]
+            elif server_resp.startswith("fail") or server_resp.startswith("FAIL"):
+                server_resp = server_resp.split(":")[2]
 
-            self.response = response.strip(" .")
+            self.response = server_resp.strip(" .")
 
         except IndexError:
             self.response = self.generic_error

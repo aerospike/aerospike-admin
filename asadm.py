@@ -274,7 +274,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
         command = []
         build_token = ""
-        lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|\:''\"<>,./?"
+        lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|:''\"<>,./?"
         for token in lexer:
             build_token += token
             if token == "-":
