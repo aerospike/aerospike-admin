@@ -778,6 +778,7 @@ info_sindex_sheet = Sheet(
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
         ),
+        Field("Context", Projectors.String("sindex_stats", "context")),
         Subgroup(
             "Queries",
             (
@@ -1581,6 +1582,7 @@ show_sindex = Sheet(
         Field("Bin Type", Projectors.String("data", "type")),
         Field("Index Type", Projectors.String("data", "indextype")),
         Field("State", Projectors.String("data", "state")),
+        Field("Context", Projectors.String("data", "context")),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),
