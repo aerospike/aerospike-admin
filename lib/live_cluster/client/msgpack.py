@@ -6,6 +6,7 @@ from msgpack import ExtType
 from lib.live_cluster.client.ctx import ASValue, ASValues, CDTContext, CTXItem, CTXItems
 
 AS_BYTES_STRING = 3
+AS_BYTES_BLOB = 4
 AS_BYTES_GEOJSON = 23
 ASVAL_CMP_EXT_TYPE = 0xFF
 ASVAL_CMP_WILDCARD = 0x00
@@ -36,10 +37,12 @@ class ASPacker(Packer):
         super().pack(obj)
 
     def _pack_as_cdt_ctx(self, obj: CDTContext):
+        """
+        For packing an ctx in order to create a secondary index.  The protocol
+        for packing a CDT with a CTX has a slightly different format.
+        """
         n = len(obj) * 2
-        self._pack_array_header(n)
-
-        tmp = self.bytes()
+        self.pack_array_header(n)
 
         for item in obj:
             self._pack_as_cdt_item(item)
@@ -51,63 +54,54 @@ class ASPacker(Packer):
             self.pack(CTXItemWireType.AS_CDT_CTX_LIST_INDEX)
         elif isinstance(obj, CTXItems.ListRank):
             self.pack(CTXItemWireType.AS_CDT_CTX_LIST_RANK)
+        elif isinstance(obj, CTXItems.ListValue):
+            self.pack(CTXItemWireType.AS_CDT_CTX_LIST_VALUE)
         elif isinstance(obj, CTXItems.MapIndex):
             self.pack(CTXItemWireType.AS_CDT_CTX_MAP_INDEX)
         elif isinstance(obj, CTXItems.MapRank):
             self.pack(CTXItemWireType.AS_CDT_CTX_MAP_RANK)
         elif isinstance(obj, CTXItems.MapKey):
             self.pack(CTXItemWireType.AS_CDT_CTX_MAP_KEY)
-            tmp = self.bytes()
+        elif isinstance(obj, CTXItems.MapValue):
+            self.pack(CTXItemWireType.AS_CDT_CTX_MAP_VALUE)
         self.pack(obj.value)
         return
 
     def _pack_as_value(self, obj: ASValue):
         if isinstance(obj, ASValues.ASString):
             val = obj.value
-            val = val.encode("utf-8", self._unicode_errors)
-            n = len(val) + 1
-            if n >= 2**32:
-                raise ValueError("String is too large")
-            self._pack_raw_header(n)
-            self._pack_byte(AS_BYTES_STRING)
-            self._buffer.write(val)
-            tmp = self.bytes()
+            val = chr(AS_BYTES_STRING) + val
+            self.pack(val)
             return
 
-        if isinstance(obj, ASValues.ASGeoJson):
+        if isinstance(obj, ASValues.ASBytes):
             val = obj.value
-            val = val.encode("utf-8", self._unicode_errors)
-            n = len(val) + 1
-            if n >= 2**32:
-                raise ValueError("String is too large")
-            self._pack_raw_header(n)
-            self._pack_byte(AS_BYTES_GEOJSON)
-            self._buffer.write(val)
+            val = chr(AS_BYTES_BLOB) + val.decode("utf-8")
+            self.pack(val)
             return
 
-        if isinstance(obj, ASValues.ASPair):
-            val = obj.value
-            val1, val2 = val
-            self._pack_array_header(2)
-            self.pack(val1)
-            self.pack(val2)
-            return
+        """
+        Not used. Here for reference in case one day they are.
+        """
 
-        if isinstance(obj, ASValues.ASList):
-            val = obj.value
-            n = len(val)
-            self._pack_array_header(n)
-            for i in range(n):
-                self._pack_as_value(val[i])
-            return
+        # if isinstance(obj, ASValues.ASGeoJson):
+        #     val = obj.value
+        #     val = chr(AS_BYTES_GEOJSON) + val
+        #     self.pack(val)
+        #     return
 
-        if isinstance(obj, ASValues.ASWildCard):
-            wildCardExt = ExtType(ASVAL_CMP_EXT_TYPE, ASVAL_CMP_WILDCARD)
-            super().pack(wildCardExt)
-            return
+        # if isinstance(obj, ASValues.ASList):
+        #     val = obj.value
+        #     n = len(val)
+        #     self._pack_array_header(n)
+        #     for i in range(n):
+        #         self._pack_as_value(val[i])
+        #     return
+
+        # if isinstance(obj, ASValues.ASWildCard):
+        #     wildCardExt = ExtType(ASVAL_CMP_EXT_TYPE, ASVAL_CMP_WILDCARD)
+        #     super().pack(wildCardExt)
+        #     return
 
         self.pack(obj.value)
         return
-
-    def _pack_byte(self, byte):
-        self._buffer.write(struct.pack("B", byte))

@@ -119,6 +119,8 @@ class JobType:
 
 
 # server versions with critical changes
+# TODO: Change to functions on the node
+SERVER_SINDEX_ON_CDT_FIRST_VERSION = "6.1"
 SERVER_QUERIES_ABORT_ALL_FIRST_VERSION = "6.0"
 SERVER_39_BYTE_OVERHEAD_FIRST_VERSION = "6.0"
 SERVER_SINDEX_BUILDER_REMOVED_VERSION = "5.7"

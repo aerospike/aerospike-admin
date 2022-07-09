@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import binascii
 import os
 import logging
 from datetime import datetime
@@ -7,7 +9,7 @@ from dateutil import parser as date_parser
 from typing import Optional
 from getpass import getpass
 from functools import reduce
-from lib.live_cluster.client.ctx import ASValues, CTXItems
+from lib.live_cluster.client.ctx import ASValues, CTXItem, CTXItems
 
 from lib.view import terminal
 from lib.utils import constants, util, version
@@ -940,63 +942,133 @@ class ManageSIndexController(LiveClusterCommandController):
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["line", "ns", "bin"])
-        self.modifiers = set(["set", "in"])
+        self.modifiers = set(["set", "in", "ctx"])
 
     def _do_default(self, line):
         self.execute_help(line)
 
-    def _str_to_cdt_ctx(self, ctx_str: str) -> CDTContext:
-        ctx_str = ctx_str.strip("[]")
-        ctx_list = ctx_str.split(",")
-        cdt_ctx: CDTContext = CDTContext()
+    @staticmethod
+    def _split_ctx_list(ctx_str: str) -> list[str]:
+        if ctx_str and (not ctx_str.startswith("[") or not ctx_str.endswith(("]"))):
+            raise ShellException("Malformed ctx list")
+        ctx_str = ctx_str.strip("[] ")
+        split_pattern = r"\)(,\s*)(?:list|map)"
+        ctx_list = []
+        start = 0
 
-        int_double_str_pattern = (
+        for m in re.finditer(split_pattern, ctx_str):
+            end = m.start(1)
+            ctx_list.append(ctx_str[start:end])
+            start = m.end(1)
+
+        ctx_list.append(ctx_str[start : len(ctx_str)])
+
+        return ctx_list
+
+    @staticmethod
+    def _str_to_cdt_ctx(ctx_str: str) -> CDTContext:
+        cdt_ctx: CDTContext = CDTContext()
+        double_pattern = r"-?\d+\.{1}\d+"
+        int_pattern = r"-?\d+"
+        str_pattern = r"(?:'{1}(.*?)'{1})|(?:\"(.*?)\")"
+        bool_pattern = (
+            r"(?:[tT]{1}[Rr]{1}[Uu]{1}[Ee]{1})|(?:[Ff]{1}[Aa]{1}[Ll]{1}[Ss]{1}[Ee]{1})"
+        )
+        base64_pattern = r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})"
+        hex_pattern = r"0[xX][0-9a-fA-F]+"
+
+        particle_pattern_with_names = (
             r"(?:"
-            + r"(\d+\.{1}\d+)"
-            + r"|(\d)+"
-            + r"|(?:[\'\"]{1})([A-Za-z\d\{\}\[\]\!@#\$%\^&\*\(\)_\-\+=\|:/\?.>,<`\~\\]+)(?:[\'\"]{1})"
+            + r"(?P<double>"
+            + double_pattern
+            + r")"
+            + r"|"
+            + r"(?P<int>"
+            + int_pattern
+            + r")"
+            + r"|"
+            + r"(?P<str>"
+            + str_pattern
+            + r")"
+            + r"|"
+            + r"(?P<bool>"
+            + bool_pattern
+            + r")"
+            + r"|"
+            + r"(?P<bytes_base64>"
+            + base64_pattern
+            + r")"
+            + r"|"
+            + r"(?P<bytes_hex>"
+            + hex_pattern
+            + r")"
             + r")"
         )
 
+        ctx_list = ManageSIndexCreateController._split_ctx_list(ctx_str)
+
         str_to_ctx = {
-            re.compile(r"^list_by_index\((\d+)\)"): CTXItems.ListIndex,
-            re.compile(r"^list_by_rank\((\d+)\)"): CTXItems.ListRank,
-            re.compile(r"^map_by_index\((\d+)\)"): CTXItems.MapIndex,
-            re.compile(r"^map_by_rank\((\d+)\)"): CTXItems.MapRank,
+            re.compile(r"^list_by_index\((" + int_pattern + r")\)"): CTXItems.ListIndex,
+            re.compile(r"^list_by_rank\((" + int_pattern + r")\)"): CTXItems.ListRank,
             re.compile(
-                r"map_by_key\(" + int_double_str_pattern + r"\)"
+                r"^list_by_value\(" + particle_pattern_with_names + r"\)"
+            ): CTXItems.ListValue,
+            re.compile(r"^map_by_index\((" + int_pattern + r")\)"): CTXItems.MapIndex,
+            re.compile(r"^map_by_rank\((" + int_pattern + r")\)"): CTXItems.MapRank,
+            re.compile(
+                r"^map_by_key\(" + particle_pattern_with_names + r"\)"
             ): CTXItems.MapKey,
+            re.compile(
+                r"^map_by_value\(" + particle_pattern_with_names + r"\)"
+            ): CTXItems.MapValue,
         }
 
         for ctx_item_str in ctx_list:
+            ctx_item_str = ctx_item_str.strip(" ")
             found = False
-            ctx_item = None
 
             for key, ctx_cls in str_to_ctx.items():
                 match = key.search(ctx_item_str)
 
                 if match is not None:
-                    ctx_arg = None
 
-                    if ctx_cls == CTXItems.MapKey:
-                        groups = match.groups()
-                        double_arg, int_arg, str_arg = groups
+                    if (
+                        ctx_cls == CTXItems.ListValue
+                        or ctx_cls == CTXItems.MapKey
+                        or ctx_cls == CTXItems.MapValue
+                    ):
+                        groups = match.groupdict()
 
-                        if double_arg is not None:
-                            ctx_arg = float(double_arg)
-                            as_val = ASValues.ASDouble(ctx_arg)
-                        elif int_arg is not None:
-                            ctx_arg = int(int_arg)
-                            as_val = ASValues.ASInt(ctx_arg)
-                        elif str_arg is not None:
-                            as_val = ASValues.ASString(str_arg)
+                        double_, int_, str_, bool_, base_64, hex_ = (
+                            groups["double"],
+                            groups["int"],
+                            groups["str"],
+                            groups["bool"],
+                            groups["bytes_base64"],
+                            groups["bytes_hex"],
+                        )
+                        if double_ is not None:
+                            double_ = float(double_)
+                            as_val = ASValues.ASDouble(double_)
+                        elif int_ is not None:
+                            int_ = int(int_)
+                            as_val = ASValues.ASInt(int_)
+                        elif str_ is not None:
+                            as_val = ASValues.ASString(str_[1:-1])  # remove parenthesis
+                        elif bool_ is not None:
+                            bool_ = True if bool_.lower() == "true" else False
+                            as_val = ASValues.ASBool(bool_)
+                        elif base_64 is not None:
+                            base_64 = binascii.a2b_base64(bytes(base_64, "utf-8"))
+                            as_val = ASValues.ASBytes(base_64)
+                        elif hex_ is not None:
+                            hex_ = bytes.fromhex(hex_[2:])  # remove 0x
+                            as_val = ASValues.ASBytes(hex_)
                         else:
                             raise Exception("All ctx args are None?")
-
                     else:
-                        ctx_arg = match.group(0)
-                        int_arg = int(ctx_arg)
-                        as_val = ASValues.ASInt(int_arg)
+                        groups = match.groups()
+                        as_val = int(groups[0])
 
                     found = True
                     cdt_ctx.append(ctx_cls(as_val))
@@ -1008,7 +1080,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
         return cdt_ctx
 
-    async def _do_create(self, line, bin_type):
+    async def _do_create(self, line, bin_type: str):
         index_name = line.pop(0)
         namespace = util.get_arg_and_delete_from_mods(
             line=line,
@@ -1043,18 +1115,23 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             mods=self.mods,
         )
 
-        ctx_str = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="ctx",
-            return_type=str,
-            default=None,
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
-
+        ctx_str = " ".join(self.mods["ctx"])
         cdt_ctx = None
 
-        if ctx_str is not None:
+        if ctx_str:
+            builds = await self.cluster.info_build(nodes=self.nodes)
+
+            if not all(
+                [
+                    version.LooseVersion(build)
+                    >= version.LooseVersion(
+                        constants.SERVER_SINDEX_ON_CDT_FIRST_VERSION
+                    )
+                    for build in builds.values()
+                ]
+            ):
+                raise ShellException("One or more servers does not support 'ctx'.")
+
             cdt_ctx = self._str_to_cdt_ctx(ctx_str)
 
         index_type = index_type.lower() if index_type else None
@@ -1077,10 +1154,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         )
         resp = list(resp.values())[0]
 
-        if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
-            return
-        elif isinstance(resp, Exception):
+        if isinstance(resp, Exception):
             raise resp
 
         self.view.print_result("Successfully created sindex {}.".format(index_name))
@@ -1165,10 +1239,7 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
         )
         resp = list(resp.values())[0]
 
-        if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
-            return
-        elif isinstance(resp, Exception):
+        if isinstance(resp, Exception):
             raise resp
 
         self.view.print_result("Successfully deleted sindex {}.".format(index_name))

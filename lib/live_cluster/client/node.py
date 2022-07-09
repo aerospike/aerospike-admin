@@ -2225,7 +2225,7 @@ class Node(AsyncObject):
         index_name: str,
         namespace: str,
         bin_name: str,
-        bin_type: SIndexBinType,
+        bin_type: str,
         index_type: Optional[str] = None,
         set_: Optional[str] = None,
         ctx: Optional[CDTContext] = None,
@@ -2249,8 +2249,8 @@ class Node(AsyncObject):
             packer = ASPacker()
             packer.pack(ctx)
             ctx_bytes: bytes = packer.bytes()
-            ctx_b64 = base64.encodebytes(ctx_bytes)
-            ctx_b64 = util.bytes_to_str(ctx_b64).strip("\n")
+            ctx_b64 = base64.b64encode(ctx_bytes)
+            ctx_b64 = util.bytes_to_str(ctx_b64)
 
             command += "context={};".format(ctx_b64)
 
