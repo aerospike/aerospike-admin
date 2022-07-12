@@ -1414,17 +1414,22 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
         self.assertListEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_bytes(self):
-        line = "[map_by_key(YmxhaA==), map_by_key(0x626C6168)]"
+        line = "[map_by_key(YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkwLT1gIUAjJV4mKigpXytbXXt9Oyc6IltdOiwu), map_by_key(YmxhaA==)]"
         expected = CDTContext(
             [
-                CTXItems.MapKey(ASValues.ASBytes(bytes("blah", encoding="utf-8"))),
+                CTXItems.MapKey(
+                    ASValues.ASBytes(
+                        bytes(
+                            "abcdefghijklmnopqrstuvwxyz1234567890-=`!@#%^&*()_+[]{};':\"[]:,.",
+                            encoding="utf-8",
+                        )
+                    )
+                ),
                 CTXItems.MapKey(ASValues.ASBytes(bytes("blah", encoding="utf-8"))),
             ]
         )
 
         actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
-        print(actual[1].value)
-
         self.assertListEqual(expected, actual)
 
     def test_incorrect_item_sytax_raises_shell_exception(self):
@@ -1499,7 +1504,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         )
 
     async def test_ctx_invalid_format(self):
-        line = "numeric a-index ns test bin a ctx foo".split()
+        line = "numeric a-index ns test bin a ctx [foo]".split()
         self.cluster_mock.info_build.return_value = {"principal": "6.1.0.0"}
 
         await self.assertAsyncRaisesRegex(
@@ -1509,12 +1514,22 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         )
 
     async def test_ctx_not_supported(self):
-        line = "numeric a-index ns test bin a ctx foo".split()
+        line = "numeric a-index ns test bin a ctx [foo]".split()
         self.cluster_mock.info_build.return_value = {"principal": "6.0.0.0"}
 
         await self.assertAsyncRaisesRegex(
             ShellException,
             "One or more servers does not support 'ctx'.",
+            self.controller.execute(line),
+        )
+
+    async def test_ctx_malformed_list(self):
+        line = "numeric a-index ns test bin a ctx foo".split()
+        self.cluster_mock.info_build.return_value = {"principal": "6.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Malformed ctx list",
             self.controller.execute(line),
         )
 
