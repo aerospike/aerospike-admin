@@ -1490,7 +1490,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
-            "Successfully created sindex a-index."
+            "Use 'show sindex' to confirm a-index was created successfully."
         )
 
     async def test_create_fails_with_asinfo_error(self):

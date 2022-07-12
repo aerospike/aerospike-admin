@@ -1148,7 +1148,11 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         if isinstance(resp, Exception):
             raise resp
 
-        self.view.print_result("Successfully created sindex {}.".format(index_name))
+        self.view.print_result(
+            "Use 'show sindex' to confirm {} was created successfully.".format(
+                index_name
+            )
+        )
 
     # Hack for auto-complete
     async def do_numeric(self, line):
