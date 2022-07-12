@@ -48,6 +48,9 @@ def project_build(b, v):
     if "enterprise" in v.lower():
         return "E-" + b
 
+    if "federal" in v.lower():
+        return "F-" + b
+
     return b
 
 

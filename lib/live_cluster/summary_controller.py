@@ -201,6 +201,8 @@ class SummaryController(LiveClusterCommandController):
                     metadata["server_version"][node] = "E-%s" % (str(version))
                 elif "community" in server_edition[node].lower():
                     metadata["server_version"][node] = "C-%s" % (str(version))
+                elif "federal" in server_edition[node].lower():
+                    metadata["server_version"][node] = "F-%s" % (str(version))
                 else:
                     metadata["server_version"][node] = version
 
