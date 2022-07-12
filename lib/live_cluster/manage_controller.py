@@ -975,7 +975,6 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             r"(?:[tT]{1}[Rr]{1}[Uu]{1}[Ee]{1})|(?:[Ff]{1}[Aa]{1}[Ll]{1}[Ss]{1}[Ee]{1})"
         )
         base64_pattern = r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})"
-        hex_pattern = r"0[xX][0-9a-fA-F]+"
 
         particle_pattern_with_names = (
             r"(?:"
@@ -997,10 +996,6 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             + r"|"
             + r"(?P<bytes_base64>"
             + base64_pattern
-            + r")"
-            + r"|"
-            + r"(?P<bytes_hex>"
-            + hex_pattern
             + r")"
             + r")"
         )
@@ -1039,13 +1034,12 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                     ):
                         groups = match.groupdict()
 
-                        double_, int_, str_, bool_, base_64, hex_ = (
+                        double_, int_, str_, bool_, base_64 = (
                             groups["double"],
                             groups["int"],
                             groups["str"],
                             groups["bool"],
                             groups["bytes_base64"],
-                            groups["bytes_hex"],
                         )
                         if double_ is not None:
                             double_ = float(double_)
@@ -1061,9 +1055,6 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                         elif base_64 is not None:
                             base_64 = binascii.a2b_base64(bytes(base_64, "utf-8"))
                             as_val = ASValues.ASBytes(base_64)
-                        elif hex_ is not None:
-                            hex_ = bytes.fromhex(hex_[2:])  # remove 0x
-                            as_val = ASValues.ASBytes(hex_)
                         else:
                             raise Exception("All ctx args are None?")
                     else:
