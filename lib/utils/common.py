@@ -453,80 +453,87 @@ async def _request_license_usage(
         days=365
     )
     a_year_ago = a_year_ago.isoformat()
-    timeout = aiohttp.ClientTimeout(total=10)
+    timeout = aiohttp.ClientTimeout(total=5)
 
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        entries_params = {"start": a_year_ago}
-        agent_req_base = "http://" + agent_host + ":" + str(agent_port) + "/v1/"
-        requests = [
-            session.get(
-                agent_req_base + "entries/range/time",
-                params=entries_params,
-            ),
-            session.get(
-                agent_req_base + "health",
-                params=entries_params,
-            ),
-        ]
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            entries_params = {"start": a_year_ago}
+            agent_req_base = "http://" + agent_host + ":" + str(agent_port) + "/v1/"
+            requests = [
+                session.get(
+                    agent_req_base + "entries/range/time",
+                    params=entries_params,
+                ),
+                session.get(
+                    agent_req_base + "health",
+                    params=entries_params,
+                ),
+            ]
 
-        res_entries = res_health = res_store = None
+            res_entries = res_health = res_store = None
 
-        if get_store:
-            requests.append(session.get(agent_req_base + "raw-store"))
-            (
-                res_entries,
-                res_health,
-                res_store,
-            ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
-                *requests
-            )
-        else:
-            (
-                res_entries,
-                res_health,
-            ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
-                *requests
-            )
-
-        try:
-            res_health = await res_health.json()
-
-            if res_health is not None:
-                json_data["health"] = res_health
+            if get_store:
+                requests.append(session.get(agent_req_base + "raw-store"))
+                (
+                    res_entries,
+                    res_health,
+                    res_store,
+                ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
+                    *requests
+                )
             else:
-                error = Exception("Unable to connect")
-        except Exception as e:
-            # TODO: Maybe use a different type
-            error = e
+                (
+                    res_entries,
+                    res_health,
+                ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
+                    *requests
+                )
 
-        try:
-            res_entries = await res_entries.json()
-
-            if res_entries is not None:
-                json_data["license_usage"] = res_entries
-            else:
-                error = Exception("Unable to connect")
-        except Exception as e:
-
-            if error is None:
-                error = e
-
-        if res_store is not None:
             try:
+                res_health = await res_health.json()
 
-                res_store = await res_store.text()
-
-                if res_store is not None:
-                    json_data["raw_store"] = res_store
+                if res_health is not None:
+                    json_data["health"] = res_health
                 else:
                     error = Exception("Unable to connect")
-                    json_data["raw_store"] = str(error)
+            except asyncio.TimeoutError as e:
+                raise TimeoutError("Unable to connect to agent. Connection timed out.")
             except Exception as e:
                 # TODO: Maybe use a different type
-                json_data["raw_store"] = str(e)
+                error = e
+
+            try:
+                res_entries = await res_entries.json()
+
+                if res_entries is not None:
+                    json_data["license_usage"] = res_entries
+                else:
+                    error = Exception("Unable to connect")
+            except Exception as e:
 
                 if error is None:
                     error = e
+
+            if res_store is not None:
+                try:
+
+                    res_store = await res_store.text()
+
+                    if res_store is not None:
+                        json_data["raw_store"] = res_store
+                    else:
+                        error = Exception("Unable to connect")
+                        json_data["raw_store"] = str(error)
+                except Exception as e:
+                    # TODO: Maybe use a different type
+                    json_data["raw_store"] = str(e)
+
+                    if error is None:
+                        error = e
+    except asyncio.TimeoutError as e:
+        raise TimeoutError("Unable to connect to agent. Connection timed out.")
+    except aiohttp.ClientConnectorError as e:
+        raise e.os_error
 
     return json_data, error
 
