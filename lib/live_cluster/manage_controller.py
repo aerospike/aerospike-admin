@@ -1048,20 +1048,36 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
         )
 
         if self.warn:
-            sindex_data = await self.cluster.info_sindex_statistics(
-                namespace, index_name, nodes=self.nodes
+            sindex_data, builds = await asyncio.gather(
+                self.cluster.info_sindex_statistics(
+                    namespace, index_name, nodes=self.nodes
+                ),
+                self.cluster.info_build(nodes=self.nodes),
             )
-            key_data = util.get_value_from_second_level_of_dict(
-                sindex_data, ["keys"], 0, int
-            )
-            num_keys = sum(key_data.values())
 
-            if not self.prompt_challenge(
-                "The secondary index {} has {} keys indexed.".format(
-                    index_name, num_keys
-                )
+            if any(
+                [
+                    version.LooseVersion("6.0")
+                    == version.LooseVersion(".".join(build.split(".")[0:2]))
+                    for build in builds.values()
+                ]
             ):
-                return
+                if not self.prompt_challenge(
+                    "Could not determine the number of keys indexed.  Use 'info sindex' instead."
+                ):
+                    return
+            else:
+                key_data = util.get_value_from_second_level_of_dict(
+                    sindex_data, ["keys"], 0, int
+                )
+                num_keys = sum(key_data.values())
+
+                if not self.prompt_challenge(
+                    "The secondary index {} has {} keys indexed.".format(
+                        index_name, num_keys
+                    )
+                ):
+                    return
 
         resp = await self.cluster.info_sindex_delete(
             index_name, namespace, set_, nodes="principal"
