@@ -1049,10 +1049,12 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
 
         if self.warn:
             sindex_data = await self.cluster.info_sindex_statistics(
-                namespace, index_name, nodes="principal"
+                namespace, index_name, nodes=self.nodes
             )
-            sindex_data = list(sindex_data.values())[0]
-            num_keys = sindex_data.get("keys", 0)
+            key_data = util.get_value_from_second_level_of_dict(
+                sindex_data, ["keys"], 0, int
+            )
+            num_keys = sum(key_data.values())
 
             if not self.prompt_challenge(
                 "The secondary index {} has {} keys indexed.".format(
