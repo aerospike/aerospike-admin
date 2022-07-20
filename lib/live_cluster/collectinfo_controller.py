@@ -481,7 +481,7 @@ class CollectinfoController(LiveClusterCommandController):
         self._dump_in_json_file(as_logfile_prefix + "ascinfo.json", snpshots)
 
     def _dump_collectinfo_file(self, filename: str, dump: str):
-        self.logger.info("Dumping collectinfo {}.", filename)
+        self.logger.info("Dumping collectinfo %s.", filename)
 
         try:
             util.write_to_file(filename, dump)
@@ -498,34 +498,30 @@ class CollectinfoController(LiveClusterCommandController):
     ) -> None:
         self.logger.info("Data collection license usage in progress...")
         self.logger.info("Requesting data usage for past 365 days...")
+        error = None
+        resp = {}
 
-        resp, error = await common.request_license_usage(
-            agent_host, agent_port, get_store
-        )
+        try:
+            resp = await common.request_license_usage(agent_host, agent_port, get_store)
+        except Exception as e:
+            msg = "Failed to retrieve license usage information : {}".format(e)
+            resp["error"] = msg
+            self.logger.error(msg)
 
-        if error is not None:
-            self.logger.error(
-                "Failed to retrieve license usage information : %s",
-                error,
-            )
-            raise error
+            complete_filename = as_logfile_prefix + "aslicenseusage.json"
+            self._dump_in_json_file(complete_filename, resp)
+
+            raise Exception(msg)
 
         if "raw_store" in resp:
             filename = "aslicenseraw.store"
             complete_filename = as_logfile_prefix + filename
             raw_store = resp["raw_store"]
-            try:
-                self._dump_collectinfo_file(complete_filename, raw_store)
-            except Exception as e:
-                error = e  # store error for after json file write so we don't skip it
-
+            self._dump_collectinfo_file(complete_filename, raw_store)
             del resp["raw_store"]
 
         complete_filename = as_logfile_prefix + "aslicenseusage.json"
         self._dump_in_json_file(complete_filename, resp)
-
-        if error:
-            raise error
 
     ###########################################################################
     # Functions for dumping pretty print files

@@ -251,15 +251,13 @@ class SummaryController(LiveClusterCommandController):
 
         metadata["os_version"] = os_version
         license_usage: Union[common.UDAResponsesDict, None] = None
+        error = None
 
         if license_usage_future is not None:
-            license_usage, error = await license_usage_future
-
-            if error is not None:
-                self.logger.error(
-                    "Failed to retrieve license usage information : {}",
-                    error,
-                )
+            try:
+                license_usage = await license_usage_future
+            except Exception as e:
+                error = "Failed to retrieve license usage information : {}".format(e)
 
         service_stats = await service_stats
         namespace_stats = await namespace_stats
@@ -267,7 +265,7 @@ class SummaryController(LiveClusterCommandController):
         service_configs = await service_configs
         namespace_configs = await namespace_configs
 
-        return self.view.print_summary(
+        self.view.print_summary(
             common.create_summary(
                 service_stats=service_stats,
                 namespace_stats=namespace_stats,
@@ -280,3 +278,6 @@ class SummaryController(LiveClusterCommandController):
             ),
             list_view=enable_list_view,
         )
+
+        if error is not None:
+            self.logger.error(error)

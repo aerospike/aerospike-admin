@@ -442,7 +442,7 @@ class UDAResponsesDict(UDAResponsesRequiredDict, UDAResponsesOptionalDict):
 
 async def _request_license_usage(
     agent_host: str, agent_port: str, get_store: bool = False
-) -> tuple[UDAResponsesDict, Union[Exception, None]]:
+) -> UDAResponsesDict:
     json_data: UDAResponsesDict = {
         "license_usage": {"count": 0, "entries": []},
         "health": {},
@@ -489,53 +489,35 @@ async def _request_license_usage(
                     *requests
                 )
 
-            try:
-                res_health = await res_health.json()
+            res_health = await res_health.json()
 
-                if res_health is not None:
-                    json_data["health"] = res_health
-                else:
-                    error = Exception("Unable to connect")
-            except asyncio.TimeoutError as e:
-                raise TimeoutError("Unable to connect to agent. Connection timed out.")
-            except Exception as e:
-                # TODO: Maybe use a different type
-                error = e
+            if res_health is not None:
+                json_data["health"] = res_health
+            else:
+                raise Exception("Issue parsing health response")
 
-            try:
-                res_entries = await res_entries.json()
+            res_entries = await res_entries.json()
 
-                if res_entries is not None:
-                    json_data["license_usage"] = res_entries
-                else:
-                    error = Exception("Unable to connect")
-            except Exception as e:
-
-                if error is None:
-                    error = e
+            if res_entries is not None:
+                json_data["license_usage"] = res_entries
+            else:
+                raise Exception("Issue parsing entries response")
 
             if res_store is not None:
-                try:
+                res_store = await res_store.text()
 
-                    res_store = await res_store.text()
-
-                    if res_store is not None:
-                        json_data["raw_store"] = res_store
-                    else:
-                        error = Exception("Unable to connect")
-                        json_data["raw_store"] = str(error)
-                except Exception as e:
-                    # TODO: Maybe use a different type
-                    json_data["raw_store"] = str(e)
-
-                    if error is None:
-                        error = e
+                if res_store is not None:
+                    json_data["raw_store"] = res_store
+                else:
+                    raise Exception("Unable to parse raw_store")
     except asyncio.TimeoutError as e:
         raise TimeoutError("Unable to connect to agent. Connection timed out.")
     except aiohttp.ClientConnectorError as e:
         raise e.os_error
+    except Exception as e:
+        raise OSError("Unable to connect to agent. {}".format(e))
 
-    return json_data, error
+    return json_data
 
 
 request_license_usage = util.async_cached(_request_license_usage, ttl=30)
