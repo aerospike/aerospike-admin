@@ -283,7 +283,6 @@ class Node(AsyncObject):
                 self.features,
                 self.peers,
             ) = await self._node_connect()
-            update_ip = asyncio.create_task(self._update_IP(address, port))
 
             if isinstance(self.node_id, Exception):
                 raise self.node_id
@@ -295,7 +294,7 @@ class Node(AsyncObject):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            update_ip, _ = await asyncio.gather(update_ip, self.close())
+            await self.close()
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
@@ -312,6 +311,7 @@ class Node(AsyncObject):
 
                     # Most common case
                     if s[0] == current_host[0] and s[1] == current_host[1] and i == 0:
+                        await self._update_IP(self.ip, self.port)
                         # The following info requests were already made
                         # no need to do again
                         break
@@ -345,7 +345,7 @@ class Node(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e, include_traceback=True)  # type: ignore
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -453,10 +453,13 @@ class Node(AsyncObject):
 
     async def _update_IP(self, address, port):
         if address not in self.dns_cache:
+
             self.dns_cache[address] = (
-                socket.getaddrinfo(address, port, socket.AF_UNSPEC, socket.SOCK_STREAM)[
-                    0
-                ][4][0],
+                (
+                    await asyncio.get_event_loop().getaddrinfo(
+                        address, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
+                    )
+                )[0][4][0],
                 get_fully_qualified_domain_name(address),
             )
 
