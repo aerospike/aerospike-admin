@@ -351,6 +351,7 @@ class Cluster(AsyncObject):
                         if node is not None
                     ]
                 )
+                self.logger.debug("Added nodes to the cluster: %s", visited)
                 visited |= unvisited
                 unvisited.clear()
 
@@ -533,6 +534,11 @@ class Cluster(AsyncObject):
                 # Alias entry already added for this endpoint
                 n = self.get_node_for_alias(addr, port)
                 if n:
+                    self.logger.debug(
+                        "{}:{} is present as an alias for [{},{},{}]. Do not create a new node".format(
+                            addr, port, n.ip, n.tls_name, n.port
+                        )
+                    )
                     # Node already added for this endpoint
                     # No need to check for offline/online as we already did
                     # this while finding new nodes to add

@@ -241,7 +241,7 @@ class Node(AsyncObject):
 
     def _initialize_socket_pool(self):
         logger.debug("%s:%s init socket pool", self.ip, self.port)
-        self.socket_pool: dict[str, set(ASSocket)] = {}
+        self.socket_pool: dict[int, set[ASSocket]] = {}
         self.socket_pool[self.port] = set()
         self.socket_pool_max_size = 3
 
@@ -318,11 +318,9 @@ class Node(AsyncObject):
 
                     # IP address have changed. Not common.
                     self.node_id, update_ip, self.peers = await asyncio.gather(
-                        *[
-                            self.info_node(),
-                            self._update_IP(self.ip, self.port),
-                            self.info_peers_list(),
-                        ]
+                        self.info_node(),
+                        self._update_IP(self.ip, self.port),
+                        self.info_peers_list(),
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -700,7 +698,7 @@ class Node(AsyncObject):
     ###### Services ######
 
     # post 3.10 services
-    def _info_peers_helper(self, peers):
+    def _info_peers_helper(self, peers) -> list[tuple[Addr_Port_TLSName]]:
         """
         Takes an info peers list response and returns a list.
         """
@@ -818,7 +816,7 @@ class Node(AsyncObject):
         """
         return self._info_peers_helper(await self.info(self._get_info_peers_alt_call()))
 
-    def _get_info_peers_list_calls(self):
+    def _get_info_peers_list_calls(self) -> list[str]:
         calls = []
         # at most 2 calls will be needed
         if self.consider_alumni:
@@ -831,12 +829,12 @@ class Node(AsyncObject):
 
         return calls
 
-    def _aggregate_peers(self, results) -> list[str]:
+    def _aggregate_peers(self, results) -> list[tuple[Addr_Port_TLSName]]:
         results = [self._info_peers_helper(result) for result in results]
         return list(set().union(*results))
 
     @async_return_exceptions
-    async def info_peers_list(self) -> list[str]:
+    async def info_peers_list(self) -> list[tuple[Addr_Port_TLSName]]:
         results = await asyncio.gather(
             *[self.info(call) for call in self._get_info_peers_list_calls()]
         )
