@@ -241,7 +241,7 @@ class Node(AsyncObject):
 
     def _initialize_socket_pool(self):
         logger.debug("%s:%s init socket pool", self.ip, self.port)
-        self.socket_pool: dict[str, set(ASSocket)] = {}
+        self.socket_pool: dict[int, set[ASSocket]] = {}
         self.socket_pool[self.port] = set()
         self.socket_pool_max_size = 3
 
@@ -283,7 +283,6 @@ class Node(AsyncObject):
                 self.features,
                 self.peers,
             ) = await self._node_connect()
-            update_ip = asyncio.create_task(self._update_IP(address, port))
 
             if isinstance(self.node_id, Exception):
                 raise self.node_id
@@ -295,7 +294,7 @@ class Node(AsyncObject):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            update_ip, _ = await asyncio.gather(update_ip, self.close())
+            await self.close()
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
@@ -312,17 +311,16 @@ class Node(AsyncObject):
 
                     # Most common case
                     if s[0] == current_host[0] and s[1] == current_host[1] and i == 0:
+                        await self._update_IP(self.ip, self.port)
                         # The following info requests were already made
                         # no need to do again
                         break
 
                     # IP address have changed. Not common.
                     self.node_id, update_ip, self.peers = await asyncio.gather(
-                        *[
-                            self.info_node(),
-                            self._update_IP(self.ip, self.port),
-                            self.info_peers_list(),
-                        ]
+                        self.info_node(),
+                        self._update_IP(self.ip, self.port),
+                        self.info_peers_list(),
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -345,7 +343,7 @@ class Node(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e, include_traceback=True)  # type: ignore
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -453,10 +451,13 @@ class Node(AsyncObject):
 
     async def _update_IP(self, address, port):
         if address not in self.dns_cache:
+
             self.dns_cache[address] = (
-                socket.getaddrinfo(address, port, socket.AF_UNSPEC, socket.SOCK_STREAM)[
-                    0
-                ][4][0],
+                (
+                    await asyncio.get_event_loop().getaddrinfo(
+                        address, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
+                    )
+                )[0][4][0],
                 get_fully_qualified_domain_name(address),
             )
 
@@ -697,7 +698,7 @@ class Node(AsyncObject):
     ###### Services ######
 
     # post 3.10 services
-    def _info_peers_helper(self, peers):
+    def _info_peers_helper(self, peers) -> list[tuple[Addr_Port_TLSName]]:
         """
         Takes an info peers list response and returns a list.
         """
@@ -815,7 +816,7 @@ class Node(AsyncObject):
         """
         return self._info_peers_helper(await self.info(self._get_info_peers_alt_call()))
 
-    def _get_info_peers_list_calls(self):
+    def _get_info_peers_list_calls(self) -> list[str]:
         calls = []
         # at most 2 calls will be needed
         if self.consider_alumni:
@@ -828,12 +829,12 @@ class Node(AsyncObject):
 
         return calls
 
-    def _aggregate_peers(self, results) -> list[str]:
+    def _aggregate_peers(self, results) -> list[tuple[Addr_Port_TLSName]]:
         results = [self._info_peers_helper(result) for result in results]
         return list(set().union(*results))
 
     @async_return_exceptions
-    async def info_peers_list(self) -> list[str]:
+    async def info_peers_list(self) -> list[tuple[Addr_Port_TLSName]]:
         results = await asyncio.gather(
             *[self.info(call) for call in self._get_info_peers_list_calls()]
         )
