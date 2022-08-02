@@ -470,7 +470,9 @@ async def _request_license_usage(
                 ),
             ]
 
-            res_entries = res_health = res_store = None
+            res_entries: aiohttp.ClientResponse
+            res_health: aiohttp.ClientResponse
+            res_store: Optional[aiohttp.ClientResponse] = None
 
             if get_store:
                 requests.append(session.get(agent_req_base + "raw-store"))
@@ -489,33 +491,40 @@ async def _request_license_usage(
                     *requests
                 )
 
-            res_health = await res_health.json()
+            res_health.raise_for_status()
+            health_json = await res_health.json()
 
-            if res_health is not None:
-                json_data["health"] = res_health
+            if health_json is not None:
+                json_data["health"] = health_json
             else:
                 raise Exception("Issue parsing health response")
 
-            res_entries = await res_entries.json()
+            res_entries.raise_for_status()
+            entries_json = await res_entries.json()
 
-            if res_entries is not None:
-                json_data["license_usage"] = res_entries
+            if entries_json is not None:
+                json_data["license_usage"] = entries_json
             else:
                 raise Exception("Issue parsing entries response")
 
             if res_store is not None:
-                res_store = await res_store.text()
+                res_store.raise_for_status()
+                store_txt = await res_store.text()
 
-                if res_store is not None:
-                    json_data["raw_store"] = res_store
+                if store_txt is not None:
+                    json_data["raw_store"] = store_txt
                 else:
                     raise Exception("Unable to parse raw_store")
     except asyncio.TimeoutError as e:
         raise TimeoutError("Unable to connect to agent. Connection timed out.")
     except aiohttp.ClientConnectorError as e:
-        raise e.os_error
+        raise OSError("Unable to connect to agent : {}".format(e.os_error))
+    except aiohttp.ClientResponseError as e:
+        raise OSError(
+            "Incorrect response from agent : {} {}".format(e.status, e.message)
+        )
     except Exception as e:
-        raise OSError("Unable to connect to agent. {}".format(e))
+        raise OSError("Unknown error : {}".format(e))
 
     return json_data
 
