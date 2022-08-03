@@ -113,7 +113,7 @@ class CliView(object):
         with_=None,
         **ignore
     ):
-        node_names = cluster.get_node_displaynames(with_)
+        node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         hosts = cluster.nodes
         title_suffix = CliView._get_timestamp_suffix(timestamp)
