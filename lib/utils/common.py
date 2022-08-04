@@ -22,7 +22,8 @@ import json
 import logging
 import operator
 import os
-from typing import Literal, Optional, TypeVar, TypedDict, Union
+from traceback import print_exc
+from typing import Any, Literal, Optional, TypeVar, TypedDict, Union
 import distro
 import socket
 import time
@@ -440,6 +441,27 @@ class UDAResponsesDict(UDAResponsesRequiredDict, UDAResponsesOptionalDict):
     pass
 
 
+async def _fetch_url(session, url, func, **kwargs):
+    async with session.get(url, **kwargs) as resp:
+        resp.raise_for_status()
+        resp = await func(resp)
+    return resp
+
+
+async def _fetch_url_json(session, url, **kwargs):
+    async def json_func(resp):
+        return await resp.json()
+
+    return await _fetch_url(session, url, json_func, **kwargs)
+
+
+async def _fetch_url_text(session, url, **kwargs):
+    async def text_func(resp):
+        return await resp.text()
+
+    return await _fetch_url(session, url, text_func, **kwargs)
+
+
 async def _request_license_usage(
     agent_host: str, agent_port: str, get_store: bool = False
 ) -> UDAResponsesDict:
@@ -460,61 +482,42 @@ async def _request_license_usage(
             entries_params = {"start": a_year_ago}
             agent_req_base = "http://" + agent_host + ":" + str(agent_port) + "/v1/"
             requests = [
-                session.get(
+                _fetch_url_json(
+                    session,
                     agent_req_base + "entries/range/time",
                     params=entries_params,
                 ),
-                session.get(
-                    agent_req_base + "health",
-                    params=entries_params,
-                ),
+                _fetch_url_json(session, agent_req_base + "health"),
             ]
 
-            res_entries: aiohttp.ClientResponse
-            res_health: aiohttp.ClientResponse
-            res_store: Optional[aiohttp.ClientResponse] = None
+            entries_json: UDAEntriesRespDict
+            health_json: dict
+            store_txt: Optional[str] = None
 
             if get_store:
-                requests.append(session.get(agent_req_base + "raw-store"))
+                requests.append(_fetch_url_text(session, agent_req_base + "raw-store"))
                 (
-                    res_entries,
-                    res_health,
-                    res_store,
+                    entries_json,
+                    health_json,
+                    store_txt,
                 ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
                     *requests
                 )
             else:
                 (
-                    res_entries,
-                    res_health,
+                    entries_json,
+                    health_json,
                 ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
                     *requests
                 )
 
-            res_health.raise_for_status()
-            health_json = await res_health.json()
-
-            if health_json is not None:
                 json_data["health"] = health_json
-            else:
-                raise Exception("Issue parsing health response")
 
-            res_entries.raise_for_status()
-            entries_json = await res_entries.json()
-
-            if entries_json is not None:
                 json_data["license_usage"] = entries_json
-            else:
-                raise Exception("Issue parsing entries response")
 
-            if res_store is not None:
-                res_store.raise_for_status()
-                store_txt = await res_store.text()
+            if store_txt is not None:
+                json_data["raw_store"] = store_txt
 
-                if store_txt is not None:
-                    json_data["raw_store"] = store_txt
-                else:
-                    raise Exception("Unable to parse raw_store")
     except asyncio.TimeoutError as e:
         raise TimeoutError("Unable to connect to agent. Connection timed out.")
     except aiohttp.ClientConnectorError as e:
@@ -524,6 +527,7 @@ async def _request_license_usage(
             "Incorrect response from agent : {} {}".format(e.status, e.message)
         )
     except Exception as e:
+        print_exc()
         raise OSError("Unknown error : {}".format(e))
 
     return json_data
