@@ -795,7 +795,7 @@ def _parse_agent_response(
             cluster_result.__dict__()
         )  # allows type checker to view type rather than generic dict
     else:
-        raise ValueError("No processable data was received from the UDA.")
+        raise ValueError("No processable data was received from the UDA")
 
     for ns, ns_result in namespaces_result.items():
         if ns_result.count != 0:

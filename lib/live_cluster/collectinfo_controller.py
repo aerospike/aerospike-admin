@@ -863,20 +863,20 @@ class CollectinfoController(LiveClusterCommandController):
             self._dump_collectinfo_sysinfo(as_logfile_prefix, file_header),
             self._dump_collectinfo_aerospike_conf(as_logfile_prefix, config_path),
         ]
+        tasks: list[asyncio.Task] = list(map(asyncio.create_task, coroutines))  # type: ignore
 
-        for i, co in enumerate(coroutines):
+        for t in tasks:
             try:
-                await co
+                await t
             except:
+                # close remaining coroutines.  An error will be raised if they are not
+                # awaited.
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+
                 if not ignore_errors:
                     self.logger.error(ignore_errors_msg)
-
-                    # close remaining coroutines.  An error will be raised if they are not
-                    # awaited.
-                    if i < len(coroutines) - 1:
-                        for co in coroutines[i + 1 :]:
-                            co.close()
-
                     return
 
         self.logger.removeHandler(debug_output_handler)
