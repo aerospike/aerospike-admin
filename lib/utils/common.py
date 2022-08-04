@@ -527,7 +527,6 @@ async def _request_license_usage(
             "Incorrect response from agent : {} {}".format(e.status, e.message)
         )
     except Exception as e:
-        print_exc()
         raise OSError("Unknown error : {}".format(e))
 
     return json_data
@@ -704,15 +703,6 @@ def _initialize_summary_output(ns_list) -> SummaryDict:
     return summary_dict
 
 
-def _license_data_usage_adjustment(effective_repl, master_objects, used_bytes):
-    if effective_repl == 0:
-        return 0
-
-    record_overhead = 35
-
-    return round((used_bytes / effective_repl) - (record_overhead * master_objects))
-
-
 class AggregateLicenseUsage:
     """
     A helper object for calculating min, max, avg and storing latest and latest_time.
@@ -758,7 +748,7 @@ def _parse_agent_response(
     license_usage: UDAEntriesRespDict,
     summary_dict: SummaryDict,
     allow_unstable: bool,
-):
+) -> bool:
     """
     license_usage - a combination of responses from the unique-data-agent.
     cluster_dict - A dictionary in which to store the result.
@@ -795,7 +785,7 @@ def _parse_agent_response(
             cluster_result.__dict__()
         )  # allows type checker to view type rather than generic dict
     else:
-        raise ValueError("No processable data was received from the UDA")
+        return False
 
     for ns, ns_result in namespaces_result.items():
         if ns_result.count != 0:
@@ -809,6 +799,8 @@ def _parse_agent_response(
                 logger.warning(
                     "Namespace %s found in UDA response but not in current cluster.", ns
                 )
+
+    return True
 
 
 def _manually_compute_license_data_size(
@@ -961,12 +953,15 @@ def compute_license_data_size(
     else:
         try:
             license_usage = license_data_usage["license_usage"]
-            _parse_agent_response(license_usage, summary_dict, allow_unstable)
-            return
+            if not _parse_agent_response(license_usage, summary_dict, allow_unstable):
+                logger.warning("Zero entries found in uda response")
+                _manually_compute_license_data_size(
+                    namespace_stats, server_builds, summary_dict
+                )
 
         #  an error was returned from request
         except (TypeError, ValueError, KeyError) as e:
-            logger.error("Issue parsing agent response: %s.", e)
+            logger.error("Issue parsing agent response: %s", e)
             _manually_compute_license_data_size(
                 namespace_stats, server_builds, summary_dict
             )
