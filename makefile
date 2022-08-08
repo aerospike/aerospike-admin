@@ -52,7 +52,6 @@ all:
 
 	mkdir -p $(BUILD_ROOT)tmp/wheels
 ifneq ($(PYTHONS),)
-	apt install libffi-dev
 	./build_pex.sh
 else
 	pip wheel -w $(BUILD_ROOT)tmp/asadm $(BUILD_ROOT)tmp/asadm
