@@ -250,7 +250,6 @@ class Node(object):
             service_addresses = util.Future(self.info_service_list).start()
             node_id = util.Future(self.info_node).start()
             features = util.Future(self.info, "features").start()
-            update_ip = util.Future(self._update_IP, address, port).start()
             peers = util.Future(self.info_peers_list).start()
             self.node_id = node_id.result()
 
@@ -268,7 +267,6 @@ class Node(object):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            update_ip.result()
             self.close()
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
@@ -286,6 +284,7 @@ class Node(object):
 
                     # Most common case
                     if s[0] == current_host[0] and s[1] == current_host[1] and i == 0:
+                        self._update_IP(address, port)
                         # The following info requests were already made
                         # no need to do again
                         break
@@ -297,6 +296,7 @@ class Node(object):
                     self.node_id = node_id.result()
 
                     if not isinstance(self.node_id, Exception):
+                        update_ip.result()
                         break
 
                 except Exception:
