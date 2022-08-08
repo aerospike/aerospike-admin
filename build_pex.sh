@@ -6,6 +6,8 @@ REQUIREMENT_FILE="./requirements.txt"
 PEX_PYTHONS=""
 SHEBANG=`cat pex_shebang.txt`
 
+yum install -y libffi-devel
+
 IFS=',' read -ra ADDR <<< "$PYTHONS"
 for i in "${ADDR[@]}"; do
         "$i"/pip wheel -w "$BUILD_ROOT"tmp/asadm "$BUILD_ROOT"tmp/asadm
