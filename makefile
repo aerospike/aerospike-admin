@@ -16,6 +16,7 @@ OS = $(shell uname)
 SOURCE_ROOT = $(realpath .)
 BUILD_ROOT = $(SOURCE_ROOT)/build/
 SYMLINK_ASADM = /usr/local/bin/asadm
+SYMLINK_ASINFO = /usr/local/bin/asinfo
 INSTALL_USER = aerospike
 INSTALL_GROUP = aerospike
 
@@ -33,11 +34,18 @@ define make_build
 	make clean
 	cp -f *.spec $(BUILD_ROOT)tmp/
 	cp -f *.py $(BUILD_ROOT)tmp/
+	cp -rf asinfo/* $(BUILD_ROOT)tmp/
 	rsync -aL lib $(BUILD_ROOT)tmp/
 
 	$(if $(filter $(OS),Darwin),
 	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm.py) || true ,
 	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm.py) || true
+	)
+	
+
+	$(if $(filter $(OS),Darwin),
+	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
 	)
 	
 
@@ -49,14 +57,16 @@ default: one-dir
 .PHONY: one-file
 one-file: init
 	$(call make_build)
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-one-file.spec --distpath $(BUILD_ROOT)bin)"
-	@echo Check $(BUILD_ROOT)bin for asadm executable
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin)"
+	@echo Check $(BUILD_ROOT)bin for asadm and asinfo executables
 
 # For macOS but can be used for any OS.
 .PHONY: one-dir
 one-dir: init
 	$(call make_build)
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-one-dir.spec --distpath $(BUILD_ROOT)bin)"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo-one-dir.spec --distpath $(BUILD_ROOT)bin)"
+	mv $(BUILD_ROOT)bin/asinfo/asinfo $(BUILD_ROOT)bin/asadm/asinfo 
+	rm -r $(BUILD_ROOT)bin/asinfo
 	@echo Check $(BUILD_ROOT)bin for bundle
 
 .PHONY: init
@@ -69,20 +79,24 @@ init:
 install: uninstall
 	install -d -m 755 $(INSTALL_ROOT)
 ifneq ($(wildcard $(BUILD_ROOT)bin/asadm/*),)
-	@echo "Asadm was built in one-dir mode"
+	@echo "Asadm and Asinfo were built in one-dir mode"
 	cp -r $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
 	ln -sf $(INSTALL_ROOT)asadm/asadm $(SYMLINK_ASADM)
+	ln -sf $(INSTALL_ROOT)asadm/asinfo $(SYMLINK_ASINFO)
 else
-	@echo "Asadm was built in one-file mode"
+	@echo "Asadm and Asinfo were built in one-file mode"
 	install -m 755 $(BUILD_ROOT)bin/asadm $(INSTALL_ROOT)asadm
+	install -m 755 $(BUILD_ROOT)bin/asinfo $(INSTALL_ROOT)asinfo
 	ln -sf $(INSTALL_ROOT)asadm $(SYMLINK_ASADM)
-
+	ln -sf $(INSTALL_ROOT)asinfo $(SYMLINK_ASINFO)
 endif
 
 .PHONY: uninstall
 uninstall:
 	rm -r $(INSTALL_ROOT)asadm || true
+	rm -r $(INSTALL_ROOT)asinfo || true
 	rm $(SYMLINK_ASADM) || true
+	rm $(SYMLINK_ASINFO) || true
 	
 
 .PHONY: clean

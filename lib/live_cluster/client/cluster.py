@@ -18,6 +18,7 @@ import random
 import re
 import logging
 import inspect
+from typing import Any, Callable, Coroutine, Literal, Union
 from time import time
 from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
 from lib.live_cluster.client.types import Addr_Port_TLSName
@@ -41,7 +42,7 @@ class Cluster(AsyncObject):
 
     async def __init__(
         self,
-        seed_nodes: Addr_Port_TLSName,
+        seed_nodes: list[Addr_Port_TLSName],
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,
@@ -106,7 +107,27 @@ class Cluster(AsyncObject):
 
         return retval
 
-    def get_node_displaynames(self):
+    def get_node_displaynames(self, nodes=None):
+        selected_nodes = nodes
+        nodes = self.nodes.items()
+
+        if selected_nodes:
+            with_nodes = set()
+
+            for w in selected_nodes:
+                try:
+                    with_nodes.update(self.get_node(w))
+                except KeyError:
+                    pass
+
+            new_nodes = []
+
+            for node_key, node in nodes:
+                if node in with_nodes:
+                    new_nodes.append((node_key, node))
+
+            nodes = new_nodes
+
         node_names = {}
         for node_key, node in self.nodes.items():
             k = node.sock_name(use_fqdn=True)
@@ -114,7 +135,7 @@ class Cluster(AsyncObject):
                 node_names[node_key] = k
             else:
                 node_names[node_key] = self.node_lookup.get_shortname(
-                    k, min_prefix_len=22, min_suffix_len=5
+                    k, min_prefix_len=20, min_suffix_len=5
                 )
 
         return node_names
@@ -330,6 +351,7 @@ class Cluster(AsyncObject):
                         if node is not None
                     ]
                 )
+                self.logger.debug("Added nodes to the cluster: %s", visited)
                 visited |= unvisited
                 unvisited.clear()
 
@@ -413,7 +435,12 @@ class Cluster(AsyncObject):
 
         return []
 
-    def get_nodes(self, nodes):
+    def get_nodes(
+        self,
+        nodes: Union[
+            Literal["all"], Literal["random"], Literal["principal"], list[str]
+        ],
+    ) -> list[Node]:
         use_nodes = []
 
         # TODO: Make an enum to store the different nodes values
@@ -507,6 +534,11 @@ class Cluster(AsyncObject):
                 # Alias entry already added for this endpoint
                 n = self.get_node_for_alias(addr, port)
                 if n:
+                    self.logger.debug(
+                        "{}:{} is present as an alias for [{},{},{}]. Do not create a new node".format(
+                            addr, port, n.ip, n.tls_name, n.port
+                        )
+                    )
                     # Node already added for this endpoint
                     # No need to check for offline/online as we already did
                     # this while finding new nodes to add
@@ -526,7 +558,7 @@ class Cluster(AsyncObject):
                 consider_alumni=self.use_services_alumni,
                 use_services_alt=self.use_services_alt,
                 ssl_context=self.ssl_context,
-            )
+            )  # type: ignore
 
             if not new_node:
                 return new_node
@@ -570,7 +602,9 @@ class Cluster(AsyncObject):
 
         return
 
-    async def call_node_method_async(self, nodes, method_name, *args, **kwargs):
+    async def call_node_method_async(
+        self, nodes, method_name, *args, **kwargs
+    ) -> dict[str, Any]:
         """
         Run a particular method command across a set of nodes
         nodes is a list of nodes to to run the command against.
@@ -584,7 +618,7 @@ class Cluster(AsyncObject):
         if len(use_nodes) == 0:
             raise IOError("Unable to find any Aerospike nodes")
 
-        async def key_to_method(node):
+        async def key_to_method(node) -> tuple[str, Any]:
             node_result = getattr(node, method_name)(*args, **kwargs)
 
             if inspect.iscoroutine(node_result):
@@ -599,7 +633,7 @@ class Cluster(AsyncObject):
             )
         )
 
-    def call_node_method(self, nodes, method_name, *args, **kwargs):
+    def call_node_method(self, nodes, method_name, *args, **kwargs) -> dict[str, Any]:
         """
         Run a particular method command across a set of nodes.
         "nodes" is a list of nodes to to run the command against.
@@ -632,9 +666,12 @@ class Cluster(AsyncObject):
         if self.need_to_refresh_cluster():
             await self._refresh_cluster()
         node_map = {}
-        for a in self.aliases.keys():
+        for addr, other_addr in self.aliases.items():
             try:
-                node_map[a] = self.nodes.get(self.aliases[a]).node_id
+                node = self.nodes.get(other_addr)
+
+                if node:
+                    node_map[addr] = node.node_id
             except Exception:
                 pass
         return node_map
@@ -643,9 +680,15 @@ class Cluster(AsyncObject):
         if self.need_to_refresh_cluster():
             await self._refresh_cluster()
         ip_map = {}
-        for addr in self.aliases.keys():
+        for addr, other_addr in self.aliases.items():
             try:
-                id = self.nodes.get(self.aliases[addr]).node_id
+                node = self.nodes.get(other_addr)
+
+                if not node:
+                    continue
+
+                id = node.node_id
+
                 if id in ip_map:
                     ip_map[id].append(addr)
                 else:
@@ -658,27 +701,32 @@ class Cluster(AsyncObject):
 
         return ip_map
 
-    def __getattr__(self, name):
+    def __getattr__(
+        self, name
+    ) -> Union[
+        Callable[[Any, Any], Coroutine[Any, Any, dict[str, Any]]],
+        Callable[[Any, Any], dict[str, Any]],
+    ]:
         regex_async = re.compile("^info.*$|^admin.*$")
         regex_sync = re.compile("^config.*$")
 
         if regex_async.match(name):
 
-            async def call_nodes(*args, **kwargs):
+            async def async_call_nodes(*args, **kwargs):
                 if "nodes" not in kwargs:
                     nodes = "all"
                 else:
                     nodes = kwargs["nodes"]
                     del kwargs["nodes"]
 
-                result = self.call_node_method_async(nodes, name, *args, **kwargs)
+                result = await self.call_node_method_async(nodes, name, *args, **kwargs)
 
                 if inspect.iscoroutine(result):
                     result = await result
 
                 return result
 
-            return call_nodes
+            return async_call_nodes
         elif regex_sync.match(name):
 
             def call_nodes(*args, **kwargs):
@@ -703,8 +751,8 @@ class Cluster(AsyncObject):
                 await node.close()
             except Exception:
                 pass
-        self.nodes = None
-        self.node_lookup = None
+        self.nodes = {}
+        self.node_lookup = LookupDict()
 
     def get_seed_nodes(self):
         return list(self._seed_nodes)

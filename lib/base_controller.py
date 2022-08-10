@@ -15,6 +15,7 @@
 import inspect
 import re
 import logging
+from typing import Optional, Union
 
 from lib.health.health_checker import HealthChecker
 from lib.utils import util
@@ -159,10 +160,9 @@ class ShellException(Exception):
 
 
 class BaseController(object):
-    view = None
-    health_checker = None
-    asadm_version = ""
-    logger = None
+    view = view.CliView()
+    health_checker = HealthChecker()
+    logger = logging.getLogger("asadm")
 
     # Here so each command controller does not need to define them
     modifiers = set()
@@ -179,10 +179,7 @@ class BaseController(object):
     def __init__(self, asadm_version=""):
         # Create static instances of view / health_checker / asadm_version /
         # logger
-        BaseController.view = view.CliView()
-        BaseController.health_checker = HealthChecker()
         BaseController.asadm_version = asadm_version
-        BaseController.logger = logging.getLogger("asadm")
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
@@ -205,11 +202,8 @@ class BaseController(object):
             else:
                 context_cpy = [command]
 
-            try:
-                controller = controller()
-                controller.context = context_cpy
-            except Exception as e:
-                print(e)
+            controller = controller()
+            controller.context = context_cpy
 
             self.commands.add(command, controller)
 
@@ -323,7 +317,7 @@ class BaseController(object):
                 rv.append(result)
         return rv
 
-    async def execute(self, line):
+    async def execute(self, line) -> Union[None, str, list[None]]:
         # Init all command controller objects
         self._init()
 
@@ -331,6 +325,7 @@ class BaseController(object):
             self.pre_controller(line)
 
         method = self._find_method(line)
+        results = None
 
         if method:
             try:
@@ -357,8 +352,8 @@ class BaseController(object):
 
             except IOError as e:
                 raise ShellException(str(e))
-        else:
-            raise ShellException("Method was not set? %s" % (line))
+
+        raise ShellException("Method was not set? %s" % (line))
 
     def execute_help(self, line, indent=0, method=None, print_modifiers=True):
         self._init()
@@ -413,17 +408,10 @@ class BaseController(object):
                         if CommandHelp.has_help(
                             command_method
                         ) and not CommandHelp.is_hidden(command_method):
-                            arg = ""
-
-                            if (
-                                inspect.isclass(command_method)
-                                and command_method.controller_arg is not None
-                            ):
-                                arg = " <{}>".format(command_method.controller_arg)
 
                             CommandHelp.print_text(
-                                "- %s%s%s%s:"
-                                % (terminal.bold(), command, arg, terminal.reset()),
+                                "- %s%s%s:"
+                                % (terminal.bold(), command, terminal.reset()),
                                 indent=indent - 1,
                             )
 
@@ -461,6 +449,8 @@ class BaseController(object):
 
 
 class CommandController(BaseController):
+    default_nodes = "all"
+
     def parse_modifiers(self, line, duplicates_in_line_allowed=False):
         mods = self.modifiers | self.required_modifiers
         groups = {}

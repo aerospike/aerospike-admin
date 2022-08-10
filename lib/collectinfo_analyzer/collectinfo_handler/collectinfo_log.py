@@ -17,7 +17,7 @@ import copy
 from lib.utils import common, util
 from lib.utils.lookup_dict import LookupDict
 
-from .collectinfo_parser import full_parser
+from .collectinfo_parser import collectinfo_parser
 
 
 class _CollectinfoNode(object):
@@ -129,7 +129,7 @@ class _CollectinfoSnapshot:
             pass
         return value
 
-    def get_node_displaynames(self):
+    def get_node_displaynames(self, nodes=None):
         node_names = {}
 
         for key in self.get_node_names():
@@ -419,13 +419,12 @@ class _CollectinfoSnapshot:
 
 
 class CollectinfoLog(object):
-    def __init__(self, cinfo_path, files, reader):
+    def __init__(self, cinfo_path, files):
         self.files = files
-        self.reader = reader
         self.snapshots = {}
         self.data = {}
         self.license_data_usage = {}
-        full_parser.parse_collectinfo_files(
+        collectinfo_parser.parse_collectinfo_files(
             files, self.data, self.license_data_usage, True
         )
 
@@ -445,7 +444,6 @@ class CollectinfoLog(object):
     def destroy(self):
         try:
             del self.files
-            del self.reader
             for sn in self.snapshots:
                 self.snapshots[sn].destroy()
             del self.snapshots

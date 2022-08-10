@@ -237,10 +237,10 @@ class BaseRSheet(object):
                         key for key in keys if self.selector.search(key) is not None
                     ]
 
-                if dfield.order is DynamicFieldOrder.ascending:
-                    keys.sort()
-                elif dfield.order is DynamicFieldOrder.descending:
-                    keys.sort(reverse=True)
+                    if dfield.order is DynamicFieldOrder.ascending:
+                        keys.sort()
+                    elif dfield.order is DynamicFieldOrder.descending:
+                        keys.sort(reverse=True)
 
                 for key in keys:
                     if key in ignore_keys:
@@ -599,7 +599,7 @@ class BaseRField(object):
         parent_key -- Not None: the decleration.key value for the parent 'Subgroup'.
         """
         self.rsheet = rsheet
-        self.decleration = field
+        self.decleration: decleration.Field = field
         self.parent_key = parent_key
 
         self.n_groups = len(groups)
@@ -781,7 +781,7 @@ class BaseRField(object):
                 self.aggregates_converted.append(self.rsheet.decleration.error_entry)
             else:
                 self.aggregates_converted.append(
-                    str(converter(decleration.EntryData(value=aggregate)))
+                    str(converter(decleration.EntryValue(value=aggregate)))
                 )
 
     def entry_value(self, entry):

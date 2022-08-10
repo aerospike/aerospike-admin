@@ -103,7 +103,9 @@ if HAVE_PYASN1:
         )
 
     class Name(univ.Choice):
-        componentType = namedtype.NamedTypes(namedtype.NamedType("", RDNSequence()),)
+        componentType = namedtype.NamedTypes(
+            namedtype.NamedType("", RDNSequence()),
+        )
 
     class GeneralName(univ.Choice):
         componentType = namedtype.NamedTypes(
@@ -285,7 +287,7 @@ class SSLContext(object):
     def _verify_none_cb(self, conn, cert, errnum, depth, ok):
         return ok
 
-    def _cert_blacklist_check(self, cert=None):
+    def _cert_blacklist_check(self, cert: crypto.X509 = None):
         if not cert:
             raise ValueError("Empty or no Server Certificate for authentication")
         if not self._cert_blacklist:
@@ -599,6 +601,9 @@ class SSLContext(object):
                 if keyfile_password:
                     try:
                         pwd = self._read_keyfile_password(keyfile_password)
+
+                        if pwd is not None:
+                            pwd = util.str_to_bytes(pwd)
                     except Exception as e:
                         raise Exception(
                             "Invalid keyfile_password {0} \n{1}".format(
@@ -610,7 +615,7 @@ class SSLContext(object):
                     pkey = crypto.load_privatekey(
                         crypto.FILETYPE_PEM,
                         open(keyfile, "rb").read(),
-                        util.str_to_bytes(pwd),
+                        pwd,
                     )
                 except IOError:
                     raise Exception("Unable to locate key file {}".format(keyfile))

@@ -14,26 +14,19 @@
 
 import collections
 import json
+import logging
 import os
 import re
-
-try:
-    import toml
-
-    HAVE_TOML = True
-except ImportError:
-    HAVE_TOML = False
-
-try:
-    from jsonschema import validate
-
-    HAVE_JSONSCHEMA = True
-except ImportError:
-    HAVE_JSONSCHEMA = False
+import argparse
+import toml
+import copy
+from jsonschema import validate
 
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
+
+logger = logging.getLogger("asadm")
 
 
 class _Namespace(object):
@@ -158,21 +151,17 @@ _confspec = """{
 }"""
 
 
-def _getdefault(logger):
-    import copy
+def _getdefault():
 
     return copy.deepcopy(_confdefault)
 
 
-def _loadfile(fname, logger):
+def _loadfile(fname):
     conf_dict = {}
 
     if os.path.exists(fname):
         # file exists
-        if HAVE_TOML:
-            conf_dict = toml.loads(open(fname).read())
-        else:
-            raise ImportError("No module named toml")
+        conf_dict = toml.loads(open(fname).read())
 
         include_files = []
         if "include" in conf_dict.keys():
@@ -192,16 +181,13 @@ def _loadfile(fname, logger):
 
         for f in include_files:
             try:
-                _merge(conf_dict, _loadfile(f, logger))
+                _merge(conf_dict, _loadfile(f))
             except Exception as e:
                 logger.error(
                     "Config file parse error: " + str(f) + " " + str(e).split("\n")[0]
                 )
 
-        if HAVE_JSONSCHEMA:
-            validate(conf_dict, json.loads(_confspec))
-        else:
-            raise ImportError("No module named jsonschema")
+        validate(conf_dict, json.loads(_confspec))
 
     return conf_dict
 
@@ -344,37 +330,28 @@ def _getseeds(conf):
         return []
 
 
-def loadconfig(cli_args, logger):
+def loadconfig(cli_args):
     # order of loading is
     #
     # Default
-    default_conf_dict = _getdefault(logger)
+    default_conf_dict = _getdefault()
 
     if cli_args.no_config_file and cli_args.only_config_file:
-        print(
+        logger.critical(
             "--no-config-file and only-config-file are mutually exclusive option. Please enable only one."
         )
-        exit(1)
 
     conf_dict = {}
     conffiles = []
 
     if cli_args.only_config_file is not None or not cli_args.no_config_file:
-        # need to load config file
-
-        if not HAVE_TOML:
-            logger.warning("No module named toml. Skipping Config file read.")
-
-        elif not HAVE_JSONSCHEMA:
-            logger.warning("No module named jsonschema. Skipping Config file read.")
-
-        elif cli_args.only_config_file is not None:
+        if cli_args.only_config_file is not None:
             # Load only config file.
             f = cli_args.only_config_file
 
             if os.path.exists(f):
                 try:
-                    _merge(conf_dict, _loadfile(f, logger))
+                    _merge(conf_dict, _loadfile(f))
                     conffiles.append(f)
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
@@ -408,7 +385,7 @@ def loadconfig(cli_args, logger):
 
             for f in conffiles:
                 try:
-                    _merge(conf_dict, _loadfile(f, logger))
+                    _merge(conf_dict, _loadfile(f))
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
                     logger.critical(
@@ -575,7 +552,7 @@ def print_config_file_option():
         "                      Aerospike Cluster is supporting it)."
     )
     print(
-        " --tls-cert-blacklist=path\n"
+        " --tls-cert-blacklist=path (DEPRECATED)\n"
         "                      Path to a certificate blacklist file. The file should\n"
         "                      contain one line for each blacklisted certificate.\n"
         "                      Each line starts with the certificate serial number\n"
@@ -640,20 +617,29 @@ def config_file_help():
     print("\n")
 
 
+def create_deprecate_action(action, optional_msg=""):
+    """
+    Used to create a deprecated flag action. The DeprecateAction is useful for obvious reasons
+    but the need to pass a BaseClass may not be.  This allows you to deprecate a flag that already
+    has an action defined.  argparse does not allow multiple actions. So you could do:
+    create_deprecate_action(argparse._Store)
+
+    action - A argparse.Action class not an instance.
+    optional_msg - Message to be printed after deprecation warning.
+    """
+
+    class DeprecateAction(action):
+        def __call__(self, parser, namespace, values, option_string=None):
+            logger.warn(
+                "Argument {} is deprecated. {}", self.option_strings, optional_msg
+            )
+
+    return DeprecateAction
+
+
 def get_cli_args():
-    have_argparse = True
-    try:
-        import argparse
-
-        parser = argparse.ArgumentParser(add_help=False, conflict_handler="resolve")
-        add_fn = parser.add_argument
-    except Exception:
-        import optparse
-
-        have_argparse = False
-        usage = "usage: %prog [options]"
-        parser = optparse.OptionParser(usage, add_help_option=False)
-        add_fn = parser.add_option
+    parser = argparse.ArgumentParser(add_help=False, conflict_handler="resolve")
+    add_fn = parser.add_argument
 
     add_fn("-V", "--version", action="store_true")
     add_fn("-E", "--help", action="store_true")
@@ -674,16 +660,7 @@ def get_cli_args():
     add_fn("-a", "--services-alternate", action="store_true")
     add_fn("-p", "--port", type=int)
     add_fn("-U", "--user")
-    if have_argparse:
-        add_fn("-P", "--password", nargs="?", const=DEFAULTPASSWORD)
-    else:
-        parser.add_option(
-            "-P",
-            "--password",
-            dest="password",
-            action="store_const",
-            const=DEFAULTPASSWORD,
-        )
+    add_fn("-P", "--password", nargs="?", const=DEFAULTPASSWORD)
 
     add_fn("--auth")
     add_fn("--tls-enable", action="store_true")
@@ -692,17 +669,12 @@ def get_cli_args():
     add_fn("--tls-protocols")
     add_fn("--tls-cipher-suite")
     add_fn("--tls-keyfile")
-    if have_argparse:
-        add_fn("--tls-keyfile-password", nargs="?", const=DEFAULTPASSWORD)
-    else:
-        parser.add_option(
-            "--tls-keyfile-password",
-            dest="tls-keyfile-password",
-            action="store_const",
-            const=DEFAULTPASSWORD,
-        )
+    add_fn("--tls-keyfile-password", nargs="?", const=DEFAULTPASSWORD)
     add_fn("--tls-certfile")
-    add_fn("--tls-cert-blacklist")
+    add_fn(
+        "--tls-cert-blacklist",
+        action=create_deprecate_action(argparse.Action, "Use a crl instead."),
+    )
     add_fn("--tls-crl-check", action="store_true")
     add_fn("--tls-crl-check-all", action="store_true")
 
@@ -745,8 +717,4 @@ def get_cli_args():
     # Usage, `asadm collectinfo --pmap`
     add_fn("--pmap", action="store_true")
 
-    if have_argparse:
-        return parser.parse_args()
-
-    (cli_args, args) = parser.parse_args()
-    return cli_args
+    return parser.parse_args()

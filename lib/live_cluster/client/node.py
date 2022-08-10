@@ -21,15 +21,14 @@ import threading
 import time
 import base64
 
-from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import conf_parser
-from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser import full_parser
-from lib.utils import common, constants, util, version, logger_debug
+from lib.utils import common, constants, util, version, conf_parser
+from lib.utils import common, constants, util, version, logger_debug, conf_parser
 from lib.utils.async_object import AsyncObject
-
 
 from .assocket import ASSocket
 from .config_handler import JsonDynamicConfigHandler
 from . import client_util
+from . import sys_cmd_parser
 from .types import (
     ASInfoConfigError,
     ASInfoError,
@@ -242,7 +241,7 @@ class Node(AsyncObject):
 
     def _initialize_socket_pool(self):
         logger.debug("%s:%s init socket pool", self.ip, self.port)
-        self.socket_pool: dict[str, set(ASSocket)] = {}
+        self.socket_pool: dict[int, set[ASSocket]] = {}
         self.socket_pool[self.port] = set()
         self.socket_pool_max_size = 3
 
@@ -284,7 +283,6 @@ class Node(AsyncObject):
                 self.features,
                 self.peers,
             ) = await self._node_connect()
-            update_ip = asyncio.create_task(self._update_IP(address, port))
 
             if isinstance(self.node_id, Exception):
                 raise self.node_id
@@ -296,7 +294,7 @@ class Node(AsyncObject):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            update_ip, _ = await asyncio.gather(update_ip, self.close())
+            await self.close()
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
@@ -313,17 +311,16 @@ class Node(AsyncObject):
 
                     # Most common case
                     if s[0] == current_host[0] and s[1] == current_host[1] and i == 0:
+                        await self._update_IP(self.ip, self.port)
                         # The following info requests were already made
                         # no need to do again
                         break
 
                     # IP address have changed. Not common.
                     self.node_id, update_ip, self.peers = await asyncio.gather(
-                        *[
-                            self.info_node(),
-                            self._update_IP(self.ip, self.port),
-                            self.info_peers_list(),
-                        ]
+                        self.info_node(),
+                        self._update_IP(self.ip, self.port),
+                        self.info_peers_list(),
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -346,7 +343,7 @@ class Node(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e, include_traceback=True)  # type: ignore
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -454,10 +451,13 @@ class Node(AsyncObject):
 
     async def _update_IP(self, address, port):
         if address not in self.dns_cache:
+
             self.dns_cache[address] = (
-                socket.getaddrinfo(address, port, socket.AF_UNSPEC, socket.SOCK_STREAM)[
-                    0
-                ][4][0],
+                (
+                    await asyncio.get_event_loop().getaddrinfo(
+                        address, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
+                    )
+                )[0][4][0],
                 get_fully_qualified_domain_name(address),
             )
 
@@ -698,7 +698,7 @@ class Node(AsyncObject):
     ###### Services ######
 
     # post 3.10 services
-    def _info_peers_helper(self, peers):
+    def _info_peers_helper(self, peers) -> list[tuple[Addr_Port_TLSName]]:
         """
         Takes an info peers list response and returns a list.
         """
@@ -816,7 +816,7 @@ class Node(AsyncObject):
         """
         return self._info_peers_helper(await self.info(self._get_info_peers_alt_call()))
 
-    def _get_info_peers_list_calls(self):
+    def _get_info_peers_list_calls(self) -> list[str]:
         calls = []
         # at most 2 calls will be needed
         if self.consider_alumni:
@@ -829,12 +829,12 @@ class Node(AsyncObject):
 
         return calls
 
-    def _aggregate_peers(self, results) -> list[str]:
+    def _aggregate_peers(self, results) -> list[tuple[Addr_Port_TLSName]]:
         results = [self._info_peers_helper(result) for result in results]
         return list(set().union(*results))
 
     @async_return_exceptions
-    async def info_peers_list(self) -> list[str]:
+    async def info_peers_list(self) -> list[tuple[Addr_Port_TLSName]]:
         results = await asyncio.gather(
             *[self.info(call) for call in self._get_info_peers_list_calls()]
         )
@@ -2275,6 +2275,16 @@ class Node(AsyncObject):
         """
         return await self.info("build")
 
+    @async_return_exceptions
+    async def info_version(self):
+        """
+        Get Build Version
+
+        Returns:
+        string -- build version
+        """
+        return await self.info("version")
+
     async def _use_new_truncate_command(self):
         """
         A new truncate-namespace and truncate-namespace-undo was added to some
@@ -2934,6 +2944,14 @@ class Node(AsyncObject):
         self.sys_ssh_key = self.sys_default_ssh_key
         self.sys_ssh_port = self.sys_default_ssh_port
 
+    def parse_system_live_command(self, command, command_raw_output, parsed_map):
+        # Parse live cmd output and create imap
+        imap = {}
+        sys_cmd_parser.extract_section_from_live_cmd(command, command_raw_output, imap)
+        sectionlist = []
+        sectionlist.append(command)
+        sys_cmd_parser.parse_sys_section(sectionlist, imap, parsed_map)
+
     @return_exceptions
     def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
@@ -2959,7 +2977,7 @@ class Node(AsyncObject):
                     continue
 
                 try:
-                    full_parser.parse_system_live_command(_key, o, sys_stats)
+                    self.parse_system_live_command(_key, o, sys_stats)
                 except Exception:
                     pass
 
@@ -3081,7 +3099,7 @@ class Node(AsyncObject):
                             status, o = self._execute_system_command(s, cmd)
                             if status or not o or isinstance(o, Exception):
                                 continue
-                            full_parser.parse_system_live_command(_key, o, sys_stats)
+                            self.parse_system_live_command(_key, o, sys_stats)
                             break
 
                         except Exception:

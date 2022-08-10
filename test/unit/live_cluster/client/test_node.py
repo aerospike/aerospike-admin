@@ -1404,9 +1404,7 @@ class NodeTest(asynctest.TestCase):
         )
         self.assertDictEqual(actual, expected)
 
-    @patch(
-        "lib.collectinfo_analyzer.collectinfo_handler.collectinfo_parser.conf_parser.parse_file"
-    )
+    @patch("lib.utils.conf_parser.parse_file")
     async def test_info_get_originalconfig(self, parse_file_mock):
         self.assertDictEqual(await self.node.info_get_originalconfig(), {})
 

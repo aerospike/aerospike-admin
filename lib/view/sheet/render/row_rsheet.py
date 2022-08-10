@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Literal, Union
 from lib.view import terminal
+from lib.view.sheet.decleration import Subgroup
 
 from ..const import FieldAlignment
 from .base_rsheet import BaseRField, BaseRSheetCLI
@@ -36,7 +38,9 @@ class RowRSheet(BaseRSheetCLI):
     # =========================================================================
     # Required overrides.
 
-    def do_create_tuple_field(self, field, groups):
+    def do_create_tuple_field(self, field: Subgroup, groups):
+        # TODO: Implement row subgroup.  I am thinking it should just take the subgroup name
+        # and prepend it to the field name.
         raise NotImplementedError("Row styles doesn't support tuple fields")
 
     def do_create_field(self, field, groups, parent_key=None):
@@ -82,7 +86,7 @@ class RowRSheet(BaseRSheetCLI):
                 )
 
         has_aggregate = any(rfield.has_aggregate() for rfield in render_fields)
-        title_indices = set([0])
+        title_indices: set[Union[int, Literal["aggr"]]] = set([0])
 
         if self.title_repeat:
             terminal_width = self.terminal_size.columns
@@ -184,7 +188,7 @@ class RowRSheet(BaseRSheetCLI):
 
             if num_groups > 1 and group_ix < num_groups - 1:
                 render.append(
-                    self.decleration.formatted_vertical_separator_func() * title_width
+                    self.decleration.formatted_horizontal_seperator_func() * title_width
                 )
 
         num_rows = len(render_fields) * num_groups - hidden_count
