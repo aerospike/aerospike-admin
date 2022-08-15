@@ -925,7 +925,7 @@ class ManageSIndexController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "Usage: create <bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>]",
+    "Usage: create <bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>] [ctx <ctx-item> [. . .]]",
     "  bin-type      - The bin type of the provided <bin-name>. Should be one of the following values:",
     "                  numeric, string, or geo2dsphere",
     "  index-name    - Name of the secondary index to be created. Should be 20 characters",
@@ -938,9 +938,16 @@ class ManageSIndexController(LiveClusterCommandController):
     "                  mapkeys: Specifies to use the keys of a map as keys.",
     "                  mapvalues: Specifies to use the values of a map as keys.",
     "                  [default: Specifies to use the contents of a bin as keys.]",
+    "  ctx           - A list of context items describing how to index into a CDT.",
+    "                  Possible values include: list_index(<int>) list_rank(<int>),",
+    "                  list_value(<value>), map_index(<int>), map_rank(<int>),",
+    "                  map_key(<value>), and map_value(<value>). Where <value> is an",
+    "                  <int>, <bool>, <string> (in quotes), or a base64 encoded byte",
+    "                  array (no quotes).",
 )
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
+
         self.required_modifiers = set(["line", "ns", "bin"])
         self.modifiers = set(["set", "in", "ctx"])
 
@@ -949,10 +956,8 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
     @staticmethod
     def _split_ctx_list(ctx_str: str) -> list[str]:
-        if ctx_str and (not ctx_str.startswith("[") or not ctx_str.endswith(("]"))):
-            raise ShellException("Malformed ctx list")
-        ctx_str = ctx_str.strip("[] ")
-        split_pattern = r"\)(,\s*)(?:list|map)"
+        ctx_str = ctx_str.strip()
+        split_pattern = r"\)(\s*)(?:list|map)"
         ctx_list = []
         start = 0
 
@@ -1003,18 +1008,18 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         ctx_list = ManageSIndexCreateController._split_ctx_list(ctx_str)
 
         str_to_ctx = {
-            re.compile(r"^list_by_index\((" + int_pattern + r")\)"): CTXItems.ListIndex,
-            re.compile(r"^list_by_rank\((" + int_pattern + r")\)"): CTXItems.ListRank,
+            re.compile(r"^list_index\((" + int_pattern + r")\)"): CTXItems.ListIndex,
+            re.compile(r"^list_rank\((" + int_pattern + r")\)"): CTXItems.ListRank,
             re.compile(
-                r"^list_by_value\(" + particle_pattern_with_names + r"\)"
+                r"^list_value\(" + particle_pattern_with_names + r"\)"
             ): CTXItems.ListValue,
-            re.compile(r"^map_by_index\((" + int_pattern + r")\)"): CTXItems.MapIndex,
-            re.compile(r"^map_by_rank\((" + int_pattern + r")\)"): CTXItems.MapRank,
+            re.compile(r"^map_index\((" + int_pattern + r")\)"): CTXItems.MapIndex,
+            re.compile(r"^map_rank\((" + int_pattern + r")\)"): CTXItems.MapRank,
             re.compile(
-                r"^map_by_key\(" + particle_pattern_with_names + r"\)"
+                r"^map_key\(" + particle_pattern_with_names + r"\)"
             ): CTXItems.MapKey,
             re.compile(
-                r"^map_by_value\(" + particle_pattern_with_names + r"\)"
+                r"^map_value\(" + particle_pattern_with_names + r"\)"
             ): CTXItems.MapValue,
         }
 
