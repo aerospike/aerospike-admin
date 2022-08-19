@@ -41,7 +41,6 @@ from .types import (
     ASProtocolError,
     ASResponse,
     Addr_Port_TLSName,
-    SIndexBinType,
 )
 
 logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
