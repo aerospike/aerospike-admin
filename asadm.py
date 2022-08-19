@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.utils.logger import logger
 import inspect
 import cmd
 import getpass
@@ -25,7 +26,7 @@ import shlex
 import sys
 import asyncio
 import readline
-from lib.live_cluster.client.msgpack import ASPacker
+
 from lib.utils.async_object import AsyncObject
 
 
@@ -37,7 +38,6 @@ else:
 
 # Setup logger before anything
 
-from lib.utils.logger import logger
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
@@ -78,9 +78,6 @@ MULTILEVEL_COMMANDS = ["show", "info", "manage"]
 
 DEFAULT_PROMPT = "Admin> "
 PRIVILEGED_PROMPT = "Admin+> "
-
-
-packer = ASPacker()
 
 
 class AerospikeShell(cmd.Cmd, AsyncObject):
