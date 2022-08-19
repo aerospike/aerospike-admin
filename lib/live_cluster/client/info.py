@@ -86,12 +86,6 @@ def _unpack_uint8(buf, offset):
     return val[0], offset
 
 
-def _pack_uint16(buf, offset, val):
-    _STRUCT_UINT16.pack_into(buf, offset, val)
-    offset += _STRUCT_UINT16.size
-    return offset
-
-
 def _pack_uint32(buf, offset, val):
     _STRUCT_UINT32.pack_into(buf, offset, val)
     offset += _STRUCT_UINT32.size
@@ -102,18 +96,6 @@ def _unpack_uint32(buf, offset):
     val = _STRUCT_UINT32.unpack_from(buf, offset)
     offset += _STRUCT_UINT32.size
     return val[0], offset
-
-
-def _pack_uint64(buf, offset, val):
-    _STRUCT_UINT64.pack_into(buf, offset, val)
-    offset += _STRUCT_UINT64.size
-    return offset
-
-
-def _pack_int64(buf, offset, val):
-    _STRUCT_INT64.pack_into(buf, offset, val)
-    offset += _STRUCT_INT64.size
-    return offset
 
 
 def _pack_string(buf, offset, string):
