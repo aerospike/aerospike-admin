@@ -587,12 +587,14 @@ class Projectors(object):
             """
             self.numerator_projector = numerator_projector
             self.denominator_projector = denominator_projector
-            self.sources = set(
-                (
-                    field_fn.source
-                    for field_fn in [numerator_projector, denominator_projector]
-                )
-            )
+            self.sources = set([])
+
+            for field_fn in [numerator_projector, denominator_projector]:
+                if field_fn.source is None:
+                    source = field_fn.sources
+                else:
+                    source = set([field_fn.source])
+                self.sources = self.sources.union(source)
 
         def do_project(self, sheet, sources):
             """
@@ -630,7 +632,7 @@ class Projectors(object):
             return result if not self.invert else 100 - result
 
     class Any(BaseProjector):
-        def __init__(self, field_type, *field_projectors):
+        def __init__(self, field_type: str, *field_projectors: BaseProjector):
             """
             Arguments:
             field_type -- The 'FieldType' for this field.
@@ -640,12 +642,10 @@ class Projectors(object):
             self.field_type = field_type
             self.sources = set()
             for field_fn in field_projectors:
-
                 if field_fn.source is None:
                     source = field_fn.sources
                 else:
                     source = set([field_fn.source])
-
                 self.sources = self.sources.union(source)
 
             self.field_projectors = field_projectors
