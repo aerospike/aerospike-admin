@@ -249,6 +249,3 @@ class ASInfoNotAuthenticatedError(ASInfoError):
 
 class ASInfoClusterStableError(ASInfoError):
     pass
-
-
-SIndexBinType = Union[Literal["NUMERIC"], Literal["GEO2DSPHERE"], Literal["STRING"]]
