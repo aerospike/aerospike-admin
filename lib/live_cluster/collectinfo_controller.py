@@ -863,17 +863,15 @@ class CollectinfoController(LiveClusterCommandController):
             self._dump_collectinfo_sysinfo(as_logfile_prefix, file_header),
             self._dump_collectinfo_aerospike_conf(as_logfile_prefix, config_path),
         ]
-        tasks: list[asyncio.Task] = list(map(asyncio.create_task, coroutines))  # type: ignore
 
-        for t in tasks:
+        for c in coroutines:
             try:
-                await t
+                await c
             except:
                 # close remaining coroutines.  An error will be raised if they are not
                 # awaited.
-                for t in tasks:
-                    if not t.done():
-                        t.cancel()
+                for c in coroutines:
+                    c.close()
 
                 if not ignore_errors:
                     self.logger.error(ignore_errors_msg)
