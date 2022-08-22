@@ -468,7 +468,7 @@ class LogHandler(object):
         file_key = self.reader.get_server_node_id(log_file)
 
         if not file_key:
-            file_key = "MD5_" + str(hashlib.md5(log_file).hexdigest())
+            file_key = "MD5_" + str(hashlib.md5(log_file.encode("utf-8")).hexdigest())
             file_key = file_key[:15] + " "
 
         log = ServerLog(file_key, log_file, self.reader)
