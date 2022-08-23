@@ -941,9 +941,9 @@ class ManageSIndexController(LiveClusterCommandController):
     "  ctx           - A list of context items describing how to index into a CDT.",
     "                  Possible values include: list_index(<int>) list_rank(<int>),",
     "                  list_value(<value>), map_index(<int>), map_rank(<int>),",
-    "                  map_key(<value>), and map_value(<value>). Where <value> is an",
-    "                  <int>, <bool>, <string> (in quotes), or a base64 encoded byte",
-    "                  array (no quotes).",
+    "                  map_key(<value>), and map_value(<value>). Where <value> is",
+    "                  <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64",
+    "                  encoded byte array (no quotes).",
 )
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
@@ -971,99 +971,125 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         return ctx_list
 
     @staticmethod
-    def _str_to_cdt_ctx(ctx_str: str) -> CDTContext:
+    def _list_to_cdt_ctx(ctx_list: list[str]) -> CDTContext:
         cdt_ctx: CDTContext = CDTContext()
-        double_pattern = r"-?\d+\.{1}\d+"
         int_pattern = r"-?\d+"
-        str_pattern = r"(?:'{1}(.*?)'{1})|(?:\"(.*?)\")"
-        bool_pattern = (
-            r"(?:[tT]{1}[Rr]{1}[Uu]{1}[Ee]{1})|(?:[Ff]{1}[Aa]{1}[Ll]{1}[Ss]{1}[Ee]{1})"
-        )
-        base64_pattern = r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})"
-
+        str_pattern = r".*"
         particle_pattern_with_names = (
             r"(?:"
+            + r"(?:float\("
             + r"(?P<double>"
-            + double_pattern
-            + r")"
-            + r"|"
-            + r"(?P<int>"
-            + int_pattern
-            + r")"
-            + r"|"
-            + r"(?P<str>"
             + str_pattern
             + r")"
-            + r"|"
-            + r"(?P<bool>"
-            + bool_pattern
+            + r"\)"
             + r")"
             + r"|"
+            + r"(?:int\("
+            + r"(?P<int>"
+            + str_pattern
+            + r")"
+            + r"\)"
+            + r")"
+            + r"|"
+            + r"(?:bool\("
+            + r"(?P<bool>"
+            + str_pattern
+            + r")"
+            + r"\)"
+            + r")"
+            + r"|"
+            + r"(?:bytes\("
             + r"(?P<bytes_base64>"
-            + base64_pattern
+            + str_pattern
+            + r")"
+            + r"\)"
             + r")"
             + r")"
         )
+        particle_pattern = re.compile(particle_pattern_with_names)
 
-        ctx_list = ManageSIndexCreateController._split_ctx_list(ctx_str)
+        # ctx_list = ManageSIndexCreateController._split_ctx_list(ctx_str)
 
         str_to_ctx = {
             re.compile(r"^list_index\((" + int_pattern + r")\)"): CTXItems.ListIndex,
             re.compile(r"^list_rank\((" + int_pattern + r")\)"): CTXItems.ListRank,
-            re.compile(
-                r"^list_value\(" + particle_pattern_with_names + r"\)"
-            ): CTXItems.ListValue,
+            re.compile(r"^list_value\((" + str_pattern + r")\)"): CTXItems.ListValue,
             re.compile(r"^map_index\((" + int_pattern + r")\)"): CTXItems.MapIndex,
             re.compile(r"^map_rank\((" + int_pattern + r")\)"): CTXItems.MapRank,
-            re.compile(
-                r"^map_key\(" + particle_pattern_with_names + r"\)"
-            ): CTXItems.MapKey,
-            re.compile(
-                r"^map_value\(" + particle_pattern_with_names + r"\)"
-            ): CTXItems.MapValue,
+            re.compile(r"^map_key\((" + str_pattern + r")\)"): CTXItems.MapKey,
+            re.compile(r"^map_value\((" + str_pattern + r")\)"): CTXItems.MapValue,
         }
 
         for ctx_item_str in ctx_list:
-            ctx_item_str = ctx_item_str.strip(" ")
+            ctx_item_str = ctx_item_str.strip()
             found = False
 
-            for key, ctx_cls in str_to_ctx.items():
-                match = key.search(ctx_item_str)
+            for regex_key, ctx_cls in str_to_ctx.items():
+                ctx_match = regex_key.search(ctx_item_str)
 
-                if match is not None:
+                if ctx_match is not None:
 
                     if (
                         ctx_cls == CTXItems.ListValue
                         or ctx_cls == CTXItems.MapKey
                         or ctx_cls == CTXItems.MapValue
                     ):
-                        groups = match.groupdict()
+                        groups = ctx_match.groups()
 
-                        double_, int_, str_, bool_, base_64 = (
-                            groups["double"],
-                            groups["int"],
-                            groups["str"],
-                            groups["bool"],
-                            groups["bytes_base64"],
-                        )
-                        if double_ is not None:
-                            double_ = float(double_)
-                            as_val = ASValues.ASDouble(double_)
-                        elif int_ is not None:
-                            int_ = int(int_)
-                            as_val = ASValues.ASInt(int_)
-                        elif str_ is not None:
-                            as_val = ASValues.ASString(str_[1:-1])  # remove parenthesis
-                        elif bool_ is not None:
-                            bool_ = True if bool_.lower() == "true" else False
-                            as_val = ASValues.ASBool(bool_)
-                        elif base_64 is not None:
-                            base_64 = binascii.a2b_base64(bytes(base_64, "utf-8"))
-                            as_val = ASValues.ASBytes(base_64)
+                        if len(groups) != 1:
+                            raise ShellException(
+                                "Malformed value: {}".format(ctx_item_str)
+                            )
+
+                        str_val = groups[0]
+                        val_match = particle_pattern.search(str_val)
+
+                        if val_match is not None:
+                            groups = val_match.groupdict()
+                            double_, int_, bool_, base_64 = (
+                                groups["double"],
+                                groups["int"],
+                                # groups["str"],
+                                groups["bool"],
+                                groups["bytes_base64"],
+                            )
+
+                            if double_ is not None:
+                                double_ = float(double_)
+                                as_val = ASValues.ASDouble(double_)
+                            elif int_ is not None:
+                                int_ = int(int_)
+                                as_val = ASValues.ASInt(int_)
+                            elif bool_ is not None:
+                                if bool_.lower() == "true":
+                                    bool_ = True
+                                elif bool_.lower() == "false":
+                                    bool_ = False
+                                else:
+                                    raise ShellException(
+                                        "Unable to parse bool {}".format(bool_)
+                                    )
+                                as_val = ASValues.ASBool(bool_)
+                            elif base_64 is not None:
+                                try:
+                                    base_64 = binascii.a2b_base64(
+                                        bytes(base_64, "utf-8")
+                                    )
+                                    as_val = ASValues.ASBytes(base_64)
+                                except ValueError as e:
+                                    raise ShellException(
+                                        "Unable to decode base64 encoded bytes : {}".format(
+                                            e
+                                        )
+                                    )
+                            else:
+                                raise Exception(
+                                    "Not able to decode to type other than string?"
+                                )
                         else:
-                            raise Exception("All ctx args are None?")
+                            as_val = ASValues.ASString(str_val)
                     else:
-                        groups = match.groups()
+                        groups = ctx_match.groups()
                         as_val = int(groups[0])
 
                     found = True
@@ -1111,10 +1137,10 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             mods=self.mods,
         )
 
-        ctx_str = " ".join(self.mods["ctx"])
+        ctx_list = self.mods["ctx"]
         cdt_ctx = None
 
-        if ctx_str:
+        if ctx_list:
             builds = await self.cluster.info_build(nodes=self.nodes)
 
             if not all(
@@ -1128,7 +1154,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             ):
                 raise ShellException("One or more servers does not support 'ctx'.")
 
-            cdt_ctx = self._str_to_cdt_ctx(ctx_str)
+            cdt_ctx = self._list_to_cdt_ctx(ctx_list)
 
         index_type = index_type.lower() if index_type else None
         bin_type = bin_type.lower()

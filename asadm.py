@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.base_controller import ShellException
 from lib.utils.logger import logger
 import inspect
 import cmd
@@ -264,31 +265,43 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
     def clean_line(self, line):
         # get rid of extra whitespace
-        lexer = shlex.shlex(line)
+        lexer = shlex.shlex(line, posix=True)
         # TODO: shlex is not working with 'with' ip addresses. Need to write a
         #       new parser or correct shlex behavior.
         commands = []
 
         command = []
         build_token = ""
-        lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|:''\"<>,./?"
-        for token in lexer:
-            build_token += token
-            if token == "-":
-                continue
 
-            if token == ";":
-                if command:
+        # Maybe someday we should not allow most of the characters below without
+        # quotes surrounding them.  These characters below define what can be in
+        # an unquotes string.
+        lexer.wordchars += r"`~!@#$;%^&*()_-+={}[]|:<>,./\?"
+        lexer.escapedquotes += "'"
+
+        try:
+            for token in lexer:
+                build_token += token
+
+                if token == ";":
+                    if command:
+                        commands.append(command)
+                        command = []
+                elif token.endswith(";"):
+                    command.append(build_token[:-1])
                     commands.append(command)
                     command = []
+                else:
+                    command.append(build_token)
+                build_token = ""
             else:
-                command.append(build_token)
-            build_token = ""
-        else:
-            if build_token:
-                command.append(build_token)
-            if command:
-                commands.append(command)
+                if build_token:
+                    command.append(build_token)
+                if command:
+                    commands.append(command)
+
+        except ValueError as e:
+            raise ShellException(e)
 
         return commands
 

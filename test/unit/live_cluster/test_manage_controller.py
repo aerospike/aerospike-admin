@@ -1286,7 +1286,7 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
         line = "list_index(3)"
         expected = CDTContext([CTXItems.ListIndex(3)])
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
@@ -1294,15 +1294,15 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
         line = "list_rank(2)"
         expected = CDTContext([CTXItems.ListRank(2)])
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_list_str_value(self):
-        line = "list_value('str')"
+        line = "list_value(str)"
         expected = CDTContext([CTXItems.ListValue(ASValues.ASString("str"))])
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
@@ -1310,7 +1310,7 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
         line = "map_index(3)"
         expected = CDTContext([CTXItems.MapIndex(3)])
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
@@ -1318,28 +1318,28 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
         line = "map_rank(2)"
         expected = CDTContext([CTXItems.MapRank(2)])
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_map_str_key(self):
-        line = "map_key('str')"
+        line = "map_key(str)"
         expected = CDTContext([CTXItems.MapKey(ASValues.ASString("str"))])
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_map_str_value(self):
-        line = "map_value('str')"
+        line = "map_value(str)"
         expected = CDTContext([CTXItems.MapValue(ASValues.ASString("str"))])
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_multiple_items(self):
-        line = "list_index(3)list_rank(2) list_value(\"str\") map_index(3) map_rank(2) map_key('str') map_value('str')"
+        line = "list_index(3) list_rank(2) list_value(str) map_index(3) map_rank(2) map_key(str) map_value('str')"
         expected = CDTContext(
             [
                 CTXItems.ListIndex(3),
@@ -1348,16 +1348,16 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
                 CTXItems.MapIndex(3),
                 CTXItems.MapRank(2),
                 CTXItems.MapKey(ASValues.ASString("str")),
-                CTXItems.MapValue(ASValues.ASString("str")),
+                CTXItems.MapValue(ASValues.ASString("'str'")),
             ]
         )
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_double(self):
-        line = "map_key(3.14159) map_key(0.0) map_key(-3.14159)"
+        line = "map_key(float(3.14159)) map_key(float(0.0)) map_key(float(-3.14159))"
         expected = CDTContext(
             [
                 CTXItems.MapKey(ASValues.ASDouble(3.14159)),
@@ -1366,12 +1366,12 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
             ]
         )
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_int(self):
-        line = "map_key(3) map_key(0) map_key(-3)"
+        line = "map_key(int(3)) map_key(int(0)) map_key(int(-3))"
         expected = CDTContext(
             [
                 CTXItems.MapKey(ASValues.ASInt(3)),
@@ -1380,28 +1380,30 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
             ]
         )
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_str(self):
-        line = 'map_key("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"-=!@#$%^&*()_+[]\\,.;/`~")'
+        line = [
+            'map_key(abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP QRSTUVWXYZ1234567890"-=!@#$%^&*()_+[]\\,.;/`~)'
+        ]
         expected = CDTContext(
             [
                 CTXItems.MapKey(
                     ASValues.ASString(
-                        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"-=!@#$%^&*()_+[]\\,.;/`~'
+                        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP QRSTUVWXYZ1234567890"-=!@#$%^&*()_+[]\\,.;/`~'
                     )
                 ),
             ]
         )
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line)
 
         self.assertListEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_bool(self):
-        line = "map_key(FaLsE) map_key(TRUE)"
+        line = "map_key(bool(FaLsE)) map_key(bool(TRUE))"
         expected = CDTContext(
             [
                 CTXItems.MapKey(ASValues.ASBool(False)),
@@ -1409,12 +1411,12 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
             ]
         )
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
 
         self.assertListEqual(expected, actual)
 
     def test_str_to_cdt_ctx_with_bytes(self):
-        line = "map_key(YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkwLT1gIUAjJV4mKigpXytbXXt9Oyc6IltdOiwu) map_key(YmxhaA==)"
+        line = "map_key(bytes(YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkwLT1gIUAjJV4mKigpXytbXXt9Oyc6IltdOiwu)) map_key(bytes(YmxhaA==))"
         expected = CDTContext(
             [
                 CTXItems.MapKey(
@@ -1429,17 +1431,37 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
             ]
         )
 
-        actual = ManageSIndexCreateController._str_to_cdt_ctx(line)
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
         self.assertListEqual(expected, actual)
 
-    def test_incorrect_item_sytax_raises_shell_exception(self):
-        line = "map_key(1.'5)"
+    def test_str_to_cdt_ctx_with_bool_fails(self):
+        line = "map_key(bool(FaLs))"
 
         self.assertRaisesRegex(
             ShellException,
-            r"Unable to parse ctx item map_key\(1.'5\)",
-            ManageSIndexCreateController._str_to_cdt_ctx,
-            line,
+            r"Unable to parse bool FaLs",
+            ManageSIndexCreateController._list_to_cdt_ctx,
+            line.split(),
+        )
+
+    def test_str_to_cdt_ctx_with_bytes_fails(self):
+        line = "map_key(bytes(abc))"
+
+        self.assertRaisesRegex(
+            ShellException,
+            r"Unable to decode base64 encoded bytes : Incorrect padding",
+            ManageSIndexCreateController._list_to_cdt_ctx,
+            line.split(),
+        )
+
+    def test_incorrect_item_sytax_raises_shell_exception(self):
+        line = "map_index(1.'5)"
+
+        self.assertRaisesRegex(
+            ShellException,
+            r"Unable to parse ctx item map_index\(1.'5\)",
+            ManageSIndexCreateController._list_to_cdt_ctx,
+            line.split(),
         )
 
 
@@ -1472,7 +1494,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         )
 
     async def test_create_successful(self):
-        line = "numeric a-index ns test set testset bin a in mapkeys ctx list_value(1)".split()
+        line = "numeric a-index ns test set testset bin a in mapkeys ctx list_value(int(1))".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
