@@ -14,8 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.utils.logger import logger  # THIS MUST BE THE FIRST IMPORT
 from lib.base_controller import ShellException
-from lib.utils.logger import logger
 import inspect
 import cmd
 import getpass
