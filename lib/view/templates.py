@@ -798,7 +798,6 @@ info_sindex_sheet = Sheet(
                     "Avg Per Rec",
                     Projectors.Number("sindex_stats", "keys", "entries_per_rec"),
                     converter=Converters.scientific_units,
-                    aggregator=Aggregators.sum(),
                 ),
                 Field(
                     "Avg Per Bin Val",
