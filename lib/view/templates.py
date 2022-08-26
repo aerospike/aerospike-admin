@@ -1633,7 +1633,12 @@ show_sindex = Sheet(
         Field("Bin Type", Projectors.String("data", "type")),
         Field("Index Type", Projectors.String("data", "indextype")),
         Field("State", Projectors.String("data", "state")),
-        Field("Context", Projectors.String("data", "context")),
+        Field(
+            "Context",
+            Projectors.Func(
+                "string", _ignore_null, Projectors.String("data", "context")
+            ),
+        ),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),
