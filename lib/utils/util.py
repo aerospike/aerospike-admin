@@ -369,7 +369,7 @@ def get_value_from_dict(
     Returns value of first matching key from keys which is available in d else returns default_value
     """
 
-    if not isinstance(keys, tuple):
+    if not isinstance(keys, tuple) and not isinstance(keys, list):
         keys = (keys,)
 
     for key in keys:
@@ -530,7 +530,10 @@ def restructure_sys_data(content, cmd):
 
 
 def get_value_from_second_level_of_dict(
-    data, keys, default_value: DefaultType = None, return_type: Type[ReturnType] = str
+    data: dict[Any, str],
+    keys: list[str],
+    default_value: DefaultType = None,
+    return_type: Type[ReturnType] = str,
 ) -> dict[str, Union[ReturnType, DefaultType]]:
     """
     Function takes dictionary and subkeys to find values inside all keys of dictionary.

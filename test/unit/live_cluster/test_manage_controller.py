@@ -1,3 +1,4 @@
+import unittest
 from pytest import PytestUnraisableExceptionWarning
 from lib.base_controller import ShellException
 from mock import MagicMock, patch
@@ -12,6 +13,7 @@ from lib.live_cluster.client import (
     Cluster,
 )
 from lib.live_cluster.client.config_handler import JsonDynamicConfigHandler
+from lib.live_cluster.client.ctx import ASValues, CDTContext, CTXItems
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.live_cluster_command_controller import (
     LiveClusterCommandController,
@@ -33,6 +35,9 @@ from lib.live_cluster.manage_controller import (
     ManageRosterRemoveController,
     ManageRosterStageNodesController,
     ManageRosterStageObservedController,
+    ManageSIndexController,
+    ManageSIndexCreateController,
+    ManageSIndexDeleteController,
     ManageTruncateController,
 )
 from lib.utils import constants
@@ -1274,6 +1279,333 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
 
         for tc in test_cases:
             run_test(tc)
+
+
+class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
+    def test_str_to_cdt_ctx_with_list_index(self):
+        line = "list_index(3)"
+        expected = CDTContext([CTXItems.ListIndex(3)])
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_list_rank(self):
+        line = "list_rank(2)"
+        expected = CDTContext([CTXItems.ListRank(2)])
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_list_str_value(self):
+        line = "list_value(str)"
+        expected = CDTContext([CTXItems.ListValue(ASValues.ASString("str"))])
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_map_index(self):
+        line = "map_index(3)"
+        expected = CDTContext([CTXItems.MapIndex(3)])
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_map_rank(self):
+        line = "map_rank(2)"
+        expected = CDTContext([CTXItems.MapRank(2)])
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_map_str_key(self):
+        line = "map_key(str)"
+        expected = CDTContext([CTXItems.MapKey(ASValues.ASString("str"))])
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_map_str_value(self):
+        line = "map_value(str)"
+        expected = CDTContext([CTXItems.MapValue(ASValues.ASString("str"))])
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_multiple_items(self):
+        line = "list_index(3) list_rank(2) list_value(str) map_index(3) map_rank(2) map_key(str) map_value('str')"
+        expected = CDTContext(
+            [
+                CTXItems.ListIndex(3),
+                CTXItems.ListRank(2),
+                CTXItems.ListValue(ASValues.ASString("str")),
+                CTXItems.MapIndex(3),
+                CTXItems.MapRank(2),
+                CTXItems.MapKey(ASValues.ASString("str")),
+                CTXItems.MapValue(ASValues.ASString("'str'")),
+            ]
+        )
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_double(self):
+        line = "map_key(float(3.14159)) map_key(float(0.0)) map_key(float(-3.14159))"
+        expected = CDTContext(
+            [
+                CTXItems.MapKey(ASValues.ASDouble(3.14159)),
+                CTXItems.MapKey(ASValues.ASDouble(0.0)),
+                CTXItems.MapKey(ASValues.ASDouble(-3.14159)),
+            ]
+        )
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_int(self):
+        line = "map_key(int(3)) map_key(int(0)) map_key(int(-3))"
+        expected = CDTContext(
+            [
+                CTXItems.MapKey(ASValues.ASInt(3)),
+                CTXItems.MapKey(ASValues.ASInt(0)),
+                CTXItems.MapKey(ASValues.ASInt(-3)),
+            ]
+        )
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_str(self):
+        line = [
+            'map_key(abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP QRSTUVWXYZ1234567890"-=!@#$%^&*()_+[]\\,.;/`~)'
+        ]
+        expected = CDTContext(
+            [
+                CTXItems.MapKey(
+                    ASValues.ASString(
+                        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP QRSTUVWXYZ1234567890"-=!@#$%^&*()_+[]\\,.;/`~'
+                    )
+                ),
+            ]
+        )
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line)
+
+        self.assertListEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_bool(self):
+        line = "map_key(bool(FaLsE)) map_key(bool(TRUE))"
+        expected = CDTContext(
+            [
+                CTXItems.MapKey(ASValues.ASBool(False)),
+                CTXItems.MapKey(ASValues.ASBool(True)),
+            ]
+        )
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+
+        self.assertListEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_bytes(self):
+        line = "map_key(bytes(YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkwLT1gIUAjJV4mKigpXytbXXt9Oyc6IltdOiwu)) map_key(bytes(YmxhaA==))"
+        expected = CDTContext(
+            [
+                CTXItems.MapKey(
+                    ASValues.ASBytes(
+                        bytes(
+                            "abcdefghijklmnopqrstuvwxyz1234567890-=`!@#%^&*()_+[]{};':\"[]:,.",
+                            encoding="utf-8",
+                        )
+                    )
+                ),
+                CTXItems.MapKey(ASValues.ASBytes(bytes("blah", encoding="utf-8"))),
+            ]
+        )
+
+        actual = ManageSIndexCreateController._list_to_cdt_ctx(line.split())
+        self.assertListEqual(expected, actual)
+
+    def test_str_to_cdt_ctx_with_bool_fails(self):
+        line = "map_key(bool(FaLs))"
+
+        self.assertRaisesRegex(
+            ShellException,
+            r"Unable to parse bool FaLs",
+            ManageSIndexCreateController._list_to_cdt_ctx,
+            line.split(),
+        )
+
+    def test_str_to_cdt_ctx_with_bytes_fails(self):
+        line = "map_key(bytes(abc))"
+
+        self.assertRaisesRegex(
+            ShellException,
+            r"Unable to decode base64 encoded bytes : Incorrect padding",
+            ManageSIndexCreateController._list_to_cdt_ctx,
+            line.split(),
+        )
+
+    def test_incorrect_item_sytax_raises_shell_exception(self):
+        line = "map_index(1.'5)"
+
+        self.assertRaisesRegex(
+            ShellException,
+            r"Unable to parse ctx item map_index\(1.'5\)",
+            ManageSIndexCreateController._list_to_cdt_ctx,
+            line.split(),
+        )
+
+
+class ManageSIndexCreateControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageSIndexCreateController()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageSIndexCreateController.prompt_challenge"
+        ).start()
+
+        self.cluster_mock.info_build.return_value = {"principal": "6.1.0.0"}
+
+        self.addCleanup(patch.stopall)
+
+    async def test_prompt_challenge_fails(self):
+        line = "numeric a-index ns test bin a ctx list_value(1)".split()
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+
+        await self.controller.execute(line)
+
+        self.prompt_mock.assert_called_once_with(
+            "Adding a secondary index will cause longer restart times."
+        )
+
+    async def test_create_successful(self):
+        line = "numeric a-index ns test set testset bin a in mapkeys ctx list_value(int(1))".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "a-index",
+            "test",
+            "a",
+            "numeric",
+            "mapkeys",
+            "testset",
+            CDTContext([CTXItems.ListValue(ASValues.ASInt(1))]),
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm a-index was created successfully."
+        )
+
+    async def test_create_fails_with_asinfo_error(self):
+        line = "numeric a-index ns test bin a ctx list_value(1)".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASInfoError("foo", "ERROR::bar")
+        }
+
+        await self.assertAsyncRaisesRegex(
+            ASInfoError, "bar", self.controller.execute(line)
+        )
+
+    async def test_ctx_invalid_format(self):
+        line = "numeric a-index ns test bin a ctx foo".split()
+        self.cluster_mock.info_build.return_value = {"principal": "6.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Unable to parse ctx item foo",
+            self.controller.execute(line),
+        )
+
+    async def test_ctx_not_supported(self):
+        line = "numeric a-index ns test bin a ctx [foo]".split()
+        self.cluster_mock.info_build.return_value = {"principal": "6.0.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "One or more servers does not support 'ctx'.",
+            self.controller.execute(line),
+        )
+
+
+class ManageSIndexDeleteControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageSIndexDeleteController()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageSIndexDeleteController.prompt_challenge"
+        ).start()
+
+        self.cluster_mock.info_build.return_value = {"principal": "6.1.0.0"}
+
+        self.addCleanup(patch.stopall)
+
+    async def test_prompt_challenge_fails(self):
+        line = "a-index ns test set testset".split()
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        self.cluster_mock.info_sindex_statistics.return_value = {
+            "1.1.1.1": {"keys": 1111},
+            "2.2.2.2": {"keys": 2222},
+        }
+
+        await self.controller.execute(line)
+
+        self.prompt_mock.assert_called_once_with(
+            "The secondary index a-index has 3333 keys indexed."
+        )
+        self.cluster_mock.info_sindex_delete.assert_not_called()
+
+    async def test_delete_successful(self):
+        line = "a-index ns test set testset".split()
+        self.cluster_mock.info_sindex_delete.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_delete.assert_called_once_with(
+            "a-index",
+            "test",
+            "testset",
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully deleted sindex a-index."
+        )
+
+    async def test_create_fails_with_asinfo_error(self):
+        line = "a-index ns test set testset".split()
+        self.cluster_mock.info_sindex_delete.return_value = {
+            "1.1.1.1": ASInfoError("foo", "ERROR::bar")
+        }
+
+        await self.assertAsyncRaisesRegex(
+            ASInfoError, "bar", self.controller.execute(line)
+        )
 
 
 @asynctest.fail_on(active_handles=True)

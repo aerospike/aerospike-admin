@@ -64,7 +64,10 @@ logger = logging.getLogger("asadm")
 
 _STRUCT_PROTOCOL_HEADER = struct.Struct("! B B 3H")
 _STRUCT_UINT8 = struct.Struct("! B")
+_STRUCT_UINT16 = struct.Struct("! H")
 _STRUCT_UINT32 = struct.Struct("! I")
+_STRUCT_UINT64 = struct.Struct("! Q")
+_STRUCT_INT64 = struct.Struct("! q")
 _STRUCT_FIELD_HEADER = struct.Struct("! I B")
 _STRUCT_ADMIN_HEADER = struct.Struct("! B B B B 12x")
 

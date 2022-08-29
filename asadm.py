@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.utils.logger import logger  # THIS MUST BE THE FIRST IMPORT
+from lib.base_controller import ShellException
 import inspect
 import cmd
 import getpass
@@ -25,6 +27,7 @@ import shlex
 import sys
 import asyncio
 import readline
+
 from lib.utils.async_object import AsyncObject
 
 
@@ -36,7 +39,6 @@ else:
 
 # Setup logger before anything
 
-from lib.utils.logger import logger
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
@@ -58,7 +60,7 @@ import yappi  # noqa F401
 # codec is registered well before it is used in getaddrinfo.
 # see https://bugs.python.org/issue29288, https://github.com/aws/aws-cli/blob/1.16.277/awscli/clidriver.py#L55,
 # and https://github.com/pyinstaller/pyinstaller/issues/1113 for more info :)
-u"".encode("idna")
+"".encode("idna")
 
 # Do not remove this line.  It mitigates a race condition that occurs when using
 # pyinstaller and socket.getaddrinfo.  For some reason the idna codec is not registered
@@ -263,31 +265,43 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
     def clean_line(self, line):
         # get rid of extra whitespace
-        lexer = shlex.shlex(line)
+        lexer = shlex.shlex(line, posix=True)
         # TODO: shlex is not working with 'with' ip addresses. Need to write a
         #       new parser or correct shlex behavior.
         commands = []
 
         command = []
         build_token = ""
-        lexer.wordchars += ".*-:/_{}@"
-        for token in lexer:
-            build_token += token
-            if token == "-":
-                continue
 
-            if token == ";":
-                if command:
+        # Maybe someday we should not allow most of the characters below without
+        # quotes surrounding them.  These characters below define what can be in
+        # an unquotes string.
+        lexer.wordchars += r"`~!@#$;%^&*()_-+={}[]|:<>,./\?"
+        lexer.escapedquotes += "'"
+
+        try:
+            for token in lexer:
+                build_token += token
+
+                if token == ";":
+                    if command:
+                        commands.append(command)
+                        command = []
+                elif token.endswith(";"):
+                    command.append(build_token[:-1])
                     commands.append(command)
                     command = []
+                else:
+                    command.append(build_token)
+                build_token = ""
             else:
-                command.append(build_token)
-            build_token = ""
-        else:
-            if build_token:
-                command.append(build_token)
-            if command:
-                commands.append(command)
+                if build_token:
+                    command.append(build_token)
+                if command:
+                    commands.append(command)
+
+        except ValueError as e:
+            raise ShellException(e)
 
         return commands
 

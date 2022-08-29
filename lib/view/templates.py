@@ -15,9 +15,6 @@
 from datetime import datetime
 import itertools
 from typing import Iterable, Union
-from unicodedata import numeric
-from lib.utils import file_size
-from lib.utils.common import SummaryStorageUsageDict
 from lib.view.sheet.decleration import ComplexAggregator, EntryData
 from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoError
 from lib.view.sheet import (
@@ -740,6 +737,20 @@ def sindex_state_converter(edata):
     return state
 
 
+def _ignore_zero(num: int):
+    if num == 0:
+        return None
+
+    return num
+
+
+def _ignore_null(s: str):
+    if s == "null":
+        return None
+
+    return s
+
+
 info_sindex_sheet = Sheet(
     (
         Field("Index Name", Projectors.String("sindex_stats", "indexname")),
@@ -747,7 +758,7 @@ info_sindex_sheet = Sheet(
         Field("Set", Projectors.String("sindex_stats", "set")),
         node_field,
         hidden_node_id_field,
-        Field("Bins", Projectors.String("sindex_stats", "bins", "bin")),
+        Field("Bin", Projectors.String("sindex_stats", "bins", "bin")),
         Field("Num Bins", Projectors.Number("sindex_stats", "num_bins")),
         Field("Bin Type", Projectors.String("sindex_stats", "type")),
         Field(
@@ -757,12 +768,44 @@ info_sindex_sheet = Sheet(
         ),  # new
         Field("Sync State", Projectors.String("sindex_stats", "sync_state")),  # old
         # removed 6.0
-        Field("Keys", Projectors.Number("sindex_stats", "keys")),
         Field(
-            "Entries",
-            Projectors.Number("sindex_stats", "entries", "objects"),
+            "Keys",
+            Projectors.Any(
+                FieldType.number,
+                Projectors.Div(
+                    Projectors.Number("sindex_stats", "entries", "objects"),
+                    Projectors.Func(
+                        FieldType.number,
+                        _ignore_zero,
+                        Projectors.Number("sindex_stats", "keys", "entries_per_bval"),
+                    ),
+                ),
+                Projectors.Number("sindex_stats", "keys"),
+            ),
             converter=Converters.scientific_units,
-            aggregator=Aggregators.sum(),
+        ),
+        # added 6.1
+        Subgroup(
+            "Entries",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number("sindex_stats", "entries", "objects"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Avg Per Rec",
+                    Projectors.Number("sindex_stats", "keys", "entries_per_rec"),
+                    converter=Converters.scientific_units,
+                ),
+                Field(
+                    "Avg Per Bin Val",
+                    Projectors.Number("sindex_stats", "keys", "entries_per_bval"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                ),
+            ),
         ),
         Field(
             "Memory Used",
@@ -777,6 +820,14 @@ info_sindex_sheet = Sheet(
             ),
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
+        ),
+        Field(
+            "Context",
+            Projectors.Func(
+                FieldType.string,
+                _ignore_null,
+                Projectors.String("sindex_stats", "context"),
+            ),
         ),
         Subgroup(
             "Queries",
@@ -1581,6 +1632,12 @@ show_sindex = Sheet(
         Field("Bin Type", Projectors.String("data", "type")),
         Field("Index Type", Projectors.String("data", "indextype")),
         Field("State", Projectors.String("data", "state")),
+        Field(
+            "Context",
+            Projectors.Func(
+                "string", _ignore_null, Projectors.String("data", "context")
+            ),
+        ),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),

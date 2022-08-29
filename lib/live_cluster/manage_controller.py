@@ -1,11 +1,15 @@
 import asyncio
+import base64
+import binascii
 import os
 import logging
 from datetime import datetime
+import re
 from dateutil import parser as date_parser
 from typing import Optional
 from getpass import getpass
 from functools import reduce
+from lib.live_cluster.client.ctx import ASValues, CTXItem, CTXItems
 
 from lib.view import terminal
 from lib.utils import constants, util, version
@@ -19,6 +23,7 @@ from .client import (
     EnumConfigType,
     StringConfigType,
     IntConfigType,
+    CDTContext,
 )
 from .live_cluster_command_controller import LiveClusterCommandController
 from lib.get_controller import GetJobsController
@@ -920,8 +925,8 @@ class ManageSIndexController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "Usage: create <bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>]",
-    "  bin-type    - The bin type of the provided <bin-name>. Should be one of the following values:",
+    "Usage: create <bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>] [ctx <ctx-item> [. . .]]",
+    "  bin-type      - The bin type of the provided <bin-name>. Should be one of the following values:",
     "                  numeric, string, or geo2dsphere",
     "  index-name    - Name of the secondary index to be created. Should be 20 characters",
     '                  or less and not contain ":" or ";".',
@@ -933,16 +938,171 @@ class ManageSIndexController(LiveClusterCommandController):
     "                  mapkeys: Specifies to use the keys of a map as keys.",
     "                  mapvalues: Specifies to use the values of a map as keys.",
     "                  [default: Specifies to use the contents of a bin as keys.]",
+    "  ctx           - A list of context items describing how to index into a CDT.",
+    "                  Possible values include: list_index(<int>) list_rank(<int>),",
+    "                  list_value(<value>), map_index(<int>), map_rank(<int>),",
+    "                  map_key(<value>), and map_value(<value>). Where <value> is",
+    "                  <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64",
+    "                  encoded byte array (no quotes).",
 )
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
+
         self.required_modifiers = set(["line", "ns", "bin"])
-        self.modifiers = set(["set", "in"])
+        self.modifiers = set(["set", "in", "ctx"])
 
     def _do_default(self, line):
         self.execute_help(line)
 
-    async def _do_create(self, line, bin_type):
+    @staticmethod
+    def _split_ctx_list(ctx_str: str) -> list[str]:
+        ctx_str = ctx_str.strip()
+        split_pattern = r"\)(\s*)(?:list|map)"
+        ctx_list = []
+        start = 0
+
+        for m in re.finditer(split_pattern, ctx_str):
+            end = m.start(1)
+            ctx_list.append(ctx_str[start:end])
+            start = m.end(1)
+
+        ctx_list.append(ctx_str[start : len(ctx_str)])
+
+        return ctx_list
+
+    @staticmethod
+    def _list_to_cdt_ctx(ctx_list: list[str]) -> CDTContext:
+        cdt_ctx: CDTContext = CDTContext()
+        int_pattern = r"-?\d+"
+        str_pattern = r".*"
+        particle_pattern_with_names = (
+            r"(?:"
+            + r"(?:float\("
+            + r"(?P<double>"
+            + str_pattern
+            + r")"
+            + r"\)"
+            + r")"
+            + r"|"
+            + r"(?:int\("
+            + r"(?P<int>"
+            + str_pattern
+            + r")"
+            + r"\)"
+            + r")"
+            + r"|"
+            + r"(?:bool\("
+            + r"(?P<bool>"
+            + str_pattern
+            + r")"
+            + r"\)"
+            + r")"
+            + r"|"
+            + r"(?:bytes\("
+            + r"(?P<bytes_base64>"
+            + str_pattern
+            + r")"
+            + r"\)"
+            + r")"
+            + r")"
+        )
+        particle_pattern = re.compile(particle_pattern_with_names)
+
+        # ctx_list = ManageSIndexCreateController._split_ctx_list(ctx_str)
+
+        str_to_ctx = {
+            re.compile(r"^list_index\((" + int_pattern + r")\)"): CTXItems.ListIndex,
+            re.compile(r"^list_rank\((" + int_pattern + r")\)"): CTXItems.ListRank,
+            re.compile(r"^list_value\((" + str_pattern + r")\)"): CTXItems.ListValue,
+            re.compile(r"^map_index\((" + int_pattern + r")\)"): CTXItems.MapIndex,
+            re.compile(r"^map_rank\((" + int_pattern + r")\)"): CTXItems.MapRank,
+            re.compile(r"^map_key\((" + str_pattern + r")\)"): CTXItems.MapKey,
+            re.compile(r"^map_value\((" + str_pattern + r")\)"): CTXItems.MapValue,
+        }
+
+        for ctx_item_str in ctx_list:
+            ctx_item_str = ctx_item_str.strip()
+            found = False
+
+            for regex_key, ctx_cls in str_to_ctx.items():
+                ctx_match = regex_key.search(ctx_item_str)
+
+                if ctx_match is not None:
+
+                    if (
+                        ctx_cls == CTXItems.ListValue
+                        or ctx_cls == CTXItems.MapKey
+                        or ctx_cls == CTXItems.MapValue
+                    ):
+                        groups = ctx_match.groups()
+
+                        if len(groups) != 1:
+                            raise ShellException(
+                                "Malformed value: {}".format(ctx_item_str)
+                            )
+
+                        str_val = groups[0]
+                        val_match = particle_pattern.search(str_val)
+
+                        if val_match is not None:
+                            groups = val_match.groupdict()
+                            double_, int_, bool_, base_64 = (
+                                groups["double"],
+                                groups["int"],
+                                # groups["str"],
+                                groups["bool"],
+                                groups["bytes_base64"],
+                            )
+
+                            if double_ is not None:
+                                double_ = float(double_)
+                                as_val = ASValues.ASDouble(double_)
+                            elif int_ is not None:
+                                int_ = int(int_)
+                                as_val = ASValues.ASInt(int_)
+                            elif bool_ is not None:
+                                if bool_.lower() == "true":
+                                    bool_ = True
+                                elif bool_.lower() == "false":
+                                    bool_ = False
+                                else:
+                                    raise ShellException(
+                                        "Unable to parse bool {}".format(bool_)
+                                    )
+                                as_val = ASValues.ASBool(bool_)
+                            elif base_64 is not None:
+                                try:
+                                    base_64 = binascii.a2b_base64(
+                                        bytes(base_64, "utf-8")
+                                    )
+                                    as_val = ASValues.ASBytes(base_64)
+                                except ValueError as e:
+                                    raise ShellException(
+                                        "Unable to decode base64 encoded bytes : {}".format(
+                                            e
+                                        )
+                                    )
+                            else:
+                                raise Exception(
+                                    "Not able to decode to type other than string?"
+                                )
+                        else:
+                            as_val = ASValues.ASString(str_val)
+                    else:
+                        groups = ctx_match.groups()
+                        as_val = int(groups[0])
+
+                    found = True
+                    cdt_ctx.append(ctx_cls(as_val))
+
+                    break
+
+            if not found:
+                raise ShellException("Unable to parse ctx item {}".format(ctx_item_str))
+
+        return cdt_ctx
+
+    async def _do_create(self, line, bin_type: str):
         index_name = line.pop(0)
         namespace = util.get_arg_and_delete_from_mods(
             line=line,
@@ -977,6 +1137,25 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             mods=self.mods,
         )
 
+        ctx_list = self.mods["ctx"]
+        cdt_ctx = None
+
+        if ctx_list:
+            builds = await self.cluster.info_build(nodes=self.nodes)
+
+            if not all(
+                [
+                    version.LooseVersion(build)
+                    >= version.LooseVersion(
+                        constants.SERVER_SINDEX_ON_CDT_FIRST_VERSION
+                    )
+                    for build in builds.values()
+                ]
+            ):
+                raise ShellException("One or more servers does not support 'ctx'.")
+
+            cdt_ctx = self._list_to_cdt_ctx(ctx_list)
+
         index_type = index_type.lower() if index_type else None
         bin_type = bin_type.lower()
 
@@ -992,17 +1171,19 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             bin_type,
             index_type,
             set_,
+            cdt_ctx,
             nodes="principal",
         )
         resp = list(resp.values())[0]
 
-        if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
-            return
-        elif isinstance(resp, Exception):
+        if isinstance(resp, Exception):
             raise resp
 
-        self.view.print_result("Successfully created sindex {}.".format(index_name))
+        self.view.print_result(
+            "Use 'show sindex' to confirm {} was created successfully.".format(
+                index_name
+            )
+        )
 
     # Hack for auto-complete
     async def do_numeric(self, line):
@@ -1084,10 +1265,7 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
         )
         resp = list(resp.values())[0]
 
-        if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
-            return
-        elif isinstance(resp, Exception):
+        if isinstance(resp, Exception):
             raise resp
 
         self.view.print_result("Successfully deleted sindex {}.".format(index_name))

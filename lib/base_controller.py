@@ -317,7 +317,7 @@ class BaseController(object):
                 rv.append(result)
         return rv
 
-    async def execute(self, line) -> Union[None, str, list[None]]:
+    async def execute(self, line: list[str]) -> Union[None, str, list[None]]:
         # Init all command controller objects
         self._init()
 
