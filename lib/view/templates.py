@@ -732,7 +732,7 @@ def sindex_state_converter(edata):
         return "Write-Only"
 
     if state == "RW":
-        return "Read-Only"
+        return "Read-Write"
 
     return state
 
