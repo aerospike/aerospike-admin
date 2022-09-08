@@ -2375,6 +2375,9 @@ def get_system_commands(port=3000):
         ["lsblk"],
         ["free -m"],
         ["uname -a"],
+        [
+            'sudo netstat -i | tr -s [:blank:] | cut -d" " -f1 | tail -n +3 | grep -v -E "lo|docker" | xargs --max-lines=1 -i{} sh -c "echo ethtool -S {}; ethtool -S {}"'
+        ],
         # Only in Pretty Print
         ["dmidecode -s system-product-name"],
         ["systemd-detect-virt"],

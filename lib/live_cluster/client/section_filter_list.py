@@ -812,13 +812,13 @@ FILTER_LIST = {
         "regex_new": "roster",
         "regex_old": r"^roster\n"
         # 'parser_func'
-    }
-    # {
-    #    'enable': True,
-    #    'raw_section_name': 'set',
-    #    'regex_new': "\['set'\]"
-    #    # 'parser_func'
-    # }
+    },
+    "ID_114": {
+        "enable": True,
+        "raw_section_name": "ethtool",
+        "final_section_name": "ethtool",
+        # 'parser_func'
+    },
 }
 
 
