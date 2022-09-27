@@ -55,10 +55,12 @@ class SummaryController(CollectinfoCommandController):
         except Exception:
             pass
 
-        metadata = {}
-        metadata["server_version"] = {}
-        metadata["server_build"] = {}
-        metadata["cluster_name"] = {}
+        metadata = {
+            "os_version": {},
+            "server_version": {},
+            "server_build": {},
+            "cluster_name": {},
+        }
 
         server_version = server_version[last_timestamp]
         server_edition = server_edition[last_timestamp]
@@ -78,6 +80,8 @@ class SummaryController(CollectinfoCommandController):
                     metadata["server_version"][node] = "E-%s" % (str(version))
                 elif "community" in server_edition[node].lower():
                     metadata["server_version"][node] = "C-%s" % (str(version))
+                elif "federal" in server_edition[node].lower():
+                    metadata["server_version"][node] = "F-%s" % (str(version))
                 else:
                     metadata["server_version"][node] = version
 
@@ -97,6 +101,7 @@ class SummaryController(CollectinfoCommandController):
         try:
             if kernel_version:
                 for node, version in os_version.items():
+                    metadata["os_version"][node] = {}
                     if not version or isinstance(version, Exception):
                         continue
 
@@ -110,14 +115,14 @@ class SummaryController(CollectinfoCommandController):
                     try:
                         ov = version["description"]
                         kv = kernel_version[node]["kernel_release"]
-                        version["description"] = str(ov) + " (%s)" % str(kv)
+                        metadata["os_version"][node]["description"] = str(
+                            ov
+                        ) + " (%s)" % str(kv)
                     except Exception:
                         pass
 
         except Exception:
             pass
-
-        metadata["os_version"] = os_version
 
         try:
             license_data_usage = self.log_handler.get_unique_data_usage()
