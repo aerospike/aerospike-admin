@@ -76,7 +76,7 @@ class Cluster(AsyncObject):
 
         # self.node_lookup is a dict of (fqdn, port) -> Node
         # and (ip, port) -> Node, and node.node_id -> Node
-        self.node_lookup = LookupDict(LookupDict.PREFIX_MODE)
+        self.node_lookup: LookupDict[Node] = LookupDict(LookupDict.PREFIX_MODE)
 
         self._seed_nodes: set[Addr_Port_TLSName] = set(seed_nodes)
         self._live_nodes: set[Addr_Port_TLSName] = set()
@@ -415,25 +415,40 @@ class Cluster(AsyncObject):
         if node.endswith("*"):
             return self.node_lookup[node[0:-1]]
 
+        # Me must now look for exact matches.
+
         # Can't use "if not in self.node_lookup" here because we need to check for
-        # exact matches.
+        # exact matches. Unless using node id than this condition requires they provide ip:port.
         if node in self.node_lookup.keys():
             return self.node_lookup[node]
 
-        node_matchs = self.node_lookup[node]
+        node_matches = self.node_lookup[node]
+        match = None
 
-        if len(node_matchs) == 1:
-            match_ip = node_matchs[0].ip
+        # All nodes must be checked in case there are multiple with the same ip or multiple
+        # with same ip prefix. i.e. (1.1.1.1:3000, 1.1.1.1:3001) or (1.1.1.11:3000, 1.1.1.1:3000)
+        for n in node_matches:
+            match_ip = n.ip.split(":")[0]
+            if match_ip == node:
+                if match is None:
+                    match = n
+                else:
+                    # more than one match
+                    return []
 
-            if match_ip.split(":")[0] == node:
-                return [node_matchs[0]]
+            match_fqdn = n.fqdn.split(":")[0]
+            if match_fqdn == node:
+                if match is None:
+                    match = n
+                else:
+                    # more than one match
+                    return []
 
-            match_id = node_matchs[0].fqdn
-
-            if match_id.split(":")[0] == node:
-                return [node_matchs[0]]
-
-        return []
+        if match is None:
+            return []
+        else:
+            # more than one match
+            return [match]
 
     def get_nodes(
         self,

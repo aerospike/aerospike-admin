@@ -134,8 +134,8 @@ class Node(AsyncObject):
         """
         self.logger = logging.getLogger("asadm")
         self.remote_system_command_prompt = "[#$] "
-        self.ip = address
-        self.port = port
+        self.ip: str = address
+        self.port: int = port
         self._timeout = timeout
         self.user = user
         self.password = password
