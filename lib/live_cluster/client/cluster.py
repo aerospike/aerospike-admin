@@ -445,9 +445,10 @@ class Cluster(AsyncObject):
                     return []
 
         if match is None:
+            # no match
             return []
         else:
-            # more than one match
+            # exactly one match
             return [match]
 
     def get_nodes(
@@ -520,7 +521,7 @@ class Cluster(AsyncObject):
             pass
         return None
 
-    async def _create_node(self, addr_port_tls, force=False):
+    async def _create_node(self, addr_port_tls: Addr_Port_TLSName, force=False):
         """
         Instantiate and return a new node
 
@@ -535,7 +536,7 @@ class Cluster(AsyncObject):
             try:
                 # tuple of length 2 for server version < 3.10.0 ( without tls
                 # name)
-                addr, port = addr_port_tls
+                addr, port = addr_port_tls  # type: ignore
                 tls_name = None
             except Exception:
                 print(
