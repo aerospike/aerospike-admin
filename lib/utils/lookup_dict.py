@@ -12,25 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any, Generic, TypeVar
 
-class LookupDict:
+
+ValueType = TypeVar("ValueType")
+
+
+class LookupDict(Generic[ValueType]):
 
     LOOKUP_MODE = 0
     PREFIX_MODE = 1
     SUFFIX_MODE = 2
 
     def __init__(self, mode=None):
-        self._kv = {}
+        self._kv: dict[Any, ValueType] = {}
 
         if mode is None:
             mode = self.LOOKUP_MODE
 
         self.mode = mode
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value: ValueType):
         return self.add(key, value)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> list[ValueType]:
         return self.get(key)
 
     def __delitem__(self, key):
@@ -141,7 +146,7 @@ class LookupDict:
     def keys(self):
         return list(self._kv.keys())
 
-    def get(self, k):
+    def get(self, k) -> list[ValueType]:
         keys = self.get_key(k)
         return [self._kv[key] for key in keys]
 
