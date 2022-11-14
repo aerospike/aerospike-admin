@@ -34,7 +34,7 @@ class BaseLogger(logging.Logger, object):
         if include_traceback:
             del kwargs["include_traceback"]
 
-        super().debug(msg, *args, **kwargs)
+        super().debug(msg, *args, stacklevel=2, **kwargs)
 
         if (
             self.level <= logging.DEBUG

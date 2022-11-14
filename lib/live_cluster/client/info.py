@@ -1265,13 +1265,12 @@ async def _info_request(
 
         if data_size > 0:
             rsp_data = await _receive_data(reader, data_size)
+        else:
+            return None
 
     except Exception as ex:
-        raise IOError("Error: %s" % str(ex))
-
-    # parse out responses
-    if data_size == 0:
-        return None
+        logger.debug("__info_request error", exc_info=1)
+        raise IOError("Error: %s" % ex)
 
     return rsp_data
 
