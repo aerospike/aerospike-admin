@@ -26,9 +26,8 @@ jobs:
         pipenv run bash -c "coverage run -m pytest test/unit"
         pipenv run bash -c "coverage xml"
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v3
       with:
         flags: unittests
-        verbose: false
         files: coverage.xml
         fail_ci_if_error: true
