@@ -3,6 +3,7 @@ name: aerospike-admin
 container:
   - base:
       - docker.qe.aerospike.com/build/aerospike-admin:pyinstaller
+      - docker.qe.aerospike.com/build/aerospike-admin:arm-pyinstaller
 
 build:
   - name: build

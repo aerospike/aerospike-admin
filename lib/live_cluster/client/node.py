@@ -20,7 +20,7 @@ import socket
 import threading
 import time
 import base64
-from typing import Optional
+from typing import Optional, Union
 from lib.live_cluster.client.ctx import CDTContext
 from lib.live_cluster.client.msgpack import ASPacker
 
@@ -134,13 +134,13 @@ class Node(AsyncObject):
         """
         self.logger = logging.getLogger("asadm")
         self.remote_system_command_prompt = "[#$] "
-        self.ip = address
-        self.port = port
+        self.ip: str = address
+        self.port: int = port
         self._timeout = timeout
         self.user = user
         self.password = password
         self.auth_mode = auth_mode
-        self.tls_name = tls_name
+        self.tls_name: Union[str, None] = tls_name
         self.ssl_context = ssl_context
         if ssl_context:
             self.enable_tls = True
