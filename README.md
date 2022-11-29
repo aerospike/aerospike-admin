@@ -26,21 +26,21 @@ bundled with asadm version 2.6 and later.
 1. Install python 3.9
 2. Install [pipenv](https://pypi.org/project/pipenv/)
 3. Build Asadm
-    There are two ways asadm can be bundled: one-file and one-dir. Both, are related to
+    - There are two ways asadm can be bundled: one-file and one-dir. Both, are related to
     pyinstaller's two methods of bundling. The one-file build is great if you want a single 
     executable artifact. The downside of one-file is that it must decompress into a /tmp
     directory in order to execute.  This causes a number of problems.  On macOS, the startup
     time is drastically increased because of the codesigning mechanism. The /tmp directory
     must be mounted with the the exec option. If the above scenarios describe your environment
     then use the one-dir build.
-    * one-dir (default)
-        ```
-        make one-dir
-        ```
-    * one-file
-        ```
-        make one-file
-        ```
+        * one-dir (default)
+            ```
+            make one-dir
+            ```
+        * one-file
+            ```
+            make one-file
+            ```
 4. Install asadm
     ```
     sudo make install
