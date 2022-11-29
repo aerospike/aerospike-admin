@@ -304,6 +304,7 @@ os.environ["PATH"] = (
 # asadm ( >= 0.1.22)
 cmd = "asadm"
 asinfo_cmd = ""
+asadm_args = ""
 
 # default password in asadm is DEFAULTPASSWORD, so no need to pass default
 # tls-keyfile-password is by default None in asadm, so need to pass its default
@@ -320,20 +321,20 @@ for arg, val in vars(args).items():
             and (arg not in pwd_args or val != DEFAULTPASSWORD)
         ):
             # If not a default values then only pass to asadm.
-            cmd += " --%s " % (str(arg))
+            asadm_args += " --%s " % (str(arg))
             if val is not True:
                 # If not enable/disable argument then pass value also.
                 # Some values may have space in it, to make it correct we need quotes.
                 cmd += ' "%s" ' % (val)
 
 # asinfo works with only single node (seed node)
-cmd += " --asinfo-mode"
+asadm_args += " --asinfo-mode"
 
 # final asadm command
 if asinfo_cmd:
-    cmd += ' -e "%s"' % (asinfo_cmd)
+    asadm_args += ' -e "%s"' % (asinfo_cmd)
 
-p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+p = Popen(executable=cmd, args=asadm_args, stdout=PIPE, stderr=PIPE)
 out, err = p.communicate()
 out = bytes_to_str(out)
 err = bytes_to_str(err)
