@@ -30,6 +30,7 @@
 #
 
 import os
+import shlex
 import sys
 from subprocess import Popen, PIPE
 import argparse
@@ -297,7 +298,6 @@ for sys_path in sys.path:
 # asadm ( >= 0.1.22)
 cmd = "asadm"
 asinfo_cmd = ""
-asadm_args = ""
 
 # default password in asadm is DEFAULTPASSWORD, so no need to pass default
 # tls-keyfile-password is by default None in asadm, so need to pass its default
@@ -314,20 +314,20 @@ for arg, val in vars(args).items():
             and (arg not in pwd_args or val != DEFAULTPASSWORD)
         ):
             # If not a default values then only pass to asadm.
-            asadm_args += " --%s " % (str(arg))
+            cmd += " --%s " % (str(arg))
             if val is not True:
                 # If not enable/disable argument then pass value also.
                 # Some values may have space in it, to make it correct we need quotes.
-                cmd += ' "%s" ' % (val)
+                cmd += " %s " % (val)
 
 # asinfo works with only single node (seed node)
-asadm_args += " --asinfo-mode"
+cmd += " --asinfo-mode"
 
 # final asadm command
 if asinfo_cmd:
-    asadm_args += ' -e "%s"' % (asinfo_cmd)
+    cmd += " -e %s" % (asinfo_cmd)
 
-p = Popen(executable=cmd, args=asadm_args, stdout=PIPE, stderr=PIPE)
+p = Popen(cmd.split(), stdout=PIPE, stderr=PIPE)
 out, err = p.communicate()
 out = bytes_to_str(out)
 err = bytes_to_str(err)
