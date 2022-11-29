@@ -282,24 +282,17 @@ if args.version:
 if args.value == "stats":
     args.value = "statistics"
 
-# Add self path as first in $PATH to resolve asadm
-# Add directory of self path also:
-# for PEX it has whole path till environment "/opt/aerospike/bin/asinfo"
-# add directory of this path
-# sys.path[0] can contain "/opt/aerospike/bin/asinfo/.bootstrap" when using pex <= 1.4.5
-# Cannot upgrade pex as we are stuck with python 2.6 on centos6
-# pex (>1.2.10) dropped support for python 2.6.
+old_path = os.getenv("PATH")
 
-if sys.path[0].endswith(".bootstrap"):
-    sys.path[0] = os.path.dirname(os.path.realpath(sys.path[0]))
+if old_path:
+    old_path = ":" + old_path
+else:
+    old_path = ""
 
-os.environ["PATH"] = (
-    sys.path[0]
-    + ":"
-    + os.path.dirname(os.path.realpath(sys.path[0]))
-    + ":"
-    + os.getenv("PATH")
-)
+for sys_path in sys.path:
+    # Force asinfo to use the asadm shipped with it rather than the installed asadm.
+    if sys_path.endswith("asadm"):
+        os.environ["PATH"] = sys_path + old_path
 
 # asadm ( >= 0.1.22)
 cmd = "asadm"
