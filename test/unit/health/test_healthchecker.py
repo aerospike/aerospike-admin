@@ -13,10 +13,7 @@
 # limitations under the License.
 
 import warnings
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest2 as unittest
+import unittest
 
 from lib.health.health_checker import HealthChecker
 

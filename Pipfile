@@ -24,7 +24,6 @@ pyinstaller = "==4.10"
 black = "*"
 flake8 = "*"
 pytest = "*"
-unittest2 = "*"
 mock = "*"
 coverage = "*"
 macholib = {version = "*", sys_platform = "== 'darwin'"}
