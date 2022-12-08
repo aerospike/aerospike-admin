@@ -48,6 +48,7 @@ define make_build
 	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
 	)
 	
+	pipenv check
 
 endef
 

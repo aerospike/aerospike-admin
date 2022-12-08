@@ -31,7 +31,7 @@ macholib = {version = "*", sys_platform = "== 'darwin'"}
 asynctest = "*"
 
 [requires]
-python_version = "3.9"
+python_full_version = "3.10.9"
 
 [pipenv]
 allow_prereleases = true
