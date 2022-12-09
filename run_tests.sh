@@ -21,11 +21,11 @@ asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-read=true' -Ua
 
 echo "Running unit test cases :"
 # Forced to run with python3 because some tests were not running correctly 
-python3 -m unittest2 discover -s test/unit -t .
+python3 -m unittest discover -s test/unit -t .
 
 echo
 echo "Running e2e test cases :"
-python3 -m unittest2 discover -s test/e2e -t .
+python3 -m unittest discover -s test/e2e -t .
 
 echo
 echo "Running asinfo test cases :"
