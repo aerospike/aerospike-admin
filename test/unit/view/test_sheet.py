@@ -14,10 +14,7 @@
 
 import json
 import warnings
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest2 as unittest
+import unittest
 
 from lib.view import sheet
 from lib.view.sheet import (

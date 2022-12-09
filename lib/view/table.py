@@ -87,7 +87,7 @@ class Extractors:
 class TitleFormats:
     @staticmethod
     def var_to_title(name):
-        rename = re.split("[\-_ ]", name)
+        rename = re.split(r"[\-_ ]", name)
         rename = " ".join([w.title() for w in rename]).strip()
         return rename.replace(" Pct", "%")
 
