@@ -4,9 +4,9 @@ on:
   repository_dispatch:
     types: mac-build
   push:
-    branches: [actionsHub, master, test-ready]
+    branches: [actionsHub, master, test-ready, "bugfix-*"]
   pull_request:
-    branches: [actionsHub]
+    branches: [test-ready, master]
   workflow_call:
     inputs:
       submodule:
@@ -56,7 +56,7 @@ jobs:
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           git rev-parse HEAD
-          echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=$(grep "python__full_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
           echo ${{ steps.system-info.outputs.name }}
           echo ${{ steps.system-info.outputs.kernel-release }}
           echo ${{ steps.system-info.outputs.platform }}
