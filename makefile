@@ -70,7 +70,6 @@ one-dir: init
 
 .PHONY: init
 init:
-	pipenv clean
 	pipenv install --dev
 	pipenv check
 	pipenv graph
@@ -104,3 +103,4 @@ clean:
 	rm -rf $(BUILD_ROOT)tmp/*
 	rm -rf $(BUILD_ROOT)bin/*
 	rm -f `find . -type f -name '*.pyc' | xargs`
+	pipenv clean
