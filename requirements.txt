@@ -12,7 +12,7 @@ frozenlist==1.3.0; python_version >= '3.7'
 idna==3.3; python_version >= '3.5'
 jsonschema==2.5.1
 msgpack==1.0.4
-multidict==6.0.2; python_version >= '3.7'
+multidict==6.0.3; python_version >= '3.7'
 pexpect==4.4.0
 ply==3.11
 ptyprocess==0.7.0
