@@ -47,8 +47,6 @@ define make_build
 	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,
 	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
 	)
-	
-	pipenv check
 
 endef
 
@@ -74,6 +72,7 @@ one-dir: init
 init:
 	pipenv clean
 	pipenv install --dev
+	pipenv check
 	pipenv graph
 
 .PHONY: install
