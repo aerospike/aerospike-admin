@@ -20,7 +20,7 @@ import argparse
 import toml
 import copy
 from jsonschema import validate
-from typing import Mapping
+from collections.abc import Mapping
 
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
