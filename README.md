@@ -19,11 +19,11 @@ There are no runtime dependencies.  This is because the python interpreter is no
 bundled with asadm version 2.6 and later.
 
 ### Build Dependencies
-- python 3.9
+- python 3.10
 - pipenv
 
 ### Build and Install Asadm
-1. Install python 3.9
+1. Install python 3.10
 2. Install [pipenv](https://pypi.org/project/pipenv/)
 3. Build Asadm
     There are two ways asadm can be bundled: one-file and one-dir. Both, are related to
@@ -83,7 +83,7 @@ pipenv
 
 ## Profiling
 ### Dependencies
-- yappi: 0.92
+- yappi
 
 ### Run Profiler
 asadm --profile
