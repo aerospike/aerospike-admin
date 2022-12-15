@@ -4,7 +4,7 @@ on:
   repository_dispatch:
     types: mac-build
   push:
-    branches: [actionsHub, master, test-ready, "bugfix-*", "*-bugfix"]
+    branches: [actionsHub, master, test-ready, "bugfix-*"]
   pull_request:
     branches: [test-ready, master]
   workflow_call:
