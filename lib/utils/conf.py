@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import collections
 import json
 import logging
 import os
@@ -21,6 +20,7 @@ import argparse
 import toml
 import copy
 from jsonschema import validate
+from collections.abc import Mapping
 
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
@@ -238,7 +238,7 @@ def _merge(dct, merge_dct, ignore_false=False):
         if (
             k in dct
             and isinstance(dct[k], dict)
-            and isinstance(merge_dct[k], collections.Mapping)
+            and isinstance(merge_dct[k], Mapping)
         ):
             _merge(dct[k], merge_dct[k], ignore_false=ignore_false)
         else:
