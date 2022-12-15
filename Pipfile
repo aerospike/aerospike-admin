@@ -4,7 +4,6 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-bcrypt = "==3.1.4"
 cryptography = "==3.4.7"
 distro = "==1.5.0"
 jsonschema = "==2.5.1"
@@ -18,7 +17,8 @@ setuptools = "*"
 aiohttp = "==3.8.1"
 python-dateutil = "2.8.2"
 msgpack = "1.0.4"
-
+bcrypt = "4.0.1"
+ 
 [dev-packages]
 pyinstaller = "==4.10"
 black = "*"
