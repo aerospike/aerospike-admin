@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "b617d61831c51f936a04d97f0c0b736394b2ac6bcf24482da40f1fb7e56a9dd5"
+            "sha256": "f355933fffcd86bf77304a46df5b687b937fbb3dcaf23906f27b13c155b0d6db"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -547,11 +547,11 @@
         },
         "pyopenssl": {
             "hashes": [
-                "sha256:26ff56a6b5ecaf3a2a59f132681e2a80afcc76b4f902f612f518f92c2a1bf854",
-                "sha256:6488f1423b00f73b7ad5167885312bb0ce410d3312eb212393795b53c8caa580"
+                "sha256:7a83b7b272dd595222d672f5ce29aa030f1fb837630ef229f62e72e395ce8968",
+                "sha256:b28437c9773bb6c6958628cf9c3bebe585de661dba6f63df17111966363dd15e"
             ],
             "index": "pypi",
-            "version": "==18.0.0"
+            "version": "==22.1.0"
         },
         "python-dateutil": {
             "hashes": [
