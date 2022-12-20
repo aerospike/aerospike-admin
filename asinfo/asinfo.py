@@ -296,7 +296,7 @@ for sys_path in sys.path:
         os.environ["PATH"] = sys_path + old_path
 
 # asadm ( >= 0.1.22)
-cmd = "asadm"
+cmd = ["asadm", "--asinfo-mode"]
 asinfo_cmd = ""
 
 # default password in asadm is DEFAULTPASSWORD, so no need to pass default
@@ -314,20 +314,19 @@ for arg, val in vars(args).items():
             and (arg not in pwd_args or val != DEFAULTPASSWORD)
         ):
             # If not a default values then only pass to asadm.
-            cmd += " --%s " % (str(arg))
+            cmd.append("--%s" % (str(arg)))
             if val is not True:
                 # If not enable/disable argument then pass value also.
                 # Some values may have space in it, to make it correct we need quotes.
-                cmd += " %s " % (val)
+                cmd.append("%s" % (val))
 
 # asinfo works with only single node (seed node)
-cmd += " --asinfo-mode"
 
 # final asadm command
 if asinfo_cmd:
-    cmd += " -e %s" % (asinfo_cmd)
+    cmd.extend(["-e", asinfo_cmd])
 
-p = Popen(cmd.split(), stdout=PIPE, stderr=PIPE)
+p = Popen(cmd, stdout=PIPE, stderr=PIPE, shell=False)
 out, err = p.communicate()
 out = bytes_to_str(out)
 err = bytes_to_str(err)
