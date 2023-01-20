@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+from typing import Any
 
 from lib.utils import common, util
 from lib.utils.lookup_dict import LookupDict
@@ -54,6 +55,7 @@ class _CollectinfoNode(object):
         self.asd_version = util.convert_edition_to_shortform(asd_version)
 
 
+# TODO: Make _CollectinfoSnapshot type inherit from a "re-playable" subtype which is also a subtype of Cluster
 class _CollectinfoSnapshot:
     def __init__(self, cluster_name, timestamp, cinfo_data, cinfo_file):
         self.cluster_name = cluster_name
@@ -163,14 +165,13 @@ class _CollectinfoSnapshot:
 
         return copy.deepcopy(self.node_ids)
 
-    def get_data(self, type="", stanza=""):
+    def get_data(self, type="", stanza="") -> dict[str, Any]:
         data = {}
 
         if not type or not self.cinfo_data:
             return data
 
         try:
-            # return copy.deepcopy(self.cinfo_data[type][stanza])
             for node, node_data in self.cinfo_data.items():
                 try:
                     if not node or not node_data:
@@ -224,8 +225,8 @@ class _CollectinfoSnapshot:
                                 elif stanza == "sindex":
                                     for _name in d[ns_name][stanza]:
                                         try:
-                                            set = d[ns_name][stanza][_name]["set"]
-                                            _key = "%s %s %s" % (ns_name, set, _name)
+                                            set_ = d[ns_name][stanza][_name]["set"]
+                                            _key = "%s %s %s" % (ns_name, set_, _name)
                                         except Exception:
                                             continue
 
@@ -235,6 +236,40 @@ class _CollectinfoSnapshot:
 
                             except Exception:
                                 pass
+                    elif type == "config" and stanza in {"xdr", "dc", "xdr_ns"}:
+                        xdr_stats = d["xdr"]
+
+                        """
+                        Handles a collectinfo model that was first introduced when XDR5
+                        was released. It looked like {"xdr": {"xdr_configs": {}, {"dc_configs": {}}, "ns_configs":{}}}
+                        The model did not work well with the view, healthcheck, or follow the precedent of the previous
+                        design. That is why this is here.
+                        """
+                        if "xdr_configs" in xdr_stats and stanza == "xdr":
+                            data[node] = copy.deepcopy(xdr_stats["xdr_configs"])
+                        elif "dc_configs" in xdr_stats and stanza == "dc":
+                            data[node] = copy.deepcopy(xdr_stats["dc_configs"])
+                        elif "ns_configs" in xdr_stats and stanza == "xdr_ns":
+                            data[node] = copy.deepcopy(xdr_stats["ns_configs"])
+                        else:
+                            data[node] = copy.deepcopy(d[stanza])
+
+                    elif type == "statistics" and stanza in {"xdr"}:
+                        xdr_stats = d[stanza]
+                        dc_stats = d.get("dc", {})
+
+                        """
+                        Handles a collectinfo model that was first introduced when XDR5
+                        was released. Similar to the above code. It placed XDR DC stats 
+                        (what is under the 'dc' stanza) also the "xdr" key. This broke
+                        backwards compatibility. For servers < 4.9 'xdr' should be a 
+                        single level dictionary. For servers > 5.0 'xdr' should be empty
+                        because top level xdr stats no longer exist.
+                        """
+                        if set(xdr_stats.keys()) == set(dc_stats.keys()):
+                            data[node] = {}
+                        else:
+                            data[node] = copy.deepcopy(xdr_stats)
 
                     elif type == "meta_data" and stanza in ["endpoints", "services"]:
                         try:
@@ -421,7 +456,7 @@ class _CollectinfoSnapshot:
 class CollectinfoLog(object):
     def __init__(self, cinfo_path, files):
         self.files = files
-        self.snapshots = {}
+        self.snapshots: dict[str, _CollectinfoSnapshot] = {}
         self.data = {}
         self.license_data_usage = {}
         collectinfo_parser.parse_collectinfo_files(

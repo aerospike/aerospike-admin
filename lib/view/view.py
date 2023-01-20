@@ -501,85 +501,182 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
-    def show_xdr5_config(
-        title,
-        service_configs,
+    def show_xdr_ns_config(
+        ns_configs,
+        cluster: Cluster,
+        like=None,
+        diff=False,
+        with_=None,
+        title_every_nth=0,
+        flip_output=True,
+        timestamp="",
+        **ignore
+    ):
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        common = dict(principal=cluster.get_expected_principal())
+        style = SheetStyle.columns if flip_output else None
+
+        # dict format starts at {node: {dc: {ns:{}}}}
+        for node, dc_ns_configs in ns_configs.items():
+            ns_configs[node] = util.flip_keys(dc_ns_configs)
+
+        ns_configs = util.flip_keys(ns_configs)
+        # dict format ends at {ns: {node: {dc:{}}}}
+
+        sorted_keys = list(ns_configs.keys())
+        sorted_keys.sort()
+
+        for ns in sorted_keys:
+            title = "XDR {} Namespace Configuration".format(ns, title_suffix)
+            sources = dict(
+                node_names=node_names,
+                node_ids=node_ids,
+                data=ns_configs[ns],
+            )
+
+            CliView.print_result(
+                sheet.render(
+                    templates.show_xdr_ns_sheet,
+                    title,
+                    sources,
+                    selectors=like,
+                    style=style,
+                    title_repeat=title_every_nth != 0,
+                    dynamic_diff=diff,
+                    common=common,
+                )
+            )
+
+    @staticmethod
+    @reserved_modifiers
+    def show_xdr_ns_stats(
+        ns_configs,
+        cluster: Cluster,
+        like=None,
+        with_=None,
+        title_every_nth=0,
+        flip_output=True,
+        show_total=False,
+        by_dc=False,
+        timestamp="",
+        **ignore
+    ):
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        common = dict(principal=cluster.get_expected_principal())
+        style = SheetStyle.columns if flip_output else None
+
+        # dict format starts at {node: {dc: {ns:{}}}}
+        if not by_dc:
+            for node, dc_ns_configs in ns_configs.items():
+                ns_configs[node] = util.flip_keys(dc_ns_configs)
+
+        ns_configs = util.flip_keys(ns_configs)
+        # dict format ends at {ns: {node: {dc:{}}}} or {dc: {node: {ns:{}}}} if by_dc
+
+        sorted_keys = list(ns_configs.keys())
+        sorted_keys.sort()
+
+        for key in sorted_keys:
+            sources = dict(
+                node_names=node_names,
+                node_ids=node_ids,
+                data=ns_configs[key],
+            )
+
+            if by_dc:
+                title = "XDR {} DC Namespace Statistics".format(key, title_suffix)
+                CliView.print_result(
+                    sheet.render(
+                        templates.show_xdr_ns_sheet_by_dc,
+                        title,
+                        sources,
+                        selectors=like,
+                        style=style,
+                        title_repeat=title_every_nth != 0,
+                        disable_aggregations=show_total,
+                        common=common,
+                    )
+                )
+            else:
+                title = "XDR {} Namespace Statistics".format(key, title_suffix)
+                CliView.print_result(
+                    sheet.render(
+                        templates.show_xdr_ns_sheet,
+                        title,
+                        sources,
+                        selectors=like,
+                        style=style,
+                        title_repeat=title_every_nth != 0,
+                        disable_aggregations=show_total,
+                        common=common,
+                    )
+                )
+
+    @staticmethod
+    @reserved_modifiers
+    def show_xdr_dc_config(
+        dc_configs,
         cluster,
         like=None,
-        diff=None,
+        diff=False,
         with_=None,
         title_every_nth=0,
         flip_output=False,
         timestamp="",
         **ignore
     ):
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = title + title_suffix
-        node_names = cluster.get_node_names(with_)
-        node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
-        style = SheetStyle.columns if flip_output else None
+        dc_configs = util.flip_keys(dc_configs)
+        sorted_keys = list(dc_configs.keys())
+        sorted_keys.sort()
 
-        sources = dict(
-            node_names=node_names,
-            node_ids=node_ids,
-            data=service_configs["xdr_configs"],
-        )
-
-        CliView.print_result(
-            sheet.render(
-                templates.show_config_sheet,
+        for dc in sorted_keys:
+            title = "XDR {} DC Configuration".format(dc)
+            CliView.show_config(
                 title,
-                sources,
-                selectors=like,
-                style=style,
-                title_repeat=title_every_nth != 0,
-                dynamic_diff=diff,
-                disable_aggregations=True,
-                common=common,
-            )
-        )
-
-        for dc in service_configs["dc_configs"]:
-            title = "DC Configuration for {}{}".format(dc, title_suffix)
-            sources = dict(
-                node_names=node_names,
-                node_ids=node_ids,
-                data=service_configs["dc_configs"][dc],
-            )
-            CliView.print_result(
-                sheet.render(
-                    templates.show_config_sheet,
-                    title,
-                    sources,
-                    selectors=like,
-                    style=style,
-                    title_repeat=title_every_nth != 0,
-                    dynamic_diff=diff,
-                    disable_aggregations=True,
-                    common=common,
-                )
+                dc_configs[dc],
+                cluster,
+                like=like,
+                diff=diff,
+                with_=with_,
+                show_total=False,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
             )
 
-        for dc in service_configs["ns_configs"]:
-            title = "Namespace Configuration for {}{}".format(dc, title_suffix)
-            sources = dict(
-                node_names=node_names,
-                node_ids=node_ids,
-                data=service_configs["ns_configs"][dc],
-            )
+    @staticmethod
+    @reserved_modifiers
+    def show_xdr_dc_stats(
+        dc_configs,
+        cluster,
+        like=None,
+        diff=False,
+        with_=None,
+        title_every_nth=0,
+        flip_output=False,
+        show_total=False,
+        timestamp="",
+        **ignore
+    ):
+        dc_configs = util.flip_keys(dc_configs)
+        sorted_keys = list(dc_configs.keys())
+        sorted_keys.sort()
 
-            CliView.print_result(
-                sheet.render(
-                    templates.show_config_xdr_ns_sheet,
-                    title,
-                    sources,
-                    selectors=like,
-                    style=style,
-                    title_repeat=title_every_nth != 0,
-                    dynamic_diff=diff,
-                    common=common,
-                )
+        for dc in sorted_keys:
+            title = "XDR {} DC Statistics".format(dc)
+            CliView.show_config(
+                title,
+                dc_configs[dc],
+                cluster,
+                like=like,
+                diff=diff,
+                with_=with_,
+                show_total=show_total,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
             )
 
     @staticmethod

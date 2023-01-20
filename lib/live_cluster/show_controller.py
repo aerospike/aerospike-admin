@@ -1,7 +1,7 @@
 import asyncio
 from lib.base_controller import CommandHelp, CommandName
 from lib.utils import common, util, version, constants
-from lib.get_controller import (
+from lib.live_cluster.client.get_controller import (
     GetConfigController,
     GetDistributionController,
     GetJobsController,
@@ -240,13 +240,14 @@ class ShowConfigController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like", "diff", "for"])
         self.getter = GetConfigController(self.cluster)
+        self.controller_map = {"xdr": ShowConfigXDRController}
 
     @CommandHelp(
         "Displays security, service, network, and namespace configuration",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
-        "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     async def _do_default(self, line):
         return await asyncio.gather(
@@ -256,7 +257,13 @@ class ShowConfigController(LiveClusterCommandController):
             self.do_namespace(line[:]),
         )
 
-    @CommandHelp("Displays security configuration")
+    @CommandHelp(
+        "Displays security configuration",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     async def do_security(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -274,6 +281,12 @@ class ShowConfigController(LiveClusterCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
         security_configs = await self.getter.get_security(nodes=self.nodes)
@@ -288,7 +301,13 @@ class ShowConfigController(LiveClusterCommandController):
             **self.mods,
         )
 
-    @CommandHelp("Displays service configuration")
+    @CommandHelp(
+        "Displays service configuration",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     async def do_service(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -306,6 +325,12 @@ class ShowConfigController(LiveClusterCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
         service_configs = await self.getter.get_service(nodes=self.nodes)
@@ -320,7 +345,13 @@ class ShowConfigController(LiveClusterCommandController):
             **self.mods,
         )
 
-    @CommandHelp("Displays network configuration")
+    @CommandHelp(
+        "Displays network configuration",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     async def do_network(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -338,6 +369,12 @@ class ShowConfigController(LiveClusterCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
         network_configs = await self.getter.get_network(nodes=self.nodes)
@@ -352,7 +389,13 @@ class ShowConfigController(LiveClusterCommandController):
             **self.mods,
         )
 
-    @CommandHelp("Displays namespace configuration")
+    @CommandHelp(
+        "Displays namespace configuration",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     async def do_namespace(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -367,6 +410,12 @@ class ShowConfigController(LiveClusterCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -389,71 +438,18 @@ class ShowConfigController(LiveClusterCommandController):
             for ns, configs in list(ns_configs.items())
         ]
 
-    @CommandHelp("Displays XDR configuration")
-    async def do_xdr(self, line):
-
-        title_every_nth = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="-r",
-            return_type=int,
-            default=0,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        flip_output = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="-flip",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        xdr5_configs, old_xdr_configs = await asyncio.gather(
-            self.getter.get_xdr5(nodes=self.nodes),
-            self.getter.get_old_xdr(nodes=self.nodes),
-        )
-        futures = []
-
-        if xdr5_configs:
-            formatted_configs = common.format_xdr5_configs(
-                xdr5_configs, self.mods.get("for", [])
-            )
-            futures.append(
-                util.callable(
-                    self.view.show_xdr5_config,
-                    "XDR Configuration",
-                    formatted_configs,
-                    self.cluster,
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    **self.mods,
-                )
-            )
-        if old_xdr_configs:
-            futures.append(
-                util.callable(
-                    self.view.show_config,
-                    "XDR Configuration",
-                    old_xdr_configs,
-                    self.cluster,
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    **self.mods,
-                )
-            )
-
-        return futures
-
-    # pre 5.0
+    # pre 5.0 but will still work
     @CommandHelp(
+        "DEPRECATED: Replaced by 'show config xdr'",
         "Displays datacenter configuration.",
-        'Replaced by "show config xdr" for server >= 5.0.',
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     async def do_dc(self, line):
-        builds = asyncio.create_task(self.cluster.info_build(nodes=self.nodes))
         dc_configs = asyncio.create_task(
-            self.getter.get_dc(flip=True, nodes=self.nodes)
+            self.getter.get_xdr_dcs(flip=True, nodes=self.nodes)
         )
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -471,51 +467,177 @@ class ShowConfigController(LiveClusterCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
-
-        nodes_running_v5_or_higher = False
-        nodes_running_v49_or_lower = False
-        node_xdr_build_major_version = 4
-        builds = await builds
-
-        for build in builds.values():
-            try:
-                node_xdr_build_major_version = int(build[0])
-            except Exception:
-                continue
-
-            if node_xdr_build_major_version >= 5:
-                nodes_running_v5_or_higher = True
-            else:
-                nodes_running_v49_or_lower = True
 
         futures = []
         dc_configs = await dc_configs
 
-        if nodes_running_v49_or_lower:
-            futures = [
-                util.callable(
-                    self.view.show_config,
-                    "%s DC Configuration" % (dc),
-                    configs,
-                    self.cluster,
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    **self.mods,
-                )
-                for dc, configs in dc_configs.items()
-            ]
-
-        if nodes_running_v5_or_higher:
-            futures.append(
-                util.callable(
-                    self.logger.warning,
-                    "Detected nodes running aerospike version >= 5.0. "
-                    + "Please use 'asadm -e \"show config xdr\"' for versions 5.0 and up.",
-                )
+        futures = [
+            util.callable(
+                self.view.show_config,
+                "%s DC Configuration" % (dc),
+                configs,
+                self.cluster,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                **self.mods,
             )
+            for dc, configs in dc_configs.items()
+        ]
+
+        futures.append(
+            util.callable(
+                self.logger.warning,
+                '"show config dc" is deprecated. Please use "show config xdr" instead.',
+            )
+        )
 
         return futures
+
+
+@CommandHelp(
+    "'show config xdr' is used to display Aerospike XDR configuration settings."
+)
+class ShowConfigXDRController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["with", "like", "diff", "for"])
+        self.getter = GetConfigController(self.cluster)
+
+    @CommandHelp(
+        "Displays xdr, xdr datacenter, and xdr namespace configuration.",
+        "Use the available subcommands for more granularity.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    async def _do_default(self, line):
+        return await asyncio.gather(
+            self._do_xdr(line[:]),
+            self.do_dc(line[:]),
+            self.do_namespace(line[:]),
+        )
+
+    async def _do_xdr(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_configs = await self.getter.get_xdr(nodes=self.nodes)
+        return util.callable(
+            self.view.show_config,
+            "XDR Configuration",
+            xdr_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods,
+        )
+
+    @CommandHelp(
+        "Displays xdr datacenter configuration.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    async def do_dc(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_ns_configs = await self.getter.get_xdr_dcs(nodes=self.nodes)
+        self.view.show_xdr_dc_config(
+            xdr_ns_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods,
+        )
+
+    @CommandHelp(
+        "Displays xdr namespace configuration.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    async def do_namespace(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_ns_configs = await self.getter.get_xdr_namespaces(nodes=self.nodes)
+        self.view.show_xdr_ns_config(
+            xdr_ns_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods,
+        )
 
 
 @CommandHelp(
@@ -547,13 +669,12 @@ class ShowMappingController(LiveClusterCommandController):
         )
 
 
-@CommandHelp(
-    '"show statistics" is used to display statistics for Aerospike components.'
-)
+@CommandHelp('"show statistics" is used to display statistics.')
 class ShowStatisticsController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like", "for"])
         self.getter = GetStatisticsController(self.cluster)
+        self.controller_map = {"xdr": ShowStatisticsXDRController}
 
     @CommandHelp(
         "Displays bin, set, service, and namespace statistics",
@@ -561,7 +682,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
-        "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     async def _do_default(self, line):
         return await asyncio.gather(
@@ -571,7 +692,14 @@ class ShowStatisticsController(LiveClusterCommandController):
             self.do_namespace(line[:]),
         )
 
-    @CommandHelp("Displays service statistics")
+    @CommandHelp(
+        "Displays service statistics",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     async def do_service(self, line):
 
         show_total = util.check_arg_and_delete_from_mods(
@@ -593,6 +721,12 @@ class ShowStatisticsController(LiveClusterCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
         service_stats = await self.getter.get_service(nodes=self.nodes)
@@ -608,7 +742,14 @@ class ShowStatisticsController(LiveClusterCommandController):
             **self.mods,
         )
 
-    @CommandHelp("Displays namespace statistics")
+    @CommandHelp(
+        "Displays namespace statistics",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     async def do_namespace(self, line):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
@@ -626,6 +767,12 @@ class ShowStatisticsController(LiveClusterCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -649,7 +796,14 @@ class ShowStatisticsController(LiveClusterCommandController):
             for namespace in sorted(ns_stats.keys())
         ]
 
-    @CommandHelp("Displays sindex statistics")
+    @CommandHelp(
+        "Displays sindex statistics",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     async def do_sindex(self, line):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
@@ -667,6 +821,12 @@ class ShowStatisticsController(LiveClusterCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -690,7 +850,14 @@ class ShowStatisticsController(LiveClusterCommandController):
             for ns_set_sindex in sorted(sindex_stats.keys())
         ]
 
-    @CommandHelp("Displays set statistics")
+    @CommandHelp(
+        "Displays set statistics",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     async def do_sets(self, line):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
@@ -708,6 +875,12 @@ class ShowStatisticsController(LiveClusterCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -731,7 +904,14 @@ class ShowStatisticsController(LiveClusterCommandController):
             for (namespace, set_name), stats in list(set_stats.items())
         ]
 
-    @CommandHelp("Displays bin statistics")
+    @CommandHelp(
+        "Displays bin statistics",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     async def do_bins(self, line):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
@@ -749,6 +929,12 @@ class ShowStatisticsController(LiveClusterCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -772,102 +958,17 @@ class ShowStatisticsController(LiveClusterCommandController):
             for namespace, new_bin_stat in list(new_bin_stats.items())
         ]
 
-    @CommandHelp("Displays XDR statistics")
-    async def do_xdr(self, line):
-        show_total = util.check_arg_and_delete_from_mods(
-            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
-        )
-
-        title_every_nth = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="-r",
-            return_type=int,
-            default=0,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        flip_output = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="-flip",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        builds, xdr_stats = await asyncio.gather(
-            self.cluster.info_build(nodes=self.nodes),
-            self.getter.get_xdr(nodes=self.nodes),
-        )
-
-        old_xdr_stats = {}
-        xdr5_stats = {}
-        node_xdr_build_major_version = 4
-
-        for node in xdr_stats:
-            try:
-                node_xdr_build_major_version = int(builds[node][0])
-            except Exception:
-                continue
-
-            if node_xdr_build_major_version < 5:
-                old_xdr_stats[node] = xdr_stats[node]
-            else:
-                xdr5_stats[node] = xdr_stats[node]
-
-        futures = []
-
-        if xdr5_stats:
-            temp = {}
-            for node in xdr5_stats:
-                for dc in xdr5_stats[node]:
-                    if dc not in temp:
-                        temp[dc] = {}
-                    temp[dc][node] = xdr5_stats[node][dc]
-
-            xdr5_stats = temp
-
-            if self.mods["for"]:
-                matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
-
-            futures = [
-                util.callable(
-                    self.view.show_stats,
-                    "XDR Statistics %s" % dc,
-                    xdr5_stats[dc],
-                    self.cluster,
-                    show_total=show_total,
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    **self.mods,
-                )
-                for dc in xdr5_stats
-                if not self.mods["for"] or dc in matches
-            ]
-
-        if old_xdr_stats:
-            futures.append(
-                util.callable(
-                    self.view.show_stats,
-                    "XDR Statistics",
-                    old_xdr_stats,
-                    self.cluster,
-                    show_total=show_total,
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    **self.mods,
-                )
-            )
-
-        return futures
-
-    # pre 5.0
+    # pre 5.0 but still works
     @CommandHelp(
+        "DEPRECATED: Replaced by 'show statistics xdr dc.'",
         "Displays datacenter statistics.",
-        'Replaced by "show statistics xdr" for server >= 5.0.',
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     async def do_dc(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -887,57 +988,202 @@ class ShowStatisticsController(LiveClusterCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
-        dc_stats, builds = await asyncio.gather(
-            self.getter.get_dc(flip=True, nodes=self.nodes),
-            self.cluster.info_build(nodes=self.nodes),
-        )
+        dc_stats = await self.getter.get_xdr_dcs(nodes=self.nodes)
 
-        nodes_running_v5_or_higher = False
-        nodes_running_v49_or_lower = False
-        node_xdr_build_major_version = 4
-
-        for dc in dc_stats.values():
-
-            for node in dc:
-                try:
-                    node_xdr_build_major_version = int(builds[node][0])
-                except Exception:
-                    continue
-
-                if node_xdr_build_major_version >= 5:
-                    nodes_running_v5_or_higher = True
-                else:
-                    nodes_running_v49_or_lower = True
-
-        futures = []
-
-        if nodes_running_v49_or_lower:
-            futures = [
-                util.callable(
-                    self.view.show_config,
-                    "%s DC Statistics" % (dc),
-                    stats,
-                    self.cluster,
-                    show_total=show_total,
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    **self.mods,
-                )
-                for dc, stats in list(dc_stats.items())
-            ]
-
-        if nodes_running_v5_or_higher:
-            futures.append(
-                util.callable(
-                    self.logger.warning,
-                    "'show statistics dc' is deprecated on aerospike versions >= 5.0. \n"
-                    + "Use 'show statistics xdr' instead.",
-                )
+        futures = [
+            util.callable(
+                self.view.show_xdr_dc_stats,
+                dc_stats,
+                self.cluster,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                show_total=show_total,
+                **self.mods,
             )
+        ]
+
+        futures.append(
+            util.callable(
+                self.logger.warning,
+                "'show statistics dc' is deprecated. Use 'show statistics xdr dc' instead.",
+            )
+        )
 
         return futures
+
+
+@CommandHelp(
+    '"show statistics xdr" is used to display xdr statistics for Aerospike components.'
+)
+class ShowStatisticsXDRController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["with", "like", "diff", "for"])
+        self.getter = GetStatisticsController(self.cluster)
+
+    @CommandHelp(
+        "Displays xdr, xdr datacenter, and xdr namespace statistics.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
+    async def _do_default(self, line):
+        return await asyncio.gather(
+            self._do_xdr(line[:]),
+            self.do_dc(line[:]),
+            self.do_namespace(line[:]),
+        )
+
+    async def _do_xdr(self, line):
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_stats = await self.getter.get_xdr(nodes=self.nodes)
+
+        return util.callable(
+            self.view.show_config,
+            "XDR Statistics",
+            xdr_stats,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            show_total=show_total,
+            **self.mods,
+        )
+
+    @CommandHelp(
+        "Displays xdr datacenter statistics.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
+    async def do_dc(self, line):
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_ns_configs = await self.getter.get_xdr_dcs(nodes=self.nodes)
+        self.view.show_xdr_dc_stats(
+            xdr_ns_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            show_total=show_total,
+            **self.mods,
+        )
+
+    @CommandHelp(
+        "Displays xdr namespace statistics.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "    --by-dc      - Display each datacenter as a new table rather than each namespace. Makes it easier",
+        "                   to identify issues belonging to a particular namespace",
+        "                   [default: False, by namespace]",
+    )
+    async def do_namespace(self, line):
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        by_dc = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--by-dc",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_ns_configs = await self.getter.get_xdr_namespaces(nodes=self.nodes)
+        self.view.show_xdr_ns_stats(
+            xdr_ns_configs,
+            self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            show_total=show_total,
+            by_dc=by_dc,
+            **self.mods,
+        )
 
 
 @CommandHelp("Displays partition map analysis of the Aerospike cluster.")
@@ -1048,7 +1294,7 @@ class ShowSIndexController(LiveClusterCommandController):
     'Displays roster information per node. Use the "diff" modifier to',
     'to show differences between node rosters. For easier viewing run "page on" first.',
     "  Options:",
-    "    -flip        - Flip output table to show nodes on X axis and roster on Y axis.",
+    "    --flip       - Flip output table to show nodes on X axis and roster on Y axis.",
 )
 class ShowRosterController(LiveClusterCommandController):
     def __init__(self):
@@ -1059,6 +1305,12 @@ class ShowRosterController(LiveClusterCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,

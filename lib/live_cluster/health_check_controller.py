@@ -3,9 +3,9 @@ import copy
 import time
 
 from lib.health import util as health_util
-from lib.get_controller import (
+from lib.live_cluster.client.get_controller import (
     GetConfigController,
-    get_sindex_stats,
+    GetStatisticsController,
 )
 from lib.utils import util
 from lib.base_controller import CommandHelp
@@ -39,9 +39,8 @@ class HealthCheckController(LiveClusterCommandController):
         elif stanza == "dc":
             return await self.cluster.info_all_dc_statistics(nodes=self.nodes)
         elif stanza == "sindex":
-            return util.flip_keys(
-                await get_sindex_stats(cluster=self.cluster, nodes=self.nodes)
-            )
+            getter = GetStatisticsController(self.cluster)  # TODO: Use getter for all?
+            return await getter.get_sindex(flip=True, nodes=self.nodes)
         elif stanza == "udf":
             return await self.cluster.info_udf_list(nodes=self.nodes)
         elif stanza == "endpoints":
@@ -51,11 +50,11 @@ class HealthCheckController(LiveClusterCommandController):
 
     async def _get_asconfig_data(self, stanza):
         if stanza == "xdr":
-            return await self.cluster.info_XDR_get_config(nodes=self.nodes)
+            return await self.cluster.info_xdr_config(nodes=self.nodes)
         elif stanza == "dc":
-            return await self.cluster.info_dc_get_config(nodes=self.nodes)
+            return await self.cluster.info_xdr_dcs_config(nodes=self.nodes)
         elif stanza == "roster":
-            getter = GetConfigController(self.cluster)
+            getter = GetConfigController(self.cluster)  # TODO: Use getter for all?
             return await getter.get_roster(nodes=self.nodes)
         elif stanza == "racks":
             return await self.cluster.info_racks(nodes=self.nodes)
@@ -325,6 +324,9 @@ class HealthCheckController(LiveClusterCommandController):
                                 ("NODE", None),
                                 (None, None),
                                 ("DC", None),
+                                # (None, None),
+                                # (None, None),
+                                # ("NAMESPACE", None),
                             ],
                         ),
                         (
@@ -365,6 +367,17 @@ class HealthCheckController(LiveClusterCommandController):
                             [("CLUSTER", cluster_name), ("NODE", None)],
                         ),
                         ("xdr", "XDR", [("CLUSTER", cluster_name), ("NODE", None)]),
+                        # (
+                        #     "xdr",
+                        #     "XDR_DC",
+                        #     [
+                        #         ("CLUSTER", cluster_name),
+                        #         ("NODE", None),
+                        #         (None, None),
+                        #         (None, None),
+                        #         ("DC", None),
+                        #     ],
+                        # ),
                         (
                             "network",
                             "NETWORK",
@@ -803,8 +816,9 @@ class HealthCheckController(LiveClusterCommandController):
                 sn_ct += 1
                 self.logger.info("Snapshot " + str(sn_ct))
                 time.sleep(sleep)
-
+            health_util.print_dict(health_input)
             health_input = health_util.h_eval(health_input)
+
             self.health_checker.set_health_input_data(health_input)
             HealthCheckController.last_snapshot_collection_time = time.time()
             HealthCheckController.last_snapshot_count = snap_count

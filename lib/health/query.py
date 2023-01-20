@@ -609,7 +609,7 @@ u = group by CLUSTER, NODE do MAX(u);
 s = do s / u on common;
 r = group by CLUSTER, DC, KEY do SD_ANOMALY(s, ==, 3);
 ASSERT(r, False, "Skewed cluster remote DC statistics.", "ANOMALY", WARNING,
-				"Listed DC statistic[s] show skew for the listed node[s]. Please run 'show statistics dc' to get all DC stats. May be non-issue if remote Data center connectivity behavior for nodes is not same.",
+				"Listed DC statistic[s] show skew for the listed node[s]. Please run 'show statistics  dc' to get all DC stats. May be non-issue if remote Data center connectivity behavior for nodes is not same.",
 				"Remote DC statistics anomaly check.");
 
 /*

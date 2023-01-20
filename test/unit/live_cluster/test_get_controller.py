@@ -3,7 +3,7 @@ from pytest import PytestUnraisableExceptionWarning
 from mock import patch
 from mock.mock import AsyncMock
 
-from lib.get_controller import (
+from lib.live_cluster.client.get_controller import (
     GetJobsController,
     GetPmapController,
     GetConfigController,

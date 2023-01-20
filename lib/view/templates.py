@@ -1378,12 +1378,27 @@ show_config_sheet = Sheet(
     default_style=SheetStyle.rows,
 )
 
-show_config_xdr_ns_sheet = Sheet(
+show_xdr_ns_sheet = Sheet(
     (
+        Field("Datacenter", Projectors.String("data", None, for_each_key=True)),
         node_field,
         hidden_node_id_field,
+        DynamicFields("data", required=True, order=DynamicFieldOrder.ascending),
+    ),
+    from_source=("node_names", "data", "node_ids"),
+    group_by=["Datacenter"],
+    order_by=["Datacenter", "Node"],
+    default_style=SheetStyle.rows,
+    for_each=["data"],
+)
+
+
+show_xdr_ns_sheet_by_dc = Sheet(
+    (
         Field("Namespace", Projectors.String("data", None, for_each_key=True)),
-        DynamicFields("data", required=True, order=DynamicFieldOrder.source),
+        node_field,
+        hidden_node_id_field,
+        DynamicFields("data", required=True, order=DynamicFieldOrder.ascending),
     ),
     from_source=("node_names", "data", "node_ids"),
     group_by=["Namespace"],
@@ -1391,6 +1406,7 @@ show_config_xdr_ns_sheet = Sheet(
     default_style=SheetStyle.rows,
     for_each=["data"],
 )
+
 
 show_mapping_to_ip_sheet = Sheet(
     (

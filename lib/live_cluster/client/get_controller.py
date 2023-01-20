@@ -14,59 +14,32 @@
 
 import asyncio
 import copy
-from distutils.command.config import config
+from typing import Iterable, Optional
 
-from lib.utils import common, util, constants, version
-from .live_cluster.client import Cluster
+from lib.utils import common, util, constants
+from lib.utils.common import NodeDict, DatacenterDict, NamespaceDict
+from . import Cluster
+
+# Helpers
+async def _get_all_dcs(cluster, nodes) -> Iterable[str]:
+    dcs_dict = await cluster.info_dcs(nodes=nodes)
+    all_dcs = set()
+    filter_dcs = None
+
+    for val in dcs_dict.values():
+        all_dcs = all_dcs.union(val)
+
+    return all_dcs
 
 
-async def get_sindex_stats(cluster, nodes="all", for_mods=[]):
-    stats = await cluster.info_sindex(nodes=nodes)
+async def _get_all_namespaces(cluster, nodes) -> Iterable[str]:
+    namespaces_per_node = await cluster.info_namespaces(nodes=nodes)
+    all_namespaces = set()
 
-    sindex_stats = {}
-    if stats:
-        for host, stat_list in stats.items():
-            if not stat_list or isinstance(stat_list, Exception):
-                continue
+    for namespaces in namespaces_per_node.values():
+        all_namespaces = all_namespaces.union(namespaces)
 
-            namespace_set = {stat["ns"] for stat in stat_list}
-            try:
-                namespace_set = set(util.filter_list(namespace_set, for_mods[:1]))
-            except Exception:
-                pass
-
-            sindex_set = {stat["indexname"] for stat in stat_list}
-            try:
-                sindex_set = set(util.filter_list(sindex_set, for_mods[1:2]))
-            except Exception:
-                pass
-
-            for stat in stat_list:
-                if not stat or stat["ns"] not in namespace_set:
-                    continue
-
-                ns = stat["ns"]
-                set_ = stat["set"]
-                indexname = stat["indexname"]
-
-                if not indexname or not ns or indexname not in sindex_set:
-                    continue
-
-                sindex_key = "%s %s %s" % (ns, set_, indexname)
-
-                if sindex_key not in sindex_stats:
-                    sindex_stats[sindex_key] = {}
-                sindex_stats[sindex_key] = await cluster.info_sindex_statistics(
-                    ns, indexname, nodes=nodes
-                )
-                for node in sindex_stats[sindex_key]:
-                    if not sindex_stats[sindex_key][node] or isinstance(
-                        sindex_stats[sindex_key][node], Exception
-                    ):
-                        continue
-                    for key, value in stat.items():
-                        sindex_stats[sindex_key][node][key] = value
-    return sindex_stats
+    return all_namespaces
 
 
 class GetDistributionController:
@@ -263,7 +236,11 @@ class GetConfigController:
                 asyncio.create_task(self.get_network(nodes=nodes)),
             ),
             (constants.CONFIG_XDR, asyncio.create_task(self.get_xdr(nodes=nodes))),
-            (constants.CONFIG_DC, asyncio.create_task(self.get_dc(nodes=nodes))),
+            (constants.CONFIG_DC, asyncio.create_task(self.get_xdr_dcs(nodes=nodes))),
+            (
+                constants.CONFIG_XDR_NS,
+                asyncio.create_task(self.get_xdr_namespaces(nodes=nodes)),
+            ),
             (
                 constants.CONFIG_ROSTER,
                 asyncio.create_task(self.get_roster(nodes=nodes)),
@@ -310,7 +287,9 @@ class GetConfigController:
 
         return network_configs
 
-    async def get_namespace(self, flip=False, nodes="all", for_mods=[]):
+    async def get_namespace(
+        self, flip=False, nodes="all", for_mods: list[str] | None = None
+    ):
         namespaces = await self.cluster.info_namespaces(nodes=nodes)
         namespace_set = set()
 
@@ -355,58 +334,9 @@ class GetConfigController:
 
         return ns_configs
 
-    async def get_xdr5_nodes(self, nodes="all"):
-        xdr5_nodes = []
-        builds = await self.cluster.info_build(nodes=nodes)
-
-        for node, build in builds.items():
-            if isinstance(build, Exception):
-                continue
-            if version.LooseVersion(
-                constants.SERVER_NEW_XDR5_VERSION
-            ) <= version.LooseVersion(build):
-                xdr5_nodes.append(node)
-
-        return xdr5_nodes
-
-    # XDR configs >= AS Server 5.0
-    async def get_xdr5(self, nodes="all"):
-        # get xdr5 nodes and remote port
-        xdr_configs = {}
-        xdr5_nodes = await self.get_xdr5_nodes(nodes)
-
-        if not xdr5_nodes:
-            return xdr_configs
-
-        return await self.get_xdr(nodes=xdr5_nodes)
-
-    async def get_old_xdr_nodes(self, nodes="all"):
-        old_xdr_nodes = []
-        builds = await self.cluster.info_build(nodes=nodes)
-
-        for node, build in builds.items():
-            if isinstance(build, Exception):
-                continue
-            if version.LooseVersion(
-                constants.SERVER_NEW_XDR5_VERSION
-            ) > version.LooseVersion(build):
-                old_xdr_nodes.append(node)
-
-        return old_xdr_nodes
-
-    # XDR configs < AS Server 5.0
-    async def get_old_xdr(self, nodes="all"):
-        xdr_configs = {}
-        nodes = await self.get_old_xdr_nodes(nodes)
-
-        if not nodes:
-            return xdr_configs
-
-        return await self.get_xdr(nodes=nodes)
-
     async def get_xdr(self, nodes="all"):
         xdr_configs = {}
-        configs = await self.cluster.info_XDR_get_config(nodes=nodes)
+        configs = await self.cluster.info_xdr_config(nodes=nodes)
 
         if configs:
             for node, config in configs.items():
@@ -417,25 +347,71 @@ class GetConfigController:
 
         return xdr_configs
 
-    async def get_dc(self, flip=False, nodes="all"):
-        configs = await self.cluster.info_dc_get_config(nodes=nodes)
+    async def get_xdr_dcs(
+        self, flip=False, nodes="all", for_mods: list[str] | None = None
+    ):
+        all_dcs = await _get_all_dcs(self.cluster, nodes)
+        filtered_dcs = util.filter_list(all_dcs, for_mods)
 
-        for node in configs:
-            if isinstance(configs[node], Exception):
-                configs[node] = {}
+        result: NodeDict[
+            DatacenterDict[str] | Exception
+        ] = await self.cluster.info_xdr_dcs_config(nodes=nodes, dcs=filtered_dcs)
 
-        dc_configs = {}
-        if configs:
-            for node, node_config in configs.items():
-                if not node_config or isinstance(node_config, Exception):
+        for node in result:
+            if isinstance(result[node], Exception):
+                result[node] = {}
+
+        for node, node_config in result.items():
+            if not node_config or isinstance(node_config, Exception):
+                result[node] = {}
+
+        if flip:
+            result = util.flip_keys(result)
+
+        return result
+
+    async def get_xdr_namespaces(self, nodes="all", for_mods: list[str] | None = None):
+        dcs_filter: list[str] | None = None
+        namespaces_filter: list[str] | None = None
+
+        if for_mods is not None:
+            try:
+                namespaces_filter = [for_mods[0]]
+                dcs_filter = [for_mods[1]]
+            except IndexError:
+                pass
+
+        all_dcs = await _get_all_dcs(self.cluster, nodes)
+        all_namespaces = await _get_all_namespaces(self.cluster, nodes)
+        filtered_dcs = None
+        filtered_namespaces = None
+
+        filtered_dcs = util.filter_list(list(all_dcs), dcs_filter)
+        filtered_namespaces = util.filter_list(list(all_namespaces), namespaces_filter)
+
+        # Not all dcs have all namespaces but that is OK. This function checks that
+        # a particular namespace is apart of a dc before making a request.
+        result: NodeDict[
+            DatacenterDict[NamespaceDict[str] | Exception] | Exception
+        ] = await self.cluster.info_xdr_namespaces_config(
+            nodes=nodes, namespaces=filtered_namespaces, dcs=filtered_dcs
+        )
+
+        for node, node_config in result.items():
+            if not node_config or isinstance(node_config, Exception):
+                result[node] = {}
+                continue
+
+            for dc, dc_config in node_config.items():
+                if not dc_config or isinstance(dc_config, Exception):
+                    result[node][dc] = {}  # type: ignore
                     continue
 
-                dc_configs[node] = node_config
+                for ns, ns_config in dc_config.items():
+                    if not ns_config or isinstance(ns_config, Exception):
+                        ns_config = {}
 
-            if flip:
-                dc_configs = util.flip_keys(dc_configs)
-
-        return dc_configs
+        return result
 
     async def get_roster(self, flip=False, nodes="all"):
         configs = await self.cluster.info_roster(nodes=nodes)
@@ -488,7 +464,7 @@ class GetConfigController:
 
 class GetStatisticsController:
     def __init__(self, cluster):
-        self.cluster = cluster
+        self.cluster: Cluster = cluster
 
     async def get_all(self, nodes="all"):
         futures = [
@@ -504,7 +480,11 @@ class GetStatisticsController:
             (constants.STAT_BINS, asyncio.create_task(self.get_bins(nodes=nodes))),
             (constants.STAT_SINDEX, asyncio.create_task(self.get_sindex(nodes=nodes))),
             (constants.STAT_XDR, asyncio.create_task(self.get_xdr(nodes=nodes))),
-            (constants.STAT_DC, asyncio.create_task(self.get_dc(nodes=nodes))),
+            (constants.STAT_DC, asyncio.create_task(self.get_xdr_dcs(nodes=nodes))),
+            (
+                constants.STAT_XDR_NS,
+                asyncio.create_task(self.get_xdr_namespaces(nodes=nodes)),
+            ),
         ]
 
         stat_map = dict([(k, await f) for k, f in futures])
@@ -551,16 +531,68 @@ class GetStatisticsController:
 
         return ns_stats
 
-    async def get_sindex(self, flip=False, nodes="all", for_mods=[]):
-        sindex_stats = await get_sindex_stats(self.cluster, nodes, for_mods)
+    async def get_sindex(
+        self, flip=False, nodes="all", for_mods: list[str] | None = None
+    ):
+        stats = await self.cluster.info_sindex(nodes=nodes)
+
+        result = {}
+        if stats:
+            for host, stat_list in stats.items():
+                if not stat_list or isinstance(stat_list, Exception):
+                    continue
+
+                ns_filter = None
+                sindex_filter = None
+
+                if for_mods is not None:
+                    try:
+                        ns_filter = [for_mods[0]]
+                        sindex_filter = [for_mods[1]]
+                    except IndexError:
+                        pass
+
+                namespace_set = {stat["ns"] for stat in stat_list}
+                namespace_set = set(util.filter_list(namespace_set, ns_filter))
+
+                sindex_set = {stat["indexname"] for stat in stat_list}
+                sindex_set = set(util.filter_list(sindex_set, sindex_filter))
+
+                for stat in stat_list:
+                    if not stat or stat["ns"] not in namespace_set:
+                        continue
+
+                    ns = stat["ns"]
+                    set_ = stat["set"]
+                    indexname = stat["indexname"]
+
+                    if not indexname or not ns or indexname not in sindex_set:
+                        continue
+
+                    sindex_key = "%s %s %s" % (ns, set_, indexname)
+
+                    if sindex_key not in result:
+                        result[sindex_key] = {}
+                    result[sindex_key] = await self.cluster.info_sindex_statistics(
+                        ns, indexname, nodes=nodes
+                    )
+                    for node in result[sindex_key]:
+                        if not result[sindex_key][node] or isinstance(
+                            result[sindex_key][node], Exception
+                        ):
+                            continue
+                        for key, value in stat.items():
+                            result[sindex_key][node][key] = value
 
         # Inverted match common structure of other getters, i.e. host is top level key
         if not flip:
-            return util.flip_keys(sindex_stats)
+            return util.flip_keys(result)
 
-        return sindex_stats
+        return result
 
-    async def get_sets(self, flip=False, nodes="all", for_mods=[]):
+    async def get_sets(
+        self, flip=False, nodes="all", for_mods: list[str] | None = None
+    ):
         sets = await self.cluster.info_all_set_statistics(nodes=nodes)
 
         set_stats = {}
@@ -568,18 +600,21 @@ class GetStatisticsController:
             if isinstance(key_values, Exception) or not key_values:
                 continue
 
-            namespace_set = {ns_set[0] for ns_set in key_values.keys()}
+            ns_filter = None
+            set_filter = None
 
-            try:
-                namespace_set = set(util.filter_list(namespace_set, for_mods[:1]))
-            except Exception:
-                pass
+            if for_mods:
+                try:
+                    ns_filter = [for_mods[0]]
+                    set_filter = [for_mods[1]]
+                except IndexError:
+                    pass
+
+            namespace_set = {ns_set[0] for ns_set in key_values.keys()}
+            namespace_set = set(util.filter_list(namespace_set, ns_filter))
 
             sets = {ns_set[1] for ns_set in key_values.keys()}
-            try:
-                sets = set(util.filter_list(sets, for_mods[1:2]))
-            except Exception:
-                pass
+            sets = set(util.filter_list(sets, set_filter))
 
             for key, values in key_values.items():
 
@@ -601,7 +636,10 @@ class GetStatisticsController:
 
         return set_stats
 
-    async def get_bins(self, flip=False, nodes="all", for_mods=[]):
+    async def get_bins(
+        self, flip=False, nodes="all", for_mods: list[str] | None = None
+    ):
+        for_mods = [] if for_mods is None else for_mods
         bin_stats = await self.cluster.info_bin_statistics(nodes=nodes)
         new_bin_stats = {}
 
@@ -634,41 +672,78 @@ class GetStatisticsController:
         xdr_stats = await self.cluster.info_XDR_statistics(nodes=nodes)
         return xdr_stats
 
-    async def get_dc(self, flip=False, nodes="all"):
-        all_dc_stats = await self.cluster.info_all_dc_statistics(nodes=nodes)
-        dc_stats = {}
-        for host, stats in all_dc_stats.items():
-            if not stats or isinstance(stats, Exception):
-                continue
-            for dc, stat in stats.items():
-                if dc not in dc_stats:
-                    dc_stats[dc] = {}
+    async def get_xdr_dcs(
+        self, flip=False, nodes="all", for_mods: Optional[list[str]] = None
+    ):
+        filter_dcs = None
+        all_dcs = await _get_all_dcs(self.cluster, nodes)
 
-                try:
-                    dc_stats[dc][host].update(stat)
-                except KeyError:
-                    dc_stats[dc][host] = stat
+        if for_mods:
+            filter_dcs = util.filter_list(list(all_dcs), for_mods)
+        else:
+            filter_dcs = all_dcs
+
+        result = await self.cluster.info_all_dc_statistics(nodes=nodes, dcs=filter_dcs)
+
+        for host, host_stats in result.items():
+            if not host_stats or isinstance(host_stats, Exception):
+                result[host] = {}
+                continue
+
+            for dc, dc_stats in host_stats.items():
+                if not dc_stats or isinstance(dc_stats, Exception):
+                    result[host][dc] = {}
 
         # Inverted match common structure of other getters, i.e. host is top level key
-        if not flip:
-            return util.flip_keys(dc_stats)
+        if flip:
+            return util.flip_keys(result)
 
-        return dc_stats
+        return result
 
-    def _check_key_for_gt(self, d={}, keys=(), v=0, is_and=False, type_check=int):
-        if not keys:
-            return True
-        if not d:
-            return False
-        if not isinstance(keys, tuple):
-            keys = (keys,)
-        if is_and:
-            if all(util.get_value_from_dict(d, k, v, type_check) > v for k in keys):
-                return True
-        else:
-            if any(util.get_value_from_dict(d, k, v, type_check) > v for k in keys):
-                return True
-        return False
+    async def get_xdr_namespaces(
+        self,
+        nodes="all",
+        for_mods: Optional[list[str]] = None,
+    ):
+        dcs_filter: list[str] | None = None
+        namespaces_filter: list[str] | None = None
+
+        if for_mods:
+            try:
+                dcs_filter = [for_mods[0]]
+                namespaces_filter = [for_mods[1]]
+            except IndexError:
+                pass
+
+        all_dcs = await _get_all_dcs(self.cluster, nodes)
+        all_namespaces = await _get_all_namespaces(self.cluster, nodes)
+        filtered_dcs = None
+        filtered_namespaces = None
+
+        filtered_dcs = util.filter_list(list(all_dcs), dcs_filter)
+        filtered_namespaces = util.filter_list(list(all_namespaces), namespaces_filter)
+
+        # Not all dcs have all namespaces but that is OK. This function checks that
+        # a particular namespace is apart of a dc before making a request.
+        result = await self.cluster.info_all_xdr_namespaces_statistics(
+            namespaces=filtered_namespaces, dcs=filtered_dcs, nodes=nodes
+        )
+
+        for host, host_stats in result.items():
+            if isinstance(host_stats, Exception) or host_stats is None:
+                result[host] = {}
+                continue
+
+            for dc, dc_stats in result.items():
+                if isinstance(dc_stats, Exception) or dc_stats is None:
+                    result[host][dc] = {}
+                    continue
+
+                for ns, ns_dict in dc_stats.items():
+                    if isinstance(ns_dict, Exception) or ns_dict is None:
+                        result[host][dc][ns] = {}
+
+        return result
 
 
 class GetFeaturesController:

@@ -71,7 +71,7 @@ def render(
     description  -- A description of the sheet.
     selectors    -- List of regular expressions to select which fields from
                     dynamic fields.
-    title_repeat -- Repeat title and row headers every n columns.
+    title_repeat -- Repeat title and row headers every n columns. TODO: Add for column style tables
     disable_aggregations -- Disable sheet aggregations.
     dynamic_diff     -- Only show dynamic fields that aren't uniform.
     """
