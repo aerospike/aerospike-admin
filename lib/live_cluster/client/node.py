@@ -482,7 +482,7 @@ class Node(AsyncObject):
         return self.sock_name()
 
     async def is_XDR_enabled(self):
-        config = await self.info_get_config("xdr")
+        config = await self.info_xdr_config()
 
         if isinstance(config, Exception):
             return False
@@ -1112,30 +1112,19 @@ class Node(AsyncObject):
         return client_util.info_to_dict(await self.info("statistics/xdr"))
 
     @async_return_exceptions
-    async def info_xdr_single_dc_namespace_statistics(self, dc: str, ns: str):
-        return client_util.info_to_dict(
-            await self.info("get-stats:context=xdr;dc={};namespace={}".format(dc, ns))
-        )
-
-    @async_return_exceptions
-    async def info_xdr_dc_namespaces_statistics(
-        self, dc: str, namespaces: list[str] | None = None
-    ):
-        if namespaces is None:
-            dc_config = await self.info_xdr_dcs_config([dc])
-
-            if isinstance(dc_config, Exception):
-                return Exception("Could not get stats for dc %s : %s", dc, dc_config)
-
-            namespaces = client_util.info_to_list(dc_config[dc]["namespaces"], ",")
-
+    async def info_xdr_dc_namespaces_statistics(self, dc: str, namespaces: list[str]):
         all_ns_stats = await asyncio.gather(
-            *[self.info_xdr_single_dc_namespace_statistics(dc, ns) for ns in namespaces]
+            *[
+                self.info("get-stats:context=xdr;dc={};namespace={}".format(dc, ns))
+                for ns in namespaces
+            ]
         )
+
+        all_ns_stats = list(map(client_util.info_to_dict, all_ns_stats))
 
         return dict(zip(namespaces, all_ns_stats))
 
-    # @async_return_exceptions
+    @async_return_exceptions
     async def info_all_xdr_namespaces_statistics(
         self, namespaces: list[str] | None = None, dcs: list[str] | None = None
     ):
@@ -1595,7 +1584,7 @@ class Node(AsyncObject):
         """
         build = None
 
-        if dcs:
+        if dcs is not None:
             build = await self.info_build()
         else:
             build, dcs = await asyncio.gather(self.info_build(), self.info_dcs())
@@ -1652,18 +1641,12 @@ class Node(AsyncObject):
         )
 
     @async_return_exceptions
-    async def info_xdr_dc_namespaces_config(
-        self, dc: str, namespaces: list[str] | None = None
-    ):
+    async def info_xdr_dc_namespaces_config(self, dc: str, namespaces: list[str]):
         """
         Returns multiple namespace configs for a single datacenter.
         namespaces: If None returns all namespaces configured to ship to a datacenter.
                     else it returns config for specified namespaces.
         """
-        if namespaces is None:
-            dc_config = await self.info_xdr_dcs_config([dc])
-            namespaces = dc_config[dc]["namespaces"].split(",")
-
         ns_configs = await asyncio.gather(
             *[self.info_xdr_dc_single_namespace_config(dc, ns) for ns in namespaces]
         )
@@ -1712,6 +1695,31 @@ class Node(AsyncObject):
         xdr_ns_configs = await asyncio.gather(*[helper(dc) for dc in dcs])
 
         return dict(zip(dcs, xdr_ns_configs))
+
+    async def _get_xdr_filter_helper(
+        self, dc: str
+    ) -> common.NamespaceDict[dict[str, str]]:
+        str_resp = client_util.info_to_dict_multi_level(
+            await self._info("xdr-get-filter:dc={}".format(dc)), keyname="namespace"
+        )
+        b64_resp = client_util.info_to_dict_multi_level(
+            await self._info("xdr-get-filter:dc={};b64=true".format(dc)),
+            keyname="namespace",
+        )
+
+        for ns in b64_resp.keys():
+            str_resp[ns]["b64-exp"] = b64_resp[ns]["exp"]
+
+        return str_resp
+
+    @async_return_exceptions
+    async def info_get_xdr_filter(self, dcs: list[str] | None = None):
+        if dcs is None:
+            dcs = await self.info_dcs()
+
+        filters = await asyncio.gather(*[self._get_xdr_filter_helper(dc) for dc in dcs])
+
+        return dict(zip(dcs, filters))
 
     @async_return_exceptions
     async def info_get_originalconfig(self, stanza=""):

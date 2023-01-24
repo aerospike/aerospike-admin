@@ -285,7 +285,7 @@ class ShowConfigController(CollectinfoCommandController):
             )
 
         self.logger.warning(
-            'The "show config dc" command is DEPRECATED. Use "show config xdr dc" instead.'
+            "The 'show config dc' command is deprecated. Please use 'show config xdr dc' instead."
         )
 
 
@@ -344,8 +344,6 @@ class ShowConfigXDRController(CollectinfoCommandController):
         )
 
         xdr_configs = self.getter.get_xdr()
-        xdr_dc_configs = self.getter.get_xdr_dcs()
-        xdr_ns_configs = self.getter.get_xdr_namespaces()
 
         for timestamp in xdr_configs.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
@@ -356,22 +354,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
                 cinfo_log,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
-                **self.mods,
-            )
-
-            self.view.show_xdr_dc_config(
-                xdr_dc_configs[timestamp],
-                cinfo_log,
-                title_every_nth=title_every_nth,
-                flip_output=flip_output,
-                **self.mods,
-            )
-
-            self.view.show_xdr_ns_config(
-                xdr_ns_configs[timestamp],
-                cinfo_log,
-                title_every_nth=title_every_nth,
-                flip_output=flip_output,
+                timestamp=timestamp,
                 **self.mods,
             )
 
@@ -415,6 +398,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
                 cinfo_log,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
+                timestamp=timestamp,
                 **self.mods,
             )
 
@@ -458,6 +442,49 @@ class ShowConfigXDRController(CollectinfoCommandController):
                 cinfo_log,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays xdr namespace configuration.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    def do_filter(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_filters = self.getter.get_xdr_filters(for_mods=self.mods["for"])
+
+        for timestamp in xdr_filters.keys():
+            self.view.show_xdr_filters(
+                xdr_filters[timestamp],
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                timestamp=timestamp,
                 **self.mods,
             )
 
@@ -944,11 +971,12 @@ class ShowStatisticsController(CollectinfoCommandController):
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 show_total=show_total,
+                timestamp=timestamp,
                 **self.mods,
             )
 
         self.logger.warning(
-            "'show statistics dc' is DEPRECATED. Please use 'show statistics xdr dc' instead."
+            "'show statistics dc' is deprecated. Please use 'show statistics xdr dc' instead."
         )
 
     @CommandHelp(
@@ -1098,13 +1126,14 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
 
             # There are no XDR level stats for XDR 5. This will not print anything
             # if it is empty
-            self.view.show_config(
+            self.view.show_stats(
                 "XDR Statistics",
                 xdr_stats[timestamp],
                 cinfo_log,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 show_total=show_total,
+                timestamp=timestamp,
                 **self.mods,
             )
 
@@ -1154,6 +1183,7 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 show_total=show_total,
+                timestamp=timestamp,
                 **self.mods,
             )
 
@@ -1212,6 +1242,7 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
                 flip_output=flip_output,
                 show_total=show_total,
                 by_dc=by_dc,
+                timestamp=timestamp,
                 **self.mods,
             )
 

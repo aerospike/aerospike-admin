@@ -20,7 +20,7 @@ import sys
 import time
 from io import StringIO
 from pydoc import pipepager
-from typing import Tuple, Union
+from typing import Any, Tuple, Union
 
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
@@ -508,7 +508,7 @@ class CliView(object):
         diff=False,
         with_=None,
         title_every_nth=0,
-        flip_output=True,
+        flip_output=False,
         timestamp="",
         **ignore
     ):
@@ -529,7 +529,7 @@ class CliView(object):
         sorted_keys.sort()
 
         for ns in sorted_keys:
-            title = "XDR {} Namespace Configuration".format(ns, title_suffix)
+            title = "XDR {} Namespace Configuration{}".format(ns, title_suffix)
             sources = dict(
                 node_names=node_names,
                 node_ids=node_ids,
@@ -545,6 +545,7 @@ class CliView(object):
                     style=style,
                     title_repeat=title_every_nth != 0,
                     dynamic_diff=diff,
+                    disable_aggregations=True,
                     common=common,
                 )
             )
@@ -557,7 +558,7 @@ class CliView(object):
         like=None,
         with_=None,
         title_every_nth=0,
-        flip_output=True,
+        flip_output=False,
         show_total=False,
         by_dc=False,
         timestamp="",
@@ -588,7 +589,7 @@ class CliView(object):
             )
 
             if by_dc:
-                title = "XDR {} DC Namespace Statistics".format(key, title_suffix)
+                title = "XDR {} DC Namespace Statistics{}".format(key, title_suffix)
                 CliView.print_result(
                     sheet.render(
                         templates.show_xdr_ns_sheet_by_dc,
@@ -597,12 +598,12 @@ class CliView(object):
                         selectors=like,
                         style=style,
                         title_repeat=title_every_nth != 0,
-                        disable_aggregations=show_total,
+                        disable_aggregations=not show_total,
                         common=common,
                     )
                 )
             else:
-                title = "XDR {} Namespace Statistics".format(key, title_suffix)
+                title = "XDR {} Namespace Statistics{}".format(key, title_suffix)
                 CliView.print_result(
                     sheet.render(
                         templates.show_xdr_ns_sheet,
@@ -611,7 +612,7 @@ class CliView(object):
                         selectors=like,
                         style=style,
                         title_repeat=title_every_nth != 0,
-                        disable_aggregations=show_total,
+                        disable_aggregations=not show_total,
                         common=common,
                     )
                 )
@@ -645,6 +646,7 @@ class CliView(object):
                 show_total=False,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
+                timestamp=timestamp,
             )
 
     @staticmethod
@@ -677,7 +679,40 @@ class CliView(object):
                 show_total=show_total,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
+                timestamp=timestamp,
             )
+
+    @staticmethod
+    @reserved_modifiers
+    def show_xdr_filters(
+        xdr_filters,
+        like=None,
+        diff=False,
+        title_every_nth=0,
+        flip_output=False,
+        timestamp="",
+        **ignore
+    ):
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        style = SheetStyle.rows if flip_output else None
+
+        xdr_filters = CliView._squash_dict(xdr_filters)
+        title = "XDR Filters{}".format(title_suffix)
+        sources = dict(
+            data=xdr_filters,
+        )
+
+        CliView.print_result(
+            sheet.render(
+                templates.show_xdr_filters,
+                title,
+                sources,
+                selectors=like,
+                style=style,
+                title_repeat=title_every_nth != 0,
+                dynamic_diff=diff,
+            )
+        )
 
     @staticmethod
     def show_grep(title, summary):
@@ -1162,6 +1197,22 @@ class CliView(object):
                 templates.show_jobs, title, sources, common=common, selectors=like
             )
         )
+
+    @staticmethod
+    def _squash_dict(data: dict[Any, dict[Any, dict[Any, Any]]]):
+        """
+        The sheet renderer handles {host: {ns: {...}}} formatted dicts well using the
+        for_each_key flag in the sheet template. However, it does not handle {host: {dc: {ns: {...}}}}}
+        without "squashing" it to {host: {(dc, ns): {...}}}}.
+        """
+        result = {}
+        for node, ns_data in data.items():
+            result[node] = {}
+            for ns, rack in ns_data.items():
+                for id, val in rack.items():
+                    result[node][(ns, id)] = val
+
+        return result
 
     @staticmethod
     def show_racks(rack_data, timestamp="", **ignore):

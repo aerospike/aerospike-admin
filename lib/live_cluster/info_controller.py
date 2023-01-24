@@ -1,5 +1,5 @@
 import asyncio
-from lib.live_cluster.client.get_controller import (
+from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
 )

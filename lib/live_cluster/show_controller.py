@@ -1,7 +1,7 @@
 import asyncio
-from lib.base_controller import CommandHelp, CommandName
+from lib.base_controller import CommandHelp, CommandName, ShellException
 from lib.utils import common, util, version, constants
-from lib.live_cluster.client.get_controller import (
+from lib.live_cluster.get_controller import (
     GetConfigController,
     GetDistributionController,
     GetJobsController,
@@ -265,7 +265,6 @@ class ShowConfigController(LiveClusterCommandController):
         "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     async def do_security(self, line):
-
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -309,7 +308,6 @@ class ShowConfigController(LiveClusterCommandController):
         "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     async def do_service(self, line):
-
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -353,7 +351,6 @@ class ShowConfigController(LiveClusterCommandController):
         "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     async def do_network(self, line):
-
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -397,7 +394,6 @@ class ShowConfigController(LiveClusterCommandController):
         "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     async def do_namespace(self, line):
-
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -448,10 +444,6 @@ class ShowConfigController(LiveClusterCommandController):
         "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     async def do_dc(self, line):
-        dc_configs = asyncio.create_task(
-            self.getter.get_xdr_dcs(flip=True, nodes=self.nodes)
-        )
-
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -476,7 +468,7 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
         futures = []
-        dc_configs = await dc_configs
+        dc_configs = await self.getter.get_xdr_dcs(flip=True, nodes=self.nodes)
 
         futures = [
             util.callable(
@@ -494,7 +486,7 @@ class ShowConfigController(LiveClusterCommandController):
         futures.append(
             util.callable(
                 self.logger.warning,
-                '"show config dc" is deprecated. Please use "show config xdr" instead.',
+                "'show config dc' is deprecated. Please use 'show config xdr dc' instead.",
             )
         )
 
@@ -590,8 +582,11 @@ class ShowConfigXDRController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        xdr_ns_configs = await self.getter.get_xdr_dcs(nodes=self.nodes)
-        self.view.show_xdr_dc_config(
+        xdr_ns_configs = await self.getter.get_xdr_dcs(
+            nodes=self.nodes, for_mods=self.mods["for"]
+        )
+        return util.callable(
+            self.view.show_xdr_dc_config,
             xdr_ns_configs,
             self.cluster,
             title_every_nth=title_every_nth,
@@ -630,10 +625,74 @@ class ShowConfigXDRController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        xdr_ns_configs = await self.getter.get_xdr_namespaces(nodes=self.nodes)
-        self.view.show_xdr_ns_config(
+        xdr_ns_configs = await self.getter.get_xdr_namespaces(
+            nodes=self.nodes, for_mods=self.mods["for"]
+        )
+        return util.callable(
+            self.view.show_xdr_ns_config,
             xdr_ns_configs,
             self.cluster,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **self.mods,
+        )
+
+    @CommandHelp(
+        "Displays xdr filters.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    async def do_filter(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        versions = asyncio.create_task(self.cluster.info_build(nodes="principal"))
+        xdr_filters = asyncio.create_task(
+            self.getter.get_xdr_filters(nodes="principal", for_mods=self.mods["for"])
+        )
+        versions = await versions
+
+        fully_supported = all(
+            [
+                True
+                if version.LooseVersion(v)
+                >= version.LooseVersion(constants.SERVER_XDR_FILTER_FIRST_VERSION)
+                else False
+                for v in versions.values()
+            ]
+        )
+
+        if not fully_supported:
+            raise ShellException(
+                "Server version 5.3 or newer is required to run 'show config xdr filter'"
+            )
+
+        self.mods["with"] = ["principal"]  # hack
+
+        self.view.show_xdr_filters(
+            await xdr_filters,
             title_every_nth=title_every_nth,
             flip_output=flip_output,
             **self.mods,
@@ -1013,7 +1072,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         futures.append(
             util.callable(
                 self.logger.warning,
-                "'show statistics dc' is deprecated. Use 'show statistics xdr dc' instead.",
+                "'show statistics dc' is deprecated. Please use 'show statistics xdr dc' instead.",
             )
         )
 
@@ -1073,7 +1132,7 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
         xdr_stats = await self.getter.get_xdr(nodes=self.nodes)
 
         return util.callable(
-            self.view.show_config,
+            self.view.show_stats,
             "XDR Statistics",
             xdr_stats,
             self.cluster,
@@ -1118,7 +1177,9 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        xdr_ns_configs = await self.getter.get_xdr_dcs(nodes=self.nodes)
+        xdr_ns_configs = await self.getter.get_xdr_dcs(
+            nodes=self.nodes, for_mods=self.mods["for"]
+        )
         self.view.show_xdr_dc_stats(
             xdr_ns_configs,
             self.cluster,
@@ -1174,7 +1235,9 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        xdr_ns_configs = await self.getter.get_xdr_namespaces(nodes=self.nodes)
+        xdr_ns_configs = await self.getter.get_xdr_namespaces(
+            nodes=self.nodes, for_mods=self.mods["for"]
+        )
         self.view.show_xdr_ns_stats(
             xdr_ns_configs,
             self.cluster,

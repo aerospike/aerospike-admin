@@ -3,7 +3,7 @@ import copy
 import time
 
 from lib.health import util as health_util
-from lib.live_cluster.client.get_controller import (
+from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
 )

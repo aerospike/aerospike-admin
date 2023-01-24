@@ -16,7 +16,7 @@ from lib.base_controller import CommandHelp
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
-from lib.live_cluster.client.get_controller import (
+from lib.live_cluster.get_controller import (
     GetStatisticsController,
     GetConfigController,
     GetUsersController,

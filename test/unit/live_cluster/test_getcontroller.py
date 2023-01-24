@@ -3,16 +3,51 @@ from pytest import PytestUnraisableExceptionWarning
 from mock import patch
 from mock.mock import AsyncMock
 
-from lib.live_cluster.client.get_controller import (
+from lib.live_cluster.get_controller import (
     GetJobsController,
     GetPmapController,
     GetConfigController,
     GetStatisticsController,
+    _get_all_dcs,
+    _get_all_namespaces,
 )
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import asynctest
+
+
+class GetControllerStaticHelpersTest(asynctest.TestCase):
+    def setUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = AsyncMock()
+
+    async def test_get_all_dcs(self):
+        self.cluster_mock.info_dcs.return_value = {
+            "1.1.1.1": ["aaa", "bbb"],
+            "2.2.2.2": ["ccc", "bbb"],
+        }
+        expected = {"aaa", "bbb", "ccc"}
+
+        actual = await _get_all_dcs(self.cluster_mock, "all")
+
+        self.cluster_mock.info_dcs.assert_called_with(nodes="all")
+
+        self.assertSetEqual(actual, expected)
+
+    async def test_get_all_namespaces(self):
+        self.cluster_mock.info_namespaces.return_value = {
+            "1.1.1.1": ["aaa", "bbb"],
+            "2.2.2.2": ["ccc", "bbb"],
+        }
+        expected = {"aaa", "bbb", "ccc"}
+
+        actual = await _get_all_namespaces(self.cluster_mock, "all")
+
+        self.cluster_mock.info_namespaces.assert_called_with(nodes="all")
+
+        self.assertSetEqual(actual, expected)
 
 
 class GetStatisticsControllerTest(asynctest.TestCase):
@@ -80,6 +115,103 @@ class GetStatisticsControllerTest(asynctest.TestCase):
         result = await self.controller.get_namespace()
 
         self.assertDictEqual(result, expected)
+
+    async def test_get_xdr(self):
+        self.cluster_mock.info_XDR_statistics.return_value = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": Exception(),
+        }
+        expected = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_xdr()
+
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    async def test_get_xdr_dcs_with_filter(self, _get_all_dcs_mock: AsyncMock):
+        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+        self.cluster_mock.info_all_dc_statistics.return_value = {
+            "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}},
+            "2.2.2.2": {"aaa": {"c"}, "aab": Exception()},
+            "3.3.3.3": Exception(),
+        }
+        expected = {
+            "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}},
+            "2.2.2.2": {"aaa": {"c"}, "aab": {}},
+            "3.3.3.3": {},
+        }
+
+        actual = await self.controller.get_xdr_dcs(for_mods=["aa"])
+
+        self.cluster_mock.info_all_dc_statistics.assert_called_with(
+            nodes="all", dcs=["aaa", "aab"]
+        )
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    async def test_get_xdr_dcs(self, _get_all_dcs_mock: AsyncMock):
+        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+        self.cluster_mock.info_all_dc_statistics.return_value = {
+            "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}},
+            "2.2.2.2": {"aaa": {"c"}, "aab": Exception()},
+            "3.3.3.3": Exception(),
+        }
+        expected = {
+            "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}},
+            "2.2.2.2": {"aaa": {"c"}, "aab": {}},
+            "3.3.3.3": {},
+        }
+
+        actual = await self.controller.get_xdr_dcs()
+
+        self.cluster_mock.info_all_dc_statistics.assert_called_with(
+            nodes="all", dcs=["aaa", "aab", "abc"]
+        )
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    @patch("lib.live_cluster.get_controller._get_all_namespaces")
+    async def test_get_xdr_namespaces(
+        self, _get_all_namespaces: AsyncMock, _get_all_dcs_mock: AsyncMock
+    ):
+        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+        _get_all_namespaces.return_value = ["test", "test1", "bar"]
+        self.cluster_mock.info_all_xdr_namespaces_statistics.return_value = {
+            "1.1.1.1": {"aaa": {"test": {"a"}}, "aab": Exception()},
+            "2.2.2.2": {"aaa": {"test": {"a"}}, "aab": {"test1": Exception()}},
+            "3.3.3.3": Exception(),
+        }
+        expected = {
+            "1.1.1.1": {"aaa": {"test": {"a"}}, "aab": {}},
+            "2.2.2.2": {"aaa": {"test": {"a"}}, "aab": {"test1": {}}},
+            "3.3.3.3": {},
+        }
+
+        actual = await self.controller.get_xdr_namespaces()
+
+        self.cluster_mock.info_all_xdr_namespaces_statistics.assert_called_with(
+            nodes="all", dcs=["aaa", "aab", "abc"], namespaces=["test", "test1", "bar"]
+        )
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    @patch("lib.live_cluster.get_controller._get_all_namespaces")
+    async def test_get_xdr_namespaces_with_filter(
+        self, _get_all_namespaces: AsyncMock, _get_all_dcs_mock: AsyncMock
+    ):
+        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+        _get_all_namespaces.return_value = ["test", "test1", "bar"]
+        self.cluster_mock.info_all_xdr_namespaces_statistics.return_value = {}
+
+        actual = await self.controller.get_xdr_namespaces(for_mods=["test", "aa"])
+
+        self.cluster_mock.info_all_xdr_namespaces_statistics.assert_called_with(
+            nodes="all", dcs=["aaa", "aab"], namespaces=["test", "test1"]
+        )
+        self.assertDictEqual(actual, {})
 
 
 class GetPmapControllerTest(asynctest.TestCase):
@@ -271,6 +403,107 @@ class GetConfigControllerTest(asynctest.TestCase):
 
         actual_output = await self.controller.get_namespace(for_mods=["bar"])
         self.assertDictEqual(expected_output, actual_output)
+
+    async def test_get_xdr(self):
+        self.cluster_mock.info_xdr_config.return_value = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": Exception(),
+        }
+        expected = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_xdr()
+
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    async def test_get_xdr_dcs(self, _get_all_dcs_mock: AsyncMock):
+        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+        self.cluster_mock.info_xdr_dcs_config.return_value = {
+            "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}},
+            "2.2.2.2": {"aaa": {"c"}, "aab": Exception()},
+            "3.3.3.3": Exception(),
+        }
+        expected = {
+            "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}},
+            "2.2.2.2": {"aaa": {"c"}, "aab": {}},
+            "3.3.3.3": {},
+        }
+
+        actual = await self.controller.get_xdr_dcs(for_mods=["aa"])
+
+        self.cluster_mock.info_xdr_dcs_config.assert_called_with(
+            nodes="all", dcs=["aaa", "aab"]
+        )
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    @patch("lib.live_cluster.get_controller._get_all_namespaces")
+    async def test_get_xdr_namespaces(
+        self, _get_all_namespaces: AsyncMock, _get_all_dcs_mock: AsyncMock
+    ):
+        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+        _get_all_namespaces.return_value = ["test", "test1", "bar"]
+        self.cluster_mock.info_xdr_namespaces_config.return_value = {
+            "1.1.1.1": {"aaa": {"test": {"a"}}, "aab": Exception()},
+            "2.2.2.2": {"aaa": {"test": {"a"}}, "aab": {"test1": Exception()}},
+            "3.3.3.3": Exception(),
+        }
+        expected = {
+            "1.1.1.1": {"aaa": {"test": {"a"}}, "aab": {}},
+            "2.2.2.2": {"aaa": {"test": {"a"}}, "aab": {"test1": {}}},
+            "3.3.3.3": {},
+        }
+
+        actual = await self.controller.get_xdr_namespaces()
+
+        self.cluster_mock.info_xdr_namespaces_config.assert_called_with(
+            nodes="all", dcs=["aaa", "aab", "abc"], namespaces=["test", "test1", "bar"]
+        )
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    @patch("lib.live_cluster.get_controller._get_all_namespaces")
+    async def test_get_xdr_namespaces_with_filter(
+        self, _get_all_namespaces: AsyncMock, _get_all_dcs_mock: AsyncMock
+    ):
+        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+        _get_all_namespaces.return_value = ["test", "test1", "bar"]
+        self.cluster_mock.info_xdr_namespaces_config.return_value = {}
+
+        actual = await self.controller.get_xdr_namespaces(for_mods=["test", "aa"])
+
+        self.cluster_mock.info_xdr_namespaces_config.assert_called_with(
+            nodes="all", dcs=["aaa", "aab"], namespaces=["test", "test1"]
+        )
+        self.assertDictEqual(actual, {})
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    @patch("lib.live_cluster.get_controller._get_all_namespaces")
+    async def test_get_xdr_filter_with_filter(
+        self, _get_all_namespaces: AsyncMock, _get_all_dcs_mock: AsyncMock
+    ):
+        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+        _get_all_namespaces.return_value = ["test", "test1", "bar"]
+        self.cluster_mock.info_get_xdr_filter.return_value = {
+            "1.1.1.1": {"aab": Exception()},
+            "2.2.2.2": {"aab": {"bar": {}}},
+            "3.3.3.3": Exception(),
+        }
+        expected = {
+            "1.1.1.1": {"aab": {}},
+            "2.2.2.2": {"aab": {}},
+            "3.3.3.3": {},
+        }
+
+        actual = await self.controller.get_xdr_filters(for_mods=["aab", "test"])
+
+        self.cluster_mock.info_get_xdr_filter.assert_called_with(
+            nodes="all", dcs=["aab"]
+        )
+        self.assertDictEqual(actual, expected)
 
 
 class GetJobsControllerTest(asynctest.TestCase):

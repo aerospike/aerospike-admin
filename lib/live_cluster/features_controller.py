@@ -1,4 +1,4 @@
-from lib.live_cluster.client.get_controller import GetFeaturesController
+from lib.live_cluster.get_controller import GetFeaturesController
 from lib.utils import util
 from lib.base_controller import CommandHelp
 

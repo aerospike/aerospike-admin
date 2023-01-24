@@ -18,28 +18,27 @@ from typing import Iterable, Optional
 
 from lib.utils import common, util, constants
 from lib.utils.common import NodeDict, DatacenterDict, NamespaceDict
-from . import Cluster
+from .client import Cluster
 
 # Helpers
-async def _get_all_dcs(cluster, nodes) -> Iterable[str]:
+def _union_iterable(vals: Iterable[Iterable[str]]) -> set[str]:
+    val_set = set()
+
+    for val in vals:
+        if not isinstance(val, Exception):
+            val_set = val_set.union(val)
+
+    return val_set
+
+
+async def _get_all_dcs(cluster, nodes) -> set[str]:
     dcs_dict = await cluster.info_dcs(nodes=nodes)
-    all_dcs = set()
-    filter_dcs = None
-
-    for val in dcs_dict.values():
-        all_dcs = all_dcs.union(val)
-
-    return all_dcs
+    return _union_iterable(dcs_dict.values())
 
 
-async def _get_all_namespaces(cluster, nodes) -> Iterable[str]:
+async def _get_all_namespaces(cluster, nodes) -> set[str]:
     namespaces_per_node = await cluster.info_namespaces(nodes=nodes)
-    all_namespaces = set()
-
-    for namespaces in namespaces_per_node.values():
-        all_namespaces = all_namespaces.union(namespaces)
-
-    return all_namespaces
+    return _union_iterable(namespaces_per_node.values())
 
 
 class GetDistributionController:
@@ -242,6 +241,10 @@ class GetConfigController:
                 asyncio.create_task(self.get_xdr_namespaces(nodes=nodes)),
             ),
             (
+                constants.CONFIG_XDR_FILTER,
+                asyncio.create_task(self.get_xdr_filters(nodes=nodes)),
+            ),
+            (
                 constants.CONFIG_ROSTER,
                 asyncio.create_task(self.get_roster(nodes=nodes)),
             ),
@@ -335,15 +338,11 @@ class GetConfigController:
         return ns_configs
 
     async def get_xdr(self, nodes="all"):
-        xdr_configs = {}
-        configs = await self.cluster.info_xdr_config(nodes=nodes)
+        xdr_configs = await self.cluster.info_xdr_config(nodes=nodes)
 
-        if configs:
-            for node, config in configs.items():
-                if isinstance(config, Exception):
-                    continue
-
-                xdr_configs[node] = config
+        for node, node_configs in xdr_configs.items():
+            if isinstance(node_configs, Exception) or not node_configs:
+                xdr_configs[node] = {}
 
         return xdr_configs
 
@@ -351,19 +350,20 @@ class GetConfigController:
         self, flip=False, nodes="all", for_mods: list[str] | None = None
     ):
         all_dcs = await _get_all_dcs(self.cluster, nodes)
-        filtered_dcs = util.filter_list(all_dcs, for_mods)
+        filtered_dcs = list(util.filter_list(all_dcs, for_mods))
 
         result: NodeDict[
-            DatacenterDict[str] | Exception
+            DatacenterDict[dict[str, str]] | Exception
         ] = await self.cluster.info_xdr_dcs_config(nodes=nodes, dcs=filtered_dcs)
 
-        for node in result:
-            if isinstance(result[node], Exception):
-                result[node] = {}
-
         for node, node_config in result.items():
-            if not node_config or isinstance(node_config, Exception):
+            if isinstance(node_config, Exception) or not node_config:
                 result[node] = {}
+                continue
+
+            for dc, dc_config in node_config.items():
+                if not dc_config or isinstance(dc_config, Exception):
+                    result[node][dc] = {}  # type: ignore
 
         if flip:
             result = util.flip_keys(result)
@@ -383,16 +383,16 @@ class GetConfigController:
 
         all_dcs = await _get_all_dcs(self.cluster, nodes)
         all_namespaces = await _get_all_namespaces(self.cluster, nodes)
-        filtered_dcs = None
-        filtered_namespaces = None
 
-        filtered_dcs = util.filter_list(list(all_dcs), dcs_filter)
-        filtered_namespaces = util.filter_list(list(all_namespaces), namespaces_filter)
+        filtered_dcs = list(util.filter_list(list(all_dcs), dcs_filter))
+        filtered_namespaces = list(
+            util.filter_list(list(all_namespaces), namespaces_filter)
+        )
 
         # Not all dcs have all namespaces but that is OK. This function checks that
         # a particular namespace is apart of a dc before making a request.
         result: NodeDict[
-            DatacenterDict[NamespaceDict[str] | Exception] | Exception
+            DatacenterDict[NamespaceDict[dict[str, str]] | Exception] | Exception
         ] = await self.cluster.info_xdr_namespaces_config(
             nodes=nodes, namespaces=filtered_namespaces, dcs=filtered_dcs
         )
@@ -409,7 +409,49 @@ class GetConfigController:
 
                 for ns, ns_config in dc_config.items():
                     if not ns_config or isinstance(ns_config, Exception):
-                        ns_config = {}
+                        result[node][dc][ns] = {}  # type: ignore
+
+        return result
+
+    async def get_xdr_filters(self, nodes="all", for_mods: list[str] | None = None):
+        dcs_filter: list[str] | None = None
+        namespaces_filter: list[str] | None = None
+        filtered_dcs = None
+
+        if for_mods:
+            try:
+                dcs_filter = [for_mods[0]]
+                namespaces_filter = [for_mods[1]]
+            except IndexError:
+                pass
+
+        if dcs_filter:
+            all_dcs = await _get_all_dcs(self.cluster, nodes)
+            filtered_dcs = list(util.filter_list(list(all_dcs), dcs_filter))
+
+        result: NodeDict[
+            DatacenterDict[NamespaceDict[dict[str, str]]]
+        ] = await self.cluster.info_get_xdr_filter(dcs=filtered_dcs, nodes=nodes)
+
+        for host, host_filters in result.items():
+            if isinstance(host_filters, Exception) or host_filters is None:
+                result[host] = {}
+                continue
+
+            for dc, dc_filters in host_filters.items():
+                if isinstance(dc_filters, Exception) or dc_filters is None:
+                    result[host][dc] = {}
+                    continue
+
+                filtered_namespaces = util.filter_list(
+                    list(dc_filters.keys()), namespaces_filter
+                )
+
+                for ns in list(dc_filters.keys()):
+                    # No need to check for exception here because all namespaces are
+                    # returned by a single dc info request unlike xdr ns configs.
+                    if ns not in filtered_namespaces:
+                        del result[host][dc][ns]
 
         return result
 
@@ -670,18 +712,19 @@ class GetStatisticsController:
 
     async def get_xdr(self, nodes="all"):
         xdr_stats = await self.cluster.info_XDR_statistics(nodes=nodes)
+
+        for host, host_stats in xdr_stats.items():
+            if not host_stats or isinstance(host_stats, Exception):
+                xdr_stats[host] = {}
+                continue
+
         return xdr_stats
 
     async def get_xdr_dcs(
-        self, flip=False, nodes="all", for_mods: Optional[list[str]] = None
+        self, flip=False, nodes="all", for_mods: list[str] | None = None
     ):
-        filter_dcs = None
         all_dcs = await _get_all_dcs(self.cluster, nodes)
-
-        if for_mods:
-            filter_dcs = util.filter_list(list(all_dcs), for_mods)
-        else:
-            filter_dcs = all_dcs
+        filter_dcs = list(util.filter_list(list(all_dcs), for_mods))
 
         result = await self.cluster.info_all_dc_statistics(nodes=nodes, dcs=filter_dcs)
 
@@ -710,22 +753,24 @@ class GetStatisticsController:
 
         if for_mods:
             try:
-                dcs_filter = [for_mods[0]]
-                namespaces_filter = [for_mods[1]]
+                namespaces_filter = [for_mods[0]]
+                dcs_filter = [for_mods[1]]
             except IndexError:
                 pass
 
         all_dcs = await _get_all_dcs(self.cluster, nodes)
         all_namespaces = await _get_all_namespaces(self.cluster, nodes)
-        filtered_dcs = None
-        filtered_namespaces = None
 
-        filtered_dcs = util.filter_list(list(all_dcs), dcs_filter)
-        filtered_namespaces = util.filter_list(list(all_namespaces), namespaces_filter)
+        filtered_dcs = list(util.filter_list(list(all_dcs), dcs_filter))
+        filtered_namespaces = list(
+            util.filter_list(list(all_namespaces), namespaces_filter)
+        )
 
         # Not all dcs have all namespaces but that is OK. This function checks that
         # a particular namespace is apart of a dc before making a request.
-        result = await self.cluster.info_all_xdr_namespaces_statistics(
+        result: NodeDict[
+            DatacenterDict[NamespaceDict[dict[str, str]]]
+        ] = await self.cluster.info_all_xdr_namespaces_statistics(
             namespaces=filtered_namespaces, dcs=filtered_dcs, nodes=nodes
         )
 
@@ -734,7 +779,7 @@ class GetStatisticsController:
                 result[host] = {}
                 continue
 
-            for dc, dc_stats in result.items():
+            for dc, dc_stats in host_stats.items():
                 if isinstance(dc_stats, Exception) or dc_stats is None:
                     result[host][dc] = {}
                     continue
