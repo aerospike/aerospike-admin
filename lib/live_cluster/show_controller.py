@@ -668,11 +668,11 @@ class ShowConfigXDRController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        versions = asyncio.create_task(self.cluster.info_build(nodes="principal"))
+        builds = asyncio.create_task(self.cluster.info_build(nodes="principal"))
         xdr_filters = asyncio.create_task(
             self.getter.get_xdr_filters(nodes="principal", for_mods=self.mods["for"])
         )
-        versions = await versions
+        builds = await builds
 
         fully_supported = all(
             [
@@ -680,14 +680,9 @@ class ShowConfigXDRController(LiveClusterCommandController):
                 if version.LooseVersion(v)
                 >= version.LooseVersion(constants.SERVER_XDR_FILTER_FIRST_VERSION)
                 else False
-                for v in versions.values()
+                for v in builds.values()
             ]
         )
-
-        if not fully_supported:
-            raise ShellException(
-                "Server version 5.3 or newer is required to run 'show config xdr filter'"
-            )
 
         self.mods["with"] = ["principal"]  # hack
 
@@ -697,6 +692,11 @@ class ShowConfigXDRController(LiveClusterCommandController):
             flip_output=flip_output,
             **self.mods,
         )
+
+        if not fully_supported:
+            self.logger.warning(
+                "Server version 5.3 or newer is required to run 'show config xdr filter'"
+            )
 
 
 @CommandHelp(

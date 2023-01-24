@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import unittest
-from mock import MagicMock, call, patch
+from mock import MagicMock, call, create_autospec, patch
 
 from lib.view import templates
 from lib.view.view import CliView
@@ -26,7 +26,9 @@ class CliViewTest(unittest.TestCase):
         self.cluster_mock = patch(
             "lib.live_cluster.live_cluster_root_controller.Cluster"
         ).start()
-        self.sheet_mock = patch("lib.view.sheet.render").start()
+        self.render_mock = patch("lib.view.sheet.render").start()
+        self.print_result_mock = patch("lib.view.view.CliView.print_result").start()
+        self.addCleanup(patch.stopall)
 
     def test_show_roster(self):
         roster_data = {
@@ -58,7 +60,7 @@ class CliViewTest(unittest.TestCase):
             roster_data, self.cluster_mock, flip=False, timestamp="test-stamp", **{}
         )
 
-        self.sheet_mock.assert_called_with(
+        self.render_mock.assert_called_with(
             templates.show_roster,
             "Roster (test-stamp)",
             sources,
@@ -177,7 +179,7 @@ class CliViewTest(unittest.TestCase):
 
         self.cluster_mock.get_node_names.assert_called_with(["foo"])
         self.cluster_mock.get_node_ids.assert_called_with(["foo"])
-        self.sheet_mock.assert_called_with(
+        self.render_mock.assert_called_with(
             templates.show_roster,
             "Roster (test-stamp)",
             sources,
@@ -208,7 +210,7 @@ class CliViewTest(unittest.TestCase):
 
         self.cluster_mock.get_node_names.assert_called_with(["bar"])
         self.cluster_mock.get_node_ids.assert_called_with(["bar"])
-        self.sheet_mock.assert_called_with(
+        self.render_mock.assert_called_with(
             templates.show_best_practices,
             "Best Practices (timestamp)",
             sources,
@@ -248,7 +250,7 @@ class CliViewTest(unittest.TestCase):
 
         self.cluster_mock.get_node_names.assert_called_with(["bar"])
         self.cluster_mock.get_node_ids.assert_called_with(["bar"])
-        self.sheet_mock.assert_called_with(
+        self.render_mock.assert_called_with(
             templates.show_jobs,
             "Jobs (timestamp)",
             sources,
@@ -288,13 +290,13 @@ class CliViewTest(unittest.TestCase):
 
         CliView.show_racks(racks_data, timestamp="test-stamp", **{})
 
-        self.sheet_mock.assert_called_with(
+        self.render_mock.assert_called_with(
             templates.show_racks,
             "Racks (test-stamp)",
             sources,
         )
 
-    def test_show_ns_config(self):
+    def test_show_xdr_ns_config(self):
         configs = {
             "[::1]:3001": {
                 "DC1": {
@@ -334,23 +336,14 @@ class CliViewTest(unittest.TestCase):
             "node_names": "node_names",
             "node_ids": "node_ids",
         }
+        self.render_mock.return_value = "table"
 
         CliView.show_xdr_ns_config(
             configs, self.cluster_mock, timestamp="test-stamp", flip_output=True
         )
 
-        self.sheet_mock.assert_has_calls(
+        self.render_mock.assert_has_calls(
             [
-                call(
-                    templates.show_xdr_ns_sheet,
-                    "XDR test Namespace Configuration (test-stamp)",
-                    test_sources,
-                    selectors=None,
-                    style=SheetStyle.columns,
-                    title_repeat=False,
-                    dynamic_diff=False,
-                    common={"principal": "principal"},
-                ),
                 call(
                     templates.show_xdr_ns_sheet,
                     "XDR bar Namespace Configuration (test-stamp)",
@@ -359,11 +352,24 @@ class CliViewTest(unittest.TestCase):
                     style=SheetStyle.columns,
                     title_repeat=False,
                     dynamic_diff=False,
+                    disable_aggregations=True,
+                    common={"principal": "principal"},
+                ),
+                call(
+                    templates.show_xdr_ns_sheet,
+                    "XDR test Namespace Configuration (test-stamp)",
+                    test_sources,
+                    selectors=None,
+                    style=SheetStyle.columns,
+                    title_repeat=False,
+                    dynamic_diff=False,
+                    disable_aggregations=True,
                     common={"principal": "principal"},
                 ),
             ],
-            any_order=True,
+            any_order=False,
         )
+        self.print_result_mock.assert_called()
 
     def test_show_xdr_ns_stats_by_ns(self):
         stats = {
@@ -405,23 +411,14 @@ class CliViewTest(unittest.TestCase):
             "node_names": "node_names",
             "node_ids": "node_ids",
         }
+        self.render_mock.return_value = "table"
 
         CliView.show_xdr_ns_stats(
             stats, self.cluster_mock, timestamp="test-stamp", flip_output=True
         )
 
-        self.sheet_mock.assert_has_calls(
+        self.render_mock.assert_has_calls(
             [
-                call(
-                    templates.show_xdr_ns_sheet,
-                    "XDR test Namespace Statistics (test-stamp)",
-                    test_sources,
-                    selectors=None,
-                    style=SheetStyle.columns,
-                    title_repeat=False,
-                    disable_aggregations=False,
-                    common={"principal": "principal"},
-                ),
                 call(
                     templates.show_xdr_ns_sheet,
                     "XDR bar Namespace Statistics (test-stamp)",
@@ -429,12 +426,23 @@ class CliViewTest(unittest.TestCase):
                     selectors=None,
                     style=SheetStyle.columns,
                     title_repeat=False,
-                    disable_aggregations=False,
+                    disable_aggregations=True,
+                    common={"principal": "principal"},
+                ),
+                call(
+                    templates.show_xdr_ns_sheet,
+                    "XDR test Namespace Statistics (test-stamp)",
+                    test_sources,
+                    selectors=None,
+                    style=SheetStyle.columns,
+                    title_repeat=False,
+                    disable_aggregations=True,
                     common={"principal": "principal"},
                 ),
             ],
-            any_order=True,
+            any_order=False,
         )
+        self.print_result_mock.assert_called()
 
     def test_show_xdr_ns_stats_by_dc(self):
         stats = {
@@ -476,6 +484,7 @@ class CliViewTest(unittest.TestCase):
             "node_names": "node_names",
             "node_ids": "node_ids",
         }
+        self.render_mock.return_value = "table"
 
         CliView.show_xdr_ns_stats(
             stats,
@@ -485,7 +494,7 @@ class CliViewTest(unittest.TestCase):
             by_dc=True,
         )
 
-        self.sheet_mock.assert_has_calls(
+        self.render_mock.assert_has_calls(
             [
                 call(
                     templates.show_xdr_ns_sheet_by_dc,
@@ -494,7 +503,7 @@ class CliViewTest(unittest.TestCase):
                     selectors=None,
                     style=SheetStyle.columns,
                     title_repeat=False,
-                    disable_aggregations=False,
+                    disable_aggregations=True,
                     common={"principal": "principal"},
                 ),
                 call(
@@ -504,12 +513,13 @@ class CliViewTest(unittest.TestCase):
                     selectors=None,
                     style=SheetStyle.columns,
                     title_repeat=False,
-                    disable_aggregations=False,
+                    disable_aggregations=True,
                     common={"principal": "principal"},
                 ),
             ],
-            any_order=True,
+            any_order=False,
         )
+        self.print_result_mock.assert_called()
 
     @patch("lib.view.view.CliView.show_config")
     def test_show_dc_config(self, show_config_mock: MagicMock):
@@ -597,7 +607,7 @@ class CliViewTest(unittest.TestCase):
 
         CliView.show_xdr_filters(filters, timestamp="test-stamp", flip_output=True)
 
-        self.sheet_mock.assert_called_with(
+        self.render_mock.assert_called_with(
             templates.show_xdr_filters,
             "XDR Filters (test-stamp)",
             dict(data=formatted_filters),

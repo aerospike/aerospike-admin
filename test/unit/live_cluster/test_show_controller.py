@@ -155,9 +155,10 @@ class ShowConfigXDRControllerTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowConfigXDRController()
-        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.cluster_mock = self.controller.cluster = AsyncMock()
         self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
         self.view_mock = self.controller.view = create_autospec(CliView)
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.mods = (
             {}
         )  # For some reason they are being polluted from other tests
@@ -221,9 +222,19 @@ class ShowConfigXDRControllerTest(asynctest.TestCase):
 
     async def test_do_filter(self):
         line = "filter for blah".split()
-        mods = {"for": ["blah"], "diff": [], "like": [], "with": [], "line": []}
+        mods = {
+            "for": ["blah"],
+            "diff": [],
+            "like": [],
+            "with": ["principal"],
+            "line": [],
+        }
         configs = {"dc": "configs"}
         self.getter_mock.get_xdr_filters.return_value = configs
+        self.cluster_mock.info_build.return_value = {
+            "1.1.1.1": "5.3.0.0",
+            "2.2.2.2": "6.3.0.0",
+        }
 
         await self.controller.execute(line)
 
@@ -234,7 +245,38 @@ class ShowConfigXDRControllerTest(asynctest.TestCase):
             configs,
             title_every_nth=0,
             flip_output=False,
-            **self.controller.mods,
+            **mods,
+        )
+
+    async def test_do_filter_warns(self):
+        line = "filter for blah".split()
+        mods = {
+            "for": ["blah"],
+            "diff": [],
+            "like": [],
+            "with": ["principal"],
+            "line": [],
+        }
+        configs = {"dc": "configs"}
+        self.getter_mock.get_xdr_filters.return_value = configs
+        self.cluster_mock.info_build.return_value = {
+            "2.2.2.2": "6.3.0.0",
+            "1.1.1.1": "5.2.9.9",
+        }
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr_filters.assert_called_with(
+            nodes="principal", for_mods=["blah"]
+        )
+        self.view_mock.show_xdr_filters.assert_called_with(
+            configs,
+            title_every_nth=0,
+            flip_output=False,
+            **mods,
+        )
+        self.logger_mock.warning.assert_called_once_with(
+            "Server version 5.3 or newer is required to run 'show config xdr filter'"
         )
 
 
@@ -475,14 +517,14 @@ class ShowStatisticsXDRControllerTest(asynctest.TestCase):
         )
 
     async def test_do_dc(self):
-        line = "dc -t".split()
-        mods = {"diff": [], "for": [], "like": [], "with": [], "line": ["-t"]}
+        line = "dc -t for blah".split()
+        mods = {"diff": [], "for": ["blah"], "like": [], "with": [], "line": ["-t"]}
         configs = {"dc": "configs"}
         self.getter_mock.get_xdr_dcs.return_value = configs
 
         await self.controller.execute(line)
 
-        self.getter_mock.get_xdr_dcs.assert_called_with(nodes="all")
+        self.getter_mock.get_xdr_dcs.assert_called_with(nodes="all", for_mods=["blah"])
         self.view_mock.show_xdr_dc_stats.assert_called_with(
             configs,
             self.cluster_mock,
@@ -493,10 +535,10 @@ class ShowStatisticsXDRControllerTest(asynctest.TestCase):
         )
 
     async def test_do_namespace(self):
-        line = "namespace -t --by-dc".split()
+        line = "namespace -t --by-dc for blah".split()
         mods = {
             "diff": [],
-            "for": [],
+            "for": ["blah"],
             "like": [],
             "with": [],
             "line": ["-t", "--by-dc"],
@@ -506,7 +548,9 @@ class ShowStatisticsXDRControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line)
 
-        self.getter_mock.get_xdr_namespaces.assert_called_with(nodes="all")
+        self.getter_mock.get_xdr_namespaces.assert_called_with(
+            nodes="all", for_mods=["blah"]
+        )
         self.view_mock.show_xdr_ns_stats.assert_called_with(
             configs,
             self.cluster_mock,
