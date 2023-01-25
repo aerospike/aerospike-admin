@@ -20,7 +20,7 @@ import sys
 import time
 from io import StringIO
 from pydoc import pipepager
-from typing import Any, Tuple, Union
+from typing import Any, Tuple
 
 from lib.health import constants as health_constants
 from lib.health.util import print_dict

@@ -338,7 +338,9 @@ class GetConfigController:
         return ns_configs
 
     async def get_xdr(self, nodes="all"):
-        xdr_configs = await self.cluster.info_xdr_config(nodes=nodes)
+        xdr_configs: NodeDict[dict[str, str]] = await self.cluster.info_xdr_config(
+            nodes=nodes
+        )
 
         for node, node_configs in xdr_configs.items():
             if isinstance(node_configs, Exception) or not node_configs:
@@ -737,7 +739,6 @@ class GetStatisticsController:
                 if not dc_stats or isinstance(dc_stats, Exception):
                     result[host][dc] = {}
 
-        # Inverted match common structure of other getters, i.e. host is top level key
         if flip:
             return util.flip_keys(result)
 

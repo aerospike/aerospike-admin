@@ -1146,7 +1146,7 @@ class Node(AsyncObject):
             if isinstance(dcs, Exception):
                 err = Exception("Could not retrieve dcs: %s".format(dcs))
                 logger.error(err)
-                return err
+                raise err
 
         async def helper(dc: str):
             dc_config: dict[
@@ -1154,7 +1154,7 @@ class Node(AsyncObject):
             ] | Exception = await self.info_xdr_dcs_config([dc])
 
             if isinstance(dc_config, Exception):
-                return Exception("Could not get stats for dc %s : %s", dc, dc_config)
+                raise Exception("Could not get stats for dc %s : %s", dc, dc_config)
 
             dc_namespaces = client_util.info_to_list(
                 dc_config[dc]["namespaces"], delimiter=","
@@ -1575,6 +1575,10 @@ class Node(AsyncObject):
         return client_util.info_to_dict(await self.info("get-config:context=xdr"))
 
     @async_return_exceptions
+    async def info_xdr_single_dc_config(self, dc):
+        return client_util.info_to_dict(self.info("get-config:context=xdr;dc=%s" % dc))
+
+    @async_return_exceptions
     async def info_xdr_dcs_config(self, dcs: list[str] | None = None):
         """
         Get config for a datacenter.
@@ -1626,11 +1630,9 @@ class Node(AsyncObject):
             logger.error(dcs)
             return dcs
 
-        result = {}
-
-        for dc in dcs:
-            dc_config = await self.info("get-config:context=xdr;dc=%s" % dc)
-            result[dc] = client_util.info_to_dict(dc_config)
+        result = await asyncio.gather(
+            *[self.info_xdr_single_dc_config(dc) for dc in dcs]
+        )
 
         return result
 
