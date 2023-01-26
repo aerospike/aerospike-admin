@@ -4,7 +4,7 @@ on:
   repository_dispatch:
     types: mac-build
   push:
-    branches: [actionsHub, master, test-ready]
+    branches: [actionsHub, master, test-ready, test-tls-hang]
   pull_request:
     branches: [actionsHub]
   workflow_call:
@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
       - name: Checkout ${{ steps.working-dir.outputs.value }}
         working-directory: ${{ steps.checkout-dir.outputs.value }}
-        run: | 
+        run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive -- ${{ inputs.submodule || '.' }}
       - name: Print version

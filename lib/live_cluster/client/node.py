@@ -526,17 +526,20 @@ class Node(AsyncObject):
 
     async def _get_connection(self, ip, port) -> ASSocket:
         sock = None
-
+        self.logger.debug("_get_connection")
         try:
             while True:
-
+                self.logger.debug("pop off list")
                 sock = self.socket_pool[port].pop()
 
+                self.logger.debug("Check if connected")
                 if await sock.is_connected():
+                    self.logger.debug("It is connected. Check for ssl context.")
                     if not self.ssl_context:
                         sock.settimeout(self._timeout)
                     break
 
+                self.logger.debug("Not connected so close and create a new one")
                 await sock.close()
                 sock = None
 

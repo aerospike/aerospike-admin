@@ -93,6 +93,7 @@ class ASSocket:
 
             if self.ssl_context:
                 try:
+                    self.logger.debug("Start handshake")
                     sock.set_app_data(self.tls_name)
 
                     # timeout on wrapper might give errors
@@ -170,9 +171,11 @@ class ASSocket:
 
     async def connect(self):
         try:
+            self.logger.debug("Create new socket")
             self.sock = self._create_socket()
             if not self.sock:
                 return False
+            self.logger.debug("Open new connection")
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
         except Exception as e:
             self.logger.debug(e, include_traceback=True)
