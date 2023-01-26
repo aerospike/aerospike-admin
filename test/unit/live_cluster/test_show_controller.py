@@ -226,7 +226,7 @@ class ShowConfigXDRControllerTest(asynctest.TestCase):
             "for": ["blah"],
             "diff": [],
             "like": [],
-            "with": ["principal"],
+            "with": [],
             "line": [],
         }
         configs = {"dc": "configs"}
@@ -254,7 +254,7 @@ class ShowConfigXDRControllerTest(asynctest.TestCase):
             "for": ["blah"],
             "diff": [],
             "like": [],
-            "with": ["principal"],
+            "with": [],
             "line": [],
         }
         configs = {"dc": "configs"}

@@ -1576,7 +1576,9 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_xdr_single_dc_config(self, dc):
-        return client_util.info_to_dict(self.info("get-config:context=xdr;dc=%s" % dc))
+        return client_util.info_to_dict(
+            await self.info("get-config:context=xdr;dc=%s" % dc)
+        )
 
     @async_return_exceptions
     async def info_xdr_dcs_config(self, dcs: list[str] | None = None):
@@ -1634,7 +1636,7 @@ class Node(AsyncObject):
             *[self.info_xdr_single_dc_config(dc) for dc in dcs]
         )
 
-        return result
+        return dict(zip(dcs, result))
 
     @async_return_exceptions
     async def info_xdr_dc_single_namespace_config(self, dc: str, ns: str):

@@ -1,5 +1,5 @@
 import asyncio
-from lib.base_controller import CommandHelp, CommandName, ShellException
+from lib.base_controller import CommandHelp, CommandName
 from lib.utils import common, util, version, constants
 from lib.live_cluster.get_controller import (
     GetConfigController,
@@ -683,8 +683,6 @@ class ShowConfigXDRController(LiveClusterCommandController):
                 for v in builds.values()
             ]
         )
-
-        self.mods["with"] = ["principal"]  # hack
 
         self.view.show_xdr_filters(
             await xdr_filters,
