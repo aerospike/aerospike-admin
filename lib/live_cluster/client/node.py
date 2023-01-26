@@ -526,16 +526,34 @@ class Node(AsyncObject):
 
     async def _get_connection(self, ip, port) -> ASSocket:
         sock = None
-        self.logger.debug("_get_connection")
+        self.logger.debug("%s:%s _get_connection", ip, port)
         try:
             while True:
-                self.logger.debug("pop off list")
-                sock = self.socket_pool[port].pop()
+                self.logger.debug(
+                    "%s:%s Try to grab existing socket from pool", ip, port
+                )
+                try:
+                    sock = self.socket_pool[port].pop()
+                except (KeyError, IndexError):
+                    self.logger.debug(
+                        "%s:%s Socket pool is empty. Create a new socket", ip, port
+                    )
+                    break
 
-                self.logger.debug("Check if connected")
+                self.logger.debug(
+                    "%s:%s %s Found socket in pool. Check if socket is connected",
+                    ip,
+                    port,
+                    id(sock),
+                )
                 if await sock.is_connected():
-                    self.logger.debug("It is connected. Check for ssl context.")
+                    self.logger.debug(
+                        "%s:%s %s Socket is connected ", ip, port, id(sock)
+                    )
                     if not self.ssl_context:
+                        self.logger.debug(
+                            "%s:%s SSL is not enabled on the socket", ip, port
+                        )
                         sock.settimeout(self._timeout)
                     break
 
@@ -548,7 +566,10 @@ class Node(AsyncObject):
             pass
 
         if sock:
+            self.logger.debug("%s:%s %s Return socket", ip, port, sock)
             return sock
+
+        self.logger.debug("%s:%s %s creating new sock", ip, port, id(sock))
 
         sock = ASSocket(
             ip,
