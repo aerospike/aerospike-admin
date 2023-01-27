@@ -538,21 +538,25 @@ class SSLContext(object):
 
         return method, protocols_to_disable
 
-    def _set_context_options(self, ctx, protocols_to_disable):
+    def _set_context_options(self, ctx: SSL.Context, protocols_to_disable):
         print("_set_context_options")
         try:
             # always disable SSLv2, as per RFC 6176
+            print("_set_options no sslv2")
             ctx.set_options(SSL.OP_NO_SSLv2)
 
             # aerospike does not support SSLv3
+            print("_set_options no sslv3")
             ctx.set_options(SSL.OP_NO_SSLv3)
         except Exception:
             pass
 
         if not protocols_to_disable:
+            print("finished: _set_context_options")
             return ctx
 
         for proto in protocols_to_disable:
+            print("enter disable loop")
             try:
                 if proto == "TLSv1":
                     ctx.set_options(SSL.OP_NO_TLSv1)
@@ -562,6 +566,8 @@ class SSLContext(object):
                     ctx.set_options(SSL.OP_NO_TLSv1_2)
             except Exception:
                 pass
+
+        print("finished: _set_context_options")
         return ctx
 
     def _create_ssl_context(
@@ -586,6 +592,7 @@ class SSLContext(object):
         if encrypt_only:
             self.ctx.set_verify(SSL.VERIFY_NONE, self._verify_none_cb)
         else:
+            print("set_verify")
             self.ctx.set_verify(
                 SSL.VERIFY_PEER | SSL.VERIFY_CLIENT_ONCE, self._verify_cb
             )
