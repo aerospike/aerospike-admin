@@ -201,11 +201,15 @@ class SSLContext(object):
         self._crl_check = crl_check
         self._crl_check_all = crl_check_all
         if enable_tls and not encrypt_only and (crl_check or crl_check_all):
+            print("parse_crl_cert")
             self._crl_checklist = self._parse_crl_cert(capath)
+            print("finish: parse_crl_cert")
         else:
             self._crl_checklist = []
         if enable_tls and not encrypt_only:
+            print("_parse_blacklist_cert")
             self._cert_blacklist = self._parse_blacklist_cert(cert_blacklist)
+            print("finish: _parse_blacklist_cert")
         else:
             self._cert_blacklist = []
 
@@ -587,6 +591,7 @@ class SSLContext(object):
             )
             if cafile or capath:
                 try:
+                    print("_create_ssl_context: load_verify_locations")
                     self.ctx.load_verify_locations(cafile, capath)
                 except Exception as e:
                     path = ""
@@ -658,6 +663,8 @@ class SSLContext(object):
 
         if cipher_suite:
             self.ctx.set_cipher_list(cipher_suite)
+
+        print("finish _create_ssl_context")
 
     def _read_keyfile_password(self, keyfile_password):
         """
