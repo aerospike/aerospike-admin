@@ -542,6 +542,7 @@ def parse_tls_input(cli_args):
             else:
                 keyfile_password = sys.stdin.readline().strip()
 
+        logger.debug("Creating SSL context from tls config")
         return SSLContext(
             enable_tls=cli_args.tls_enable,
             encrypt_only=None,

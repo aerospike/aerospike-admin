@@ -63,7 +63,7 @@ one-file: init
 .PHONY: one-dir
 one-dir: init
 	$(call make_build)
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo-one-dir.spec --distpath $(BUILD_ROOT)bin)"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo-one-dir.spec --debug=imports --distpath $(BUILD_ROOT)bin)"
 	mv $(BUILD_ROOT)bin/asinfo/asinfo $(BUILD_ROOT)bin/asadm/asinfo 
 	rm -r $(BUILD_ROOT)bin/asinfo
 	@echo Check $(BUILD_ROOT)bin for bundle

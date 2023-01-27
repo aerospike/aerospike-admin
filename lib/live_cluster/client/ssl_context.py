@@ -19,20 +19,25 @@ import warnings
 from . import ssl_util
 from lib.utils import util
 
-try:
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        from OpenSSL import crypto, SSL
+try:
+    # with warnings.catch_warnings():
+    #     warnings.filterwarnings("ignore", category=DeprecationWarning)
+    print("Try to import OpenSSL")
+    from OpenSSL import crypto, SSL
+
     HAVE_PYOPENSSL = True
 except ImportError:
+    print("OpenSSL import failed")
     HAVE_PYOPENSSL = False
 try:
+    print("Check for pyasn1 codec")
     from pyasn1.type import univ, constraint, char, namedtype, tag
     from pyasn1.codec.der import decoder as der_decoder
 
     HAVE_PYASN1 = True
 except ImportError:
+    print("pyasn1 codec not found")
     HAVE_PYASN1 = False
 
 if HAVE_PYASN1:
@@ -174,7 +179,7 @@ class SSLContext(object):
         crl_check=False,
         crl_check_all=False,
     ):
-
+        print("init")
         self.ctx = None
         if not enable_tls:
             return
@@ -205,6 +210,7 @@ class SSLContext(object):
             self._cert_blacklist = []
 
     def _parse_crl_cert(self, crl_dir_path):
+        print("_parse_crl_cert")
         if not crl_dir_path:
             raise ValueError("No capath provided to CRL check.")
         try:
@@ -240,6 +246,7 @@ class SSLContext(object):
             raise ValueError("No valid CRL found at capath")
 
     def _parse_blacklist_cert(self, file):
+        print("_parse_blacklist_cert")
         blacklist = []
         try:
             for line in open(file, "r").readlines():
@@ -262,6 +269,7 @@ class SSLContext(object):
             return blacklist
 
     def _parse_issuer(self, issuer_string):
+        print("_parse_issuer")
         components = issuer_string.split("/")
         if not components:
             return None
@@ -285,9 +293,11 @@ class SSLContext(object):
         return comp_list
 
     def _verify_none_cb(self, conn, cert, errnum, depth, ok):
+        print("_verify_none_cb")
         return ok
 
     def _cert_blacklist_check(self, cert: crypto.X509 = None):
+        print("_cert_blacklist_check")
         if not cert:
             raise ValueError("Empty or no Server Certificate for authentication")
         if not self._cert_blacklist:
@@ -326,6 +336,7 @@ class SSLContext(object):
             )
 
     def _cert_crl_check(self, cert):
+        print("_cert_crl_check")
         if not cert:
             raise ValueError("empty or no Server Certificate chain for CRL check")
         if not self._crl_checklist:
@@ -352,6 +363,7 @@ class SSLContext(object):
             )
 
     def _get_common_names(self, components):
+        print("_get_common_names")
         common_names = []
         if not components:
             return common_names
@@ -362,6 +374,7 @@ class SSLContext(object):
         return common_names
 
     def _get_subject_alt_names(self, cert):
+        print("_get_subject_alt_names")
         alt_names = []
         for i in range(cert.get_extension_count()):
             e = cert.get_extension(i)
@@ -377,6 +390,7 @@ class SSLContext(object):
         return alt_names
 
     def _match_tlsname(self, cert, tls_name):
+        print("_match_tlsname")
         if not cert:
             raise ValueError(
                 "empty or no certificate, match_tlsname needs a "
@@ -425,6 +439,7 @@ class SSLContext(object):
             )
 
     def _verify_cb(self, conn, cert, errnum, depth, ok):
+        print("_verify_cb")
         if depth == 0:
             tls_name = conn.get_app_data()
             self._match_tlsname(cert=cert, tls_name=tls_name)
@@ -435,6 +450,7 @@ class SSLContext(object):
         return ok
 
     def _parse_protocols(self, protocols):
+        print("_parse_protocols")
         all_protocols = ["TLSv1", "TLSv1.1", "TLSv1.2"]
         protocols_to_enable = set()
         method = None
@@ -519,6 +535,7 @@ class SSLContext(object):
         return method, protocols_to_disable
 
     def _set_context_options(self, ctx, protocols_to_disable):
+        print("_set_context_options")
         try:
             # always disable SSLv2, as per RFC 6176
             ctx.set_options(SSL.OP_NO_SSLv2)
@@ -555,6 +572,7 @@ class SSLContext(object):
         protocols=None,
         cipher_suite=None,
     ):
+        print("_create_ssl_context")
 
         if not enable_tls:
             return
@@ -651,7 +669,7 @@ class SSLContext(object):
         :param keyfile_password: input password string
         :return: password to read tls keyfile
         """
-
+        print("_read_keyfile_password")
         if keyfile_password is None:
             return keyfile_password
 
