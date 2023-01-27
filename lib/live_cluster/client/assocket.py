@@ -73,6 +73,12 @@ class ASSocket:
         if ctx:
             if HAVE_PYOPENSSL:
                 sock = SSL.Connection(ctx, sock)
+                self.logger.debug(
+                    "%s:%s %s Wrapped underlying socket with TLS context",
+                    self.ip,
+                    self.port,
+                    id(self),
+                )
             else:
                 raise ImportError("No module named pyOpenSSL")
 
@@ -98,6 +104,9 @@ class ASSocket:
                     # timeout on wrapper might give errors
                     sock.setblocking(1)
 
+                    self.logger.debug(
+                        "%s:%s %s Start TLS handshake", self.ip, self.port, id(self)
+                    )
                     sock.do_handshake()
                 except Exception as tlse:
                     print("TLS connection exception: " + str(tlse))
@@ -170,9 +179,14 @@ class ASSocket:
 
     async def connect(self):
         try:
+            self.logger.debug("%s:%s Create new OS socket", self.ip, self.port)
             self.sock = self._create_socket()
             if not self.sock:
+                self.logger.debug("%s:%s Failed to create socket", self.ip, self.port)
                 return False
+            self.logger.debug(
+                "%s:%s Open new connection on new socket", self.ip, self.port
+            )
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
         except Exception as e:
             self.logger.debug(e, include_traceback=True)

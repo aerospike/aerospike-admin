@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
       - name: Checkout ${{ steps.working-dir.outputs.value }}
         working-directory: ${{ steps.checkout-dir.outputs.value }}
-        run: | 
+        run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive -- ${{ inputs.submodule || '.' }}
       - name: Print version
