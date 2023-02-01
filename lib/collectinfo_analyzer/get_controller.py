@@ -77,19 +77,19 @@ class GetConfigController:
                 dcs = dc_vals.keys()
                 filtered_dcs = set(util.filter_list(dcs, dcs_filter))
 
-                for dc, ns_filters in list(dc_vals.items()):
+                for dc, ns_vals in list(dc_vals.items()):
                     if dc not in filtered_dcs:
                         del dc_vals[dc]
                         continue
 
-                    namespaces = ns_filters.keys()
+                    namespaces = ns_vals.keys()
                     filtered_namespaces = set(
                         util.filter_list(namespaces, namespaces_filter)
                     )
 
-                    for ns in list(ns_filters.keys()):
+                    for ns in list(ns_vals.keys()):
                         if ns not in filtered_namespaces:
-                            del ns_filters[ns]
+                            del ns_vals[ns]
 
         return d
 

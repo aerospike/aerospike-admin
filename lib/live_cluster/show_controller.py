@@ -387,7 +387,7 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays namespace configuration",
+        "Displays namespace configuration. Use the 'for' modifier to filter by namespace.",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
@@ -502,8 +502,8 @@ class ShowConfigXDRController(LiveClusterCommandController):
         self.getter = GetConfigController(self.cluster)
 
     @CommandHelp(
-        "Displays xdr, xdr datacenter, and xdr namespace configuration.",
-        "Use the available subcommands for more granularity.",
+        "Displays xdr, xdr datacenter, and xdr namespace configuration. Use the 'for' modifier to filter",
+        "by dc or by namespace. Use the available sub-commands for more granularity.",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
@@ -552,7 +552,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr datacenter configuration.",
+        "Displays xdr datacenter configuration. Use the 'for' modifier to filter by dc.",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
@@ -595,7 +595,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr namespace configuration.",
+        "Displays xdr namespace configuration. Use the 'for' modifier to filter by namespace and then by dc.",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
@@ -638,7 +638,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr filters.",
+        "Displays xdr filters. Use the 'for' modifier to filter by dc and then by namespace.",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   [default: False, no repetition]",
@@ -750,7 +750,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays service statistics",
+        "Displays service statistics.",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
@@ -800,7 +800,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays namespace statistics",
+        "Displays namespace statistics. Use the 'for' modifier to filter by namespace.",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
@@ -854,7 +854,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         ]
 
     @CommandHelp(
-        "Displays sindex statistics",
+        "Displays sindex statistics. Use the 'for' modifier to filter by namespace and then by sindex.",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
@@ -908,7 +908,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         ]
 
     @CommandHelp(
-        "Displays set statistics",
+        "Displays set statistics. Use the 'for' modifier to filter by namespace and then by set.",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
@@ -962,7 +962,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         ]
 
     @CommandHelp(
-        "Displays bin statistics",
+        "Displays bin statistics. Use the 'for' modifier to filter by namespace.",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
@@ -1086,7 +1086,8 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
         self.getter = GetStatisticsController(self.cluster)
 
     @CommandHelp(
-        "Displays xdr, xdr datacenter, and xdr namespace statistics.",
+        "Displays xdr, xdr datacenter, and xdr namespace statistics. Use the 'for' modifier to filter by dc",
+        "or by namespace.",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
@@ -1141,7 +1142,7 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr datacenter statistics.",
+        "Displays xdr datacenter statistics. Use the 'for' modifier to filter by dc.",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
@@ -1188,7 +1189,7 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr namespace statistics.",
+        "Displays xdr namespace statistics. Use the 'for' modifier to filter by namespace and then by dc.",
         "  Options:",
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
