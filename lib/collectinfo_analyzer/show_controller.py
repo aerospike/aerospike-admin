@@ -1,3 +1,7 @@
+from lib.collectinfo_analyzer.get_controller import (
+    GetConfigController,
+    GetStatisticsController,
+)
 from lib.utils import common, constants, util
 from lib.base_controller import CommandHelp, CommandName
 
@@ -32,13 +36,15 @@ class ShowController(CollectinfoCommandController):
 class ShowConfigController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["like", "diff", "for"])
+        self.controller_map = {"xdr": ShowConfigXDRController}
+        self.getter = GetConfigController(self.log_handler)
 
     @CommandHelp(
         "Displays security, service, network, and namespace configuration",
         "  Options:",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   default: False, no repetition.",
-        "    -flip        - Flip output table to show Nodes on Y axis and config on X axis.",
+        "    --flip       - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def _do_default(self, line):
         self.do_security(line[:])
@@ -46,7 +52,13 @@ class ShowConfigController(CollectinfoCommandController):
         self.do_network(line[:])
         self.do_namespace(line[:])
 
-    @CommandHelp("Displays service configuration")
+    @CommandHelp(
+        "Displays service configuration",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip       - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     def do_security(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
@@ -60,6 +72,12 @@ class ShowConfigController(CollectinfoCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -77,10 +95,16 @@ class ShowConfigController(CollectinfoCommandController):
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )
 
-    @CommandHelp("Displays service configuration")
+    @CommandHelp(
+        "Displays service configuration",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip       - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     def do_service(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
@@ -94,6 +118,12 @@ class ShowConfigController(CollectinfoCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -111,10 +141,16 @@ class ShowConfigController(CollectinfoCommandController):
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )
 
-    @CommandHelp("Displays network configuration")
+    @CommandHelp(
+        "Displays network configuration",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip       - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     def do_network(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
@@ -128,6 +164,12 @@ class ShowConfigController(CollectinfoCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -145,10 +187,16 @@ class ShowConfigController(CollectinfoCommandController):
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )
 
-    @CommandHelp("Displays namespace configuration")
+    @CommandHelp(
+        "Displays namespace configuration.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip       - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
     def do_namespace(self, line):
 
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -163,6 +211,12 @@ class ShowConfigController(CollectinfoCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -181,88 +235,17 @@ class ShowConfigController(CollectinfoCommandController):
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
                     timestamp=timestamp,
-                    **self.mods
-                )
-
-    @CommandHelp("Displays XDR configuration")
-    def do_xdr(self, line):
-
-        title_every_nth = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="-r",
-            return_type=int,
-            default=0,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        flip_output = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="-flip",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        xdr_configs = self.log_handler.info_getconfig(stanza=constants.CONFIG_XDR)
-        old_xdr_configs = {}
-        xdr5_configs = {}
-        node_xdr_build_major_version = 5
-
-        for timestamp in sorted(xdr_configs.keys()):
-            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_asd_build()
-
-            for xdr_node in xdr_configs[timestamp]:
-                try:
-                    node_xdr_build_major_version = int(builds[xdr_node][0])
-                except Exception:
-                    continue
-
-                if node_xdr_build_major_version < 5:
-                    old_xdr_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
-                else:
-                    xdr5_configs[xdr_node] = xdr_configs[timestamp][xdr_node]
-
-            if xdr5_configs:
-                formatted_configs = common.format_xdr5_configs(
-                    xdr5_configs, self.mods.get("for", [])
-                )
-
-                if formatted_configs:
-                    self.view.show_xdr5_config(
-                        "XDR Configuration",
-                        formatted_configs,
-                        cinfo_log,
-                        title_every_nth=title_every_nth,
-                        flip_output=flip_output,
-                        timestamp=timestamp,
-                        **self.mods
-                    )
-                else:
-                    # ASADM versions < 1.0.2 could cause this error if ran on
-                    # aerospike server >= 5.0.
-                    #
-                    self.logger.warning(
-                        "Unable to parse XDR configuration info.  Collectinfo file may have been generated \n"
-                        "         with an old version of ASADM on Aerospike server >= 5.0."
-                    )
-
-            if old_xdr_configs:
-                self.view.show_config(
-                    "XDR Configuration",
-                    old_xdr_configs,
-                    cinfo_log,
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    timestamp=timestamp,
-                    **self.mods
+                    **self.mods,
                 )
 
     # pre 5.0
     @CommandHelp(
+        "DEPRECATED: Replaced by 'show config xdr dc'",
         "Displays datacenter configuration",
-        'Replaced by "show config xdr" for server >= 5.0.',
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip       - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def do_dc(self, line):
 
@@ -281,49 +264,229 @@ class ShowConfigController(CollectinfoCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
-        dc_configs = self.log_handler.info_getconfig(
-            stanza=constants.CONFIG_DC, flip=True
-        )
-        node_xdr_build_major_version = 5
+        xdr_dc_configs = self.getter.get_xdr_dcs(for_mods=self.mods["for"])
 
-        for timestamp in sorted(dc_configs.keys()):
+        for timestamp in xdr_dc_configs.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_asd_build()
-            nodes_running_v5_or_higher = False
-            nodes_running_v49_or_lower = False
+            self.view.show_xdr_dc_config(
+                xdr_dc_configs[timestamp],
+                cinfo_log,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                **self.mods,
+            )
 
-            for version in builds.values():
-                try:
-                    node_xdr_build_major_version = int(version[0])
-                except Exception:
-                    continue
+        self.logger.warning(
+            "The 'show config dc' command is deprecated. Please use 'show config xdr dc' instead."
+        )
 
-                if node_xdr_build_major_version >= 5:
-                    nodes_running_v5_or_higher = True
-                else:
-                    nodes_running_v49_or_lower = True
 
-            if nodes_running_v49_or_lower:
-                for dc, configs in dc_configs[timestamp].items():
-                    self.view.show_config(
-                        "%s DC Configuration" % (dc),
-                        configs,
-                        self.log_handler.get_cinfo_log_at(timestamp=timestamp),
-                        title_every_nth=title_every_nth,
-                        flip_output=flip_output,
-                        timestamp=timestamp,
-                        **self.mods
+@CommandHelp(
+    "'show config xdr' is used to display Aerospike XDR configuration settings."
+)
+class ShowConfigXDRController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["with", "like", "diff", "for"])
+        self.getter = GetConfigController(self.log_handler)
+
+    def _check_ns_stats_and_warn(self, xdr_ns_stats):
+        for ts_stats in xdr_ns_stats.values():
+            for node_stats in ts_stats.values():
+                if not node_stats:
+                    self.logger.warning(
+                        "XDR namespace subcontexts were introduced in server 5.0. Try 'show config namespace'"
                     )
+                    return
 
-            if nodes_running_v5_or_higher:
-                self.view.print_result(
-                    "WARNING: Detected nodes running "
-                    + "aerospike version >= 5.0. Please use 'asadm -cf "
-                    + '/path/to/collect_info_file -e "show config xdr"\''
-                    + " for versions 5.0 and up."
-                )
+    @CommandHelp(
+        "Displays xdr, xdr datacenter, and xdr namespace configuration. Use the 'for' modifier to filter",
+        "by dc or by namespace. Use the available sub-commands for more granularity.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    def _do_default(self, line):
+        self._do_xdr(line[:])
+        self.do_dc(line[:])
+        self.do_namespace(line[:])
+
+    def _do_xdr(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_configs = self.getter.get_xdr()
+
+        for timestamp in xdr_configs.keys():
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            self.view.show_config(
+                "XDR Configuration",
+                xdr_configs[timestamp],
+                cinfo_log,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays xdr datacenter configuration. Use the 'for' modifier to filter by dc.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    def do_dc(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_dc_configs = self.getter.get_xdr_dcs(for_mods=self.mods["for"])
+
+        for timestamp in xdr_dc_configs.keys():
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+            self.view.show_xdr_dc_config(
+                xdr_dc_configs[timestamp],
+                cinfo_log,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays xdr namespace configuration. Use the 'for' modifier to filter by namespace and then by dc.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    def do_namespace(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_ns_configs = self.getter.get_xdr_namespaces(for_mods=self.mods["for"])
+
+        for timestamp in xdr_ns_configs.keys():
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+            self.view.show_xdr_ns_config(
+                xdr_ns_configs[timestamp],
+                cinfo_log,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays xdr filter information. Use the 'for' modifier to filter by dc and then by namespace.",
+        "  Options:",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+    )
+    def do_filter(self, line):
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_filters = self.getter.get_xdr_filters(for_mods=self.mods["for"])
+
+        for timestamp in xdr_filters.keys():
+            self.view.show_xdr_filters(
+                xdr_filters[timestamp],
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                timestamp=timestamp,
+                **self.mods,
+            )
 
 
 @CommandHelp(
@@ -482,7 +645,7 @@ class ShowLatenciesController(CollectinfoCommandController):
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 show_ns_details=True if namespace_set else False,
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )
 
 
@@ -490,6 +653,10 @@ class ShowLatenciesController(CollectinfoCommandController):
 class ShowStatisticsController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["like", "for"])
+        self.controller_map = {"xdr": ShowStatisticsXDRController}
+        self.getter = GetStatisticsController(
+            self.log_handler
+        )  # TODO: Use this getter for more than just xdr
 
     @CommandHelp(
         "Displays bin, set, service, and namespace statistics",
@@ -497,7 +664,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
         "    -r           - Repeat output table title and row header after every <terminal width> columns.",
         "                   default: False, no repetition.",
-        "    -flip        - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "    --flip      - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def _do_default(self, line):
         self.do_bins(line[:])
@@ -505,8 +672,65 @@ class ShowStatisticsController(CollectinfoCommandController):
         self.do_service(line[:])
         self.do_namespace(line[:])
 
-    @CommandHelp("Displays service statistics")
+    @CommandHelp(
+        "Displays service statistics",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip      - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     def do_service(self, line):
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
+
+        for timestamp in sorted(service_stats.keys()):
+            self.view.show_config(
+                "Service Statistics",
+                service_stats[timestamp],
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
+                show_total=show_total,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays namespace statistics. Use the 'for' modifier to filter by namespace.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip      - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
+    def do_namespace(self, line):
 
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
@@ -527,41 +751,9 @@ class ShowStatisticsController(CollectinfoCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
-        )
-
-        service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
-
-        for timestamp in sorted(service_stats.keys()):
-            self.view.show_config(
-                "Service Statistics",
-                service_stats[timestamp],
-                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
-                show_total=show_total,
-                title_every_nth=title_every_nth,
-                flip_output=flip_output,
-                timestamp=timestamp,
-                **self.mods
-            )
-
-    @CommandHelp("Displays namespace statistics")
-    def do_namespace(self, line):
-
-        show_total = util.check_arg_and_delete_from_mods(
-            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
-        )
-
-        title_every_nth = util.get_arg_and_delete_from_mods(
+        ) or util.check_arg_and_delete_from_mods(
             line=line,
-            arg="-r",
-            return_type=int,
-            default=0,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        flip_output = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="-flip",
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -585,12 +777,18 @@ class ShowStatisticsController(CollectinfoCommandController):
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
                     timestamp=timestamp,
-                    **self.mods
+                    **self.mods,
                 )
 
-    @CommandHelp("Displays set statistics")
+    @CommandHelp(
+        "Displays set statistics. Use the 'for' modifier to filter by namespace and then by set.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip      - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     def do_sets(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -607,6 +805,12 @@ class ShowStatisticsController(CollectinfoCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -649,10 +853,17 @@ class ShowStatisticsController(CollectinfoCommandController):
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
                     timestamp=timestamp,
-                    **self.mods
+                    **self.mods,
                 )
 
-    @CommandHelp("Displays bin statistics")
+    @CommandHelp(
+        "Displays bin statistics. Use the 'for' modifier to filter by namespace.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip      - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     def do_bins(self, line):
 
         show_total = util.check_arg_and_delete_from_mods(
@@ -671,6 +882,12 @@ class ShowStatisticsController(CollectinfoCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -702,100 +919,20 @@ class ShowStatisticsController(CollectinfoCommandController):
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
                     timestamp=timestamp,
-                    **self.mods
-                )
-
-    @CommandHelp("Displays XDR statistics")
-    def do_xdr(self, line):
-
-        show_total = util.check_arg_and_delete_from_mods(
-            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
-        )
-
-        title_every_nth = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="-r",
-            return_type=int,
-            default=0,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        flip_output = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="-flip",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        xdr_stats = self.log_handler.info_statistics(stanza=constants.STAT_XDR)
-        old_xdr_stats = {}
-        xdr5_stats = {}
-        node_xdr_build_major_version = 5
-
-        for timestamp in sorted(xdr_stats.keys()):
-
-            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_asd_build()
-
-            for xdr_node in xdr_stats[timestamp]:
-                try:
-                    node_xdr_build_major_version = int(builds[xdr_node][0])
-                except Exception:
-                    continue
-
-                if node_xdr_build_major_version < 5:
-                    old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
-                else:
-                    xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
-
-            if xdr5_stats:
-                temp = {}
-                for node in xdr5_stats:
-                    for dc in xdr5_stats[node]:
-                        if dc not in temp:
-                            temp[dc] = {}
-                        temp[dc][node] = xdr5_stats[node][dc]
-
-                xdr5_stats = temp
-                matches = set([])
-
-                if self.mods["for"]:
-                    matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
-
-                for dc in xdr5_stats:
-                    if not self.mods["for"] or dc in matches:
-                        self.view.show_config(
-                            "XDR Statistics %s" % dc,
-                            xdr5_stats[dc],
-                            self.log_handler.get_cinfo_log_at(timestamp=timestamp),
-                            show_total=show_total,
-                            title_every_nth=title_every_nth,
-                            flip_output=flip_output,
-                            timestamp=timestamp,
-                            **self.mods
-                        )
-
-            if old_xdr_stats:
-                self.view.show_config(
-                    "XDR Statistics",
-                    old_xdr_stats,
-                    self.log_handler.get_cinfo_log_at(timestamp=timestamp),
-                    show_total=show_total,
-                    title_every_nth=title_every_nth,
-                    flip_output=flip_output,
-                    timestamp=timestamp,
-                    **self.mods
+                    **self.mods,
                 )
 
     # pre 5.0
     @CommandHelp(
+        "DEPRECATED: Replaced by 'show statistics xdr dc'",
         "Displays datacenter statistics",
-        'Replaced by "show statistics xdr" for server >= 5.0.',
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip      - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def do_dc(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -815,50 +952,42 @@ class ShowStatisticsController(CollectinfoCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
-        dc_stats = self.log_handler.info_statistics(stanza=constants.STAT_DC, flip=True)
-        node_xdr_build_major_version = 5
-        for timestamp in sorted(dc_stats.keys()):
+        xdr_dc_stats = self.getter.get_xdr_dcs()
+
+        for timestamp in xdr_dc_stats.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
-            builds = cinfo_log.get_asd_build()
-            nodes_running_v5_or_higher = False
-            nodes_running_v49_or_lower = False
 
-            for version in builds.values():
-                try:
-                    node_xdr_build_major_version = int(version[0])
-                except Exception:
-                    continue
+            self.view.show_xdr_dc_stats(
+                xdr_dc_stats[timestamp],
+                cinfo_log,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                show_total=show_total,
+                timestamp=timestamp,
+                **self.mods,
+            )
 
-                if node_xdr_build_major_version >= 5:
-                    nodes_running_v5_or_higher = True
-                else:
-                    nodes_running_v49_or_lower = True
+        self.logger.warning(
+            "'show statistics dc' is deprecated. Please use 'show statistics xdr dc' instead."
+        )
 
-            if nodes_running_v49_or_lower:
-                for dc, stats in dc_stats[timestamp].items():
-                    self.view.show_stats(
-                        "%s DC Statistics" % (dc),
-                        stats,
-                        self.log_handler.get_cinfo_log_at(timestamp=timestamp),
-                        show_total=show_total,
-                        title_every_nth=title_every_nth,
-                        flip_output=flip_output,
-                        timestamp=timestamp,
-                        **self.mods
-                    )
-
-            if nodes_running_v5_or_higher:
-                self.view.print_result(
-                    "WARNING: 'show statistics dc' is deprecated on "
-                    + "aerospike versions >= 5.0 \n"
-                    + "Please use 'show statistics xdr' instead"
-                )
-
-    @CommandHelp("Displays sindex statistics")
+    @CommandHelp(
+        "Displays sindex statistics. Use the 'for' modifier to filter by namespace and then by sindex.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   default: False, no repetition.",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
     def do_sindex(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -875,6 +1004,12 @@ class ShowStatisticsController(CollectinfoCommandController):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -916,15 +1051,206 @@ class ShowStatisticsController(CollectinfoCommandController):
                     continue
 
                 self.view.show_stats(
-                    "%s Sindex Statistics" % (sindex),
+                    "%s SIndex Statistics" % (sindex),
                     stats,
                     self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total,
                     title_every_nth=title_every_nth,
                     flip_output=flip_output,
                     timestamp=timestamp,
-                    **self.mods
+                    **self.mods,
                 )
+
+
+@CommandHelp(
+    '"show statistics xdr" is used to display xdr statistics for Aerospike components.'
+)
+class ShowStatisticsXDRController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["like", "for"])
+        self.getter = GetStatisticsController(self.log_handler)
+
+    def _check_ns_stats_and_warn(self, xdr_ns_stats):
+        for ts_stats in xdr_ns_stats.values():
+            for node_stats in ts_stats.values():
+                if not node_stats:
+                    self.logger.warning(
+                        "XDR namespace statistics were introduced in server 5.0 and not added to the collectinfo file until asadm 2.13.0"
+                    )
+                    return
+
+    @CommandHelp(
+        "Displays xdr, xdr datacenter, and xdr namespace statistics. Use the 'for' modifier to filter by dc",
+        "or by namespace. Use the available sub-commands for more granularity.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
+    def _do_default(self, line):
+        self._do_xdr(line[:])
+        self.do_dc(line[:])
+        self.do_namespace(line[:])
+
+    def _do_xdr(self, line):
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_stats = self.getter.get_xdr()
+
+        for timestamp in xdr_stats.keys():
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            # There are no XDR level stats for XDR 5. This will not print anything
+            # if it is empty
+            self.view.show_stats(
+                "XDR Statistics",
+                xdr_stats[timestamp],
+                cinfo_log,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                show_total=show_total,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays xdr datacenter statistics. Use the 'for' modifier to filter by dc.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+    )
+    def do_dc(self, line):
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_dc_stats = self.getter.get_xdr_dcs(for_mods=self.mods["for"])
+
+        for timestamp in xdr_dc_stats.keys():
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            self.view.show_xdr_dc_stats(
+                xdr_dc_stats[timestamp],
+                cinfo_log,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                show_total=show_total,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays xdr namespace statistics. Use the 'for' modifier to filter by namespace and then by dc.",
+        "  Options:",
+        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
+        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
+        "                   [default: False, no repetition]",
+        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "    --by-dc      - Display each datacenter as a new table rather than each namespace. Makes it easier",
+        "                   to identify issues belonging to a particular namespace",
+        "                   [default: False, by namespace]",
+    )
+    def do_namespace(self, line):
+        show_total = util.check_arg_and_delete_from_mods(
+            line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
+        )
+        title_every_nth = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-r",
+            return_type=int,
+            default=0,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        flip_output = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        by_dc = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--by-dc",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        xdr_ns_stats = self.getter.get_xdr_namespaces(for_mods=self.mods["for"])
+
+        for timestamp in xdr_ns_stats.keys():
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            self.view.show_xdr_ns_stats(
+                xdr_ns_stats[timestamp],
+                cinfo_log,
+                title_every_nth=title_every_nth,
+                flip_output=flip_output,
+                show_total=show_total,
+                by_dc=by_dc,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+        self._check_ns_stats_and_warn(xdr_ns_stats)
 
 
 @CommandHelp("Displays partition map analysis of Aerospike cluster.")
@@ -1034,6 +1360,12 @@ class ShowRosterController(CollectinfoCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
 
         roster_configs = self.log_handler.info_getconfig(stanza=constants.CONFIG_ROSTER)
@@ -1043,7 +1375,7 @@ class ShowRosterController(CollectinfoCommandController):
                 roster_configs[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 flip=flip_output,
-                **self.mods
+                **self.mods,
             )
 
 

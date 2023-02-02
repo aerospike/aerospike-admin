@@ -26,7 +26,7 @@ from .client import (
     CDTContext,
 )
 from .live_cluster_command_controller import LiveClusterCommandController
-from lib.get_controller import GetJobsController
+from lib.live_cluster.get_controller import GetJobsController
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
