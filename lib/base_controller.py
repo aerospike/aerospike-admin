@@ -15,7 +15,7 @@
 import inspect
 import re
 import logging
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from lib.health.health_checker import HealthChecker
 from lib.utils import util
@@ -160,26 +160,14 @@ class ShellException(Exception):
 
 
 class BaseController(object):
+    # Create static instances of view / health_checker / asadm_version / logger
     view = view.CliView()
     health_checker = HealthChecker()
     logger = logging.getLogger("asadm")
 
-    # Here so each command controller does not need to define them
-    modifiers = set()
-    required_modifiers = set()
-    mods = {}
-    context = None
-
-    """
-        For when a parent controller takes an argument that needs parsing
-        before sending argument to child controllers
-    """
-    controller_arg = None
-
     def __init__(self, asadm_version=""):
-        # Create static instances of view / health_checker / asadm_version /
-        # logger
-        BaseController.asadm_version = asadm_version
+        if asadm_version:
+            BaseController.asadm_version = asadm_version
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
@@ -195,6 +183,12 @@ class BaseController(object):
                 self.commands.add(CommandName.name(func), func)
             else:
                 self.commands.add(command[1], func)
+
+        try:
+            if self.context:
+                pass
+        except Exception:
+            self.context = None
 
         for command, controller in self.controller_map.items():
             if self.context:
@@ -247,13 +241,53 @@ class BaseController(object):
         return await self.execute(line)
 
     def _init_controller_map(self):
-        try:  # define controller map if not defined
+        """
+        Define controller_map if not defined. This way, not all sub-commands need to
+        define it or call super()
+        """
+        try:
             if self.controller_map:
                 pass
         except Exception:
             self.controller_map = {}
 
+    def _init_modifiers(self):
+        """
+        Define modifiers, required_modifiers, and mods if not defined. This way,
+        not all sub-commands need to define it or call super()
+        """
+        try:
+            if self.modifiers:
+                pass
+        except Exception:
+            self.modifiers = set()
+
+        try:
+            if self.required_modifiers:
+                pass
+        except Exception:
+            self.required_modifiers = set()
+
+        try:
+            if self.mods:
+                pass
+        except Exception:
+            self.mods = {}
+
+    def _init_controller_arg(self):
+        """
+        For when a parent controller takes an argument that needs parsing
+        before sending argument to child controllers
+        """
+        try:
+            if self.controller_arg:
+                pass
+        except Exception:
+            self.controller_arg = None
+
     def _init(self):
+        self._init_modifiers()
+        self._init_controller_arg()
         self._init_controller_map()
         self._init_commands()
 
@@ -453,7 +487,7 @@ class CommandController(BaseController):
 
     def parse_modifiers(self, line, duplicates_in_line_allowed=False):
         mods = self.modifiers | self.required_modifiers
-        groups = {}
+        groups: dict[str, list[Any]] = {}
 
         for mod in mods:
             if mod in mods:
@@ -465,11 +499,6 @@ class CommandController(BaseController):
         while line:
             word = line.pop(0)
 
-            # Remove ',' from input since it needs to be filtered
-            # out in many cases.
-            if word == ",":
-                continue
-
             if word in mods:
                 mod = word
                 # Special case for handling diff modifier of show config
@@ -480,9 +509,16 @@ class CommandController(BaseController):
                 if duplicates_in_line_allowed or word not in groups[mod]:
                     groups[mod].append(word)
 
-        if "with" in mods and "all" in groups["with"]:
-            groups["with"] = "all"
+        # Remove ',' from input since it needs to be filtered
+        # out in many cases.
+        for mod in groups:
+            if len(groups[mod]) > 1:
+                for idx, val in enumerate(groups[mod]):
+                    if isinstance(val, str) and val.endswith(","):
+                        groups[mod][idx] = val[:-1]
 
+        if "with" in mods and "all" in groups["with"]:
+            groups["with"] = "all"  # type: ignore
         return groups
 
     def _check_required_modifiers(self, line):
