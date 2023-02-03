@@ -56,13 +56,6 @@ class ManageLeafCommandController(LiveClusterCommandController):
 
         return True
 
-    def check_list_for_commas_and_warn(self, ls: list[str]):
-        for item in ls:
-            if item.endswith(","):
-                self.logger.warning(
-                    "Because commas are valid input(e.g. passwords), they are no longer accepted as a delimiter. Spaces must be used."
-                )
-
 
 @CommandHelp(
     '"manage" is used for administrative tasks like managing users, roles, udf, and',
