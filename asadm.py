@@ -523,9 +523,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             s = s / 1.2
         print(terminal.bold() + "Let there be CAKE!".center(80) + terminal.reset())
 
-    def do_ctrl_c(*args, **kwargs):
-        print("Please press ctrl+d or type exit")
-
 
 def parse_tls_input(cli_args):
     if cli_args.collectinfo:
