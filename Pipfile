@@ -20,7 +20,7 @@ python-dateutil = "2.8.2"
 msgpack = "1.0.4"
  
 [dev-packages]
-pyinstaller = "==4.10"
+pyinstaller = "==5.7.0"
 black = "*"
 flake8 = "*"
 pytest = "*"
@@ -30,7 +30,7 @@ macholib = {version = "*", sys_platform = "== 'darwin'"}
 asynctest = "*"
 
 [requires]
-python_full_version = "3.10.9"
+python_full_version = "3.10.10"
 
 [pipenv]
 allow_prereleases = true
