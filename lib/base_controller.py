@@ -509,7 +509,7 @@ class CommandController(BaseController):
                 if duplicates_in_line_allowed or word not in groups[mod]:
                     groups[mod].append(word)
 
-        # Remove ',' from input since it needs to be filtered
+        # Remove trailing ',' from input since it needs to be filtered
         # out in many cases.
         for mod in groups:
             if len(groups[mod]) > 1:
