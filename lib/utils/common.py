@@ -838,7 +838,7 @@ def _manually_compute_license_data_size(
 
             repl_factor = util.get_value_from_dict(
                 host_stats,
-                ("effective_replication_factor", "replication-factor"),
+                ("effective_replication_factor", "replication-factor", "repl-factor"),
                 default_value=1,
                 return_type=int,
             )
@@ -1495,7 +1495,6 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
         width = 1
 
         for host_id, data_ in host_data.items():
-
             try:
                 as_version = builds[host_id]
                 if version.LooseVersion(as_version) < version.LooseVersion("2.7.0") or (
@@ -1552,7 +1551,6 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
         need_to_show = {}
 
         for i, bucket in enumerate(start_buckets):
-
             if i == len(start_buckets) - 1:
                 break
 
@@ -1563,7 +1561,6 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             columns.append(key)
 
         for host_id, data_ in host_data.items():
-
             rblock_size_bytes = 128
 
             try:
@@ -1583,7 +1580,6 @@ def _create_bytewise_histogram_percentiles_output(histogram_data, bucket_count, 
             data_["values"] = {}
 
             for i, s in enumerate(start_buckets):
-
                 if i == len(start_buckets) - 1:
                     break
 
@@ -1868,6 +1864,7 @@ def is_new_histogram_version(version_):
 
 #################################
 
+
 ########## Latencies ##########
 def is_new_latencies_version(version_):
     """
@@ -1937,7 +1934,6 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
 
 
 def _check_cmds_for_str(cmds, strings):
-
     for cmd in cmds:
         try:
             output, _ = util.shell_command([cmd])
@@ -2158,7 +2154,6 @@ def _collect_lsof(verbose=False):
             try:
                 t = row.strip().split()[4]
                 if t not in o_dict:
-
                     if len(t) > type_ljust:
                         type_ljust = len(t)
 
@@ -2658,7 +2653,6 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
         xdr_dc = for_mods[0]
 
         for config in xdr_configs.values():
-
             # There is only one dc config per dc
             try:
                 dc_configs_matches = util.filter_list(config["dc_configs"], [xdr_dc])
@@ -2711,7 +2705,6 @@ def format_xdr5_configs(xdr_configs, for_mods=[]):
 
         for node in xdr_configs:
             for dc in xdr_configs[node]["ns_configs"]:
-
                 if dc not in formatted_ns_configs:
                     formatted_ns_configs[dc] = {}
 
