@@ -69,7 +69,10 @@ def add_component_keys(data, component_key_list):
     return temp_dict
 
 
-def pop_tuple_keys_for_next_level(tuple_key_list):
+TypeNameTuple = tuple[str, str]
+
+
+def pop_tuple_keys_for_next_level(tuple_key_list: list[TypeNameTuple]):
     """
     Function takes list of tuple keys (TYPE, NAME)
 

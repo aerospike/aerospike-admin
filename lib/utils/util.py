@@ -14,6 +14,7 @@
 
 import asyncio
 import copy
+import functools
 import inspect
 import io
 import pipes
@@ -165,7 +166,9 @@ def compile_likes(likes):
     return likes
 
 
-def filter_list(ilist, pattern_list):
+def filter_list(
+    ilist: Iterable[str], pattern_list: list[str] | None
+) -> Iterable[str] | filter:
     if not ilist or not pattern_list:
         return ilist
     likes = compile_likes(pattern_list)
@@ -858,3 +861,11 @@ class async_cached(Generic[AwaitableType]):
         if "disable_cache" in kwargs and kwargs["disable_cache"]:
             return self.func(*args)
         return self[args]
+
+    def __repr__(self):
+        """Return the function's docstring."""
+        return self.func.__doc__
+
+    def __get__(self, obj, objtype):
+        """Support instance methods."""
+        return functools.partial(self.__call__, obj)

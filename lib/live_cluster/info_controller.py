@@ -1,8 +1,7 @@
 import asyncio
-from lib.get_controller import (
+from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
-    get_sindex_stats,
 )
 from lib.utils import util
 from lib.base_controller import CommandHelp
@@ -19,6 +18,7 @@ class InfoController(LiveClusterCommandController):
         self.modifiers = set(["with", "for"])
         self.controller_map = dict(namespace=InfoNamespaceController)
         self.config_getter = GetConfigController(self.cluster)
+        self.stat_getter = GetStatisticsController(self.cluster)
 
     @CommandHelp("Displays network, namespace, and XDR summary information.")
     async def _do_default(self, line):
@@ -70,7 +70,7 @@ class InfoController(LiveClusterCommandController):
     async def do_dc(self, line):
         stats, configs = await asyncio.gather(
             self.cluster.info_all_dc_statistics(nodes=self.nodes),
-            self.config_getter.get_dc(nodes=self.nodes),
+            self.config_getter.get_xdr_dcs(nodes=self.nodes),
         )
         builds = asyncio.create_task(self.cluster.info_build(nodes=self.nodes))
 
@@ -206,7 +206,7 @@ class InfoController(LiveClusterCommandController):
         '"info sindex" displays summary information for Secondary Indexes (SIndex).'
     )
     async def do_sindex(self, line):
-        sindex_stats = await get_sindex_stats(self.cluster, self.nodes)
+        sindex_stats = await self.stat_getter.get_sindex()
         return util.callable(
             self.view.info_sindex, sindex_stats, self.cluster, **self.mods
         )

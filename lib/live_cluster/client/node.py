@@ -20,7 +20,7 @@ import socket
 import threading
 import time
 import base64
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from lib.live_cluster.client.ctx import CDTContext
 from lib.live_cluster.client.msgpack import ASPacker
 
@@ -151,7 +151,7 @@ class Node(AsyncObject):
         self.peers: list[tuple[Addr_Port_TLSName]] = []
 
         # session token
-        self.session_token = None
+        self.session_token: bytes | None = None
         self.session_expiration = 0
         self.perform_login = True
 
@@ -268,9 +268,6 @@ class Node(AsyncObject):
         service_info_call = self._get_service_info_call()
         commands = ["node", service_info_call, "features"] + peers_info_calls
         results = await self._info_cinfo(commands, self.ip, disable_cache=True)
-
-        if isinstance(results, Exception):
-            raise results
 
         node_id = results["node"]
         service_addresses = self._info_service_helper(results[service_info_call])
@@ -485,7 +482,7 @@ class Node(AsyncObject):
         return self.sock_name()
 
     async def is_XDR_enabled(self):
-        config = await self.info_get_config("xdr")
+        config = await self.info_xdr_config()
 
         if isinstance(config, Exception):
             return False
@@ -616,8 +613,6 @@ class Node(AsyncObject):
     # connect. If this happens while setting ip (connection process) then node
     # will get that ip to which asadm can't connect. It will create new
     # issues in future process.
-
-    @async_return_exceptions
     @util.async_cached
     async def _info_cinfo(self, command, ip=None, port=None):
         if ip is None:
@@ -674,9 +669,23 @@ class Node(AsyncObject):
             )
             raise ex
 
+    @async_return_exceptions
     async def info(self, command):
         """
-        asinfo function equivalent
+        asinfo function equivalent but returns exceptions instead of raising them
+
+        Arguments:
+        command -- the info command to execute on this node
+        """
+        return await self._info_cinfo(command, self.ip)
+
+    async def _info(self, command):
+        """
+        TODO: Start using this as the internal info function. I think mechanism that catches
+        and returns exceptions should be done at the cluster level. It can make things difficult
+        with a linter when everything could possibly be an exception.
+
+        asinfo function equivalent but raises exceptions instead of returning them
 
         Arguments:
         command -- the info command to execute on this node
@@ -1013,9 +1022,6 @@ class Node(AsyncObject):
         failed_practices = []
         resp = await self.info("best-practices")
 
-        if isinstance(resp, ASInfoError):
-            return resp
-
         resp_dict = client_util.info_to_dict(resp)
 
         if (
@@ -1046,6 +1052,44 @@ class Node(AsyncObject):
         return stat_dict
 
     @async_return_exceptions
+    async def info_dc_statistics(self, dc):
+        """
+        Get statistics for a datacenter.
+
+        Returns:
+        dict -- {stat_name : stat_value, ...}
+        """
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            err = Exception("Unable to get stats for dc {} : {}".format(dc, build))
+            return err
+
+        # XDR 5 created a new API
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            return client_util.info_to_dict(await self.info("dc/%s" % dc))
+
+        return client_util.info_to_dict(
+            await self.info("get-stats:context=xdr;dc=%s" % dc)
+        )
+
+    @async_return_exceptions
+    async def info_all_dc_statistics(self, dcs: list[str] | None = None):
+        if dcs is None:
+            dcs = await self.info_dcs()
+
+            if isinstance(dcs, Exception):
+                err = Exception("Unable to get dcs : ".format(dcs))
+                return err
+
+        stat_list = await asyncio.gather(*[self.info_dc_statistics(dc) for dc in dcs])
+
+        return dict(zip(dcs, stat_list))
+
+    @async_return_exceptions
     async def info_XDR_statistics(self):
         """
         Get statistics for XDR
@@ -1055,14 +1099,75 @@ class Node(AsyncObject):
         """
         build = await self.info_build()
 
-        # for new aerospike version (>=3.8) with
-        # xdr-in-asd stats available on service port
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # XDR 5 does not have statistics at the xdr context level.  It requires a dc.
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            return {}
+
+        return client_util.info_to_dict(await self.info("statistics/xdr"))
+
+    @async_return_exceptions
+    async def info_xdr_dc_namespaces_statistics(self, dc: str, namespaces: list[str]):
+        all_ns_stats = await asyncio.gather(
+            *[
+                self.info("get-stats:context=xdr;dc={};namespace={}".format(dc, ns))
+                for ns in namespaces
+            ]
+        )
+
+        all_ns_stats = list(map(client_util.info_to_dict, all_ns_stats))
+
+        return dict(zip(namespaces, all_ns_stats))
+
+    @async_return_exceptions
+    async def info_all_xdr_namespaces_statistics(
+        self, namespaces: list[str] | None = None, dcs: list[str] | None = None
+    ):
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # New in XDR5. These stats used to be stored at the namespace level
         if version.LooseVersion(build) < version.LooseVersion(
             constants.SERVER_NEW_XDR5_VERSION
         ):
-            return client_util.info_to_dict(await self.info("statistics/xdr"))
+            return {}
 
-        return await self.info_all_dc_statistics()
+        if not dcs:
+            dcs = await self.info_dcs()
+
+            if isinstance(dcs, Exception):
+                err = Exception("Could not retrieve dcs: %s".format(dcs))
+                logger.error(err)
+                raise err
+
+        async def helper(dc: str):
+            dc_config: dict[
+                str, dict[str, Any]
+            ] | Exception = await self.info_xdr_dcs_config([dc])
+
+            if isinstance(dc_config, Exception):
+                raise Exception("Could not get stats for dc %s : %s", dc, dc_config)
+
+            dc_namespaces = client_util.info_to_list(
+                dc_config[dc]["namespaces"], delimiter=","
+            )
+
+            if namespaces is not None:
+                dc_namespaces = list(set(dc_namespaces).intersection(namespaces))
+
+            return await self.info_xdr_dc_namespaces_statistics(dc, dc_namespaces)
+
+        xdr_namespace_stats = await asyncio.gather(*[helper(dc) for dc in dcs])
+
+        return dict(zip(dcs, xdr_namespace_stats))
 
     @async_return_exceptions
     async def info_set_config_xdr_create_dc(self, dc):
@@ -1424,7 +1529,7 @@ class Node(AsyncObject):
         """
         Get the complete config for a node. This should include the following
         stanzas: Service, Network, XDR, and Namespace
-        Sadly it seems Service and Network are not seperable.
+        Sadly it seems Service and Network are not separable.
 
         Returns:
         dict -- stanza --> [namespace] --> param --> value
@@ -1432,41 +1537,9 @@ class Node(AsyncObject):
         config = {}
 
         if stanza == "namespace":
-            if namespace != "":
-                config = {
-                    namespace: client_util.info_to_dict(
-                        await self.info(
-                            "get-config:context=namespace;id=%s" % namespace
-                        )
-                    )
-                }
-            else:
-                namespace_configs = {}
-                namespaces = await self.info_namespaces()
-                config_list = await client_util.concurrent_map(
-                    lambda ns: self.info_get_config("namespace", ns), namespaces
-                )
-
-                for namespace, namespace_config in zip(namespaces, config_list):
-                    # info_get_config returns a dict that must be unpacked.
-                    namespace_configs[namespace] = namespace_config[namespace]
-                config = namespace_configs
-        elif stanza == "xdr" and version.LooseVersion(
-            await self.info_build()
-        ) >= version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION):
-            xdr_config = {}
-            xdr_config["dc_configs"] = {}
-            xdr_config["ns_configs"] = {}
-            tmp_xdr_config, dcs = await asyncio.gather(
-                self.info("get-config:context=xdr"), self.info_dcs()
-            )
-            xdr_config["xdr_configs"] = client_util.info_to_dict(tmp_xdr_config)
-
-            await asyncio.gather(
-                *[self.xdr_config_helper(xdr_config, dc) for dc in dcs]
-            )
-
-            config = xdr_config
+            config = await self.info_namespace_config(namespace)
+        elif stanza == "xdr":
+            config = await self.info_xdr_config()
         elif not stanza:
             config = client_util.info_to_dict(await self.info("get-config:"))
         else:
@@ -1474,6 +1547,183 @@ class Node(AsyncObject):
                 await self.info("get-config:context=%s" % stanza)
             )
         return config
+
+    @async_return_exceptions
+    async def info_namespace_config(self, namespace=""):
+        if namespace != "":
+            config = {
+                namespace: client_util.info_to_dict(
+                    await self.info("get-config:context=namespace;id=%s" % namespace)
+                )
+            }
+        else:
+            namespace_configs = {}
+            namespaces = await self.info_namespaces()
+            config_list = await client_util.concurrent_map(
+                lambda ns: self.info("get-config:context=namespace;id=%s" % ns),
+                namespaces,
+            )
+
+            for namespace, namespace_config in zip(namespaces, config_list):
+                # info_get_config returns a dict that must be unpacked.
+                namespace_configs[namespace] = namespace_config[namespace]
+            config = namespace_configs
+        return config
+
+    @async_return_exceptions
+    async def info_xdr_config(self):
+        return client_util.info_to_dict(await self.info("get-config:context=xdr"))
+
+    @async_return_exceptions
+    async def info_xdr_single_dc_config(self, dc):
+        return client_util.info_to_dict(
+            await self.info("get-config:context=xdr;dc=%s" % dc)
+        )
+
+    @async_return_exceptions
+    async def info_xdr_dcs_config(self, dcs: list[str] | None = None):
+        """
+        Get config for a datacenter.
+
+        Returns:
+        dict -- {dc_name1:{config_name : config_value, ...}, dc_name2:{config_name : config_value, ...}}
+        """
+        build = None
+
+        if dcs is not None:
+            build = await self.info_build()
+        else:
+            build, dcs = await asyncio.gather(self.info_build(), self.info_dcs())
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # New in XDR5. These stats used to be stored at the namespace level
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            configs = await self.info("get-dc-config")
+
+            if not configs or isinstance(configs, Exception):
+                configs = await self.info("get-dc-config:")
+
+            if not configs or isinstance(configs, Exception):
+                return configs
+
+            result = client_util.info_to_dict_multi_level(
+                configs,
+                ["dc-name", "DC_Name"],
+                ignore_field_without_key_value_delimiter=False,
+            )
+
+            if isinstance(result, Exception):
+                logger.error(result)
+                return result
+
+            # No way to get specific DCs back in the pre XDR5 days.
+            for dc in list(result.keys()):
+                if dc not in dcs:
+                    result.pop(dc)
+
+            return result
+
+        if isinstance(dcs, Exception):
+            logger.error(dcs)
+            return dcs
+
+        result = await asyncio.gather(
+            *[self.info_xdr_single_dc_config(dc) for dc in dcs]
+        )
+
+        return dict(zip(dcs, result))
+
+    @async_return_exceptions
+    async def info_xdr_dc_single_namespace_config(self, dc: str, ns: str):
+        return client_util.info_to_dict(
+            await self._info("get-config:context=xdr;dc={};namespace={}".format(dc, ns))
+        )
+
+    @async_return_exceptions
+    async def info_xdr_dc_namespaces_config(self, dc: str, namespaces: list[str]):
+        """
+        Returns multiple namespace configs for a single datacenter.
+        namespaces: If None returns all namespaces configured to ship to a datacenter.
+                    else it returns config for specified namespaces.
+        """
+        ns_configs = await asyncio.gather(
+            *[self.info_xdr_dc_single_namespace_config(dc, ns) for ns in namespaces]
+        )
+
+        return dict(zip(namespaces, ns_configs))
+
+    @async_return_exceptions
+    async def info_xdr_namespaces_config(
+        self, namespaces: list[str] | None = None, dcs: list[str] | None = None
+    ):
+        """
+        Returns multiple namespace configs for multiple datacenters.
+        namespaces: If None returns all namespaces from the specified dcs.
+                    Else it returns config for specified namespaces from the specified dcs.
+        dcs:        If None returns specified namespaces configs from all dcs.
+                    Else it returns specified namespaces from specified dcs.
+        Note: Namespaces are checked to see if they are defined for a specific dc before
+        the configuration is requested.  If a namespace does not exist on a dc the request
+        is skipped.
+        """
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # New in XDR5. XDR Namespace configs used to be defined inside the namespace context.
+        # Now they are defined in the xdr.dc context.
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_NEW_XDR5_VERSION
+        ):
+            return {}
+
+        if not dcs:
+            dcs = await self.info_dcs()
+
+        async def helper(dc):
+            dc_config = await self.info_xdr_dcs_config([dc])
+            dc_namespaces: list[str] = dc_config[dc]["namespaces"].split(",")
+
+            if namespaces is not None:
+                dc_namespaces = list(set(namespaces).intersection(dc_namespaces))
+
+            return await self.info_xdr_dc_namespaces_config(dc, dc_namespaces)
+
+        xdr_ns_configs = await asyncio.gather(*[helper(dc) for dc in dcs])
+
+        return dict(zip(dcs, xdr_ns_configs))
+
+    async def _get_xdr_filter_helper(
+        self, dc: str
+    ) -> common.NamespaceDict[dict[str, str]]:
+        str_resp = client_util.info_to_dict_multi_level(
+            await self._info("xdr-get-filter:dc={}".format(dc)), keyname="namespace"
+        )
+        b64_resp = client_util.info_to_dict_multi_level(
+            await self._info("xdr-get-filter:dc={};b64=true".format(dc)),
+            keyname="namespace",
+        )
+
+        for ns in b64_resp.keys():
+            str_resp[ns]["b64-exp"] = b64_resp[ns]["exp"]
+
+        return str_resp
+
+    @async_return_exceptions
+    async def info_get_xdr_filter(self, dcs: list[str] | None = None):
+        if dcs is None:
+            dcs = await self.info_dcs()
+
+        filters = await asyncio.gather(*[self._get_xdr_filter_helper(dc) for dc in dcs])
+
+        return dict(zip(dcs, filters))
 
     @async_return_exceptions
     async def info_get_originalconfig(self, stanza=""):
@@ -1839,42 +2089,6 @@ class Node(AsyncObject):
         return client_util.info_to_list(await self.info("dcs"))
 
     @async_return_exceptions
-    async def info_dc_statistics(self, dc):
-        """
-        Get statistics for a datacenter.
-
-        Returns:
-        dict -- {stat_name : stat_value, ...}
-        """
-        xdr_major_version = int((await self.info_build())[0])
-
-        # If xdr version is < XDR5.0 return output of old asinfo command.
-        if xdr_major_version < 5:
-            return client_util.info_to_dict(await self.info("dc/%s" % dc))
-        else:
-            return client_util.info_to_dict(
-                await self.info("get-stats:context=xdr;dc=%s" % dc)
-            )
-
-    @async_return_exceptions
-    async def info_all_dc_statistics(self):
-        dcs = await self.info_dcs()
-
-        if isinstance(dcs, Exception):
-            return {}
-
-        result_stats = {}
-
-        stat_list = await asyncio.gather(*[self.info_dc_statistics(dc) for dc in dcs])
-
-        for dc, stat in zip(dcs, stat_list):
-            if not stat or isinstance(stat, Exception):
-                stat = {}
-            result_stats[dc] = stat
-
-        return result_stats
-
-    @async_return_exceptions
     async def info_udf_list(self):
         """
         Get list of UDFs stored on the node.
@@ -2123,32 +2337,6 @@ class Node(AsyncObject):
 
         return rack_data
 
-    @async_return_exceptions
-    async def info_dc_get_config(self):
-        """
-        Get config for a datacenter.
-
-        Returns:
-        dict -- {dc_name1:{config_name : config_value, ...}, dc_name2:{config_name : config_value, ...}}
-        """
-        configs = await self.info("get-dc-config")
-
-        if not configs or isinstance(configs, Exception):
-            configs = await self.info("get-dc-config:")
-
-        if not configs or isinstance(configs, Exception):
-            return {}
-
-        return client_util.info_to_dict_multi_level(
-            configs,
-            ["dc-name", "DC_Name"],
-            ignore_field_without_key_value_delimiter=False,
-        )
-
-    @async_return_exceptions
-    async def info_XDR_get_config(self):
-        return await self.info_get_config(stanza="xdr")
-
     async def _collect_histogram_data(
         self, histogram, command, logarithmic=False, raw_output=False
     ):
@@ -2295,7 +2483,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_build(self):
         """
-        Get Build Version
+        Get Build Version. i.e. w.x.y.z
 
         Returns:
         string -- build version
@@ -2305,10 +2493,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_version(self):
         """
-        Get Build Version
+        Get String describing the server version and edition.
 
         Returns:
-        string -- build version
+        string -- build edition and version
         """
         return await self.info("version")
 

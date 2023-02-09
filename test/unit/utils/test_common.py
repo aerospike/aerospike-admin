@@ -17,7 +17,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
     ):
         # merge expected summary with init summary output so we don't have put the entire thing
         # in the test
-        expected_summary_dict = common._deep_merge_dicts(
+        expected_summary_dict = common.deep_merge_dicts(
             common._initialize_summary_output(namespace_stats.keys()),
             expected_summary_dict,
         )

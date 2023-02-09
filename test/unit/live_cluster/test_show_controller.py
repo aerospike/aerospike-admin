@@ -14,20 +14,31 @@
 
 from pytest import PytestUnraisableExceptionWarning
 from lib.base_controller import ShellException
-from mock import patch, AsyncMock
+from mock import patch, AsyncMock, create_autospec
 from mock.mock import call
+from lib.live_cluster.client.cluster import Cluster
+from lib.live_cluster.get_controller import (
+    GetConfigController,
+    GetJobsController,
+    GetRolesController,
+    GetStatisticsController,
+    GetUsersController,
+)
 
 from lib.live_cluster.show_controller import (
     ShowBestPracticesController,
     ShowConfigController,
+    ShowConfigXDRController,
     ShowJobsController,
     ShowRacksController,
     ShowRolesController,
     ShowRosterController,
     ShowStatisticsController,
+    ShowStatisticsXDRController,
     ShowUsersController,
 )
 from lib.live_cluster.client import ASProtocolError, ASResponse
+from lib.view.view import CliView
 from test.unit import util as test_util
 
 import warnings
@@ -39,21 +50,16 @@ with warnings.catch_warnings():
 
 class ShowConfigControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowConfigController.cluster"
-        ).start()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowConfigController()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetConfigController", AsyncMock()
-        ).start()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
         self.controller.mods = (
             {}
         )  # For some reason they are being polluted from other tests
-        self.view_mock = patch("lib.base_controller.BaseController.view").start()
-        self.controller.getter = self.getter_mock
         self.mods = {}
-        warnings.filterwarnings("error", category=RuntimeWarning)
-        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         self.addCleanup(patch.stopall)
 
@@ -143,27 +149,155 @@ class ShowConfigControllerTest(asynctest.TestCase):
         )
 
 
-@patch("lib.base_controller.BaseController.view")
-class ShowStatisticsControllerTest(asynctest.TestCase):
+@asynctest.fail_on(active_handles=True)
+class ShowConfigXDRControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowStatisticsController.cluster"
-        ).start()
-        self.controller = ShowStatisticsController()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetStatisticsController", AsyncMock()
-        ).start()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.controller = ShowConfigXDRController()
+        self.cluster_mock = self.controller.cluster = AsyncMock()
+        self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.mods = (
             {}
         )  # For some reason they are being polluted from other tests
         self.controller.getter = self.getter_mock
         self.mods = {}
-        warnings.filterwarnings("error", category=RuntimeWarning)
-        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         self.addCleanup(patch.stopall)
 
-    async def test_do_service_default(self, view_mock):
+    async def test_do_xdr(self):
+        line = []
+        mods = {"diff": [], "for": [], "like": [], "with": [], "line": []}
+        configs = {"xdr": "configs"}
+        self.getter_mock.get_xdr.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr.assert_called_with(nodes="all")
+        self.view_mock.show_config.assert_called_with(
+            "XDR Configuration",
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            **mods,
+        )
+
+    async def test_do_dc(self):
+        line = "dc for blah".split()
+        configs = {"dc": "configs"}
+        self.getter_mock.get_xdr_dcs.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr_dcs.assert_called_with(nodes="all", for_mods=["blah"])
+        self.view_mock.show_xdr_dc_config.assert_called_with(
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            **self.controller.mods,
+        )
+
+    async def test_do_namespace(self):
+        line = "namespace for blah".split()
+        mods = {"diff": [], "for": ["blah"], "like": [], "with": [], "line": []}
+        configs = {"dc": "configs"}
+        self.getter_mock.get_xdr_namespaces.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr_namespaces.assert_called_with(
+            nodes="all", for_mods=["blah"]
+        )
+        self.view_mock.show_xdr_ns_config.assert_called_with(
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            **mods,
+        )
+
+    async def test_do_filter(self):
+        line = "filter for blah".split()
+        mods = {
+            "for": ["blah"],
+            "diff": [],
+            "like": [],
+            "with": [],
+            "line": [],
+        }
+        configs = {"dc": "configs"}
+        self.getter_mock.get_xdr_filters.return_value = configs
+        self.cluster_mock.info_build.return_value = {
+            "1.1.1.1": "5.3.0.0",
+            "2.2.2.2": "6.3.0.0",
+        }
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr_filters.assert_called_with(
+            nodes="principal", for_mods=["blah"]
+        )
+        self.view_mock.show_xdr_filters.assert_called_with(
+            configs,
+            title_every_nth=0,
+            flip_output=False,
+            **mods,
+        )
+
+    async def test_do_filter_warns(self):
+        line = "filter for blah".split()
+        mods = {
+            "for": ["blah"],
+            "diff": [],
+            "like": [],
+            "with": [],
+            "line": [],
+        }
+        configs = {"dc": "configs"}
+        self.getter_mock.get_xdr_filters.return_value = configs
+        self.cluster_mock.info_build.return_value = {
+            "2.2.2.2": "6.3.0.0",
+            "1.1.1.1": "5.2.9.9",
+        }
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr_filters.assert_called_with(
+            nodes="principal", for_mods=["blah"]
+        )
+        self.view_mock.show_xdr_filters.assert_called_with(
+            configs,
+            title_every_nth=0,
+            flip_output=False,
+            **mods,
+        )
+        self.logger_mock.warning.assert_called_once_with(
+            "Server version 5.3 or newer is required to run 'show config xdr filter'"
+        )
+
+
+class ShowStatisticsControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.controller = ShowStatisticsController()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(
+            GetStatisticsController
+        )
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.controller.mods = (
+            {}
+        )  # For some reason they are being polluted from other tests
+        self.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    async def test_do_service_default(self):
         line = ["service"]
         mods = {"like": [], "with": [], "for": [], "line": []}
         stats = {"service": "stats"}
@@ -172,7 +306,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         await self.controller.execute(line)
 
         self.getter_mock.get_service.assert_called_with(nodes="all")
-        view_mock.show_stats.assert_called_with(
+        self.view_mock.show_stats.assert_called_with(
             "Service Statistics",
             stats,
             self.cluster_mock,
@@ -182,7 +316,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
             **mods,
         )
 
-    async def test_do_service_modifiers(self, view_mock):
+    async def test_do_service_modifiers(self):
         line = ["service", "with", "1.2.3.4", "like", "foo", "for", "bar"]
         mods = {"like": ["foo"], "with": ["1.2.3.4"], "for": ["bar"], "line": []}
         stats = {"service": "stats"}
@@ -191,7 +325,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         await self.controller.execute(line)
 
         self.getter_mock.get_service.assert_called_with(nodes=["1.2.3.4"])
-        view_mock.show_stats.assert_called_with(
+        self.view_mock.show_stats.assert_called_with(
             "Service Statistics",
             stats,
             self.cluster_mock,
@@ -201,7 +335,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
             **mods,
         )
 
-    async def test_do_service_args(self, view_mock):
+    async def test_do_service_args(self):
         line = ["service", "-t", "-r", "17", "-flip"]
         mods = {"like": [], "with": [], "for": [], "line": line[1:]}
         stats = {"service": "stats"}
@@ -210,7 +344,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         await self.controller.execute(line)
 
         self.getter_mock.get_service.assert_called_with(nodes="all")
-        view_mock.show_stats.assert_called_with(
+        self.view_mock.show_stats.assert_called_with(
             "Service Statistics",
             stats,
             self.cluster_mock,
@@ -220,7 +354,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
             **mods,
         )
 
-    async def test_do_sindex(self, view_mock):
+    async def test_do_sindex(self):
         node_addr = "1.2.3.4"
         like = "foo"
         for_ = "bar"
@@ -246,10 +380,10 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         self.getter_mock.get_sindex.assert_called_with(
             flip=True, nodes=[node_addr], for_mods=[for_]
         )
-        self.assertEqual(view_mock.show_stats.call_count, 3)
+        self.assertEqual(self.view_mock.show_stats.call_count, 3)
 
         for ns_set_sindex in stats:
-            view_mock.show_stats.assert_any_call(
+            self.view_mock.show_stats.assert_any_call(
                 "{} Sindex Statistics".format(ns_set_sindex),
                 stats[ns_set_sindex],
                 self.cluster_mock,
@@ -259,7 +393,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
                 **mods,
             )
 
-    async def test_do_sets(self, view_mock):
+    async def test_do_sets(self):
         node_addr = "1.2.3.4"
         like = "foo"
         for_ = "bar"
@@ -289,10 +423,10 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         self.getter_mock.get_sets.assert_called_with(
             flip=True, nodes=[node_addr], for_mods=[for_]
         )
-        self.assertEqual(view_mock.show_stats.call_count, 3)
+        self.assertEqual(self.view_mock.show_stats.call_count, 3)
 
         for namespace, set_ in stats:
-            view_mock.show_stats.assert_any_call(
+            self.view_mock.show_stats.assert_any_call(
                 "{} {} Set Statistics".format(namespace, set_),
                 stats[(namespace, set_)],
                 self.cluster_mock,
@@ -302,7 +436,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
                 **mods,
             )
 
-    async def test_do_bins(self, view_mock):
+    async def test_do_bins(self):
         node_addr = "1.2.3.4"
         like = "foo"
         for_ = "bar"
@@ -332,10 +466,10 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         self.getter_mock.get_bins.assert_called_with(
             flip=True, nodes=[node_addr], for_mods=[for_]
         )
-        self.assertEqual(view_mock.show_stats.call_count, 3)
+        self.assertEqual(self.view_mock.show_stats.call_count, 3)
 
         for namespace in stats:
-            view_mock.show_stats.assert_any_call(
+            self.view_mock.show_stats.assert_any_call(
                 "{} Bin Statistics".format(namespace),
                 stats[namespace],
                 self.cluster_mock,
@@ -346,18 +480,96 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
             )
 
 
+class ShowStatisticsXDRControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.controller = ShowStatisticsXDRController()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(
+            GetStatisticsController
+        )
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.controller.mods = (
+            {}
+        )  # For some reason they are being polluted from other tests
+        self.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    async def test_do_default(self):
+        line = "-t".split()
+        mods = {"diff": [], "for": [], "like": [], "with": [], "line": line}
+        configs = {"xdr": "configs"}
+        self.getter_mock.get_xdr.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr.assert_called_with(nodes="all")
+        self.view_mock.show_stats.assert_called_with(
+            "XDR Statistics",
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            show_total=True,
+            **mods,
+        )
+
+    async def test_do_dc(self):
+        line = "dc -t for blah".split()
+        mods = {"diff": [], "for": ["blah"], "like": [], "with": [], "line": ["-t"]}
+        configs = {"dc": "configs"}
+        self.getter_mock.get_xdr_dcs.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr_dcs.assert_called_with(nodes="all", for_mods=["blah"])
+        self.view_mock.show_xdr_dc_stats.assert_called_with(
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            show_total=True,
+            **mods,
+        )
+
+    async def test_do_namespace(self):
+        line = "namespace -t --by-dc for blah".split()
+        mods = {
+            "diff": [],
+            "for": ["blah"],
+            "like": [],
+            "with": [],
+            "line": ["-t", "--by-dc"],
+        }
+        configs = {"dc": "configs"}
+        self.getter_mock.get_xdr_namespaces.return_value = configs
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_xdr_namespaces.assert_called_with(
+            nodes="all", for_mods=["blah"]
+        )
+        self.view_mock.show_xdr_ns_stats.assert_called_with(
+            configs,
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            show_total=True,
+            by_dc=True,
+            **mods,
+        )
+
+
 class ShowUsersControllerTest(asynctest.TestCase):
     async def setUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
-        self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowUsersController.cluster"
-        ).start()
         self.controller = ShowUsersController()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetUsersController", AsyncMock()
-        ).start()
-        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(GetUsersController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
@@ -461,14 +673,12 @@ class ShowUsersControllerTest(asynctest.TestCase):
 
 class ShowRolesControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
-        self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowRolesController.cluster"
-        ).start()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRolesController()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetRolesController", AsyncMock()
-        ).start()
-        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(GetRolesController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
@@ -575,8 +785,9 @@ class ShowBestPracticesControllerTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowBestPracticesController()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.view_mock = self.controller.view = create_autospec(CliView)
         self.controller.cluster = self.cluster_mock = AsyncMock()
-        self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
 
     async def test_full_support(self):
@@ -622,18 +833,14 @@ class ShowJobsControllerTest(asynctest.TestCase):
     def setUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
-        self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowJobsController.cluster", AsyncMock()
-        ).start()
         self.controller = ShowJobsController()
-        self.view_mock = patch("lib.base_controller.BaseController.view").start()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetJobsController"
-        ).start()
-        self.getter_mock.get_scans = AsyncMock()
-        self.getter_mock.get_query = AsyncMock()
-        self.getter_mock.get_sindex_builder = AsyncMock()
-        self.controller.getter = self.getter_mock
+        self.cluster_mock = (
+            self.controller.cluster
+        ) = (
+            AsyncMock()
+        )  # can't use autospec here because info_* cluster functions are not autospec-able
+        self.getter_mock = self.controller.getter = create_autospec(GetJobsController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
 
     async def test_default_6_0(self):
@@ -774,14 +981,9 @@ class ShowRosterControllerTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRosterController()
-        self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowRosterController.cluster"
-        ).start()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetConfigController"
-        ).start()
-        self.getter_mock.get_roster = AsyncMock()
-        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
@@ -849,14 +1051,9 @@ class ShowRacksControllerTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRacksController()
-        self.cluster_mock = patch(
-            "lib.live_cluster.show_controller.ShowRacksController.cluster"
-        ).start()
-        self.getter_mock = patch(
-            "lib.live_cluster.show_controller.GetConfigController"
-        ).start()
-        self.getter_mock.get_racks = AsyncMock()
-        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}

@@ -459,7 +459,7 @@ class Cluster(AsyncObject):
     ) -> list[Node]:
         use_nodes = []
 
-        # TODO: Make an enum to store the different nodes values
+        # TODO: Make an enum or class to store the different node selections
         if nodes == "all":
             use_nodes = list(self.nodes.values())
         elif nodes == "random":

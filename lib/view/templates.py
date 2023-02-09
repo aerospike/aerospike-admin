@@ -1378,12 +1378,32 @@ show_config_sheet = Sheet(
     default_style=SheetStyle.rows,
 )
 
-show_config_xdr_ns_sheet = Sheet(
+show_xdr_ns_sheet = Sheet(
     (
+        Field("Datacenter", Projectors.String("data", None, for_each_key=True)),
         node_field,
         hidden_node_id_field,
+        DynamicFields(
+            "data",
+            required=True,
+            order=DynamicFieldOrder.ascending,
+            aggregator_selector=numeric_sum_aggregator_selector,
+        ),
+    ),
+    from_source=("node_names", "data", "node_ids"),
+    group_by=["Datacenter"],
+    order_by=["Datacenter", "Node"],
+    default_style=SheetStyle.rows,
+    for_each=["data"],
+)
+
+
+show_xdr_ns_sheet_by_dc = Sheet(
+    (
         Field("Namespace", Projectors.String("data", None, for_each_key=True)),
-        DynamicFields("data", required=True, order=DynamicFieldOrder.source),
+        node_field,
+        hidden_node_id_field,
+        DynamicFields("data", required=True, order=DynamicFieldOrder.ascending),
     ),
     from_source=("node_names", "data", "node_ids"),
     group_by=["Namespace"],
@@ -1391,6 +1411,23 @@ show_config_xdr_ns_sheet = Sheet(
     default_style=SheetStyle.rows,
     for_each=["data"],
 )
+
+show_xdr_filters = Sheet(
+    (
+        Field("Namespace", Projectors.String("data", 1, for_each_key=True)),
+        Field("Datacenter", Projectors.String("data", 0, for_each_key=True)),
+        Field(
+            "Base64 Expression", Projectors.String("data", "b64-exp"), allow_diff=True
+        ),
+        Field("Expression", Projectors.String("data", "exp"), allow_diff=True),
+    ),
+    from_source=("data"),
+    for_each="data",
+    group_by=("Namespace"),
+    order_by=("Namespace", "Datacenter"),
+    default_style=SheetStyle.columns,
+)
+
 
 show_mapping_to_ip_sheet = Sheet(
     (

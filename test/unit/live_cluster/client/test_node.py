@@ -14,6 +14,7 @@
 
 from ctypes import ArgumentError
 import time
+from typing import Any
 from unittest.mock import call
 import warnings
 from pytest import PytestUnraisableExceptionWarning
@@ -21,7 +22,8 @@ from mock import MagicMock, patch
 import socket
 import unittest
 
-from mock.mock import AsyncMock, Mock
+from mock.mock import AsyncMock, Mock, call
+import pytest
 
 import lib
 from lib.live_cluster.client.ctx import CDTContext, CTXItem, CTXItems
@@ -825,7 +827,7 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with("bins", self.ip)
         self.assertDictEqual(actual, expected)
 
-    async def test_info_XDR_statistics_with_server_before_5(self):
+    async def test_info_XDR_statistics_with_server_pre_xdr5(self):
         self.info_mock.reset_mock()
         lib.live_cluster.client.node.Node.info_build.return_value = "2.5.6"
         self.info_mock.side_effect = ["a=b;c=1;2=z"]
@@ -839,17 +841,12 @@ class NodeTest(asynctest.TestCase):
         self.assertDictEqual(actual, expected)
 
     @patch("lib.live_cluster.client.node.Node.info_all_dc_statistics")
-    async def test_info_XDR_statistics_with_server_after_5(
-        self, info_all_dc_statistics_mock
-    ):
-        info_all_dc_statistics_mock.return_value = "blah"
-        expected = "blah"
-
+    async def test_info_XDR_statistics_xdr5(self, info_all_dc_statistics_mock):
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.1"
         actual = await self.node.info_XDR_statistics()
 
         self.assertEqual(lib.live_cluster.client.node.Node.info_build.call_count, 1)
-        self.assertEqual(info_all_dc_statistics_mock.call_count, 1)
-        self.assertEqual(actual, expected)
+        self.assertEqual(actual, {})
 
     @patch("lib.live_cluster.client.node.Node.info_dcs")
     async def test_info_set_config_xdr_create_dc_success(self, info_dcs_mock):
@@ -1340,69 +1337,52 @@ class NodeTest(asynctest.TestCase):
             % (expected, config),
         )
 
-    async def test_info_get_config_namespace(self):
-        await self.node.info_get_config("namespace", "test")
+    async def test_info_get_config_namespace_single(self):
+        self.info_mock.side_effect = [
+            "a=false;b=10000",
+        ]
+        expected = {"test": {"a": "false", "b": "10000"}}
+
+        actual = await self.node.info_get_config("namespace", "test")
         self.info_mock.assert_called_with(
             "get-config:context=namespace;id=test", self.ip
+        )
+        self.assertDictEqual(expected, actual)
+
+    @patch("lib.live_cluster.client.node.Node.info_namespaces")
+    async def test_info_get_config_namespace_all(self, info_namespaces_mock: AsyncMock):
+        self.info_mock.side_effect = [
+            "a=false;b=10000",
+            "c=true;d=10000",
+        ]
+        info_namespaces_mock.return_value = ["test", "bar"]
+        expected = {
+            "test": {"a": "false", "b": "10000"},
+            "bar": {"c": "true", "b": "10000"},
+        }
+
+        await self.node.info_get_config("namespace")
+
+        self.info_mock.assert_has_calls(
+            [
+                call("get-config:context=namespace;id=test", self.ip),
+                call("get-config:context=namespace;id=bar", self.ip),
+            ]  # type: ignore
         )
 
     async def test_info_get_config_xdr(self):
         def side_effect(req, ip):
             if req == "get-config:context=xdr":
                 return "dcs=DC1,DC2;src-id=0;trace-sample=0"
-            elif req == "get-config:context=xdr;dc=DC1":
-                return "namespaces=bar,foo;a=1;b=2;c=3"
-            elif req == "get-config:context=xdr;dc=DC1;namespace=bar":
-                return "d=4;e=5;f=6"
-            elif req == "get-config:context=xdr;dc=DC1;namespace=foo":
-                return "d=7;e=8;f=9"
-            elif req == "get-config:context=xdr;dc=DC2":
-                return "namespaces=jar;a=10;b=11;c=12"
-            elif req == "get-config:context=xdr;dc=DC2;namespace=jar":
-                return "d=13;e=14;f=15"
             else:
                 raise Exception("Unexpected info call: " + req)
 
         self.info_mock.side_effect = side_effect
-        expected = {
-            "dc_configs": {
-                "DC1": {
-                    "namespaces": "bar,foo",
-                    "a": "1",
-                    "b": "2",
-                    "c": "3",
-                },
-                "DC2": {
-                    "namespaces": "jar",
-                    "a": "10",
-                    "b": "11",
-                    "c": "12",
-                },
-            },
-            "ns_configs": {
-                "DC1": {
-                    "bar": {"d": "4", "e": "5", "f": "6"},
-                    "foo": {"d": "7", "e": "8", "f": "9"},
-                },
-                "DC2": {"jar": {"d": "13", "e": "14", "f": "15"}},
-            },
-            "xdr_configs": {"dcs": "DC1,DC2", "src-id": "0", "trace-sample": "0"},
-        }
+        expected = {"dcs": "DC1,DC2", "src-id": "0", "trace-sample": "0"}
 
         actual = await self.node.info_get_config("xdr")
 
         self.info_mock.assert_any_call("get-config:context=xdr", self.ip)
-        self.info_mock.assert_any_call("get-config:context=xdr;dc=DC1", self.ip)
-        self.info_mock.assert_any_call(
-            "get-config:context=xdr;dc=DC1;namespace=bar", self.ip
-        )
-        self.info_mock.assert_any_call(
-            "get-config:context=xdr;dc=DC1;namespace=foo", self.ip
-        )
-        self.info_mock.assert_any_call("get-config:context=xdr;dc=DC2", self.ip)
-        self.info_mock.assert_any_call(
-            "get-config:context=xdr;dc=DC2;namespace=jar", self.ip
-        )
         self.assertDictEqual(actual, expected)
 
     @patch("lib.utils.conf_parser.parse_file")
@@ -1714,11 +1694,11 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with("dcs", self.ip)
         self.assertListEqual(actual, expected)
 
-    async def test_info_dc_statistics(self):
+    async def test_info_dc_statistics_xdr5(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0"
         expected = {"a": "b", "c": "d", "e": "f"}
         dc = "foo"
         self.info_mock.return_value = "a=b;c=d;e=f"
-        self.node.features = "xdr"
 
         actual = await self.node.info_dc_statistics(dc=dc)
 
@@ -1727,12 +1707,102 @@ class NodeTest(asynctest.TestCase):
         )
         self.assertDictEqual(actual, expected)
 
+    async def test_info_dc_statistics_pre_xdr5(self):
         lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
+        expected = {"a": "b", "c": "d", "e": "f"}
+        dc = "foo"
         self.info_mock.return_value = "a=b;c=d;e=f"
 
         actual = await self.node.info_dc_statistics(dc=dc)
 
         self.info_mock.assert_called_with("dc/{}".format(dc), self.ip)
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.client.node.Node.info_dc_statistics")
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_all_dc_statistics_xdr5(
+        self, info_dcs_mock: AsyncMock, info_dc_statistics_mock: AsyncMock
+    ):
+        info_dc_statistics_mock.side_effect = [
+            {"a": "b", "c": "d", "e": "f"},
+            {"g": "h", "i": "j", "k": "l"},
+        ]
+        expected = {
+            "dc1": {"a": "b", "c": "d", "e": "f"},
+            "dc2": {"g": "h", "i": "j", "k": "l"},
+        }
+        info_dcs_mock.return_value = ["dc1", "dc2"]
+
+        actual = await self.node.info_all_dc_statistics()
+
+        info_dc_statistics_mock.assert_has_calls([call("dc1"), call("dc2")])
+
+        self.assertDictEqual(actual, expected)
+
+    async def test_info_all_dc_statistics_pre_xdr5(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
+        expected = {"a": "b", "c": "d", "e": "f"}
+        dc = "foo"
+        self.info_mock.return_value = "a=b;c=d;e=f"
+
+        actual = await self.node.info_dc_statistics(dc=dc)
+
+        self.info_mock.assert_called_with("dc/{}".format(dc), self.ip)
+        self.assertDictEqual(actual, expected)
+
+    async def test_info_xdr_dc_namespaces_statistics(
+        self,
+    ):
+        self.info_mock.side_effect = [
+            "a=b;c=d",
+            "e=f;g=h",
+        ]
+        expected = {
+            "test": {"a": "b", "c": "d"},
+            "bar": {"e": "f", "g": "h"},
+        }
+
+        actual = await self.node.info_xdr_dc_namespaces_statistics(
+            "dc1", ["test", "bar"]
+        )
+        self.info_mock.assert_has_calls(
+            [
+                call("get-stats:context=xdr;dc=dc1;namespace=test", self.ip),
+                call("get-stats:context=xdr;dc=dc1;namespace=bar", self.ip),
+            ]  # type: ignore
+        )
+        self.assertDictEqual(expected, actual)
+
+    async def test_info_all_xdr_namespaces_statistics_pre_xdr5(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
+
+        actual = await self.node.info_all_xdr_namespaces_statistics()
+        self.assertDictEqual(actual, {})
+
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    @patch("lib.live_cluster.client.node.Node.info_xdr_dcs_config")
+    @patch("lib.live_cluster.client.node.Node.info_xdr_dc_namespaces_statistics")
+    async def test_info_all_xdr_namespaces_statistics_xdr5(
+        self,
+        info_xdr_dc_namespaces_statistics_mock: AsyncMock,
+        info_xdr_dcs_config_mock: AsyncMock,
+        info_dcs_mock: AsyncMock,
+    ):
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0"
+        info_dcs_mock.return_value = ["dc1", "dc2"]
+        info_xdr_dcs_config_mock.side_effect = [
+            {"dc1": {"namespaces": "test,bar"}},
+            {"dc2": {"namespaces": "zip,zow"}},
+        ]
+        info_xdr_dc_namespaces_statistics_mock.side_effect = [
+            {"test": {"a": "b"}},
+            {"zip": {"c": "d"}},
+        ]
+        expected = {"dc1": {"test": {"a": "b"}}, "dc2": {"zip": {"c": "d"}}}
+
+        actual = await self.node.info_all_xdr_namespaces_statistics(
+            namespaces=["test", "zip"]
+        )
         self.assertDictEqual(actual, expected)
 
     async def test_info_udf_list(self):
@@ -2026,12 +2096,21 @@ class NodeTest(asynctest.TestCase):
             racks_actual, expected, "info_rack_ids did not return the expected result"
         )
 
-    async def test_info_dc_get_config(self):
-        self.info_mock.return_value = (
-            "dc-name=REMOTE_DC:dc-type=aerospike:tls-name=:dc-security-config-file=/private/aerospike/security_credentials_REMOTE_DC.txt:"
-            "nodes=192.168.100.140+3000,192.168.100.147+3000:int-ext-ipmap=:dc-connections=64:"
-            "dc-connections-idle-ms=55000:dc-use-alternate-services=false:namespaces=test"
-        )
+    @patch("lib.live_cluster.client.node.Node.info_build")
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_xdr_dcs_config_pre_xdr5(
+        self, info_dcs_mock: AsyncMock, info_build_mock: AsyncMock
+    ):
+        info_build_mock.return_value = "4.9.9.9"
+        info_dcs_mock.return_value = ["REMOTE_DC"]
+        self.info_mock.side_effect = [
+            Exception("triggers the second call"),
+            (
+                "dc-name=REMOTE_DC:dc-type=aerospike:tls-name=:dc-security-config-file=/private/aerospike/security_credentials_REMOTE_DC.txt:"
+                "nodes=192.168.100.140+3000,192.168.100.147+3000:int-ext-ipmap=:dc-connections=64:"
+                "dc-connections-idle-ms=55000:dc-use-alternate-services=false:namespaces=test"
+            ),
+        ]
         expected = {
             "REMOTE_DC": {
                 "dc-security-config-file": "/private/aerospike/security_credentials_REMOTE_DC.txt",
@@ -2049,26 +2128,120 @@ class NodeTest(asynctest.TestCase):
 
         self.node.features = ["xdr"]
 
-        xdr_dc_confg = await self.node.info_dc_get_config()
+        xdr_dc_confg = await self.node.info_xdr_dcs_config()
 
         self.assertEqual(
             xdr_dc_confg,
             expected,
-            "info_dc_get_config with xdr feature did not return the expected result",
+            "info_xdr_dcs_config with xdr feature did not return the expected result",
         )
-        self.info_mock.assert_any_call("get-dc-config", self.ip)
+        self.info_mock.assert_has_calls([call("get-dc-config", self.ip), call("get-dc-config:", self.ip)])  # type: ignore
 
-    @patch("lib.live_cluster.client.node.Node.info_get_config")
-    async def test_info_XDR_get_config(self, info_get_config):
-        info_get_config.return_value = {"a": "1", "b": "2", "c": "3"}
-        self.node.features = "xdr"
+    @patch("lib.live_cluster.client.node.Node.info_build")
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_xdr_dcs_config_xdr5(
+        self, info_dcs_mock: AsyncMock, info_build_mock: AsyncMock
+    ):
+        info_build_mock.return_value = "5.0.0.1"
+        self.info_mock.side_effect = [
+            "auth-mode=none;auth-password-file=null;auth-user=null"
+        ]
+        expected = {
+            "REMOTE_DC": {
+                "auth-mode": "none",
+                "auth-password-file": "null",
+                "auth-user": "null",
+            }
+        }
+
+        xdr_dc_confg = await self.node.info_xdr_dcs_config(dcs=["REMOTE_DC"])
+
+        self.assertEqual(
+            xdr_dc_confg,
+            expected,
+            "info_xdr_dcs_config with xdr feature did not return the expected result",
+        )
+        self.info_mock.assert_has_calls([call("get-config:context=xdr;dc=REMOTE_DC", self.ip)])  # type: ignore
+        info_dcs_mock.assert_not_called()
+
+    async def test_info_xdr_dc_namespaces_config(
+        self,
+    ):
+        self.info_mock.side_effect = [
+            "a=b;c=d",
+            "e=f;g=h",
+        ]
+        expected = {
+            "test": {"a": "b", "c": "d"},
+            "bar": {"e": "f", "g": "h"},
+        }
+
+        actual = await self.node.info_xdr_dc_namespaces_config("dc1", ["test", "bar"])
+        self.assertDictEqual(expected, actual)
+
+    async def test_info_all_xdr_namespaces_config_pre_xdr5(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "4.9"
+
+        actual = await self.node.info_xdr_namespaces_config()
+        self.assertDictEqual(actual, {})
+
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    @patch("lib.live_cluster.client.node.Node.info_xdr_dcs_config")
+    @patch("lib.live_cluster.client.node.Node.info_xdr_dc_namespaces_config")
+    async def test_info_all_xdr_namespaces_config_xdr5(
+        self,
+        info_xdr_dc_namespaces_config: AsyncMock,
+        info_xdr_dcs_config_mock: AsyncMock,
+        info_dcs_mock: AsyncMock,
+    ):
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0"
+        info_dcs_mock.return_value = ["dc1", "dc2"]
+        info_xdr_dcs_config_mock.side_effect = [
+            {"dc1": {"namespaces": "test,bar"}},
+            {"dc2": {"namespaces": "zip,zow"}},
+        ]
+        info_xdr_dc_namespaces_config.side_effect = [
+            {"test": {"a": "b"}},
+            {"zip": {"c": "d"}},
+        ]
+        expected = {"dc1": {"test": {"a": "b"}}, "dc2": {"zip": {"c": "d"}}}
+
+        actual = await self.node.info_xdr_namespaces_config(namespaces=["test", "zip"])
+        self.assertDictEqual(actual, expected)
+
+    async def test_info_xdr_config(self):
+        self.info_mock.return_value = "a=1;b=2;c=3"
         expected = {
             "a": "1",
             "b": "2",
             "c": "3",
         }
 
-        actual = await self.node.info_XDR_get_config()
+        actual = await self.node.info_xdr_config()
+
+        self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_get_xdr_filter(self, info_dcs_mock: AsyncMock):
+        info_dcs_mock.return_value = ["dc1", "dc2"]
+        self.info_mock.side_effect = [
+            "namespace=test:exp=1;namespace=bar:exp=2",
+            "namespace=test:exp=3;namespace=bar:exp=4",
+            "namespace=test:exp=5;namespace=bar:exp=6",
+            "namespace=test:exp=7;namespace=bar:exp=8",
+        ]
+        expected = {
+            "dc1": {
+                "test": {"namespace": "test", "exp": "1", "b64-exp": "3"},
+                "bar": {"namespace": "bar", "exp": "2", "b64-exp": "4"},
+            },
+            "dc2": {
+                "test": {"namespace": "test", "exp": "5", "b64-exp": "7"},
+                "bar": {"namespace": "bar", "exp": "6", "b64-exp": "8"},
+            },
+        }
+
+        actual = await self.node.info_get_xdr_filter()
 
         self.assertDictEqual(actual, expected)
 

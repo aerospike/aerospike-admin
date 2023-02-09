@@ -436,7 +436,7 @@ class BaseRSheet(object):
             drop_dfields_groups.append(drop_dfields)
 
         # dfields in intersection can be dropped from all projections.
-        # If it is not in interestion but needs to be "dropped" (not displayed)
+        # If it is not in intersection but needs to be "dropped" (not displayed)
         # from a specific group we will use hidden_fields
         drop_intersection = set(drop_dfields_groups[0])
         for drop_dfields in drop_dfields_groups:

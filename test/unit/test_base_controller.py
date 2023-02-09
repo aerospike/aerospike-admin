@@ -147,10 +147,7 @@ class BaseControllerTest(asynctest.TestCase):
             else:
                 self.assertEqual(expected_result, actual_result)
 
-    @unittest.skip(
-        "Now that mods are passed between controllers to handle self.controller_arg this test is broken"
-    )
-    def test_pre_command(self):
+    async def test_pre_command(self):
         test_lines = [
             (
                 "cmd test like bar with a".split(" "),
@@ -171,7 +168,7 @@ class BaseControllerTest(asynctest.TestCase):
                 ],
             ),
             (
-                "cmd info service with a b with a c".split(" "),
+                "cmd info service with a, b with a, c,".split(" "),
                 [
                     (
                         set(["with"]),
@@ -193,7 +190,7 @@ class BaseControllerTest(asynctest.TestCase):
             for modifiers, expected in results:
                 c = FakeCommand1()
                 c.modifiers = modifiers
-                retval = c(line[:])  # pre_command is a hook
+                retval = await c(line[:])  # pre_command is a hook
                 # print ""
                 # print "modifiers ", c.modifiers
                 # print "line:     ", line
