@@ -947,7 +947,6 @@ class ManageSIndexController(LiveClusterCommandController):
 )
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
-
         self.required_modifiers = set(["line", "ns", "bin"])
         self.modifiers = set(["set", "in", "ctx"])
 
@@ -1007,8 +1006,6 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             + r")"
         )
         particle_pattern = re.compile(particle_pattern_with_names)
-
-        # ctx_list = ManageSIndexCreateController._split_ctx_list(ctx_str)
 
         str_to_ctx = {
             re.compile(r"^list_index\((" + int_pattern + r")\)"): CTXItems.ListIndex,

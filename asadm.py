@@ -261,7 +261,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         # TODO: shlex is not working with 'with' ip addresses. Need to write a
         #       new parser or correct shlex behavior.
         commands = []
-
         command = []
         build_token = ""
 
@@ -476,6 +475,11 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
         return True
 
+    # Just to be consistent with AQL. Is not documented but it is nice for them all
+    # to be consistent.
+    async def do_quit(self, line):
+        return self.do_exit(line)
+
     async def do_EOF(self, line):
         return await self.do_exit(line)
 
@@ -518,10 +522,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             sleep(s)
             s = s / 1.2
         print(terminal.bold() + "Let there be CAKE!".center(80) + terminal.reset())
-
-
-def do_ctrl_c(*args, **kwargs):
-    print("Please press ctrl+d or type exit")
 
 
 def parse_tls_input(cli_args):
@@ -805,7 +805,10 @@ async def main():
             cleanup()
             logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
-    await cmdloop(shell, func, args, use_yappi, single_command)
+    try:
+        await cmdloop(shell, func, args, use_yappi, single_command)
+    except (KeyboardInterrupt, SystemExit):
+        pass
     await shell.close()
 
     try:
@@ -834,11 +837,7 @@ async def cmdloop(shell, func, args, use_yappi, single_command):
             await func(*args)
     except (KeyboardInterrupt, SystemExit):
         if not single_command:
-            shell.intro = (
-                terminal.fg_red()
-                + "\nTo exit asadm utility please run exit command."
-                + terminal.fg_clear()
-            )
+            raise
         await cmdloop(shell, func, args, use_yappi, single_command)
 
 
