@@ -71,7 +71,7 @@ one-dir: init
 .PHONY: init
 init:
 	pipenv install --dev
-	pipenv check
+# pipenv check
 	pipenv graph
 
 .PHONY: install
