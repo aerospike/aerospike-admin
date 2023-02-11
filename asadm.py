@@ -209,7 +209,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             logger.critical(e)
 
         if not execute_only_mode:
-
             try:
                 readline.read_history_file(self.admin_history)
             except Exception:
@@ -363,7 +362,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 return " ".join(line)
 
             if len(lines) > max_commands_to_print_header:
-
                 if len(line) > 1 and any(
                     cmd.startswith(line[0]) for cmd in MULTILEVEL_COMMANDS
                 ):
@@ -536,7 +534,6 @@ def parse_tls_input(cli_args):
             and cli_args.tls_keyfile
             and cli_args.tls_keyfile_password == conf.DEFAULTPASSWORD
         ):
-
             if sys.stdin.isatty():
                 keyfile_password = getpass.getpass("Enter TLS-Keyfile Password:")
             else:
@@ -686,7 +683,6 @@ async def main():
     ssl_context = parse_tls_input(cli_args)
 
     if cli_args.asinfo_mode:
-
         if mode == AdminMode.COLLECTINFO_ANALYZER or mode == AdminMode.LOG_ANALYZER:
             logger.critical(
                 "asinfo mode cannot work with Collectinfo-analyser or Log-analyser mode."

@@ -39,9 +39,7 @@ from .manage_controller import (
 
 @CommandHelp("Aerospike Admin")
 class LiveClusterRootController(BaseController, AsyncObject):
-
-    cluster = None
-    command = None
+    cluster: Cluster
 
     async def __init__(
         self,
@@ -56,8 +54,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
         timeout=5,
         asadm_version="",
     ):
-
-        super().__init__(asadm_version)
+        BaseController.asadm_version = asadm_version
 
         # Create static instance of cluster
         LiveClusterRootController.cluster = await Cluster(
@@ -70,10 +67,10 @@ class LiveClusterRootController(BaseController, AsyncObject):
             ssl_context,
             only_connect_seed,
             timeout=timeout,
-        )
+        )  # type: ignore linter does not understand AsyncObject
 
         # Create Basic Command Controller Object
-        LiveClusterRootController.command = LiveClusterCommandController(self.cluster)
+        LiveClusterCommandController.cluster = self.cluster
 
         self.controller_map = {
             "health": HealthCheckController,

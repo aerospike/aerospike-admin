@@ -9,7 +9,7 @@ from dateutil import parser as date_parser
 from typing import Optional
 from getpass import getpass
 from functools import reduce
-from lib.live_cluster.client.ctx import ASValues, CTXItem, CTXItems
+from lib.live_cluster.client.ctx import ASValues, CTXItems
 
 from lib.view import terminal
 from lib.utils import constants, util, version
@@ -32,7 +32,47 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
 
 
-class ManageLeafCommandController(LiveClusterCommandController):
+class LiveClusterManageCommandController(LiveClusterCommandController):
+    def pre_controller(self, line):
+        self._init_controller_arg()
+
+        if self.controller_arg is None:
+            return
+
+        mod = self.context[-1]
+
+        if mod not in self.mods:
+            self.mods[mod] = {}
+
+        # Used as the key to reference arg, normally the controllers "command".
+        try:
+            arg = line.pop(0)
+        except IndexError:
+            raise ShellException("{} is required".format(mod))
+
+        if arg not in self.modifiers | self.required_modifiers:
+            if mod not in self.mods[mod]:
+                self.mods[mod] = []
+
+            self.mods[mod].append(arg)
+
+            return
+
+        raise ShellException("{} is required".format(mod))
+
+    def _init_controller_arg(self):
+        """
+        For when a parent controller takes an argument that needs parsing
+        before sending argument to child controllers
+        """
+        try:
+            if self.controller_arg:
+                pass
+        except Exception:
+            self.controller_arg = None
+
+
+class ManageLeafCommandController(LiveClusterManageCommandController):
     warn = False
 
     def prompt_challenge(self, message=""):
@@ -62,7 +102,7 @@ class ManageLeafCommandController(LiveClusterCommandController):
     'sindexes. It should be used in conjunction with the "show users" and "show roles"',
     "command.",
 )
-class ManageController(LiveClusterCommandController):
+class ManageController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "jobs": ManageJobsController,
@@ -82,7 +122,7 @@ class ManageController(LiveClusterCommandController):
 
 
 @CommandHelp('"manage acl" is used to manage users and roles.')
-class ManageACLController(LiveClusterCommandController):
+class ManageACLController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "create": ManageACLCreateController,
@@ -100,7 +140,7 @@ class ManageACLController(LiveClusterCommandController):
 
 
 @CommandHelp("")
-class ManageACLCreateController(LiveClusterCommandController):
+class ManageACLCreateController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "user": ManageACLCreateUserController,
@@ -112,7 +152,7 @@ class ManageACLCreateController(LiveClusterCommandController):
 
 
 @CommandHelp("")
-class ManageACLDeleteController(LiveClusterCommandController):
+class ManageACLDeleteController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "user": ManageACLDeleteUserController,
@@ -124,7 +164,7 @@ class ManageACLDeleteController(LiveClusterCommandController):
 
 
 @CommandHelp("")
-class ManageACLGrantController(LiveClusterCommandController):
+class ManageACLGrantController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "user": ManageACLGrantUserController,
@@ -136,7 +176,7 @@ class ManageACLGrantController(LiveClusterCommandController):
 
 
 @CommandHelp("")
-class ManageACLRevokeController(LiveClusterCommandController):
+class ManageACLRevokeController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "user": ManageACLRevokeUserController,
@@ -821,7 +861,7 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
     '"manage udfs" is used to add and remove user defined functions. It should be used',
     'in conjunction with the "show udfs" command.',
 )
-class ManageUdfsController(LiveClusterCommandController):
+class ManageUdfsController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "add": ManageUdfsAddController,
@@ -913,7 +953,7 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
     '"manage sindex" is used to create and delete secondary indexes. It should be used',
     'in conjunction with the "show sindex" or "info sindex" command.',
 )
-class ManageSIndexController(LiveClusterCommandController):
+class ManageSIndexController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "create": ManageSIndexCreateController,
@@ -1025,7 +1065,6 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                 ctx_match = regex_key.search(ctx_item_str)
 
                 if ctx_match is not None:
-
                     if (
                         ctx_cls == CTXItems.ListValue
                         or ctx_cls == CTXItems.MapKey
@@ -1301,7 +1340,6 @@ class ManageConfigLeafController(ManageLeafCommandController):
             current_context.append(context)
 
             if subcontexts is not None:
-
                 # If context is not valid subcontext then it is probably a prefix
                 if context not in subcontexts:
                     logger.debug(
@@ -1393,6 +1431,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
             return [line[-1]]
 
         self._init()
+        self._init_controller_arg()
         contexts = self.context[:]
         arg = None
 
@@ -1521,7 +1560,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
 
 @CommandHelp('"manage config" is used to change dynamic configuration')
-class ManageConfigController(LiveClusterCommandController):
+class ManageConfigController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "logging": ManageConfigLoggingController,
@@ -1900,7 +1939,7 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
 
 
 @CommandHelp("")
-class ManageConfigXDRDCAddController(LiveClusterCommandController):
+class ManageConfigXDRDCAddController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "node": ManageConfigXDRDCAddNodeController,
@@ -1983,7 +2022,7 @@ class ManageConfigXDRDCAddNamespaceController(ManageConfigLeafController):
 
 
 @CommandHelp("")
-class ManageConfigXDRDCRemoveController(LiveClusterCommandController):
+class ManageConfigXDRDCRemoveController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "node": ManageConfigXDRDCRemoveNodeController,
@@ -2496,7 +2535,7 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
     '"manage roster" is used to modify the clusters roster. It',
     'should be used in conjunction with the "show roster" command',
 )
-class ManageRosterController(LiveClusterCommandController):
+class ManageRosterController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "add": ManageRosterAddController,
@@ -2657,7 +2696,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
 
 
 @CommandHelp("")
-class ManageRosterStageController(LiveClusterCommandController):
+class ManageRosterStageController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "nodes": ManageRosterStageNodesController,
@@ -2785,7 +2824,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
 
 
 @CommandHelp("")
-class ManageJobsController(LiveClusterCommandController):
+class ManageJobsController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {"kill": ManageJobsKillController}
 
@@ -2796,7 +2835,7 @@ class ManageJobsController(LiveClusterCommandController):
 @CommandHelp(
     '"manage jobs kill" is used to abort jobs.',
 )
-class ManageJobsKillController(LiveClusterCommandController):
+class ManageJobsKillController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "trids": ManageJobsKillTridController,
@@ -2881,7 +2920,7 @@ class ManageJobsKillTridController(ManageLeafCommandController):
 
 
 @CommandHelp("")
-class ManageJobsKillAllController(LiveClusterCommandController):
+class ManageJobsKillAllController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "queries": ManageJobsKillAllQueriesController,

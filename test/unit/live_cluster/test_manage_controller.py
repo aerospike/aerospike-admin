@@ -680,7 +680,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Set Logging Context test-param to test-value"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_service_prompt(self):
@@ -750,7 +750,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Set Network Param test-param to test-value"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_security_prompt_with_subcontext(self):
@@ -793,7 +793,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Set Security Param test-param to test-value"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_namespace_prompt_with_subcontext(self):
@@ -836,7 +836,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Set Namespace Param rack-id to test-value"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
         self.view_mock.print_result.assert_called_once_with(
             'Run "manage recluster" for your changes to rack-id to take affect.'
@@ -879,7 +879,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Set Namespace Set Param test-param to test-value"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_XDR_prompt(self):
@@ -908,7 +908,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Set XDR Param test-param to test-value"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_XDR_create_dc_prompt(self):
@@ -934,7 +934,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Create XDR DC test-dc"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_XDR_delete_dc_prompt(self):
@@ -960,7 +960,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Delete XDR DC test-dc"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_XDR_dc_prompt(self):
@@ -990,7 +990,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Set XDR DC Param auth-user to test-value"
         self.view_mock.print_info_responses(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
         self.view_mock.print_result.assert_called_once_with(
             'The parameter "auth-password-file" must also be set.'
@@ -1020,7 +1020,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Add XDR Node 3.3.3.3 to DC test-dc"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_XDR_dc_remove_node_prompt(self):
@@ -1047,7 +1047,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Remove XDR Node 3.3.3.3 from DC test-dc"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_XDR_dc_add_namespace_prompt(self):
@@ -1087,7 +1087,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Add XDR Namespace test-ns to DC test-dc"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_XDR_dc_remove_namespace_prompt(self):
@@ -1116,7 +1116,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Remove XDR Namespace test-ns from DC test-dc"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
     async def test_XDR_dc_namespace_prompt(self):
@@ -1147,7 +1147,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
         title = "Set XDR Namespace Param test-param to test-value"
         self.view_mock.print_info_responses.assert_called_once_with(
-            title, resp, self.cluster_mock, **ManageConfigLeafController.mods
+            title, resp, self.cluster_mock, **self.controller.mods
         )
 
 

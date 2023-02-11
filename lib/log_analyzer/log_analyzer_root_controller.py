@@ -18,17 +18,15 @@ from lib.view import terminal
 from lib.view.view import CliView
 
 from .log_analyzer_command_controller import LogAnalyzerCommandController
-from .grep_file_controller import _GrepFile
+from .grep_file_controller import GrepFile
 from .log_handler.log_handler import LogHandler
 
 
 @CommandHelp("Aerospike Admin")
 class LogAnalyzerRootController(BaseController):
-
     log_handler = None
 
     def __init__(self, asadm_version="", log_path=" "):
-
         super(LogAnalyzerRootController, self).__init__(asadm_version)
 
         # Create static instance of log_handler
@@ -87,7 +85,8 @@ class LogAnalyzerRootController(BaseController):
 class GrepController(LogAnalyzerCommandController):
     def __init__(self):
         self.modifiers = set()
-        self.grep_file = _GrepFile(self.modifiers)
+        self.required_modifiers = set()
+        self.grep_file = GrepFile(self.modifiers, self.required_modifiers)
 
     def _do_default(self, line):
         self.grep_file.do_show(line)
@@ -120,7 +119,8 @@ class GrepController(LogAnalyzerCommandController):
 class CountController(LogAnalyzerCommandController):
     def __init__(self):
         self.modifiers = set()
-        self.grep_file = _GrepFile(self.modifiers)
+        self.required_modifiers = set()
+        self.grep_file = GrepFile(self.modifiers, self.required_modifiers)
 
     def _do_default(self, line):
         self.grep_file.do_count(line)
@@ -158,7 +158,8 @@ class CountController(LogAnalyzerCommandController):
 class DiffController(LogAnalyzerCommandController):
     def __init__(self):
         self.modifiers = set()
-        self.grep_file = _GrepFile(self.modifiers)
+        self.required_modifiers = set()
+        self.grep_file = GrepFile(self.modifiers, self.required_modifiers)
 
     def _do_default(self, line):
         self.grep_file.do_diff(line)
@@ -186,7 +187,8 @@ class DiffController(LogAnalyzerCommandController):
 class HistogramController(LogAnalyzerCommandController):
     def __init__(self):
         self.modifiers = set()
-        self.grep_file = _GrepFile(self.modifiers)
+        self.required_modifiers = set()
+        self.grep_file = GrepFile(self.modifiers, self.required_modifiers)
 
     def _do_default(self, line):
         self.grep_file.do_latency(line)

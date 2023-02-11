@@ -142,7 +142,6 @@ def create_disabled_controller(controller, command_):
     """
 
     class DisableController(controller):
-
         # override
         async def execute(self, line):
             self.logger.error(
@@ -164,10 +163,7 @@ class BaseController(object):
     view = view.CliView()
     health_checker = HealthChecker()
     logger = logging.getLogger("asadm")
-
-    def __init__(self, asadm_version=""):
-        if asadm_version:
-            BaseController.asadm_version = asadm_version
+    asadm_version: str | None
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
@@ -188,16 +184,20 @@ class BaseController(object):
             if self.context:
                 pass
         except Exception:
-            self.context = None
+            self.context = []
+
+        try:
+            if self.mods:
+                pass
+        except Exception:
+            self.mods = {}
 
         for command, controller in self.controller_map.items():
-            if self.context:
-                context_cpy = list(self.context) + [command]
-            else:
-                context_cpy = [command]
-
+            context_cpy = list(self.context)
+            context_cpy.append(command)
             controller = controller()
             controller.context = context_cpy
+            controller.mods = self.mods
 
             self.commands.add(command, controller)
 
@@ -274,20 +274,8 @@ class BaseController(object):
         except Exception:
             self.mods = {}
 
-    def _init_controller_arg(self):
-        """
-        For when a parent controller takes an argument that needs parsing
-        before sending argument to child controllers
-        """
-        try:
-            if self.controller_arg:
-                pass
-        except Exception:
-            self.controller_arg = None
-
     def _init(self):
         self._init_modifiers()
-        self._init_controller_arg()
         self._init_controller_map()
         self._init_commands()
 
@@ -355,8 +343,7 @@ class BaseController(object):
         # Init all command controller objects
         self._init()
 
-        if self.controller_arg is not None:
-            self.pre_controller(line)
+        self.pre_controller(line)
 
         method = self._find_method(line)
         results = None
@@ -442,7 +429,6 @@ class BaseController(object):
                         if CommandHelp.has_help(
                             command_method
                         ) and not CommandHelp.is_hidden(command_method):
-
                             CommandHelp.print_text(
                                 "- %s%s%s:"
                                 % (terminal.bold(), command, terminal.reset()),
@@ -450,7 +436,9 @@ class BaseController(object):
                             )
 
                             self.execute_help(
-                                [command], indent=indent, method=command_method
+                                [command],
+                                indent=indent,
+                                method=command_method,
                             )
                     return
 
@@ -474,11 +462,16 @@ class BaseController(object):
         # Override method to provide default command behavior
         raise ShellException("%s: command not found." % (" ".join(line)))
 
-    # Hook to be defined by subclasses
     def pre_command(self, line):
+        """
+        Called once before the command executes. Optionally, defined in subclass
+        """
         pass
 
     def pre_controller(self, line):
+        """
+        Called before each new controller is called. Optionally, defined in subclass.
+        """
         pass
 
 
@@ -553,29 +546,3 @@ class CommandController(BaseController):
                     self.nodes = self.default_nodes
             except Exception:
                 self.nodes = "all"  # default not set use all
-
-    def pre_controller(self, line):
-        if self.controller_arg is None:
-            return
-
-        mod = self.context[-1]
-
-        if mod not in self.mods:
-            self.mods[mod] = {}
-
-        # Used as the key to reference arg, normally the controllers "command".
-        try:
-            arg = line.pop(0)
-        except IndexError:
-            raise IOError("{} is required".format(mod))
-
-        if arg not in self.modifiers | self.required_modifiers:
-
-            if mod not in self.mods[mod]:
-                self.mods[mod] = []
-
-            self.mods[mod].append(arg)
-
-            return
-
-        raise IOError("{} is required".format(mod))
