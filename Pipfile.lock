@@ -271,11 +271,11 @@
         },
         "distro": {
             "hashes": [
-                "sha256:0e58756ae38fbd8fc3020d54badb8eae17c5b9dcbed388b17bb55b8a5928df92",
-                "sha256:df74eed763e18d10d0da624258524ae80486432cd17392d9c3d96f5e83cd2799"
+                "sha256:02e111d1dc6a50abb8eed6bf31c3e48ed8b0830d1ea2a1b78c61765c2513fdd8",
+                "sha256:99522ca3e365cac527b44bde033f64c6945d90eb9f769703caaec52b09bbd3ff"
             ],
             "index": "pypi",
-            "version": "==1.5.0"
+            "version": "==1.8.0"
         },
         "frozenlist": {
             "hashes": [
