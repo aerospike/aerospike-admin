@@ -197,7 +197,6 @@ class BaseController(object):
             context_cpy.append(command)
             controller = controller()
             controller.context = context_cpy
-            controller.mods = self.mods
 
             self.commands.add(command, controller)
 
@@ -340,12 +339,12 @@ class BaseController(object):
         return rv
 
     async def execute(self, line: list[str]) -> Union[None, str, list[None]]:
-        # Init all command controller objects
+        # Init all command controller objects and modifiers.
         self._init()
 
         self.pre_controller(line)
-
         method = self._find_method(line)
+
         results = None
 
         if method:

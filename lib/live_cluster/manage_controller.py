@@ -1,6 +1,8 @@
 import asyncio
 import base64
 import binascii
+import copy
+import inspect
 import os
 import logging
 from datetime import datetime
@@ -34,31 +36,39 @@ logger.setLevel(logging.CRITICAL)
 
 class LiveClusterManageCommandController(LiveClusterCommandController):
     def pre_controller(self, line):
+        """
+        Hook called before each controller and command is executed.
+        This allows us to take controller_arg and append it to mods for
+        the next controller.
+        """
         self._init_controller_arg()
 
-        if self.controller_arg is None:
-            return
+        if self.controller_arg:
+            mod = self.context[-1]
 
-        mod = self.context[-1]
-
-        if mod not in self.mods:
-            self.mods[mod] = {}
-
-        # Used as the key to reference arg, normally the controllers "command".
-        try:
-            arg = line.pop(0)
-        except IndexError:
-            raise ShellException("{} is required".format(mod))
-
-        if arg not in self.modifiers | self.required_modifiers:
-            if mod not in self.mods[mod]:
+            if mod not in self.mods:
                 self.mods[mod] = []
 
-            self.mods[mod].append(arg)
+            # Used as the key to reference arg, normally the controllers "command".
+            try:
+                arg = line.pop(0)
+            except IndexError:
+                raise ShellException("{} is required".format(mod))
 
-            return
+            if arg not in self.modifiers | self.required_modifiers:
+                if mod not in self.mods:
+                    self.mods[mod] = []
 
-        raise ShellException("{} is required".format(mod))
+                self.mods[mod].append(arg)
+
+            else:
+                raise ShellException("{} is required".format(mod))
+
+        # Needs a copy of list because _find_method is called right after.
+        controller = self._find_method(line[:])
+
+        if controller and not inspect.ismethod(controller):
+            controller.mods = copy.deepcopy(self.mods)
 
     def _init_controller_arg(self):
         """
