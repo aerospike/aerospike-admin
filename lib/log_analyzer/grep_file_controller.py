@@ -6,9 +6,10 @@ from lib.base_controller import ShellException
 from .log_analyzer_command_controller import LogAnalyzerCommandController
 
 
-class _GrepFile(LogAnalyzerCommandController):
-    def __init__(self, modifiers):
+class GrepFile(LogAnalyzerCommandController):
+    def __init__(self, modifiers, required_modifiers):
         self.modifiers = modifiers
+        self.required_modifiers = required_modifiers
         self.logger = logging.getLogger("asadm")
 
     def do_show(self, line):

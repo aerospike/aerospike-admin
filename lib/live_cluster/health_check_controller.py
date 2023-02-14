@@ -116,7 +116,6 @@ class HealthCheckController(LiveClusterCommandController):
         "                                          [2001::1234:10]:3232,uid,,key_path",
     )
     async def _do_default(self, line):
-
         output_file = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-o",
@@ -726,9 +725,7 @@ class HealthCheckController(LiveClusterCommandController):
                 fetched_as_val = {}
 
                 for _key, (info_function, stanza_list) in stanza_dict.items():
-
                     for stanza_item in stanza_list:
-
                         stanza = stanza_item[0]
                         fetched_as_val[(_key, stanza)] = asyncio.create_task(
                             info_function(stanza)
@@ -749,9 +746,7 @@ class HealthCheckController(LiveClusterCommandController):
 
                 # Creating health input model
                 for _key, (info_function, stanza_list) in stanza_dict.items():
-
                     for stanza_item in stanza_list:
-
                         stanza = stanza_item[0]
                         component_name = stanza_item[1]
 
@@ -778,9 +773,7 @@ class HealthCheckController(LiveClusterCommandController):
                 sys_stats = util.flip_keys(await sys_stats)
 
                 for cmd_key, (sys_function, sys_cmd_list) in sys_cmd_dict.items():
-
                     for cmd_item in sys_cmd_list:
-
                         cmd_section = cmd_item[0]
                         component_name = cmd_item[1]
                         sub_component_name = cmd_item[2]
@@ -816,7 +809,7 @@ class HealthCheckController(LiveClusterCommandController):
                 sn_ct += 1
                 self.logger.info("Snapshot " + str(sn_ct))
                 time.sleep(sleep)
-            health_util.print_dict(health_input)
+
             health_input = health_util.h_eval(health_input)
 
             self.health_checker.set_health_input_data(health_input)
