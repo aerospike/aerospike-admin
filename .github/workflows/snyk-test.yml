@@ -12,9 +12,18 @@ jobs:
         uses: actions/checkout@v3
       - name: Setup snyk CLI
         uses: snyk/actions/setup@master
+      - name: Get Python version from Pipfile
+        working-directory: ${{ steps.working-dir.outputs.value }}
+        run: |
+          echo "PYTHON_VERSION=$(grep "python_full_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pipenv"
       - name: Pipenv setup
         run: |
-          brew install pipenv
+          pip install pipenv
       - name: Run Snyk to check for vulnerabilities and record dependencies
         run: |
           snyk test --print-deps | tee snyk.txt
