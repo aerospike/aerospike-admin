@@ -1,8 +1,6 @@
 name: "Snyk Test"
 
 on:
-  push:
-    branches: ["*"] # remove before merged
   workflow_call:
 jobs:
   security:
