@@ -17,13 +17,13 @@ jobs:
         run: |
           echo "PYTHON_VERSION=$(grep "python_full_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pipenv"
       - name: Pipenv setup
         run: |
           pip install pipenv
+          pipenv install
       - name: Run Snyk to check for vulnerabilities and record dependencies
         run: |
           snyk test --print-deps | tee snyk.txt
