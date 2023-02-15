@@ -26,11 +26,11 @@ jobs:
           pipenv install
       - name: Run Snyk to check for vulnerabilities and record dependencies
         run: |
-          snyk test --print-deps | sed -r "s/\x1B\[([0-9]{1,3}((;[0-9]{1,3})*)?)?[m|K]//g" | tee snyk.txt
+          snyk test --print-deps | sed -r "s/\x1B\[([0-9]{1,3}((;[0-9]{1,3})*)?)?[m|K]//g" | tee asadm-snyk.txt
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       - name: Upload snyk results
         uses: actions/upload-artifact@v3
         with:
-          name: snyk.txt
-          path: snyk.txt
+          name: asadm-snyk.txt
+          path: asadm-snyk.txt
