@@ -1,0 +1,22 @@
+name: "Snyk Test"
+
+on:
+  workflow_call:
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Setup snyk CLI
+        uses: snyk/actions/setup@master
+      - name: Run Snyk to check for vulnerabilities and record dependencies
+        run: |
+          snyk test --print-deps | tee snyk.txt
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Upload snyk results
+        uses: actions/upload-artifact@v3
+        with:
+          name: snyk.txt
+          path: snyk.txt
