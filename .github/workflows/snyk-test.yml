@@ -12,6 +12,9 @@ jobs:
         uses: actions/checkout@v3
       - name: Setup snyk CLI
         uses: snyk/actions/setup@master
+      - name: Pipenv setup
+        run: |
+          brew install pipenv
       - name: Run Snyk to check for vulnerabilities and record dependencies
         run: |
           snyk test --print-deps | tee snyk.txt
