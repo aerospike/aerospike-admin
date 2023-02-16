@@ -1,4 +1,4 @@
-name: "Snyk Test"
+name: "Snyk Report"
 
 on:
   workflow_call:
