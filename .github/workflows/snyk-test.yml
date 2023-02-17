@@ -1,0 +1,34 @@
+name: "Snyk Report"
+
+on:
+  workflow_call:
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Setup snyk CLI
+        uses: snyk/actions/setup@master
+      - name: Get Python version from Pipfile
+        working-directory: ${{ steps.working-dir.outputs.value }}
+        run: |
+          echo "PYTHON_VERSION=$(grep "python_full_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+      - name: Setup Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Pipenv setup
+        run: |
+          pip install pipenv
+          pipenv install
+      - name: Run Snyk to check for vulnerabilities and record dependencies
+        run: |
+          snyk test --print-deps | sed -r "s/\x1B\[([0-9]{1,3}((;[0-9]{1,3})*)?)?[m|K]//g" | tee asadm-snyk.txt
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Upload snyk results
+        uses: actions/upload-artifact@v3
+        with:
+          name: asadm-snyk.txt
+          path: asadm-snyk.txt
