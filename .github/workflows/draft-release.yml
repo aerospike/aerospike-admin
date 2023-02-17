@@ -9,8 +9,7 @@ on:
 jobs:
   # workflows to pull release artifacts from
   snyk-test:
-    uses: aerospike/.github/workflows/snyk-test.yml@main
-    secrets: inherit
+    uses: aerospike/.github/workflows/snyk-test.yml@master
   draft-release-notes:
     needs: snyk-test
     runs-on: ubuntu-latest
