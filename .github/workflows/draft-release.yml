@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - "*"
-    branches: ["*"]
 
 jobs:
   # workflows to pull release artifacts from
