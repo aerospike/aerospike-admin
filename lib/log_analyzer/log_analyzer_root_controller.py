@@ -27,7 +27,7 @@ class LogAnalyzerRootController(BaseController):
     log_handler = None
 
     def __init__(self, asadm_version="", log_path=" "):
-        super(LogAnalyzerRootController, self).__init__(asadm_version)
+        BaseController.asadm_version = asadm_version
 
         # Create static instance of log_handler
         LogAnalyzerRootController.log_handler = LogHandler(log_path)
