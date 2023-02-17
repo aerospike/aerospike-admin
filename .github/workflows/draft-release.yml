@@ -9,7 +9,7 @@ on:
 jobs:
   # workflows to pull release artifacts from
   snyk-test:
-    uses: aerospike/aerospike-admin/.github/workflows/snyk-test.yml@master
+    uses: aerospike/aerospike-admin/.github/workflows/snyk-test.yml
   draft-release-notes:
     needs: snyk-test
     runs-on: ubuntu-latest
