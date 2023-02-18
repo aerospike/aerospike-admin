@@ -275,24 +275,27 @@ class CliView(object):
         )
 
     @staticmethod
-    def info_XDR(
-        stats, xdr_enable, cluster, timestamp="", title="XDR Information", **ignore
-    ):
+    def info_XDR(stats, xdr_enable, cluster, timestamp="", **ignore):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = title + title_suffix
         node_names = cluster.get_node_names()
-        node_ids = node_ids = cluster.get_node_ids()
-        sources = dict(
-            xdr_enable=xdr_enable,
-            node_ids=node_ids,
-            node_names=node_names,
-            xdr_stats=stats,
-        )
+        node_ids = cluster.get_node_ids()
         common = dict(principal=cluster.get_expected_principal())
+        stats = util.flip_keys(stats)
+        dcs = list(stats.keys())
+        dcs.sort()
 
-        CliView.print_result(
-            sheet.render(templates.info_xdr_sheet, title, sources, common=common)
-        )
+        for dc in dcs:
+            title = "XDR Information {}".format(dc) + title_suffix
+            sources = dict(
+                xdr_enable=xdr_enable,
+                node_ids=node_ids,
+                node_names=node_names,
+                xdr_stats=stats[dc],
+            )
+
+            CliView.print_result(
+                sheet.render(templates.info_xdr_sheet, title, sources, common=common)
+            )
 
     @staticmethod
     @reserved_modifiers
@@ -1723,10 +1726,8 @@ class CliView(object):
             s = ""
 
             if d[health_constants.AssertResultKey.LEVEL] == level:
-
                 if d[health_constants.AssertResultKey.SUCCESS]:
                     if d[health_constants.AssertResultKey.SUCCESS_MSG]:
-
                         s_msg_str += CliView._get_header(
                             d[health_constants.AssertResultKey.CATEGORY][0]
                         ) + CliView._get_msg(
@@ -2366,7 +2367,6 @@ class CliView(object):
 
     @staticmethod
     def print_summary(summary: SummaryDict, list_view=True):
-
         if list_view:
             CliView._summary_cluster_list_view(summary["CLUSTER"])
             CliView._summary_namespace_list_view(summary["NAMESPACES"])

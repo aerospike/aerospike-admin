@@ -27,13 +27,11 @@ from .summary_controller import SummaryController
 
 @CommandHelp("Aerospike Admin")
 class CollectinfoRootController(BaseController):
-
     log_handler = None
     command = None
 
     def __init__(self, asadm_version="", clinfo_path=" "):
-
-        super(CollectinfoRootController, self).__init__(asadm_version)
+        BaseController.asadm_version = asadm_version
 
         # Create Static Instance of Loghdlr
         CollectinfoRootController.log_handler = CollectinfoLogHandler(clinfo_path)
