@@ -1,5 +1,6 @@
 from lib.base_controller import CommandHelp
-from lib.utils import constants, util
+from lib.collectinfo_analyzer.get_controller import GetStatisticsController
+from lib.utils import constants, util, version
 
 from .collectinfo_command_controller import CollectinfoCommandController
 
@@ -68,10 +69,12 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays Cross Datacenter Replication (XDR) summary information.")
     def do_xdr(self, line):
-        xdr_stats = self.log_handler.info_statistics(stanza=constants.STAT_XDR)
+        getter = GetStatisticsController(self.log_handler)
+        old_stats = getter.get_xdr()
+        new_stats = getter.get_xdr_dcs(for_mods=self.mods["for"])
         node_xdr_build_major_version = 5
-        for timestamp in sorted(xdr_stats.keys()):
-            if not xdr_stats[timestamp]:
+        for timestamp in sorted(old_stats.keys()):
+            if not old_stats[timestamp]:
                 continue
 
             xdr_enable = {}
@@ -80,44 +83,24 @@ class InfoController(CollectinfoCommandController):
             old_xdr_stats = {}
             xdr5_stats = {}
 
-            for xdr_node in xdr_stats[timestamp].keys():
+            for xdr_node in old_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
-                try:
-                    node_xdr_build_major_version = int(builds[xdr_node][0])
-                except Exception:
-                    continue
 
-                if node_xdr_build_major_version < 5:
-                    old_xdr_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+                if version.LooseVersion(builds[xdr_node]) < version.LooseVersion(
+                    constants.SERVER_NEW_XDR5_VERSION
+                ):
+                    old_xdr_stats[xdr_node] = old_stats[timestamp][xdr_node]
                 else:
-                    xdr5_stats[xdr_node] = xdr_stats[timestamp][xdr_node]
+                    xdr5_stats[xdr_node] = new_stats[timestamp][xdr_node]
 
             if xdr5_stats:
-                temp = {}
-                for node in xdr5_stats:
-                    for dc in xdr5_stats[node]:
-                        if dc not in temp:
-                            temp[dc] = {}
-                        temp[dc][node] = xdr5_stats[node][dc]
-
-                xdr5_stats = temp
-                matches = set([])
-
-                if self.mods["for"]:
-                    matches = set(
-                        util.filter_list(list(xdr5_stats.keys()), self.mods["for"])
-                    )
-
-                for dc in xdr5_stats:
-                    if not self.mods["for"] or dc in matches:
-                        self.view.info_XDR(
-                            xdr5_stats[dc],
-                            xdr_enable,
-                            cluster=cinfo_log,
-                            timestamp=timestamp,
-                            title="XDR Information %s" % dc,
-                            **self.mods
-                        )
+                self.view.info_XDR(
+                    xdr5_stats,
+                    xdr_enable,
+                    cluster=cinfo_log,
+                    timestamp=timestamp,
+                    **self.mods
+                )
 
             if old_xdr_stats:
                 self.view.info_old_XDR(
@@ -158,7 +141,6 @@ class InfoController(CollectinfoCommandController):
                         and dc_config[timestamp][dc]
                         and not isinstance(dc_config[timestamp][dc], Exception)
                     ):
-
                         for node in dc_stats[timestamp][dc].keys():
                             if node in dc_config[timestamp][dc]:
                                 dc_stats[timestamp][dc][node].update(
@@ -174,7 +156,6 @@ class InfoController(CollectinfoCommandController):
                         and dc_config[timestamp][dc]
                         and not isinstance(dc_config[timestamp][dc], Exception)
                     ):
-
                         dc_stats[timestamp][dc] = dc_config[timestamp][dc]
 
                 except Exception:

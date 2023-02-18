@@ -3,7 +3,7 @@ from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
 )
-from lib.utils import util
+from lib.utils import constants, util, version
 from lib.base_controller import CommandHelp
 
 from .live_cluster_command_controller import LiveClusterCommandController
@@ -75,7 +75,6 @@ class InfoController(LiveClusterCommandController):
         builds = asyncio.create_task(self.cluster.info_build(nodes=self.nodes))
 
         for node in stats.keys():
-
             if (
                 stats[node]
                 and not isinstance(stats[node], Exception)
@@ -83,7 +82,6 @@ class InfoController(LiveClusterCommandController):
                 and configs[node]
                 and not isinstance(configs[node], Exception)
             ):
-
                 for dc in stats[node].keys():
                     try:
                         stats[node][dc].update(configs[node][dc])
@@ -137,56 +135,35 @@ class InfoController(LiveClusterCommandController):
 
     @CommandHelp('"info xdr" displays summary information for each datacenter.')
     async def do_xdr(self, line):
-        stats, builds = await asyncio.gather(
-            self.cluster.info_XDR_statistics(nodes=self.nodes),
+        new_stats, old_stats, xdr_enabled, builds = await asyncio.gather(
+            self.stat_getter.get_xdr_dcs(for_mods=self.mods["for"], nodes=self.nodes),
+            self.stat_getter.get_xdr(nodes=self.nodes),
+            self.cluster.is_XDR_enabled(nodes=self.nodes),
             self.cluster.info_build(nodes=self.nodes),
         )
-        xdr_enable = asyncio.create_task(self.cluster.is_XDR_enabled(nodes=self.nodes))
-
-        old_xdr_stats = {}
         xdr5_stats = {}
-        node_xdr_build_major_version = 4
+        old_xdr_stats = {}
 
-        for node in stats:
-            try:
-                node_xdr_build_major_version = int(builds[node][0])
-            except Exception:
-                continue
-
-            if node_xdr_build_major_version < 5:
-                old_xdr_stats[node] = stats[node]
+        for node in new_stats:
+            if version.LooseVersion(builds[node]) < version.LooseVersion(
+                constants.SERVER_NEW_XDR5_VERSION
+            ):
+                old_xdr_stats[node] = old_stats[node]
             else:
-                xdr5_stats[node] = stats[node]
+                xdr5_stats[node] = new_stats[node]
 
-        xdr_enable = await xdr_enable
         futures = []
 
         if xdr5_stats:
-            temp = {}
-            for node in xdr5_stats:
-                for dc in xdr5_stats[node]:
-                    if dc not in temp:
-                        temp[dc] = {}
-                    temp[dc][node] = xdr5_stats[node][dc]
-
-            xdr5_stats = temp
-            matches = None
-
-            if self.mods["for"]:
-                matches = set(util.filter_list(xdr5_stats.keys(), self.mods["for"]))
-
-            futures = [
+            futures.append(
                 util.callable(
                     self.view.info_XDR,
-                    xdr5_stats[dc],
-                    xdr_enable,
+                    xdr5_stats,
+                    xdr_enabled,
                     self.cluster,
-                    title="XDR Information %s" % dc,
                     **self.mods
                 )
-                for dc in xdr5_stats
-                if not self.mods["for"] or dc in matches
-            ]
+            )
 
         if old_xdr_stats:
             futures.append(
@@ -194,7 +171,7 @@ class InfoController(LiveClusterCommandController):
                     self.view.info_old_XDR,
                     old_xdr_stats,
                     builds,
-                    xdr_enable,
+                    xdr_enabled,
                     self.cluster,
                     **self.mods
                 )

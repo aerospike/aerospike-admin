@@ -458,7 +458,6 @@ class Node(AsyncObject):
 
     async def _update_IP(self, address, port):
         if address not in self.dns_cache:
-
             self.dns_cache[address] = (
                 (
                     await asyncio.get_event_loop().getaddrinfo(
@@ -526,7 +525,6 @@ class Node(AsyncObject):
 
         try:
             while True:
-
                 sock = self.socket_pool[port].pop()
 
                 if await sock.is_connected():
