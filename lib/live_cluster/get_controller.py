@@ -20,6 +20,7 @@ from lib.utils import common, util, constants
 from lib.utils.common import NodeDict, DatacenterDict, NamespaceDict
 from .client import Cluster
 
+
 # Helpers
 def _union_iterable(vals: Iterable[Iterable[str]]) -> set[str]:
     val_set = set()
@@ -177,9 +178,6 @@ class GetLatenciesController:
     async def get_all(self, nodes, buckets, exponent_increment, verbose, ns_set=None):
         latencies_nodes, latency_nodes = await self.get_latencies_and_latency_nodes()
         latencies = None
-
-        if ns_set is None:
-            ns_set = await self.get_namespace_set(nodes)
 
         # all nodes support "show latencies"
         if len(latency_nodes) == 0:
@@ -661,7 +659,6 @@ class GetStatisticsController:
             sets = set(util.filter_list(sets, set_filter))
 
             for key, values in key_values.items():
-
                 if key[0] not in namespace_set or key[1] not in sets:
                     continue
 
@@ -834,7 +831,6 @@ class GetPmapController:
         stats = ["dead_partitions", "unavailable_partitions"]
 
         for ns, nodes in namespace_stats.items():
-
             for node, params in nodes.items():
                 if isinstance(params, Exception):
                     continue

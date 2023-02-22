@@ -62,7 +62,6 @@ class ShowDistributionController(LiveClusterCommandController):
 
     @CommandHelp("Shows the distribution of TTLs for namespaces")
     async def do_time_to_live(self, line):
-
         histogram = await self.getter.do_distribution("ttl", nodes=self.nodes)
 
         return util.callable(
@@ -86,7 +85,6 @@ class ShowDistributionController(LiveClusterCommandController):
         "                       [default is 5].",
     )
     async def do_object_size(self, line):
-
         byte_distribution = util.check_arg_and_delete_from_mods(
             line=line, arg="-b", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -151,8 +149,8 @@ class ShowLatenciesController(LiveClusterCommandController):
         self.modifiers = set(["with", "like", "for"])
         self.latency_getter = GetLatenciesController(self.cluster)
 
-    async def get_namespace_set(self):
-        namespace_set = set()
+    async def _get_namespace_set(self):
+        namespace_set = None
 
         if self.mods["for"]:
             namespace_set = await self.latency_getter.get_namespace_set(self.nodes)
@@ -160,7 +158,7 @@ class ShowLatenciesController(LiveClusterCommandController):
 
         return namespace_set
 
-    def sort_data_by_histogram_name(self, latency_data):
+    def _sort_data_by_histogram_name(self, latency_data):
         hist_latency = {}
         for node_id, hist_data in list(latency_data.items()):
             if isinstance(hist_data, Exception):
@@ -205,7 +203,7 @@ class ShowLatenciesController(LiveClusterCommandController):
             line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods
         )
 
-        namespace_set = await self.get_namespace_set()
+        namespace_set = await self._get_namespace_set()
         latencies, (latencies_nodes, latency_nodes) = await asyncio.gather(
             self.latency_getter.get_all(
                 self.nodes, buckets, increment, verbose, namespace_set
@@ -225,7 +223,7 @@ class ShowLatenciesController(LiveClusterCommandController):
             )
 
         # TODO: This format should probably be returned from get controller
-        latencies = self.sort_data_by_histogram_name(latencies)
+        latencies = self._sort_data_by_histogram_name(latencies)
 
         self.view.show_latency(
             latencies,
@@ -758,7 +756,6 @@ class ShowStatisticsController(LiveClusterCommandController):
         "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     async def do_service(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
