@@ -2144,6 +2144,14 @@
                                         "description": "",
                                         "dynamic": true
                                     },
+                                    "compression-acceleration": {
+                                        "type": "integer",
+                                        "default": 1,
+                                        "minimum": 1,
+                                        "maximum": 65537,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
                                     "defrag-lwm-pct": {
                                         "type": "integer",
                                         "default": 50,
