@@ -2922,6 +2922,14 @@
                         "description": "",
                         "dynamic": true
                     },
+                    "stop-writes-sys-memory-pct": {
+                        "type": "integer",
+                        "default": 90,
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": "",
+                        "dynamic": true
+                    },
                     "strong-consistency": {
                         "type": "boolean",
                         "default": false,
