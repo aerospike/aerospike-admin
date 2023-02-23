@@ -942,7 +942,7 @@ class ShowJobsControllerTest(asynctest.TestCase):
         self.getter_mock.get_scans.assert_not_called()
         self.view_mock.show_jobs.assert_not_called()
         self.logger_mock.error.assert_called_with(
-            "Scans were unified into queries in server v. 6.0 and later. User 'show queries' instead."
+            "Scans were unified into queries in server v. 6.0 and later. Use 'show jobs queries' instead."
         )
 
     async def test_sindex_builder(self):

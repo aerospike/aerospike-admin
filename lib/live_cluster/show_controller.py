@@ -62,7 +62,6 @@ class ShowDistributionController(LiveClusterCommandController):
 
     @CommandHelp("Shows the distribution of TTLs for namespaces")
     async def do_time_to_live(self, line):
-
         histogram = await self.getter.do_distribution("ttl", nodes=self.nodes)
 
         return util.callable(
@@ -86,7 +85,6 @@ class ShowDistributionController(LiveClusterCommandController):
         "                       [default is 5].",
     )
     async def do_object_size(self, line):
-
         byte_distribution = util.check_arg_and_delete_from_mods(
             line=line, arg="-b", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -758,7 +756,6 @@ class ShowStatisticsController(LiveClusterCommandController):
         "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     async def do_service(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -1485,7 +1482,7 @@ class ShowJobsController(LiveClusterCommandController):
         if not await self._scans_supported():
             if not default:
                 self.logger.error(
-                    "Scans were unified into queries in server v. {} and later. User 'show queries' instead.".format(
+                    "Scans were unified into queries in server v. {} and later. Use 'show jobs queries' instead.".format(
                         constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION
                     )
                 )
