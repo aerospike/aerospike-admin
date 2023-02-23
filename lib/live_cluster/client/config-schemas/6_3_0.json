@@ -2516,6 +2516,12 @@
                         "description": "",
                         "dynamic": true
                     },
+                    "disallow-expunge": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "",
+                        "dynamic": true
+                    },
                     "disallow-null-setname": {
                         "type": "boolean",
                         "default": false,
