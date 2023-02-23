@@ -342,6 +342,12 @@
                     "description": "",
                     "dynamic": false
                 },
+                "vault-namespace": {
+                    "type": "string",
+                    "default": "",
+                    "description": "",
+                    "dynamic": false
+                },
                 "work-directory": {
                     "type": "string",
                     "default": "/opt/aerospike",
