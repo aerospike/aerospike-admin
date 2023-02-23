@@ -77,9 +77,13 @@ class GetLatenciesController:
     def __init__(self, cluster):
         self.cluster = cluster
 
-    # Returns a tuple (latencies, latency) of lists that contain nodes that
-    #  support latencies cmd and nodes that do not.
-    async def get_latencies_and_latency_nodes(self, nodes="all"):
+    async def get_latencies_and_latency_nodes(
+        self, nodes="all"
+    ) -> tuple[list[str], list[str]]:
+        """
+        Returns a tuple (latencies, latency) of lists that contain nodes that support
+        latencies cmd and nodes that do not.
+        """
         latencies_nodes = []
         latency_nodes = []
         builds = await self.cluster.info_build(nodes=nodes)
@@ -164,17 +168,6 @@ class GetLatenciesController:
 
         return latencies_table
 
-    async def get_namespace_set(self, nodes):
-        namespace_set = set()
-        namespaces = await self.cluster.info_namespaces(nodes=nodes)
-        namespaces = list(namespaces.values())
-
-        for namespace in namespaces:
-            if isinstance(namespace, Exception):
-                continue
-            namespace_set.update(namespace)
-        return namespace_set
-
     async def get_all(self, nodes, buckets, exponent_increment, verbose, ns_set=None):
         latencies_nodes, latency_nodes = await self.get_latencies_and_latency_nodes()
         latencies = None
@@ -190,9 +183,7 @@ class GetLatenciesController:
             )
         # No nodes support "show latencies"
         elif len(latencies_nodes) == 0:
-            latencies = await self.cluster.info_latency(
-                nodes=latency_nodes, ns_set=ns_set
-            )
+            latencies = await self.cluster.info_latency(nodes=nodes, ns_set=ns_set)
         # Some nodes support latencies and some do not
         else:
             latency, latencies = await asyncio.gather(
