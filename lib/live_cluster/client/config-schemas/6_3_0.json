@@ -2248,6 +2248,14 @@
                                         "description": "",
                                         "dynamic": true
                                     },
+                                    "max-used-pct": {
+                                        "type": "integer",
+                                        "default": 70,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
                                     "post-write-queue": {
                                         "type": "integer",
                                         "default": 0,
@@ -2437,6 +2445,14 @@
                                     "min-avail-pct": {
                                         "type": "integer",
                                         "default": 5,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
+                                    "max-used-pct": {
+                                        "type": "integer",
+                                        "default": 70,
                                         "minimum": 0,
                                         "maximum": 100,
                                         "description": "",
