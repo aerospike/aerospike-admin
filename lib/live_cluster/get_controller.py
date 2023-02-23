@@ -168,6 +168,9 @@ class GetLatenciesController:
 
         return latencies_table
 
+    async def get_namespace_set(self, nodes) -> set[str]:
+        return set(await _get_all_namespaces(self.cluster, nodes))
+
     async def get_all(self, nodes, buckets, exponent_increment, verbose, ns_set=None):
         latencies_nodes, latency_nodes = await self.get_latencies_and_latency_nodes()
         latencies = None
@@ -282,15 +285,7 @@ class GetConfigController:
     async def get_namespace(
         self, flip=False, nodes="all", for_mods: list[str] | None = None
     ):
-        namespaces = await self.cluster.info_namespaces(nodes=nodes)
-        namespace_set = set()
-
-        for namespace in namespaces.values():
-            if isinstance(namespace, Exception):
-                continue
-
-            namespace_set.update(namespace)
-
+        namespace_set = set(await _get_all_namespaces(self.cluster, nodes))
         namespace_list = list(util.filter_list(namespace_set, for_mods))
         ns_configs = {}
         ns_node_configs = []
@@ -528,15 +523,7 @@ class GetStatisticsController:
         return await self.cluster.info_statistics(nodes=nodes)
 
     async def get_namespace(self, flip=False, nodes="all", for_mods=[]):
-        namespaces = await self.cluster.info_namespaces(nodes=nodes)
-        namespace_set = set()
-
-        for namespace in namespaces.values():
-            if isinstance(namespace, Exception):
-                continue
-
-            namespace_set.update(namespace)
-
+        namespace_set = set(await _get_all_namespaces(self.cluster, nodes))
         namespace_list = list(util.filter_list(namespace_set, for_mods))
         tasks = [
             asyncio.create_task(

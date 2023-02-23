@@ -448,6 +448,7 @@ class CliView(object):
         node_names = cluster.get_node_names(with_)
         likes = util.compile_likes(like)
         title = "Latency " + CliView._get_timestamp_suffix(timestamp)
+        latency = util.flip_keys(latency)  # make histogram name top level key
         keys = set(filter(likes.search, latency.keys()))
         latency = {k: v for k, v in latency.items() if k in keys}
         latency = CliView.format_latency(latency)

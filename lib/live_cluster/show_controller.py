@@ -158,18 +158,6 @@ class ShowLatenciesController(LiveClusterCommandController):
 
         return namespace_set
 
-    def _sort_data_by_histogram_name(self, latency_data):
-        hist_latency = {}
-        for node_id, hist_data in list(latency_data.items()):
-            if isinstance(hist_data, Exception):
-                continue
-            for hist_name, data in list(hist_data.items()):
-                if hist_name not in hist_latency:
-                    hist_latency[hist_name] = {node_id: data}
-                else:
-                    hist_latency[hist_name][node_id] = data
-        return hist_latency
-
     # It would be nice if the  'show latencies' help section could be completely removed for servers prior to 5.1
     @CommandHelp(
         "Displays latency information for the Aerospike cluster.",
@@ -221,9 +209,6 @@ class ShowLatenciesController(LiveClusterCommandController):
             self.logger.warning(
                 "'show latencies' is not fully supported on aerospike versions <= 5.0"
             )
-
-        # TODO: This format should probably be returned from get controller
-        latencies = self._sort_data_by_histogram_name(latencies)
 
         self.view.show_latency(
             latencies,
