@@ -334,7 +334,7 @@
                     "type": "string",
                     "default": "",
                     "description": "",
-                    "dynamic": false
+                    "dynamic": true
                 },
                 "vault-url": {
                     "type": "string",
