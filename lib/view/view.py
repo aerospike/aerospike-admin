@@ -445,12 +445,14 @@ class CliView(object):
     @reserved_modifiers
     def show_latency(latency, cluster, like=None, with_=None, timestamp="", **ignore):
         # TODO - May not need to converter now that dicts can be nested.
-        node_names = cluster.get_node_names(with_)
         likes = util.compile_likes(like)
         title = "Latency " + CliView._get_timestamp_suffix(timestamp)
         keys = set(filter(likes.search, latency.keys()))
         latency = {k: v for k, v in latency.items() if k in keys}
         latency = CliView.format_latency(latency)
+        node_names = cluster.get_node_names(
+            with_
+        )  # TODO: Find out why table shows ~ instead of -- when latency metrics are missing for a given node.
 
         sources = dict(node_names=node_names, histogram=latency)
 

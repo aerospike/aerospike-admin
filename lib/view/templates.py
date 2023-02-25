@@ -69,24 +69,46 @@ def project_xdr_req_shipped_errors(s, esc, ess):
     return esc + ess
 
 
+def _ignore_zero(num: int):
+    if num == 0:
+        return None
+
+    return num
+
+
+def _ignore_null(s: str):
+    if s == "null":
+        return None
+
+    return s
+
+
 #
 # Aggregator helpers
 #
 
 
-def weighted_avg(weights: Iterable[float], values: Iterable[float]):
+# TODO: There is no way to compute this without finding the total
+def weighted_avg(weights: Iterable[float], totals: Iterable[float]):
+    """
+    Computes the average of multiple percentage points. Remember: used/total = percent or percent * total = used
+    Let's assume each entry has three pieces of info (used amount, total amount available, percent). To compute
+    the average of percents we can use sum(used for each element) / sum(total for each element) or because
+    percent * total = used we can do sum(percent * total for each element) / sum(total for each element). We choose
+    the latter approach because most tables don't show the total configured
+    """
     total = 0.0
-    weighted_avg = 0.0
+    total_used = 0.0
 
-    for w, v in zip(weights, values):
-        weighted_avg += w * v
+    for w, v in zip(weights, totals):
+        used = w * v
+        total_used += used
         total += v
 
     if not total:
         return 0.0
 
-    weighted_avg /= total
-    return weighted_avg
+    return total_used / total
 
 
 #
@@ -209,7 +231,7 @@ info_network_sheet = Sheet(
 def create_usage_weighted_avg(type: str):
     def usage_weighted_avg(edatas: list[EntryData]):
         pcts: map[float] = map(lambda edata: edata.value, edatas)
-        byte_values: map[float] = map(lambda edata: edata.record[type]["Used"], edatas)
+        byte_values: map[float] = map(lambda edata: edata.record[type]["Total"], edatas)
         return weighted_avg(pcts, byte_values)
 
     return usage_weighted_avg
@@ -254,6 +276,13 @@ info_namespace_usage_sheet = Sheet(
             "Device",
             (
                 Field(
+                    "Total",
+                    Projectors.Number(
+                        "ns_stats", "device_total_bytes", "total-bytes-disk"
+                    ),
+                    # hidden=True,
+                ),
+                Field(
                     "Used",
                     Projectors.Number(
                         "ns_stats", "device_used_bytes", "used-bytes-disk"
@@ -264,13 +293,17 @@ info_namespace_usage_sheet = Sheet(
                 Field(
                     "Used%",
                     Projectors.PercentCompute(
-                        Projectors.Number("ns_stats", "device_used_bytes"),
-                        Projectors.Number("ns_stats", "device_total_bytes"),
+                        Projectors.Number(
+                            "ns_stats", "device_used_bytes", "used-bytes-disk"
+                        ),
+                        Projectors.Number(
+                            "ns_stats", "device_total_bytes", "total-bytes-disk"
+                        ),
                     ),
-                    converter=Converters.round(2),
+                    converter=Converters.pct,
                     aggregator=ComplexAggregator(
                         create_usage_weighted_avg("Device"),
-                        converter=Converters.round(2),
+                        converter=Converters.pct,
                     ),
                     formatters=(
                         Formatters.yellow_alert(
@@ -279,12 +312,17 @@ info_namespace_usage_sheet = Sheet(
                         ),
                     ),
                 ),
-                Field("HWM%", Projectors.Number("ns_stats", "high-water-disk-pct")),
+                Field(
+                    "HWM%",
+                    Projectors.Number("ns_stats", "high-water-disk-pct"),
+                    converter=Converters.pct,
+                ),
                 Field(
                     "Avail%",
                     Projectors.Number(
                         "ns_stats", "device_available_pct", "available_pct"
                     ),
+                    converter=Converters.pct,
                     formatters=(Formatters.red_alert(lambda edata: edata.value < 10),),
                 ),
             ),
@@ -293,8 +331,15 @@ info_namespace_usage_sheet = Sheet(
             "Memory",
             (
                 Field(
+                    "Total",
+                    Projectors.Number("ns_stats", "memory-size", "total-bytes-memory"),
+                    # hidden=True,
+                ),
+                Field(
                     "Used",
-                    Projectors.Number("ns_stats", "memory_used_bytes"),
+                    Projectors.Number(
+                        "ns_stats", "memory_used_bytes", "used-bytes-memory"
+                    ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
                 ),
@@ -302,12 +347,14 @@ info_namespace_usage_sheet = Sheet(
                     "Used%",
                     Projectors.PercentCompute(
                         Projectors.Number("ns_stats", "memory_used_bytes"),
-                        Projectors.Number("ns_stats", "memory-size"),
+                        Projectors.Number(
+                            "ns_stats", "memory-size", "total-bytes-memory"
+                        ),
                     ),
-                    converter=Converters.round(2),
+                    converter=Converters.pct,
                     aggregator=ComplexAggregator(
                         create_usage_weighted_avg("Memory"),
-                        converter=Converters.round(2),
+                        converter=Converters.pct,
                     ),
                     formatters=(
                         Formatters.yellow_alert(
@@ -316,14 +363,30 @@ info_namespace_usage_sheet = Sheet(
                         ),
                     ),
                 ),
-                Field("HWM%", Projectors.Number("ns_stats", "high-water-memory-pct")),
-                Field("Stop%", Projectors.Number("ns_stats", "stop-writes-pct")),
+                Field(
+                    "HWM%",
+                    Projectors.Number("ns_stats", "high-water-memory-pct"),
+                    converter=Converters.pct,
+                ),
+                Field(
+                    "Stop%",
+                    Projectors.Number("ns_stats", "stop-writes-pct"),
+                    converter=Converters.pct,
+                ),
             ),
         ),
         Subgroup(
             "Primary Index",
             (
                 Field("Type", Projectors.String("ns_stats", "index-type")),
+                Field(
+                    "Total",
+                    Projectors.Number(
+                        "ns_stats",
+                        "index-type.mounts-size-limit",
+                    ),
+                    # hidden=True,
+                ),
                 Field(
                     "Used",
                     Projectors.Number(
@@ -342,10 +405,10 @@ info_namespace_usage_sheet = Sheet(
                         ),
                         Projectors.Number("ns_stats", "index-type.mounts-size-limit"),
                     ),
-                    converter=Converters.round(2),
+                    converter=Converters.pct,
                     aggregator=ComplexAggregator(
                         create_usage_weighted_avg("Primary Index"),
-                        converter=Converters.round(2),
+                        converter=Converters.pct,
                     ),
                     formatters=(
                         Formatters.yellow_alert(
@@ -358,6 +421,7 @@ info_namespace_usage_sheet = Sheet(
                 Field(
                     "HWM%",
                     Projectors.Number("ns_stats", "index-type.mounts-high-water-pct"),
+                    converter=Converters.pct,
                 ),
             ),
         ),
@@ -493,17 +557,82 @@ info_set_sheet = Sheet(
         node_field,
         hidden_node_id_field,
         Field("Set Delete", Projectors.Boolean("set_stats", "deleting", "set-delete")),
-        Field(
-            "Mem Used",
-            Projectors.Number("set_stats", "memory_data_bytes", "n-bytes-memory"),
-            converter=Converters.byte,
-            aggregator=Aggregators.sum(),
+        Subgroup(
+            "Memory",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number(
+                        "set_stats",
+                        "stop-writes-size",
+                    ),
+                    # hidden=True,
+                ),
+                Field(
+                    "Used",
+                    Projectors.Number(
+                        "set_stats", "memory_data_bytes", "n-bytes-memory"
+                    ),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Used%",
+                    Projectors.PercentCompute(
+                        Projectors.Number(
+                            "set_stats", "memory_data_bytes", "n-bytes-memory"
+                        ),
+                        Projectors.Func(
+                            FieldType.number,
+                            _ignore_zero,
+                            Projectors.Number("set_stats", "stop-writes-size"),
+                        ),
+                    ),
+                    converter=Converters.pct,
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Memory"),
+                        converter=Converters.pct,
+                    ),
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value >= 90.0),
+                        Formatters.yellow_alert(lambda edata: edata.value >= 75.0),
+                    ),
+                ),
+            ),
         ),
-        Field(
-            "Disk Used",
-            Projectors.Number("set_stats", "device_data_bytes"),
-            converter=Converters.byte,
-            aggregator=Aggregators.sum(),
+        Subgroup(
+            "Disk",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number(
+                        "set_stats",
+                        "stop-writes-size",
+                    ),
+                    hidden=True,
+                ),
+                Field(
+                    "Used",
+                    Projectors.Number("set_stats", "device_data_bytes"),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Used%",
+                    Projectors.PercentCompute(
+                        Projectors.Number(
+                            "set_stats", "device_data_bytes", "n-bytes-memory"
+                        ),
+                        Projectors.Func(
+                            FieldType.number,
+                            _ignore_zero,
+                            Projectors.Number("set_stats", "stop-writes-size"),
+                        ),
+                    ),
+                    converter=Converters.pct,
+                    aggregator=Aggregators.sum(),
+                ),
+            ),
         ),
         Field(
             "Objects",
@@ -556,6 +685,7 @@ info_old_xdr_sheet = Sheet(
                     "xdr_stats", "dlog_free_pct", "free-dlog-pct", "free_dlog_pct"
                 ),
             ),
+            converter=Converters.pct,
         ),
         Field(
             "Lag (sec)",
@@ -735,20 +865,6 @@ def sindex_state_converter(edata):
         return "Read-Write"
 
     return state
-
-
-def _ignore_zero(num: int):
-    if num == 0:
-        return None
-
-    return num
-
-
-def _ignore_null(s: str):
-    if s == "null":
-        return None
-
-    return s
 
 
 info_sindex_sheet = Sheet(
@@ -959,7 +1075,7 @@ def create_summary_used(source: str, storage_type: str, subgroup=False):
 
 
 def create_summary_used_pct(source: str, storage_type: str, subgroup=False):
-    title = _storage_type_display_name(storage_type, "Used %", subgroup)
+    title = _storage_type_display_name(storage_type, "Used%", subgroup)
 
     return Field(
         title,
@@ -968,7 +1084,7 @@ def create_summary_used_pct(source: str, storage_type: str, subgroup=False):
             extract_value_from_dict("used_pct"),
             Projectors.Identity(source, storage_type),
         ),
-        converter=Converters.round(2),
+        converter=Converters.pct,
     )
 
 
@@ -996,7 +1112,7 @@ def create_summary_avail_pct(source: str, storage_type: str, subgroup=False):
             extract_value_from_dict("avail_pct"),
             Projectors.Identity(source, storage_type),
         ),
-        converter=Converters.round(2),
+        converter=Converters.pct,
     )
 
 
@@ -1113,7 +1229,11 @@ summary_cluster_sheet = Sheet(
             ),
             align=FieldAlignment.right,
         ),
-        Field("Cache Read%", Projectors.Percent("cluster_dict", "cache_read_pct")),
+        Field(
+            "Cache Read%",
+            Projectors.Percent("cluster_dict", "cache_read_pct"),
+            converter=Converters.pct,
+        ),
         Field(
             "Master Objects",
             Projectors.Number("cluster_dict", "master_objects"),
@@ -1254,7 +1374,11 @@ summary_namespace_sheet = Sheet(
             ),
             align=FieldAlignment.right,
         ),
-        Field("Cache Read%", Projectors.Percent("ns_stats", "cache_read_pct")),
+        Field(
+            "Cache Read%",
+            Projectors.Percent("ns_stats", "cache_read_pct"),
+            converter=Converters.pct,
+        ),
         Field(
             "Master Objects",
             Projectors.Number("ns_stats", "master_objects"),
@@ -1458,8 +1582,8 @@ show_object_distribution_sheet = Sheet(
 
 
 def latency_weighted_avg(edatas: list[EntryData]):
-    pcts = map(lambda edata: edata.value, edatas)
-    ops_sec_values = map(lambda edata: edata.record["ops/sec"], edatas)
+    ops_sec_values: map[float] = map(lambda edata: edata.record["ops/sec"], edatas)
+    pcts = map(lambda data: data[0].value * data[1], zip(edatas, ops_sec_values))
     return weighted_avg(pcts, ops_sec_values)
 
 
@@ -1781,12 +1905,13 @@ show_jobs = Sheet(
     (
         hidden_node_id_field,
         node_field,
-        Field("Namespace", Projectors.Percent("data", "ns")),
+        Field("Namespace", Projectors.String("data", "ns")),
         Field("Module", Projectors.String("data", "module")),
         Field("Type", Projectors.String("data", "job-type")),
         Field(
-            "Progress %",
-            Projectors.Float("data", "job-progress"),
+            "Progress%",
+            Projectors.Percent("data", "job-progress"),
+            converter=Converters.pct,
             formatters=(
                 Formatters.yellow_alert(lambda edata: edata.value != 100.0),
                 Formatters.green_alert(lambda edata: edata.value == 100.0),
@@ -1803,7 +1928,7 @@ show_jobs = Sheet(
     from_source=("data", "node_names", "node_ids"),
     for_each="data",
     group_by=("Namespace", "Module", "Type"),
-    order_by=("Progress %", "Time Since Done"),
+    order_by=("Progress%", "Time Since Done"),
     default_style=SheetStyle.rows,
 )
 
@@ -1828,7 +1953,7 @@ kill_jobs = Sheet(
         hidden_node_id_field,
         node_field,
         Field("Transaction ID", Projectors.Number("data", "trid")),
-        Field("Namespace", Projectors.Percent("data", "ns")),
+        Field("Namespace", Projectors.String("data", "ns")),
         Field("Module", Projectors.String("data", "module")),
         Field("Type", Projectors.String("data", "job-type")),
         Field(

@@ -146,6 +146,18 @@ class Converters:
 
         return fun
 
+    @staticmethod
+    def _fmt_pct_type(val: float):
+        return str(round(float(val), 2)) + " %"
+
+    @staticmethod
+    def ratio_to_pct(edata: EntryValue):
+        return Converters._fmt_pct_type(edata.value * 100)
+
+    @staticmethod
+    def pct(edata: EntryValue):
+        return Converters._fmt_pct_type(edata.value)
+
 
 FormatterPredicateFnType = Callable[[EntryData], bool]
 FormatterType = tuple[str, Callable[[EntryData], Union[Callable[[str], str], None]]]
@@ -664,7 +676,7 @@ class Projectors(object):
                     pass
 
     class Func(BaseProjector):
-        def __init__(self, field_type, func, *field_projectors):
+        def __init__(self, field_type: str, func, *field_projectors):
             """
             Arguments:
             field_type -- The 'FieldType' for this field.

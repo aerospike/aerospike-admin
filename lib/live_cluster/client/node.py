@@ -24,7 +24,6 @@ from typing import Any, Optional, Union
 from lib.live_cluster.client.ctx import CDTContext
 from lib.live_cluster.client.msgpack import ASPacker
 
-from lib.utils import common, constants, util, version, conf_parser
 from lib.utils import common, constants, util, version, logger_debug, conf_parser
 from lib.utils.async_object import AsyncObject
 
