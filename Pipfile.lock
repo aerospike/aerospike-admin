@@ -585,11 +585,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:23c86b4e44432bfd8899384afc08872ec166a24f48a3f99f293b0a557e6a6b5d",
-                "sha256:daec07fd848d80676694d6bf69c009d28910aeece68a38dbe88b7e1bb6dba12e"
+                "sha256:e5fd0a713141a4a105412233c63dc4e17ba0090c8e8334594ac790ec97792330",
+                "sha256:f106dee1b506dee5102cc3f3e9e68137bbad6d47b616be7991714b0c62204251"
             ],
             "index": "pypi",
-            "version": "==67.3.1"
+            "version": "==67.4.0"
         },
         "six": {
             "hashes": [
@@ -886,7 +886,6 @@
                 "sha256:44c40f2cd7d6726af8fa6fe22549178d3a4dfecc35a9cd15ea916d9c83a688e0",
                 "sha256:557bbfa1bb255c20e9abafe7ed6cd8046b48d9525db2f9b77d3122a63a2a8bf8"
             ],
-            "index": "pypi",
             "markers": "sys_platform == 'darwin'",
             "version": "==1.16.2"
         },
@@ -998,11 +997,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:23c86b4e44432bfd8899384afc08872ec166a24f48a3f99f293b0a557e6a6b5d",
-                "sha256:daec07fd848d80676694d6bf69c009d28910aeece68a38dbe88b7e1bb6dba12e"
+                "sha256:e5fd0a713141a4a105412233c63dc4e17ba0090c8e8334594ac790ec97792330",
+                "sha256:f106dee1b506dee5102cc3f3e9e68137bbad6d47b616be7991714b0c62204251"
             ],
             "index": "pypi",
-            "version": "==67.3.1"
+            "version": "==67.4.0"
         },
         "tomli": {
             "hashes": [
