@@ -290,7 +290,7 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.PercentCompute(
+                    Projectors.Div(
                         Projectors.Number(
                             "ns_stats", "device_used_bytes", "used-bytes-disk"
                         ),
@@ -298,14 +298,15 @@ info_namespace_usage_sheet = Sheet(
                             "ns_stats", "device_total_bytes", "total-bytes-disk"
                         ),
                     ),
-                    converter=Converters.pct,
+                    converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
                         create_usage_weighted_avg("Device"),
-                        converter=Converters.pct,
+                        converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
                         Formatters.yellow_alert(
-                            lambda edata: edata.value >= edata.record["Device"]["HWM%"]
+                            lambda edata: edata.value * 100
+                            >= edata.record["Device"]["HWM%"]
                             and edata.record["Device"]["HWM%"] != 0
                         ),
                     ),
@@ -343,20 +344,21 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.PercentCompute(
+                    Projectors.Div(
                         Projectors.Number("ns_stats", "memory_used_bytes"),
                         Projectors.Number(
                             "ns_stats", "memory-size", "total-bytes-memory"
                         ),
                     ),
-                    converter=Converters.pct,
+                    converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
                         create_usage_weighted_avg("Memory"),
-                        converter=Converters.pct,
+                        converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
                         Formatters.yellow_alert(
-                            lambda edata: edata.value > edata.record["Memory"]["HWM%"]
+                            lambda edata: edata.value * 100
+                            > edata.record["Memory"]["HWM%"]
                             and edata.record["Memory"]["HWM%"] != 0
                         ),
                     ),
@@ -395,7 +397,7 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.PercentCompute(
+                    Projectors.Div(
                         Projectors.Number(
                             "ns_stats",
                             "index_flash_used_bytes",
@@ -403,14 +405,14 @@ info_namespace_usage_sheet = Sheet(
                         ),
                         Projectors.Number("ns_stats", "index-type.mounts-size-limit"),
                     ),
-                    converter=Converters.pct,
+                    converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
                         create_usage_weighted_avg("Primary Index"),
-                        converter=Converters.pct,
+                        converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
                         Formatters.yellow_alert(
-                            lambda edata: edata.value
+                            lambda edata: edata.value * 100
                             >= edata.record["Primary Index"]["HWM%"]
                             and edata.record["Primary Index"]["HWM%"] != 0
                         ),
@@ -581,7 +583,7 @@ info_set_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.PercentCompute(
+                    Projectors.Div(
                         Projectors.Sum(
                             Projectors.Number(
                                 "set_stats", "memory_data_bytes", "n-bytes-memory"
@@ -596,14 +598,16 @@ info_set_sheet = Sheet(
                             Projectors.Number("set_stats", "stop-writes-size"),
                         ),
                     ),
-                    converter=Converters.pct,
+                    converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
                         create_usage_weighted_avg("Quota"),
-                        converter=Converters.pct,
+                        converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
-                        Formatters.red_alert(lambda edata: edata.value >= 90.0),
-                        Formatters.yellow_alert(lambda edata: edata.value >= 75.0),
+                        Formatters.red_alert(lambda edata: edata.value * 100 >= 90.0),
+                        Formatters.yellow_alert(
+                            lambda edata: edata.value * 100 >= 75.0
+                        ),
                     ),
                 ),
             ),

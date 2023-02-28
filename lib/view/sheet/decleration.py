@@ -620,29 +620,6 @@ class Projectors(object):
 
             return result
 
-    class PercentCompute(Div):
-        field_type = FieldType.number
-
-        def __init__(self, numerator_projector, denominator_projector, **kwargs):
-            """
-            Arguments:
-            invert:  Return result as (100 - result) if true
-            See Div for remaining args.
-
-            Computed as ((numberator/denomanator) * 100)
-            """
-            super().__init__(numerator_projector, denominator_projector)
-            self.invert = kwargs.get("invert", False)
-
-        def do_project(self, sheet, sources):
-            """
-            Arguments:
-            source -- A set of sources to project a sum of fields.
-            """
-            result = super().do_project(sheet, sources)
-            result *= 100
-            return result if not self.invert else 100 - result
-
     class Any(BaseProjector):
         def __init__(self, field_type: str, *field_projectors: BaseProjector):
             """

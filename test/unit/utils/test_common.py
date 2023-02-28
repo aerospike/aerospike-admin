@@ -20,8 +20,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
         expected_summary_dict = util.deep_merge_dicts(
             common._initialize_summary_output(namespace_stats.keys()),
             expected_summary_dict,
-        )
-
+        )  # type: ignore
         summary_dict = common._initialize_summary_output(namespace_stats.keys())
 
         common.compute_license_data_size(
