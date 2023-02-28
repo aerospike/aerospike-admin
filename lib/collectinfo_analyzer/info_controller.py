@@ -189,9 +189,7 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays secondary index (SIndex) summary information).")
     def do_sindex(self, line):
-        sindex_stats = self.log_handler.info_statistics(
-            stanza=constants.STAT_SINDEX, flip=True
-        )
+        sindex_stats = self.log_handler.info_statistics(stanza=constants.STAT_SINDEX)
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp]:
                 continue
