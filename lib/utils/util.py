@@ -605,6 +605,36 @@ def get_nested_value_from_dict(
     return default_value
 
 
+def deep_merge_dicts(dict_to, dict_from):
+    """
+    Function takes dictionaries to merge
+
+    Merge dict_from to dict_to and returns dict_to
+    """
+
+    if not dict_to and not dict_from:
+        return dict_to
+
+    if not dict_to:
+        return dict_from
+
+    if not isinstance(dict_to, dict):
+        return dict_to
+
+    if not dict_from or not isinstance(dict_from, dict):
+        # either dict_from is None/empty or is last value whose key matched
+        # already, so no need to add
+        return dict_to
+
+    for _key in dict_from.keys():
+        if _key not in dict_to:
+            dict_to[_key] = dict_from[_key]
+        else:
+            dict_to[_key] = deep_merge_dicts(dict_to[_key], dict_from[_key])
+
+    return dict_to
+
+
 def add_dicts(d1, d2):
     """
     Function takes two dictionaries and merges those to one dictionary by adding values for same key.
@@ -748,7 +778,6 @@ def _is_valid_ipv6_address(address):
 
 
 def is_str(data):
-
     return isinstance(data, str)
 
 

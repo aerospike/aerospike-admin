@@ -88,27 +88,25 @@ def _ignore_null(s: str):
 #
 
 
-# TODO: There is no way to compute this without finding the total
-def weighted_avg(weights: Iterable[float], totals: Iterable[float]):
+def weighted_avg(weights: Iterable[float], values: Iterable[float]):
     """
     Computes the average of multiple percentage points. Remember: used/total = percent or percent * total = used
     Let's assume each entry has three pieces of info (used amount, total amount available, percent). To compute
     the average of percents we can use sum(used for each element) / sum(total for each element) or because
-    percent * total = used we can do sum(percent * total for each element) / sum(total for each element). We choose
-    the latter approach because most tables don't show the total configured
+    percent * total = used we can do sum(percent * total for each element) / sum(total for each element).
     """
-    total = 0.0
-    total_used = 0.0
+    values_total = 0.0
+    weighted_total = 0.0
 
-    for w, v in zip(weights, totals):
-        used = w * v
-        total_used += used
-        total += v
+    for w, v in zip(weights, values):
+        weighted_value = w * v
+        weighted_total += weighted_value
+        values_total += v
 
-    if not total:
+    if not values_total:
         return 0.0
 
-    return total_used / total
+    return weighted_total / values_total
 
 
 #
@@ -280,7 +278,7 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Number(
                         "ns_stats", "device_total_bytes", "total-bytes-disk"
                     ),
-                    # hidden=True,
+                    hidden=True,
                 ),
                 Field(
                     "Used",
@@ -333,7 +331,7 @@ info_namespace_usage_sheet = Sheet(
                 Field(
                     "Total",
                     Projectors.Number("ns_stats", "memory-size", "total-bytes-memory"),
-                    # hidden=True,
+                    hidden=True,
                 ),
                 Field(
                     "Used",
@@ -385,7 +383,7 @@ info_namespace_usage_sheet = Sheet(
                         "ns_stats",
                         "index-type.mounts-size-limit",
                     ),
-                    # hidden=True,
+                    hidden=True,
                 ),
                 Field(
                     "Used",
@@ -557,8 +555,20 @@ info_set_sheet = Sheet(
         node_field,
         hidden_node_id_field,
         Field("Set Delete", Projectors.Boolean("set_stats", "deleting", "set-delete")),
+        Field(
+            "Memory Used",
+            Projectors.Number("set_stats", "memory_data_bytes", "n-bytes-memory"),
+            converter=Converters.byte,
+            aggregator=Aggregators.sum(),
+        ),
+        Field(
+            "Disk Used",
+            Projectors.Number("set_stats", "device_data_bytes"),
+            converter=Converters.byte,
+            aggregator=Aggregators.sum(),
+        ),
         Subgroup(
-            "Memory",
+            "Quota",
             (
                 Field(
                     "Total",
@@ -566,21 +576,19 @@ info_set_sheet = Sheet(
                         "set_stats",
                         "stop-writes-size",
                     ),
-                    # hidden=True,
-                ),
-                Field(
-                    "Used",
-                    Projectors.Number(
-                        "set_stats", "memory_data_bytes", "n-bytes-memory"
-                    ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
                 ),
                 Field(
                     "Used%",
                     Projectors.PercentCompute(
-                        Projectors.Number(
-                            "set_stats", "memory_data_bytes", "n-bytes-memory"
+                        Projectors.Sum(
+                            Projectors.Number(
+                                "set_stats", "memory_data_bytes", "n-bytes-memory"
+                            ),
+                            Projectors.Number(
+                                "set_stats", "device_data_bytes", "n-bytes-memory"
+                            ),
                         ),
                         Projectors.Func(
                             FieldType.number,
@@ -590,47 +598,13 @@ info_set_sheet = Sheet(
                     ),
                     converter=Converters.pct,
                     aggregator=ComplexAggregator(
-                        create_usage_weighted_avg("Memory"),
+                        create_usage_weighted_avg("Quota"),
                         converter=Converters.pct,
                     ),
                     formatters=(
                         Formatters.red_alert(lambda edata: edata.value >= 90.0),
                         Formatters.yellow_alert(lambda edata: edata.value >= 75.0),
                     ),
-                ),
-            ),
-        ),
-        Subgroup(
-            "Disk",
-            (
-                Field(
-                    "Total",
-                    Projectors.Number(
-                        "set_stats",
-                        "stop-writes-size",
-                    ),
-                    hidden=True,
-                ),
-                Field(
-                    "Used",
-                    Projectors.Number("set_stats", "device_data_bytes"),
-                    converter=Converters.byte,
-                    aggregator=Aggregators.sum(),
-                ),
-                Field(
-                    "Used%",
-                    Projectors.PercentCompute(
-                        Projectors.Number(
-                            "set_stats", "device_data_bytes", "n-bytes-memory"
-                        ),
-                        Projectors.Func(
-                            FieldType.number,
-                            _ignore_zero,
-                            Projectors.Number("set_stats", "stop-writes-size"),
-                        ),
-                    ),
-                    converter=Converters.pct,
-                    aggregator=Aggregators.sum(),
                 ),
             ),
         ),

@@ -579,7 +579,7 @@ class BaseRSubgroup(object):
     def get_kv(self, group_ix, entry_ix):
         return (
             self.decleration.key,
-            dict(sub.get_kv(group_ix, entry_ix) for sub in self.visible),
+            dict(sub.get_kv(group_ix, entry_ix) for sub in self.subfields),
         )
 
     def n_entries_in_group(self, group_ix):
