@@ -304,14 +304,6 @@ class CliView(object):
         if not stats:
             return
 
-        # stats comes in {index:{node:{k:v}}}, needs to be {node:{index:{k:v}}}
-        sindex_stats = {}
-
-        for iname, nodes in stats.items():
-            for node, values in nodes.items():
-                sindex_stats[node] = node_stats = sindex_stats.get(node, {})
-                node_stats[iname] = values
-
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
@@ -319,7 +311,7 @@ class CliView(object):
         sources = dict(
             node_ids=node_ids,
             node_names=node_names,
-            sindex_stats=sindex_stats,
+            sindex_stats=stats,
         )
         common = dict(principal=cluster.get_expected_principal())
 

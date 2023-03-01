@@ -662,7 +662,7 @@ class CollectinfoController(LiveClusterCommandController):
                 util.write_to_file(complete_filename, str(e))
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.warning("Failed to generate %s file.", complete_filename)
             self.logger.debug(traceback.format_exc())
             raise
 
@@ -707,7 +707,7 @@ class CollectinfoController(LiveClusterCommandController):
 
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.warning("Failed to generate %s file.", complete_filename)
             self.logger.debug(traceback.format_exc())
             raise
 
@@ -731,7 +731,7 @@ class CollectinfoController(LiveClusterCommandController):
                 )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.warning("Failed to generate %s file.", complete_filename)
             self.logger.debug(traceback.format_exc())
             raise
 
@@ -751,7 +751,7 @@ class CollectinfoController(LiveClusterCommandController):
             )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.warning("Failed to generate %s file.", complete_filename)
             self.logger.debug(traceback.format_exc())
             raise
 
@@ -767,7 +767,7 @@ class CollectinfoController(LiveClusterCommandController):
             self._collect_local_file(conf_path, complete_filename)
         except Exception as e:
             self.logger.debug(traceback.format_exc())
-            self.logger.warning("Failed to generate {} file.", complete_filename)
+            self.logger.warning("Failed to generate %s file.", complete_filename)
             self.logger.warning(str(e))
             util.write_to_file(complete_filename, str(e))
 
