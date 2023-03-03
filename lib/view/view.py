@@ -299,10 +299,23 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
-    def info_sindex(stats, cluster, timestamp="", with_=None, **ignore):
+    def info_sindex(
+        sindex_stats, ns_configs, cluster, timestamp="", with_=None, **ignore
+    ):
         # return if sindex stats are empty.
-        if not stats:
+        if not sindex_stats:
             return
+
+        # Insert sindex-type from ns_confgs into sindex_stats. Sheets can't handle
+        # two objects with differing schemas.
+        for node, node_stats in sindex_stats.items():
+            for key in node_stats:
+                ns = key.split()[0]
+
+                sindex_type = ns_configs.get(node, {}).get(ns).get("sindex-type", None)
+
+                if sindex_type is not None:
+                    sindex_stats[node][key]["sindex-type"] = sindex_type
 
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
@@ -311,7 +324,7 @@ class CliView(object):
         sources = dict(
             node_ids=node_ids,
             node_names=node_names,
-            sindex_stats=stats,
+            sindex_stats=sindex_stats,
         )
         common = dict(principal=cluster.get_expected_principal())
 

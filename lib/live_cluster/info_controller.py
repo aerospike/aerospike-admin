@@ -183,9 +183,11 @@ class InfoController(LiveClusterCommandController):
         '"info sindex" displays summary information for Secondary Indexes (SIndex).'
     )
     async def do_sindex(self, line):
-        sindex_stats = await self.stat_getter.get_sindex()
+        sindex_stats, ns_configs = await asyncio.gather(
+            self.stat_getter.get_sindex(), self.config_getter.get_namespace()
+        )
         return util.callable(
-            self.view.info_sindex, sindex_stats, self.cluster, **self.mods
+            self.view.info_sindex, sindex_stats, ns_configs, self.cluster, **self.mods
         )
 
 
