@@ -40,7 +40,6 @@ class CollectinfoController(LiveClusterCommandController):
 
     def __init__(self):
         self.modifiers = set(["with"])
-        self.ignore_errors = False
         self.collectinfo_root_controller = None
 
     def _collect_local_file(self, src, dest_dir):
@@ -305,7 +304,6 @@ class CollectinfoController(LiveClusterCommandController):
         )
 
         for hist, hist_dump in zip(hist_list, hist_dumps):
-
             for node in hist_dump:
                 if node not in histogram_map:
                     histogram_map[node] = {}
@@ -461,7 +459,6 @@ class CollectinfoController(LiveClusterCommandController):
         snpshots = {}
 
         for i in range(snp_count):
-
             snp_timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
             self.logger.info(
                 "Data collection for Snapshot: " + str(i + 1) + " in progress..."
@@ -791,7 +788,6 @@ class CollectinfoController(LiveClusterCommandController):
         output_prefix: str = "",
         config_path: str = "",
     ):
-
         # JSON collectinfo snapshot count check
         if snp_count < 1:
             self.logger.error("Wrong collectinfo snapshot count")
@@ -845,8 +841,9 @@ class CollectinfoController(LiveClusterCommandController):
                 snp_count,
                 wait_time,
             )
-        except:
-            if not self.ignore_errors:
+        except Exception as e:
+            if not ignore_errors:
+                self.logger.debug(e)
                 self.logger.error(ignore_errors_msg)
                 return
 
