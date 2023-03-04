@@ -2082,9 +2082,14 @@ class Node(AsyncObject):
             if dcs == "":
                 return []
 
-            return dcs.split(",")
+            return client_util.info_to_list(dcs, delimiter=",")
 
-        return client_util.info_to_list(await self.info("dcs"))
+        dcs = await self.info("dcs")
+
+        if dcs == "":
+            return []
+
+        return client_util.info_to_list(dcs)
 
     @async_return_exceptions
     async def info_udf_list(self):
