@@ -15,12 +15,13 @@ import asyncio
 from ctypes import ArgumentError
 import copy
 import logging
+import os
 import re
 import socket
 import threading
 import time
 import base64
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 from lib.live_cluster.client.ctx import CDTContext
 from lib.live_cluster.client.msgpack import ASPacker
 
@@ -101,6 +102,53 @@ def return_exceptions(func):
     return wrapper
 
 
+class _SysCmd:
+    _uid: int = -1
+
+    @classmethod
+    def set_uid(cls, uid):
+        cls._uid = uid
+
+    def __init__(
+        self,
+        name: str,
+        ignore_error: bool,
+        cmds: list[str],
+        parse_func: Callable[[str], dict[str, Any]],
+    ) -> None:
+        if _SysCmd._uid == -1:
+            raise RuntimeError("set_uid not called")
+
+        self.key = name
+        self.ignore_error = ignore_error
+        self._cmds = cmds
+        self._idx = 0
+        self._parse_func = parse_func
+
+    def parse(self, command_raw_output):
+        result = self._parse_func(command_raw_output)
+        sys_cmd_parser.type_check_basic_values(result)
+        return result
+        # Parse live cmd output and create imap
+        # sys_cmd_parser.parse_sys_section(self.key, command_raw_output)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._idx > len(self._cmds):
+            raise StopIteration
+
+        cmd = self._cmds[self._idx]
+        self._idx += 1
+
+        # Remove sudo if already root. Some systems do not have sudo.
+        if self._uid == 1:
+            return cmd.replace("sudo ", "")
+
+        return cmd
+
+
 class Node(AsyncObject):
     dns_cache = {}
     info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
@@ -165,58 +213,110 @@ class Node(AsyncObject):
         self.sys_default_user_id = None
         self.sys_default_pwd = None
         self.sys_default_ssh_key = None
-        self.sys_cmds = [
-            # format: (command name as in parser, ignore error, command list)
-            ("hostname", False, ["hostname -I", "hostname"]),
-            ("top", False, ["top -n1 -b", "top -l 1"]),
-            (
+
+        _SysCmd.set_uid(os.getuid())
+        self.sys_cmds: list[_SysCmd] = [
+            # format: (command name as in parser, ignore error, sudo, command list)
+            _SysCmd(
+                "hostname",
+                False,
+                ["hostname -I", "hostname"],
+                sys_cmd_parser._parse_hostname_section,
+            ),
+            _SysCmd(
+                "top",
+                False,
+                ["top -n1 -b", "top -l 1"],
+                sys_cmd_parser._parse_top_section,
+            ),
+            _SysCmd(
                 "lsb",
                 False,
                 ["lsb_release -a", "ls /etc|grep release|xargs -I f cat /etc/f"],
+                sys_cmd_parser._parse_lsb_release_section,
             ),
-            ("meminfo", False, ["cat /proc/meminfo", "vmstat -s"]),
-            ("interrupts", False, ["cat /proc/interrupts", ""]),
-            ("iostat", False, ["iostat -y -x 5 1", ""]),
-            ("dmesg", False, ["dmesg -T", "dmesg"]),
-            (
+            _SysCmd(
+                "meminfo",
+                False,
+                ["cat /proc/meminfo", "vmstat -s"],
+                sys_cmd_parser._parse_meminfo_section,
+            ),
+            _SysCmd(
+                "interrupts",
+                False,
+                ["cat /proc/interrupts", ""],
+                sys_cmd_parser._parse_interrupts_section,
+            ),
+            _SysCmd(
+                "iostat",
+                False,
+                ["iostat -y -x 5 1", ""],
+                sys_cmd_parser._parse_iostat_section,
+            ),
+            _SysCmd(
+                "dmesg",
+                False,
+                ["dmesg -T", "dmesg"],
+                sys_cmd_parser._parse_dmesg_section,
+            ),
+            _SysCmd(
                 "limits",
                 False,
-                ['sudo  pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', ""],
+                ['sudo pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', ""],
+                sys_cmd_parser._parse_limits_section,
             ),
-            ("lscpu", False, ["lscpu", ""]),
-            ("sysctlall", False, ["sudo sysctl vm fs", ""]),
-            ("iptables", False, ["sudo iptables -S", ""]),
-            (
+            _SysCmd("lscpu", False, ["lscpu", ""], sys_cmd_parser._parse_lscpu_section),
+            _SysCmd(
+                "sysctlall",
+                False,
+                ["sudo sysctl vm fs", ""],
+                sys_cmd_parser._parse_sysctlall_section,
+            ),
+            _SysCmd(
+                "iptables",
+                False,
+                ["sudo iptables -S", ""],
+                sys_cmd_parser._parse_iptables_section,
+            ),  # TODO needs parser
+            _SysCmd(
                 "hdparm",
                 False,
                 [
                     'sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null',
                     "",
                 ],
+                sys_cmd_parser._parse_hdparm_section,
             ),
-            ("df", False, ["df -h", ""]),
-            ("free-m", False, ["free -m", ""]),
-            ("uname", False, ["uname -a", ""]),
-            (
+            _SysCmd("df", False, ["df -h", ""], sys_cmd_parser._parse_df_section),
+            _SysCmd(
+                "free-m", False, ["free -m", ""], sys_cmd_parser._parse_free_m_section
+            ),
+            _SysCmd(
+                "uname", False, ["uname -a", ""], sys_cmd_parser._parse_uname_section
+            ),
+            _SysCmd(
                 "scheduler",
                 True,
                 [
                     'ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"',
                     "",
                 ],
+                sys_cmd_parser._parse_scheduler_section,
             ),
             # Todo: Add more commands for other cloud platform detection
-            (
+            _SysCmd(
                 "environment",
                 False,
                 ["curl -m 1 -s http://169.254.169.254/1.0/", "uname"],
+                sys_cmd_parser._parse_hostname_section,
             ),
-            (
+            _SysCmd(
                 "ethtool",
                 False,
                 [
                     'sudo netstat -i | tr -s [:blank:] | cut -d" " -f1 | tail -n +3 | grep -v -E "lo|docker" | xargs --max-lines=1 -i{} sh -c "echo ethtool -S {}; ethtool -S {}"'
                 ],
+                sys_cmd_parser._parse_hostname_section,
             ),
         ]
 
@@ -3157,14 +3257,6 @@ class Node(AsyncObject):
         self.sys_ssh_key = self.sys_default_ssh_key
         self.sys_ssh_port = self.sys_default_ssh_port
 
-    def parse_system_live_command(self, command, command_raw_output, parsed_map):
-        # Parse live cmd output and create imap
-        imap = {}
-        sys_cmd_parser.extract_section_from_live_cmd(command, command_raw_output, imap)
-        sectionlist = []
-        sectionlist.append(command)
-        sys_cmd_parser.parse_sys_section(sectionlist, imap, parsed_map)
-
     @return_exceptions
     def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
@@ -3175,22 +3267,22 @@ class Node(AsyncObject):
             commands,
         )
 
-        for _key, ignore_error, cmds in self.sys_cmds:
-            if _key not in commands:
+        for sys_cmd in self.sys_cmds:
+            if sys_cmd.key not in commands:
                 continue
 
-            for cmd in cmds:
+            for cmd in sys_cmd:
                 logger.debug(
                     ("%s._get_localhost_system_statistics running cmd=%s"),
                     self.ip,
                     cmd,
                 )
                 o, e = util.shell_command([cmd])
-                if (e and not ignore_error) or not o:
+                if (e and not sys_cmd.ignore_error) or not o:
                     continue
 
                 try:
-                    self.parse_system_live_command(_key, o, sys_stats)
+                    sys_cmd.parse(o, sys_stats)
                 except Exception:
                     pass
 
@@ -3303,16 +3395,17 @@ class Node(AsyncObject):
                 continue
 
             try:
-                for _key, _, cmds in self.sys_cmds:
-                    if _key not in commands:
+                for sys_cmd in self.sys_cmds:
+                    key = sys_cmd.key
+                    if key not in commands:
                         continue
 
-                    for cmd in cmds:
+                    for cmd in sys_cmd:
                         try:
                             status, o = self._execute_system_command(s, cmd)
                             if status or not o or isinstance(o, Exception):
                                 continue
-                            self.parse_system_live_command(_key, o, sys_stats)
+                            sys_cmd.parse(o, sys_stats)
                             break
 
                         except Exception:
@@ -3377,7 +3470,7 @@ class Node(AsyncObject):
         if commands:
             cmd_list = copy.deepcopy(commands)
         else:
-            cmd_list = [_key for _key, _, _ in self.sys_cmds]
+            cmd_list = [sys_cmd.key for sys_cmd in self.sys_cmds]
 
         if self.localhost:
             return self._get_localhost_system_statistics(cmd_list)

@@ -17,6 +17,7 @@ import copy
 import functools
 import inspect
 import io
+import os
 import pipes
 import re
 import socket
@@ -748,7 +749,6 @@ def _is_valid_ipv6_address(address):
 
 
 def is_str(data):
-
     return isinstance(data, str)
 
 

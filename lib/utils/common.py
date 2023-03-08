@@ -22,6 +22,7 @@ import json
 import logging
 import operator
 import os
+import platform
 from traceback import print_exc
 from typing import Any, Literal, Optional, TypeVar, TypedDict, Union
 import distro
@@ -2347,16 +2348,19 @@ def get_system_commands(port=3000):
     # Unfortunately timestamp cannot be printed in Centos with dmesg,
     # storing dmesg logs without timestamp for this particular OS.
     if "centos" == (distro.linux_distribution()[0]).lower():
-        cmd_dmesg = "sudo dmesg"
-        alt_dmesg = ""
+        dmesg_cmds = ["sudo dmesg"]
     else:
-        cmd_dmesg = "sudo dmesg -T"
-        alt_dmesg = "sudo dmesg"
+        dmesg_cmds = ["sudo dmesg -T", "sudo dmesg"]
+
+    if "darwin" in platform.system().lower():
+        netstat_cmds = ["netstat -rn"]
+    else:
+        netstat_cmds = ["netstat"]
 
     # cmd and alternative cmds are stored in list of list instead of dic to
     # maintain proper order for output
 
-    sys_shell_cmds = [
+    sys_shell_cmds: list[list[str]] = [
         ["hostname -I", "hostname"],
         ["top -n3 -b", "top -l 3"],
         ["lsb_release -a", "ls /etc|grep release|xargs -I f cat /etc/f"],
@@ -2364,7 +2368,7 @@ def get_system_commands(port=3000):
         ["cat /proc/meminfo", "vmstat -s"],
         ["cat /proc/interrupts"],
         ["iostat -y -x 5 4"],
-        [cmd_dmesg, alt_dmesg],
+        dmesg_cmds,
         ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
         ["lscpu"],
         ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"'],
@@ -2406,7 +2410,7 @@ def get_system_commands(port=3000):
         ["sar -n EDEV"],
         ["mpstat -P ALL 2 3"],
         ["uptime"],
-        ["netstat"],
+        netstat_cmds,
         [
             "ss -ant state time-wait sport = :%d or dport = :%d | wc -l" % (port, port),
             "netstat -ant | grep %d | grep TIME_WAIT | wc -l" % (port),
@@ -2430,6 +2434,18 @@ def get_system_commands(port=3000):
             r'find /proc/sys/net/ipv4/neigh/default/ -name "gc_thresh*" -print -exec cat {} \;'
         ],
     ]
+
+    uid = os.getuid()
+
+    """
+    Some distros and most containers do not have sudo installed by default. If running
+    if running as root don't require it. 
+    """
+    if uid == 1:
+        for cmd_list in sys_shell_cmds:
+            for idx, cmd in enumerate(cmd_list):
+                if "sudo " in cmd:
+                    cmd_list[idx] = cmd.replace("sudo ", "")
 
     return sys_shell_cmds
 

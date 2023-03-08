@@ -101,31 +101,6 @@ def type_check_basic_values(section):
         section[newkey] = val
 
 
-def get_section_name_from_id(sec_id):
-    raw_section_name = FILTER_LIST[sec_id]["raw_section_name"]
-    final_section_name = (
-        FILTER_LIST[sec_id]["final_section_name"]
-        if "final_section_name" in FILTER_LIST[sec_id]
-        else ""
-    )
-    parent_section_name = (
-        FILTER_LIST[sec_id]["parent_section_name"]
-        if "parent_section_name" in FILTER_LIST[sec_id]
-        else ""
-    )
-    return raw_section_name, final_section_name, parent_section_name
-
-
-def is_collision_allowed_for_section(sec_id):
-    if "collision_allowed" not in FILTER_LIST[sec_id]:
-        return False
-
-    if FILTER_LIST[sec_id]["collision_allowed"] == True:
-        return True
-
-    return False
-
-
 def is_valid_section(
     imap, raw_section_name, final_section_name, collision_allowed=False
 ):
