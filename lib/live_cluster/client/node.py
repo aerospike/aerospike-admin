@@ -127,23 +127,26 @@ class _SysCmd:
 
     def parse(self, command_raw_output):
         result = self._parse_func(command_raw_output)
-        sys_cmd_parser.type_check_basic_values(result)
+        sys_cmd_parser.type_check_basic_values(
+            result
+        )  # Not sure if this is still needed.
         return result
-        # Parse live cmd output and create imap
-        # sys_cmd_parser.parse_sys_section(self.key, command_raw_output)
+
+    def _is_root(self) -> bool:
+        return self._uid == 0
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        if self._idx > len(self._cmds):
+        if self._idx >= len(self._cmds):
             raise StopIteration
 
         cmd = self._cmds[self._idx]
         self._idx += 1
 
         # Remove sudo if already root. Some systems do not have sudo.
-        if self._uid == 1:
+        if self._is_root():
             return cmd.replace("sudo ", "")
 
         return cmd
@@ -221,62 +224,62 @@ class Node(AsyncObject):
                 "hostname",
                 False,
                 ["hostname -I", "hostname"],
-                sys_cmd_parser._parse_hostname_section,
+                sys_cmd_parser.parse_hostname_section,
             ),
             _SysCmd(
                 "top",
                 False,
                 ["top -n1 -b", "top -l 1"],
-                sys_cmd_parser._parse_top_section,
+                sys_cmd_parser.parse_top_section,
             ),
             _SysCmd(
                 "lsb",
                 False,
                 ["lsb_release -a", "ls /etc|grep release|xargs -I f cat /etc/f"],
-                sys_cmd_parser._parse_lsb_release_section,
+                sys_cmd_parser.parse_lsb_release_section,
             ),
             _SysCmd(
                 "meminfo",
                 False,
                 ["cat /proc/meminfo", "vmstat -s"],
-                sys_cmd_parser._parse_meminfo_section,
+                sys_cmd_parser.parse_meminfo_section,
             ),
             _SysCmd(
                 "interrupts",
                 False,
                 ["cat /proc/interrupts", ""],
-                sys_cmd_parser._parse_interrupts_section,
+                sys_cmd_parser.parse_interrupts_section,
             ),
             _SysCmd(
                 "iostat",
                 False,
                 ["iostat -y -x 5 1", ""],
-                sys_cmd_parser._parse_iostat_section,
+                sys_cmd_parser.parse_iostat_section,
             ),
             _SysCmd(
                 "dmesg",
                 False,
                 ["dmesg -T", "dmesg"],
-                sys_cmd_parser._parse_dmesg_section,
+                sys_cmd_parser.parse_dmesg_section,
             ),
             _SysCmd(
                 "limits",
                 False,
                 ['sudo pgrep asd | xargs -I f sh -c "sudo cat /proc/f/limits"', ""],
-                sys_cmd_parser._parse_limits_section,
+                sys_cmd_parser.parse_limits_section,
             ),
-            _SysCmd("lscpu", False, ["lscpu", ""], sys_cmd_parser._parse_lscpu_section),
+            _SysCmd("lscpu", False, ["lscpu", ""], sys_cmd_parser.parse_lscpu_section),
             _SysCmd(
                 "sysctlall",
                 False,
                 ["sudo sysctl vm fs", ""],
-                sys_cmd_parser._parse_sysctlall_section,
+                sys_cmd_parser.parse_sysctlall_section,
             ),
             _SysCmd(
                 "iptables",
                 False,
                 ["sudo iptables -S", ""],
-                sys_cmd_parser._parse_iptables_section,
+                sys_cmd_parser.parse_iptables_section,
             ),  # TODO needs parser
             _SysCmd(
                 "hdparm",
@@ -285,14 +288,14 @@ class Node(AsyncObject):
                     'sudo fdisk -l |grep Disk |grep dev | cut -d " " -f 2 | cut -d ":" -f 1 | xargs sudo hdparm -I 2>/dev/null',
                     "",
                 ],
-                sys_cmd_parser._parse_hdparm_section,
+                sys_cmd_parser.parse_hdparm_section,
             ),
-            _SysCmd("df", False, ["df -h", ""], sys_cmd_parser._parse_df_section),
+            _SysCmd("df", False, ["df -h", ""], sys_cmd_parser.parse_df_section),
             _SysCmd(
-                "free-m", False, ["free -m", ""], sys_cmd_parser._parse_free_m_section
+                "free-m", False, ["free -m", ""], sys_cmd_parser.parse_free_m_section
             ),
             _SysCmd(
-                "uname", False, ["uname -a", ""], sys_cmd_parser._parse_uname_section
+                "uname", False, ["uname -a", ""], sys_cmd_parser.parse_uname_section
             ),
             _SysCmd(
                 "scheduler",
@@ -301,14 +304,14 @@ class Node(AsyncObject):
                     'ls /sys/block/{sd*,xvd*,nvme*}/queue/scheduler |xargs -I f sh -c "echo f; cat f;"',
                     "",
                 ],
-                sys_cmd_parser._parse_scheduler_section,
+                sys_cmd_parser.parse_scheduler_section,
             ),
             # Todo: Add more commands for other cloud platform detection
             _SysCmd(
                 "environment",
                 False,
                 ["curl -m 1 -s http://169.254.169.254/1.0/", "uname"],
-                sys_cmd_parser._parse_hostname_section,
+                sys_cmd_parser.parse_environment_section,
             ),
             _SysCmd(
                 "ethtool",
@@ -316,7 +319,7 @@ class Node(AsyncObject):
                 [
                     'sudo netstat -i | tr -s [:blank:] | cut -d" " -f1 | tail -n +3 | grep -v -E "lo|docker" | xargs --max-lines=1 -i{} sh -c "echo ethtool -S {}; ethtool -S {}"'
                 ],
-                sys_cmd_parser._parse_hostname_section,
+                sys_cmd_parser.parse_ethtool_section,
             ),
         ]
 
@@ -3282,7 +3285,7 @@ class Node(AsyncObject):
                     continue
 
                 try:
-                    sys_cmd.parse(o, sys_stats)
+                    sys_stats[sys_cmd.key] = sys_cmd.parse(o)
                 except Exception:
                     pass
 
