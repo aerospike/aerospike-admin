@@ -2441,7 +2441,7 @@ def get_system_commands(port=3000):
     Some distros and most containers do not have sudo installed by default. If running
     if running as root don't require it. 
     """
-    if uid == 1:
+    if uid == 0:
         for cmd_list in sys_shell_cmds:
             for idx, cmd in enumerate(cmd_list):
                 if "sudo " in cmd:

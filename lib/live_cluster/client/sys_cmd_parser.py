@@ -7,96 +7,8 @@ from datetime import datetime
 import sys
 from typing import Any
 
-from . import section_filter_list
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
-
-FILTER_LIST = section_filter_list.FILTER_LIST
-DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
-
-
-def parse_sys_section(section, cmd_raw_output):
-    logger.info("Parse sys stats.")
-    parsed_map = None
-
-    # TODO: add line split to each
-
-    if section == "top":
-        parsed_map = _parse_top_section(cmd_raw_output)
-
-    elif section == "lsb":
-        parsed_map = _parse_lsb_release_section(cmd_raw_output)
-
-    elif section == "uname":
-        parsed_map = _parse_uname_section(cmd_raw_output)
-
-    elif section == "meminfo":
-        parsed_map = _parse_meminfo_section(cmd_raw_output)
-
-    elif section == "awsdata":
-        parsed_map = _parse_awsdata_section(cmd_raw_output)
-
-    elif section == "hostname":
-        parsed_map = _parse_hostname_section(cmd_raw_output)
-
-    elif section == "df":
-        parsed_map = _parse_df_section(cmd_raw_output)
-
-    elif section == "free-m":
-        parsed_map = _parse_free_m_section(cmd_raw_output)
-
-    elif section == "iostat":
-        parsed_map = _parse_iostat_section(cmd_raw_output)
-
-    elif section == "interrupts":
-        parsed_map = _parse_interrupts_section(cmd_raw_output)
-
-    elif section == "ip_addr":
-        parsed_map = _parse_ipaddr_section(cmd_raw_output)
-
-    elif section == "dmesg":
-        parsed_map = _parse_dmesg_section(cmd_raw_output)
-
-    elif section == "lscpu":
-        parsed_map = _parse_lscpu_section(cmd_raw_output)
-
-    elif section == "iptables":
-        parsed_map = _parse_iptables_section(cmd_raw_output)
-
-    elif section == "sysctlall":
-        parsed_map = _parse_sysctlall_section(cmd_raw_output)
-
-    elif section == "hdparm":
-        parsed_map = _parse_hdparm_section(cmd_raw_output)
-
-    elif section == "limits":
-        parsed_map = _parse_limits_section(cmd_raw_output)
-
-    elif section == "environment":
-        parsed_map = _parse_environment_section(cmd_raw_output)
-
-    elif section == "scheduler":
-        parsed_map = _parse_scheduler_section(cmd_raw_output)
-    elif section == "ethtool":
-        parsed_map = _parse_ethtool_section(cmd_raw_output)
-
-    else:
-        logger.warning(
-            "Section unknown, cannot be parsed. Check SYS_SECTION_NAME_LIST. Section: "
-            + section
-        )
-
-    logger.info(
-        "Converting basic raw string vals to original vals. Sections: " + str(section)
-    )
-
-    # if section in parsed_map:
-    #     param_map = {section: parsed_map[section]}
-    #     type_check_basic_values(parsed_map)
-    #     parsed_map[section] = copy.deepcopy(param_map[section])
-
-    type_check_basic_values(parsed_map)
 
 
 def _get_mem_in_byte_from_str(memstr, mem_unit_len, shift=0):
@@ -171,7 +83,9 @@ def _replace_comma_from_map_value_field(datamap):
                     )
 
 
-def _parse_top_section_line(line, tok_separater, keyval_separater_list):
+def _parse_top_section_line(
+    line, tok_separater, keyval_separater_list
+) -> dict[str, Any] | None:
     dataobj = {}
     lineobj = line.rstrip().split(":")
     if len(lineobj) != 2:
@@ -189,14 +103,14 @@ def _parse_top_section_line(line, tok_separater, keyval_separater_list):
     return dataobj
 
 
-def _parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
+def parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: top")
     output_lines = cmd_raw_output.split("\n")
 
     if not output_lines:
         return {}
 
-    topdata = {
+    topdata: dict[str, Any] = {
         "uptime": {},
         "tasks": {},
         "cpu_utilization": {},
@@ -269,10 +183,12 @@ def _parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
 
             obj = _parse_top_section_line(line, ",", [" ", "+"])
             topdata["ram"] = obj
-            for mem in topdata["ram"]:
-                topdata["ram"][mem] = _get_mem_in_byte_from_str(
-                    topdata["ram"][mem], 1, shift=shift
-                )
+
+            if topdata["ram"] is not None:
+                for mem in topdata["ram"]:
+                    topdata["ram"][mem] = _get_mem_in_byte_from_str(
+                        topdata["ram"][mem], 1, shift=shift
+                    )
 
         elif matchobj_2 or matchobj_3:
             shift = 1
@@ -348,9 +264,7 @@ def _parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
 # output: {kernel_name: AAA, nodename: AAA, kernel_release: AAA}
 
 
-def _parse_uname_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_24"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
+def parse_uname_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: uname")
     output_lines = cmd_raw_output.split("\n")
 
@@ -358,7 +272,6 @@ def _parse_uname_section(cmd_raw_output: str) -> dict[str, Any]:
         return {}
 
     unamedata = {}
-    # uname_section = imap[raw_section_name][0]
 
     for line in output_lines:
         if re.search("uname -a", line) or line.strip() == "":
@@ -374,18 +287,12 @@ def _parse_uname_section(cmd_raw_output: str) -> dict[str, Any]:
 
 
 # output: {key: val..........}
-def _parse_meminfo_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_92"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_meminfo_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: meminfo")
     output_lines = cmd_raw_output.split("\n")
 
     if not output_lines:
         return {}
-
-    # if not is_valid_section(imap, raw_section_name, final_section_name):
-    #     return
 
     meminfo_data = {}
     meminfo_section = output_lines
@@ -417,36 +324,18 @@ def _get_age_month(y, m):
     return (n.year - y) * 12 + n.month - m
 
 
-def _parse_lsb_release_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id_1 = "ID_25"
-    # raw_section_name_1, final_section_name_1, _ = get_section_name_from_id(sec_id_1)
-
-    # sec_id_2 = "ID_26"
-    # raw_section_name_2, final_section_name_2, _ = get_section_name_from_id(sec_id_2)
+def parse_lsb_release_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: lsb_release")
 
     output_lines = cmd_raw_output.split("\n")
 
     if not output_lines:
         logger.warning("Null section json")
-        return
+        return {}
 
     lsb_data = {}
-    # lsb_section_names = [raw_section_name_1, raw_section_name_2]
-    # for section in lsb_section_names:
-    # lsb_section_list = None
 
-    # lsb_section_list = cmd_raw_output
-
-    # if len(lsb_section_list) > 1:
-    #     logger.warning(
-    #         "More than one entries detected, There is a collision for this section: "
-    #         + section
-    #     )
-
-    lsb_section = output_lines
-
-    for line in lsb_section:
+    for line in output_lines:
         # "LSB Version:\t:base-4.0-amd64:base-4.0-noarch:core-4.0-amd64:
         # "Description:\t_cent_oS release 6.4 (Final)\n"
         matchobj = re.match(r"Description:\t(.*)", line)
@@ -470,7 +359,7 @@ def _parse_lsb_release_section(cmd_raw_output: str) -> dict[str, Any]:
             and "ami" in lsb_data["description"].lower()
         ):
             # For amazon linux ami
-            for index, line in enumerate(lsb_section):
+            for index, line in enumerate(output_lines):
                 matchobj = re.match(r"version=(.*)", line.lower())
                 if matchobj:
                     v = matchobj.group(1).strip()
@@ -497,10 +386,7 @@ def _parse_lsb_release_section(cmd_raw_output: str) -> dict[str, Any]:
 # output: {hostname: {'hosts': [...................]}}
 
 
-def _parse_hostname_section(cmd_raw_output: str):
-    # sec_id = "ID_22"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_hostname_section(cmd_raw_output: str):
     logger.info("Parsing section: hostname")
 
     output_lines = cmd_raw_output.split("\n")
@@ -509,9 +395,8 @@ def _parse_hostname_section(cmd_raw_output: str):
         return {}
 
     hnamedata = {}
-    hname_section = output_lines
 
-    for line in hname_section:
+    for line in output_lines:
         if line == "\n" or line == "." or "hostname" in line:
             continue
         else:
@@ -529,7 +414,7 @@ def _parse_hostname_section(cmd_raw_output: str):
 # mount_point: AAA}, ....]
 
 
-def _parse_df_section(cmd_raw_output: str) -> dict[str, Any]:
+def parse_df_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: df")
     output_lines = cmd_raw_output.split("\n")
 
@@ -541,9 +426,7 @@ def _parse_df_section(cmd_raw_output: str) -> dict[str, Any]:
     found_sec_start = False
     size_in_kb = False
 
-    df_section = output_lines
-
-    for index, line in enumerate(df_section):
+    for index, line in enumerate(output_lines):
         if re.search(r"id.*enabled", line):
             break
         if line.strip() == "":
@@ -559,13 +442,13 @@ def _parse_df_section(cmd_raw_output: str) -> dict[str, Any]:
             tok_list = line.strip().split()
 
             if len(tok_list) != tok_count:
-                if index > len(df_section) - 1:
+                if index > len(output_lines) - 1:
                     continue
                 if len(tok_list) == 1 and (
-                    len(df_section[index + 1].rstrip().split()) == tok_count - 1
+                    len(output_lines[index + 1].rstrip().split()) == tok_count - 1
                 ):
-                    tok_list = tok_list + df_section[index + 1].rstrip().split()
-                    df_section[index + 1] = ""
+                    tok_list = tok_list + output_lines[index + 1].rstrip().split()
+                    output_lines[index + 1] = ""
                 else:
                     continue
 
@@ -592,10 +475,7 @@ def _parse_df_section(cmd_raw_output: str) -> dict[str, Any]:
 # output: {mem: {}, buffers/cache: {}, swap: {}}
 
 
-def _parse_free_m_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_37"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_free_m_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: free_m")
 
     output_lines = cmd_raw_output.split("\n")
@@ -617,9 +497,7 @@ def _parse_free_m_section(cmd_raw_output: str) -> dict[str, Any]:
     ]
     found_sec_start = False
 
-    free_m_section = output_lines
-
-    for line in free_m_section:
+    for line in output_lines:
         if "total" in line and "used" in line and "free" in line:
             sectok_list = line.rstrip().split()
             if set(sectok_list).intersection(set(alltok_list)) != set(sectok_list):
@@ -694,10 +572,7 @@ def _modify_keys_in_iostat_section(iostatobj_list):
         change_key_name_in_map(obj, ["wkB/s"], "wk_b/s")
 
 
-def _parse_dmesg_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_42"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_dmesg_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: dmesg")
     output_lines = cmd_raw_output.split("\n")
 
@@ -706,11 +581,6 @@ def _parse_dmesg_section(cmd_raw_output: str) -> dict[str, Any]:
 
     dmesg_section = output_lines
     dmesg_data: dict[str, Any] = {"OOM": False, "Blocked": False, "ENA_enable": False}
-
-    # parsed_map[final_section_name] = {}
-    # parsed_map[final_section_name]["OOM"] = False
-    # parsed_map[final_section_name]["Blocked"] = False
-    # parsed_map[final_section_name]["ENA_enabled"] = False
 
     for line in dmesg_section:
         if "OOM" in line:
@@ -728,20 +598,16 @@ def _parse_dmesg_section(cmd_raw_output: str) -> dict[str, Any]:
     return dmesg_data
 
 
-def _parse_lscpu_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_107"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_lscpu_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: lscpu")
     output_lines = cmd_raw_output.split("\n")
 
     if not output_lines:
         return {}
 
-    lscpu_section = output_lines
     lscpu_data = {}
 
-    for line in lscpu_section:
+    for line in output_lines:
         if line == "":
             continue
         lineobj = line.rstrip().split(":")
@@ -752,10 +618,7 @@ def _parse_lscpu_section(cmd_raw_output: str) -> dict[str, Any]:
     return lscpu_data
 
 
-def _parse_iptables_section(cmd_raw_section) -> dict[str, Any]:
-    # sec_id = "ID_108"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_iptables_section(cmd_raw_section) -> dict[str, Any]:
     logger.info("Parsing section: iptables")
 
     output_lines = cmd_raw_section.split("\n")
@@ -763,10 +626,9 @@ def _parse_iptables_section(cmd_raw_section) -> dict[str, Any]:
     if not output_lines:
         return {}
 
-    iptables_section = output_lines
     iptables_data = {"has_firewall": False}
 
-    for line in iptables_section:
+    for line in output_lines:
         if "DROP" in line:
             iptables_data["has_firewall"] = True
             break
@@ -774,7 +636,7 @@ def _parse_iptables_section(cmd_raw_section) -> dict[str, Any]:
     return iptables_data
 
 
-def _parse_sysctlall_section(cmd_raw_output) -> dict[str, Any]:
+def parse_sysctlall_section(cmd_raw_output) -> dict[str, Any]:
     logger.info("Parsing section: sysctlall")
 
     output_lines = cmd_raw_output.split("\n")
@@ -782,10 +644,9 @@ def _parse_sysctlall_section(cmd_raw_output) -> dict[str, Any]:
     if not output_lines:
         return {}
 
-    sysctlall_section = output_lines
     sysctlall_data = {}
 
-    for line in sysctlall_section:
+    for line in output_lines:
         if line == "":
             continue
         lineobj = line.rstrip().split("=")
@@ -796,10 +657,7 @@ def _parse_sysctlall_section(cmd_raw_output) -> dict[str, Any]:
     return sysctlall_data
 
 
-def _parse_hdparm_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_110"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_hdparm_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: hdparm")
 
     output_lines = cmd_raw_output.split("\n")
@@ -808,11 +666,10 @@ def _parse_hdparm_section(cmd_raw_output: str) -> dict[str, Any]:
         return {}
 
     device_data = {}
-    hdparm_section = output_lines
 
     device = ""
 
-    for line in hdparm_section:
+    for line in output_lines:
         if re.search("/dev.*:", line, re.IGNORECASE):
             device = line
             continue
@@ -841,10 +698,7 @@ def _parse_hdparm_section(cmd_raw_output: str) -> dict[str, Any]:
     return device_data
 
 
-def _parse_limits_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_111"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_limits_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: limits")
 
     output_lines = cmd_raw_output.split("\n")
@@ -853,9 +707,8 @@ def _parse_limits_section(cmd_raw_output: str) -> dict[str, Any]:
         return {}
 
     limits = {}
-    limits_section = output_lines
 
-    for line in limits_section:
+    for line in output_lines:
         if "Max" not in line:
             continue
 
@@ -867,19 +720,18 @@ def _parse_limits_section(cmd_raw_output: str) -> dict[str, Any]:
     return limits
 
 
-def _parse_environment_section(cmd_raw_output: str) -> dict[str, Any]:
+def parse_environment_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: environment")
     output_lines = cmd_raw_output.split("\n")
 
     if not output_lines:
         return {}
 
-    env_section = output_lines
     env_data = {}
 
     platform = "baremetal"
 
-    for line in env_section:
+    for line in output_lines:
         if line.strip() == "meta-data":
             platform = "aws"
             break
@@ -889,20 +741,19 @@ def _parse_environment_section(cmd_raw_output: str) -> dict[str, Any]:
     return env_data
 
 
-def _parse_scheduler_section(cmd_raw_output: str) -> dict[str, Any]:
+def parse_scheduler_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: scheduler")
     output_lines = cmd_raw_output.split("\n")
 
     if not output_lines:
         return {}
 
-    scheduler_section = output_lines
     scheduler_data = {}
 
     schedulers = []
     scheduler = ""
     device = ""
-    for line in scheduler_section:
+    for line in output_lines:
         line = line.strip()
         if not line or "cannot access" in line:
             continue
@@ -940,7 +791,7 @@ def _parse_scheduler_section(cmd_raw_output: str) -> dict[str, Any]:
     return scheduler_data
 
 
-def _parse_ethtool_section(cmd_raw_output: str) -> dict[str, Any]:
+def parse_ethtool_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: ethtool")
 
     output_lines = cmd_raw_output.split("\n")
@@ -949,19 +800,10 @@ def _parse_ethtool_section(cmd_raw_output: str) -> dict[str, Any]:
         logger.warning("Null section json")
         return {}
 
-    # ethtool_section_list = None
-
-    # if raw_section_name_1 in cmd_raw_output:
-    #     ethtool_section_list = cmd_raw_output[raw_section_name_1]
-    # else:
-    #     logger.warning(raw_section_name_1 + " section is not present in section json.")
-    #     return
-
-    ethtool_section = output_lines
     ethtool_data = {}
     current_device = None
 
-    for line in ethtool_section:
+    for line in output_lines:
         line = line.lower()
 
         if "ethtool" in line:
@@ -1002,20 +844,18 @@ def _parse_ethtool_section(cmd_raw_output: str) -> dict[str, Any]:
 # output: [{avg-cpu: {}, device_stat: {}}, .........]
 
 
-def _parse_iostat_section(cmd_raw_output: str) -> dict[str, Any]:
+def parse_iostat_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: iostat")
     output_lines = cmd_raw_output.split("\n")
 
     if not output_lines:
         return {}
 
-    iostat_section = output_lines
-
     # Create a List of all instances of iostat data.
     section_list = []
     start = False
     section = []
-    for line in iostat_section:
+    for line in output_lines:
         if "avg-cpu" in line and "user" in line:
             if start:
                 section_list.append(section)
@@ -1128,21 +968,18 @@ def _parse_iostat_section(cmd_raw_output: str) -> dict[str, Any]:
     return {"iostats": iostat_data}
 
 
-def _parse_interrupts_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_93"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_interrupts_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: interrupts")
     output_lines = cmd_raw_output.split("\n")
 
     if not output_lines:
         return {}
 
-    irq_section = output_lines
-
     tok_list = []
     int_list = []
-    for line in irq_section:
+    cpu_tok = []
+
+    for line in output_lines:
         if "cat /proc" in line or line == "\n":
             continue
         if "CPU" in line:
@@ -1168,21 +1005,17 @@ def _parse_interrupts_section(cmd_raw_output: str) -> dict[str, Any]:
     return {"device_interrupts": int_list}
 
 
-def _parse_ipaddr_section(cmd_raw_output: str) -> dict[str, Any]:
-    # sec_id = "ID_72"
-    # raw_section_name, final_section_name, _ = get_section_name_from_id(sec_id)
-
+def parse_ipaddr_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: ipaddr")
     output_lines = cmd_raw_output.split("\n")
 
     if not cmd_raw_output:
         return {}
 
-    ip_section = output_lines
     ip_data = {}
     ip_list = []
 
-    for line in ip_section:
+    for line in output_lines:
         # inet 127.0.0.1/8 scope host lo
         if "inet" in line and "inet6" not in line:
             tok_list = line.rstrip().split()
@@ -1200,7 +1033,7 @@ def _parse_ipaddr_section(cmd_raw_output: str) -> dict[str, Any]:
     return ip_data
 
 
-def _parse_awsdata_section(cmd_raw_output: str) -> dict[str, Any]:
+def parse_awsdata_section(cmd_raw_output: str) -> dict[str, Any]:
     logger.info("Parsing section: awsdata")
     output_lines = cmd_raw_output.split("\n")
 
@@ -1212,37 +1045,7 @@ def _parse_awsdata_section(cmd_raw_output: str) -> dict[str, Any]:
     field_count = 0
     total_fields = 2
 
-    # aws_section_list = output_lines
-    # If both sections are present, select which has more number of lines.
-    # if raw_section_name_1 in output_lines and raw_section_name_2 in output_lines:
-    #     if len(output_lines[raw_section_name_1]) > len(
-    #         output_lines[raw_section_name_2]
-    #     ):
-    #         aws_section_list = output_lines[raw_section_name_1]
-    #     else:
-    #         aws_section_list = output_lines[raw_section_name_2]
-
-    # elif raw_section_name_1 in output_lines:
-    #     aws_section_list = output_lines[raw_section_name_1]
-    # elif raw_section_name_2 in output_lines:
-    #     aws_section_list = output_lines[raw_section_name_2]
-    # else:
-    #     logger.warning(
-    #         raw_section_name_1
-    #         + " and "
-    #         + raw_section_name_2
-    #         + " section is not present in section json."
-    #     )
-    #     return
-
-    # if len(aws_section_list) > 1:
-    #     logger.warning(
-    #         "More than one entries detected, There is a collision for this section(aws_info)."
-    #     )
-
-    aws_section = output_lines
-
-    for index, line in enumerate(aws_section):
+    for index, line in enumerate(output_lines):
         if field_count >= total_fields:
             break
         if "in_aWS" not in awsdata and re.search("This .* in AWS", line, re.IGNORECASE):
@@ -1254,7 +1057,7 @@ def _parse_awsdata_section(cmd_raw_output: str) -> dict[str, Any]:
             field_count += 1
             continue
         if "instance_type" not in awsdata and re.search("instance-type", line):
-            awsdata["instance_type"] = (aws_section[index + 1]).split("\n")[0]
+            awsdata["instance_type"] = (output_lines[index + 1]).split("\n")[0]
             field_count += 1
             if "in_aWS" not in awsdata:
                 awsdata["in_aws"] = True
@@ -1277,12 +1080,6 @@ def change_key_name_in_map(datamap, old_keys, new_key):
             datamap.pop(key, None)
 
 
-def type_check_raw_all(nodes, section_name, parsed_map):
-    for node in nodes:
-        if section_name in parsed_map[node]:
-            _type_check_field_and_raw_values(parsed_map[node][section_name])
-
-
 # This should check only raw values.
 # Aerospike doesn't send float values
 # pretty print and other cpu stats can send float
@@ -1292,6 +1089,7 @@ def type_check_raw_all(nodes, section_name, parsed_map):
 def type_check_basic_values(section: dict[str, Any]):
     malformedkeys = []
     # ip_regex = "[0-9]{1,2,3}(\.[0-9]{1,2,3})*"
+    print(section)
     for key in section:
         if isinstance(section[key], dict):
             type_check_basic_values(section[key])
@@ -1325,59 +1123,24 @@ def type_check_basic_values(section: dict[str, Any]):
 
             # Handle float of format (a.b), only 1 dot would be there.
             if section[key].replace(".", "", 1).isdigit():
+                print(section[key])
                 section[key] = _str_to_number(section[key])
 
             # Handle bool
             elif is_bool(section[key]):
                 section[key] = _str_to_boolean(section[key])
 
-            # Handle negative format (-ab,c,f)
-            elif section[key].lstrip("-").isdigit():
+            elif section[key].lstrip("-").replace(".", "", 1).isdigit():
                 num = section[key].lstrip("-")
-                if num.isdigit():
-                    number = _str_to_number(num)
-                    section[key] = -1 * number
+                number = _str_to_number(num)
+                section[key] = -1 * number
+            # Handle negative format (-ab,c,f)
 
     for key in malformedkeys:
         newkey = key.replace(".", "_").replace(" ", "_")
         val = section[key]
         section.pop(key, None)
         section[newkey] = val
-
-
-def get_section_name_from_id(sec_id):
-    raw_section_name = FILTER_LIST[sec_id]["raw_section_name"]
-    final_section_name = (
-        FILTER_LIST[sec_id]["final_section_name"]
-        if "final_section_name" in FILTER_LIST[sec_id]
-        else ""
-    )
-    parent_section_name = (
-        FILTER_LIST[sec_id]["parent_section_name"]
-        if "parent_section_name" in FILTER_LIST[sec_id]
-        else ""
-    )
-    return raw_section_name, final_section_name, parent_section_name
-
-
-# def is_valid_section(
-#     imap, raw_section_name, final_section_name, collision_allowed=False
-# ):
-#     if not imap:
-#         logger.warning("Null section json")
-#         return False
-
-#     if raw_section_name not in imap:
-#         logger.warning(raw_section_name + " section not present.")
-#         return False
-
-#     if len(imap[raw_section_name]) > 1 and not collision_allowed:
-#         logger.warning(
-#             "More than one entries detected, There is a collision for this section: "
-#             + final_section_name
-#         )
-#         return False
-#     return True
 
 
 def is_bool(val):
@@ -1405,77 +1168,3 @@ def _str_to_boolean(val):
         return True
     elif val.lower() in ["false", "no"]:
         return False
-
-
-# Aerospike doesn't send float values
-# pretty print and other cpu stats can send float
-
-
-def _type_check_field_and_raw_values(section):
-    keys = []
-    # ip_regex = "[0-9]{1,2,3}(\.[0-9]{1,2,3})*"
-    for key in section:
-        if isinstance(section[key], dict):
-            _type_check_field_and_raw_values(section[key])
-        elif (
-            isinstance(section[key], list)
-            and len(section[key]) > 0
-            and isinstance(section[key][0], dict)
-        ):
-            for item in section[key]:
-                _type_check_field_and_raw_values(item)
-
-        else:
-            if (
-                isinstance(section[key], list)
-                or isinstance(section[key], int)
-                or isinstance(section[key], bool)
-                or isinstance(section[key], float)
-            ):
-                continue
-
-            if section[key] is None:
-                logger.debug("Value for key " + key + " is Null")
-                continue
-            # Some numbers have a.b.c.d* format, which matches with IP address
-            # So do a defensive check at starting.
-            # All type of address stats and config should be string so continue
-            # mesh-adderss, service-address.
-            if "addr" in key:
-                continue
-
-            # 3.9 config have ns name in some of the field names. {ns_name}-field_name
-            # Thease fields are already under ns section, so no need to put ns_name again.
-            # Remove ns name and put only filed name.
-            if re.match(r"\{.*\}-.*", key):
-                section[key.split("}-")[1]] = section.pop(key)
-
-            # Handle format like (a,b,c) this is a valid number
-            elif section[key].replace(",", "").isdigit():
-                number = _str_to_number(section[key].replace(",", ""))
-                if number < sys.maxsize:
-                    section[key] = number
-                else:
-                    keys.append(key)
-
-            # Handle format (a.b.cd.s), its valid number.
-            elif section[key].replace(".", "").isdigit():
-                number = _str_to_number(section[key].replace(".", ""))
-                if number < sys.maxsize:
-                    section[key] = number
-                else:
-                    keys.append(key)
-
-            # Handle bool
-            elif is_bool(section[key]):
-                section[key] = _str_to_boolean(section[key])
-
-            # Handle format (-ab,c,f)
-            elif section[key].lstrip("-").replace(",", "").isdigit():
-                num = section[key].lstrip("-").replace(",", "")
-                if num.isdigit():
-                    number = _str_to_number(num)
-                    section[key] = -1 * number
-
-    for key in keys:
-        section.pop(key, None)
