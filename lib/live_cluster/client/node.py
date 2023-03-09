@@ -1547,26 +1547,23 @@ class Node(AsyncObject):
         return config
 
     @async_return_exceptions
+    async def info_single_namespace_config(self, namespace):
+        return client_util.info_to_dict(
+            await self.info("get-config:context=namespace;id=%s" % namespace)
+        )
+
+    @async_return_exceptions
     async def info_namespace_config(self, namespace=""):
         if namespace != "":
-            config = {
-                namespace: client_util.info_to_dict(
-                    await self.info("get-config:context=namespace;id=%s" % namespace)
-                )
-            }
+            return {namespace: await self.info_single_namespace_config(namespace)}
         else:
-            namespace_configs = {}
             namespaces = await self.info_namespaces()
             config_list = await client_util.concurrent_map(
-                lambda ns: self.info("get-config:context=namespace;id=%s" % ns),
+                lambda ns: self.info_single_namespace_config(ns),
                 namespaces,
             )
 
-            for namespace, namespace_config in zip(namespaces, config_list):
-                # info_get_config returns a dict that must be unpacked.
-                namespace_configs[namespace] = namespace_config[namespace]
-            config = namespace_configs
-        return config
+            return dict(zip(namespaces, config_list))
 
     @async_return_exceptions
     async def info_xdr_config(self):

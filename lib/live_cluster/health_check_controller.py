@@ -40,7 +40,7 @@ class HealthCheckController(LiveClusterCommandController):
             return await self.cluster.info_all_dc_statistics(nodes=self.nodes)
         elif stanza == "sindex":
             getter = GetStatisticsController(self.cluster)  # TODO: Use getter for all?
-            return await getter.get_sindex(flip=True, nodes=self.nodes)
+            return await getter.get_sindex(nodes=self.nodes)
         elif stanza == "udf":
             return await self.cluster.info_udf_list(nodes=self.nodes)
         elif stanza == "endpoints":
