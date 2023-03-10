@@ -945,7 +945,9 @@ info_sindex_sheet = Sheet(
                     "Used",
                     Projectors.Any(
                         FieldType.number,
-                        Projectors.Number("sindex_stats", "memory_used"),
+                        Projectors.Number(
+                            "sindex_stats", "used_bytes", "memory_used"
+                        ),  # memory_used renamed in 6.3 to be more generic
                         Projectors.Sum(
                             # removed in 6.0
                             Projectors.Number("sindex_stats", "ibtr_memory_used"),
