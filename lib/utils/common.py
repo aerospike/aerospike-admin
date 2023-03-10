@@ -23,8 +23,7 @@ import logging
 import operator
 import os
 import platform
-from traceback import print_exc
-from typing import Any, Literal, Optional, TypeVar, TypedDict, Union
+from typing import Literal, Optional, TypeVar, TypedDict, Union
 import distro
 import socket
 import time
@@ -474,7 +473,6 @@ async def _request_license_usage(
         "license_usage": {"count": 0, "entries": []},
         "health": {},
     }
-    error = None
 
     a_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
         days=365
@@ -2341,10 +2339,16 @@ def _zip_files(dir_path, _size=1):
                     os.remove(_file)
                 except Exception as e:
                     print(e)
-                    pass
 
 
-def get_system_commands(port=3000):
+def get_system_commands(port=3000) -> list[list[str]]:
+    """
+    Returns list of system commands and their alternatives to gather output from. The
+    unparsed output is then stored in a sysinfo.log. This list of commands is separate
+    from what is found in class Node which are system commands which are parsed and stored
+    as json to later be used in collectinfo mode's summary and health commands.
+    """
+
     # Unfortunately timestamp cannot be printed in Centos with dmesg,
     # storing dmesg logs without timestamp for this particular OS.
     if "centos" == (distro.linux_distribution()[0]).lower():
@@ -2439,7 +2443,7 @@ def get_system_commands(port=3000):
 
     """
     Some distros and most containers do not have sudo installed by default. If running
-    if running as root don't require it. 
+    as root don't use it. 
     """
     if uid == 0:
         for cmd_list in sys_shell_cmds:

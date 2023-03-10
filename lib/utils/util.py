@@ -17,7 +17,6 @@ import copy
 import functools
 import inspect
 import io
-import os
 import pipes
 import re
 import socket
@@ -33,7 +32,6 @@ from typing import (
     Generic,
     Iterable,
     Literal,
-    Optional,
     Tuple,
     Type,
     TypeVar,

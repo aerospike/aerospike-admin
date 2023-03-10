@@ -280,7 +280,7 @@ class Node(AsyncObject):
                 False,
                 ["sudo iptables -S", ""],
                 sys_cmd_parser.parse_iptables_section,
-            ),  # TODO needs parser
+            ),
             _SysCmd(
                 "hdparm",
                 False,
@@ -640,7 +640,6 @@ class Node(AsyncObject):
 
         except Exception as e:
             self.logger.debug(e, include_traceback=True)
-            pass
 
         if sock:
             return sock
@@ -739,7 +738,7 @@ class Node(AsyncObject):
                     else:
                         await sock.close()
 
-                except Exception as e:
+                except Exception:
                     await sock.close()
 
             if result != -1 and result is not None:
