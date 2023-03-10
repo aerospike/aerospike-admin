@@ -20,7 +20,7 @@ python-dateutil = "2.8.2"
 msgpack = "1.0.4"
  
 [dev-packages]
-pyinstaller = "==4.10"
+pyinstaller = "==5.8.0"
 black = "*"
 flake8 = "*"
 pytest = "*"
