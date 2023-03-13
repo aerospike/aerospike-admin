@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
+import platform
 
 #
 # Creates a bundled directory as apposed to a single executable file. This allows for
@@ -12,14 +13,18 @@ from PyInstaller.utils.hooks import collect_all
 # TLDR; Use onedir for MacOS.
 #
 
-datas = []
+datas = [('lib/live_cluster/client/config-schemas', './lib/live_cluster/client/config-schemas')]
 binaries = [('/usr/bin/less','.')]
 hiddenimports = []
-tmp_ret = collect_all('lib')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-added_files = [
-]
+'''
+RHEL9 removed libcrypt (different from libcrypto) from its default distribution.
+It is possible to build Python without libcrypt but we would need to move away from
+using pyenv on our build machine since pyenv relies on libcrypt to run `pyenv install`.
+'''
+
+if "darwin" not in platform.system().lower():
+    binaries.append(('/usr/lib64/libcrypt.so.1', '.'))
 
 block_cipher = None
 
