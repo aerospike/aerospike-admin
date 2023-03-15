@@ -11,5 +11,5 @@ class HelperTests(unittest.TestCase):
             ([0.5, 0.8, 0.3], [-1, 0, 1], 0),
         ],
     )
-    def test_weighted_avg(self, weights, values, expected):
-        assert round(templates.weighted_avg(weights, values), 3) == expected
+    def test_weighted_avg(self, values, weights, expected):
+        assert round(templates.weighted_avg(values, weights), 3) == expected
