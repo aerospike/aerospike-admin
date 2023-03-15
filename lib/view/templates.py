@@ -77,7 +77,7 @@ def _ignore_zero(num: int):
 
 
 def _ignore_null(s: str):
-    if s == "null":
+    if s.lower() == "null":
         return None
 
     return s
@@ -88,25 +88,25 @@ def _ignore_null(s: str):
 #
 
 
-def weighted_avg(weights: Iterable[float], values: Iterable[float]):
+def weighted_avg(values: Iterable[float], weights: Iterable[float]):
     """
     Computes the average of multiple percentage points. Remember: used/total = percent or percent * total = used
     Let's assume each entry has three pieces of info (used amount, total amount available, percent). To compute
     the average of percents we can use sum(used for each element) / sum(total for each element) or because
     percent * total = used we can do sum(percent * total for each element) / sum(total for each element).
     """
+    weights_total = 0.0
     values_total = 0.0
-    weighted_total = 0.0
 
-    for w, v in zip(weights, values):
+    for w, v in zip(values, weights):
         weighted_value = w * v
-        weighted_total += weighted_value
-        values_total += v
+        values_total += weighted_value
+        weights_total += v
 
-    if not values_total:
+    if not weights_total:
         return 0.0
 
-    return weighted_total / values_total
+    return values_total / weights_total
 
 
 #
@@ -565,7 +565,7 @@ info_set_sheet = Sheet(
         ),
         Field(
             "Disk Used",
-            Projectors.Number("set_stats", "device_data_bytes"),
+            Projectors.Number("set_stats", "device_data_bytes", "n-bytes-device"),
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
         ),
@@ -589,7 +589,7 @@ info_set_sheet = Sheet(
                                 "set_stats", "memory_data_bytes", "n-bytes-memory"
                             ),
                             Projectors.Number(
-                                "set_stats", "device_data_bytes", "n-bytes-memory"
+                                "set_stats", "device_data_bytes", "n-bytes-device"
                             ),
                         ),
                         Projectors.Func(
