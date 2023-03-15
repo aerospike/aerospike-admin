@@ -21,7 +21,7 @@ msgpack = "1.0.4"
 parameterized = "*"
 
 [dev-packages]
-pyinstaller = "==4.10"
+pyinstaller = "==5.9.0"
 black = "*"
 flake8 = "*"
 pytest = "*"
