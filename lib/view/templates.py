@@ -326,7 +326,9 @@ info_namespace_usage_sheet = Sheet(
                 Field(
                     "Used%",
                     Projectors.Div(
-                        Projectors.Number("ns_stats", "memory_used_bytes"),
+                        Projectors.Number(
+                            "ns_stats", "memory_used_bytes", "used-bytes-memory"
+                        ),
                         Projectors.Number(
                             "ns_stats", "memory-size", "total-bytes-memory"
                         ),
@@ -415,6 +417,14 @@ info_namespace_usage_sheet = Sheet(
             (
                 Field("Type", Projectors.String("ns_stats", "sindex-type")),
                 Field(
+                    "Total",
+                    Projectors.Number(
+                        "ns_stats",
+                        "sindex-type.mounts-size-limit",
+                    ),
+                    hidden=True,
+                ),
+                Field(
                     "Used",
                     Projectors.Number(
                         "ns_stats",
@@ -427,7 +437,7 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "Used%",
-                    Projectors.PercentCompute(
+                    Projectors.Div(
                         Projectors.Number(
                             "ns_stats",
                             "sindex_flash_used_bytes",
@@ -436,10 +446,10 @@ info_namespace_usage_sheet = Sheet(
                         ),
                         Projectors.Number("ns_stats", "sindex-type.mounts-size-limit"),
                     ),
-                    converter=Converters.round(2),
+                    converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
                         create_usage_weighted_avg("Secondary Index"),
-                        converter=Converters.round(2),
+                        converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
                         Formatters.yellow_alert(
