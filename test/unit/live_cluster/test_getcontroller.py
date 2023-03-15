@@ -1,13 +1,16 @@
+import copy
 import warnings
 from pytest import PytestUnraisableExceptionWarning
 from mock import patch
 from mock.mock import AsyncMock
+from lib.live_cluster.client.cluster import Cluster
 
 from lib.live_cluster.get_controller import (
     GetJobsController,
     GetPmapController,
     GetConfigController,
     GetStatisticsController,
+    GetLatenciesController,
     _get_all_dcs,
     _get_all_namespaces,
 )
@@ -15,6 +18,220 @@ from lib.live_cluster.get_controller import (
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import asynctest
+
+
+class GetLatenciesControllerTest(asynctest.TestCase):
+    latency_return_value = {
+        "2.2.2.2": {
+            "batch-index": {
+                "total": {
+                    "columns": ["ops/sec", ">1ms", ">8ms", ">16ms"],
+                    "values": [[38.0, 37.05, 40.05, 43.05]],
+                },
+            },
+            "write": {
+                "namespace": {
+                    "bar": {
+                        "columns": ["ops/sec", ">1ms", ">8ms", ">16ms"],
+                        "values": [[55.0, 56.0, 59.0, 62.0]],
+                    },
+                },
+                "total": {
+                    "columns": ["ops/sec", ">1ms", ">8ms", ">16ms"],
+                    "values": [[74.0, 46.76, 49.76, 52.76]],
+                },
+            },
+        }
+    }
+    latencies_return_value = {
+        "1.1.1.1": {
+            "batch-index": {
+                "total": {
+                    "columns": [
+                        "ops/sec",
+                        ">1ms",
+                        ">2ms",
+                        ">4ms",
+                        ">8ms",
+                        ">16ms",
+                    ],
+                    "values": [[1.0, 2.0, 3.0, 5.0, 6.0, 7.0]],
+                },
+            },
+            "write": {
+                "namespace": {
+                    "bar": {
+                        "columns": [
+                            "ops/sec",
+                            ">1ms",
+                            ">2ms",
+                            ">4ms",
+                            ">8ms",
+                            ">16ms",
+                        ],
+                        "values": [[55.0, 56.0, 57.0, 58.0, 59.0, 60.0]],
+                    },
+                },
+                "total": {
+                    "columns": [
+                        "ops/sec",
+                        ">1ms",
+                        ">2ms",
+                        ">4ms",
+                        ">8ms",
+                        ">16ms",
+                    ],
+                    "values": [[61.0, 62.0, 63.0, 64.0, 65.0, 66.0]],
+                },
+            },
+        }
+    }
+
+    def setUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = self.cluster_mock = patch(
+            "lib.live_cluster.client.cluster.Cluster", AsyncMock()
+        ).start()
+        # self.cluster_mock.info = AsyncMock()
+        self.controller = GetLatenciesController(self.cluster_mock)
+
+    async def test_get_latencies_and_latency_nodes(self):
+        self.cluster_mock.info_build.return_value = {
+            "1.1.1.1": "4.9.0.3",
+            "2.2.2.2": "5.1.0.3",
+            "3.3.3.3": "5.0.9.9",
+            "4.4.4.4": "5.2.0.0",
+            "5.5.5.5": Exception(),
+        }
+        expected = (["2.2.2.2", "4.4.4.4"], ["1.1.1.1", "3.3.3.3"])
+        actual = await self.controller.get_latencies_and_latency_nodes(nodes="1234")
+
+        self.assertCountEqual(expected[0], actual[0])
+        self.assertCountEqual(expected[1], actual[1])
+
+    async def test_get_all_latency_only(self):
+        self.controller.get_latencies_and_latency_nodes = AsyncMock()
+        self.controller.get_latencies_and_latency_nodes.return_value = (
+            [],
+            ["2.2.2.2"],
+        )
+        self.maxDiff = None
+        self.cluster_mock.info_latency.return_value = self.latency_return_value
+        expected = {}
+        expected["2.2.2.2"] = {
+            "batch-index": {
+                "total": {
+                    "columns": ["ops/sec", ">1ms", ">8ms", ">16ms"],
+                    "values": [[38.0, 37.05, 40.05, 43.05]],
+                },
+            },
+            "write": {
+                "namespace": {
+                    "bar": {
+                        "columns": [
+                            "ops/sec",
+                            ">1ms",
+                            ">8ms",
+                            ">16ms",
+                        ],
+                        "values": [[55.0, 56.0, 59.0, 62.0]],
+                    },
+                },
+                "total": {
+                    "columns": ["ops/sec", ">1ms", ">8ms", ">16ms"],
+                    "values": [[74.0, 46.76, 49.76, 52.76]],
+                },
+            },
+        }
+
+        actual = await self.controller.get_all(
+            nodes="nodes", buckets=5, exponent_increment=1, verbose=1, ns_set=None
+        )
+
+        self.assertDictEqual(expected, actual)
+        self.cluster_mock.info_latency.assert_called_once_with(
+            nodes="nodes", ns_set=None
+        )
+        self.cluster_mock.info_latencies.assert_not_called()
+
+    async def test_get_all_latencies_only(self):
+        self.controller.get_latencies_and_latency_nodes = AsyncMock()
+        self.controller.get_latencies_and_latency_nodes.return_value = (
+            ["1.1.1.1"],
+            [],
+        )
+        self.maxDiff = None
+        self.cluster_mock.info_latencies.return_value = self.latencies_return_value
+        expected = copy.deepcopy(self.latencies_return_value)
+
+        actual = await self.controller.get_all(
+            nodes="nodes", buckets=5, exponent_increment=1, verbose=1, ns_set=None
+        )
+
+        self.assertDictEqual(expected, actual)
+        self.cluster_mock.info_latency.assert_not_called()
+        self.cluster_mock.info_latencies.assert_called_once_with(
+            nodes="nodes",
+            buckets=5,
+            exponent_increment=1,
+            verbose=1,
+            ns_set=None,
+        )
+
+    async def test_get_all_mixed_versions(self):
+        self.controller.get_latencies_and_latency_nodes = AsyncMock()
+        self.controller.get_latencies_and_latency_nodes.return_value = (
+            ["1.1.1.1"],
+            ["2.2.2.2"],
+        )
+        self.maxDiff = None
+        self.cluster_mock.info_latencies.return_value = self.latencies_return_value
+        self.cluster_mock.info_latency.return_value = self.latency_return_value
+        expected = copy.deepcopy(self.latencies_return_value)
+        expected["2.2.2.2"] = {
+            "batch-index": {
+                "total": {
+                    "columns": ["ops/sec", ">1ms", ">2ms", ">4ms", ">8ms", ">16ms"],
+                    "values": [[38.0, 37.05, "N/A", "N/A", 40.05, 43.05]],
+                },
+            },
+            "write": {
+                "namespace": {
+                    "bar": {
+                        "columns": [
+                            "ops/sec",
+                            ">1ms",
+                            ">2ms",
+                            ">4ms",
+                            ">8ms",
+                            ">16ms",
+                        ],
+                        "values": [[55.0, 56.0, "N/A", "N/A", 59.0, 62.0]],
+                    },
+                },
+                "total": {
+                    "columns": ["ops/sec", ">1ms", ">2ms", ">4ms", ">8ms", ">16ms"],
+                    "values": [[74.0, 46.76, "N/A", "N/A", 49.76, 52.76]],
+                },
+            },
+        }
+
+        actual = await self.controller.get_all(
+            "nodes", buckets=5, exponent_increment=1, verbose=1, ns_set=None
+        )
+
+        self.assertDictEqual(expected, actual)
+        self.cluster_mock.info_latency.assert_called_once_with(
+            nodes=["2.2.2.2"], ns_set=None
+        )
+        self.cluster_mock.info_latencies.assert_called_once_with(
+            nodes=["1.1.1.1"],
+            buckets=5,
+            exponent_increment=1,
+            verbose=1,
+            ns_set=None,
+        )
 
 
 class GetControllerStaticHelpersTest(asynctest.TestCase):
@@ -66,7 +283,6 @@ class GetStatisticsControllerTest(asynctest.TestCase):
     def setUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
-        # cluster = Cluster(("10.71.71.169", "3000", None))
         self.cluster_mock = patch(
             "lib.live_cluster.client.cluster.Cluster", AsyncMock()
         ).start()
@@ -230,17 +446,13 @@ class GetPmapControllerTest(asynctest.TestCase):
     def setUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
-        # cluster = Cluster(("10.71.71.169", "3000", None))
         cluster_mock = patch(
             "lib.live_cluster.client.cluster.Cluster", AsyncMock()
         ).start()
-        # cluster.info_statistics = Mock()
         cluster_mock.info_statistics.return_value = {
             "10.71.71.169:3000": {"cluster_key": "ck"}
         }
-        # cluster_mock.info_namespaces = Mock()
         cluster_mock.info_namespaces.return_value = {"10.71.71.169:3000": ["test"]}
-        # cluster_mock.info_namespace_statistics = Mock()
         cluster_mock.info_namespace_statistics.return_value = {
             "10.71.71.169:3000": {
                 "dead_partitions": "2000",

@@ -198,7 +198,6 @@ class ShowConfigController(CollectinfoCommandController):
         "    --flip       - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def do_namespace(self, line):
-
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -248,7 +247,6 @@ class ShowConfigController(CollectinfoCommandController):
         "    --flip       - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     def do_dc(self, line):
-
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -530,7 +528,6 @@ class ShowDistributionController(CollectinfoCommandController):
         "    -b   - Displays byte wise distribution of Object Sizes if it is collected in collectinfo.",
     )
     def do_object_size(self, line):
-
         byte_distribution = util.check_arg_and_delete_from_mods(
             line=line, arg="-b", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -630,18 +627,8 @@ class ShowLatenciesController(CollectinfoCommandController):
             else:
                 _latency = latency[timestamp]
 
-            hist_latency = {}
-            for node_id, node_data in _latency.items():
-                if not node_data or isinstance(node_data, Exception):
-                    continue
-                for hist_name, hist_data in node_data.items():
-                    if hist_name not in hist_latency:
-                        hist_latency[hist_name] = {}
-
-                    hist_latency[hist_name][node_id] = hist_data
-
             self.view.show_latency(
-                hist_latency,
+                _latency,
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 show_ns_details=True if namespace_set else False,
                 timestamp=timestamp,
@@ -731,7 +718,6 @@ class ShowStatisticsController(CollectinfoCommandController):
         "    --flip      - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def do_namespace(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -865,7 +851,6 @@ class ShowStatisticsController(CollectinfoCommandController):
         "    --flip      - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     def do_bins(self, line):
-
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
