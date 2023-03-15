@@ -98,10 +98,10 @@ def weighted_avg(values: Iterable[float], weights: Iterable[float]):
     weights_total = 0.0
     values_total = 0.0
 
-    for w, v in zip(values, weights):
-        weighted_value = w * v
+    for v, w in zip(values, weights):
+        weighted_value = v * w
         values_total += weighted_value
-        weights_total += v
+        weights_total += w
 
     if not weights_total:
         return 0.0
