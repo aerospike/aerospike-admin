@@ -293,15 +293,8 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
             [
                 call("lib.live_cluster.client.config_handler", "dir/schema_map.json"),
                 call("lib.live_cluster.client.config_handler", "dir/4_0_0.json"),
-            ]
+            ]  # type: ignore
         )
-        # pkgutil_mock.assert_any_call(
-        #     "lib.live_cluster.client.config_handler", "dir/schema_map.json"
-        # )
-        # pkgutil_mock.assert_any_call(
-        #     "lib.live_cluster.client.config_handler", "dir/4_0_0.json"
-        # )
-
         JsonDynamicConfigHandler("dir", "4.0.1")
         pkgutil_mock.assert_called_with(
             "lib.live_cluster.client.config_handler", "dir/4_0_0.json"
@@ -310,7 +303,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         JsonDynamicConfigHandler("dir", "10.9.0.1")
         pkgutil_mock.assert_called_with(
             "lib.live_cluster.client.config_handler",
-            "dir/6_0_0.json",  # <- Will need to change when a new file is created
+            "dir/6_0_0.json",
         )
 
         JsonDynamicConfigHandler("dir", "5.4.9")
@@ -380,7 +373,6 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         self.assertCountEqual(expected, params)
 
     def test_get_service_value(self):
-
         values = self.handler.get_types(
             ["service"], ["proto-fd-max", "advertise-ipv6", "dne"]
         )
@@ -460,7 +452,6 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         self.assertCountEqual(expected, params)
 
     def test_get_logging_value(self):
-
         values = self.handler.get_types(["logging"], ["misc", "alloc", "dne"])
 
         self.assertEqual(
