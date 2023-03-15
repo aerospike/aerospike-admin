@@ -1,7 +1,7 @@
 from datetime import datetime
 import unittest
 
-from lib.utils import common
+from lib.utils import common, util
 
 
 class ComputeLicenseDataSizeTest(unittest.TestCase):
@@ -17,11 +17,10 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
     ):
         # merge expected summary with init summary output so we don't have put the entire thing
         # in the test
-        expected_summary_dict = common.deep_merge_dicts(
+        expected_summary_dict = util.deep_merge_dicts(
             common._initialize_summary_output(namespace_stats.keys()),
             expected_summary_dict,
-        )
-
+        )  # type: ignore
         summary_dict = common._initialize_summary_output(namespace_stats.keys())
 
         common.compute_license_data_size(
@@ -247,7 +246,6 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
             )
 
     def test_success_with_agent(self):
-
         test_cases = [
             {
                 "ns_stats": {"foo": {}},

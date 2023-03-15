@@ -23,7 +23,6 @@ from lib.health.exceptions import HealthException
 from lib.health.util import (
     create_health_internal_tuple,
     create_value_list_to_save,
-    deep_merge_dicts,
     find_majority_element,
     get_kv,
     get_value_from_health_internal_tuple,
@@ -31,6 +30,7 @@ from lib.health.util import (
     make_map,
     make_key,
 )
+from lib.utils.util import deep_merge_dicts
 
 RESULT_TUPLE_HEADER = "RESULT"
 NOKEY = ""
@@ -552,7 +552,6 @@ class ApplyOperation:
             return None
 
         if not isinstance(arg2, dict):
-
             try:
                 raw_arg1 = get_value_from_health_internal_tuple(arg1)
                 raw_arg2 = get_value_from_health_internal_tuple(arg2)
@@ -697,7 +696,6 @@ class SimpleOperation:
 
 
 class AggOperation:
-
     operator_and_function = {
         "+": lambda v: float_vector_to_scalar_operation(operators["+"], v),
         "*": lambda v: float_vector_to_scalar_operation(operators["*"], v),
@@ -763,7 +761,6 @@ class AggOperation:
 
 
 class ComplexOperation:
-
     operator_and_function = {
         "DIFF": lambda kv, op, a, sp: vector_to_vector_diff_operation(kv, op, a, sp),
         "SD_ANOMALY": lambda kv, op, a, sp: vector_to_vector_sd_anomaly_operation(
@@ -1032,7 +1029,6 @@ def select_keys_from_dict(
                         or (check_substring and re.search(s_key, _key[0]))
                         or (not check_substring and _key[0] == s_key)
                     ):
-
                         val_to_save = create_value_list_to_save(
                             save_param=save_param,
                             key=_key[0],
@@ -1184,7 +1180,6 @@ def find_kv_vector(key, data, recurse=False, update_saved_list=False):
     for _key in sorted(data.keys()):
         k = merge_key(key, _key, recurse)
         if not isinstance(data[_key], dict):
-
             if _key[1] == "KEY":
                 _k = key
 

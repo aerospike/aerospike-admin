@@ -259,36 +259,6 @@ def _check_nested_feature_by_keys(ns_data=None, ns_keys=None):
     return False
 
 
-def deep_merge_dicts(dict_to, dict_from):
-    """
-    Function takes dictionaries to merge
-
-    Merge dict_from to dict_to and returns dict_to
-    """
-
-    if not dict_to and not dict_from:
-        return dict_to
-
-    if not dict_to:
-        return dict_from
-
-    if not isinstance(dict_to, dict):
-        return dict_to
-
-    if not dict_from or not isinstance(dict_from, dict):
-        # either dict_from is None/empty or is last value whose key matched
-        # already, so no need to add
-        return dict_to
-
-    for _key in dict_from.keys():
-        if _key not in dict_to:
-            dict_to[_key] = dict_from[_key]
-        else:
-            dict_to[_key] = deep_merge_dicts(dict_to[_key], dict_from[_key])
-
-    return dict_to
-
-
 def _find_features_for_cluster(
     service_stats,
     ns_stats,
@@ -303,8 +273,8 @@ def _find_features_for_cluster(
 
     features = []
 
-    service_data = deep_merge_dicts(service_stats, service_configs)
-    ns_data = deep_merge_dicts(ns_stats, ns_configs)
+    service_data = util.deep_merge_dicts(service_stats, service_configs)
+    ns_data = util.deep_merge_dicts(ns_stats, ns_configs)
 
     nodes = list(service_data.keys())
 
@@ -342,9 +312,9 @@ def find_nodewise_features(
     features = {}
 
     # Before asadm 2.7 security configs were joined into service configs because of info_get_config in node.py.
-    service_configs = deep_merge_dicts(service_configs, security_configs)
-    service_data = deep_merge_dicts(service_stats, service_configs)
-    ns_data = deep_merge_dicts(ns_stats, ns_configs)
+    service_configs = util.deep_merge_dicts(service_configs, security_configs)
+    service_data = util.deep_merge_dicts(service_stats, service_configs)
+    ns_data = util.deep_merge_dicts(ns_stats, ns_configs)
 
     nodes = list(service_data.keys())
 

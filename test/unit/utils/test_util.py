@@ -91,3 +91,44 @@ class UtilTest(asynctest.TestCase):
             Exception, asyncio.wait_for(cached_tester_exc(), 0.1)
         )
         self.assertTrue(await cached_tester_exc())
+
+    def test_deep_merge_dicts(self):
+        arg1 = {
+            ("C1", "CLUSTER"): {
+                ("N1", "NODE"): {
+                    ("NS1", "NAMESPACE"): {("CONFIG1", "KEY"): (1, [])},
+                    ("NS2", "NAMESPACE"): {
+                        ("CONFIG2", "KEY"): (2, []),
+                        ("CONFIG3", "KEY"): (3, []),
+                    },
+                }
+            }
+        }
+        arg2 = {
+            ("C1", "CLUSTER"): {
+                ("N1", "NODE"): {
+                    ("NS3", "NAMESPACE"): {("CONFIG1", "KEY"): (3, [])},
+                    ("NS2", "NAMESPACE"): {
+                        ("CONFIG2", "KEY"): (4, []),
+                        ("CONFIG5", "KEY"): (7, []),
+                    },
+                }
+            }
+        }
+        expected = {
+            ("C1", "CLUSTER"): {
+                ("N1", "NODE"): {
+                    ("NS1", "NAMESPACE"): {("CONFIG1", "KEY"): (1, [])},
+                    ("NS3", "NAMESPACE"): {("CONFIG1", "KEY"): (3, [])},
+                    ("NS2", "NAMESPACE"): {
+                        ("CONFIG2", "KEY"): (2, []),
+                        ("CONFIG3", "KEY"): (3, []),
+                        ("CONFIG5", "KEY"): (7, []),
+                    },
+                }
+            }
+        }
+        result = util.deep_merge_dicts(arg1, arg2)
+        self.assertEqual(
+            result, expected, "deep_merge_dicts did not return the expected result"
+        )
