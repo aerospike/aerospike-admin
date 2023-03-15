@@ -1316,8 +1316,8 @@ summary_cluster_sheet = Sheet(
         # Subgroup(
         #     "Namespaces",
         #     (
-        Field("Active", Projectors.Number("cluster_dict", "active_ns")),
-        Field("Total", Projectors.Number("cluster_dict", "ns_count")),
+        Field("Namespaces Active", Projectors.Number("cluster_dict", "active_ns")),
+        Field("Namespaces Total", Projectors.Number("cluster_dict", "ns_count")),
         #     ),
         # ),
         Field(
