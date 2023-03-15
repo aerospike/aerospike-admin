@@ -25,6 +25,12 @@ class GetConfigController:
     def __init__(self, log_analyzer: CollectinfoLogHandler):
         self.log_handler = log_analyzer
 
+    def get_namespace(self):
+        return self.log_handler.info_getconfig(stanza=constants.CONFIG_NAMESPACE)
+
+    def get_rack_ids(self):
+        return self.log_handler.info_getconfig(stanza=constants.CONFIG_RACK_IDS)
+
     def get_xdr(self):
         return self.log_handler.info_getconfig(stanza=constants.CONFIG_XDR)
 
@@ -147,31 +153,25 @@ class GetStatisticsController:
     """
 
     def __init__(self, log_analyzer: CollectinfoLogHandler):
-        self.log_analyzer = log_analyzer
+        self.log_handler = log_analyzer
+
+    def get_namespace(self):
+        return self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+
+    def get_sindex(self):
+        return self.log_handler.info_statistics(stanza=constants.STAT_SINDEX)
 
     # TODO might be a good place to add support for the with modifier to filter nodes
-    def get_all(self):
-        futures = [
-            (constants.STAT_XDR, self.get_xdr()),
-            (constants.STAT_DC, self.get_xdr_dcs()),
-            (
-                constants.STAT_XDR_NS,
-                self.get_xdr_namespaces(),
-            ),
-        ]
-        stat_map = dict([(k, f) for k, f in futures])
-
-        return stat_map
 
     def get_xdr(
         self,
     ) -> TimestampDict[dict[str, str]]:
-        return self.log_analyzer.info_statistics(stanza=constants.STAT_XDR)
+        return self.log_handler.info_statistics(stanza=constants.STAT_XDR)
 
     def get_xdr_dcs(self, flip=False, for_mods: list[str] | None = None):
         stats: TimestampDict[
             NodeDict[DatacenterDict[dict[str, str]]]
-        ] = self.log_analyzer.info_statistics(stanza=constants.STAT_DC)
+        ] = self.log_handler.info_statistics(stanza=constants.STAT_DC)
 
         for nodes_stats in stats.values():
             for dc_stats in nodes_stats.values():
@@ -200,7 +200,7 @@ class GetStatisticsController:
 
         stats: TimestampDict[
             NodeDict[DatacenterDict[NamespaceDict[dict[str, str]]]]
-        ] = self.log_analyzer.info_statistics(stanza=constants.STAT_XDR_NS)
+        ] = self.log_handler.info_statistics(stanza=constants.STAT_XDR_NS)
 
         for nodes_stats in stats.values():
             for dc_stats in nodes_stats.values():

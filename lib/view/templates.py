@@ -241,25 +241,6 @@ info_namespace_usage_sheet = Sheet(
         node_field,
         hidden_node_id_field,
         Field(
-            "Total Records",
-            Projectors.Sum(
-                Projectors.Number("ns_stats", "master_objects", "master-objects"),
-                Projectors.Number("ns_stats", "master_tombstones"),
-                Projectors.Number("ns_stats", "prole_objects", "prole-objects"),
-                Projectors.Number("ns_stats", "prole_tombstones"),
-                Projectors.Number("ns_stats", "non_replica_objects"),
-                Projectors.Number("ns_stats", "non_replica_tombstones"),
-            ),
-            converter=Converters.scientific_units,
-            aggregator=Aggregators.sum(),
-        ),
-        Field(
-            "Expirations",
-            Projectors.Number("ns_stats", "expired_objects", "expired-objects"),
-            converter=Converters.scientific_units,
-            aggregator=Aggregators.sum(),
-        ),
-        Field(
             "Evictions",
             Projectors.Number("ns_stats", "evicted_objects", "evicted-objects"),
             converter=Converters.scientific_units,
@@ -345,7 +326,9 @@ info_namespace_usage_sheet = Sheet(
                 Field(
                     "Used%",
                     Projectors.Div(
-                        Projectors.Number("ns_stats", "memory_used_bytes"),
+                        Projectors.Number(
+                            "ns_stats", "memory_used_bytes", "used-bytes-memory"
+                        ),
                         Projectors.Number(
                             "ns_stats", "memory-size", "total-bytes-memory"
                         ),
@@ -390,7 +373,10 @@ info_namespace_usage_sheet = Sheet(
                 Field(
                     "Used",
                     Projectors.Number(
-                        "ns_stats", "index_flash_used_bytes", "index_pmem_used_bytes"
+                        "ns_stats",
+                        "index_flash_used_bytes",
+                        "index_pmem_used_bytes",
+                        "memory_used_index_bytes",
                     ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
@@ -402,6 +388,7 @@ info_namespace_usage_sheet = Sheet(
                             "ns_stats",
                             "index_flash_used_bytes",
                             "index_pmem_used_bytes",
+                            "memory_used_index_bytes",
                         ),
                         Projectors.Number("ns_stats", "index-type.mounts-size-limit"),
                     ),
@@ -422,6 +409,59 @@ info_namespace_usage_sheet = Sheet(
                     "HWM%",
                     Projectors.Number("ns_stats", "index-type.mounts-high-water-pct"),
                     converter=Converters.pct,
+                ),
+            ),
+        ),
+        Subgroup(
+            "Secondary Index",
+            (
+                Field("Type", Projectors.String("ns_stats", "sindex-type")),
+                Field(
+                    "Total",
+                    Projectors.Number(
+                        "ns_stats",
+                        "sindex-type.mounts-size-limit",
+                    ),
+                    hidden=True,
+                ),
+                Field(
+                    "Used",
+                    Projectors.Number(
+                        "ns_stats",
+                        "sindex_flash_used_bytes",
+                        "sindex_pmem_used_bytes",
+                        "memory_used_sindex_bytes",
+                    ),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Div(
+                        Projectors.Number(
+                            "ns_stats",
+                            "sindex_flash_used_bytes",
+                            "sindex_pmem_used_bytes",
+                            "memory_used_sindex_bytes",
+                        ),
+                        Projectors.Number("ns_stats", "sindex-type.mounts-size-limit"),
+                    ),
+                    converter=Converters.ratio_to_pct,
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Secondary Index"),
+                        converter=Converters.ratio_to_pct,
+                    ),
+                    formatters=(
+                        Formatters.yellow_alert(
+                            lambda edata: edata.value
+                            >= edata.record["Secondary Index"]["HWM%"]
+                            and edata.record["Secondary Index"]["HWM%"] != 0
+                        ),
+                    ),
+                ),
+                Field(
+                    "HWM%",
+                    Projectors.Number("ns_stats", "sindex-type.mounts-high-water-pct"),
                 ),
             ),
         ),
@@ -446,6 +486,12 @@ info_namespace_object_sheet = Sheet(
                 "replication-factor",
                 "repl-factor",
             ),
+        ),
+        Field(
+            "Expirations",
+            Projectors.Number("ns_stats", "expired_objects", "expired-objects"),
+            converter=Converters.scientific_units,
+            aggregator=Aggregators.sum(),
         ),
         Field(
             "Total Records",
@@ -901,19 +947,27 @@ info_sindex_sheet = Sheet(
                 ),
             ),
         ),
-        Field(
-            "Memory Used",
-            # removed in 6.0
-            Projectors.Any(
-                FieldType.number,
-                Projectors.Number("sindex_stats", "memory_used"),
-                Projectors.Sum(
-                    Projectors.Number("sindex_stats", "ibtr_memory_used"),
-                    Projectors.Number("sindex_stats", "nbtr_memory_used"),
+        Subgroup(
+            "Storage",
+            (
+                Field("Type", Projectors.String("sindex_stats", "sindex-type")),
+                Field(
+                    "Used",
+                    Projectors.Any(
+                        FieldType.number,
+                        Projectors.Number(
+                            "sindex_stats", "used_bytes", "memory_used"
+                        ),  # memory_used renamed in 6.3 to be more generic
+                        Projectors.Sum(
+                            # removed in 6.0
+                            Projectors.Number("sindex_stats", "ibtr_memory_used"),
+                            Projectors.Number("sindex_stats", "nbtr_memory_used"),
+                        ),
+                    ),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
                 ),
             ),
-            converter=Converters.byte,
-            aggregator=Aggregators.sum(),
         ),
         Field(
             "Context",
@@ -978,8 +1032,12 @@ info_sindex_sheet = Sheet(
             ),
         ),
     ),
-    from_source=("node_ids", "node_names", "sindex_stats"),
-    for_each="sindex_stats",
+    from_source=(
+        "node_ids",
+        "node_names",
+        "sindex_stats",
+    ),
+    for_each=("sindex_stats"),
     group_by=("Namespace", "Set"),
     order_by=("Index Name", "Node"),
 )
@@ -1268,8 +1326,8 @@ summary_cluster_sheet = Sheet(
         # Subgroup(
         #     "Namespaces",
         #     (
-        Field("Active", Projectors.Number("cluster_dict", "active_ns")),
-        Field("Total", Projectors.Number("cluster_dict", "ns_count")),
+        Field("Namespaces Active", Projectors.Number("cluster_dict", "active_ns")),
+        Field("Namespaces Total", Projectors.Number("cluster_dict", "ns_count")),
         #     ),
         # ),
         Field(

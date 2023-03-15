@@ -1,5 +1,8 @@
 from lib.base_controller import CommandHelp
-from lib.collectinfo_analyzer.get_controller import GetStatisticsController
+from lib.collectinfo_analyzer.get_controller import (
+    GetConfigController,
+    GetStatisticsController,
+)
 from lib.utils import constants, util, version
 
 from .collectinfo_command_controller import CollectinfoCommandController
@@ -12,7 +15,8 @@ from .collectinfo_command_controller import CollectinfoCommandController
 class InfoController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["for"])
-
+        self.stats_getter = GetStatisticsController(self.log_handler)
+        self.config_getter = GetConfigController(self.log_handler)
         self.controller_map = dict(namespace=InfoNamespaceController)
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")
@@ -69,10 +73,8 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays Cross Datacenter Replication (XDR) summary information.")
     def do_xdr(self, line):
-        getter = GetStatisticsController(self.log_handler)
-        old_stats = getter.get_xdr()
-        new_stats = getter.get_xdr_dcs(for_mods=self.mods["for"])
-        node_xdr_build_major_version = 5
+        old_stats = self.stats_getter.get_xdr()
+        new_stats = self.stats_getter.get_xdr_dcs(for_mods=self.mods["for"])
         for timestamp in sorted(old_stats.keys()):
             if not old_stats[timestamp]:
                 continue
@@ -189,13 +191,16 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays secondary index (SIndex) summary information).")
     def do_sindex(self, line):
-        sindex_stats = self.log_handler.info_statistics(stanza=constants.STAT_SINDEX)
+        sindex_stats = self.stats_getter.get_sindex()
+        ns_configs = self.config_getter.get_namespace()
+
         for timestamp in sorted(sindex_stats.keys()):
-            if not sindex_stats[timestamp]:
+            if not sindex_stats[timestamp] or not ns_configs[timestamp]:
                 continue
 
             self.view.info_sindex(
                 sindex_stats[timestamp],
+                ns_configs[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
@@ -209,6 +214,8 @@ class InfoController(CollectinfoCommandController):
 class InfoNamespaceController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set()
+        self.config_getter = GetConfigController(self.log_handler)
+        self.stat_getter = GetStatisticsController(self.log_handler)
 
     @CommandHelp("Displays usage and objects information for namespaces")
     def _do_default(self, line):
@@ -217,7 +224,7 @@ class InfoNamespaceController(CollectinfoCommandController):
 
     @CommandHelp("Displays usage information for each namespace.")
     def do_usage(self, line):
-        ns_stats = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+        ns_stats = self.stat_getter.get_namespace()
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
@@ -233,8 +240,8 @@ class InfoNamespaceController(CollectinfoCommandController):
     @CommandHelp("Displays object information for each namespace.")
     def do_object(self, line):
         # In SC mode effective rack-id is different from that in namespace config.
-        ns_stats = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
-        rack_ids = self.log_handler.info_getconfig(stanza=constants.CONFIG_RACK_IDS)
+        ns_stats = self.stat_getter.get_namespace()
+        rack_ids = self.config_getter.get_rack_ids()
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
