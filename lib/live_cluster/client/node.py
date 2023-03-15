@@ -219,7 +219,6 @@ class Node(AsyncObject):
 
         _SysCmd.set_uid(os.getuid())
         self.sys_cmds: list[_SysCmd] = [
-            # format: (command name as in parser, ignore error, sudo, command list)
             _SysCmd(
                 "hostname",
                 False,
