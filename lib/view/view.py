@@ -312,10 +312,11 @@ class CliView(object):
             for key in node_stats:
                 ns = key.split()[0]
 
-                sindex_type = ns_configs.get(node, {}).get(ns).get("sindex-type", None)
+                sindex_type = (
+                    ns_configs.get(node, {}).get(ns).get("sindex-type", "shmem")
+                )
 
-                if sindex_type is not None:
-                    sindex_stats[node][key]["sindex-type"] = sindex_type
+                sindex_stats[node][key]["sindex-type"] = sindex_type
 
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
