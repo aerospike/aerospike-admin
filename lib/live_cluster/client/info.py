@@ -236,7 +236,6 @@ def _unpack_admin_field_header(buf, offset):
 
 
 def _pack_admin_field(buf, offset, as_field, field):
-
     # _pack_string() will convert str to bytes, no need to handle here.
     if as_field in {ASField.READ_QUOTA, ASField.WRITE_QUOTA}:
         if isinstance(field, str):
@@ -354,7 +353,6 @@ def _pack_admin_privileges(buf, offset, privileges):
     offset = _pack_uint8(buf, offset, privilege_count)
 
     for privilege in privileges:
-
         permission, namespace, set_ = _parse_privilege(privilege)
         offset = _pack_uint8(buf, offset, permission.value)
 
@@ -1322,7 +1320,7 @@ async def info(reader, writer, names=None):
 
         if name != names:
             if "not authenticated" in name.lower():
-                return ASInfoNotAuthenticatedError("Connection failed", name)
+                raise ASInfoNotAuthenticatedError("Connection failed", name)
             else:
                 logger.debug(
                     "Unexpected key %s in info response %s. Expected key: %s",
@@ -1336,7 +1334,7 @@ async def info(reader, writer, names=None):
         rdict = dict()
         for line in rsp_data.split("\n"):
             if "not authenticated" in line.lower():
-                return ASInfoNotAuthenticatedError("Connection failed", line)
+                raise ASInfoNotAuthenticatedError("Connection failed", line)
             if len(line) < 1:
                 # this accounts for the trailing '\n' - cheaper than chomp
                 continue

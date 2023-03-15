@@ -149,26 +149,14 @@ class ShowLatenciesController(LiveClusterCommandController):
         self.modifiers = set(["with", "like", "for"])
         self.latency_getter = GetLatenciesController(self.cluster)
 
-    async def get_namespace_set(self):
-        namespace_set = set()
+    async def _get_namespace_set(self):
+        namespace_set = None
 
         if self.mods["for"]:
             namespace_set = await self.latency_getter.get_namespace_set(self.nodes)
             namespace_set = set(util.filter_list(namespace_set, self.mods["for"]))
 
         return namespace_set
-
-    def sort_data_by_histogram_name(self, latency_data):
-        hist_latency = {}
-        for node_id, hist_data in list(latency_data.items()):
-            if isinstance(hist_data, Exception):
-                continue
-            for hist_name, data in list(hist_data.items()):
-                if hist_name not in hist_latency:
-                    hist_latency[hist_name] = {node_id: data}
-                else:
-                    hist_latency[hist_name][node_id] = data
-        return hist_latency
 
     # It would be nice if the  'show latencies' help section could be completely removed for servers prior to 5.1
     @CommandHelp(
@@ -203,7 +191,7 @@ class ShowLatenciesController(LiveClusterCommandController):
             line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods
         )
 
-        namespace_set = await self.get_namespace_set()
+        namespace_set = await self._get_namespace_set()
         latencies, (latencies_nodes, latency_nodes) = await asyncio.gather(
             self.latency_getter.get_all(
                 self.nodes, buckets, increment, verbose, namespace_set
@@ -221,9 +209,6 @@ class ShowLatenciesController(LiveClusterCommandController):
             self.logger.warning(
                 "'show latencies' is not fully supported on aerospike versions <= 5.0"
             )
-
-        # TODO: This format should probably be returned from get controller
-        latencies = self.sort_data_by_histogram_name(latencies)
 
         self.view.show_latency(
             latencies,

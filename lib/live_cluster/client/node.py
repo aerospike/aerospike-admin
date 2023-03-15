@@ -1546,26 +1546,23 @@ class Node(AsyncObject):
         return config
 
     @async_return_exceptions
+    async def info_single_namespace_config(self, namespace):
+        return client_util.info_to_dict(
+            await self.info("get-config:context=namespace;id=%s" % namespace)
+        )
+
+    @async_return_exceptions
     async def info_namespace_config(self, namespace=""):
         if namespace != "":
-            config = {
-                namespace: client_util.info_to_dict(
-                    await self.info("get-config:context=namespace;id=%s" % namespace)
-                )
-            }
+            return {namespace: await self.info_single_namespace_config(namespace)}
         else:
-            namespace_configs = {}
             namespaces = await self.info_namespaces()
             config_list = await client_util.concurrent_map(
-                lambda ns: self.info("get-config:context=namespace;id=%s" % ns),
+                lambda ns: self.info_single_namespace_config(ns),
                 namespaces,
             )
 
-            for namespace, namespace_config in zip(namespaces, config_list):
-                # info_get_config returns a dict that must be unpacked.
-                namespace_configs[namespace] = namespace_config[namespace]
-            config = namespace_configs
-        return config
+            return dict(zip(namespaces, config_list))
 
     @async_return_exceptions
     async def info_xdr_config(self):
@@ -1914,11 +1911,10 @@ class Node(AsyncObject):
         [[val1, val2, . . .]]}}, . . .}}}}
         """
 
-        # If ns_set is set filter through all default latencies with ns_set
-        # If optional_benchmark is set make additional queries for the
-        # optional_benchmark
+        # If verbose, make additional queries for micro-benchmarks
         cmd_latencies = ["latencies:"]
         data = {}
+
         if verbose:
             namespaces = []
             if ns_set:
@@ -1928,7 +1924,7 @@ class Node(AsyncObject):
                     namespaces = (await self.info("namespaces")).split(";")
                 except Exception:
                     return data
-            optional_benchmarks = [
+            micro_benchmarks = [
                 "proxy",
                 "benchmark-fabric",
                 "benchmarks-ops-sub",
@@ -1941,7 +1937,7 @@ class Node(AsyncObject):
             cmd_latencies += [
                 "latencies:hist={%s}-%s" % (ns, optional)
                 for ns in namespaces
-                for optional in optional_benchmarks
+                for optional in micro_benchmarks
             ]
 
         hist_info = []
@@ -2081,9 +2077,14 @@ class Node(AsyncObject):
             if dcs == "":
                 return []
 
-            return dcs.split(",")
+            return client_util.info_to_list(dcs, delimiter=",")
 
-        return client_util.info_to_list(await self.info("dcs"))
+        dcs = await self.info("dcs")
+
+        if dcs == "":
+            return []
+
+        return client_util.info_to_list(dcs)
 
     @async_return_exceptions
     async def info_udf_list(self):
