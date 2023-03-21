@@ -833,7 +833,11 @@ async def cmdloop(shell, func, args, use_yappi, single_command):
             await func(*args)
     except (KeyboardInterrupt, SystemExit):
         if not single_command:
-            raise
+            shell.intro = (
+                terminal.fg_red()
+                + "\nTo exit asadm utility please run the 'exit' command."
+                + terminal.fg_clear()
+            )
         await cmdloop(shell, func, args, use_yappi, single_command)
 
 
