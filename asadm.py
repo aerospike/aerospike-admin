@@ -476,7 +476,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
     # Just to be consistent with AQL. Is not documented but it is nice for them all
     # to be consistent.
     async def do_quit(self, line):
-        return self.do_exit(line)
+        return await self.do_exit(line)
 
     async def do_EOF(self, line):
         return await self.do_exit(line)
