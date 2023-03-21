@@ -476,7 +476,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
     # Just to be consistent with AQL. Is not documented but it is nice for them all
     # to be consistent.
     async def do_quit(self, line):
-        return self.do_exit(line)
+        return await self.do_exit(line)
 
     async def do_EOF(self, line):
         return await self.do_exit(line)
@@ -833,7 +833,11 @@ async def cmdloop(shell, func, args, use_yappi, single_command):
             await func(*args)
     except (KeyboardInterrupt, SystemExit):
         if not single_command:
-            raise
+            shell.intro = (
+                terminal.fg_red()
+                + "\nTo exit asadm utility please run the 'exit' command."
+                + terminal.fg_clear()
+            )
         await cmdloop(shell, func, args, use_yappi, single_command)
 
 
