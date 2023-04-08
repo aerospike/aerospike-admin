@@ -2,6 +2,7 @@ import asyncio
 from typing import Union
 from lib.utils import common, util
 from lib.base_controller import CommandHelp
+from lib.utils import constants
 
 from .live_cluster_command_controller import LiveClusterCommandController
 
@@ -171,10 +172,19 @@ class SummaryController(LiveClusterCommandController):
             self.cluster.info_all_dc_statistics(nodes=self.nodes)
         )
         service_configs = asyncio.create_task(
-            self.cluster.info_get_config(nodes=self.nodes, stanza="service")
+            self.cluster.info_get_config(
+                nodes=self.nodes, stanza=constants.CONFIG_SERVICE
+            )
         )
         namespace_configs = asyncio.create_task(
-            self.cluster.info_get_config(nodes=self.nodes, stanza="namespace")
+            self.cluster.info_get_config(
+                nodes=self.nodes, stanza=constants.CONFIG_NAMESPACE
+            )
+        )
+        security_configs = asyncio.create_task(
+            self.cluster.info_get_config(
+                nodes=self.nodes, stanza=constants.CONFIG_SECURITY
+            )
         )
 
         metadata = {}
@@ -264,6 +274,7 @@ class SummaryController(LiveClusterCommandController):
         xdr_dc_stats = await xdr_dc_stats
         service_configs = await service_configs
         namespace_configs = await namespace_configs
+        security_configs = await security_configs
 
         self.view.print_summary(
             common.create_summary(
@@ -273,6 +284,7 @@ class SummaryController(LiveClusterCommandController):
                 metadata=metadata,
                 service_configs=service_configs,
                 ns_configs=namespace_configs,
+                security_configs=security_configs,
                 license_data_usage=license_usage,
                 license_allow_unstable=agent_unstable,
             ),

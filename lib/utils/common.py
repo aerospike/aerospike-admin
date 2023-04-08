@@ -22,7 +22,7 @@ import json
 import logging
 import operator
 import os
-from traceback import print_exc
+from typing import Any, Callable
 from typing import Any, Literal, Optional, TypeVar, TypedDict, Union
 import distro
 import socket
@@ -51,145 +51,19 @@ comp_ops = {
     "!=": operator.ne,
 }
 
-# TODO:  This needs to be a data structure of some kind other than a map. Currently,
-# TODO:  it is difficult to read and reference values.  A dictionary of string -> tuple
-# TODO:  -> tuple.
-# Dictionary to contain feature and related stats to identify state of that feature.
-# xdr/dc stats are not coupled with xdr-dc configs because at this time it is not required.
-# In the future xdr, xdr/dc, and xdr/dc/namespace configs might need to be included.
-# Format : { feature1: ((service stat1/config1 <, comp_op, value> ), (service stat2/config2 <, comp_op, value>), ....),
-#                      ((namespace stat1/config1 <, comp_op, value>), (namespace stat2/config2 <, comp_op, value>), ...),
-#                      ((xdr/dc stat1 <, comp_op, value>), (xdr/dc stat2 <, comp_op, value>), ...),
-#          }
-FEATURE_KEYS = {
-    "KVS": (
-        ("stat_read_reqs", "stat_write_reqs"),
-        (
-            "client_read_error",
-            "client_read_success",
-            "client_write_error",
-            "client_write_success",
-        ),
-        None,
-    ),
-    "UDF": (
-        ("udf_read_reqs", "udf_write_reqs"),
-        ("client_udf_complete", "client_udf_error"),
-        None,
-    ),
-    "Batch": (("batch_initiate", "batch_index_initiate"), None, None),
-    "Scan": (
-        (
-            "tscan_initiate",
-            "basic_scans_succeeded",
-            "basic_scans_failed",
-            "aggr_scans_succeeded",
-            "aggr_scans_failed",
-            "udf_bg_scans_succeeded",
-            "udf_bg_scans_failed",
-        ),
-        (
-            # pre 6.0, all of these stats have an equivalent Query stat post 6.0
-            "scan_basic_complete",
-            "scan_basic_error",
-            "scan_aggr_complete",
-            "scan_aggr_error",
-            "scan_udf_bg_complete",
-            "scan_udf_bg_error",
-        ),
-        None,
-    ),
-    "SIndex": (("sindex-used-bytes-memory"), ("memory_used_sindex_bytes"), None),
-    "Query": (
-        ("query_reqs", "query_success"),
-        (
-            "query_reqs",
-            "query_success",
-        ),
-        None,
-    ),
-    "Primary Index Query": (
-        None,
-        (
-            # post 6.0 when queries and scans were unified into just queries
-            "pi_query_long_basic_complete",
-            "pi_query_long_basic_error",
-            "pi_query_short_basic_complete",
-            "pi_query_short_basic_error",
-            "pi_query_aggr_complete",
-            "pi_query_aggr_error",
-            "pi_query_udf_bg_complete",
-            "pi_query_udf_bg_error",
-            "pi_query_ops_bg_complete",
-            "pi_query_ops_bg_error",
-        ),
-        None,
-    ),
-    "SIndex Query": (
-        None,
-        (
-            # post 6.0 when queries and scans were unified into just queries
-            "si_query_long_basic_complete",
-            "si_query_long_basic_error",
-            "si_query_short_basic_complete",
-            "si_query_short_basic_error",
-            "si_query_aggr_complete",
-            "si_query_aggr_error",
-            "si_query_udf_bg_complete",
-            "si_query_udf_bg_error",
-            "si_query_ops_bg_complete",
-            "si_query_ops_bg_error",
-        ),
-        None,
-    ),
-    "Aggregation": (
-        ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
-        ("query_aggr_success", "query_aggr_error", "query_aggr_abort", "query_agg"),
-        None,
-    ),
-    "LDT": (
-        (
-            "sub-records",
-            "ldt-writes",
-            "ldt-reads",
-            "ldt-deletes",
-            "ldt_writes",
-            "ldt_reads",
-            "ldt_deletes",
-            "sub_objects",
-        ),
-        (
-            "ldt-writes",
-            "ldt-reads",
-            "ldt-deletes",
-            "ldt_writes",
-            "ldt_reads",
-            "ldt_deletes",
-        ),
-        None,
-    ),
-    "XDR Source": (
-        ("stat_read_reqs_xdr", "xdr_read_success", "xdr_read_error"),
-        None,
-        ("success"),
-    ),
-    "XDR Destination": (
-        ("stat_write_reqs_xdr"),
-        ("xdr_write_success", "xdr_client_write_success"),
-        None,
-    ),
-    "Rack-aware": (("self-group-id"), ("rack-id"), None),
-    "Security": ((("enable-security", comp_ops["=="], "true"),), None, None),
-    "TLS (Heartbeat)": (("heartbeat.mesh-seed-address-port"), None, None),
-    "TLS (Fabric)": (("fabric.tls-port"), None, None),
-    "TLS (Service)": (("service.tls-port"), None, None),
-    "SC": (None, (("strong-consistency", comp_ops["=="], "true"),), None),
-    "Index-on-device": (None, ("index_flash_used_bytes"), None),
-    "Index-on-pmem": (None, (("index-type", comp_ops["=="], "pmem"),), None),
-}
+CompareValue = str | int | bool
+CompareCallable = Callable[[Any, Any], bool]
+CheckCallback = Callable[
+    [dict[str, Any], tuple[str, ...], CompareCallable, str | int | bool], bool
+]
 
 
-def _check_value(data={}, keys=()):
+def _check_value(
+    data: dict[str, Any],
+    keys: tuple[str],
+    op: Callable[[Any, Any], bool],
+    value: int | str | bool,
+):
     """
     Function takes dictionary, and keys to compare.
     Returns boolean to indicate value for key is satisfying operation over value or not.
@@ -201,21 +75,10 @@ def _check_value(data={}, keys=()):
     if not data:
         return False
 
-    if not isinstance(keys, tuple):
-        keys = (keys,)
-
     for key in keys:
         k = key
-        value = 0
         dv = 0
-        op = comp_ops[">"]
         type_check = int
-        if isinstance(key, tuple):
-            if len(key) != 3:
-                return False
-            k = key[0]
-            value = key[2]
-            op = key[1]
 
         if isinstance(value, str):
             dv = None
@@ -235,28 +98,382 @@ def _check_value(data={}, keys=()):
     return False
 
 
-def _check_feature_by_keys(service_data=None, service_keys=None):
+def _check_feature_by_keys(
+    service_data: dict[str, Any],
+    service_keys: tuple[str, ...],
+    op: CompareCallable,
+    value: CompareValue,
+) -> bool:
     """
     Function takes dictionary of service data, service keys, dictionary of namespace data and namespace keys.
     Returns boolean to indicate service key in service data or namespace key in namespace data has non-zero value or not.
     """
 
     if service_data and not isinstance(service_data, Exception) and service_keys:
-        if _check_value(service_data, service_keys):
+        if _check_value(service_data, service_keys, op, value):
             return True
 
     return False
 
 
-def _check_nested_feature_by_keys(ns_data=None, ns_keys=None):
+def _check_nested_feature_by_keys(
+    ns_data: dict[str, Any],
+    ns_keys: tuple[str, ...],
+    op: CompareCallable,
+    value: CompareValue,
+) -> bool:
     if ns_data and ns_keys:
         for _, nsval in ns_data.items():
             if not nsval or isinstance(nsval, Exception):
                 continue
-            if _check_value(nsval, ns_keys):
+            if _check_value(nsval, ns_keys, op, value):
                 return True
 
     return False
+
+
+class FieldCheck:
+    def __init__(
+        self,
+        source: str,
+        check_func: CheckCallback,
+        fields: tuple[str, ...],
+        compare_op: CompareCallable = operator.gt,
+        compare_val: CompareValue = 0,
+    ):
+        """A class for describing the presence of a feature based on config and stat
+        comparisons.
+
+        Args:
+            source (str): The key to use for the sources dict passed to check()
+            check_func (CheckCallback): A callback that determines whether the feature is present.
+            fields (tuple[str, ...]): All the fields to check.
+            compare_op (CompareCallable, optional): A function that tells how we should compare the field value to compare_val. Defaults to operator.gt.
+            compare_val (CompareValue, optional): The value to use in the comparison to each field value. Defaults to 0.
+        """
+        self._source = source
+        self._fields: tuple[str, ...] = fields
+        self._check_func = check_func
+        self._compare_op = compare_op
+        self._compare_val = compare_val
+
+    def check(self, sources: dict[str, Any]) -> bool:
+        if self._source not in sources:
+            return False
+
+        return self._check_func(
+            sources[self._source], self._fields, self._compare_op, self._compare_val
+        )
+
+
+class GlobalFieldCheck(FieldCheck):
+    def __init__(
+        self,
+        source: str,
+        fields: tuple[str, ...],
+        compare_op: CompareCallable = operator.gt,
+        compare_val: CompareValue = 0,
+    ):
+        super().__init__(
+            source, _check_feature_by_keys, fields, compare_op, compare_val
+        )
+
+
+class NestedFieldCheck(FieldCheck):
+    def __init__(
+        self,
+        source: str,
+        fields: tuple[str, ...],
+        compare_op: CompareCallable = operator.gt,
+        compare_val: CompareValue = 0,
+    ):
+        super().__init__(
+            source, _check_nested_feature_by_keys, fields, compare_op, compare_val
+        )
+
+
+class ServiceFieldCheck(GlobalFieldCheck):
+    pass
+
+
+class SecurityFieldCheck(GlobalFieldCheck):
+    pass
+
+
+class NamespacesFieldCheck(NestedFieldCheck):
+    pass
+
+
+class XdrDcsFieldCheck(NestedFieldCheck):
+    pass
+
+
+class FeatureCheck:
+    def __init__(self, display_key: str, *field_checks: FieldCheck) -> None:
+        """A collection of checks that indicate a feature is in use.
+
+        Args:
+            display_key (str): The value to be displayed when a feature is determined to be in use.
+            field_checks (tuple[FieldCheck, ...]): All the possible checks that would indicate that this
+            feature is in use. Sometimes different metrics may indicate an feature is in use like
+            errors, timeout, success. It also might be the case that a stat or config no longer exists
+            and having multiple checks allows for backwards compatibility.
+        """
+        self.display_key = display_key
+        self._field_checks = field_checks
+
+    def check(self, sources: dict[str, Any]) -> bool:
+        if not sources:
+            return False
+
+        for field_check in self._field_checks:
+            if field_check.check(sources):
+                return True
+
+        return False
+
+    def __str__(self):
+        for field_check in self._field_checks:
+            return True
+
+
+# Please update the following page when feature checks are updated:
+# https://aerospike.atlassian.net/wiki/spaces/PRODUCT/pages/2998730862/Feature+Definitions+for+summary+and+features+commands
+feature_checks = (
+    FeatureCheck(
+        "KVS",
+        ServiceFieldCheck("service", ("stat_read_reqs", "stat_write_reqs")),
+        NamespacesFieldCheck(
+            "namespaces",
+            (
+                "client_read_error",
+                "client_read_success",
+                "client_write_error",
+                "client_write_success",
+            ),
+        ),
+    ),
+    FeatureCheck(
+        "UDF",
+        ServiceFieldCheck("service", ("udf_read_reqs", "udf_write_reqs")),
+        NamespacesFieldCheck(
+            "namespaces",
+            ("client_udf_complete", "client_udf_error"),
+        ),
+    ),
+    FeatureCheck(
+        "Batch",
+        ServiceFieldCheck(
+            "service",
+            ("batch_initiate", "batch_index_initiate"),
+        ),
+    ),
+    FeatureCheck(
+        "Scan",
+        ServiceFieldCheck(
+            "service",
+            (
+                "tscan_initiate",
+                "basic_scans_succeeded",
+                "basic_scans_failed",
+                "aggr_scans_succeeded",
+                "aggr_scans_failed",
+                "udf_bg_scans_succeeded",
+                "udf_bg_scans_failed",
+            ),
+        ),
+        NamespacesFieldCheck(
+            "namespaces",
+            (
+                "scan_basic_complete",
+                "scan_basic_error",
+                "scan_aggr_complete",
+                "scan_aggr_error",
+                "scan_udf_bg_complete",
+                "scan_udf_bg_error",
+            ),
+        ),
+    ),
+    FeatureCheck(
+        "SIndex",
+        ServiceFieldCheck("service", ("sindex-used-bytes-memory",)),
+        NamespacesFieldCheck("namespaces", ("memory_used_sindex_bytes",)),
+    ),
+    FeatureCheck(
+        "Query",
+        ServiceFieldCheck("service", ("query_reqs", "query_success")),
+        NamespacesFieldCheck(
+            "namespaces",
+            ("query_reqs", "query_success"),
+        ),
+    ),
+    FeatureCheck(
+        "PIndex Query",
+        NamespacesFieldCheck(
+            "namespaces",
+            (
+                "pi_query_long_basic_complete",
+                "pi_query_long_basic_error",
+                "pi_query_short_basic_complete",
+                "pi_query_short_basic_error",
+                "pi_query_aggr_complete",
+                "pi_query_aggr_error",
+                "pi_query_udf_bg_complete",
+                "pi_query_udf_bg_error",
+                "pi_query_ops_bg_complete",
+                "pi_query_ops_bg_error",
+            ),
+        ),
+    ),
+    FeatureCheck(
+        "SIndex Query",
+        NamespacesFieldCheck(
+            "namespaces",
+            (
+                "si_query_long_basic_complete",
+                "si_query_long_basic_error",
+                "si_query_short_basic_complete",
+                "si_query_short_basic_error",
+                "si_query_aggr_complete",
+                "si_query_aggr_error",
+                "si_query_udf_bg_complete",
+                "si_query_udf_bg_error",
+                "si_query_ops_bg_complete",
+                "si_query_ops_bg_error",
+            ),
+        ),
+    ),
+    FeatureCheck(
+        "Aggregation",
+        ServiceFieldCheck(
+            "service",
+            (
+                "query_aggr_success",
+                "query_aggr_error",
+                "query_aggr_abort",
+                "query_agg",
+            ),
+        ),
+        NamespacesFieldCheck(
+            "namespaces",
+            (
+                "query_aggr_success",
+                "query_aggr_error",
+                "query_aggr_abort",
+                "query_agg",
+            ),
+        ),
+    ),
+    FeatureCheck(
+        "LDT",
+        ServiceFieldCheck(
+            "service",
+            (
+                "sub-records",
+                "ldt-writes",
+                "ldt-reads",
+                "ldt-deletes",
+                "ldt_writes",
+                "ldt_reads",
+                "ldt_deletes",
+                "sub_objects",
+            ),
+        ),
+        NamespacesFieldCheck(
+            "namespaces",
+            (
+                "ldt-writes",
+                "ldt-reads",
+                "ldt-deletes",
+                "ldt_writes",
+                "ldt_reads",
+                "ldt_deletes",
+            ),
+        ),
+    ),
+    FeatureCheck(
+        "XDR Source",
+        ServiceFieldCheck(
+            "service",
+            ("stat_read_reqs_xdr", "xdr_read_success", "xdr_read_error"),
+        ),
+        XdrDcsFieldCheck("xdr_dc", ("success",)),
+    ),
+    FeatureCheck(
+        "XDR Destination",
+        ServiceFieldCheck("service", ("stat_write_reqs_xdr",)),
+        NamespacesFieldCheck(
+            "namespaces",
+            ("xdr_write_success", "xdr_client_write_success"),
+        ),
+    ),
+    FeatureCheck(
+        "Rack-aware",
+        ServiceFieldCheck("service", ("self-group-id",)),
+        NamespacesFieldCheck("namespaces", ("rack-id",)),
+    ),
+    FeatureCheck(
+        "Security",
+        # Before asadm 2.7 the node.info_get_config call to get service configs also included security configs.
+        # Security configs are now returned on their own.
+        # This is here to handle the case where an older collectinfo is loaded and they are still included as one.
+        ServiceFieldCheck(
+            "service",
+            ("enable-security",),
+            comp_ops["=="],
+            "true",
+        ),
+        SecurityFieldCheck(
+            "security",
+            ("enable-security",),
+            comp_ops["=="],
+            "true",
+        ),
+    ),
+    FeatureCheck(
+        "TLS (Heartbeat)",
+        ServiceFieldCheck(
+            "service",
+            ("heartbeat.mesh-seed-address-port",),
+        ),
+    ),
+    FeatureCheck(
+        "TLS (Fabric)",
+        ServiceFieldCheck(
+            "service",
+            ("fabric.tls-port",),
+        ),
+    ),
+    FeatureCheck(
+        "TLS (Service)",
+        ServiceFieldCheck(
+            "service",
+            ("service.tls-port",),
+        ),
+    ),
+    FeatureCheck(
+        "SC",
+        NamespacesFieldCheck(
+            "namespaces",
+            ("strong-consistency",),
+            comp_ops["=="],
+            "true",
+        ),
+    ),
+    FeatureCheck(
+        "Index-on-device",
+        NamespacesFieldCheck("namespaces", ("index_flash_used_bytes",)),
+    ),
+    FeatureCheck(
+        "Index-on-pmem",
+        NamespacesFieldCheck(
+            "namespaces",
+            ("index-type",),
+            comp_ops["=="],
+            "pmem",
+        ),
+    ),
+)
 
 
 def _find_features_for_cluster(
@@ -265,6 +482,7 @@ def _find_features_for_cluster(
     xdr_dc_stats,
     service_configs={},
     ns_configs={},
+    security_configs={},
 ):
     """
     Function takes service stats, namespace stats, service configs, namespace configs and dictionary cluster config.
@@ -275,22 +493,23 @@ def _find_features_for_cluster(
 
     service_data = util.deep_merge_dicts(service_stats, service_configs)
     ns_data = util.deep_merge_dicts(ns_stats, ns_configs)
-
     nodes = list(service_data.keys())
 
-    for feature, keys in FEATURE_KEYS.items():
+    for fc in feature_checks:
         for node in nodes:
             ns_d = util.get_value_from_dict(ns_data, node, None, dict)
             service_d = util.get_value_from_dict(service_data, node, None, dict)
             xdr_d = util.get_value_from_dict(xdr_dc_stats, node, None, dict)
-            service_keys, ns_keys, xdr_dc_keys = keys
+            security_d = util.get_value_from_dict(security_configs, node, None, dict)
+            sources = {
+                "service": service_d,
+                "namespaces": ns_d,
+                "xdr_dc": xdr_d,
+                "security": security_d,
+            }
 
-            if (
-                _check_feature_by_keys(service_d, service_keys)
-                or _check_nested_feature_by_keys(ns_d, ns_keys)
-                or _check_nested_feature_by_keys(xdr_d, xdr_dc_keys)
-            ):
-                features.append(feature)
+            if fc.check(sources):
+                features.append(fc.display_key)
                 break
 
     return features
@@ -310,32 +529,31 @@ def find_nodewise_features(
     """
 
     features = {}
-
-    # Before asadm 2.7 security configs were joined into service configs because of info_get_config in node.py.
-    service_configs = util.deep_merge_dicts(service_configs, security_configs)
     service_data = util.deep_merge_dicts(service_stats, service_configs)
     ns_data = util.deep_merge_dicts(ns_stats, ns_configs)
 
     nodes = list(service_data.keys())
 
-    for feature, keys in FEATURE_KEYS.items():
-        for node in nodes:
-            ns_d = util.get_value_from_dict(ns_data, node, None, dict)
-            service_d = util.get_value_from_dict(service_data, node, None, dict)
-            xdr_d = util.get_value_from_dict(xdr_dc_stats, node, None, dict)
-            service_keys, ns_keys, xdr_dc_keys = keys
+    for node in nodes:
+        ns_d = util.get_value_from_dict(ns_data, node, None, dict)
+        service_d = util.get_value_from_dict(service_data, node, None, dict)
+        xdr_d = util.get_value_from_dict(xdr_dc_stats, node, None, dict)
+        security_d = util.get_value_from_dict(security_configs, node, None, dict)
+        sources = {
+            "service": service_d,
+            "namespaces": ns_d,
+            "xdr_dc": xdr_d,
+            "security": security_d,
+        }
 
+        for feature_check in feature_checks:
             if node not in features:
                 features[node] = {}
 
-            features[node][feature.upper()] = "NO"
-
-            if (
-                _check_feature_by_keys(service_d, service_keys)
-                or _check_nested_feature_by_keys(ns_d, ns_keys)
-                or _check_nested_feature_by_keys(xdr_d, xdr_dc_keys)
-            ):
-                features[node][feature.upper()] = "YES"
+            if feature_check.check(sources):
+                features[node][feature_check.display_key] = "YES"
+            else:
+                features[node][feature_check.display_key] = "NO"
 
     return features
 
@@ -343,29 +561,6 @@ def find_nodewise_features(
 #############################
 
 ########## Summary ##########
-
-
-def _set_record_overhead(as_version=""):
-    overhead = 9
-    if not as_version:
-        return overhead
-
-    if version.LooseVersion(as_version) >= version.LooseVersion("4.2"):
-        return 1
-
-    return overhead
-
-
-def _round_up(value, rounding_factor):
-    if not rounding_factor or not value:
-        return value
-
-    d = int(value // rounding_factor)
-    m = value % rounding_factor
-    if m > 0:
-        d += 1
-
-    return d * rounding_factor
 
 
 class UDAEntryNamespaceDict(TypedDict):
@@ -953,6 +1148,7 @@ def create_summary(
     license_allow_unstable: bool,
     service_configs={},
     ns_configs={},
+    security_configs={},
     license_data_usage: Optional[UDAResponsesDict] = None,
 ):
     """
@@ -966,6 +1162,7 @@ def create_summary(
         xdr_dc_stats,
         service_configs=service_configs,
         ns_configs=ns_configs,
+        security_configs=security_configs,
     )
 
     namespace_stats = util.flip_keys(namespace_stats)
