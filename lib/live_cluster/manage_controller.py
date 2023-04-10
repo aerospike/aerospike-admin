@@ -1425,6 +1425,20 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
         return possible_completions
 
+    def _remove_up_to(self, iter: list[str], to: str):
+        """Solves this case `manage config logging file /path/to/file param *tab*` since
+        file is not listed as a subcontext in the yamls. Might not be needed if we
+        redesign `manage config logging` but still might be nice to have
+        """
+        if not len(iter):
+            return
+
+        while len(iter) and iter[0] != to:
+            iter.pop(0)
+
+        if iter[0] == to:
+            iter.pop(0)
+
     def complete(self, line):
         logger.debug(
             "ManageConfigLeafController: Complete context {} and line {}".format(
@@ -1514,14 +1528,15 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
         # Complete a config parameter
         elif p_success and not v_success:
-            line.remove(self.PARAM)
+            self._remove_up_to(line, self.PARAM)
             to_complete = param
             possible_completions = self._complete_params(contexts)
             next_token = self.TO
 
         # Complete a parameter value
         elif p_success and v_success:
-            line.remove(self.TO)
+            self._remove_up_to(line, self.TO)
+            # line.remove(self.TO)
             to_complete = value
             possible_completions = self._complete_values(contexts, param)
 
