@@ -32,13 +32,13 @@ jobs:
           cond: ${{ inputs.submodule != '' }}
           if_true: aerospike-tools/${{ inputs.submodule }} # In this case we are expecting to checkout the tools package.
           if_false: admin
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           path: ${{ steps.checkout-dir.outputs.value }}
           fetch-depth: 0
       - name: Checkout ${{ steps.working-dir.outputs.value }}
         working-directory: ${{ steps.checkout-dir.outputs.value }}
-        run: | 
+        run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive -- ${{ inputs.submodule || '.' }}
       - name: Print version
@@ -49,7 +49,7 @@ jobs:
         working-directory: ${{ steps.working-dir.outputs.value }}
         id: sha
         run: |
-          echo "::set-output name=sha::$(git rev-parse head)"
+          echo "sha=$(git rev-parse head)" >> $GITHUB_OUTPUT
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Get Python version from Pipfile
@@ -61,7 +61,7 @@ jobs:
           echo ${{ steps.system-info.outputs.kernel-release }}
           echo ${{ steps.system-info.outputs.platform }}
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pipenv"
