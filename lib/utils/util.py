@@ -32,7 +32,6 @@ from typing import (
     Generic,
     Iterable,
     Literal,
-    Optional,
     Tuple,
     Type,
     TypeVar,
