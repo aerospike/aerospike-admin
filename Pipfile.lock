@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "cc1cfb2495fe5a552608340217778bdc7b8058369f94f36770a01b4ce762a49c"
+            "sha256": "19557bd313a10bd3e2f8161764446bafff6e7b3623c89a98869a52b42fdb02c8"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -122,7 +122,7 @@
                 "sha256:2163e1640ddb52b7a8c80d0a67a08587e5d245cc9c553a74a847056bc2976b15",
                 "sha256:8ca1e4fcf50d07413d66d1a5e416e42cfdf5851c981d679a09851a6853383b3c"
             ],
-            "markers": "python_version >= '3.6'",
+            "markers": "python_full_version >= '3.6.0'",
             "version": "==4.0.2"
         },
         "attrs": {
@@ -130,7 +130,7 @@
                 "sha256:29e95c7f6778868dbd49170f98f8818f78f3dc5e0e37c0b1f474e3561b240836",
                 "sha256:c9227bfc2f01993c03f68db37d1d15c9690188323c067c641f1a35ca58185f99"
             ],
-            "markers": "python_version >= '3.6'",
+            "markers": "python_full_version >= '3.6.0'",
             "version": "==22.2.0"
         },
         "bcrypt": {
@@ -234,7 +234,7 @@
                 "sha256:5a3d016c7c547f69d6f81fb0db9449ce888b418b5b9952cc5e6e66843e9dd845",
                 "sha256:83e9a75d1911279afd89352c68b45348559d1fc0506b054b346651b5e7fee29f"
             ],
-            "markers": "python_version >= '3.6'",
+            "markers": "python_full_version >= '3.6.0'",
             "version": "==2.1.1"
         },
         "cryptography": {
@@ -768,7 +768,7 @@
                 "sha256:29e95c7f6778868dbd49170f98f8818f78f3dc5e0e37c0b1f474e3561b240836",
                 "sha256:c9227bfc2f01993c03f68db37d1d15c9690188323c067c641f1a35ca58185f99"
             ],
-            "markers": "python_version >= '3.6'",
+            "markers": "python_full_version >= '3.6.0'",
             "version": "==22.2.0"
         },
         "black": {
@@ -973,20 +973,21 @@
         },
         "pyinstaller": {
             "hashes": [
-                "sha256:05c21117b84199272ebd355b556af4714f6e79245e1c435d6f16653786d7d17e",
-                "sha256:0dcaf6557cdb2da763c46e06e95a94a7634ab03fb09d91bc77988b01ee05c907",
-                "sha256:15557cd1a79d182967f0a5040750e6902e13ebd6cab41e3ed84d7b28a306357b",
-                "sha256:581620bdcd32f01e89b13231256b807bb090e7eadf40c81c864ec402afa4758a",
-                "sha256:70c71e827f4b34602cbc7a0947a067b662c1cbdc4db51832e13b97cca3c54dd7",
-                "sha256:714c4dcc319a41416744d1e30c6317405dfaed80d2adc45f8bfa70dc7367e664",
-                "sha256:7749c868d2e2dc84df7d6f65437226183c8a366f3a99bb2737785625c3a3cca1",
-                "sha256:7d94518ba1f8e9a8577345312276891ad7d6cd9785e453e9951b35647e2c7078",
-                "sha256:cfed0b3a43e73550a43a094610328109564710b9514afa093ef7199d072cae87",
-                "sha256:d4f79c0a774451f12baca4e476376418f011fa3039dde8fd172ea2aa8ff67bad",
-                "sha256:f2166ff2cd95eefb0d377ae8d1071f186fa25edd410ede65b376162d5ec41909"
+                "sha256:176a9d66d8ce619055daee98b2df93093a4282d0df4fe25609fcf3a8e4c704a3",
+                "sha256:239bb7f99312feaa5e49585a760af9a4b21923bfd85f7084a3150d36f7f13601",
+                "sha256:4893817d743bbb633dec8bec1fc343f3474b078339d4962f76af8208194ae097",
+                "sha256:497e0b88489d07bf1e7d99de587d26912cddbc77544c809cb28f48e9eb7331f8",
+                "sha256:4ae664b93b627b717c23b90e8deae64f23ffb2f62197abdb87def44512c7e759",
+                "sha256:53449d8acaa3e5504197168cef13a329828b139749aaa0d1fc383d0f0e67a0e7",
+                "sha256:96d013d118c575fe0051efbe80323921c79e41f94fc374e8cb674d083650f6b4",
+                "sha256:9a93e484934262362f327214ef2632390f28b04d03715cc2da86657c7073916d",
+                "sha256:b2ae7afd384c3ef0866a741eeeb7c0f650374fc3fe0a8d7b9c2f41e09ce3ba74",
+                "sha256:c0261ebacefee92838342e246335f1ffab556745a5250de7f7b38f9e6d510e83",
+                "sha256:ee00f52db787e9a1a8ba447f555b51ea97ddca7cf71d02c5fdaf26411e8925ba",
+                "sha256:fd117d460bcaefafc109c15accf1f0005a2951883d5be69a79eaa306a7923a9a"
             ],
             "index": "pypi",
-            "version": "==4.10"
+            "version": "==5.10.0"
         },
         "pyinstaller-hooks-contrib": {
             "hashes": [
