@@ -30,6 +30,7 @@ class SummaryController(CollectinfoCommandController):
         namespace_stats = self.log_handler.info_statistics(
             stanza=constants.STAT_NAMESPACE
         )
+        xdr_dc_stats = self.log_handler.info_statistics(stanza=constants.STAT_XDR)
 
         service_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_SERVICE
@@ -37,7 +38,9 @@ class SummaryController(CollectinfoCommandController):
         namespace_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_NAMESPACE
         )
-        xdr_dc_stats = self.log_handler.info_statistics(stanza=constants.STAT_XDR)
+        security_configs = self.log_handler.info_getconfig(
+            stanza=constants.CONFIG_SECURITY
+        )
 
         os_version = self.log_handler.get_sys_data(stanza="lsb")
         kernel_version = self.log_handler.get_sys_data(stanza="uname")
@@ -137,6 +140,7 @@ class SummaryController(CollectinfoCommandController):
                 metadata=metadata,
                 service_configs=service_configs[last_timestamp],
                 ns_configs=namespace_configs[last_timestamp],
+                security_configs=security_configs[last_timestamp],
                 license_data_usage=license_data_usage,
                 license_allow_unstable=agent_unstable,
             ),

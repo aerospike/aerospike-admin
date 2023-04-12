@@ -533,7 +533,7 @@ def restructure_sys_data(content, cmd):
 
 def get_value_from_second_level_of_dict(
     data: dict[Any, str],
-    keys: list[str],
+    keys: Iterable[str],
     default_value: DefaultType = None,
     return_type: Type[ReturnType] = str,
 ) -> dict[str, Union[ReturnType, DefaultType]]:
