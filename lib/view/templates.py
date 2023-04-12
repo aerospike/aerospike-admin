@@ -907,24 +907,24 @@ info_sindex_sheet = Sheet(
             converter=sindex_state_converter,
         ),  # new
         Field("Sync State", Projectors.String("sindex_stats", "sync_state")),  # old
-        # removed 6.0
         Field(
             "Keys",
             Projectors.Any(
+                # added 6.1
                 FieldType.number,
                 Projectors.Div(
-                    Projectors.Number("sindex_stats", "entries", "objects"),
+                    Projectors.Number("sindex_stats", "entries"),
                     Projectors.Func(
                         FieldType.number,
                         _ignore_zero,
-                        Projectors.Number("sindex_stats", "keys", "entries_per_bval"),
+                        Projectors.Number("sindex_stats", "entries_per_bval"),
                     ),
                 ),
+                # removed 6.0
                 Projectors.Number("sindex_stats", "keys"),
             ),
             converter=Converters.scientific_units,
         ),
-        # added 6.1
         Subgroup(
             "Entries",
             (
@@ -936,12 +936,27 @@ info_sindex_sheet = Sheet(
                 ),
                 Field(
                     "Avg Per Rec",
-                    Projectors.Number("sindex_stats", "keys", "entries_per_rec"),
+                    Projectors.Number("sindex_stats", "entries_per_rec"),  # added 6.1
                     converter=Converters.scientific_units,
                 ),
                 Field(
                     "Avg Per Bin Val",
-                    Projectors.Number("sindex_stats", "keys", "entries_per_bval"),
+                    Projectors.Any(
+                        FieldType.number,
+                        Projectors.Number(
+                            "sindex_stats", "entries_per_bval"
+                        ),  # added 6.1
+                        Projectors.Div(
+                            Projectors.Number("sindex_stats", "entries"),
+                            Projectors.Func(
+                                FieldType.number,
+                                _ignore_zero,
+                                Projectors.Number(
+                                    "sindex_stats", "keys"
+                                ),  # removed 6.0
+                            ),
+                        ),
+                    ),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
                 ),
@@ -1175,6 +1190,11 @@ summary_cluster_sheet = Sheet(
                 Formatters.green_alert(lambda edata: edata.value),
                 Formatters.red_alert(lambda edata: not edata.value),
             ),
+        ),
+        Field(
+            "Cluster Name",
+            Projectors.Identity("cluster_dict", "cluster_name"),
+            converter=Converters.list_to_comma_sep_str,
         ),
         Field(
             "Server Version",

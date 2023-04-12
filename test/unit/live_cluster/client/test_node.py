@@ -31,7 +31,7 @@ from lib.live_cluster.client.types import ASProtocolError, ASResponse
 from test.unit import util
 from lib.utils import constants
 from lib.live_cluster.client.assocket import ASSocket
-from lib.live_cluster.client.node import Node
+from lib.live_cluster.client.node import _SysCmd, Node
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoClusterStableError,
@@ -1322,7 +1322,6 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual.response, "Invalid subcontext security")
 
     async def test_info_get_config_service(self):
-
         # todo call getconfig with various formats
         self.info_mock.return_value = "asdf=1;b=b;c=!@#$%^&*()"
         expected = {"asdf": "1", "b": "b", "c": "!@#$%^&*()"}
@@ -3988,6 +3987,89 @@ class NodeTest(asynctest.TestCase):
             admin_cadmin_mock.assert_called_with(
                 tc.assocket_func, tc.args, self.node.ip
             )
+
+
+class SyscmdTest(unittest.TestCase):
+    def setUp(self) -> None:
+        def parse_func(input: str) -> dict[str, Any]:
+            return {"key": "parsed"}
+
+        self.parse_func = parse_func
+        # self.sys_cmd = _SysCmd("name", False, ["cmd1", "cmd2", "cmd3"], parse_func)
+
+    def test_init(self):
+        _SysCmd.set_uid(-1)
+        self.assertRaises(
+            RuntimeError,
+            lambda: _SysCmd("name", False, ["cmd1", "cmd2", "cmd3"], self.parse_func),
+        )
+
+        _SysCmd.set_uid(1)
+        sys_cmd = _SysCmd("name", False, ["cmd1", "cmd2", "cmd3"], self.parse_func)
+
+        self.assertEqual(sys_cmd.key, "name")
+        self.assertEqual(sys_cmd.ignore_error, False)
+
+    def test_iter_as_root(self):
+        _SysCmd.set_uid(0)
+        sys_cmd = _SysCmd(
+            "name", False, ["sudo cmd1", "cmd2 sudo ", "cmd3"], self.parse_func
+        )
+
+        cmds = [cmd for cmd in sys_cmd]
+
+        self.assertListEqual(["cmd1", "cmd2 ", "cmd3"], cmds)
+
+    def test_iter_not_as_root(self):
+        _SysCmd.set_uid(1)
+        sys_cmd = _SysCmd(
+            "name", False, ["sudo cmd1", "cmd2 sudo ", "cmd3"], self.parse_func
+        )
+
+        cmds = [cmd for cmd in sys_cmd]
+
+        self.assertListEqual(["sudo cmd1", "cmd2 sudo ", "cmd3"], cmds)
+
+    def test_parse(self):
+        def parse_func(input: str) -> dict[str, Any]:
+            return {
+                "key1": {"key2": [{"key3": "n/e", "key4": None}]},
+                "key.5": {
+                    "ke y6": 2,
+                    "key.7": "True",
+                    "key8": "3.14",
+                    "key9": "-5",
+                    "key10": "-5.5",
+                    "key11": "2",
+                    "key12": True,
+                    "key13": 3.14,
+                },
+                "key14": input,
+            }
+
+        expected = {
+            "key1": {"key2": [{"key3": None, "key4": None}]},
+            "key.5": {
+                "ke_y6": 2,
+                "key_7": True,
+                "key8": 3.14,
+                "key9": -5,
+                "key10": -5.5,
+                "key11": 2,
+                "key12": True,
+                "key13": 3.14,
+            },
+            "key14": "foo",
+        }
+
+        _SysCmd.set_uid(1)
+        sys_cmd = _SysCmd(
+            "name", False, ["sudo cmd1", "cmd2 sudo ", "cmd3"], parse_func
+        )
+
+        result = sys_cmd.parse("foo")
+
+        self.assertDictEqual(expected, result)
 
 
 if __name__ == "__main__":
