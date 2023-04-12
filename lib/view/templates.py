@@ -1192,6 +1192,11 @@ summary_cluster_sheet = Sheet(
             ),
         ),
         Field(
+            "Cluster Name",
+            Projectors.Identity("cluster_dict", "cluster_name"),
+            converter=Converters.list_to_comma_sep_str,
+        ),
+        Field(
             "Server Version",
             Projectors.Identity("cluster_dict", "server_version"),
             converter=Converters.list_to_comma_sep_str,
