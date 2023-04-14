@@ -1087,7 +1087,6 @@ def change_key_name_in_map(datamap, old_keys, new_key):
 def type_check_basic_values(section: dict[str, Any]):
     malformedkeys = []
     # ip_regex = "[0-9]{1,2,3}(\.[0-9]{1,2,3})*"
-    print(section)
     for key in section:
         if isinstance(section[key], dict):
             type_check_basic_values(section[key])
@@ -1121,7 +1120,6 @@ def type_check_basic_values(section: dict[str, Any]):
 
             # Handle float of format (a.b), only 1 dot would be there.
             if section[key].replace(".", "", 1).isdigit():
-                print(section[key])
                 section[key] = _str_to_number(section[key])
 
             # Handle bool
