@@ -229,8 +229,8 @@ info_network_sheet = Sheet(
 def create_usage_weighted_avg(type: str):
     def usage_weighted_avg(edatas: list[EntryData]):
         pcts: map[float] = map(lambda edata: edata.value, edatas)
-        byte_values: map[float] = map(lambda edata: edata.record[type]["Total"], edatas)
-        return weighted_avg(pcts, byte_values)
+        weights: map[float] = map(lambda edata: edata.record[type]["Total"], edatas)
+        return weighted_avg(pcts, weights)
 
     return usage_weighted_avg
 
@@ -1638,9 +1638,9 @@ show_object_distribution_sheet = Sheet(
 
 
 def latency_weighted_avg(edatas: list[EntryData]):
-    ops_sec_values: map[float] = map(lambda edata: edata.record["ops/sec"], edatas)
-    pcts = map(lambda data: data[0].value * data[1], zip(edatas, ops_sec_values))
-    return weighted_avg(pcts, ops_sec_values)
+    weights: map[float] = map(lambda edata: edata.record["ops/sec"], edatas)
+    pcts = [data.value for data in edatas]
+    return weighted_avg(pcts, weights)
 
 
 weightedAvgAggregator = ComplexAggregator(
