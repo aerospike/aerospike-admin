@@ -296,6 +296,23 @@ class CliViewTest(unittest.TestCase):
             sources,
         )
 
+    def test_show_stop_writes(self):
+        racks_data = {"1.1.1.1": {"test": "data"}}
+        sources = {
+            "node_names": {"1.1.1.1": "node-name"},
+            "stop_writes": {"1.1.1.1": {"test": "data"}},
+        }
+        self.cluster_mock.get_node_names.return_value = {"1.1.1.1": "node-name"}
+
+        CliView.show_stop_writes(racks_data, self.cluster_mock, timestamp="test-stamp", **{})  # type: ignore
+
+        self.render_mock.assert_called_with(
+            templates.show_stop_writes_sheet,
+            "Stop Writes (test-stamp)",
+            sources,
+            description="Show all stop writes - add 'for <namespace> [<set>]' for a shorter list.",
+        )
+
     def test_show_xdr_ns_config(self):
         configs = {
             "[::1]:3001": {

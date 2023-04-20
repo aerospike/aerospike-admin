@@ -123,7 +123,9 @@ def compile_likes(likes):
     return likes
 
 
-def filter_list(ilist: Iterable[str], pattern_list: Optional[list[str]]):
+def filter_list(
+    ilist: Iterable[str], pattern_list: Iterable[str] | None
+) -> Iterable[str] | filter:
     if not ilist or not pattern_list:
         return ilist
     likes = compile_likes(pattern_list)

@@ -20,6 +20,59 @@ class GetConfigControllerTest(unittest.TestCase):
         self.log_handler = create_autospec(CollectinfoLogHandler)
         self.controller = GetConfigController(self.log_handler)
 
+    def test_get_namespace(self):
+        self.log_handler.info_getconfig.return_value = {
+            "timestamp": {
+                "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}, "abc": {"b"}},
+                "2.2.2.2": {"aaa": {"c"}, "aab": {}, "abc": {"b"}},
+            }
+        }
+        expected = {
+            "timestamp": {
+                "1.1.1.1": {"abc": {"b"}, "aab": {"b"}},
+                "2.2.2.2": {"abc": {"b"}, "aab": {}},
+            }
+        }
+
+        actual = self.controller.get_namespace(for_mods=["aab", "ab"])
+
+        self.assertDictEqual(actual, expected)
+        self.log_handler.info_getconfig.assert_called_with(
+            stanza=constants.CONFIG_NAMESPACE
+        )
+
+    def test_get_set(self):
+        self.log_handler.info_getconfig.return_value = {
+            "timestamp": {
+                "1.1.1.1": {
+                    ("aaa", "sss"): {"a"},
+                    ("aab", "sst"): {"b"},
+                    ("abc", "stu"): {"c"},
+                },
+                "2.2.2.2": {
+                    ("aaa", "sss"): {"c"},
+                    ("aab", "sst"): {},
+                    ("abc", "stu"): {"b"},
+                },
+            }
+        }
+        expected = {
+            "timestamp": {
+                "1.1.1.1": {
+                    ("aab", "sst"): {"b"},
+                    ("abc", "stu"): {"c"},
+                },
+                "2.2.2.2": {
+                    ("aab", "sst"): {},
+                    ("abc", "stu"): {"b"},
+                },
+            }
+        }
+
+        actual = self.controller.get_sets(for_mods=["ab", "st"])
+        self.assertDictEqual(actual, expected)
+        self.log_handler.info_getconfig.assert_called_with(stanza=constants.CONFIG_SET)
+
     def test_get_xdr(self):
         self.log_handler.info_getconfig.return_value = {
             "timestamp": {
@@ -158,6 +211,59 @@ class GetStatisticsControllerTest(unittest.TestCase):
             MagicMock(),
         ).start()
         self.controller = GetStatisticsController(self.log_handler)
+
+    def test_get_namespace(self):
+        self.log_handler.info_statistics.return_value = {
+            "timestamp": {
+                "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}, "abc": {"b"}},
+                "2.2.2.2": {"aaa": {"c"}, "aab": {}, "abc": {"b"}},
+            }
+        }
+        expected = {
+            "timestamp": {
+                "1.1.1.1": {"abc": {"b"}, "aab": {"b"}},
+                "2.2.2.2": {"abc": {"b"}, "aab": {}},
+            }
+        }
+
+        actual = self.controller.get_namespace(for_mods=["aab", "ab"])
+
+        self.assertDictEqual(actual, expected)
+        self.log_handler.info_statistics.assert_called_with(
+            stanza=constants.STAT_NAMESPACE
+        )
+
+    def test_get_set(self):
+        self.log_handler.info_statistics.return_value = {
+            "timestamp": {
+                "1.1.1.1": {
+                    ("aaa", "sss"): {"a"},
+                    ("aab", "sst"): {"b"},
+                    ("abc", "stu"): {"c"},
+                },
+                "2.2.2.2": {
+                    ("aaa", "sss"): {"c"},
+                    ("aab", "sst"): {},
+                    ("abc", "stu"): {"b"},
+                },
+            }
+        }
+        expected = {
+            "timestamp": {
+                "1.1.1.1": {
+                    ("aab", "sst"): {"b"},
+                    ("abc", "stu"): {"c"},
+                },
+                "2.2.2.2": {
+                    ("aab", "sst"): {},
+                    ("abc", "stu"): {"b"},
+                },
+            }
+        }
+
+        actual = self.controller.get_sets(for_mods=["ab", "st"])
+        self.assertDictEqual(actual, expected)
+        self.log_handler.info_statistics.assert_called_with(stanza=constants.STAT_SETS)
 
     def test_get_xdr(self):
         self.log_handler.info_statistics.return_value = {

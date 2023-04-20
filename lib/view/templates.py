@@ -15,7 +15,7 @@
 from datetime import datetime
 import itertools
 from typing import Iterable, Union
-from lib.view.sheet.decleration import ComplexAggregator, EntryData
+from lib.view.sheet.decleration import ComplexAggregator, EntryData, FieldSorter
 from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoError
 from lib.view.sheet import (
     Aggregators,
@@ -222,7 +222,7 @@ info_network_sheet = Sheet(
         "versions",
         "stats",
     ),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 
@@ -469,7 +469,7 @@ info_namespace_usage_sheet = Sheet(
     from_source=("node_ids", "node_names", "ns_stats"),
     for_each="ns_stats",
     group_by=("Namespace"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 info_namespace_object_sheet = Sheet(
@@ -581,7 +581,7 @@ info_namespace_object_sheet = Sheet(
     from_source=("node_ids", "node_names", "ns_stats"),
     for_each="ns_stats",
     group_by=("Namespace"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 
@@ -680,7 +680,7 @@ info_set_sheet = Sheet(
     from_source=("node_ids", "node_names", "set_stats"),
     for_each="set_stats",
     group_by=("Namespace", "Set"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 info_old_xdr_sheet = Sheet(
@@ -790,7 +790,7 @@ info_old_xdr_sheet = Sheet(
     ),
     from_source=("xdr_enable", "node_ids", "node_names", "builds", "xdr_stats"),
     where=lambda record: record["XDR Enabled"],
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 info_dc_sheet = Sheet(
@@ -837,7 +837,7 @@ info_dc_sheet = Sheet(
     for_each="dc_stats",
     where=lambda record: record["DC"],
     group_by=("DC", "Namespaces"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 info_xdr_sheet = Sheet(
@@ -875,7 +875,7 @@ info_xdr_sheet = Sheet(
     ),
     from_source=("xdr_enable", "node_ids", "node_names", "xdr_stats"),
     where=lambda record: record["XDR Enabled"],
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 
@@ -1054,7 +1054,7 @@ info_sindex_sheet = Sheet(
     ),
     for_each=("sindex_stats"),
     group_by=("Namespace", "Set"),
-    order_by=("Index Name", "Node"),
+    order_by=(FieldSorter("Index Name"), FieldSorter("Node")),
 )
 
 show_distribution_sheet = Sheet(
@@ -1068,7 +1068,7 @@ show_distribution_sheet = Sheet(
         )
     ),
     from_source=("node_names", "histogram"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 
@@ -1495,7 +1495,7 @@ summary_namespace_sheet = Sheet(
     from_source="ns_stats",
     for_each="ns_stats",
     group_by="Namespace",
-    order_by="Namespace",
+    order_by=FieldSorter("Namespace"),
 )
 
 show_pmap_sheet = Sheet(
@@ -1533,7 +1533,7 @@ show_pmap_sheet = Sheet(
     from_source=("node_names", "node_ids", "pmap"),
     for_each="pmap",
     group_by="Namespace",
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 
@@ -1554,7 +1554,7 @@ show_config_sheet = Sheet(
         ),
     ),
     from_source=("node_names", "data", "node_ids"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
     default_style=SheetStyle.rows,
 )
 
@@ -1571,8 +1571,8 @@ show_xdr_ns_sheet = Sheet(
         ),
     ),
     from_source=("node_names", "data", "node_ids"),
-    group_by=["Datacenter"],
-    order_by=["Datacenter", "Node"],
+    group_by=("Datacenter"),
+    order_by=(FieldSorter("Datacenter"), FieldSorter("Node")),
     default_style=SheetStyle.rows,
     for_each=["data"],
 )
@@ -1586,8 +1586,8 @@ show_xdr_ns_sheet_by_dc = Sheet(
         DynamicFields("data", required=True, order=DynamicFieldOrder.ascending),
     ),
     from_source=("node_names", "data", "node_ids"),
-    group_by=["Namespace"],
-    order_by=["Namespace", "Node"],
+    group_by=("Namespace"),
+    order_by=(FieldSorter("Namespace"), FieldSorter("Node")),
     default_style=SheetStyle.rows,
     for_each=["data"],
 )
@@ -1604,7 +1604,7 @@ show_xdr_filters = Sheet(
     from_source=("data"),
     for_each="data",
     group_by=("Namespace"),
-    order_by=("Namespace", "Datacenter"),
+    order_by=(FieldSorter("Namespace"), FieldSorter("Datacenter")),
     default_style=SheetStyle.columns,
 )
 
@@ -1615,7 +1615,7 @@ show_mapping_to_ip_sheet = Sheet(
         Field("IP", Projectors.String("mapping", 1)),
     ),
     from_source="mapping",
-    order_by="Node ID",
+    order_by=FieldSorter("Node ID"),
 )
 
 show_mapping_to_id_sheet = Sheet(
@@ -1624,7 +1624,7 @@ show_mapping_to_id_sheet = Sheet(
         Field("Node ID", Projectors.String("mapping", 1)),
     ),
     from_source="mapping",
-    order_by="IP",
+    order_by=FieldSorter("IP"),
 )
 
 show_object_distribution_sheet = Sheet(
@@ -1633,7 +1633,7 @@ show_object_distribution_sheet = Sheet(
         DynamicFields("histogram", required=True, order=DynamicFieldOrder.source),
     ),
     from_source=("node_names", "histogram"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
 )
 
 
@@ -1676,7 +1676,106 @@ show_latency_sheet = Sheet(
     from_source=("node_names", "histogram"),
     for_each="histogram",
     group_by=("Namespace", "Histogram"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
+)
+
+
+def stop_writes_converter_selector(edata: EntryData):
+    if "Metric" not in edata.record:
+        return None
+
+    metric = edata.record["Metric"]
+
+    if "pct" in metric:
+        return Converters.pct(edata)
+    if "bytes" in metric:
+        return Converters.byte(edata)
+    if "_ms" in metric:
+        return Converters.time_milliseconds(edata)
+
+    return Converters.scientific_units(edata)
+
+
+sw_row_yellow_format = (
+    Formatters.yellow_alert(lambda edata: edata.record["Stop-Writes"] == True),
+)
+sw_val_red_format = (
+    Formatters.red_alert(lambda edata: edata.record["Usage%"] >= 0.90),  # 90%
+)
+sw_val_yellow_format = (
+    Formatters.yellow_alert(lambda edata: edata.record["Usage%"] >= 0.75),  # 75%
+)
+
+show_stop_writes_sheet = Sheet(
+    (
+        Field(
+            "key",
+            Projectors.String("stop_writes", None, for_each_key=True),
+            hidden=True,
+        ),
+        Field(
+            "Config",
+            Projectors.String("stop_writes", "config"),
+            formatters=sw_row_yellow_format,
+        ),
+        Field(
+            "Namespace",
+            Projectors.String("stop_writes", "namespace"),
+            formatters=sw_row_yellow_format,
+        ),
+        Field(
+            "Set",
+            Projectors.String("stop_writes", "set"),
+            formatters=sw_row_yellow_format,
+        ),
+        Field(
+            "Node",
+            Projectors.String("node_names", None),
+            formatters=sw_row_yellow_format,
+        ),
+        Field(
+            "Stop-Writes",
+            Projectors.Boolean("stop_writes", "stop_writes"),
+            formatters=sw_val_red_format + sw_row_yellow_format,
+        ),
+        Field(
+            "Metric",
+            Projectors.String("stop_writes", "metric"),
+            formatters=sw_row_yellow_format,
+        ),
+        Field(
+            "Usage%",
+            Projectors.Div(
+                Projectors.Number("stop_writes", "metric_usage"),
+                Projectors.Func(
+                    FieldType.number,
+                    _ignore_zero,
+                    Projectors.Number("stop_writes", "metric_threshold"),
+                ),
+            ),
+            converter=Converters.ratio_to_pct,
+            formatters=sw_val_red_format + sw_val_yellow_format + sw_row_yellow_format,
+        ),
+        Field(
+            "Usage",
+            Projectors.Number("stop_writes", "metric_usage"),
+            converter=stop_writes_converter_selector,
+            formatters=sw_row_yellow_format,
+        ),
+        Field(
+            "Threshold",
+            Projectors.Func(
+                FieldType.number,
+                _ignore_zero,
+                Projectors.Number("stop_writes", "metric_threshold"),
+            ),
+            converter=stop_writes_converter_selector,
+            formatters=sw_row_yellow_format,
+        ),
+    ),
+    from_source=("node_names", "stop_writes"),
+    for_each="stop_writes",
+    order_by=(FieldSorter("Usage%"), FieldSorter("Metric")),
 )
 
 
@@ -1787,7 +1886,7 @@ show_users = Sheet(
     ),
     from_source="data",
     for_each="data",
-    order_by="User",
+    order_by=FieldSorter("User"),
 )
 
 show_roles = Sheet(
@@ -1823,7 +1922,7 @@ show_roles = Sheet(
     ),
     from_source="data",
     for_each="data",
-    order_by="Role",
+    order_by=FieldSorter("Role"),
 )
 
 show_udfs = Sheet(
@@ -1837,7 +1936,7 @@ show_udfs = Sheet(
     ),
     from_source="data",
     for_each="data",
-    order_by="Filename",
+    order_by=FieldSorter("Filename"),
 )
 
 show_sindex = Sheet(
@@ -1858,7 +1957,7 @@ show_sindex = Sheet(
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),
-    order_by=("Index Name", "Namespace", "Set"),
+    order_by=(FieldSorter("Index Name"), FieldSorter("Namespace"), FieldSorter("Set")),
 )
 
 
@@ -1912,7 +2011,7 @@ show_roster = Sheet(
     from_source=("data", "node_names", "node_ids"),
     for_each="data",
     group_by=("Namespace"),
-    order_by=("Node ID", "Namespace"),
+    order_by=(FieldSorter("Node ID"), FieldSorter("Namespace")),
 )
 
 
@@ -1984,7 +2083,11 @@ show_jobs = Sheet(
     from_source=("data", "node_names", "node_ids"),
     for_each="data",
     group_by=("Namespace", "Module", "Type"),
-    order_by=("Progress%", "Time Since Done", "Node"),
+    order_by=(
+        FieldSorter("Progress%"),
+        FieldSorter("Time Since Done"),
+        FieldSorter("Node"),
+    ),
     default_style=SheetStyle.rows,
 )
 
@@ -2001,7 +2104,7 @@ show_racks = Sheet(
     from_source=("data"),
     for_each="data",
     group_by=("Namespace"),
-    order_by=("Rack ID"),
+    order_by=FieldSorter(("Rack ID")),
 )
 
 kill_jobs = Sheet(
@@ -2033,7 +2136,7 @@ grep_count_sheet = Sheet(
         DynamicFields("data", required=True, order=DynamicFieldOrder.source),
     ),
     from_source=("node_ids", "data"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
     default_style=SheetStyle.rows,
 )
 
@@ -2045,7 +2148,7 @@ grep_count_sheet = Sheet(
         ),
     ),
     from_source=("node_ids", "data"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
     default_style=SheetStyle.rows,
 )
 
@@ -2066,7 +2169,7 @@ node_info_responses = Sheet(
         ),
     ),
     from_source=("data", "node_names"),
-    order_by="Node",
+    order_by=FieldSorter("Node"),
     default_style=SheetStyle.columns,
 )
 

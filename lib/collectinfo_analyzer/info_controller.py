@@ -55,17 +55,14 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays set summary information.")
     def do_set(self, line):
-        set_stats = self.log_handler.info_statistics(
-            stanza=constants.STAT_SETS, flip=True
-        )
+        set_stats = self.stats_getter.get_sets()
 
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
                 continue
 
-            self._convert_key_to_tuple(set_stats[timestamp])
             self.view.info_set(
-                util.flip_keys(set_stats[timestamp]),
+                set_stats[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods
