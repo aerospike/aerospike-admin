@@ -70,7 +70,7 @@ jobs:
         id: cache-asadm-asinfo
         env:
           cache-name: cache-asadm-asinfo
-          cache-index: "4"
+          cache-index: "5"
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/build/bin
