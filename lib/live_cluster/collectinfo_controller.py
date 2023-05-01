@@ -264,6 +264,7 @@ class CollectinfoController(LiveClusterCommandController):
             self.cluster.info_best_practices(nodes=self.nodes),
             GetJobsController(self.cluster).get_all(flip=True, nodes=self.nodes),
         )
+        node_names = self.cluster.get_node_names()
 
         for nodeid in builds:
             metamap[nodeid] = {}
@@ -280,8 +281,8 @@ class CollectinfoController(LiveClusterCommandController):
             self._check_for_exception_and_set(
                 best_practices, "best_practices", nodeid, metamap
             )
+            self._check_for_exception_and_set(node_names, "node_names", nodeid, metamap)
             self._check_for_exception_and_set(jobs, "jobs", nodeid, metamap)
-
         return metamap
 
     async def _get_as_histograms(self):

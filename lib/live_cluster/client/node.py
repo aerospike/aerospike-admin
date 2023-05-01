@@ -2062,6 +2062,7 @@ class Node(AsyncObject):
         ns = None
         unit_mapping = {"msec": "ms", "usec": "\u03bcs"}
         time_units = None
+        exponent_increment = 1 if exponent_increment <= 0 else exponent_increment
         columns = [
             ">1",
             ">2",

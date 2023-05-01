@@ -427,10 +427,9 @@ class CliView(object):
         #       because loganalyser also sends this format.
         latency = {}
 
-        for hist, nodes_data in orig_latency.items():
-            for node, node_data in nodes_data.items():
-                node_latency = latency[node] = latency.get(node, {})
-
+        for node, nodes_data in orig_latency.items():
+            node_latency = latency[node] = latency.get(node, {})
+            for hist, node_data in nodes_data.items():
                 if "namespace" in node_data:
                     for ns, ns_data in node_data["namespace"].items():
                         for slice_id, values in enumerate(ns_data["values"]):
@@ -451,15 +450,26 @@ class CliView(object):
     @reserved_modifiers
     def show_latency(latency, cluster, like=None, with_=None, timestamp="", **ignore):
         # TODO - May not need to converter now that dicts can be nested.
-        likes = util.compile_likes(like)
         title = "Latency " + CliView._get_timestamp_suffix(timestamp)
-        latency = util.flip_keys(latency)  # make histogram name top level key
-        keys = set(filter(likes.search, latency.keys()))
-        latency = {k: v for k, v in latency.items() if k in keys}
         latency = CliView.format_latency(latency)
-        node_names = cluster.get_node_names(
-            with_
-        )  # TODO: Find out why table shows ~ instead of -- when latency metrics are missing for a given node.
+
+        if like:
+            likes = util.compile_likes(like)
+            keys = set()
+            for node_data in latency.values():
+                for hist_tup in node_data:
+                    _, hist, _ = hist_tup
+                    keys.add(hist)
+
+            keys = set(filter(likes.search, keys))
+
+            for node in latency.keys():
+                for hist_tup in list(latency[node].keys()):
+                    _, hist, _ = hist_tup
+                    if hist not in keys:
+                        del latency[node][hist_tup]
+
+        node_names = cluster.get_node_names(with_)
 
         sources = dict(node_names=node_names, histogram=latency)
 

@@ -15,10 +15,9 @@
 import inspect
 import re
 import logging
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 from lib.health.health_checker import HealthChecker
-from lib.utils import util
 from lib.utils.lookup_dict import PrefixDict
 from lib.view import view, terminal
 

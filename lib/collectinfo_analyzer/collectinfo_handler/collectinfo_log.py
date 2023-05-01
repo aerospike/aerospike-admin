@@ -147,12 +147,15 @@ class _CollectinfoSnapshot:
     def get_node_names(self, nodes=None):
         if not self.node_names:
             if self.cinfo_data:
-                node_names = self.cinfo_data.keys()
+                node_names = self.get_data(type="meta_data", stanza="node_names")
+                # "node_name" was stored in collectinfo file in asadm 2.15.0
+                if not node_names:
+                    node_names = self.cinfo_data.keys()
             else:
                 return {}
 
             for node_name in node_names:
-                self.node_names[node_name] = node_name
+                self.node_names[node_name] = node_names[node_name]
         return copy.deepcopy(self.node_names)
 
     def get_node_ids(self, nodes=None):
@@ -398,7 +401,7 @@ class _CollectinfoSnapshot:
 
     def _set_nodes(self, nodes):
         for node in nodes:
-            self.node_names[node] = node
+            self.node_names[node] = nodes[node]
             self.nodes[node] = _CollectinfoNode(self.timestamp, node)
             self.node_lookup[node] = node
 
@@ -415,7 +418,6 @@ class _CollectinfoSnapshot:
                 pass
 
     def _set_ip(self):
-
         for node in self.nodes:
             try:
                 self.nodes[node].set_ip(
@@ -425,7 +427,6 @@ class _CollectinfoSnapshot:
                 pass
 
     def _set_asd_build(self):
-
         for node in self.nodes:
             try:
                 self.nodes[node].set_asd_build(
@@ -435,7 +436,6 @@ class _CollectinfoSnapshot:
                 pass
 
     def _set_asd_version(self):
-
         for node in self.nodes:
             try:
                 self.nodes[node].set_asd_version(
@@ -445,7 +445,6 @@ class _CollectinfoSnapshot:
                 pass
 
     def _set_cluster_name(self):
-
         for node in self.nodes:
             try:
                 self.nodes[node].set_cluster_name(self.cluster_name)

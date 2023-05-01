@@ -13,7 +13,11 @@
 # limitations under the License.
 
 import json
+import os
 import re
+import shlex
+import subprocess
+from typing import Any
 from lib.utils import util
 
 
@@ -42,17 +46,57 @@ def parse_record(parent_field, record):
     return field_names, field_values
 
 
-def parse_output(actual_out={}, horizontal=False, header_len=2, merge_header=True):
+class CompletedProcess:
+    def __init__(self, cp: subprocess.CompletedProcess):
+        self.returncode = cp.returncode
+        self.stdout = bytes.decode(cp.stdout)
+        self.stderr = bytes.decode(cp.stderr)
+        self.stderr = self.stderr.strip()
+        self.stdout = self.stdout.strip()
+        print(self.stderr)
+        print(self.stdout)
+
+    def get_seperated_json_stdout(self):
+        return get_separate_output(self.stdout)
+
+
+def run_asadm(args=None, strip_header=True) -> CompletedProcess:
+    if "ASADM_TEST_BUNDLE" in os.environ:
+        binary = os.path.abspath("build/bin/asadm/asadm")
+    else:
+        binary = os.path.abspath("asadm.py")
+
+    env = None
+
+    args = [] if args is None else shlex.split(args)
+    cmd = [binary]
+    cmd.extend(args)
+    print("Running cmd: {}".format(cmd))
+    cp = CompletedProcess(subprocess.run(cmd, capture_output=True, env=os.environ))
+
+    if strip_header:
+        lines = cp.stdout.split("\n")
+        for idx, line in enumerate(lines):
+            if line.startswith("Config_file"):
+                cp.stdout = "\n".join(lines[idx + 1 :])
+                break
+
+    return cp
+
+
+def parse_output(
+    actual_out={},
+) -> tuple[str, str, list[str], list[list[str | int | float]], int]:
     """
-        commmon parser for all show commands will return tuple of following
-        @param heading : first line of output
-        @param header: Second line of output
-        @param params: list of parameters 
-    
+    commmon parser for all show commands will return tuple of following
+    @param heading : first line of output
+    @param header: Second line of output
+    @param params: list of parameters
+
     """
     title = actual_out["title"]
     description = actual_out.get("description", "")
-    data_names = {}
+    data_names = []
     data_values = []
     num_records = 0
 
@@ -70,7 +114,7 @@ def parse_output(actual_out={}, horizontal=False, header_len=2, merge_header=Tru
     return title, description, data_names, data_values, num_records
 
 
-def get_separate_output(in_str=""):
+def get_separate_output(in_str="") -> list[dict[str, Any]]:
     _regex = re.compile(r"((?<=^{).*?(?=^}))", re.MULTILINE | re.DOTALL)
     out = re.findall(_regex, in_str)
     ls = []
@@ -82,12 +126,24 @@ def get_separate_output(in_str=""):
     return ls
 
 
-def capture_separate_and_parse_output(rc, commands):
-    actual_stdout = util.capture_stdout(rc.execute, commands)
+async def capture_separate_and_parse_output(rc, commands):
+    actual_stdout = await util.capture_stdout(rc.execute, commands)
     separated_stdout = get_separate_output(actual_stdout)
     result = parse_output(separated_stdout[0])
 
     return result
+
+
+def get_collectinfo_path(cp: CompletedProcess, collectinfo_prefix: str):
+    collectinfo_path = None
+    for line in reversed(cp.stderr.splitlines()):
+        if collectinfo_prefix in line and line.startswith("INFO:"):
+            words = line.split()
+            for word in words:
+                if collectinfo_prefix in word:
+                    print("Found collectinfo_prefix", collectinfo_path)
+                    return word
+    raise Exception("Unable to find collectinfo path in output")
 
 
 def get_merged_header(*lines):

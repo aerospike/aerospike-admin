@@ -4,8 +4,7 @@ import logging
 import traceback
 from sys import exit
 from typing import Optional
-from xml.etree.ElementInclude import include
-from lib.utils.logger_debug import DebugFormatter, get_debug_logger
+from lib.utils.logger_debug import DebugFormatter
 
 
 from lib.view import terminal

@@ -14,6 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+try:
+    import coverage
+
+    coverage.process_startup()
+except:
+    pass
+
 from lib.utils.logger import logger  # THIS MUST BE THE FIRST IMPORT
 from lib.base_controller import ShellException
 import inspect
@@ -21,7 +28,6 @@ import cmd
 import getpass
 import logging
 
-import os
 import re
 import shlex
 import sys
@@ -29,6 +35,8 @@ import asyncio
 import readline
 
 from lib.utils.async_object import AsyncObject
+
+import os
 
 
 if "libedit" in readline.__doc__:
