@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 import platform
+from os import path
 
 #
 # Creates a bundled directory as apposed to a single executable file. This allows for
@@ -23,7 +24,7 @@ It is possible to build Python without libcrypt but we would need to move away f
 using pyenv on our build machine since pyenv relies on libcrypt to run `pyenv install`.
 '''
 
-if "darwin" not in platform.system().lower():
+if "darwin" not in platform.system().lower() and path.isfile('/usr/lib64/libcrypt.so.1'):
     binaries.append(('/usr/lib64/libcrypt.so.1', '.'))
 
 block_cipher = None
