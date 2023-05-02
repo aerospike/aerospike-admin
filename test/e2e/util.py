@@ -66,8 +66,6 @@ def run_asadm(args=None, strip_header=True) -> CompletedProcess:
     else:
         binary = os.path.abspath("asadm.py")
 
-    env = None
-
     args = [] if args is None else shlex.split(args)
     cmd = [binary]
     cmd.extend(args)

@@ -63,6 +63,7 @@ class TestCollectinfo(asynctest.TestCase):
                 "info_complete",
                 "heartbeat_received_foreign",
                 "heap_mapped_kbytes",
+                "heap_efficiency_pct",
                 "heap_allocated_kbytes",
                 "heap_active_kbytes",
                 "client_connections_opened",
