@@ -1,4 +1,4 @@
-name: Unit Test
+name: Tests
 on:
   push:
     branches: [actionsHub, master, test-ready, "bugfix-*"]
@@ -24,7 +24,6 @@ jobs:
           make
       - name: Tests with coverage report
         env:
-          # ASADM_TEST_BUNDLE: true
           FEATKEY: ${{ secrets.TEST_FEAT_KEY }}
         run: |
           pipenv run bash -c "make coverage"
