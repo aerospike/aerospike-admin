@@ -57,8 +57,13 @@ class TestCollectinfo(asynctest.TestCase):
             [
                 "uptime",
                 "time_since_rebalance",
+                "system_total_cpu_pct",
+                "system_user_cpu_pct",
+                "system_kernel_cpu_pct",
                 "system_free_mem_kbytes",
+                "system_free_mem_pct",
                 "system_thp_mem_kbytes",
+                "process_cpu_pct",
                 "info_queue",
                 "info_complete",
                 "heartbeat_received_foreign",
@@ -67,7 +72,6 @@ class TestCollectinfo(asynctest.TestCase):
                 "heap_allocated_kbytes",
                 "heap_active_kbytes",
                 "client_connections_opened",
-                "client_connections_closed",
                 "client_connections_closed",
                 "client_connections",
             ],
@@ -166,7 +170,7 @@ class TestCollectinfo(asynctest.TestCase):
         query = lib.CLIENT.query(lib.NAMESPACE, set_)
         query.foreach(record_set)
         time.sleep(60)
-        # time.sleep(300000)
+        time.sleep(300000)
 
         collectinfo_cmd = "collectinfo --output-prefix asadm_test_"
         live_mode_cmds = cls.get_cmds()
