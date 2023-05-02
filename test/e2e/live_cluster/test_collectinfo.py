@@ -58,6 +58,7 @@ class TestCollectinfo(asynctest.TestCase):
                 "uptime",
                 "time_since_rebalance",
                 "system_free_mem_kbytes",
+                "system_thp_mem_kbytes",
                 "info_queue",
                 "info_complete",
                 "heartbeat_received_foreign",
@@ -163,7 +164,7 @@ class TestCollectinfo(asynctest.TestCase):
 
         query = lib.CLIENT.query(lib.NAMESPACE, set_)
         query.foreach(record_set)
-        time.sleep(20)
+        time.sleep(60)
         # time.sleep(300000)
 
         collectinfo_cmd = "collectinfo --output-prefix asadm_test_"

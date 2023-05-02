@@ -110,7 +110,7 @@ class TableRenderTests(unittest.TestCase):
         lib.populate_db("no-error-test")
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
         lib.upload_udf("metadata.lua", TEST_UDF)
-        time.sleep(20)
+        time.sleep(60)
         cls.collectinfo_cp = util.run_asadm(
             "-h {} -e '{}' -Uadmin -Padmin".format(
                 lib.SERVER_IP, "collectinfo --output-prefix asadm_test_"
