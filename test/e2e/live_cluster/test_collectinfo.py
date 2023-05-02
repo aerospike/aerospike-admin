@@ -170,7 +170,7 @@ class TestCollectinfo(asynctest.TestCase):
         query = lib.CLIENT.query(lib.NAMESPACE, set_)
         query.foreach(record_set)
         time.sleep(60)
-        time.sleep(300000)
+        # time.sleep(300000)
 
         collectinfo_cmd = "collectinfo --output-prefix asadm_test_"
         live_mode_cmds = cls.get_cmds()
