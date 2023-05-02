@@ -74,9 +74,9 @@ init:
 	pipenv check
 	pipenv graph
 
-UNIT_TEST_CMD=pytest test/unit
-E2E_TEST_CMD=pytest test/e2e/live_cluster
-COVERAGE_CONF=tox.ini
+UNIT_TEST_CMD=pytest --disable-warnings test/unit
+E2E_TEST_CMD=pytest --disable-warnings test/e2e/live_cluster
+COVERAGE_CONF=$(SOURCE_ROOT)/tox.ini
 
 .PHONY: unit
 unit:
