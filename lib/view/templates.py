@@ -1984,7 +1984,7 @@ show_jobs = Sheet(
     from_source=("data", "node_names", "node_ids"),
     for_each="data",
     group_by=("Namespace", "Module", "Type"),
-    order_by=("Progress%", "Time Since Done"),
+    order_by=("Progress%", "Node"),
     default_style=SheetStyle.rows,
 )
 
