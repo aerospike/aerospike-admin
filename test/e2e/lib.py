@@ -289,6 +289,12 @@ def start(do_reset=True):
                     str(index - 1),
                 )
                 print("running in docker: %s" % cmd)
+                try:
+                    container = DOCKER_CLIENT.containers.get("aerospike-%d" % (index))
+                    container.remove(force=True)
+                except:
+                    pass
+
                 container = DOCKER_CLIENT.containers.run(
                     "aerospike/aerospike-server-enterprise:6.2.0.8",
                     command=cmd,
@@ -306,6 +312,7 @@ def start(do_reset=True):
                     },
                     name="aerospike-%d" % (index),
                 )
+
                 NODES[index - 1] = container
                 if index == 1:
                     container.reload()

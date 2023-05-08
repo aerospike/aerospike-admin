@@ -15,6 +15,7 @@
 import json
 import re
 import time
+from typing import Any, Callable
 import unittest
 
 from parameterized import parameterized
@@ -32,26 +33,21 @@ end
 class TestCollectinfo(asynctest.TestCase):
     # Formate: (cmd to run, [keys to ignore when comparing collectinfo vs live mode])
     CMDS = [
-        ("info network", ["Uptime", "Client Conns"]),
-        ("info namespace object", []),
-        ("info namespace usage", []),
-        ("info set", []),
-        ("info xdr", ["Lag (hh:mm:ss)"]),
-        ("info sindex", []),
-        ("show config namespace", []),
-        ("show config network", []),
-        ("show config security", []),
-        ("show config service", []),
-        ("show config dc", []),
-        ("show config xdr dc", []),
-        ("show config xdr filter", []),
-        ("show config xdr namespace", []),
-        (
-            "show statistics namespace",
-            [
-                "current_time",
-            ],
-        ),
+        ("info network", ["Uptime", "Client Conns"], None),
+        ("info namespace object", [], None),
+        ("info namespace usage", [], None),
+        ("info set", [], None),
+        ("info xdr", ["Lag (hh:mm:ss)"], None),
+        ("info sindex", [], None),
+        ("show config namespace", [], None),
+        ("show config network", [], None),
+        ("show config security", [], None),
+        ("show config service", [], None),
+        ("show config dc", [], None),
+        ("show config xdr dc", [], None),
+        ("show config xdr filter", [], None),
+        ("show config xdr namespace", [], None),
+        ("show statistics namespace", ["current_time"], None),
         (
             "show statistics service",
             [
@@ -75,27 +71,32 @@ class TestCollectinfo(asynctest.TestCase):
                 "client_connections_closed",
                 "client_connections",
             ],
+            None,
         ),
-        ("show statistics sindex", []),
-        ("show statistics sets", []),
-        ("show statistics bins", []),
-        ("show statistics dc", ["retry_no_node", "lag", "lap_us"]),
-        ("show statistics xdr dc", ["retry_no_node", "lag", "lap_us"]),
-        ("show statistics xdr namespace", ["retry_no_node", "lag"]),
-        ("show latencies -v -e 1 -b 17", []),
-        ("show distribution time_to_live", []),
-        # "show distribution object_size", # TODO: Fix differences between two outputs
-        ("show pmap", []),
-        ("show best-practices", []),
-        ("show jobs queries", ["Time Since Done"]),
-        ("show racks", []),
-        ("show roster", []),
-        ("show roles", []),
-        ("show users", ["Connections"]),
-        ("show udfs", []),
-        ("show sindex", []),
-        ("health", []),
+        ("show statistics sindex", [], None),
+        ("show statistics sets", [], None),
+        ("show statistics bins", [], None),
+        ("show statistics dc", ["retry_no_node", "lag", "lap_us"], None),
+        ("show statistics xdr dc", ["retry_no_node", "lag", "lap_us"], None),
+        ("show statistics xdr namespace", ["retry_no_node", "lag"], None),
+        ("show latencies -v -e 1 -b 17", [], None),
+        ("show distribution time_to_live", [], None),
+        ("show pmap", [], None),
+        ("show best-practices", [], None),
+        (
+            "show jobs queries",
+            ["Time Since Done"],
+            lambda x: sorted(x, key=lambda x: x["Transaction ID"]["raw"]),
+        ),  # Sort the records
+        ("show racks", [], None),
+        ("show roster", [], None),
+        ("show roles", [], None),
+        ("show users", ["Connections"], None),
+        ("show udfs", [], None),
+        ("show sindex", [], None),
+        ("health", [], None),
     ]
+
     maxDiff = None
 
     @classmethod
@@ -225,14 +226,23 @@ class TestCollectinfo(asynctest.TestCase):
     def tearDownClass(cls) -> None:
         lib.stop()
 
-    def assertTableDictEqual(self, d1, d2, ignore_keys=None):
+    def assertTableDictEqual(
+        self,
+        d1,
+        d2,
+        ignore_keys=None,
+        transform_recs: Callable[[list[Any]], list[Any]] | None = None,
+    ):
         if isinstance(d1, str) or isinstance(d1, int) or isinstance(d1, float):
             return d1 == d2
         if isinstance(d1, list) and isinstance(d2, list):
             if len(d1) != len(d2):
                 return False
+
             for idx, _ in enumerate(d1):
-                if not self.assertTableDictEqual(d1[idx], d2[idx], ignore_keys):
+                if not self.assertTableDictEqual(
+                    d1[idx], d2[idx], ignore_keys, transform_recs
+                ):
                     return False
                 return True
 
@@ -246,16 +256,27 @@ class TestCollectinfo(asynctest.TestCase):
 
         for key in d1:
             if not ignore_keys or key not in ignore_keys:
-                if not self.assertTableDictEqual(d1[key], d2[key], ignore_keys):
+                if key == "records" and transform_recs:
+                    d1[key] = transform_recs(d1[key])
+                    d2[key] = transform_recs(d2[key])
+                if not self.assertTableDictEqual(
+                    d1[key], d2[key], ignore_keys, transform_recs
+                ):
                     return False
 
         return True
 
     @parameterized.expand(CMDS)
-    def test_compare_collectinfo_to_live(self, cmd: str, ignore_keys: list[str] | None):
+    def test_compare_collectinfo_to_live(
+        self,
+        cmd: str,
+        ignore_keys: list[str] | None,
+        transform_recs: Callable[[list[Any]], list[Any]] | None = None,
+    ):
         if not self.assertTableDictEqual(
             self.live_mode_map[cmd],
             self.collectinfo_map[cmd],
             ignore_keys=ignore_keys,
+            transform_recs=transform_recs,
         ):
             self.assertEqual(self.live_mode_map[cmd], self.collectinfo_map[cmd])
