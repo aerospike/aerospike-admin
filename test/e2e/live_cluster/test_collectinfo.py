@@ -86,7 +86,9 @@ class TestCollectinfo(asynctest.TestCase):
         (
             "show jobs queries",
             ["Time Since Done"],
-            lambda x: sorted(x, key=lambda x: x["Transaction ID"]["raw"]),
+            lambda x: sorted(
+                x, key=lambda x: x["Node"]["raw"]
+            ),  # Only works if a single query has be created
         ),  # Sort the records
         ("show racks", [], None),
         ("show roster", [], None),
