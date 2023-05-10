@@ -2110,7 +2110,7 @@ class Node(AsyncObject):
             if time_units is None:
                 time_units = hist_data.pop(0)
                 columns = ["ops/sec"] + [
-                    col + unit_mapping[time_units] for col in list(columns)
+                    (col + unit_mapping[time_units]).encode() for col in list(columns)
                 ]
             else:
                 hist_data.pop(0)

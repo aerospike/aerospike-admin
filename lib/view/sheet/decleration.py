@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections import Counter
+from functools import reduce
 import logging
 from operator import itemgetter
 from typing import Any, Callable, Generic, Optional, TypeVar, Union
@@ -380,12 +381,35 @@ class Aggregators(object):
         )
 
 
-class BaseProjector(object):
-    field_type = None  # required override
-    source = None  # optional override
-    keys = None  # optional override
+class Projector(object):
+    def __init__(self, field_type: str):
+        """
+        Arguments:
+        source -- Name of the source to project from.
+        """
+        self.field_type = field_type
 
-    def __init__(self, source, *keys, **kwargs):
+    def __call__(self, sheet, sources):
+        try:
+            result = self.do_project(sheet, sources)
+        except (NoEntryException, ErrorEntryException):
+            raise
+        except Exception as e:
+            # XXX - A debug log may be useful.
+            # print 'debug - ', e, self.source, self.source
+            raise ErrorEntryException("unexpected error occurred: {}".format(e))
+
+        return result
+
+    def do_project(self, sheet, sources):
+        raise NotImplementedError("override do_project")
+
+    def get_sources(self):
+        raise NotImplementedError("override get_sources")
+
+
+class BaseProjector(Projector):
+    def __init__(self, field_type: str, source: str, *keys, **kwargs):
         """
         Arguments:
         source -- Name of the source to project from.
@@ -403,30 +427,12 @@ class BaseProjector(object):
                         source is not used in a 'for_each' then the sheet will
                         assert during render.
         """
+        super().__init__(field_type)
         self.source = source
         self.keys = None if keys[0] is None else tuple(keys)
         self.for_each_key = kwargs.get("for_each_key", None)
 
-    def __call__(self, sheet, sources):
-        try:
-            result = self.do_project(sheet, sources)
-        except (NoEntryException, ErrorEntryException):
-            raise
-        except Exception as e:
-            # XXX - A debug log may be useful.
-            # print 'debug - ', e, self.source, self.source
-            logger.debug("Problem projecting keys %s, exc: %s", self.keys, e)
-            raise ErrorEntryException("unexpected error occurred: {}".format(e))
-
-        if result is None:
-            raise NoEntryException("No entry found for source {}".format(self.source))
-
-        return result
-
-    def do_project(self, sheet, sources):
-        raise NotImplementedError("override do_project")
-
-    def project_raw(self, sheet, sources, ignore_exception=False):
+    def do_project(self, sheet, sources, ignore_exception=False):
         row = source_lookup(sources, self.source)
 
         if self.source in sheet.for_each:
@@ -463,31 +469,57 @@ class BaseProjector(object):
                     "{} does not contain any key in {}".format(self.source, self.keys)
                 )
 
+    def get_sources(self) -> set[str]:
+        return set([self.source])
+
+    def __call__(self, sheet, sources):
+        try:
+            result = super().__call__(sheet, sources)
+        except (NoEntryException, ErrorEntryException):
+            raise
+        except Exception as e:
+            # XXX - A debug log may be useful.
+            # print 'debug - ', e, self.source, self.source
+            logger.debug("Problem projecting keys %s, exc: %s", self.keys, e)
+            raise
+
+        if result is None:
+            raise NoEntryException("No entry found for source {}".format(self.source))
+
+        return result
+
 
 class Projectors(object):
     class Identity(BaseProjector):
-        field_type = FieldType.undefined
+        def __init__(self, source: str, *keys, **kwargs):
+            super().__init__(FieldType.undefined, source, *keys, **kwargs)
 
         def do_project(self, sheet, sources):
             try:
-                row = self.project_raw(sheet, sources)
+                row = super().do_project(sheet, sources)
             except ErrorEntryException as e:
                 row = e.exc
 
             return row
 
-    class String(BaseProjector):
-        field_type = FieldType.string
+    class _String(BaseProjector):
+        def __init__(self, field_type: str, source: str, *keys, **kwargs):
+            super().__init__(field_type, source, *keys, **kwargs)
 
         def do_project(self, sheet, sources):
             """
             Arguments:
             source -- A set of sources to project a string from.
             """
-            return str(self.project_raw(sheet, sources))
+            return str(super().do_project(sheet, sources))
 
-    class Boolean(String):
-        field_type = FieldType.boolean
+    class String(_String):
+        def __init__(self, source: str, *keys, **kwargs):
+            super().__init__(FieldType.string, source, *keys, **kwargs)
+
+    class Boolean(_String):
+        def __init__(self, source: str, *keys, **kwargs):
+            super().__init__(FieldType.boolean, source, *keys, **kwargs)
 
         def do_project(self, sheet, sources):
             """
@@ -501,8 +533,9 @@ class Projectors(object):
 
             return True if value else False
 
-    class Float(String):
-        field_type = FieldType.number
+    class Float(_String):
+        def __init__(self, source: str, *keys, **kwargs):
+            super().__init__(FieldType.number, source, *keys, **kwargs)
 
         def do_project(self, sheet, sources):
             """
@@ -516,8 +549,9 @@ class Projectors(object):
             except ValueError:
                 return value
 
-    class Number(String):
-        field_type = FieldType.number
+    class Number(_String):
+        def __init__(self, source: str, *keys, **kwargs):
+            super().__init__(FieldType.number, source, *keys, **kwargs)
 
         def do_project(self, sheet, sources) -> Any:
             """
@@ -536,9 +570,7 @@ class Projectors(object):
 
                 return value
 
-    class Percent(Number):
-        field_type = FieldType.number
-
+    class Percent(_String):
         def __init__(self, source, *keys, **kwargs):
             """
             Arguments:
@@ -548,7 +580,7 @@ class Projectors(object):
             invert -- False by default, if True will return 100 - value.
             """
 
-            super().__init__(source, *keys, **kwargs)
+            super().__init__(FieldType.number, source, *keys, **kwargs)
             self.invert = kwargs.get("invert", False)
 
         def do_project(self, sheet, sources):
@@ -562,16 +594,40 @@ class Projectors(object):
             value = super().do_project(sheet, sources)
             return value if not self.invert else 100 - value
 
-    class Sum(BaseProjector):
-        field_type = FieldType.number
+    class Exception(BaseProjector):
+        def __init__(self, source, *keys, **kwargs):
+            """
+            Arguments:
+            See 'BaseProjector'
 
-        def __init__(self, *field_projectors):
+            Keyword Arguments:
+            filter_exc -- List of exception types to convert to strings.
+            """
+
+            super().__init__(FieldType.undefined, source, *keys, **kwargs)
+            self.filter_exc = kwargs.get("filter_exc", [])
+
+        def do_project(self, sheet, sources):
+            row = super().do_project(sheet, sources, ignore_exception=True)
+            for exc_type in self.filter_exc:
+                if isinstance(row, exc_type):
+                    return str(row)
+
+            if isinstance(row, Exception):
+                raise ErrorEntryException(row, "Error occurred fetching row")
+
+            return row
+
+    class Sum(Projector):
+        def __init__(self, *field_projectors: Projector):
             """
             Arguments:
             field_projectors  -- Projectors to be summed.
             """
+            super().__init__(FieldType.number)
             self.field_projectors = field_projectors
-            self.sources = set((field_fn.source for field_fn in field_projectors))
+            # sources = [(field_fn.get_sources() for field_fn in field_projectors)]
+            # self.sources = reduce(lambda acc, elem: acc.union(elem), sources, set())
 
         def do_project(self, sheet, sources):
             """
@@ -585,7 +641,11 @@ class Projectors(object):
 
             return result
 
-    class Div(BaseProjector):
+        def get_sources(self):
+            sources = [field_fn.get_sources() for field_fn in self.field_projectors]
+            return reduce(lambda acc, elem: acc.union(elem), sources, set())
+
+    class Div(Projector):
         field_type = FieldType.number
 
         def __init__(self, numerator_projector, denominator_projector):
@@ -598,29 +658,40 @@ class Projectors(object):
             """
             self.numerator_projector = numerator_projector
             self.denominator_projector = denominator_projector
-            self.sources = set([])
+            # self.sources = set([])
 
-            for field_fn in [numerator_projector, denominator_projector]:
-                if field_fn.source is None:
-                    source = field_fn.sources
-                else:
-                    source = set([field_fn.source])
-                self.sources = self.sources.union(source)
+            # for field_fn in [numerator_projector, denominator_projector]:
+            #     if field_fn.source is None:
+            #         source = field_fn.sources
+            #     else:
+            #         source = set([field_fn.source])
+            #     self.sources = self.sources.union(source)
 
         def do_project(self, sheet, sources):
             """
             Arguments:
             source -- A set of sources to project a sum of fields.
             """
+            num = self.numerator_projector(sheet, sources)
+            den = self.denominator_projector(sheet, sources)
 
-            result = self.numerator_projector(
-                sheet, sources
-            ) / self.denominator_projector(sheet, sources)
+            if den == 0:
+                return 0
 
-            return result
+            return num / den
+
+        def get_sources(self):
+            sources = [
+                field_fn.get_sources()
+                for field_fn in [
+                    self.numerator_projector,
+                    self.denominator_projector,
+                ]
+            ]
+            return reduce(lambda acc, elem: acc.union(elem), sources, set())
 
     class Any(BaseProjector):
-        def __init__(self, field_type: str, *field_projectors: BaseProjector):
+        def __init__(self, field_type: str, *field_projectors: Projector):
             """
             Arguments:
             field_type -- The 'FieldType' for this field.
@@ -628,14 +699,6 @@ class Projectors(object):
                                 which is useful because non-existent keys cause failure.
             """
             self.field_type = field_type
-            self.sources = set()
-            for field_fn in field_projectors:
-                if field_fn.source is None:
-                    source = field_fn.sources
-                else:
-                    source = set([field_fn.source])
-                self.sources = self.sources.union(source)
-
             self.field_projectors = field_projectors
 
         def do_project(self, sheet, sources):
@@ -651,8 +714,12 @@ class Projectors(object):
                 except NoEntryException:
                     pass
 
-    class Func(BaseProjector):
-        def __init__(self, field_type: str, func, *field_projectors):
+        def get_sources(self):
+            sources = [field_fn.get_sources() for field_fn in self.field_projectors]
+            return reduce(lambda acc, elem: acc.union(elem), sources, set())
+
+    class Func(Projector):
+        def __init__(self, field_type: str, func, *field_projectors: Projector):
             """
             Arguments:
             field_type -- The 'FieldType' for this field.
@@ -661,7 +728,6 @@ class Projectors(object):
                                 to func.
             """
             self.field_type = field_type
-            self.sources = set((field_fn.source for field_fn in field_projectors))
             self.func = func
             self.field_projectors = field_projectors
 
@@ -681,36 +747,16 @@ class Projectors(object):
 
             return self.func(*values)
 
-    class Exception(BaseProjector):
-        def __init__(self, source, *keys, **kwargs):
-            """
-            Arguments:
-            See 'BaseProjector'
-
-            Keyword Arguments:
-            filter_exc -- List of exception types to convert to strings.
-            """
-
-            super().__init__(source, *keys, **kwargs)
-            self.filter_exc = kwargs.get("filter_exc", [])
-
-        def do_project(self, sheet, sources):
-            row = self.project_raw(sheet, sources, ignore_exception=True)
-            for exc_type in self.filter_exc:
-                if isinstance(row, exc_type):
-                    return str(row)
-
-            if isinstance(row, Exception):
-                raise ErrorEntryException(row, "Error occurred fetching row")
-
-            return row
+        def get_sources(self):
+            sources = [field_fn.get_sources() for field_fn in self.field_projectors]
+            return reduce(lambda acc, elem: acc.union(elem), sources, set())
 
 
 class Field(object):
     def __init__(
         self,
         title: str,
-        projector: BaseProjector,
+        projector: Projector,
         converter: Optional[ConverterType] = None,
         formatters: Optional[tuple[FormatterType, ...]] = None,
         aggregator: Optional[Aggregator] = None,
@@ -954,9 +1000,9 @@ class Sheet(object):
     def _init_sanity_check(self):
         # Ensure 'group_bys' and 'sort_bys' are in 'fields'.
         # NOTE - currently cannot group_by/sort_by a member of a Subgroup.
-        static_fields = [
-            field for field in self.fields if not isinstance(field, DynamicFields)
-        ]
+        static_fields = tuple(
+            [field for field in self.fields if not isinstance(field, DynamicFields)]
+        )
         field_set = set(field.key for field in static_fields)
 
         if len(field_set) != len(static_fields):
@@ -998,7 +1044,7 @@ class Sheet(object):
 
         seen_sources_set = set()
 
-        def populate_seen_sources(fields):
+        def populate_seen_sources(fields: tuple[Field | Subgroup]):
             for field in fields:
                 if isinstance(field, Subgroup):
                     return populate_seen_sources(field.fields)
@@ -1007,10 +1053,7 @@ class Sheet(object):
                     field, DynamicFields
                 ), "DynamicFields cannot be members of Subgroups."
 
-                try:
-                    sources = field.projector.sources
-                except AttributeError:
-                    sources = set([field.projector.source])
+                sources = field.projector.get_sources()
 
                 assert sources - sources_set == set(), "{} not subset of {}".format(
                     sources, sources_set

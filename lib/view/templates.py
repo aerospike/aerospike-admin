@@ -14,8 +14,13 @@
 
 from datetime import datetime
 import itertools
-from typing import Iterable, Union
-from lib.view.sheet.decleration import ComplexAggregator, EntryData, FieldSorter
+from typing import Iterable, Literal, Union
+from lib.view.sheet.decleration import (
+    ComplexAggregator,
+    EntryData,
+    NoEntryException,
+    FieldSorter,
+)
 from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoError
 from lib.view.sheet import (
     Aggregators,
@@ -71,14 +76,14 @@ def project_xdr_req_shipped_errors(s, esc, ess):
 
 def _ignore_zero(num: int):
     if num == 0:
-        return None
+        raise NoEntryException()
 
     return num
 
 
 def _ignore_null(s: str):
     if s.lower() == "null":
-        return None
+        raise NoEntryException()
 
     return s
 
@@ -638,11 +643,7 @@ info_set_sheet = Sheet(
                                 "set_stats", "device_data_bytes", "n-bytes-device"
                             ),
                         ),
-                        Projectors.Func(
-                            FieldType.number,
-                            _ignore_zero,
-                            Projectors.Number("set_stats", "stop-writes-size"),
-                        ),
+                        Projectors.Number("set_stats", "stop-writes-size"),
                     ),
                     converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
@@ -914,11 +915,7 @@ info_sindex_sheet = Sheet(
                 FieldType.number,
                 Projectors.Div(
                     Projectors.Number("sindex_stats", "entries"),
-                    Projectors.Func(
-                        FieldType.number,
-                        _ignore_zero,
-                        Projectors.Number("sindex_stats", "entries_per_bval"),
-                    ),
+                    Projectors.Number("sindex_stats", "entries_per_bval"),
                 ),
                 # removed 6.0
                 Projectors.Number("sindex_stats", "keys"),
@@ -948,13 +945,7 @@ info_sindex_sheet = Sheet(
                         ),  # added 6.1
                         Projectors.Div(
                             Projectors.Number("sindex_stats", "entries"),
-                            Projectors.Func(
-                                FieldType.number,
-                                _ignore_zero,
-                                Projectors.Number(
-                                    "sindex_stats", "keys"
-                                ),  # removed 6.0
-                            ),
+                            Projectors.Number("sindex_stats", "keys"),  # removed 6.0
                         ),
                     ),
                     converter=Converters.scientific_units,
@@ -1075,7 +1066,7 @@ show_distribution_sheet = Sheet(
 def extract_value_from_dict(key: str):
     def extract_value(dict):
         if key not in dict:
-            return None
+            raise NoEntryException()
 
         return dict[key]
 
@@ -1799,10 +1790,6 @@ show_users = Sheet(
             Converters.list_to_comma_sep_str,
             align=FieldAlignment.right,
         ),
-        Field(
-            "Connections",
-            Projectors.String("data", "connections"),
-        ),
         Subgroup(
             "Read",
             (
@@ -1814,34 +1801,6 @@ show_users = Sheet(
                         Projectors.Identity("data", "read-info"),
                     ),
                 ),
-                Field(
-                    "Single Record TPS",
-                    Projectors.Func(
-                        FieldType.undefined,
-                        extract_value_from_dict("single-record-tps"),
-                        Projectors.Identity("data", "read-info"),
-                    ),
-                ),
-                # TODO: Support for Subgroups to have Subgroups to have Scan/Query be a
-                # subgroup of Write
-                Field(
-                    "Scan/Query Limited RPS",
-                    Projectors.Func(
-                        FieldType.undefined,
-                        extract_value_from_dict("scan-query-rps-limited"),
-                        Projectors.Identity("data", "read-info"),
-                    ),
-                ),
-                Field(
-                    "Scan/Query Limitless",
-                    Projectors.Func(
-                        FieldType.undefined,
-                        extract_value_from_dict("scan-query-limitless"),
-                        Projectors.Identity("data", "read-info"),
-                    ),
-                ),
-                #     ),
-                # ),
             ),
         ),
         Subgroup(
@@ -1855,38 +1814,135 @@ show_users = Sheet(
                         Projectors.Identity("data", "write-info"),
                     ),
                 ),
-                Field(
-                    "Single Record TPS",
-                    Projectors.Func(
-                        FieldType.undefined,
-                        extract_value_from_dict("single-record-tps"),
-                        Projectors.Identity("data", "write-info"),
-                    ),
-                ),
-                # TODO: Support for Subgroups to have Subgroups to have Scan/Query be a
-                # subgroup of Write
-                Field(
-                    "Scan/Query Limited RPS",
-                    Projectors.Func(
-                        FieldType.undefined,
-                        extract_value_from_dict("scan-query-rps-limited"),
-                        Projectors.Identity("data", "write-info"),
-                    ),
-                ),
-                Field(
-                    "Scan/Query Limitless",
-                    Projectors.Func(
-                        FieldType.undefined,
-                        extract_value_from_dict("scan-query-limitless"),
-                        Projectors.Identity("data", "write-info"),
-                    ),
-                ),
             ),
         ),
     ),
     from_source="data",
     for_each="data",
     order_by=FieldSorter("User"),
+)
+
+
+def create_quota_weighted_avg(type: str):
+    """
+    A simple averaging would work fine since all nodes likely have the same quota. Although,
+    there is a slight chance they do not.
+    """
+
+    def usage_weighted_avg(edatas: list[EntryData]):
+        pcts: map[float] = map(lambda edata: edata.value, edatas)
+        weights: list[float] = list(
+            map(lambda edata: edata.record[type]["Quota"], edatas)
+        )
+
+        if not weights:
+            return None
+
+        return weighted_avg(pcts, weights)
+
+    return usage_weighted_avg
+
+
+def create_quota_tps_subgroup(
+    type: Literal["Read"] | Literal["Write"],
+    key: Literal["read-info"] | Literal["write-info"],
+):
+    return Subgroup(
+        type,
+        (
+            Field(
+                "Quota",
+                Projectors.Func(
+                    FieldType.number,
+                    extract_value_from_dict("quota"),
+                    Projectors.Identity("data", key),
+                ),
+                converter=Converters.scientific_units,
+                aggregator=Aggregators.sum(converter=Converters.scientific_units),
+            ),
+            Field(
+                "Usage%",
+                Projectors.Div(
+                    Projectors.Sum(
+                        Projectors.Func(
+                            FieldType.number,
+                            extract_value_from_dict("single-record-tps"),
+                            Projectors.Identity("data", key),
+                        ),
+                        Projectors.Func(
+                            FieldType.number,
+                            extract_value_from_dict("scan-query-rps-limited"),
+                            Projectors.Identity("data", key),
+                        ),
+                    ),
+                    Projectors.Func(
+                        FieldType.number,
+                        lambda x: _ignore_zero(extract_value_from_dict("quota")(x)),
+                        Projectors.Identity("data", key),
+                    ),
+                ),
+                converter=Converters.ratio_to_pct,
+                aggregator=ComplexAggregator(
+                    create_quota_weighted_avg(type), converter=Converters.ratio_to_pct
+                ),
+                formatters=(
+                    Formatters.red_alert(lambda edata: edata.value * 100 >= 90.0),
+                    Formatters.yellow_alert(lambda edata: edata.value * 100 >= 75.0),
+                ),
+            ),
+            Field(
+                "Single Record TPS",
+                Projectors.Func(
+                    FieldType.undefined,
+                    extract_value_from_dict("single-record-tps"),
+                    Projectors.Identity("data", key),
+                ),
+                converter=Converters.scientific_units,
+                aggregator=Aggregators.sum(converter=Converters.scientific_units),
+            ),
+            # TODO: Support for Subgroups to have Subgroups to have Scan/Query be a
+            # subgroup of Write
+            Field(
+                "Scan/Query Limited RPS",
+                Projectors.Func(
+                    FieldType.undefined,
+                    extract_value_from_dict("scan-query-rps-limited"),
+                    Projectors.Identity("data", key),
+                ),
+                converter=Converters.scientific_units,
+                aggregator=Aggregators.sum(converter=Converters.scientific_units),
+            ),
+            Field(
+                "Scan/Query Limitless",
+                Projectors.Func(
+                    FieldType.undefined,
+                    extract_value_from_dict("scan-query-limitless"),
+                    Projectors.Identity("data", key),
+                ),
+                converter=Converters.scientific_units,
+                aggregator=Aggregators.sum(converter=Converters.scientific_units),
+            ),
+        ),
+    )
+
+
+show_users_stats = Sheet(
+    (
+        Field("User", Projectors.String("data", None, for_each_key=True)),
+        node_field,
+        Field(
+            "Connections",
+            Projectors.Number("data", "connections"),
+            converter=Converters.scientific_units,
+            aggregator=Aggregators.sum(converter=Converters.scientific_units),
+        ),
+        create_quota_tps_subgroup("Read", "read-info"),
+        create_quota_tps_subgroup("Write", "write-info"),
+    ),
+    from_source=("data", "node_names"),
+    for_each="data",
+    order_by=("User", "Node"),
+    group_by="User",
 )
 
 show_roles = Sheet(
