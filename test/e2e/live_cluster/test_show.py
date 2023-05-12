@@ -1184,7 +1184,7 @@ end
             user="admin", password="admin"
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
-        await util.capture_stdout_and_stderr_async(
+        await util.capture_stdout(
             self.rc.execute(["manage", "udfs", "add", "filler_.lua", "path", self.path])
         )
         time.sleep(2)

@@ -113,58 +113,6 @@ def capture_stderr(func, *args, **kwargs):
     return output
 
 
-def capture_stdout_and_stderr(func, *args, **kwargs):
-    sys.stdout.flush()
-    stdout_old = sys.stdout
-    stdout_capturer = io.StringIO()
-    sys.stdout = stdout_capturer
-
-    sys.stderr.flush()
-    stderr_old = sys.stderr
-    stderr_capturer = io.StringIO()
-    sys.stderr = stderr_capturer
-
-    func(*args, **kwargs)
-
-    stdout_output = stdout_capturer.getvalue()
-    sys.stdout = stdout_old
-
-    stderr_output = stderr_capturer.getvalue()
-    sys.stderr = stderr_old
-
-    return stdout_output, stderr_output
-
-
-async def capture_stdout_and_stderr_async(func):
-    stdout_capturer = io.StringIO()
-    stderr_capturer = io.StringIO()
-    # with contextlib.redirect_stdout(stdout_capturer):
-    with contextlib.redirect_stderr(stderr_capturer):
-        await func
-
-    stdout_capturer.flush()
-    stderr_capturer.flush()
-
-    return stdout_capturer.getvalue(), stderr_capturer.getvalue()
-
-    sys.stdout.flush()
-    stdout_old = sys.stdout
-    sys.stdout = stdout_capturer
-
-    sys.stderr.flush()
-    stderr_old = sys.stderr
-    sys.stderr = stderr_capturer
-
-    stdout_output = stdout_capturer.getvalue()
-    sys.stdout = stdout_old
-
-    stderr_output = stderr_capturer.getvalue()
-    print("test", stderr_output)
-    sys.stderr = stderr_old
-
-    return stdout_output, stderr_output
-
-
 def compile_likes(likes):
     if likes is None:
         likes = []

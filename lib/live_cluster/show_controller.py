@@ -460,15 +460,7 @@ class ShowConfigController(LiveClusterCommandController):
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 **self.mods,
-                # self.view.show_config,
-                # "%s DC Configuration" % (dc),
-                # configs,
-                # self.cluster,
-                # title_every_nth=title_every_nth,
-                # flip_output=flip_output,
-                # **self.mods,
             )
-            # for dc, configs in dc_configs.items()
         ]
 
         futures.append(
