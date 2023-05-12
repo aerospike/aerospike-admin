@@ -1185,8 +1185,9 @@ end
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
         await util.capture_stdout(
-            self.rc.execute(["manage", "udfs", "add", "filler_.lua", "path", self.path])
+            self.rc.execute, ["manage", "udfs", "add", "filler_.lua", "path", self.path]
         )
+
         time.sleep(2)
 
     def tearDown(self):
