@@ -1666,7 +1666,7 @@ def _create_stop_writes_entry(
 
 
 @staticmethod
-def _determine_stop_writes(
+def _is_stop_writes_cause(
     usage: int | float, threshold: int | float, stop_writes: str | None = None
 ):
     if threshold == 0:
@@ -1674,8 +1674,7 @@ def _determine_stop_writes(
 
     return (
         True
-        if int(usage) >= int(threshold)
-        and (stop_writes is None or stop_writes.lower() == "true")
+        if usage >= threshold and (stop_writes is None or stop_writes.lower() == "true")
         else False
     )
 
@@ -1719,7 +1718,7 @@ def _format_ns_stop_writes_metrics(
                         int(cluster_clock_skew_stop_writes_sec) * 1000
                     )  # convert to ms
                 use = int(usage)
-                sw = _determine_stop_writes(use, thresh, stop_writes)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
@@ -1741,7 +1740,7 @@ def _format_ns_stop_writes_metrics(
             ):
                 thresh = int(threshold)
                 use = 100 - int(system_free_mem_pct)
-                sw = _determine_stop_writes(use, thresh, stop_writes)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
@@ -1767,7 +1766,7 @@ def _format_ns_stop_writes_metrics(
             if usage is not None and threshold is not None:
                 use = int(usage)
                 thresh = int(threshold)
-                sw = _determine_stop_writes(use, thresh, stop_writes)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
@@ -1787,7 +1786,7 @@ def _format_ns_stop_writes_metrics(
             if usage is not None and threshold is not None and bytes_total is not None:
                 use = int(usage)
                 thresh = int(bytes_total) * (int(threshold) / 100)
-                sw = _determine_stop_writes(use, thresh, stop_writes)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
@@ -1807,7 +1806,7 @@ def _format_ns_stop_writes_metrics(
             if usage is not None and threshold is not None and bytes_total is not None:
                 use = int(usage)
                 thresh = int(bytes_total) * (int(threshold) / 100)
-                sw = _determine_stop_writes(use, thresh, stop_writes)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
@@ -1844,7 +1843,7 @@ def _format_set_stop_writes_metrics(
             if usage is not None and threshold is not None:
                 use = int(usage)
                 thresh = int(threshold)
-                sw = _determine_stop_writes(use, thresh)
+                sw = _is_stop_writes_cause(use, thresh)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
@@ -1864,7 +1863,7 @@ def _format_set_stop_writes_metrics(
             if usage is not None and threshold is not None:
                 use = int(usage)
                 thresh = int(threshold)
-                sw = _determine_stop_writes(use, thresh)
+                sw = _is_stop_writes_cause(use, thresh)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,

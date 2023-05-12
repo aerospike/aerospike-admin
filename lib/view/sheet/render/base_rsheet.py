@@ -513,9 +513,7 @@ class BaseRSheet(object):
 
         for projections_group in projections_groups.values():
             for order_by in order_bys[::-1]:
-                # list.sort(projections_group, key=itemgetter(order_by))
                 order_by.sort(projections_group)
-                # projections_group.sort()
 
         return projections_groups
 
