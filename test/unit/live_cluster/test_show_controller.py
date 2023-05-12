@@ -384,7 +384,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
 
         for ns_set_sindex in stats:
             self.view_mock.show_stats.assert_any_call(
-                "{} Sindex Statistics".format(ns_set_sindex),
+                "{} SIndex Statistics".format(ns_set_sindex),
                 stats[ns_set_sindex],
                 self.cluster_mock,
                 show_total=True,

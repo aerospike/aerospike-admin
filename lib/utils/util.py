@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import contextlib
 import copy
 import functools
 import inspect
@@ -32,6 +33,7 @@ from typing import (
     Generic,
     Iterable,
     Literal,
+    Optional,
     Tuple,
     Type,
     TypeVar,
@@ -111,50 +113,6 @@ def capture_stderr(func, *args, **kwargs):
     return output
 
 
-def capture_stdout_and_stderr(func, *args, **kwargs):
-    sys.stdout.flush()
-    stdout_old = sys.stdout
-    stdout_capturer = io.StringIO()
-    sys.stdout = stdout_capturer
-
-    sys.stderr.flush()
-    stderr_old = sys.stderr
-    stderr_capturer = io.StringIO()
-    sys.stderr = stderr_capturer
-
-    func(*args, **kwargs)
-
-    stdout_output = stdout_capturer.getvalue()
-    sys.stdout = stdout_old
-
-    stderr_output = stderr_capturer.getvalue()
-    sys.stderr = stderr_old
-
-    return stdout_output, stderr_output
-
-
-async def capture_stdout_and_stderr_async(func, *args, **kwargs):
-    sys.stdout.flush()
-    stdout_old = sys.stdout
-    stdout_capturer = io.StringIO()
-    sys.stdout = stdout_capturer
-
-    sys.stderr.flush()
-    stderr_old = sys.stderr
-    stderr_capturer = io.StringIO()
-    sys.stderr = stderr_capturer
-
-    await func(*args, **kwargs)
-
-    stdout_output = stdout_capturer.getvalue()
-    sys.stdout = stdout_old
-
-    stderr_output = stderr_capturer.getvalue()
-    sys.stderr = stderr_old
-
-    return stdout_output, stderr_output
-
-
 def compile_likes(likes):
     if likes is None:
         likes = []
@@ -165,9 +123,7 @@ def compile_likes(likes):
     return likes
 
 
-def filter_list(
-    ilist: Iterable[str], pattern_list: list[str] | None
-) -> Iterable[str] | filter:
+def filter_list(ilist: Iterable[str], pattern_list: Optional[list[str]]):
     if not ilist or not pattern_list:
         return ilist
     likes = compile_likes(pattern_list)

@@ -451,19 +451,16 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
         futures = []
-        dc_configs = await self.getter.get_xdr_dcs(flip=True, nodes=self.nodes)
-
+        dc_configs = await self.getter.get_xdr_dcs(nodes=self.nodes)
         futures = [
             util.callable(
-                self.view.show_config,
-                "%s DC Configuration" % (dc),
-                configs,
+                self.view.show_xdr_dc_config,
+                dc_configs,
                 self.cluster,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 **self.mods,
             )
-            for dc, configs in dc_configs.items()
         ]
 
         futures.append(
@@ -878,7 +875,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         return [
             util.callable(
                 self.view.show_stats,
-                "%s Sindex Statistics" % (ns_set_sindex),
+                "%s SIndex Statistics" % (ns_set_sindex),
                 sindex_stats[ns_set_sindex],
                 self.cluster,
                 show_total=show_total,

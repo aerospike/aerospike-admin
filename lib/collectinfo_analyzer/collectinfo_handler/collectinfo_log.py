@@ -55,15 +55,25 @@ class _CollectinfoNode(object):
         self.asd_version = util.convert_edition_to_shortform(asd_version)
 
 
+NodeIP = str
+NodeFQDN = str
+NodeID = str
+NodeNamesDict = dict[NodeIP, NodeFQDN | NodeIP]
+NodeIDsDict = dict[NodeIP, NodeID]
+NodesDict = dict[NodeIP, _CollectinfoNode]
+
+
 # TODO: Make _CollectinfoSnapshot type inherit from a "re-playable" subtype which is also a subtype of Cluster
 class _CollectinfoSnapshot:
     def __init__(self, cluster_name, timestamp, cinfo_data, cinfo_file):
         self.cluster_name = cluster_name
         self.timestamp = timestamp
-        self.nodes = {}
-        self.node_names = {}
-        self.node_ids = {}
-        self.cinfo_data = self.ns_name_fault_check(cinfo_data)
+        self.nodes: NodesDict = {}
+        self.node_names: NodeNamesDict = {}
+        self.node_ids: NodeIDsDict = {}
+        self.cinfo_data: dict[str, Any] = self.ns_name_fault_check(
+            cinfo_data
+        )  # TODO define type
         self.cinfo_file = cinfo_file
         self.node_lookup = LookupDict()
         self._initialize_nodes()
@@ -147,12 +157,21 @@ class _CollectinfoSnapshot:
     def get_node_names(self, nodes=None):
         if not self.node_names:
             if self.cinfo_data:
-                node_names = self.cinfo_data.keys()
+                node_names_dict: NodeNamesDict | None = self.get_data(
+                    type="meta_data", stanza="node_names"
+                )
+
+                # "node_name" was stored in collectinfo file in asadm 2.15.0
+                if not node_names_dict:
+                    node_names = self.cinfo_data.keys()
+                    for node_name in node_names:
+                        self.node_names[node_name] = node_name
+                else:
+                    for node_ips in node_names_dict:
+                        self.node_names[node_ips] = node_names_dict[node_ips]
             else:
                 return {}
 
-            for node_name in node_names:
-                self.node_names[node_name] = node_name
         return copy.deepcopy(self.node_names)
 
     def get_node_ids(self, nodes=None):
@@ -396,9 +415,9 @@ class _CollectinfoSnapshot:
             pass
         return cluster_name
 
-    def _set_nodes(self, nodes):
+    def _set_nodes(self, nodes: NodeNamesDict):
         for node in nodes:
-            self.node_names[node] = node
+            self.node_names[node] = nodes[node]
             self.nodes[node] = _CollectinfoNode(self.timestamp, node)
             self.node_lookup[node] = node
 
@@ -415,7 +434,6 @@ class _CollectinfoSnapshot:
                 pass
 
     def _set_ip(self):
-
         for node in self.nodes:
             try:
                 self.nodes[node].set_ip(
@@ -425,7 +443,6 @@ class _CollectinfoSnapshot:
                 pass
 
     def _set_asd_build(self):
-
         for node in self.nodes:
             try:
                 self.nodes[node].set_asd_build(
@@ -435,7 +452,6 @@ class _CollectinfoSnapshot:
                 pass
 
     def _set_asd_version(self):
-
         for node in self.nodes:
             try:
                 self.nodes[node].set_asd_version(
@@ -445,7 +461,6 @@ class _CollectinfoSnapshot:
                 pass
 
     def _set_cluster_name(self):
-
         for node in self.nodes:
             try:
                 self.nodes[node].set_cluster_name(self.cluster_name)
