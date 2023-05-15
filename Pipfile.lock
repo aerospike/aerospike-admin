@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "9286d60f340ef2550f924dffeae9795e5fd2285c9b27e136a10172b1790a7e51"
+            "sha256": "4841d538c4aa6d9e6806d682052fe9386abed2f87e6219944cb5c70ceb0d4c74"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -234,7 +234,7 @@
                 "sha256:5a3d016c7c547f69d6f81fb0db9449ce888b418b5b9952cc5e6e66843e9dd845",
                 "sha256:83e9a75d1911279afd89352c68b45348559d1fc0506b054b346651b5e7fee29f"
             ],
-            "markers": "python_full_version >= '3.6.0'",
+            "markers": "python_version >= '3.6'",
             "version": "==2.1.1"
         },
         "cryptography": {
@@ -579,11 +579,11 @@
         },
         "pyopenssl": {
             "hashes": [
-                "sha256:c1cc5f86bcacefc84dada7d31175cae1b1518d5f60d3d0bb595a67822a868a6f",
-                "sha256:df5fc28af899e74e19fccb5510df423581047e10ab6f1f4ba1763ff5fde844c0"
+                "sha256:841498b9bec61623b1b6c47ebbc02367c07d60e0e195f19790817f10cc8db0b7",
+                "sha256:9e0c526404a210df9d2b18cd33364beadb0dc858a739b885677bc65e105d4a4c"
             ],
             "index": "pypi",
-            "version": "==23.0.0"
+            "version": "==23.1.1"
         },
         "python-dateutil": {
             "hashes": [
@@ -841,7 +841,7 @@
                 "sha256:5a3d016c7c547f69d6f81fb0db9449ce888b418b5b9952cc5e6e66843e9dd845",
                 "sha256:83e9a75d1911279afd89352c68b45348559d1fc0506b054b346651b5e7fee29f"
             ],
-            "markers": "python_full_version >= '3.6.0'",
+            "markers": "python_version >= '3.6'",
             "version": "==2.1.1"
         },
         "click": {
@@ -954,7 +954,6 @@
                 "sha256:44c40f2cd7d6726af8fa6fe22549178d3a4dfecc35a9cd15ea916d9c83a688e0",
                 "sha256:557bbfa1bb255c20e9abafe7ed6cd8046b48d9525db2f9b77d3122a63a2a8bf8"
             ],
-            "index": "pypi",
             "markers": "sys_platform == 'darwin'",
             "version": "==1.16.2"
         },
