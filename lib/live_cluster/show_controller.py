@@ -27,11 +27,12 @@ class ShowController(LiveClusterCommandController):
             "pmap": ShowPmapController,
             "best-practices": ShowBestPracticesController,
             "jobs": ShowJobsController,
+            "udfs": ShowUdfsController,
+            "stop-writes": ShowStopWritesController,
             "racks": ShowRacksController,
             "roster": ShowRosterController,
             "roles": ShowRolesController,
             "users": ShowUsersController,
-            "udfs": ShowUdfsController,
             "sindex": ShowSIndexController,
             "config": ShowConfigController,
             "latencies": ShowLatenciesController,
@@ -1511,3 +1512,33 @@ class ShowRacksController(LiveClusterCommandController):
     async def _do_default(self, line):
         racks_data = await self.getter.get_racks(nodes="principal", flip=False)
         return self.view.show_racks(racks_data, **self.mods)
+
+
+@CommandHelp("Displays all metrics that could trigger stop-writes.")
+class ShowStopWritesController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["with", "for"])
+        self.config_getter = GetConfigController(self.cluster)
+        self.stat_getter = GetStatisticsController(self.cluster)
+
+    async def _do_default(self, line):
+        service_stats = await self.stat_getter.get_service()
+
+        if len(self.mods["for"]) < 2:
+            ns_stats = await self.stat_getter.get_namespace(for_mods=self.mods["for"])
+            ns_configs = await self.config_getter.get_namespace(
+                for_mods=self.mods["for"]
+            )
+        else:
+            ns_stats = {}
+            ns_configs = {}
+
+        set_stats = await self.stat_getter.get_sets(for_mods=self.mods["for"])
+        set_configs = await self.config_getter.get_sets(for_mods=self.mods["for"])
+        return self.view.show_stop_writes(
+            common.create_stop_writes_summary(
+                service_stats, ns_stats, ns_configs, set_stats, set_configs
+            ),
+            self.cluster,
+            **self.mods,
+        )

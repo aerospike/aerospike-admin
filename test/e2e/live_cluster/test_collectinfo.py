@@ -96,6 +96,7 @@ class TestCollectinfo(asynctest.TestCase):
         ("show users", ["Connections"], None),
         ("show udfs", [], None),
         ("show sindex", [], None),
+        ("show stop-writes", [], None),
         ("health", [], None),
     ]
 

@@ -228,19 +228,16 @@ class _CollectinfoSnapshot:
                                     data[node][ns_name] = copy.deepcopy(
                                         d[ns_name]["service"]
                                     )
-
                                 elif stanza == "bin" or stanza == "bins":
                                     data[node][ns_name] = copy.deepcopy(
                                         d[ns_name][stanza]
                                     )
-
                                 elif stanza == "set":
                                     for _name in d[ns_name][stanza]:
-                                        _key = "%s %s" % (ns_name, _name)
+                                        _key = (ns_name, _name)
                                         data[node][_key] = copy.deepcopy(
                                             d[ns_name][stanza][_name]
                                         )
-
                                 elif stanza == "sindex":
                                     for _name in d[ns_name][stanza]:
                                         try:

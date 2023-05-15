@@ -11,10 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from ast import Call
 from collections import Counter
 import logging
+from operator import itemgetter
 from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
 from lib.utils import file_size
@@ -745,7 +744,7 @@ class Field(object):
         dynamic_field_decl -- None if not from DynamicFields.
                               Otherwise DynamicFields instance.
         allow_diff -- A non dynamic field by default does not allow diff and is always
-                      displayed. This is mutally exclusive with dynamic_field_decl.
+                      displayed. This is mutually exclusive with dynamic_field_decl.
                       True: Allow diff.
                       False: Don't diff.
                       Default: False
@@ -782,7 +781,7 @@ class TitleField(Field):
         if formatters is None:
             formatters = (Formatters.bold(lambda _: True),)
 
-        super(TitleField, self).__init__(
+        super().__init__(
             title,
             projector,
             converter=converter,
@@ -842,7 +841,7 @@ class DynamicFields(object):
                               infer_projector is false String projection is used.
 
         Note: If a preceding non-dynamic Field uses the same key it will not be rendered
-              by a proceding DynamicField.
+              by a proceeding DynamicField.
         """
         self.source = source
         self.infer_projectors = infer_projectors
@@ -855,6 +854,15 @@ class DynamicFields(object):
         self.has_aggregate = False  # XXX - hack
 
 
+class FieldSorter:
+    def __init__(self, field_name: str, reverse: bool = False) -> None:
+        self.field_name = field_name
+        self.reverse = reverse
+
+    def sort(self, to_sort: list[Any]):
+        list.sort(to_sort, key=itemgetter(self.field_name), reverse=self.reverse)
+
+
 class Sheet(object):
     def __init__(
         self,
@@ -863,7 +871,7 @@ class Sheet(object):
         for_each=None,
         where=None,
         group_by=None,
-        order_by=None,
+        order_by: tuple[FieldSorter, ...] | FieldSorter | None = None,
         default_style=SheetStyle.columns,
         title_fill="~",
         subtitle_fill="~",
@@ -925,13 +933,17 @@ class Sheet(object):
 
         self._init_sanity_check()
 
-    def _arg_as_tuple(self, arg):
+    T = TypeVar("T")
+
+    def _arg_as_tuple(self, arg: T | tuple[T, ...] | None) -> tuple[T, ...]:
         if arg is None:
             return tuple()
         elif isinstance(arg, tuple):
             return arg
         elif isinstance(arg, list):
             return tuple(arg)
+        elif isinstance(arg, FieldSorter):
+            return (arg,)
         elif isinstance(arg, str):
             return (arg,)
 
@@ -967,7 +979,7 @@ class Sheet(object):
             group_by_set = set()
 
         if self.order_bys:
-            order_by_set = set(self.order_bys)
+            order_by_set: set[str] = {by.field_name for by in self.order_bys}
             assert len(order_by_set) == len(self.order_bys)
         else:
             order_by_set = set()

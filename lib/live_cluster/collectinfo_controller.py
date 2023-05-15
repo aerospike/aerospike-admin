@@ -105,24 +105,24 @@ class CollectinfoController(LiveClusterCommandController):
 
     def _restructure_set_section(self, stats):
         for node, node_data in stats.items():
-            if "set" not in node_data.keys():
+            if constants.STAT_SETS not in node_data.keys():
                 continue
 
-            for key, val in node_data["set"].items():
+            for key, val in node_data[constants.STAT_SETS].items():
                 ns_name = key[0]
                 setname = key[1]
 
-                if ns_name not in node_data["namespace"]:
+                if ns_name not in node_data[constants.STAT_NAMESPACE]:
                     continue
 
-                ns = node_data["namespace"][ns_name]
+                ns = node_data[constants.STAT_NAMESPACE][ns_name]
 
-                if "set" not in ns.keys():
-                    ns["set"] = {}
+                if constants.STAT_SETS not in ns.keys():
+                    ns[constants.STAT_SETS] = {}
 
-                ns["set"][setname] = copy.deepcopy(val)
+                ns[constants.STAT_SETS][setname] = copy.deepcopy(val)
 
-            del node_data["set"]
+            del node_data[constants.STAT_SETS]
 
     def _restructure_sindex_section(self, stats):
         # Due to new server feature namespace add/remove with rolling restart,
@@ -220,8 +220,9 @@ class CollectinfoController(LiveClusterCommandController):
         self._restructure_set_section(new_stats)
         self._restructure_sindex_section(new_stats)
         self._restructure_bin_section(new_stats)
-        # No config for set, sindex, bin
+        # No config for sindex, bin
         self._restructure_ns_section(new_config)
+        self._restructure_set_section(new_config)
 
         # check this 'XDR': {'STATISTICS': {'192.168.112.194:3000':
         # Type_error('expected str

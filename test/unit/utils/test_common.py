@@ -1,4 +1,5 @@
 from datetime import datetime
+from parameterized import parameterized
 import unittest
 
 from lib.utils import common, util
@@ -571,3 +572,543 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
                 tc["allow_unstable"],
                 tc["exp_summary_dict"],
             )
+
+
+class CreateStopWritesSummaryTests(unittest.TestCase):
+    maxDiff = None
+
+    @parameterized.expand(
+        [
+            ({}, {}, {}, {}, {}, {}),
+            (
+                {
+                    "1.1.1.1": {
+                        "cluster_clock_skew_ms": "256",
+                        "cluster_clock_skew_stop_writes_sec": "20",
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"clock_skew_stop_writes": "false"}},
+                },
+                {
+                    "1.1.1.1": {
+                        "ns1": {"strong-consistency": "false", "nsup-period": "0"}
+                    },
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "cluster_clock_skew_ms"): {
+                            "stop_writes": False,
+                            "metric": "cluster_clock_skew_ms",
+                            "metric_usage": 256,
+                            "metric_threshold": 20000,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # cluster_clock_skew_ms does not trigger stop writes when clock_skew_stop_writes is false
+            (
+                {
+                    "1.1.1.1": {
+                        "cluster_clock_skew_ms": "200001",
+                        "cluster_clock_skew_stop_writes_sec": "20",
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"clock_skew_stop_writes": "false"}},
+                },
+                {
+                    "1.1.1.1": {
+                        "ns1": {"strong-consistency": "false", "nsup-period": "0"}
+                    },
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "cluster_clock_skew_ms"): {
+                            "stop_writes": False,
+                            "metric": "cluster_clock_skew_ms",
+                            "metric_usage": 200001,
+                            "metric_threshold": 20000,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # cluster_clock_skew_ms triggers stop writes when clock_skew_stop_writes is true
+            (
+                {
+                    "1.1.1.1": {
+                        "cluster_clock_skew_ms": "200001",  # <<
+                        "cluster_clock_skew_stop_writes_sec": "20",
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"clock_skew_stop_writes": "true"}},  # <<
+                },
+                {
+                    "1.1.1.1": {
+                        "ns1": {"strong-consistency": "false", "nsup-period": "0"}
+                    },
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "cluster_clock_skew_ms"): {
+                            "stop_writes": True,
+                            "metric": "cluster_clock_skew_ms",
+                            "metric_usage": 200001,
+                            "metric_threshold": 20000,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # nsup-period is not zero and strong consistency causes default metric_threshold
+            (
+                {
+                    "1.1.1.1": {
+                        "cluster_clock_skew_ms": "256",
+                        "cluster_clock_skew_stop_writes_sec": "20",
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"clock_skew_stop_writes": "true"}},  # <<
+                },
+                {
+                    "1.1.1.1": {
+                        "ns1": {"strong-consistency": "false", "nsup-period": "999"}
+                    },
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "cluster_clock_skew_ms"): {
+                            "stop_writes": False,
+                            "metric": "cluster_clock_skew_ms",
+                            "metric_usage": 256,
+                            "metric_threshold": 40000,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes not triggered by system_free_mem_pct
+            (
+                {
+                    "1.1.1.1": {
+                        "system_free_mem_pct": "90",
+                    },
+                },
+                {
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "false",
+                        }
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"stop-writes-sys-memory-pct": "90"}},
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "system_free_mem_pct"): {
+                            "metric": "system_free_mem_pct",
+                            "config": "stop-writes-sys-memory-pct",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes triggered by system_free_mem_pct
+            (
+                {
+                    "1.1.1.1": {
+                        "system_free_mem_pct": "10",
+                    },
+                },
+                {
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                        }
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"stop-writes-sys-memory-pct": "90"}},
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "system_free_mem_pct"): {
+                            "metric": "system_free_mem_pct",
+                            "config": "stop-writes-sys-memory-pct",
+                            "stop_writes": True,
+                            "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes not triggered by device_avail_pct
+            (
+                {},
+                {
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "device_avail_pct": "50",
+                        }
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "device_avail_pct"): {
+                            "metric": "device_avail_pct",
+                            "config": "min-avail-pct",
+                            "stop_writes": False,
+                            "metric_usage": 50,
+                            "metric_threshold": 55,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes triggered by device_avail_pct
+            (
+                {},
+                {
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "device_avail_pct": "56",
+                        }
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "device_avail_pct"): {
+                            "metric": "device_avail_pct",
+                            "config": "min-avail-pct",
+                            "stop_writes": True,
+                            "metric_usage": 56,
+                            "metric_threshold": 55,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes not triggered by device_used_bytes
+            (
+                {},
+                {
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "device_used_bytes": "10",
+                            "device_total_bytes": "100",
+                        }
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "device_used_bytes"): {
+                            "metric": "device_used_bytes",
+                            "config": "max-used-pct",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by device_used_bytes
+            (
+                {},
+                {
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "device_used_bytes": "90",
+                            "device_total_bytes": "100",
+                        }
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "device_used_bytes"): {
+                            "metric": "device_used_bytes",
+                            "config": "max-used-pct",
+                            "stop_writes": True,
+                            "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is not triggered by memory_used_bytes
+            (
+                {},
+                {
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "memory_used_bytes": "10",
+                        }
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"stop-writes-pct": "90", "memory-size": "100"}},
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "memory_used_bytes"): {
+                            "metric": "memory_used_bytes",
+                            "config": "stop-writes-pct",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by memory_used_bytes
+            (
+                {},
+                {
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "memory_used_bytes": "90",
+                        }
+                    },
+                },
+                {
+                    "1.1.1.1": {"ns1": {"stop-writes-pct": "90", "memory-size": "100"}},
+                },
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", None, "memory_used_bytes"): {
+                            "metric": "memory_used_bytes",
+                            "config": "stop-writes-pct",
+                            "stop_writes": True,
+                            "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is not triggered by set.memory_data_bytes
+            (
+                {},
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1"): {
+                            "memory_data_bytes": "10",
+                            "device_data_bytes": "0",
+                        }
+                    }
+                },
+                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1", "memory_data_bytes"): {
+                            "metric": "memory_data_bytes",
+                            "config": "stop-writes-size",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 100,
+                            "namespace": "ns1",
+                            "set": "set1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by set.memory_data_bytes
+            (
+                {},
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1"): {
+                            "memory_data_bytes": "100",
+                        }
+                    }
+                },
+                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1", "memory_data_bytes"): {
+                            "metric": "memory_data_bytes",
+                            "config": "stop-writes-size",
+                            "stop_writes": True,
+                            "metric_usage": 100,
+                            "metric_threshold": 100,
+                            "namespace": "ns1",
+                            "set": "set1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is not triggered by set.device_data_bytes
+            (
+                {},
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1"): {
+                            "memory_data_bytes": "0",
+                            "device_data_bytes": "10",
+                        }
+                    }
+                },
+                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1", "device_data_bytes"): {
+                            "metric": "device_data_bytes",
+                            "config": "stop-writes-size",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 100,
+                            "namespace": "ns1",
+                            "set": "set1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by set.device_data_bytes
+            (
+                {},
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1"): {
+                            "device_data_bytes": "100",
+                        }
+                    }
+                },
+                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1", "device_data_bytes"): {
+                            "metric": "device_data_bytes",
+                            "config": "stop-writes-size",
+                            "stop_writes": True,
+                            "metric_usage": 100,
+                            "metric_threshold": 100,
+                            "namespace": "ns1",
+                            "set": "set1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is not triggered by set.objects
+            (
+                {},
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1"): {
+                            "objects": "10",
+                        }
+                    }
+                },
+                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-count": "100"}}},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1", "objects"): {
+                            "metric": "objects",
+                            "config": "stop-writes-count",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 100,
+                            "namespace": "ns1",
+                            "set": "set1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by set.objects
+            (
+                {},
+                {},
+                {},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1"): {
+                            "objects": "100",
+                        }
+                    }
+                },
+                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-count": "100"}}},
+                {
+                    "1.1.1.1": {
+                        ("ns1", "set1", "objects"): {
+                            "metric": "objects",
+                            "config": "stop-writes-count",
+                            "stop_writes": True,
+                            "metric_usage": 100,
+                            "metric_threshold": 100,
+                            "namespace": "ns1",
+                            "set": "set1",
+                        },
+                    }
+                },
+            ),
+        ],
+    )
+    def test(self, service_stats, ns_stats, ns_config, set_stats, set_config, expected):
+        self.assertDictEqual(
+            common.create_stop_writes_summary(
+                service_stats, ns_stats, ns_config, set_stats, set_config
+            ),
+            expected,
+        )

@@ -28,6 +28,7 @@ from lib.live_cluster.client import Cluster
 from lib.live_cluster.client.node import ASInfoError
 from lib.utils import file_size, constants, util
 from lib.utils.common import (
+    StopWritesDict,
     SummaryClusterDict,
     SummaryDict,
     SummaryNamespacesDict,
@@ -474,6 +475,26 @@ class CliView(object):
         sources = dict(node_names=node_names, histogram=latency)
 
         CliView.print_result(sheet.render(templates.show_latency_sheet, title, sources))
+
+    @staticmethod
+    @reserved_modifiers
+    def show_stop_writes(
+        stop_writes: StopWritesDict, cluster, with_=None, timestamp="", **ignore
+    ):
+        # likes = util.compile_likes(like) TODO: Support the like modifier?
+        title = "Stop Writes" + CliView._get_timestamp_suffix(timestamp)
+        node_names = cluster.get_node_names(with_)
+
+        sources = dict(node_names=node_names, stop_writes=stop_writes)
+
+        CliView.print_result(
+            sheet.render(
+                templates.show_stop_writes_sheet,
+                title,
+                sources,
+                description="Show all stop writes - add 'for <namespace> [<set>]' for a shorter list.",
+            )
+        )
 
     @staticmethod
     @reserved_modifiers

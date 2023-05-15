@@ -1,5 +1,6 @@
 import asyncio
-from typing import TypeVar
+from operator import itemgetter
+from typing import Any, Callable, Iterable, TypeVar
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )
@@ -8,6 +9,37 @@ from lib.utils.common import DatacenterDict, NamespaceDict, NodeDict
 
 T = TypeVar("T")
 TimestampDict = dict[str, T]
+
+
+def filter_3rd_level_keys(
+    stats: dict[Any, dict[Any, dict[Any, Any]]],
+    keys: Iterable[str] | None,
+    func: Callable[[Any], str] | None = None,
+):
+    for level2 in stats.values():
+        for level3 in level2.values():
+            keys_to_filter = level3.keys()
+
+            if func:
+                keys_to_filter = map(func, keys_to_filter)
+
+            filtered_keys = set(util.filter_list(keys_to_filter, keys))
+
+            for key in list(level3.keys()):
+                if func:
+                    extracted_key = func(key)
+                else:
+                    extracted_key = key
+
+                if extracted_key not in filtered_keys:
+                    del level3[key]
+
+    return stats
+
+
+def timestamp_flip_keys(timestamp_stats: TimestampDict[dict[Any, Any]]):
+    for timestamp in timestamp_stats:
+        timestamp_stats[timestamp] = util.flip_keys(timestamp_stats[timestamp])
 
 
 class GetConfigController:
@@ -25,8 +57,34 @@ class GetConfigController:
     def __init__(self, log_analyzer: CollectinfoLogHandler):
         self.log_handler = log_analyzer
 
-    def get_namespace(self):
-        return self.log_handler.info_getconfig(stanza=constants.CONFIG_NAMESPACE)
+    def get_service(self):
+        return self.log_handler.info_getconfig(stanza=constants.CONFIG_SERVICE)
+
+    def get_namespace(self, for_mods: list[str] | None = None):
+        stats: TimestampDict[
+            NodeDict[NamespaceDict[dict[str, str]]]
+        ] = self.log_handler.info_getconfig(stanza=constants.CONFIG_NAMESPACE)
+        return filter_3rd_level_keys(stats, for_mods)
+
+    def get_sets(self, for_mods: list[str] | None = None, flip=False):
+        set_filter: list[str] | None = None
+        namespaces_filter: list[str] | None = None
+
+        if for_mods is not None:
+            try:
+                namespaces_filter = [for_mods[0]]
+                set_filter = [for_mods[1]]
+            except IndexError:
+                pass
+
+        stats = self.log_handler.info_getconfig(stanza=constants.CONFIG_SET)
+        filter_3rd_level_keys(stats, namespaces_filter, func=itemgetter(0))
+        filter_3rd_level_keys(stats, set_filter, func=itemgetter(1))
+
+        if flip:
+            timestamp_flip_keys(stats)
+
+        return stats
 
     def get_rack_ids(self):
         return self.log_handler.info_getconfig(stanza=constants.CONFIG_RACK_IDS)
@@ -155,8 +213,34 @@ class GetStatisticsController:
     def __init__(self, log_analyzer: CollectinfoLogHandler):
         self.log_handler = log_analyzer
 
-    def get_namespace(self):
-        return self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+    def get_service(self):
+        return self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
+
+    def get_namespace(self, for_mods=None):
+        stats: TimestampDict[
+            NodeDict[NamespaceDict[dict[str, str]]]
+        ] = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+        return filter_3rd_level_keys(stats, for_mods)
+
+    def get_sets(self, for_mods=None, flip=False):
+        set_filter: list[str] | None = None
+        namespaces_filter: list[str] | None = None
+
+        if for_mods is not None:
+            try:
+                namespaces_filter = [for_mods[0]]
+                set_filter = [for_mods[1]]
+            except IndexError:
+                pass
+
+        stats = self.log_handler.info_statistics(stanza=constants.STAT_SETS)
+        filter_3rd_level_keys(stats, namespaces_filter, func=itemgetter(0))
+        filter_3rd_level_keys(stats, set_filter, func=itemgetter(1))
+
+        if flip:
+            timestamp_flip_keys(stats)
+
+        return stats
 
     def get_sindex(self):
         return self.log_handler.info_statistics(stanza=constants.STAT_SINDEX)
@@ -168,22 +252,11 @@ class GetStatisticsController:
     ) -> TimestampDict[dict[str, str]]:
         return self.log_handler.info_statistics(stanza=constants.STAT_XDR)
 
-    def get_xdr_dcs(self, flip=False, for_mods: list[str] | None = None):
+    def get_xdr_dcs(self, for_mods: list[str] | None = None):
         stats: TimestampDict[
             NodeDict[DatacenterDict[dict[str, str]]]
         ] = self.log_handler.info_statistics(stanza=constants.STAT_DC)
-
-        for nodes_stats in stats.values():
-            for dc_stats in nodes_stats.values():
-                dcs = dc_stats.keys()
-                filtered_dcs = set(util.filter_list(dcs, for_mods))
-
-                for dc in list(dc_stats.keys()):
-                    if dc not in filtered_dcs:
-                        del dc_stats[dc]
-
-        if flip:
-            stats = util.flip_keys(stats)
+        stats = filter_3rd_level_keys(stats, for_mods)
 
         return stats
 

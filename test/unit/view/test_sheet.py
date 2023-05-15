@@ -29,7 +29,7 @@ from lib.view.sheet import (
     SheetStyle,
     Subgroup,
 )
-from lib.view.sheet.decleration import ComplexAggregator
+from lib.view.sheet.decleration import ComplexAggregator, FieldSorter
 
 
 def do_render(*args, **kwargs):
@@ -548,7 +548,9 @@ class SheetTest(unittest.TestCase):
 
     def test_sheet_order_by(self):
         test_sheet = Sheet(
-            (Field("F", Projectors.Number("d", "f")),), from_source="d", order_by=("F")
+            (Field("F", Projectors.Number("d", "f")),),
+            from_source="d",
+            order_by=FieldSorter("F"),
         )
         sources = dict(d=dict(n0=dict(f=2), n1=dict(f=1), n2=dict(f=0)))
         render = do_render(test_sheet, "test", sources)
@@ -566,7 +568,7 @@ class SheetTest(unittest.TestCase):
                 Field("F", Projectors.Number("d", "f")),
             ),
             from_source="d",
-            order_by=("G", "F"),
+            order_by=(FieldSorter("G"), FieldSorter("F")),
         )
         sources = dict(
             d=dict(

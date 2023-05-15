@@ -203,6 +203,50 @@ class GetLatenciesController:
         return latencies
 
 
+async def get_sets(cluster, flip, nodes, for_mods: list[str] | None):
+    sets = await cluster.info_all_set_statistics(nodes=nodes)
+
+    ns_filter = None
+    set_filter = None
+
+    if for_mods:
+        try:
+            ns_filter = [for_mods[0]]
+            set_filter = [for_mods[1]]
+        except IndexError:
+            pass
+
+    set_stats = {}
+    for host_id, key_values in sets.items():
+        if isinstance(key_values, Exception) or not key_values:
+            continue
+
+        namespace_set = {ns_set[0] for ns_set in key_values.keys()}
+        namespace_set = set(util.filter_list(namespace_set, ns_filter))
+
+        sets = {ns_set[1] for ns_set in key_values.keys()}
+        sets = set(util.filter_list(sets, set_filter))
+
+        for key, values in key_values.items():
+            if key[0] not in namespace_set or key[1] not in sets:
+                continue
+
+            if key not in set_stats:
+                set_stats[key] = {}
+            host_vals = set_stats[key]
+
+            if host_id not in host_vals:
+                host_vals[host_id] = {}
+            hv = host_vals[host_id]
+            hv.update(values)
+
+    # Inverted match common structure of other getters, i.e. host is top level key
+    if not flip:
+        return util.flip_keys(set_stats)
+
+    return set_stats
+
+
 class GetConfigController:
     def __init__(self, cluster):
         self.cluster = cluster
@@ -220,6 +264,10 @@ class GetConfigController:
             (
                 constants.CONFIG_NAMESPACE,
                 asyncio.create_task(self.get_namespace(nodes=nodes)),
+            ),
+            (
+                constants.CONFIG_SET,
+                asyncio.create_task(self.get_sets(nodes=nodes)),
             ),
             (
                 constants.CONFIG_NETWORK,
@@ -319,6 +367,17 @@ class GetConfigController:
             ns_configs = util.flip_keys(ns_configs)
 
         return ns_configs
+
+    async def get_sets(
+        self, flip=False, nodes="all", for_mods: list[str] | None = None
+    ):
+        """
+        set stats and config are currently returned together in a single response. That means
+        that there are sections of asadm that expect stats and config to be in a single
+        struct. When the separation does occur code will need to be audited to make sure this
+        expectation no longer exists. This method will help that effort.
+        """
+        return await get_sets(self.cluster, flip, nodes, for_mods)
 
     async def get_xdr(self, nodes="all"):
         xdr_configs: NodeDict[dict[str, str]] = await self.cluster.info_xdr_config(
@@ -612,47 +671,7 @@ class GetStatisticsController:
     async def get_sets(
         self, flip=False, nodes="all", for_mods: list[str] | None = None
     ):
-        sets = await self.cluster.info_all_set_statistics(nodes=nodes)
-
-        set_stats = {}
-        for host_id, key_values in sets.items():
-            if isinstance(key_values, Exception) or not key_values:
-                continue
-
-            ns_filter = None
-            set_filter = None
-
-            if for_mods:
-                try:
-                    ns_filter = [for_mods[0]]
-                    set_filter = [for_mods[1]]
-                except IndexError:
-                    pass
-
-            namespace_set = {ns_set[0] for ns_set in key_values.keys()}
-            namespace_set = set(util.filter_list(namespace_set, ns_filter))
-
-            sets = {ns_set[1] for ns_set in key_values.keys()}
-            sets = set(util.filter_list(sets, set_filter))
-
-            for key, values in key_values.items():
-                if key[0] not in namespace_set or key[1] not in sets:
-                    continue
-
-                if key not in set_stats:
-                    set_stats[key] = {}
-                host_vals = set_stats[key]
-
-                if host_id not in host_vals:
-                    host_vals[host_id] = {}
-                hv = host_vals[host_id]
-                hv.update(values)
-
-        # Inverted match common structure of other getters, i.e. host is top level key
-        if not flip:
-            return util.flip_keys(set_stats)
-
-        return set_stats
+        return await get_sets(self.cluster, flip, nodes, for_mods)
 
     async def get_bins(
         self, flip=False, nodes="all", for_mods: list[str] | None = None

@@ -96,6 +96,7 @@ class TableRenderTests(unittest.TestCase):
         ("show users"),
         ("show udfs"),
         ("show sindex"),
+        ("show stop-writes"),
     ]
     NOT_IN_CI_MODE = ["show mapping ip", "show mapping node", "show pmap"]
 
