@@ -114,7 +114,8 @@ tramp
 # AUCTeX auto folder
 /auto/
 
-
+# env
+.env
 
 # -*- mode: gitignore; -*-
 *~
