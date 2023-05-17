@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -113,7 +113,6 @@ class ASSocket:
         return sock
 
     def _create_socket(self):
-
         sock = None
         for addrinfo in socket.getaddrinfo(
             self.ip, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM
@@ -196,7 +195,6 @@ class ASSocket:
         return True
 
     async def close(self):
-
         if self.sock:
             try:
                 self.sock = None

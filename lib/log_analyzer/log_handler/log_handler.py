@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -88,7 +88,6 @@ class LogHandler(object):
         return ""
 
     def add_log_files_at_path(self, log_path=""):
-
         if not log_path:
             return 0, "No valid log file added"
 
@@ -118,7 +117,6 @@ class LogHandler(object):
         return server_logs_added, ""
 
     def get_log_files(self, all_list=True):
-
         log_entries = {}
 
         if all_list:
@@ -132,7 +130,6 @@ class LogHandler(object):
         return log_entries
 
     def get_logs_by_index(self, indices=[]):
-
         logs = []
         if indices:
             keys = sorted(self.all_logs.keys())
@@ -152,7 +149,6 @@ class LogHandler(object):
         return logs
 
     def remove_logs_by_index(self, indices="all"):
-
         if not indices or not isinstance(indices, list):
             return
 
@@ -437,7 +433,6 @@ class LogHandler(object):
             pass
 
     def _get_valid_log_files(self, log_path=""):
-
         if not log_path:
             log_path = self.log_path
 
@@ -456,7 +451,6 @@ class LogHandler(object):
             return []
 
     def _add_log_file(self, log_file=""):
-
         for key in self.all_logs:
             if self.all_logs[key].get_filename() == log_file:
                 # Skip already added files. No error
