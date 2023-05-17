@@ -1,3 +1,17 @@
+# Copyright 2022-2023 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import copy
 
 from lib.base_controller import CommandHelp
@@ -12,7 +26,6 @@ from .collectinfo_command_controller import CollectinfoCommandController
     "This command is still in beta and its output should not be directly acted upon without further analysis.",
 )
 class HealthCheckController(CollectinfoCommandController):
-
     health_check_input_created = False
 
     def __init__(self):
@@ -33,7 +46,6 @@ class HealthCheckController(CollectinfoCommandController):
         "                      This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
     )
     def _do_default(self, line):
-
         output_file = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-o",
@@ -590,7 +602,6 @@ class HealthCheckController(CollectinfoCommandController):
             health_input = {}
             for _key, (info_function, stanza_list) in stanza_dict.items():
                 for stanza_item in stanza_list:
-
                     stanza = stanza_item[0]
                     component_name = stanza_item[1]
                     sub_component_name = stanza_item[2]

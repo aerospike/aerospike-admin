@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -173,7 +173,6 @@ def _merge_samelevel_maps(main_map, from_map):
         return main_map
 
     for _k in from_map:
-
         if _k not in main_map:
             main_map[_k] = copy.deepcopy(from_map[_k])
 
@@ -275,7 +274,6 @@ def _get_sys_map(parsed_map, ignore_exception):
                     return sys_map
 
     except Exception as e:
-
         if not ignore_exception:
             logger.error(
                 "sys_section_parser cannot parse intermediate json. Err: " + str(e)

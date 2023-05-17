@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -99,7 +99,6 @@ class CollectinfoLogHandler(object):
             shutil.rmtree(self.collectinfo_dir)
 
     def get_cinfo_log_at(self, timestamp=""):
-
         if not timestamp or timestamp not in self.all_cinfo_logs:
             return None
 
@@ -256,7 +255,6 @@ class CollectinfoLogHandler(object):
             log_files = log_util.get_all_files(cinfo_path)
             valid_files = []
             for log_file in log_files:
-
                 try:
                     # ToDo: It should be some proper check for asadm
                     # collectinfo json file.
@@ -301,7 +299,6 @@ class CollectinfoLogHandler(object):
         return files
 
     def _add_cinfo_log_files(self, cinfo_path=""):
-
         if not cinfo_path:
             raise Exception("Collectinfo path not specified.")
 
