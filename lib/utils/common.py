@@ -1853,6 +1853,10 @@ def _format_set_stop_writes_metrics(
             usage: str | None = stats.get(metric, None)
             threshold: str | None = stats.get(config, None)
 
+            if threshold is None:
+                config = "set-stop-writes-count"
+                threshold = stats.get(config, None)
+
             if usage is not None and threshold is not None:
                 use = int(usage)
                 thresh = int(threshold)
