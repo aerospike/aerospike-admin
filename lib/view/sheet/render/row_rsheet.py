@@ -1,4 +1,4 @@
-# Copyright 2019 Aerospike, Inc.
+# Copyright 2019-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -164,7 +164,6 @@ class RowRSheet(BaseRSheetCLI):
             num_entries = render_fields[0].n_entries_in_group(group_ix)
 
             for render_field in render_fields:
-
                 if render_field.decleration in self.group_hidden_fields[group_ix]:
                     hidden_count += 1
                     continue

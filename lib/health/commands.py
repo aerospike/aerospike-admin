@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -80,7 +80,6 @@ def do_operation(
     on_common_only=False,
     save_param=None,
 ):
-
     if op in op_list:
         return op_list[op](
             arg1,

@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -524,7 +524,6 @@ class ServerLog:
         grep_str = self.search_strings[-1]
         line = self.next_line()
         if line:
-
             value = []
             diff = []
 

@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,46 +13,46 @@
 # limitations under the License.
 
 byte = [
-    (1024.0 ** 5, " PB"),
-    (1024.0 ** 4, " TB"),
-    (1024.0 ** 3, " GB"),
-    (1024.0 ** 2, " MB"),
-    (1024.0 ** 1, " KB"),
-    (1024.0 ** 0, " B "),
+    (1024.0**5, " PB"),
+    (1024.0**4, " TB"),
+    (1024.0**3, " GB"),
+    (1024.0**2, " MB"),
+    (1024.0**1, " KB"),
+    (1024.0**0, " B "),
 ]
 
 byte_verbose = [
-    (1024 ** 5, (" petabyte ", " petabytes")),
-    (1024 ** 4, (" terabyte ", " terabytes")),
-    (1024 ** 3, (" gigabyte ", " gigabytes")),
-    (1024 ** 2, (" megabyte ", " megabytes")),
-    (1024 ** 1, (" kilobyte ", " kilobytes")),
-    (1024 ** 0, (" byte     ", " bytes    ")),
+    (1024**5, (" petabyte ", " petabytes")),
+    (1024**4, (" terabyte ", " terabytes")),
+    (1024**3, (" gigabyte ", " gigabytes")),
+    (1024**2, (" megabyte ", " megabytes")),
+    (1024**1, (" kilobyte ", " kilobytes")),
+    (1024**0, (" byte     ", " bytes    ")),
 ]
 
 si = [
-    (1000 ** 5, " P"),
-    (1000 ** 4, " T"),
-    (1000 ** 3, " G"),
-    (1000 ** 2, " M"),
-    (1000 ** 1, " K"),
-    (1000 ** 0, "  "),
+    (1000**5, " P"),
+    (1000**4, " T"),
+    (1000**3, " G"),
+    (1000**2, " M"),
+    (1000**1, " K"),
+    (1000**0, "  "),
 ]
 
 si_float = [
-    (1000.0 ** 5, " P"),
-    (1000.0 ** 4, " T"),
-    (1000.0 ** 3, " G"),
-    (1000.0 ** 2, " M"),
-    (1000.0 ** 1, " K"),
-    (1000.0 ** 0, "  "),
+    (1000.0**5, " P"),
+    (1000.0**4, " T"),
+    (1000.0**3, " G"),
+    (1000.0**2, " M"),
+    (1000.0**1, " K"),
+    (1000.0**0, "  "),
 ]
 
 time = [
-    ((60.0 ** 2) * 24, " days"),
-    (60.0 ** 2, " hrs "),
-    (60.0 ** 1, " mins"),
-    (60.0 ** 0, " secs"),
+    ((60.0**2) * 24, " days"),
+    (60.0**2, " hrs "),
+    (60.0**1, " mins"),
+    (60.0**0, " secs"),
 ]
 
 systems = (byte, byte_verbose, si, si_float, time)

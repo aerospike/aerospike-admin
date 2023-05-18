@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ ValueType = TypeVar("ValueType")
 
 
 class LookupDict(Generic[ValueType]):
-
     LOOKUP_MODE = 0
     PREFIX_MODE = 1
     SUFFIX_MODE = 2

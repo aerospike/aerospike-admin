@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -490,7 +490,6 @@ class LogLatency(object):
         arg_ns=None,
         arg_relative_stats=False,
     ):
-
         latency = {}
         tps_key = ("ops/sec", None)
         latency[tps_key] = {}
@@ -662,8 +661,8 @@ class LogLatency(object):
                     for i in range(max_bucket):
                         labels.append(0)
                         if i % arg_every_nth == 0:
-                            labels[i] = (2 ** i, self._bucket_unit)
-                            latency[(2 ** i, self._bucket_unit)] = {}
+                            labels[i] = (2**i, self._bucket_unit)
+                            latency[(2**i, self._bucket_unit)] = {}
 
                     for i in range(max_bucket):
                         if i % arg_every_nth:
