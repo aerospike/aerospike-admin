@@ -6,11 +6,11 @@ from lib.live_cluster.get_controller import (
     GetDistributionController,
     GetJobsController,
     GetPmapController,
-    GetRolesController,
+    GetAclController,
     GetSIndexController,
     GetStatisticsController,
     GetUdfController,
-    GetUsersController,
+    GetAclController,
     GetLatenciesController,
 )
 
@@ -1248,8 +1248,8 @@ class ShowPmapController(LiveClusterCommandController):
 )
 class ShowUsersController(LiveClusterCommandController):
     def __init__(self):
-        self.getter = GetUsersController(self.cluster)
-        self.controller_map = {"stats": ShowUsersStatsController}
+        self.getter = GetAclController(self.cluster)
+        self.controller_map = {"statistics": ShowUsersStatsController}
 
     async def _do_default(self, line):
         user = None
@@ -1267,6 +1267,7 @@ class ShowUsersController(LiveClusterCommandController):
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
+            print(resp)
             self.logger.error(resp)
             return
         elif isinstance(resp, Exception):
@@ -1283,7 +1284,7 @@ class ShowUsersController(LiveClusterCommandController):
 )
 class ShowUsersStatsController(LiveClusterCommandController):
     def __init__(self):
-        self.getter = GetUsersController(self.cluster)
+        self.getter = GetAclController(self.cluster)
 
     async def _do_default(self, line):
         user = None
@@ -1298,8 +1299,8 @@ class ShowUsersStatsController(LiveClusterCommandController):
         else:
             users_data = await self.getter.get_user(user, nodes=self.nodes)
 
-        if isinstance(users_data, Exception):
-            raise users_data
+        if all([isinstance(data, Exception) for data in users_data.values()]):
+            raise list(users_data.values())[0]
 
         return self.view.show_users_stats(self.cluster, users_data, **self.mods)
 
@@ -1312,7 +1313,7 @@ class ShowUsersStatsController(LiveClusterCommandController):
 )
 class ShowRolesController(LiveClusterCommandController):
     def __init__(self):
-        self.getter = GetRolesController(self.cluster)
+        self.getter = GetAclController(self.cluster)
 
     async def _do_default(self, line):
         role = None

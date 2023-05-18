@@ -47,7 +47,7 @@ class TestCollectinfo(asynctest.TestCase):
         ("show config xdr dc", [], None),
         ("show config xdr filter", [], None),
         ("show config xdr namespace", [], None),
-        ("show statistics namespace", ["current_time"], None),
+        ("show statistics namespace", ["current_time", "migrate_rx_instances"], None),
         (
             "show statistics service",
             [
@@ -94,6 +94,7 @@ class TestCollectinfo(asynctest.TestCase):
         ("show roster", [], None),
         ("show roles", [], None),
         ("show users", ["Connections"], None),
+        ("show users stat", ["Connections"], None),
         ("show udfs", [], None),
         ("show sindex", [], None),
         ("show stop-writes", [], None),
@@ -166,6 +167,7 @@ class TestCollectinfo(asynctest.TestCase):
         set_ = "collect-info-testset"
         lib.populate_db(set_)
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
+        lib.create_xdr_filter(lib.NAMESPACE, lib.DC, "kxGRSJMEk1ECo2FnZRU=")
         lib.upload_udf("metadata.lua", TEST_UDF)
 
         def record_set(record):
@@ -247,9 +249,12 @@ class TestCollectinfo(asynctest.TestCase):
                     d1[idx], d2[idx], ignore_keys, transform_recs
                 ):
                     return False
-                return True
+
+            return True
 
         if not (isinstance(d1, dict) and isinstance(d2, dict)):
+            # return False
+            # time.sleep(3000)
             self.fail(
                 f"d1 and d2 should both be dicts but found {type(d1)} and {type(d2)}"
             )

@@ -633,3 +633,48 @@ class CliViewTest(unittest.TestCase):
             title_repeat=False,
             dynamic_diff=False,
         )
+
+    def test_show_users(self):
+        users_data = {
+            "admin": {"admin": "data"},
+            "bob": {"bob": "data"},
+        }
+        formatted_users = {
+            0: {"admin": {"admin": "data"}},
+            1: {
+                "bob": {"bob": "data"},
+            },
+        }
+
+        CliView.show_users(users_data, timestamp="test-stamp")
+
+        self.render_mock.assert_called_with(
+            templates.show_users,
+            "Users (test-stamp)",
+            dict(data=formatted_users),
+        )
+
+    def test_show_users_stats(self):
+        users_data = {
+            0: {"admin": {"admin": "data"}},
+            1: {
+                "bob": {"bob": "data"},
+            },
+        }
+        node_names = {"1.1.1.1": "1.1.1.1 is my name"}
+        node_ids = {"1.1.1.1": "ABCD"}
+        principal = "test-principal"
+        common = {"principal": principal}
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+        sources = {"data": users_data, "node_names": node_names, "node_ids": node_ids}
+
+        CliView.show_users_stats(self.cluster_mock, users_data, timestamp="test-stamp")
+
+        self.render_mock.assert_called_with(
+            templates.show_users_stats,
+            "Users Statistics (test-stamp)",
+            sources,
+            common=common,
+        )

@@ -511,7 +511,7 @@ class Projectors(object):
             Arguments:
             source -- A set of sources to project a string from.
             """
-            return str(super().do_project(sheet, sources))
+            return super().do_project(sheet, sources)
 
     class String(_String):
         def __init__(self, source: str, *keys, **kwargs):
@@ -570,7 +570,7 @@ class Projectors(object):
 
                 return value
 
-    class Percent(_String):
+    class Percent(Number):
         def __init__(self, source, *keys, **kwargs):
             """
             Arguments:
@@ -580,7 +580,7 @@ class Projectors(object):
             invert -- False by default, if True will return 100 - value.
             """
 
-            super().__init__(FieldType.number, source, *keys, **kwargs)
+            super().__init__(source, *keys, **kwargs)
             self.invert = kwargs.get("invert", False)
 
         def do_project(self, sheet, sources):
@@ -658,14 +658,6 @@ class Projectors(object):
             """
             self.numerator_projector = numerator_projector
             self.denominator_projector = denominator_projector
-            # self.sources = set([])
-
-            # for field_fn in [numerator_projector, denominator_projector]:
-            #     if field_fn.source is None:
-            #         source = field_fn.sources
-            #     else:
-            #         source = set([field_fn.source])
-            #     self.sources = self.sources.union(source)
 
         def do_project(self, sheet, sources):
             """
@@ -690,7 +682,7 @@ class Projectors(object):
             ]
             return reduce(lambda acc, elem: acc.union(elem), sources, set())
 
-    class Any(BaseProjector):
+    class Any(Projector):
         def __init__(self, field_type: str, *field_projectors: Projector):
             """
             Arguments:
@@ -713,6 +705,8 @@ class Projectors(object):
                     return field_projector(sheet, sources)
                 except NoEntryException:
                     pass
+
+            raise NoEntryException("No sources found in Any field")
 
         def get_sources(self):
             sources = [field_fn.get_sources() for field_fn in self.field_projectors]

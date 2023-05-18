@@ -1772,7 +1772,7 @@ show_stop_writes_sheet = Sheet(
 
 def turn_empty_to_none(ls):
     if not ls:
-        return None
+        raise NoEntryException("List is empty")
 
     return ls
 
@@ -1941,7 +1941,7 @@ show_users_stats = Sheet(
     ),
     from_source=("data", "node_names"),
     for_each="data",
-    order_by=("User", "Node"),
+    order_by=(FieldSorter("User"), FieldSorter("Node")),
     group_by="User",
 )
 

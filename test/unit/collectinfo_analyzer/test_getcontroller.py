@@ -8,6 +8,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
 )
 
 from lib.collectinfo_analyzer.get_controller import (
+    GetAclController,
     GetConfigController,
     GetStatisticsController,
 )
@@ -177,17 +178,9 @@ class GetConfigControllerTest(unittest.TestCase):
         self.assertDictEqual(actual, expected)
 
     def test_get_xdr_namespaces_with_filter(self):
-        self.log_handler.get_node_id_to_ip_mapping.return_value = {
-            "1": "1.1.1.1",
-            "2": "2.2.2.2",
-            "3": "3.3.3.3",
-        }
-        self.log_handler.get_principal.return_value = "1"
         self.log_handler.info_getconfig.return_value = {
             "timestamp": {
                 "1.1.1.1": {"aaa": {"test": {"a"}}, "aab": {"aa": {}}},
-                "2.2.2.2": {"aaa": {"test": {"a"}}, "aab": {"test1": {}}},
-                "3.3.3.3": {"ccc": {"test": {"a"}}},
             }
         }
         expected = {
@@ -196,10 +189,12 @@ class GetConfigControllerTest(unittest.TestCase):
             }
         }
 
-        actual = self.controller.get_xdr_filters(for_mods=["aa", "test"])
+        actual = self.controller.get_xdr_filters(
+            for_mods=["aa", "test"], nodes="principal"
+        )
 
         self.log_handler.info_getconfig.assert_called_with(
-            stanza=constants.CONFIG_XDR_FILTER
+            stanza=constants.CONFIG_XDR_FILTER, nodes="principal"
         )
         self.assertDictEqual(actual, expected)
 
@@ -367,3 +362,132 @@ class GetStatisticsControllerTest(unittest.TestCase):
             stanza=constants.STAT_XDR_NS
         )
         self.assertDictEqual(actual, expected)
+
+
+class GetACLControllerTest(unittest.TestCase):
+    def setUp(self):
+        self.log_handler = patch(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler.CollectinfoLogHandler",
+            MagicMock(),
+        ).start()
+        self.controller = GetAclController(self.log_handler)
+
+    def test_get_users(self):
+        expected = {
+            "ts1": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+            "ts2": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+        }
+        self.log_handler.admin_acl.return_value = {
+            "ts1": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+            "ts2": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+        }
+
+        actual = self.controller.get_users(nodes="principal")
+
+        self.log_handler.admin_acl.assert_called_with(
+            stanza=constants.ADMIN_USERS, nodes="principal"
+        )
+
+        self.assertEqual(actual, expected)
+
+    def test_get_user(self):
+        expected = {
+            "ts1": {
+                "1.1.1.1": {"admin": "1"},
+                "2.2.2.2": {"admin": "1"},
+            },
+            "ts2": {
+                "1.1.1.1": {"admin": "1"},
+                "2.2.2.2": {"admin": "1"},
+            },
+        }
+        self.log_handler.admin_acl.return_value = {
+            "ts1": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+            "ts2": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+        }
+
+        actual = self.controller.get_user("admin", nodes="principal")
+
+        self.log_handler.admin_acl.assert_called_with(
+            stanza=constants.ADMIN_USERS, nodes="principal"
+        )
+
+        self.assertEqual(actual, expected)
+
+    def test_get_roles(self):
+        expected = {
+            "ts1": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+            "ts2": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+        }
+        self.log_handler.admin_acl.return_value = {
+            "ts1": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+            "ts2": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+        }
+
+        actual = self.controller.get_roles(nodes="principal")
+
+        self.log_handler.admin_acl.assert_called_with(
+            stanza=constants.ADMIN_ROLES, nodes="principal"
+        )
+
+        self.assertEqual(actual, expected)
+
+    def test_get_role(self):
+        expected = {
+            "ts1": {
+                "1.1.1.1": {"admin": "1"},
+                "2.2.2.2": {"admin": "1"},
+            },
+            "ts2": {
+                "1.1.1.1": {"admin": "1"},
+                "2.2.2.2": {"admin": "1"},
+            },
+        }
+        self.log_handler.admin_acl.return_value = {
+            "ts1": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+            "ts2": {
+                "1.1.1.1": {"admin": "1", "user": "2"},
+                "2.2.2.2": {"admin": "1", "user": "2"},
+            },
+        }
+
+        actual = self.controller.get_role("admin", nodes="principal")
+
+        self.log_handler.admin_acl.assert_called_with(
+            stanza=constants.ADMIN_ROLES, nodes="principal"
+        )
+
+        self.assertEqual(actual, expected)

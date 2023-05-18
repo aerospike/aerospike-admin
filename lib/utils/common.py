@@ -27,7 +27,6 @@ from typing import (
     Any,
     Literal,
     Optional,
-    TypeVar,
     TypedDict,
     Union,
     Callable,
@@ -45,6 +44,7 @@ from collections import OrderedDict
 from dateutil import parser as date_parser
 
 from lib.utils import constants, file_size, util, version, data
+from lib.utils.types import NamespaceDict, NodeDict
 from lib.view import terminal
 
 logger = logging.getLogger("asadm")
@@ -577,12 +577,6 @@ class UDAEntryNamespaceDict(TypedDict):
     unique_data_bytes: int
 
 
-T = TypeVar("T")
-
-# TODO: Could be moved to its own utils.types module.
-NodeDict = dict[str, T]
-DatacenterDict = dict[str, T]
-NamespaceDict = dict[str, T]
 UDAEntryNamespacesDict = NamespaceDict[UDAEntryNamespaceDict]
 
 
@@ -606,7 +600,6 @@ class UDAEntriesRespDict(TypedDict):
 
 
 class UDAResponsesRequiredDict(TypedDict):
-    # TODO: Maybe get rid of possible str type
     license_usage: UDAEntriesRespDict
     health: dict
 

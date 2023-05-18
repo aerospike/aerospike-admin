@@ -16,6 +16,7 @@ PORT = 3000
 NAMESPACE = "test"
 # the set to be used for the tests
 SET = "test"
+DC = "DC1"
 CLIENT_ATTEMPTS = 20
 
 # the number of server nodes to use
@@ -469,6 +470,16 @@ def create_sindex(name, type_, ns, bin, set_: str | None = None):
 
     time.sleep(1)  # TODO: Instead of sleep wait for sindex to exist
     print("Successfully created secondary index", name)
+
+
+def create_xdr_filter(ns, dc, exp):
+    global CLIENT
+    req = f"xdr-set-filter:namespace={ns};dc={dc};exp={exp}".format(ns, dc, exp)
+
+    CLIENT.info_all(req)
+
+    time.sleep(1)  # TODO: Instead of sleep wait for sindex to exist
+    print("Successfully created an xdr filter for ", dc, ns, exp)
 
 
 def upload_udf(file_name, file_contents):

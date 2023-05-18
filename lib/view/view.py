@@ -1040,7 +1040,7 @@ class CliView(object):
         )
 
     @staticmethod
-    def show_users(users_data, like=None, timestamp="", **ignore):
+    def show_users(users_data, timestamp="", like=None, **ignore):
         if not users_data:
             return
 
@@ -1053,7 +1053,7 @@ class CliView(object):
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Users{}".format(title_timestamp)
         # Normally the top level of the dict is used to associate different sources.
-        # Since we do not need one here we must artificially create one.
+        # We only get the result from the principal so we do not need to here. So we must artificially create one.
 
         users_data = dict(
             enumerate({k: v} for k, v in users_data.items() if k in filtered_keys)
@@ -1078,10 +1078,6 @@ class CliView(object):
 
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        sources = dict(
-            node_names=node_names,
-            node_ids=node_ids,
-        )
         common = dict(principal=cluster.get_expected_principal())
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Users Statistics{}".format(title_timestamp)

@@ -16,9 +16,11 @@ import ntpath
 import os
 import shutil
 import tarfile
+from typing import Literal
 import zipfile
 
 from lib.utils import common, log_util, util, constants
+from lib.utils.constants import NodeSelection, NodeSelectionType
 from .collectinfo_log import CollectinfoLog
 
 ###### Constants ######
@@ -99,7 +101,6 @@ class CollectinfoLogHandler(object):
             shutil.rmtree(self.collectinfo_dir)
 
     def get_cinfo_log_at(self, timestamp=""):
-
         if not timestamp or timestamp not in self.all_cinfo_logs:
             return None
 
@@ -152,8 +153,15 @@ class CollectinfoLogHandler(object):
 
         return ip_to_node
 
-    def info_getconfig(self, stanza="", flip=False):
-        return self._fetch_from_cinfo_log(type="config", stanza=stanza, flip=flip)
+    def info_getconfig(
+        self,
+        stanza="",
+        flip=False,
+        nodes: NodeSelectionType = NodeSelection.ALL,
+    ):
+        return self._fetch_from_cinfo_log(
+            type="config", stanza=stanza, flip=flip, nodes=nodes
+        )
 
     def info_get_originalconfig(self, stanza="", flip=False):
         return self._fetch_from_cinfo_log(
@@ -217,8 +225,13 @@ class CollectinfoLogHandler(object):
     def info_namespaces(self):
         return self._fetch_from_cinfo_log(type="config", stanza="namespace_list")
 
-    def admin_acl(self, stanza):
-        data = self._fetch_from_cinfo_log(type="acl", stanza=stanza)
+    def admin_acl(
+        self,
+        stanza,
+        nodes: Literal[NodeSelection.ALL]
+        | Literal[NodeSelection.PRINCIPAL] = NodeSelection.ALL,
+    ):
+        data = self._fetch_from_cinfo_log(type="acl", stanza=stanza, nodes=nodes)
 
         """
         Asadm 2.1 stored user data as {user: [role1, role2, . . .]} which had to be
@@ -256,7 +269,6 @@ class CollectinfoLogHandler(object):
             log_files = log_util.get_all_files(cinfo_path)
             valid_files = []
             for log_file in log_files:
-
                 try:
                     # ToDo: It should be some proper check for asadm
                     # collectinfo json file.
@@ -301,7 +313,6 @@ class CollectinfoLogHandler(object):
         return files
 
     def _add_cinfo_log_files(self, cinfo_path=""):
-
         if not cinfo_path:
             raise Exception("Collectinfo path not specified.")
 
@@ -320,7 +331,13 @@ class CollectinfoLogHandler(object):
         if not snapshots_added:
             raise Exception("Multiple snapshots available without JSON dump.")
 
-    def _fetch_from_cinfo_log(self, type="", stanza="", flip=False):
+    def _fetch_from_cinfo_log(
+        self,
+        type="",
+        stanza="",
+        flip=False,
+        nodes: NodeSelectionType = NodeSelection.ALL,
+    ):
         res_dict = {}
 
         if not type:
@@ -329,7 +346,7 @@ class CollectinfoLogHandler(object):
         for timestamp in sorted(self.selected_cinfo_logs.keys()):
             try:
                 out = self.selected_cinfo_logs[timestamp].get_data(
-                    type=type, stanza=stanza
+                    type=type, stanza=stanza, nodes=nodes
                 )
                 if flip:
                     out = util.flip_keys(out)

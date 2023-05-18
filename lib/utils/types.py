@@ -1,7 +1,5 @@
 from typing import TypeVar
 
-from lib.utils.common import UDAEntryNamespaceDict
-
 
 T = TypeVar("T")
 
