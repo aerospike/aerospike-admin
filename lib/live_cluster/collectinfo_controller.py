@@ -34,7 +34,6 @@ from lib.live_cluster.get_controller import (
     GetStatisticsController,
     GetConfigController,
     GetAclController,
-    GetAclController,
     GetLatenciesController,
     GetPmapController,
     GetJobsController,

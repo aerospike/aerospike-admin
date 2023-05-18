@@ -1307,7 +1307,7 @@ class ShowUsersStatsController(CollectinfoCommandController):
 
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
-            return self.view.show_users_stats(
+            self.view.show_users_stats(
                 cinfo_log, users_data[timestamp], timestamp=timestamp, **self.mods
             )
 

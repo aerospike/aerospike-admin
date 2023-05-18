@@ -399,6 +399,9 @@ class Projector(object):
             # print 'debug - ', e, self.source, self.source
             raise ErrorEntryException("unexpected error occurred: {}".format(e))
 
+        if result is None:
+            raise NoEntryException("No entry found for source {}".format(sources))
+
         return result
 
     def do_project(self, sheet, sources):
@@ -472,22 +475,6 @@ class BaseProjector(Projector):
     def get_sources(self) -> set[str]:
         return set([self.source])
 
-    def __call__(self, sheet, sources):
-        try:
-            result = super().__call__(sheet, sources)
-        except (NoEntryException, ErrorEntryException):
-            raise
-        except Exception as e:
-            # XXX - A debug log may be useful.
-            # print 'debug - ', e, self.source, self.source
-            logger.debug("Problem projecting keys %s, exc: %s", self.keys, e)
-            raise
-
-        if result is None:
-            raise NoEntryException("No entry found for source {}".format(self.source))
-
-        return result
-
 
 class Projectors(object):
     class Identity(BaseProjector):
@@ -502,22 +489,11 @@ class Projectors(object):
 
             return row
 
-    class _String(BaseProjector):
-        def __init__(self, field_type: str, source: str, *keys, **kwargs):
-            super().__init__(field_type, source, *keys, **kwargs)
-
-        def do_project(self, sheet, sources):
-            """
-            Arguments:
-            source -- A set of sources to project a string from.
-            """
-            return super().do_project(sheet, sources)
-
-    class String(_String):
+    class String(BaseProjector):
         def __init__(self, source: str, *keys, **kwargs):
             super().__init__(FieldType.string, source, *keys, **kwargs)
 
-    class Boolean(_String):
+    class Boolean(BaseProjector):
         def __init__(self, source: str, *keys, **kwargs):
             super().__init__(FieldType.boolean, source, *keys, **kwargs)
 
@@ -533,7 +509,7 @@ class Projectors(object):
 
             return True if value else False
 
-    class Float(_String):
+    class Float(BaseProjector):
         def __init__(self, source: str, *keys, **kwargs):
             super().__init__(FieldType.number, source, *keys, **kwargs)
 
@@ -549,7 +525,7 @@ class Projectors(object):
             except ValueError:
                 return value
 
-    class Number(_String):
+    class Number(BaseProjector):
         def __init__(self, source: str, *keys, **kwargs):
             super().__init__(FieldType.number, source, *keys, **kwargs)
 
@@ -626,8 +602,6 @@ class Projectors(object):
             """
             super().__init__(FieldType.number)
             self.field_projectors = field_projectors
-            # sources = [(field_fn.get_sources() for field_fn in field_projectors)]
-            # self.sources = reduce(lambda acc, elem: acc.union(elem), sources, set())
 
         def do_project(self, sheet, sources):
             """

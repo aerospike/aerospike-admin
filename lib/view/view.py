@@ -1081,8 +1081,6 @@ class CliView(object):
         common = dict(principal=cluster.get_expected_principal())
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Users Statistics{}".format(title_timestamp)
-        # Normally the top level of the dict is used to associate different sources.
-        # Since we do not need one here we must artificially create one.
 
         users_data = {k: v for k, v in users_data.items() if k in filtered_keys}
 

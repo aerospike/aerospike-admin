@@ -767,7 +767,11 @@ class ShowUsersStatsControllerTest(asynctest.TestCase):
 
     async def test_raises_error(self):
         as_error = IOError("test-message")
-        self.getter_mock.get_users.return_value = {"1.1.1.1": as_error}
+        as_error2 = IOError("test-message2")
+        self.getter_mock.get_users.return_value = {
+            "1.1.1.1": as_error,
+            "2.2.2.2": as_error2,
+        }
 
         await test_util.assert_exception_async(
             self,
@@ -779,6 +783,39 @@ class ShowUsersStatsControllerTest(asynctest.TestCase):
 
         self.getter_mock.get_users.assert_called_with(nodes=self.controller.nodes)
         self.view_mock.show_users_stats.assert_not_called()
+
+    async def test_calls_user_successfully_with_only_one_error(self):
+        resp = {
+            "1.1.1.1": {
+                "admin": {
+                    "roles": ["user-admin"],
+                    "read-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "write-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "connections": 4294966442,
+                }
+            },
+            "2.2.2.2": Exception(),
+        }
+        self.getter_mock.get_user.return_value = resp
+
+        await self.controller.execute(["admin"])
+
+        self.getter_mock.get_user.assert_called_with(
+            "admin", nodes=self.controller.nodes
+        )
+        self.view_mock.show_users_stats.assert_called_with(
+            self.cluster_mock, resp, **self.controller.mods
+        )
 
 
 class ShowRolesControllerTest(asynctest.TestCase):

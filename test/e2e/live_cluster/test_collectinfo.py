@@ -49,7 +49,7 @@ class TestCollectinfo(asynctest.TestCase):
         ("show config xdr namespace", [], None),
         ("show statistics namespace", ["current_time", "migrate_rx_instances"], None),
         (
-            "show statistics service",
+            "show statistics service",  # Too many differing stats to compare
             [
                 "uptime",
                 "time_since_rebalance",
@@ -253,8 +253,6 @@ class TestCollectinfo(asynctest.TestCase):
             return True
 
         if not (isinstance(d1, dict) and isinstance(d2, dict)):
-            # return False
-            # time.sleep(3000)
             self.fail(
                 f"d1 and d2 should both be dicts but found {type(d1)} and {type(d2)}"
             )
