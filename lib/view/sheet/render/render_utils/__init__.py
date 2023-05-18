@@ -1,4 +1,4 @@
-# Copyright 2019 Aerospike, Inc.
+# Copyright 2019-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
 
 class ErrorEntry(object):
     def __lt__(self, other):
-        return False
+        return True
 
     def __le__(self, other):
         return True
 
     def __gt__(self, other):
-        return True
+        return False
 
     def __ge__(self, other):
         return False
@@ -29,13 +29,13 @@ class ErrorEntry(object):
 
 class NoEntry(object):
     def __lt__(self, other):
-        return False
+        return True
 
     def __le__(self, other):
         return True
 
     def __gt__(self, other):
-        return True
+        return False
 
     def __ge__(self, other):
         return False

@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -73,6 +73,33 @@ init:
 	pipenv install --dev
 	pipenv check
 	pipenv graph
+
+UNIT_TEST_CMD=pytest --disable-warnings test/unit
+E2E_TEST_CMD=pytest --disable-warnings test/e2e/live_cluster
+COVERAGE_CONF=$(SOURCE_ROOT)/tox.ini
+
+.PHONY: unit
+unit:
+	$(UNIT_TEST_CMD)
+
+.PHONY: integration
+integration:
+	FEATKEY=$(FEATKEY) $(E2E_TEST_CMD)
+
+.PHONY: unit-cov
+unit-cov:
+	COVERAGE_PROCESS_START=$(COVERAGE_CONF) coverage run --module $(UNIT_TEST_CMD)
+
+.PHONY: integration-cov
+integration-cov:
+	COVERAGE_PROCESS_START=$(COVERAGE_CONF) FEATKEY=$(FEATKEY) coverage run --module $(E2E_TEST_CMD)
+
+.PHONY: coverage
+coverage:
+	coverage erase
+	make unit-cov
+	make integration-cov
+	coverage combine
 
 .PHONY: install
 install: uninstall

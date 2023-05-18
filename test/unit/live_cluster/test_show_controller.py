@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 from pytest import PytestUnraisableExceptionWarning
 from lib.base_controller import ShellException
-from mock import patch, AsyncMock, create_autospec
+from mock import MagicMock, patch, AsyncMock, create_autospec
 from mock.mock import call
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.get_controller import (
@@ -35,9 +35,11 @@ from lib.live_cluster.show_controller import (
     ShowRosterController,
     ShowStatisticsController,
     ShowStatisticsXDRController,
+    ShowStopWritesController,
     ShowUsersController,
 )
 from lib.live_cluster.client import ASProtocolError, ASResponse
+from lib.utils import common
 from lib.view.view import CliView
 from test.unit import util as test_util
 
@@ -384,7 +386,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
 
         for ns_set_sindex in stats:
             self.view_mock.show_stats.assert_any_call(
-                "{} Sindex Statistics".format(ns_set_sindex),
+                "{} SIndex Statistics".format(ns_set_sindex),
                 stats[ns_set_sindex],
                 self.cluster_mock,
                 show_total=True,
@@ -1055,7 +1057,6 @@ class ShowRacksControllerTest(asynctest.TestCase):
         self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
         self.view_mock = self.controller.view = create_autospec(CliView)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
-        self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
         self.addCleanup(patch.stopall)
@@ -1069,3 +1070,78 @@ class ShowRacksControllerTest(asynctest.TestCase):
 
         self.getter_mock.get_racks.assert_called_with(nodes="principal", flip=False)
         self.view_mock.show_racks.assert_called_with(resp, **self.controller.mods)
+
+
+class ShowStopWritesControllerTest(asynctest.TestCase):
+    async def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.controller = ShowStopWritesController()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.config_getter_mock = self.controller.config_getter = create_autospec(
+            GetConfigController
+        )
+        self.stat_getter_mock = self.controller.stat_getter = create_autospec(
+            GetStatisticsController
+        )
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.create_stop_writes_summary_mock = self.log_handler = patch(
+            "lib.utils.common.create_stop_writes_summary",
+            MagicMock(),
+        ).start()
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    @asynctest.fail_on(active_handles=True)
+    async def test_default(self):
+        self.config_getter_mock.get_namespace.return_value = conf_ns_resp = {
+            "1.1.1.1": "a"
+        }
+        self.config_getter_mock.get_sets.return_value = conf_set_resp = {"1.1.1.1": "b"}
+        self.stat_getter_mock.get_namespace.return_value = stat_ns_resp = {
+            "1.1.1.1": "c"
+        }
+        self.stat_getter_mock.get_sets.return_value = stat_set_resp = {"1.1.1.1": "d"}
+        self.stat_getter_mock.get_service.return_value = stat_service_resp = {
+            "1.1.1.1": "e"
+        }
+        self.create_stop_writes_summary_mock.return_value = summary_resp = {
+            "1.1.1.1": "f"
+        }
+
+        await self.controller.execute([])
+
+        self.create_stop_writes_summary_mock.assert_called_with(
+            stat_service_resp, stat_ns_resp, conf_ns_resp, stat_set_resp, conf_set_resp
+        )
+        self.view_mock.show_stop_writes.assert_called_with(
+            summary_resp, self.cluster_mock, **self.controller.mods
+        )
+
+    @asynctest.fail_on(active_handles=True)
+    async def test_for_mod(self):
+        self.config_getter_mock.get_namespace.return_value = conf_ns_resp = {
+            "1.1.1.1": "a"
+        }
+        self.config_getter_mock.get_sets.return_value = conf_set_resp = {"1.1.1.1": "b"}
+        self.stat_getter_mock.get_namespace.return_value = stat_ns_resp = {
+            "1.1.1.1": "c"
+        }
+        self.stat_getter_mock.get_sets.return_value = stat_set_resp = {"1.1.1.1": "d"}
+        self.stat_getter_mock.get_service.return_value = stat_service_resp = {
+            "1.1.1.1": "e"
+        }
+        self.create_stop_writes_summary_mock.return_value = summary_resp = {
+            "1.1.1.1": "f"
+        }
+
+        await self.controller.execute(["for", "test", "testset"])
+
+        self.create_stop_writes_summary_mock.assert_called_with(
+            stat_service_resp, {}, {}, stat_set_resp, conf_set_resp
+        )
+        self.view_mock.show_stop_writes.assert_called_with(
+            summary_resp, self.cluster_mock, **self.controller.mods
+        )

@@ -1,3 +1,17 @@
+# Copyright 2022-2023 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 import re
 import math
@@ -1087,7 +1101,6 @@ def change_key_name_in_map(datamap, old_keys, new_key):
 def type_check_basic_values(section: dict[str, Any]):
     malformedkeys = []
     # ip_regex = "[0-9]{1,2,3}(\.[0-9]{1,2,3})*"
-    print(section)
     for key in section:
         if isinstance(section[key], dict):
             type_check_basic_values(section[key])
@@ -1121,7 +1134,6 @@ def type_check_basic_values(section: dict[str, Any]):
 
             # Handle float of format (a.b), only 1 dot would be there.
             if section[key].replace(".", "", 1).isdigit():
-                print(section[key])
                 section[key] = _str_to_number(section[key])
 
             # Handle bool

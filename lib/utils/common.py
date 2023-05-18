@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,16 @@ import logging
 import operator
 import os
 import platform
-from typing import Any, Literal, Optional, TypeVar, TypedDict, Union, Callable
+from typing import (
+    Any,
+    Literal,
+    Optional,
+    TypeVar,
+    TypedDict,
+    Union,
+    Callable,
+)
+from typing_extensions import NotRequired
 import distro
 import socket
 import time
@@ -1148,7 +1157,7 @@ def create_summary(
     service_configs={},
     ns_configs={},
     security_configs={},
-    license_data_usage: Optional[UDAResponsesDict] = None,
+    license_data_usage: UDAResponsesDict | None = None,
 ):
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
@@ -1607,6 +1616,286 @@ def create_summary(
         summary_dict["CLUSTER"]["pmem"] = cluster_pmem_index
 
     return summary_dict
+
+
+#############################
+
+####### Stop-Writes #########
+
+
+class StopWritesEntry(TypedDict):
+    metric: str
+    metric_usage: int | float
+    stop_writes: bool
+    metric_threshold: NotRequired[int | float]
+    config: NotRequired[str]
+    namespace: NotRequired[str]
+    set: NotRequired[str]
+
+
+StopWritesEntryKey = tuple[str | None, str | None, str]
+StopWritesDict = NodeDict[dict[StopWritesEntryKey, StopWritesEntry]]
+
+
+def _create_stop_writes_entry(
+    node_sw_metrics: dict[StopWritesEntryKey, StopWritesEntry],
+    metric: str,
+    metric_usage: float | int,
+    stop_writes: bool,
+    metric_threshold: float | int | None,
+    config: str | None = None,
+    namespace: str | None = None,
+    set_: str | None = None,
+):
+    entry: StopWritesEntry = {
+        "stop_writes": stop_writes,
+        "metric": metric,
+        "metric_usage": metric_usage,
+    }
+
+    if config:
+        entry["config"] = config
+    if metric_threshold:
+        entry["metric_threshold"] = metric_threshold
+    if namespace:
+        entry["namespace"] = namespace
+    if set_:
+        entry["set"] = set_
+
+    node_sw_metrics[(namespace, set_, metric)] = entry
+
+
+@staticmethod
+def _is_stop_writes_cause(
+    usage: int | float, threshold: int | float, stop_writes: str | None = None
+):
+    if threshold == 0:
+        return False
+
+    return (
+        True
+        if usage >= threshold and (stop_writes is None or stop_writes.lower() == "true")
+        else False
+    )
+
+
+@staticmethod
+def _format_ns_stop_writes_metrics(
+    stop_writes_metrics: StopWritesDict,
+    service_stats,
+    ns_stats,
+):
+    for node in service_stats:
+        cluster_clock_skew_ms = service_stats[node].get("cluster_clock_skew_ms", None)
+        cluster_clock_skew_stop_writes_sec = service_stats[node].get(
+            "cluster_clock_skew_stop_writes_sec", None
+        )
+        system_free_mem_pct = service_stats[node].get("system_free_mem_pct", None)
+
+        for ns, stats in ns_stats.get(node, {}).items():
+            # There is no config for this trigger
+            strong_consistency: str | None = stats.get("strong-consistency", None)
+            nsup_period: str | None = stats.get("nsup-period", None)
+            stop_writes: str | None = stats.get("clock_skew_stop_writes", None)
+            metric: str = "cluster_clock_skew_ms"
+            usage = cluster_clock_skew_ms
+            threshold = cluster_clock_skew_stop_writes_sec
+
+            """
+            For Available mode (AP) namespaces running versions 4.5.1 or above and where 
+            NSUP is enabled (i.e. nsup-period not zero), will be true if the cluster 
+            clock skew exceeds 40 seconds.
+            """
+            if usage is not None and threshold is not None and stop_writes is not None:
+                if (
+                    strong_consistency == "false"
+                    and nsup_period is not None  # nsup-period was added in 4.5.1.
+                    and nsup_period != "0"
+                ):
+                    thresh = 40000
+                else:
+                    thresh = (
+                        int(cluster_clock_skew_stop_writes_sec) * 1000
+                    )  # convert to ms
+                use = int(usage)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+                _create_stop_writes_entry(
+                    stop_writes_metrics[node],
+                    metric,
+                    use,
+                    sw,
+                    thresh,
+                    namespace=ns,
+                )
+
+            stop_writes: str | None = stats.get("stop_writes", None)
+            metric = "system_free_mem_pct"
+            config = "stop-writes-sys-memory-pct"
+            threshold: str | None = stats.get(config, None)
+
+            if (
+                threshold is not None
+                and system_free_mem_pct is not None
+                and stop_writes is not None
+            ):
+                thresh = int(threshold)
+                use = 100 - int(system_free_mem_pct)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+                _create_stop_writes_entry(
+                    stop_writes_metrics[node],
+                    metric,
+                    use,
+                    sw,
+                    thresh,
+                    config=config,
+                    namespace=ns,
+                )
+
+    for node in ns_stats:
+        for ns, stats in ns_stats[node].items():
+            stop_writes: str | None = stats.get("stop_writes", None)
+
+            if stop_writes is None:
+                continue
+
+            metric = "device_avail_pct"
+            config = "min-avail-pct"
+            usage: str | None = stats.get(metric, None)
+            threshold: str | None = stats.get(config, None)
+
+            if usage is not None and threshold is not None:
+                use = int(usage)
+                thresh = int(threshold)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+                _create_stop_writes_entry(
+                    stop_writes_metrics[node],
+                    metric,
+                    use,
+                    sw,
+                    thresh,
+                    config=config,
+                    namespace=ns,
+                )
+
+            metric = "device_used_bytes"
+            config = "max-used-pct"
+            usage: str | None = stats.get(metric, None)
+            bytes_total: str | None = stats.get("device_total_bytes", None)
+            threshold: str | None = stats.get(config, None)
+
+            if usage is not None and threshold is not None and bytes_total is not None:
+                use = int(usage)
+                thresh = int(bytes_total) * (int(threshold) / 100)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+                _create_stop_writes_entry(
+                    stop_writes_metrics[node],
+                    metric,
+                    use,
+                    sw,
+                    thresh,
+                    config=config,
+                    namespace=ns,
+                )
+
+            metric = "memory_used_bytes"
+            config = "stop-writes-pct"
+            usage: str | None = stats.get(metric, None)
+            bytes_total: str | None = stats.get("memory-size", None)
+            threshold: str | None = stats.get(config, None)
+
+            if usage is not None and threshold is not None and bytes_total is not None:
+                use = int(usage)
+                thresh = int(bytes_total) * (int(threshold) / 100)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+                _create_stop_writes_entry(
+                    stop_writes_metrics[node],
+                    metric,
+                    use,
+                    sw,
+                    thresh,
+                    config=config,
+                    namespace=ns,
+                )
+
+
+def _format_set_stop_writes_metrics(
+    stop_writes_metrics: StopWritesDict,
+    set_stats,
+):
+    for node in set_stats:
+        for (ns, set_), stats in set_stats[node].items():
+            metric1 = "memory_data_bytes"
+            metric2 = "device_data_bytes"
+            config = "stop-writes-size"
+            usage = None
+            metric = None
+            usage1: str | None = stats.get(metric1, None)
+            usage2: str | None = stats.get(metric2, None)
+            threshold: str | None = stats.get(config, None)
+
+            if usage1 is None or usage1 == "0":
+                metric = metric2
+                usage = usage2
+            else:
+                metric = metric1
+                usage = usage1
+
+            if usage is not None and threshold is not None:
+                use = int(usage)
+                thresh = int(threshold)
+                sw = _is_stop_writes_cause(use, thresh)
+                _create_stop_writes_entry(
+                    stop_writes_metrics[node],
+                    metric,
+                    use,
+                    sw,
+                    thresh,
+                    config=config,
+                    namespace=ns,
+                    set_=set_,
+                )
+
+            metric = "objects"
+            config = "stop-writes-count"
+            usage: str | None = stats.get(metric, None)
+            threshold: str | None = stats.get(config, None)
+
+            if usage is not None and threshold is not None:
+                use = int(usage)
+                thresh = int(threshold)
+                sw = _is_stop_writes_cause(use, thresh)
+                _create_stop_writes_entry(
+                    stop_writes_metrics[node],
+                    metric,
+                    use,
+                    sw,
+                    thresh,
+                    config=config,
+                    namespace=ns,
+                    set_=set_,
+                )
+
+
+def create_stop_writes_summary(
+    service_stats, ns_stats, ns_config, set_stats, set_config
+) -> StopWritesDict:
+    stop_writes_metrics: StopWritesDict = {}
+    node_keys = (
+        set(service_stats.keys())
+        .union(ns_stats.keys())
+        .union(ns_config.keys())
+        .union(set_stats.keys())
+        .union(set_config.keys())
+    )
+    for key in node_keys:
+        stop_writes_metrics[key] = {}
+
+    ns_stats = util.deep_merge_dicts(ns_stats, ns_config)
+    set_stats = util.deep_merge_dicts(set_stats, set_config)
+
+    _format_ns_stop_writes_metrics(stop_writes_metrics, service_stats, ns_stats)
+    _format_set_stop_writes_metrics(stop_writes_metrics, set_stats)
+    return stop_writes_metrics
 
 
 #############################
@@ -2540,7 +2829,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
         ["cat /proc/interrupts"],
         ["iostat -y -x 5 4"],
         dmesg_cmds,
-        ['sudo  pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
+        ['sudo pgrep asd | xargs -I f sh -c "cat /proc/f/limits"'],
         ["lscpu"],
         ['sudo sysctl -a | grep -E "shmmax|file-max|maxfiles"'],
         ["sudo iptables -L -vn"],

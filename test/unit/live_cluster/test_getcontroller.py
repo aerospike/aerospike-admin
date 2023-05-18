@@ -1,3 +1,17 @@
+# Copyright 2021-2023 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import copy
 import warnings
 from pytest import PytestUnraisableExceptionWarning
@@ -292,9 +306,9 @@ class GetStatisticsControllerTest(asynctest.TestCase):
 
     async def test_get_namespace(self):
         self.cluster_mock.info_namespaces.return_value = {
-            "1.1.1.1": ["foo", "bar"],
+            "1.1.1.1": ["foo", "bar", ""],
             "2.2.2.2": Exception(),
-            "3.3.3.3": ["foo", "bar"],
+            "3.3.3.3": ["bbb", "aaa"],
             "4.4.4.4": ["tar", "zip"],
         }
 
@@ -308,6 +322,16 @@ class GetStatisticsControllerTest(asynctest.TestCase):
                 return {
                     "1.1.1.1": {"stat3": 3, "stat4": 4},
                     "2.2.2.2": {"stat3": 3, "stat4": 4},
+                }
+            if namespace == "aaa":
+                return {
+                    "1.1.1.1": {"stat1": 5, "stat2": 5},
+                    "2.2.2.2": {"stat1": 6, "stat2": 6},
+                }
+            elif namespace == "bbb":
+                return {
+                    "1.1.1.1": {"stat3": 7, "stat4": 7},
+                    "2.2.2.2": {"stat3": 7, "stat4": 7},
                 }
             elif namespace == "tar":
                 return Exception()
@@ -328,7 +352,33 @@ class GetStatisticsControllerTest(asynctest.TestCase):
             },
         }
 
-        result = await self.controller.get_namespace()
+        result = await self.controller.get_namespace(for_mods=["foo", "bar"])
+
+        self.assertDictEqual(result, expected)
+
+    async def test_get_sets(self):
+        self.cluster_mock.info_all_set_statistics.return_value = {
+            "1.1.1.1": {
+                ("aaa", "sss"): {"stat1": 1, "stat2": 2},
+                ("aab", "sst"): {"stat3": 3, "stat4": 4},
+                ("abc", "stu"): {"stat3": 5, "stat4": 6},
+            },
+            "2.2.2.2": {
+                ("aaa", "sss"): {"stat1": 1, "stat2": 2},
+                ("aab", "sst"): {"stat3": 3, "stat4": 4},
+                ("abc", "stu"): {"stat3": 5, "stat4": 6},
+            },
+        }
+        expected = {
+            "1.1.1.1": {
+                ("aab", "sst"): {"stat3": 3, "stat4": 4},
+            },
+            "2.2.2.2": {
+                ("aab", "sst"): {"stat3": 3, "stat4": 4},
+            },
+        }
+
+        result = await self.controller.get_sets(for_mods=["ab", "ss"])
 
         self.assertDictEqual(result, expected)
 
@@ -615,6 +665,32 @@ class GetConfigControllerTest(asynctest.TestCase):
 
         actual_output = await self.controller.get_namespace(for_mods=["bar"])
         self.assertDictEqual(expected_output, actual_output)
+
+    async def test_get_sets(self):
+        self.cluster_mock.info_all_set_statistics.return_value = {
+            "1.1.1.1": {
+                ("aaa", "sss"): {"stat1": 1, "stat2": 2},
+                ("aab", "sst"): {"stat3": 3, "stat4": 4},
+                ("abc", "stu"): {"stat3": 5, "stat4": 6},
+            },
+            "2.2.2.2": {
+                ("aaa", "sss"): {"stat1": 1, "stat2": 2},
+                ("aab", "sst"): {"stat3": 3, "stat4": 4},
+                ("abc", "stu"): {"stat3": 5, "stat4": 6},
+            },
+        }
+        expected = {
+            "1.1.1.1": {
+                ("aab", "sst"): {"stat3": 3, "stat4": 4},
+            },
+            "2.2.2.2": {
+                ("aab", "sst"): {"stat3": 3, "stat4": 4},
+            },
+        }
+
+        result = await self.controller.get_sets(for_mods=["ab", "ss"])
+
+        self.assertDictEqual(result, expected)
 
     async def test_get_xdr(self):
         self.cluster_mock.info_xdr_config.return_value = {

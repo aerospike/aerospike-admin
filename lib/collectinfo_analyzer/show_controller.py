@@ -1,3 +1,17 @@
+# Copyright 2021-2023 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from lib.collectinfo_analyzer.get_controller import (
     GetConfigController,
     GetStatisticsController,
@@ -21,6 +35,7 @@ class ShowController(CollectinfoCommandController):
             "roles": ShowRolesController,
             "users": ShowUsersController,
             "udfs": ShowUdfsController,
+            "stop-writes": ShowStopWritesController,
             "sindex": ShowSIndexController,
             "config": ShowConfigController,
             "latencies": ShowLatenciesController,
@@ -802,37 +817,13 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        set_stats = self.log_handler.info_statistics(
-            stanza=constants.STAT_SETS, flip=True
-        )
+        set_stats = self.getter.get_sets(for_mods=self.mods["for"], flip=True)
 
         for timestamp in sorted(set_stats.keys()):
-            if not set_stats[timestamp]:
-                continue
-            namespace_set = {
-                ns_set.split()[0] for ns_set in set_stats[timestamp].keys()
-            }
-
-            try:
-                namespace_set = set(
-                    util.filter_list(namespace_set, self.mods["for"][:1])
-                )
-            except Exception:
-                pass
-
-            sets = {ns_set.split()[1] for ns_set in set_stats[timestamp].keys()}
-            try:
-                sets = set(util.filter_list(sets, self.mods["for"][1:2]))
-            except Exception:
-                pass
-
-            for ns_set, stats in set_stats[timestamp].items():
-                ns, set_ = ns_set.split()
-                if ns not in namespace_set or set_ not in sets:
-                    continue
-
+            for key, stats in set_stats[timestamp].items():
+                ns, set_ = key
                 self.view.show_stats(
-                    "%s Set Statistics" % (ns_set),
+                    "%s %s Set Statistics" % (ns, set_),
                     stats,
                     self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     show_total=show_total,
@@ -1397,7 +1388,7 @@ class ShowJobsController(CollectinfoCommandController):
     )
     def _do_default(self, line):
         self.do_scans(line[:])
-        self.do_queries(line[:]),
+        self.do_queries(line[:])
         self.do_sindex_builder(line[:])
 
     def _job_helper(self, module, title):
@@ -1456,3 +1447,44 @@ class ShowRacksController(CollectinfoCommandController):
             data = {principal_ip: data[principal_ip]}
 
             self.view.show_racks(data, timestamp=timestamp, **self.mods)
+
+
+@CommandHelp("Displays all metrics that could trigger stop-writes.")
+class ShowStopWritesController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["with", "for"])
+        self.config_getter = GetConfigController(self.log_handler)
+        self.stat_getter = GetStatisticsController(self.log_handler)
+
+    async def _do_default(self, line):
+        service_stats = self.stat_getter.get_service()
+        ns_stats = self.stat_getter.get_namespace()
+        ns_configs = self.config_getter.get_namespace()
+
+        if len(self.mods["for"]) < 2:
+            ns_stats = self.stat_getter.get_namespace(for_mods=self.mods["for"])
+            ns_configs = self.config_getter.get_namespace(for_mods=self.mods["for"])
+        else:
+            ns_stats = {}
+            ns_configs = {}
+
+        set_stats = self.stat_getter.get_sets(for_mods=self.mods["for"])
+        set_configs = self.config_getter.get_sets(for_mods=self.mods["for"])
+
+        for timestamp in sorted(service_stats.keys()):
+            if not service_stats[timestamp]:
+                continue
+
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            return self.view.show_stop_writes(
+                common.create_stop_writes_summary(
+                    service_stats[timestamp],
+                    ns_stats[timestamp] if ns_stats else {},
+                    ns_configs[timestamp] if ns_configs else {},
+                    set_stats[timestamp] if set_stats else {},
+                    set_configs[timestamp] if set_configs else {},
+                ),
+                cinfo_log,
+                **self.mods,
+            )

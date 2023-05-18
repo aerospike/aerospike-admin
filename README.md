@@ -9,7 +9,7 @@ full documentation can be found [here](https://docs.aerospike.com/tools/asadm).
 
 ## Asinfo
 The Aerospike Admin repo now contains asinfo. Asinfo has been a long time member of the
-Aerospike Tools package but is now build together with asadm. Asinfo provides a raw
+Aerospike Tools package and is now built together with asadm. Asinfo provides a raw
 interface to Aerospike info protocol and is useful for debugging and development. The
 full documentation can be found [here](https://docs.aerospike.com/tools/asinfo).
 
@@ -66,19 +66,30 @@ Admin> help
 
 
 ## Tests
+Asadm has unit, integration, and e2e tests. Tests also support code coverage reporting.
 
-### Setting Test Environment
-asadm has unit and e2e tests. To setup environment for e2e tests, execute following steps:
-- Enable security in the aerospike.conf file.
-- Verify that the default user `admin` exists and that is has the default roles: `sys-admin`, `user-admin`, and `read-write`. 
-- Start Aerospike cluster: Test machine should be part of this cluster with 3000 as asinfo port.
-- Write a few records to cluster `asbenchmark -h <host> -Uadmin -Padmin`
-- Wait for a few seconds so cluster can return histogram output properly.
+### Dependencies
+- The e2e tests depend on docker. 
+- The e2e tests depend on a aerospike features.conf file to run Aerospike Enterprise Edition. 
+- Run `pipenv install --dev`.
 
-### Running Tests
+### Running Unit Tests
 ```
-pipenv
-./run_tests.sh
+make unit
+```
+
+### Running e2e/integration Tests
+```
+FEATKEY=(base64 -i path/to/features.conf) make integration
+```
+to test the bundled app run:
+```
+ASADM_TEST_BUNDLE=true FEATKEY=(base64 -i path/to/features.conf) make integration
+```
+
+### Running all tests with coverage
+```
+FEATKEY=(base64 -i path/to/features.conf) make coverage
 ```
 
 ## Profiling

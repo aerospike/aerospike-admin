@@ -1,3 +1,16 @@
+# Copyright 2021-2023 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import asyncio
 from lib.base_controller import CommandHelp, CommandName
 from lib.utils import common, util, version, constants
@@ -27,11 +40,12 @@ class ShowController(LiveClusterCommandController):
             "pmap": ShowPmapController,
             "best-practices": ShowBestPracticesController,
             "jobs": ShowJobsController,
+            "udfs": ShowUdfsController,
+            "stop-writes": ShowStopWritesController,
             "racks": ShowRacksController,
             "roster": ShowRosterController,
             "roles": ShowRolesController,
             "users": ShowUsersController,
-            "udfs": ShowUdfsController,
             "sindex": ShowSIndexController,
             "config": ShowConfigController,
             "latencies": ShowLatenciesController,
@@ -451,19 +465,16 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
         futures = []
-        dc_configs = await self.getter.get_xdr_dcs(flip=True, nodes=self.nodes)
-
+        dc_configs = await self.getter.get_xdr_dcs(nodes=self.nodes)
         futures = [
             util.callable(
-                self.view.show_config,
-                "%s DC Configuration" % (dc),
-                configs,
+                self.view.show_xdr_dc_config,
+                dc_configs,
                 self.cluster,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 **self.mods,
             )
-            for dc, configs in dc_configs.items()
         ]
 
         futures.append(
@@ -878,7 +889,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         return [
             util.callable(
                 self.view.show_stats,
-                "%s Sindex Statistics" % (ns_set_sindex),
+                "%s SIndex Statistics" % (ns_set_sindex),
                 sindex_stats[ns_set_sindex],
                 self.cluster,
                 show_total=show_total,
@@ -1514,3 +1525,33 @@ class ShowRacksController(LiveClusterCommandController):
     async def _do_default(self, line):
         racks_data = await self.getter.get_racks(nodes="principal", flip=False)
         return self.view.show_racks(racks_data, **self.mods)
+
+
+@CommandHelp("Displays all metrics that could trigger stop-writes.")
+class ShowStopWritesController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["with", "for"])
+        self.config_getter = GetConfigController(self.cluster)
+        self.stat_getter = GetStatisticsController(self.cluster)
+
+    async def _do_default(self, line):
+        service_stats = await self.stat_getter.get_service()
+
+        if len(self.mods["for"]) < 2:
+            ns_stats = await self.stat_getter.get_namespace(for_mods=self.mods["for"])
+            ns_configs = await self.config_getter.get_namespace(
+                for_mods=self.mods["for"]
+            )
+        else:
+            ns_stats = {}
+            ns_configs = {}
+
+        set_stats = await self.stat_getter.get_sets(for_mods=self.mods["for"])
+        set_configs = await self.config_getter.get_sets(for_mods=self.mods["for"])
+        return self.view.show_stop_writes(
+            common.create_stop_writes_summary(
+                service_stats, ns_stats, ns_configs, set_stats, set_configs
+            ),
+            self.cluster,
+            **self.mods,
+        )

@@ -1,3 +1,17 @@
+# Copyright 2023 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import unittest
 import warnings
 from pytest import PytestUnraisableExceptionWarning
@@ -19,6 +33,59 @@ class GetConfigControllerTest(unittest.TestCase):
     def setUp(self):
         self.log_handler = create_autospec(CollectinfoLogHandler)
         self.controller = GetConfigController(self.log_handler)
+
+    def test_get_namespace(self):
+        self.log_handler.info_getconfig.return_value = {
+            "timestamp": {
+                "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}, "abc": {"b"}},
+                "2.2.2.2": {"aaa": {"c"}, "aab": {}, "abc": {"b"}},
+            }
+        }
+        expected = {
+            "timestamp": {
+                "1.1.1.1": {"abc": {"b"}, "aab": {"b"}},
+                "2.2.2.2": {"abc": {"b"}, "aab": {}},
+            }
+        }
+
+        actual = self.controller.get_namespace(for_mods=["aab", "ab"])
+
+        self.assertDictEqual(actual, expected)
+        self.log_handler.info_getconfig.assert_called_with(
+            stanza=constants.CONFIG_NAMESPACE
+        )
+
+    def test_get_set(self):
+        self.log_handler.info_getconfig.return_value = {
+            "timestamp": {
+                "1.1.1.1": {
+                    ("aaa", "sss"): {"a"},
+                    ("aab", "sst"): {"b"},
+                    ("abc", "stu"): {"c"},
+                },
+                "2.2.2.2": {
+                    ("aaa", "sss"): {"c"},
+                    ("aab", "sst"): {},
+                    ("abc", "stu"): {"b"},
+                },
+            }
+        }
+        expected = {
+            "timestamp": {
+                "1.1.1.1": {
+                    ("aab", "sst"): {"b"},
+                    ("abc", "stu"): {"c"},
+                },
+                "2.2.2.2": {
+                    ("aab", "sst"): {},
+                    ("abc", "stu"): {"b"},
+                },
+            }
+        }
+
+        actual = self.controller.get_sets(for_mods=["ab", "st"])
+        self.assertDictEqual(actual, expected)
+        self.log_handler.info_getconfig.assert_called_with(stanza=constants.CONFIG_SET)
 
     def test_get_xdr(self):
         self.log_handler.info_getconfig.return_value = {
@@ -158,6 +225,59 @@ class GetStatisticsControllerTest(unittest.TestCase):
             MagicMock(),
         ).start()
         self.controller = GetStatisticsController(self.log_handler)
+
+    def test_get_namespace(self):
+        self.log_handler.info_statistics.return_value = {
+            "timestamp": {
+                "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}, "abc": {"b"}},
+                "2.2.2.2": {"aaa": {"c"}, "aab": {}, "abc": {"b"}},
+            }
+        }
+        expected = {
+            "timestamp": {
+                "1.1.1.1": {"abc": {"b"}, "aab": {"b"}},
+                "2.2.2.2": {"abc": {"b"}, "aab": {}},
+            }
+        }
+
+        actual = self.controller.get_namespace(for_mods=["aab", "ab"])
+
+        self.assertDictEqual(actual, expected)
+        self.log_handler.info_statistics.assert_called_with(
+            stanza=constants.STAT_NAMESPACE
+        )
+
+    def test_get_set(self):
+        self.log_handler.info_statistics.return_value = {
+            "timestamp": {
+                "1.1.1.1": {
+                    ("aaa", "sss"): {"a"},
+                    ("aab", "sst"): {"b"},
+                    ("abc", "stu"): {"c"},
+                },
+                "2.2.2.2": {
+                    ("aaa", "sss"): {"c"},
+                    ("aab", "sst"): {},
+                    ("abc", "stu"): {"b"},
+                },
+            }
+        }
+        expected = {
+            "timestamp": {
+                "1.1.1.1": {
+                    ("aab", "sst"): {"b"},
+                    ("abc", "stu"): {"c"},
+                },
+                "2.2.2.2": {
+                    ("aab", "sst"): {},
+                    ("abc", "stu"): {"b"},
+                },
+            }
+        }
+
+        actual = self.controller.get_sets(for_mods=["ab", "st"])
+        self.assertDictEqual(actual, expected)
+        self.log_handler.info_statistics.assert_called_with(stanza=constants.STAT_SETS)
 
     def test_get_xdr(self):
         self.log_handler.info_statistics.return_value = {

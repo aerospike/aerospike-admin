@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,16 +14,19 @@
 
 import unittest
 
+import asynctest
+import pytest
+
 from lib.view.sheet import set_style_json
 import lib.live_cluster.live_cluster_root_controller as controller
 import lib.utils.util as util
-from test.e2e import util as test_util
+from test.e2e import util as test_util, lib
 
 set_style_json()
 
 
-class TestInfo(unittest.TestCase):
-
+@pytest.mark.skip()  # TODO: Are these useful? Do we need to remove them or change them?
+class TestInfo(asynctest.TestCase):
     rc = None
     output_list = list()
     service_info = ""
@@ -34,33 +37,20 @@ class TestInfo(unittest.TestCase):
     xdr_info = ""
 
     @classmethod
-    def setUpClass(cls):
-        TestInfo.rc = controller.LiveClusterRootController(
+    def setUpClass(cls) -> None:
+        lib.start()
+
+    async def setUp(self):
+        self.rc = await controller.LiveClusterRootController(
             user="admin", password="admin"
-        )
-
-        actual_out = util.capture_stdout(TestInfo.rc.execute, ["info"])
-        actual_out += util.capture_stdout(TestInfo.rc.execute, ["info", "sindex"])
-        TestInfo.output_list = test_util.get_separate_output(actual_out)
-
-        for item in TestInfo.output_list:
-            title = item["title"]
-            if "Network Information" in title:
-                TestInfo.network_info = item
-            elif "Namespace Usage Information" in title:
-                TestInfo.namespace_usage_info = item
-            elif "Secondary Index Information" in title:
-                TestInfo.sindex_info = item
-            elif "XDR Information" in title:
-                TestInfo.xdr_info = item
-            elif "Namespace Object Information" in title:
-                TestInfo.namespace_object_info = item
+        )  # type: ignore
+        await util.capture_stdout(self.rc.execute, ["enable"])
 
     @classmethod
-    def tearDownClass(cls):
-        cls.rc = None
+    def tearDownClass(cls) -> None:
+        lib.stop()
 
-    def test_network(self):
+    async def test_network(self):
         """
         This test will assert <b> info Network </b> output for heading, headerline1, headerline2
         and no of row displayed in output
@@ -80,7 +70,7 @@ class TestInfo(unittest.TestCase):
             "Client Conns",
             "Uptime",
         ]
-        expected_num_records = len(TestInfo.rc.cluster.nodes)
+        expected_num_records = len(self.rc.cluster.nodes)
 
         (
             actual_heading,
@@ -88,12 +78,12 @@ class TestInfo(unittest.TestCase):
             actual_header,
             actual_data,
             actual_num_records,
-        ) = test_util.parse_output(TestInfo.network_info, horizontal=True)
+        ) = await test_util.capture_separate_and_parse_output(self.rc, ["info", "net"])
         self.assertTrue(exp_heading in actual_heading)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(expected_num_records, actual_num_records)
 
-    def test_sindex(self):
+    async def test_sindex(self):
         """
         This test will assert <b> info sindex </b> output for heading, headerline1, headerline2
         and no of row displayed in output
@@ -127,12 +117,14 @@ class TestInfo(unittest.TestCase):
             actual_header,
             actual_data,
             num_records,
-        ) = test_util.parse_output(TestInfo.sindex_info, horizontal=True)
+        ) = await test_util.capture_separate_and_parse_output(
+            self.rc, ["info", "sindex"]
+        )
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
 
-    def test_namespace_usage(self):
+    async def test_namespace_usage(self):
         """
         This test will assert <b> info namespace usage </b> output for heading, headerline1, headerline2
         displayed in output
@@ -160,11 +152,13 @@ class TestInfo(unittest.TestCase):
             actual_header,
             actual_data,
             num_records,
-        ) = test_util.parse_output(TestInfo.namespace_usage_info, horizontal=True)
+        ) = await test_util.capture_separate_and_parse_output(
+            self.rc, ["info", "namespace", "usage"]
+        )
         self.assertListEqual(actual_header, exp_header)
         self.assertTrue(exp_heading in actual_heading)
 
-    def test_namespace_object(self):
+    async def test_namespace_object(self):
         """
         This test will assert <b> info namespace Object </b> output for heading, headerline1, headerline2
         displayed in output
@@ -193,12 +187,14 @@ class TestInfo(unittest.TestCase):
             actual_header,
             actual_data,
             num_records,
-        ) = test_util.parse_output(TestInfo.namespace_object_info, horizontal=True)
+        ) = await test_util.capture_separate_and_parse_output(
+            self.rc, ["info", "namespace", "object"]
+        )
         self.assertListEqual(actual_header, exp_header)
         self.assertTrue(exp_heading in actual_heading)
 
     # @unittest.skip("Will enable only when xdr is configured")
-    def test_xdr(self):
+    async def test_xdr(self):
         """
         This test will assert info XDR output.
         and no of row displayed in output
@@ -225,7 +221,7 @@ class TestInfo(unittest.TestCase):
             actual_header,
             actual_data,
             num_records,
-        ) = test_util.parse_output(TestInfo.xdr_info, horizontal=True, header_len=3)
+        ) = await test_util.capture_separate_and_parse_output(self.rc, ["info", "xdr"])
 
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)

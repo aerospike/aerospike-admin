@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -2062,6 +2062,7 @@ class Node(AsyncObject):
         ns = None
         unit_mapping = {"msec": "ms", "usec": "\u03bcs"}
         time_units = None
+        exponent_increment = 1 if exponent_increment <= 0 else exponent_increment
         columns = [
             ">1",
             ">2",

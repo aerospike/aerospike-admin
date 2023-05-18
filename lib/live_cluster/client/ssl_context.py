@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -174,7 +174,6 @@ class SSLContext(object):
         crl_check=False,
         crl_check_all=False,
     ):
-
         self.ctx = None
         if not enable_tls:
             return
@@ -555,7 +554,6 @@ class SSLContext(object):
         protocols=None,
         cipher_suite=None,
     ):
-
         if not enable_tls:
             return
         method, protocols_to_disable = self._parse_protocols(protocols)
