@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -123,7 +123,6 @@ class Table:
         description="",
         n_last_columns_ignore_sort=0,
     ):
-
         self._data = []
         self._need_sort = False
         self._data_source = {}
@@ -569,7 +568,6 @@ class Table:
         output.extend(self.gen_description(sum(title_width), sum(title_width) - 10))
 
         for i, column_name in enumerate(self._render_column_names):
-
             row = []
             row.append(terminal.style(terminal.bg_clear, terminal.fg_clear))
 
@@ -584,7 +582,6 @@ class Table:
             for j, (cell_format, cell) in enumerate(
                 (raw_data[i] for raw_data in self._data), 1
             ):
-
                 if (
                     title_every_nth
                     and added_columns > 0

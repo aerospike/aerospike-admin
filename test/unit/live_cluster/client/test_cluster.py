@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,7 +45,6 @@ class ClusterTest(asynctest.TestCase):
     async def get_info_mock(
         self, return_value, return_key_value={}, ip="127.0.0.1", port=3000
     ):
-
         if "build" not in return_key_value:
             return_key_value["build"] = "4.9.0.0"
 

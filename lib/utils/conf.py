@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -152,7 +152,6 @@ _confspec = """{
 
 
 def _getdefault():
-
     return copy.deepcopy(_confdefault)
 
 
@@ -235,11 +234,7 @@ def _flatten(conf_dict, instance=None):
 
 def _merge(dct, merge_dct, ignore_false=False):
     for k, v in merge_dct.items():
-        if (
-            k in dct
-            and isinstance(dct[k], dict)
-            and isinstance(merge_dct[k], Mapping)
-        ):
+        if k in dct and isinstance(dct[k], dict) and isinstance(merge_dct[k], Mapping):
             _merge(dct[k], merge_dct[k], ignore_false=ignore_false)
         else:
             if merge_dct[k] is not None and (
@@ -249,7 +244,6 @@ def _merge(dct, merge_dct, ignore_false=False):
 
 
 def _getseeds(conf):
-
     re_ipv6host = re.compile(r"^(\[.*\])$")
     re_ipv6hostport = re.compile(r"^(\[.*\]):(.*)$")
     re_ipv6hostnameport = re.compile(r"^(\[.*\]):(.*):(.*)$")

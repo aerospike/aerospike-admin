@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ CONFIG_SERVICE = "service"
 CONFIG_SECURITY = "security"
 CONFIG_NETWORK = "network"
 CONFIG_NAMESPACE = "namespace"
+CONFIG_SET = "set"
 CONFIG_XDR = "xdr"
 CONFIG_DC = "dc"
 CONFIG_XDR_NS = "xdr_ns"

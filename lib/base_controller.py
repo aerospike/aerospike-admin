@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,10 +15,9 @@
 import inspect
 import re
 import logging
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 from lib.health.health_checker import HealthChecker
-from lib.utils import util
 from lib.utils.lookup_dict import PrefixDict
 from lib.view import view, terminal
 

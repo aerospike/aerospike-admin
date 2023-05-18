@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,28 +14,33 @@
 
 import unittest
 
+import asynctest
+
 import lib.live_cluster.live_cluster_root_controller as controller
 import lib.utils.util as util
-from test.e2e import util as test_util
+from test.e2e import lib, util as test_util
 from lib.view.sheet import set_style_json
 
 set_style_json()
 
 
-class TestWatch(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        TestWatch.rc = controller.LiveClusterRootController(
+class TestWatch(asynctest.TestCase):
+    async def setUp(self):
+        lib.start()
+        self.rc = await controller.LiveClusterRootController(
             user="admin", password="admin"
-        )
-        actual_out = util.capture_stdout(
-            TestWatch.rc.execute, ["watch", "1", "3", "info", "network"]
-        )
-        TestWatch.output_list = test_util.get_separate_output(actual_out)
+        )  # type: ignore
 
-    def test_watch(self):
+    def tearDown(self) -> None:
+        lib.stop()
+
+    async def test_watch(self):
+        actual_out = await util.capture_stdout(
+            self.rc.execute, ["watch", "1", "3", "info", "network"]
+        )
+        output_list = test_util.get_separate_output(actual_out)
         info_counter = 0
-        for item in TestWatch.output_list:
+        for item in output_list:
             if "Network Information" in item["title"]:
                 info_counter += 1
         self.assertEqual(info_counter, 3)

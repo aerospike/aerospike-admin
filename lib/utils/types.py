@@ -1,4 +1,4 @@
-# Copyright 2013-2023 Aerospike, Inc.
+# Copyright 2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,16 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Set default handler to avoid "No handler found" warnings.
-import logging
+from typing import TypeVar
 
-try:  # Python 2.7+
-    from logging import NullHandler
-except ImportError:
+T = TypeVar("T")
 
-    class NullHandler(logging.Handler):
-        def emit(self, record):
-            pass
-
-
-# logging.getLogger(__name__).addHandler(NullHandler())
+# TODO: Could be moved to its own utils.types module.
+NodeDict = dict[str, T]
+DatacenterDict = dict[str, T]
+NamespaceDict = dict[str, T]
+UsersDict = dict[str, T]

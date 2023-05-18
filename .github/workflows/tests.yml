@@ -1,4 +1,4 @@
-name: Unit Test
+name: Tests
 on:
   push:
     branches: [actionsHub, master, test-ready, "bugfix-*"]
@@ -19,13 +19,17 @@ jobs:
         run: |
           python -m pip install pipenv
           pipenv install --dev
-      - name: Test with unittest
+      - name: Build
         run: |
-          pipenv run bash -c "coverage run -m pytest test/unit"
+          make
+      - name: Tests with coverage report
+        env:
+          FEATKEY: ${{ secrets.TEST_FEAT_KEY }}
+        run: |
+          pipenv run bash -c "make coverage"
           pipenv run bash -c "coverage xml"
-      - name: Upload coverage to Codecov
+      - name: Upload coverage report to Codecov
         uses: codecov/codecov-action@v3
         with:
-          flags: unittests
           files: coverage.xml
           fail_ci_if_error: false

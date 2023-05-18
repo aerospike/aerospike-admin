@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Aerospike, Inc.
+# Copyright 2013-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -334,7 +334,6 @@ def _parse_xdr_context(parsed_output, fstream, line):
                 _k, _v = _get_kv_from_line(line, value_separator=" ")
 
                 if _k:
-
                     if _k == "xdr-digestlog-path" and len(_v.split()) > 1:
                         _v = _v.split()
                         xdr_dir_ptr[_k] = _v[0]
@@ -401,9 +400,7 @@ def _parse_namespace_context(parsed_output, fstream, line):
                 _k, _v = _get_kv_from_line(line)
 
                 if _k:
-
                     if _k == "xdr-remote-datacenter":
-
                         if _v not in dc_dir_ptr:
                             dc_dir_ptr[_v] = {}
 

@@ -1,3 +1,16 @@
+# Copyright 2021-2023 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import asyncio
 import copy
 import json
@@ -105,24 +118,24 @@ class CollectinfoController(LiveClusterCommandController):
 
     def _restructure_set_section(self, stats):
         for node, node_data in stats.items():
-            if "set" not in node_data.keys():
+            if constants.STAT_SETS not in node_data.keys():
                 continue
 
-            for key, val in node_data["set"].items():
+            for key, val in node_data[constants.STAT_SETS].items():
                 ns_name = key[0]
                 setname = key[1]
 
-                if ns_name not in node_data["namespace"]:
+                if ns_name not in node_data[constants.STAT_NAMESPACE]:
                     continue
 
-                ns = node_data["namespace"][ns_name]
+                ns = node_data[constants.STAT_NAMESPACE][ns_name]
 
-                if "set" not in ns.keys():
-                    ns["set"] = {}
+                if constants.STAT_SETS not in ns.keys():
+                    ns[constants.STAT_SETS] = {}
 
-                ns["set"][setname] = copy.deepcopy(val)
+                ns[constants.STAT_SETS][setname] = copy.deepcopy(val)
 
-            del node_data["set"]
+            del node_data[constants.STAT_SETS]
 
     def _restructure_sindex_section(self, stats):
         # Due to new server feature namespace add/remove with rolling restart,
@@ -220,8 +233,9 @@ class CollectinfoController(LiveClusterCommandController):
         self._restructure_set_section(new_stats)
         self._restructure_sindex_section(new_stats)
         self._restructure_bin_section(new_stats)
-        # No config for set, sindex, bin
+        # No config for sindex, bin
         self._restructure_ns_section(new_config)
+        self._restructure_set_section(new_config)
 
         # check this 'XDR': {'STATISTICS': {'192.168.112.194:3000':
         # Type_error('expected str
@@ -264,6 +278,7 @@ class CollectinfoController(LiveClusterCommandController):
             self.cluster.info_best_practices(nodes=self.nodes),
             GetJobsController(self.cluster).get_all(flip=True, nodes=self.nodes),
         )
+        node_names = self.cluster.get_node_names()
 
         for nodeid in builds:
             metamap[nodeid] = {}
@@ -280,8 +295,8 @@ class CollectinfoController(LiveClusterCommandController):
             self._check_for_exception_and_set(
                 best_practices, "best_practices", nodeid, metamap
             )
+            self._check_for_exception_and_set(node_names, "node_names", nodeid, metamap)
             self._check_for_exception_and_set(jobs, "jobs", nodeid, metamap)
-
         return metamap
 
     async def _get_as_histograms(self):
