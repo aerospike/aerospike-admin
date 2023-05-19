@@ -453,10 +453,7 @@ class Cluster(AsyncObject):
 
     def get_nodes(
         self,
-        nodes: Literal[constants.NodeSelection.ALL]
-        | Literal[constants.NodeSelection.PRINCIPAL]
-        | Literal[constants.NodeSelection.RANDOM]
-        | list[str],
+        nodes: Literal[constants.NodeSelection.ALL, constants.NodeSelection.PRINCIPAL, constants.NodeSelection.RANDOM] | list[str],
     ) -> list[Node]:
         use_nodes = []
 
