@@ -1771,7 +1771,6 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
 
         # Config params that require another to be set.
         self.param_pairs = {
-            "compression-level": "enable-compression",
             "ship-sets": "ship-only-specified-sets",
         }
 
@@ -1804,7 +1803,7 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
                 )
             )
 
-        if param in self.param_pairs.keys():
+        if param in self.param_pairs:
             self.view.print_result(
                 'The parameter "{}" must also be set.'.format(self.param_pairs[param])
             )
@@ -1970,7 +1969,7 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
         title = "Set XDR DC param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
-        if param in self.param_pairs.keys():
+        if param in self.param_pairs:
             self.view.print_result(
                 'The parameter "{}" must also be set.'.format(self.param_pairs[param])
             )
@@ -2138,6 +2137,11 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
         self.modifiers = set(["with"])
         self.controller_arg = "ns"
 
+        # Config params that require another to be set.
+        self.param_pairs = {
+            "compression-level": "enable-compression",
+        }
+
     async def _do_default(self, line):
         param, value = self.extract_param_value(line)
         dc = self.mods["dc"][0]
@@ -2156,6 +2160,11 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
 
         title = "Set XDR Namespace Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        if param in self.param_pairs:
+            self.view.print_result(
+                'The parameter "{}" must also be set.'.format(self.param_pairs[param])
+            )
 
 
 @CommandHelp(
