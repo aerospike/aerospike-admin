@@ -1035,9 +1035,6 @@ class ManageConfigControllerTest(asynctest.TestCase):
         self.view_mock.print_info_responses(
             title, resp, self.cluster_mock, **self.controller.mods
         )
-        self.view_mock.print_result.assert_called_once_with(
-            'The parameter "auth-password-file" must also be set.'
-        )
 
     async def test_XDR_dc_add_node_prompt(self):
         line = "xdr dc test-dc add node 3.3.3.3 with 1.1.1.1 2.2.2.2"
@@ -1212,9 +1209,6 @@ class ManageConfigControllerTest(asynctest.TestCase):
             resp,
             self.cluster_mock,
             **self._get_controller_mods(self.controller, ["xdr", "dc", "namespace"]),
-        )
-        self.view_mock.print_result.assert_called_once_with(
-            'The parameter "enable-compression" must also be set.'
         )
 
 
