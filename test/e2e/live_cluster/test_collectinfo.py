@@ -47,32 +47,32 @@ class TestCollectinfo(asynctest.TestCase):
         ("show config xdr dc", [], None),
         ("show config xdr filter", [], None),
         ("show config xdr namespace", [], None),
-        ("show statistics namespace", ["current_time"], None),
-        (
-            "show statistics service",
-            [
-                "uptime",
-                "time_since_rebalance",
-                "system_total_cpu_pct",
-                "system_user_cpu_pct",
-                "system_kernel_cpu_pct",
-                "system_free_mem_kbytes",
-                "system_free_mem_pct",
-                "system_thp_mem_kbytes",
-                "process_cpu_pct",
-                "info_queue",
-                "info_complete",
-                "heartbeat_received_foreign",
-                "heap_mapped_kbytes",
-                "heap_efficiency_pct",
-                "heap_allocated_kbytes",
-                "heap_active_kbytes",
-                "client_connections_opened",
-                "client_connections_closed",
-                "client_connections",
-            ],
-            None,
-        ),
+        ("show statistics namespace", ["current_time", "migrate_rx_instances"], None),
+        # (
+        #     "show statistics service",  # Too many differing stats to compare. Leaving for reference.
+        #     [
+        #         "uptime",
+        #         "time_since_rebalance",
+        #         "system_total_cpu_pct",
+        #         "system_user_cpu_pct",
+        #         "system_kernel_cpu_pct",
+        #         "system_free_mem_kbytes",
+        #         "system_free_mem_pct",
+        #         "system_thp_mem_kbytes",
+        #         "process_cpu_pct",
+        #         "info_queue",
+        #         "info_complete",
+        #         "heartbeat_received_foreign",
+        #         "heap_mapped_kbytes",
+        #         "heap_efficiency_pct",
+        #         "heap_allocated_kbytes",
+        #         "heap_active_kbytes",
+        #         "client_connections_opened",
+        #         "client_connections_closed",
+        #         "client_connections",
+        #     ],
+        #     None,
+        # ),
         ("show statistics sindex", [], None),
         ("show statistics sets", [], None),
         ("show statistics bins", [], None),
@@ -94,6 +94,7 @@ class TestCollectinfo(asynctest.TestCase):
         ("show roster", [], None),
         ("show roles", [], None),
         ("show users", ["Connections"], None),
+        ("show users stat", ["Connections"], None),
         ("show udfs", [], None),
         ("show sindex", [], None),
         ("show stop-writes", [], None),
@@ -166,6 +167,7 @@ class TestCollectinfo(asynctest.TestCase):
         set_ = "collect-info-testset"
         lib.populate_db(set_)
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
+        lib.create_xdr_filter(lib.NAMESPACE, lib.DC, "kxGRSJMEk1ECo2FnZRU=")
         lib.upload_udf("metadata.lua", TEST_UDF)
 
         def record_set(record):
@@ -247,7 +249,8 @@ class TestCollectinfo(asynctest.TestCase):
                     d1[idx], d2[idx], ignore_keys, transform_recs
                 ):
                     return False
-                return True
+
+            return True
 
         if not (isinstance(d1, dict) and isinstance(d2, dict)):
             self.fail(

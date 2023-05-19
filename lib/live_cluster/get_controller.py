@@ -17,7 +17,7 @@ import copy
 from typing import Iterable, Optional
 
 from lib.utils import common, util, constants
-from lib.utils.common import NodeDict, DatacenterDict, NamespaceDict
+from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
 from .client import Cluster
 
 
@@ -1018,20 +1018,33 @@ class GetPmapController:
         return pmap_data
 
 
-class GetUsersController:
-    def __init__(self, cluster: Cluster):
+class GetAclController:
+    def __init__(self, cluster):
         self.cluster = cluster
+
+    async def get_all(self, nodes="all", flip=False):
+        futures = [
+            (
+                constants.ADMIN_USERS,
+                asyncio.create_task(self.get_users(nodes=nodes)),
+            ),
+            (
+                constants.ADMIN_ROLES,
+                asyncio.create_task(self.get_roles(nodes=nodes)),
+            ),
+        ]
+        stat_map = dict([(k, await f) for k, f in futures])
+
+        if flip:
+            return util.flip_keys(stat_map)
+
+        return stat_map
 
     async def get_users(self, nodes="all"):
         return await self.cluster.admin_query_users(nodes=nodes)
 
     async def get_user(self, username, nodes="all"):
         return await self.cluster.admin_query_user(username, nodes=nodes)
-
-
-class GetRolesController:
-    def __init__(self, cluster):
-        self.cluster = cluster
 
     async def get_roles(self, nodes="all"):
         return await self.cluster.admin_query_roles(nodes=nodes)

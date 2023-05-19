@@ -20,7 +20,8 @@ import shutil
 import time
 import sys
 import traceback
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
+from lib.utils.types import NodeDict
 
 from lib.view.sheet.render import get_style_json, set_style_json
 from lib.view.terminal import terminal
@@ -32,8 +33,7 @@ from lib.collectinfo_analyzer.collectinfo_root_controller import (
 from lib.live_cluster.get_controller import (
     GetStatisticsController,
     GetConfigController,
-    GetUsersController,
-    GetRolesController,
+    GetAclController,
     GetLatenciesController,
     GetPmapController,
     GetJobsController,
@@ -237,8 +237,6 @@ class CollectinfoController(LiveClusterCommandController):
         self._restructure_ns_section(new_config)
         self._restructure_set_section(new_config)
 
-        # check this 'XDR': {'STATISTICS': {'192.168.112.194:3000':
-        # Type_error('expected str
         as_map["statistics"] = new_stats
         as_map["config"] = new_config
 
@@ -352,21 +350,12 @@ class CollectinfoController(LiveClusterCommandController):
         getter = GetPmapController(self.cluster)
         return await getter.get_pmap(nodes=self.nodes)
 
-    async def _get_as_access_control_list(self):
-        acl_map = {}
-        users_getter = GetUsersController(self.cluster)
-        roles_getter = GetRolesController(self.cluster)
-        users_map, roles_map = await asyncio.gather(
-            users_getter.get_users(nodes="principal"),
-            roles_getter.get_roles(nodes="principal"),
-        )
-
-        for node in users_map:
-            acl_map[node] = {}
-            self._check_for_exception_and_set(users_map, "users", node, acl_map)
-            self._check_for_exception_and_set(roles_map, "roles", node, acl_map)
-
-        return acl_map
+    async def _get_as_access_control_list(self) -> NodeDict[dict[str, dict[str, Any]]]:
+        users_getter = GetAclController(self.cluster)
+        users_map = await users_getter.get_all()
+        self._remove_exception_from_section_output(users_map)
+        users_map = util.flip_keys(users_map)
+        return users_map
 
     async def _get_collectinfo_data_json(
         self,

@@ -1040,7 +1040,7 @@ class CliView(object):
         )
 
     @staticmethod
-    def show_users(users_data, like=None, timestamp="", **ignore):
+    def show_users(users_data, timestamp="", like=None, **ignore):
         if not users_data:
             return
 
@@ -1053,7 +1053,7 @@ class CliView(object):
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Users{}".format(title_timestamp)
         # Normally the top level of the dict is used to associate different sources.
-        # Since we do not need one here we must artificially create one.
+        # We only get the result from the principal so we do not need to here. So we must artificially create one.
 
         users_data = dict(
             enumerate({k: v} for k, v in users_data.items() if k in filtered_keys)
@@ -1061,6 +1061,33 @@ class CliView(object):
 
         sources = dict(data=users_data)
         CliView.print_result(sheet.render(templates.show_users, title, sources))
+
+    @staticmethod
+    @reserved_modifiers
+    def show_users_stats(
+        cluster: Cluster, users_data, like=None, timestamp="", with_=None, **ignore
+    ):
+        if not users_data:
+            return
+
+        if like:
+            likes = util.compile_likes(like)
+            filtered_keys = list(filter(likes.search, users_data.keys()))
+        else:
+            filtered_keys = users_data.keys()
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        common = dict(principal=cluster.get_expected_principal())
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Users Statistics{}".format(title_timestamp)
+
+        users_data = {k: v for k, v in users_data.items() if k in filtered_keys}
+
+        sources = dict(data=users_data, node_names=node_names, node_ids=node_ids)
+        CliView.print_result(
+            sheet.render(templates.show_users_stats, title, sources, common=common)
+        )
 
     @staticmethod
     def show_roles(roles_data, like=None, timestamp="", **ignore):

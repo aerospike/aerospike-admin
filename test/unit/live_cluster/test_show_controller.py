@@ -20,9 +20,8 @@ from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.get_controller import (
     GetConfigController,
     GetJobsController,
-    GetRolesController,
     GetStatisticsController,
-    GetUsersController,
+    GetAclController,
 )
 
 from lib.live_cluster.show_controller import (
@@ -37,6 +36,7 @@ from lib.live_cluster.show_controller import (
     ShowStatisticsXDRController,
     ShowStopWritesController,
     ShowUsersController,
+    ShowUsersStatsController,
 )
 from lib.live_cluster.client import ASProtocolError, ASResponse
 from lib.utils import common
@@ -570,7 +570,7 @@ class ShowUsersControllerTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowUsersController()
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
-        self.getter_mock = self.controller.getter = create_autospec(GetUsersController)
+        self.getter_mock = self.controller.getter = create_autospec(GetAclController)
         self.view_mock = self.controller.view = create_autospec(CliView)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
@@ -673,13 +673,157 @@ class ShowUsersControllerTest(asynctest.TestCase):
         self.view_mock.show_users.assert_not_called()
 
 
+class ShowUsersStatsControllerTest(asynctest.TestCase):
+    async def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.controller = ShowUsersStatsController()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(GetAclController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.controller.getter = self.getter_mock
+        self.controller.mods = {}
+
+        self.addCleanup(patch.stopall)
+
+    async def test_calls_users_successfully(self):
+        resp = {
+            "1.1.1.1": {
+                "admin": {
+                    "roles": ["user-admin"],
+                    "read-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "write-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "connections": 4294966442,
+                },
+                "alpha-reader": {
+                    "roles": ["alpha-reader"],
+                    "read-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "write-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                },
+            }
+        }
+        self.getter_mock.get_users.return_value = resp
+
+        await self.controller.execute([])
+
+        self.getter_mock.get_users.assert_called_with(nodes=self.controller.nodes)
+        self.view_mock.show_users_stats.assert_called_with(
+            self.cluster_mock, resp, line=[]
+        )
+
+    async def test_calls_user_successfully(self):
+        resp = {
+            "1.1.1.1": {
+                "admin": {
+                    "roles": ["user-admin"],
+                    "read-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "write-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "connections": 4294966442,
+                }
+            }
+        }
+        self.getter_mock.get_user.return_value = resp
+
+        await self.controller.execute(["admin"])
+
+        self.getter_mock.get_user.assert_called_with(
+            "admin", nodes=self.controller.nodes
+        )
+        self.view_mock.show_users_stats.assert_called_with(
+            self.cluster_mock, resp, **self.controller.mods
+        )
+
+    async def test_raises_error(self):
+        as_error = IOError("test-message")
+        as_error2 = IOError("test-message2")
+        self.getter_mock.get_users.return_value = {
+            "1.1.1.1": as_error,
+            "2.2.2.2": as_error2,
+        }
+
+        await test_util.assert_exception_async(
+            self,
+            ShellException,
+            "test-message",
+            self.controller.execute,
+            [],
+        )
+
+        self.getter_mock.get_users.assert_called_with(nodes=self.controller.nodes)
+        self.view_mock.show_users_stats.assert_not_called()
+
+    async def test_calls_user_successfully_with_only_one_error(self):
+        resp = {
+            "1.1.1.1": {
+                "admin": {
+                    "roles": ["user-admin"],
+                    "read-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "write-info": {
+                        "quota": 0,
+                        "single-record-tps": 0,
+                        "scan-query-rps-limited": 0,
+                        "scan-query-limitless": 0,
+                    },
+                    "connections": 4294966442,
+                }
+            },
+            "2.2.2.2": Exception(),
+        }
+        self.getter_mock.get_user.return_value = resp
+
+        await self.controller.execute(["admin"])
+
+        self.getter_mock.get_user.assert_called_with(
+            "admin", nodes=self.controller.nodes
+        )
+        self.view_mock.show_users_stats.assert_called_with(
+            self.cluster_mock, resp, **self.controller.mods
+        )
+
+
 class ShowRolesControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRolesController()
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
-        self.getter_mock = self.controller.getter = create_autospec(GetRolesController)
+        self.getter_mock = self.controller.getter = create_autospec(GetAclController)
         self.view_mock = self.controller.view = create_autospec(CliView)
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock

@@ -19,11 +19,10 @@ from lib.live_cluster.get_controller import (
     GetDistributionController,
     GetJobsController,
     GetPmapController,
-    GetRolesController,
     GetSIndexController,
     GetStatisticsController,
     GetUdfController,
-    GetUsersController,
+    GetAclController,
     GetLatenciesController,
 )
 
@@ -1254,14 +1253,15 @@ class ShowPmapController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "Displays users and their assigned roles, connections, and quota metrics",
+    "Displays users and their assigned roles and quotas",
     "for the Aerospike cluster.",
     "Usage: users [user]",
     "  user          - Display output for a single user.",
 )
 class ShowUsersController(LiveClusterCommandController):
     def __init__(self):
-        self.getter = GetUsersController(self.cluster)
+        self.getter = GetAclController(self.cluster)
+        self.controller_map = {"statistics": ShowUsersStatsController}
 
     async def _do_default(self, line):
         user = None
@@ -1288,6 +1288,35 @@ class ShowUsersController(LiveClusterCommandController):
 
 
 @CommandHelp(
+    "Displays users, open connections, and quota usage",
+    "for the Aerospike cluster.",
+    "Usage: users [user]",
+    "  user          - Display output for a single user.",
+)
+class ShowUsersStatsController(LiveClusterCommandController):
+    def __init__(self):
+        self.getter = GetAclController(self.cluster)
+
+    async def _do_default(self, line):
+        user = None
+
+        if line:
+            user = line.pop(0)
+
+        users_data = None
+
+        if user is None:
+            users_data = await self.getter.get_users(nodes=self.nodes)
+        else:
+            users_data = await self.getter.get_user(user, nodes=self.nodes)
+
+        if all([isinstance(data, Exception) for data in users_data.values()]):
+            raise list(users_data.values())[0]
+
+        return self.view.show_users_stats(self.cluster, users_data, **self.mods)
+
+
+@CommandHelp(
     "Displays roles and their assigned privileges, allowlist, and quotas",
     "for the Aerospike cluster.",
     "Usage: roles [role]",
@@ -1295,7 +1324,7 @@ class ShowUsersController(LiveClusterCommandController):
 )
 class ShowRolesController(LiveClusterCommandController):
     def __init__(self):
-        self.getter = GetRolesController(self.cluster)
+        self.getter = GetAclController(self.cluster)
 
     async def _do_default(self, line):
         role = None

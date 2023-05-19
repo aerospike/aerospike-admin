@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import json
-import warnings
 import unittest
+from parameterized import parameterized
 
 from lib.view import sheet
 from lib.view.sheet import (
@@ -171,8 +171,8 @@ class SheetTest(unittest.TestCase):
         for sample in samples:
             test_it(sample)
 
-    def test_sheet_project_percent(self):
-        samples = [
+    @parameterized.expand(
+        [
             ("42", False, 42, "42"),
             (42, False, 42, "42"),
             ("1.25", False, 1, "1"),
@@ -182,21 +182,22 @@ class SheetTest(unittest.TestCase):
             ("1.25", True, 99, "99"),
             (1.25, True, 99, "99"),
         ]
+    )
+    def test_sheet_project_percent(
+        self, input, invert, expected_raw, expected_converted
+    ):
+        test_sheet = Sheet(
+            (Field("F", Projectors.Percent("d", "f", invert=invert)),),
+            from_source="d",
+        )
+        sources = dict(d=dict(n0=dict(f=input)))
+        render = do_render(test_sheet, "test", sources)
+        value = render["groups"][0]["records"][0]["F"]
 
-        def test_it(sample):
-            test_sheet = Sheet(
-                (Field("F", Projectors.Percent("d", "f", invert=sample[1])),),
-                from_source="d",
-            )
-            sources = dict(d=dict(n0=dict(f=sample[0])))
-            render = do_render(test_sheet, "test", sources)
-            value = render["groups"][0]["records"][0]["F"]
-
-            self.assertEqual(value["raw"], sample[2], str(sample))
-            self.assertEqual(value["converted"], sample[3], str(sample))
-
-        for sample in samples:
-            test_it(sample)
+        self.assertEqual(value["raw"], expected_raw, "raw != expected_raw")
+        self.assertEqual(
+            value["converted"], expected_converted, "converted != expected_converted"
+        )
 
     def test_sheet_project_sum(self):
         test_sheet = Sheet(

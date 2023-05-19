@@ -16,9 +16,11 @@ import ntpath
 import os
 import shutil
 import tarfile
+from typing import Literal
 import zipfile
 
 from lib.utils import common, log_util, util, constants
+from lib.utils.constants import NodeSelection, NodeSelectionType
 from .collectinfo_log import CollectinfoLog
 
 ###### Constants ######
@@ -151,8 +153,15 @@ class CollectinfoLogHandler(object):
 
         return ip_to_node
 
-    def info_getconfig(self, stanza="", flip=False):
-        return self._fetch_from_cinfo_log(type="config", stanza=stanza, flip=flip)
+    def info_getconfig(
+        self,
+        stanza="",
+        flip=False,
+        nodes: NodeSelectionType = NodeSelection.ALL,
+    ):
+        return self._fetch_from_cinfo_log(
+            type="config", stanza=stanza, flip=flip, nodes=nodes
+        )
 
     def info_get_originalconfig(self, stanza="", flip=False):
         return self._fetch_from_cinfo_log(
@@ -216,8 +225,12 @@ class CollectinfoLogHandler(object):
     def info_namespaces(self):
         return self._fetch_from_cinfo_log(type="config", stanza="namespace_list")
 
-    def admin_acl(self, stanza):
-        data = self._fetch_from_cinfo_log(type="acl", stanza=stanza)
+    def admin_acl(
+        self,
+        stanza,
+        nodes: NodeSelectionType = NodeSelection.ALL,
+    ):
+        data = self._fetch_from_cinfo_log(type="acl", stanza=stanza, nodes=nodes)
 
         """
         Asadm 2.1 stored user data as {user: [role1, role2, . . .]} which had to be
@@ -317,7 +330,13 @@ class CollectinfoLogHandler(object):
         if not snapshots_added:
             raise Exception("Multiple snapshots available without JSON dump.")
 
-    def _fetch_from_cinfo_log(self, type="", stanza="", flip=False):
+    def _fetch_from_cinfo_log(
+        self,
+        type="",
+        stanza="",
+        flip=False,
+        nodes: NodeSelectionType = NodeSelection.ALL,
+    ):
         res_dict = {}
 
         if not type:
@@ -326,7 +345,7 @@ class CollectinfoLogHandler(object):
         for timestamp in sorted(self.selected_cinfo_logs.keys()):
             try:
                 out = self.selected_cinfo_logs[timestamp].get_data(
-                    type=type, stanza=stanza
+                    type=type, stanza=stanza, nodes=nodes
                 )
                 if flip:
                     out = util.flip_keys(out)

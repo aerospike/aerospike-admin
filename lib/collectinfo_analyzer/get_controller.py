@@ -14,12 +14,12 @@
 
 import asyncio
 from operator import itemgetter
-from typing import Any, Callable, Iterable, TypeVar
+from typing import Any, Callable, Iterable, Literal, TypeVar
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )
 from lib.utils import constants, util
-from lib.utils.common import DatacenterDict, NamespaceDict, NodeDict
+from lib.utils.types import DatacenterDict, NamespaceDict, NodeDict, UsersDict
 
 T = TypeVar("T")
 TimestampDict = dict[str, T]
@@ -130,28 +130,16 @@ class GetConfigController:
         d: TimestampDict[NodeDict[DatacenterDict[NamespaceDict[dict[str, str]]]]],
         dcs_filter: list[str] | None = None,
         namespaces_filter: list[str] | None = None,
-        principal=False,
     ) -> TimestampDict[NodeDict[DatacenterDict[NamespaceDict[dict[str, str]]]]]:
         """
         Removes dcs and namespaces not found in dcs_filter and namespaces_filter. Edits
         d in place and returns d.
         """
-        if not dcs_filter and not namespaces_filter and not principal:
+        if not dcs_filter and not namespaces_filter:
             return d
 
         for ts, nodes_vals in d.items():
-            principal_ip = None
-
-            if principal:
-                node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(ts)
-                principal_id = self.log_handler.get_principal(ts)
-                principal_ip = node_id_to_ip[principal_id]
-
             for node_ip, dc_vals in list(nodes_vals.items()):
-                if principal_ip and principal_ip != node_ip:
-                    del nodes_vals[node_ip]
-                    continue
-
                 dcs = dc_vals.keys()
                 filtered_dcs = set(util.filter_list(dcs, dcs_filter))
 
@@ -192,7 +180,11 @@ class GetConfigController:
 
         return configs
 
-    def get_xdr_filters(self, for_mods: list[str] | None = None):
+    def get_xdr_filters(
+        self,
+        for_mods: list[str] | None = None,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.PRINCIPAL,
+    ):
         dcs_filter: list[str] | None = None
         namespaces_filter: list[str] | None = None
 
@@ -205,10 +197,14 @@ class GetConfigController:
 
         filters: TimestampDict[
             NodeDict[DatacenterDict[NamespaceDict[dict[str, str]]]]
-        ] = self.log_handler.info_getconfig(stanza=constants.CONFIG_XDR_FILTER)
+        ] = self.log_handler.info_getconfig(
+            stanza=constants.CONFIG_XDR_FILTER, nodes=nodes
+        )
 
         filters = self._filter_ts_host_dc_ns_dict(
-            filters, dcs_filter, namespaces_filter, principal=True
+            filters,
+            dcs_filter,
+            namespaces_filter,
         )
 
         return filters
@@ -308,3 +304,56 @@ class GetStatisticsController:
                             del ns_stats[ns]
 
         return stats
+
+
+class GetAclController:
+    def __init__(self, log_analyzer: CollectinfoLogHandler):
+        self.log_handler = log_analyzer
+
+    @staticmethod
+    def new_dict_with_key(d: TimestampDict[NodeDict[dict[str, Any]]], key: str):
+        new_dict = {}
+
+        for timestamp, nodes_data in d.items():
+            new_dict[timestamp] = {}
+            for node, keys_data in nodes_data.items():
+                for found_key in keys_data:
+                    if found_key == key:
+                        new_dict[timestamp].update(
+                            {node: {found_key: keys_data[found_key]}}
+                        )
+                        break
+
+        return new_dict
+
+    def get_users(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
+        return self.log_handler.admin_acl(stanza=constants.ADMIN_USERS, nodes=nodes)
+
+    def get_user(
+        self,
+        username: str,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
+    ):
+        data: TimestampDict[
+            NodeDict[UsersDict[dict[str, str | int]]]
+        ] = self.log_handler.admin_acl(stanza=constants.ADMIN_USERS, nodes=nodes)
+
+        return GetAclController.new_dict_with_key(data, username)
+
+    def get_roles(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
+        return self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES, nodes=nodes)
+
+    def get_role(
+        self,
+        role_name,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
+    ):
+        data: TimestampDict[
+            NodeDict[UsersDict[dict[str, str | int]]]
+        ] = self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES, nodes=nodes)
+
+        return GetAclController.new_dict_with_key(data, role_name)

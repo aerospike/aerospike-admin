@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from lib.collectinfo_analyzer.get_controller import (
+    GetAclController,
     GetConfigController,
     GetStatisticsController,
 )
@@ -1252,9 +1253,21 @@ class ShowPmapController(CollectinfoCommandController):
 class ShowUsersController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["like"])
+        self.controller_map = {"statistics": ShowUsersStatsController}
+        self.getter = GetAclController(self.log_handler)
 
     def _do_default(self, line):
-        users_data = self.log_handler.admin_acl(stanza=constants.ADMIN_USERS)
+        user = None
+
+        if line:
+            user = line.pop(0)
+
+        users_data = None
+
+        if user is None:
+            users_data = self.getter.get_users(nodes="principal")
+        else:
+            users_data = self.getter.get_user(user, nodes="principal")
 
         for timestamp in sorted(users_data.keys()):
             if not users_data[timestamp]:
@@ -1262,6 +1275,41 @@ class ShowUsersController(CollectinfoCommandController):
 
             data = list(users_data[timestamp].values())[0]
             self.view.show_users(data, timestamp=timestamp, **self.mods)
+
+
+@CommandHelp(
+    "Displays users, open connections, and quota usage",
+    "for the Aerospike cluster.",
+    "Usage: users [user]",
+    "  user          - Display output for a single user.",
+)
+class ShowUsersStatsController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["like"])
+        self.getter = GetAclController(self.log_handler)
+
+    async def _do_default(self, line):
+        user = None
+
+        if line:
+            user = line.pop(0)
+
+        users_data = None
+
+        if user is None:
+            users_data = self.getter.get_users()
+        else:
+            users_data = self.getter.get_user(user)
+
+        for timestamp in sorted(users_data.keys()):
+            if not users_data[timestamp]:
+                continue
+
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            self.view.show_users_stats(
+                cinfo_log, users_data[timestamp], timestamp=timestamp, **self.mods
+            )
 
 
 @CommandHelp(

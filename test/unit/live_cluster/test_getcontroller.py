@@ -20,6 +20,7 @@ from mock.mock import AsyncMock
 from lib.live_cluster.client.cluster import Cluster
 
 from lib.live_cluster.get_controller import (
+    GetAclController,
     GetJobsController,
     GetPmapController,
     GetConfigController,
@@ -843,3 +844,66 @@ class GetJobsControllerTest(asynctest.TestCase):
         )
 
         self.assertDictEqual(actual, expected)
+
+
+class GetACLControllerTest(asynctest.TestCase):
+    def setUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = patch(
+            "lib.live_cluster.client.cluster.Cluster", AsyncMock()
+        ).start()
+        self.controller = GetAclController(self.cluster_mock)
+        self.addCleanup(patch.stopall)
+
+    async def test_get_all(self):
+        expected = {"users": "users", "roles": "roles"}
+        self.cluster_mock.admin_query_users.return_value = "users"
+        self.cluster_mock.admin_query_roles.return_value = "roles"
+
+        actual = await self.controller.get_all(nodes="principal")
+
+        self.cluster_mock.admin_query_users.assert_called_with(nodes="principal")
+        self.cluster_mock.admin_query_roles.assert_called_with(nodes="principal")
+
+        self.assertDictEqual(actual, expected)
+
+    async def test_get_users(self):
+        expected = "users"
+        self.cluster_mock.admin_query_users.return_value = "users"
+
+        actual = await self.controller.get_users(nodes="principal")
+
+        self.cluster_mock.admin_query_users.assert_called_with(nodes="principal")
+
+        self.assertEqual(actual, expected)
+
+    async def test_get_user(self):
+        expected = "users"
+        self.cluster_mock.admin_query_user.return_value = "users"
+
+        actual = await self.controller.get_user("bob", nodes="principal")
+
+        self.cluster_mock.admin_query_user.assert_called_with("bob", nodes="principal")
+
+        self.assertEqual(actual, expected)
+
+    async def test_get_roles(self):
+        expected = "role"
+        self.cluster_mock.admin_query_roles.return_value = "role"
+
+        actual = await self.controller.get_roles(nodes="principal")
+
+        self.cluster_mock.admin_query_roles.assert_called_with(nodes="principal")
+
+        self.assertEqual(actual, expected)
+
+    async def test_get_role(self):
+        expected = "role"
+        self.cluster_mock.admin_query_role.return_value = "role"
+
+        actual = await self.controller.get_role("bob", nodes="principal")
+
+        self.cluster_mock.admin_query_role.assert_called_with("bob", nodes="principal")
+
+        self.assertEqual(actual, expected)

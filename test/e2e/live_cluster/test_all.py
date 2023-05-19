@@ -108,6 +108,9 @@ class TableRenderTests(unittest.TestCase):
         ("show roster"),
         ("show roles"),
         ("show users"),
+        ("show users admin"),
+        ("show users statistics"),
+        ("show users statistics admin"),
         ("show udfs"),
         ("show sindex"),
         ("show stop-writes"),
@@ -124,6 +127,7 @@ class TableRenderTests(unittest.TestCase):
         lib.start()
         lib.populate_db("no-error-test")
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
+        lib.create_xdr_filter(lib.NAMESPACE, lib.DC, "kxGRSJMEk1ECo2FnZRU=")
         lib.upload_udf("metadata.lua", TEST_UDF)
         time.sleep(60)
         cls.collectinfo_cp = util.run_asadm(
@@ -160,11 +164,14 @@ class TableRenderTests(unittest.TestCase):
         except Exception as e:
             self.fail("Unable to unmarshal json: {}".format(e))
 
-        self.assertEqual(
-            len(stdout_dicts),
-            1,
-            "This command returned multiple tables and should not for this test.",
-        )
+        if len(stdout_dicts) > 1:
+            self.fail(
+                "This command returned multiple tables and should not for this test."
+            )
+        if len(stdout_dicts) == 0:
+            self.fail(
+                "This command returned no tables. There should be exactly 1 for this test."
+            )
 
         for group in stdout_dicts[0]["groups"]:
             for record in group["records"]:

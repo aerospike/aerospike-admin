@@ -585,7 +585,7 @@ class TestShowDistribution(asynctest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        lib.stop
+        lib.stop()
 
     async def test_test_ttl(self):
         """
@@ -608,6 +608,8 @@ class TestShowDistribution(asynctest.TestCase):
             "90%",
             "100%",
         ]
+
+        time.sleep(10)
 
         actual_out = await util.capture_stdout(
             self.rc.execute, ["show", "distribution", "ttl", "for", lib.NAMESPACE]
@@ -642,8 +644,6 @@ class TestShowUsers(asynctest.TestCase):
         lib.start()
         self.rc = await controller.LiveClusterRootController(user="admin", password="admin")  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
-        # Added since tests were failing.  I assume because the server response
-        # comes before the request is commited to SMD or security layer.
 
     def tearDown(self):
         lib.stop()
@@ -653,15 +653,8 @@ class TestShowUsers(asynctest.TestCase):
         exp_header = [
             "User",
             "Roles",
-            "Connections",
             "Read Quota",
-            "Read Single Record TPS",
-            "Read Scan/Query Limited RPS",
-            "Read Scan/Query Limitless",
             "Write Quota",
-            "Write Single Record TPS",
-            "Write Scan/Query Limited RPS",
-            "Write Scan/Query Limitless",
         ]
 
         (
@@ -681,13 +674,6 @@ class TestShowUsers(asynctest.TestCase):
         exp_user = "foo"
         exp_data = [
             "--",
-            "--",
-            "0",
-            "0",
-            "0",
-            "0",
-            "0",
-            "0",
             "0",
             "0",
         ]
@@ -695,15 +681,8 @@ class TestShowUsers(asynctest.TestCase):
         exp_header = [
             "User",
             "Roles",
-            "Connections",
             "Read Quota",
-            "Read Single Record TPS",
-            "Read Scan/Query Limited RPS",
-            "Read Scan/Query Limitless",
             "Write Quota",
-            "Write Single Record TPS",
-            "Write Scan/Query Limited RPS",
-            "Write Scan/Query Limitless",
         ]
 
         _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
@@ -739,13 +718,6 @@ class TestShowUsers(asynctest.TestCase):
         exp_roles = ["sys-admin", "user-admin"]
         exp_data = [
             ",".join(exp_roles),
-            "--",
-            "0",
-            "0",
-            "0",
-            "0",
-            "0",
-            "0",
             "0",
             "0",
         ]
@@ -753,15 +725,8 @@ class TestShowUsers(asynctest.TestCase):
         exp_header = [
             "User",
             "Roles",
-            "Connections",
             "Read Quota",
-            "Read Single Record TPS",
-            "Read Scan/Query Limited RPS",
-            "Read Scan/Query Limitless",
             "Write Quota",
-            "Write Single Record TPS",
-            "Write Scan/Query Limited RPS",
-            "Write Scan/Query Limitless",
         ]
 
         _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
@@ -811,15 +776,8 @@ class TestShowUsers(asynctest.TestCase):
         exp_header = [
             "User",
             "Roles",
-            "Connections",
             "Read Quota",
-            "Read Single Record TPS",
-            "Read Scan/Query Limited RPS",
-            "Read Scan/Query Limitless",
             "Write Quota",
-            "Write Single Record TPS",
-            "Write Scan/Query Limited RPS",
-            "Write Scan/Query Limitless",
         ]
 
         _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
@@ -878,15 +836,8 @@ class TestShowUsers(asynctest.TestCase):
         exp_header = [
             "User",
             "Roles",
-            "Connections",
             "Read Quota",
-            "Read Single Record TPS",
-            "Read Scan/Query Limited RPS",
-            "Read Scan/Query Limitless",
             "Write Quota",
-            "Write Single Record TPS",
-            "Write Scan/Query Limited RPS",
-            "Write Scan/Query Limitless",
         ]
 
         await util.capture_stdout(
@@ -927,6 +878,74 @@ class TestShowUsers(asynctest.TestCase):
         self.assertListEqual(exp_header, actual_header)
         self.assertIsNotNone(actual_roles)
         self.assertEqual(",".join(exp_roles), actual_roles[0])
+
+
+class TestShowUsersStats(asynctest.TestCase):
+    async def setUp(self):
+        lib.start()
+        self.rc = await controller.LiveClusterRootController(user="admin", password="admin")  # type: ignore
+        await util.capture_stdout(self.rc.execute, ["enable"])
+
+    def tearDown(self):
+        lib.stop()
+
+    async def test_show_users_stats(self):
+        exp_title = "Users"
+        exp_header = [
+            "User",
+            "Node",
+            "Connections",
+            "Read Quota",
+            "Read Single Record TPS",
+            "Read Scan/Query Limited RPS",
+            "Read Scan/Query Limitless",
+            "Write Quota",
+            "Write Single Record TPS",
+            "Write Scan/Query Limited RPS",
+            "Write Scan/Query Limitless",
+        ]
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            _,
+            _,
+        ) = await test_util.capture_separate_and_parse_output(
+            self.rc, ["show", "users", "stat"]
+        )
+
+        self.assertIn(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+
+    async def test_show_single_users_stats(self):
+        exp_title = "Users"
+        exp_header = [
+            "User",
+            "Node",
+            "Connections",
+            "Read Quota",
+            "Read Single Record TPS",
+            "Read Scan/Query Limited RPS",
+            "Read Scan/Query Limitless",
+            "Write Quota",
+            "Write Single Record TPS",
+            "Write Scan/Query Limited RPS",
+            "Write Scan/Query Limitless",
+        ]
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            _,
+            _,
+        ) = await test_util.capture_separate_and_parse_output(
+            self.rc, ["show", "users", "stat", "admin"]
+        )
+
+        self.assertIn(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
 
 
 class TestShowRoles(asynctest.TestCase):

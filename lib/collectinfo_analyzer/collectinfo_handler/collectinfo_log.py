@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import copy
-from typing import Any
+from typing import Any, Literal
 
 from lib.utils import common, util
+from lib.utils.constants import NodeSelection, NodeSelectionType
 from lib.utils.lookup_dict import LookupDict
 
 from .collectinfo_parser import collectinfo_parser
@@ -184,16 +185,40 @@ class _CollectinfoSnapshot:
 
         return copy.deepcopy(self.node_ids)
 
-    def get_data(self, type="", stanza="") -> dict[str, Any]:
+    def get_data(
+        self,
+        type="",
+        stanza="",
+        nodes: NodeSelectionType = NodeSelection.ALL,
+    ) -> dict[str, Any]:
         data = {}
+        principal_ip = None
 
         if not type or not self.cinfo_data:
             return data
 
+        if nodes == NodeSelection.PRINCIPAL:
+            princpal_id = self.get_expected_principal()
+            node_ip_to_id = self.get_node_ids()
+
+            for ip, id in node_ip_to_id.items():
+                if id == princpal_id:
+                    principal_ip = ip
+                    break
+
+        elif nodes != NodeSelection.ALL:
+            raise NotImplementedError(
+                "collectinfo getter only supports 'principal' and 'all'"
+            )
+
         try:
             for node, node_data in self.cinfo_data.items():
                 try:
-                    if not node or not node_data:
+                    if (
+                        not node
+                        or not node_data
+                        or (principal_ip and principal_ip != node)
+                    ):
                         continue
 
                     if "as_stat" not in node_data or type not in node_data["as_stat"]:
@@ -371,7 +396,7 @@ class _CollectinfoSnapshot:
     def get_summary(self, stanza=""):
         return self.get_data(type="summary", stanza=stanza)
 
-    def get_expected_principal(self):
+    def get_expected_principal(self) -> str:
         try:
             principal = "0"
             for n in self.nodes.values():

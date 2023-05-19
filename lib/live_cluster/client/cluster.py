@@ -453,19 +453,17 @@ class Cluster(AsyncObject):
 
     def get_nodes(
         self,
-        nodes: Union[
-            Literal["all"], Literal["random"], Literal["principal"], list[str]
-        ],
+        nodes: Literal[constants.NodeSelection.ALL, constants.NodeSelection.PRINCIPAL, constants.NodeSelection.RANDOM] | list[str],
     ) -> list[Node]:
         use_nodes = []
 
         # TODO: Make an enum or class to store the different node selections
-        if nodes == "all":
+        if nodes == constants.NodeSelection.ALL:
             use_nodes = list(self.nodes.values())
-        elif nodes == "random":
+        elif nodes == constants.NodeSelection.RANDOM:
             randint = random.randint(0, len(self.nodes) - 1)
             use_nodes = [list(self.nodes.values())[randint]]
-        elif nodes == "principal":
+        elif nodes == constants.NodeSelection.PRINCIPAL:
             principal = self.get_expected_principal()
             use_nodes = self.get_node(principal)
 
@@ -480,7 +478,7 @@ class Cluster(AsyncObject):
                 except Exception:  # Ignore ambiguous and key errors
                     continue
         else:
-            raise TypeError("nodes should be 'all' or list found %s" % type(nodes))
+            raise TypeError("nodes should be 'all' or list found %s" % nodes)
 
         return use_nodes
 
