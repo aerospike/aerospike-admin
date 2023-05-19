@@ -882,10 +882,6 @@ class ManageConfigControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        self.view_mock.print_result.assert_called_once_with(
-            'The parameter "enable-compression" must also be set.'
-        )
-
     async def test_set_prompt(self):
         line = "namespace test-ns set test-set param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
@@ -1197,25 +1193,28 @@ class ManageConfigControllerTest(asynctest.TestCase):
         self.cluster_mock.info_set_config_xdr.assert_not_called()
 
     async def test_XDR_dc_namespace_success(self):
-        line = "xdr dc test-dc namespace test-ns param test-param to test-value with 1.1.1.1 2.2.2.2"
+        line = "xdr dc test-dc namespace test-ns param compression-level to test-value with 1.1.1.1 2.2.2.2"
         resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": "ASInfoConfigError"}
         self.cluster_mock.info_set_config_xdr.return_value = resp
 
         await self.controller.execute(line.split())
 
         self.cluster_mock.info_set_config_xdr.assert_called_once_with(
-            "test-param",
+            "compression-level",
             "test-value",
             dc="test-dc",
             namespace="test-ns",
             nodes=["1.1.1.1", "2.2.2.2"],
         )
-        title = "Set XDR Namespace Param test-param to test-value"
+        title = "Set XDR Namespace Param compression-level to test-value"
         self.view_mock.print_info_responses.assert_called_once_with(
             title,
             resp,
             self.cluster_mock,
             **self._get_controller_mods(self.controller, ["xdr", "dc", "namespace"]),
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            'The parameter "enable-compression" must also be set.'
         )
 
 
