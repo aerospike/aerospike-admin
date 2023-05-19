@@ -76,14 +76,14 @@ def project_xdr_req_shipped_errors(s, esc, ess):
 
 def _ignore_zero(num: int):
     if num == 0:
-        raise NoEntryException()
+        raise NoEntryException("Ignoring zero")
 
     return num
 
 
 def _ignore_null(s: str):
     if s.lower() == "null":
-        raise NoEntryException()
+        raise NoEntryException("Ignoring 'null'")
 
     return s
 
@@ -1066,7 +1066,7 @@ show_distribution_sheet = Sheet(
 def extract_value_from_dict(key: str):
     def extract_value(dict):
         if key not in dict:
-            raise NoEntryException()
+            raise NoEntryException(f"{key} not found dict")
 
         return dict[key]
 
@@ -1831,9 +1831,7 @@ def create_quota_weighted_avg(type: str):
 
     def usage_weighted_avg(edatas: list[EntryData]):
         pcts: map[float] = map(lambda edata: edata.value, edatas)
-        weights: list[float] = list(
-            map(lambda edata: edata.record[type]["Quota"], edatas)
-        )
+        weights: map[float] = map(lambda edata: edata.record[type]["Quota"], edatas)
 
         if not weights:
             return None
@@ -1893,7 +1891,7 @@ def create_quota_tps_subgroup(
             Field(
                 "Single Record TPS",
                 Projectors.Func(
-                    FieldType.undefined,
+                    FieldType.number,
                     extract_value_from_dict("single-record-tps"),
                     Projectors.Identity("data", key),
                 ),
@@ -1905,7 +1903,7 @@ def create_quota_tps_subgroup(
             Field(
                 "Scan/Query Limited RPS",
                 Projectors.Func(
-                    FieldType.undefined,
+                    FieldType.number,
                     extract_value_from_dict("scan-query-rps-limited"),
                     Projectors.Identity("data", key),
                 ),
@@ -1915,7 +1913,7 @@ def create_quota_tps_subgroup(
             Field(
                 "Scan/Query Limitless",
                 Projectors.Func(
-                    FieldType.undefined,
+                    FieldType.number,
                     extract_value_from_dict("scan-query-limitless"),
                     Projectors.Identity("data", key),
                 ),

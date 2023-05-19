@@ -118,9 +118,7 @@ AdminMode = Enumeration(
 )
 
 
-NodeSelectionType = (
-    Literal["all"] | Literal["principal"] | Literal["random"] | list[str]
-)
+NodeSelectionType = Literal["all", "principal", "random"] | list[str]
 
 
 class NodeSelection:

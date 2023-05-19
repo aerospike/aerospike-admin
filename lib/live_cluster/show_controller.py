@@ -19,7 +19,6 @@ from lib.live_cluster.get_controller import (
     GetDistributionController,
     GetJobsController,
     GetPmapController,
-    GetAclController,
     GetSIndexController,
     GetStatisticsController,
     GetUdfController,
@@ -1280,7 +1279,6 @@ class ShowUsersController(LiveClusterCommandController):
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
-            print(resp)
             self.logger.error(resp)
             return
         elif isinstance(resp, Exception):

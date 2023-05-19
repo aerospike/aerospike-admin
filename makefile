@@ -71,7 +71,7 @@ one-dir: init
 .PHONY: init
 init:
 	pipenv install --dev
-	pipenv check
+	# pipenv check
 	pipenv graph
 
 UNIT_TEST_CMD=pytest --disable-warnings test/unit

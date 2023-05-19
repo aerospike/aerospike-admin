@@ -20,7 +20,6 @@ from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.get_controller import (
     GetConfigController,
     GetJobsController,
-    GetAclController,
     GetStatisticsController,
     GetAclController,
 )

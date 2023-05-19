@@ -14,7 +14,7 @@
 
 import asyncio
 from operator import itemgetter
-from typing import Any, Callable, Iterable, TypeVar
+from typing import Any, Callable, Iterable, Literal, TypeVar
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )
@@ -312,34 +312,46 @@ class GetAclController:
 
     @staticmethod
     def new_dict_with_key(d: TimestampDict[NodeDict[dict[str, Any]]], key: str):
-        new_users_data = {}
+        new_dict = {}
 
         for timestamp, nodes_data in d.items():
-            new_users_data[timestamp] = {}
-            for node, users_data in nodes_data.items():
-                for user in users_data:
-                    if user == key:
-                        new_users_data[timestamp].update(
-                            {node: {user: users_data[user]}}
+            new_dict[timestamp] = {}
+            for node, keys_data in nodes_data.items():
+                for found_key in keys_data:
+                    if found_key == key:
+                        new_dict[timestamp].update(
+                            {node: {found_key: keys_data[found_key]}}
                         )
                         break
 
-        return new_users_data
+        return new_dict
 
-    def get_users(self, nodes=constants.NodeSelection.ALL):
+    def get_users(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
         return self.log_handler.admin_acl(stanza=constants.ADMIN_USERS, nodes=nodes)
 
-    def get_user(self, username: str, nodes=constants.NodeSelection.ALL):
+    def get_user(
+        self,
+        username: str,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
+    ):
         data: TimestampDict[
             NodeDict[UsersDict[dict[str, str | int]]]
         ] = self.log_handler.admin_acl(stanza=constants.ADMIN_USERS, nodes=nodes)
 
         return GetAclController.new_dict_with_key(data, username)
 
-    def get_roles(self, nodes=constants.NodeSelection.ALL):
+    def get_roles(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
         return self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES, nodes=nodes)
 
-    def get_role(self, role_name, nodes=constants.NodeSelection.ALL):
+    def get_role(
+        self,
+        role_name,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
+    ):
         data: TimestampDict[
             NodeDict[UsersDict[dict[str, str | int]]]
         ] = self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES, nodes=nodes)

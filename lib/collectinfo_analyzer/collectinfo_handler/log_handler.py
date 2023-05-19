@@ -228,8 +228,7 @@ class CollectinfoLogHandler(object):
     def admin_acl(
         self,
         stanza,
-        nodes: Literal[NodeSelection.ALL]
-        | Literal[NodeSelection.PRINCIPAL] = NodeSelection.ALL,
+        nodes: NodeSelectionType = NodeSelection.ALL,
     ):
         data = self._fetch_from_cinfo_log(type="acl", stanza=stanza, nodes=nodes)
 

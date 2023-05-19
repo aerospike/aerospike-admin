@@ -18,7 +18,7 @@ from operator import itemgetter
 
 from lib.utils import util
 from lib.view.sheet.decleration import (
-    BaseProjector,
+    SimpleProjector,
     EntryData,
     EntryValue,
     ErrorEntryException,
@@ -293,7 +293,7 @@ class BaseRSheet(object):
                 # To keep data displayed in a Field from being displayed in a DynamicFields
                 if (
                     isinstance(dfield, Field)
-                    and isinstance(dfield.projector, BaseProjector)
+                    and isinstance(dfield.projector, SimpleProjector)
                     and dfield.projector.keys is not None
                 ):
                     ignore_keys.update(dfield.projector.keys)
