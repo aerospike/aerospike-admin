@@ -585,7 +585,7 @@ class TestShowDistribution(asynctest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        lib.stop
+        lib.stop()
 
     async def test_test_ttl(self):
         """
@@ -608,6 +608,8 @@ class TestShowDistribution(asynctest.TestCase):
             "90%",
             "100%",
         ]
+
+        time.sleep(10)
 
         actual_out = await util.capture_stdout(
             self.rc.execute, ["show", "distribution", "ttl", "for", lib.NAMESPACE]
@@ -915,7 +917,7 @@ class TestShowUsersStats(asynctest.TestCase):
 
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        
+
     async def test_show_single_users_stats(self):
         exp_title = "Users"
         exp_header = [
