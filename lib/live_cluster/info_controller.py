@@ -158,9 +158,9 @@ class InfoController(LiveClusterCommandController):
         old_xdr_stats = {}
 
         for node in new_stats:
-            if version.LooseVersion(builds[node]) < version.LooseVersion(
-                constants.SERVER_NEW_XDR5_VERSION
-            ):
+            if not isinstance(builds[node], Exception) and version.LooseVersion(
+                builds[node]
+            ) < version.LooseVersion(constants.SERVER_NEW_XDR5_VERSION):
                 old_xdr_stats[node] = old_stats[node]
             else:
                 xdr5_stats[node] = new_stats[node]
