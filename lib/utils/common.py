@@ -1783,6 +1783,7 @@ def _format_ns_stop_writes_metrics(
             if usage is None:
                 metric = "pmem_used_bytes"
                 usage = stats.get(metric, None)
+                bytes_total = stats.get("pmem_total_bytes", None)
 
             if usage is not None and threshold is not None and bytes_total is not None:
                 use = int(usage)
