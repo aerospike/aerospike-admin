@@ -1756,6 +1756,10 @@ def _format_ns_stop_writes_metrics(
             usage: str | None = stats.get(metric, None)
             threshold: str | None = stats.get(config, None)
 
+            if usage is None:
+                metric = "pmem_avail_pct"
+                usage = stats.get(metric, None)
+
             if usage is not None and threshold is not None:
                 use = int(usage)
                 thresh = int(threshold)
@@ -1775,6 +1779,11 @@ def _format_ns_stop_writes_metrics(
             usage: str | None = stats.get(metric, None)
             bytes_total: str | None = stats.get("device_total_bytes", None)
             threshold: str | None = stats.get(config, None)
+
+            if usage is None:
+                metric = "pmem_used_bytes"
+                usage = stats.get(metric, None)
+                bytes_total = stats.get("pmem_total_bytes", None)
 
             if usage is not None and threshold is not None and bytes_total is not None:
                 use = int(usage)

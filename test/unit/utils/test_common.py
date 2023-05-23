@@ -591,27 +591,43 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
 class CreateStopWritesSummaryTests(unittest.TestCase):
     maxDiff = None
 
+    @staticmethod
+    def create_tc(
+        service_stats=None,
+        ns_stats=None,
+        ns_config=None,
+        set_stats=None,
+        set_config=None,
+        expected=None,
+    ):
+        return (
+            service_stats if service_stats else {},
+            ns_stats if ns_stats else {},
+            ns_config if ns_config else {},
+            set_stats if set_stats else {},
+            set_config if set_config else {},
+            expected if expected else {},
+        )
+
     @parameterized.expand(
         [
-            ({}, {}, {}, {}, {}, {}),
-            (
-                {
+            create_tc(),
+            create_tc(
+                service_stats={
                     "1.1.1.1": {
                         "cluster_clock_skew_ms": "256",
                         "cluster_clock_skew_stop_writes_sec": "20",
                     },
                 },
-                {
+                ns_stats={
                     "1.1.1.1": {"ns1": {"clock_skew_stop_writes": "false"}},
                 },
-                {
+                ns_config={
                     "1.1.1.1": {
                         "ns1": {"strong-consistency": "false", "nsup-period": "0"}
                     },
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "cluster_clock_skew_ms"): {
                             "stop_writes": False,
@@ -624,24 +640,22 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # cluster_clock_skew_ms does not trigger stop writes when clock_skew_stop_writes is false
-            (
-                {
+            create_tc(
+                service_stats={
                     "1.1.1.1": {
                         "cluster_clock_skew_ms": "200001",
                         "cluster_clock_skew_stop_writes_sec": "20",
                     },
                 },
-                {
+                ns_stats={
                     "1.1.1.1": {"ns1": {"clock_skew_stop_writes": "false"}},
                 },
-                {
+                ns_config={
                     "1.1.1.1": {
                         "ns1": {"strong-consistency": "false", "nsup-period": "0"}
                     },
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "cluster_clock_skew_ms"): {
                             "stop_writes": False,
@@ -654,24 +668,22 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # cluster_clock_skew_ms triggers stop writes when clock_skew_stop_writes is true
-            (
-                {
+            create_tc(
+                service_stats={
                     "1.1.1.1": {
                         "cluster_clock_skew_ms": "200001",  # <<
                         "cluster_clock_skew_stop_writes_sec": "20",
                     },
                 },
-                {
+                ns_stats={
                     "1.1.1.1": {"ns1": {"clock_skew_stop_writes": "true"}},  # <<
                 },
-                {
+                ns_config={
                     "1.1.1.1": {
                         "ns1": {"strong-consistency": "false", "nsup-period": "0"}
                     },
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "cluster_clock_skew_ms"): {
                             "stop_writes": True,
@@ -684,24 +696,22 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # nsup-period is not zero and strong consistency causes default metric_threshold
-            (
-                {
+            create_tc(
+                service_stats={
                     "1.1.1.1": {
                         "cluster_clock_skew_ms": "256",
                         "cluster_clock_skew_stop_writes_sec": "20",
                     },
                 },
-                {
+                ns_stats={
                     "1.1.1.1": {"ns1": {"clock_skew_stop_writes": "true"}},  # <<
                 },
-                {
+                ns_config={
                     "1.1.1.1": {
                         "ns1": {"strong-consistency": "false", "nsup-period": "999"}
                     },
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "cluster_clock_skew_ms"): {
                             "stop_writes": False,
@@ -714,7 +724,7 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes not triggered by system_free_mem_pct
-            (
+            create_tc(
                 {
                     "1.1.1.1": {
                         "system_free_mem_pct": "90",
@@ -746,31 +756,29 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes triggered by system_free_mem_pct
-            (
-                {
+            create_tc(
+                service_stats={
                     "1.1.1.1": {
-                        "system_free_mem_pct": "10",
+                        "system_free_mem_pct": "90",
                     },
                 },
-                {
+                ns_stats={
                     "1.1.1.1": {
                         "ns1": {
-                            "stop_writes": "true",
+                            "stop_writes": "false",
                         }
                     },
                 },
-                {
+                ns_config={
                     "1.1.1.1": {"ns1": {"stop-writes-sys-memory-pct": "90"}},
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "system_free_mem_pct"): {
                             "metric": "system_free_mem_pct",
                             "config": "stop-writes-sys-memory-pct",
-                            "stop_writes": True,
-                            "metric_usage": 90,
+                            "stop_writes": False,
+                            "metric_usage": 10,
                             "metric_threshold": 90,
                             "namespace": "ns1",
                         },
@@ -778,9 +786,8 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes not triggered by device_avail_pct
-            (
-                {},
-                {
+            create_tc(
+                ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
@@ -788,12 +795,10 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                         }
                     },
                 },
-                {
+                ns_config={
                     "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "device_avail_pct"): {
                             "metric": "device_avail_pct",
@@ -806,10 +811,8 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                     }
                 },
             ),
-            # stop_writes triggered by device_avail_pct
-            (
-                {},
-                {
+            create_tc(
+                ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
@@ -817,12 +820,10 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                         }
                     },
                 },
-                {
+                ns_config={
                     "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "device_avail_pct"): {
                             "metric": "device_avail_pct",
@@ -835,10 +836,59 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                     }
                 },
             ),
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "pmem_avail_pct": "56",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "pmem_avail_pct"): {
+                            "metric": "pmem_avail_pct",
+                            "config": "min-avail-pct",
+                            "stop_writes": True,
+                            "metric_usage": 56,
+                            "metric_threshold": 55,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "pmem_avail_pct": "56",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "pmem_avail_pct"): {
+                            "metric": "pmem_avail_pct",
+                            "config": "min-avail-pct",
+                            "stop_writes": True,
+                            "metric_usage": 56,
+                            "metric_threshold": 55,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
             # stop_writes not triggered by device_used_bytes
-            (
-                {},
-                {
+            create_tc(
+                ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
@@ -847,12 +897,10 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                         }
                     },
                 },
-                {
+                ns_config={
                     "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "device_used_bytes"): {
                             "metric": "device_used_bytes",
@@ -866,9 +914,8 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes is triggered by device_used_bytes
-            (
-                {},
-                {
+            create_tc(
+                ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
@@ -877,12 +924,10 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                         }
                     },
                 },
-                {
+                ns_config={
                     "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "device_used_bytes"): {
                             "metric": "device_used_bytes",
@@ -895,10 +940,63 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                     }
                 },
             ),
+            # stop_writes not triggered by pmem_used_bytes
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "pmem_used_bytes": "10",
+                            "pmem_total_bytes": "100",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "pmem_used_bytes"): {
+                            "metric": "pmem_used_bytes",
+                            "config": "max-used-pct",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by pmem_used_bytes
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "pmem_used_bytes": "90",
+                            "pmem_total_bytes": "100",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "pmem_used_bytes"): {
+                            "metric": "pmem_used_bytes",
+                            "config": "max-used-pct",
+                            "stop_writes": True,
+                            "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
             # stop_writes is not triggered by memory_used_bytes
-            (
-                {},
-                {
+            create_tc(
+                ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
@@ -906,12 +1004,10 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                         }
                     },
                 },
-                {
+                ns_config={
                     "1.1.1.1": {"ns1": {"stop-writes-pct": "90", "memory-size": "100"}},
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "memory_used_bytes"): {
                             "metric": "memory_used_bytes",
@@ -925,9 +1021,8 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes is triggered by memory_used_bytes
-            (
-                {},
-                {
+            create_tc(
+                ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
@@ -935,12 +1030,10 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                         }
                     },
                 },
-                {
+                ns_config={
                     "1.1.1.1": {"ns1": {"stop-writes-pct": "90", "memory-size": "100"}},
                 },
-                {},
-                {},
-                {
+                expected={
                     "1.1.1.1": {
                         ("ns1", None, "memory_used_bytes"): {
                             "metric": "memory_used_bytes",
@@ -954,11 +1047,8 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes is not triggered by set.memory_data_bytes
-            (
-                {},
-                {},
-                {},
-                {
+            create_tc(
+                set_stats={
                     "1.1.1.1": {
                         ("ns1", "set1"): {
                             "memory_data_bytes": "10",
@@ -966,8 +1056,8 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                         }
                     }
                 },
-                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
-                {
+                set_config={"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                expected={
                     "1.1.1.1": {
                         ("ns1", "set1", "memory_data_bytes"): {
                             "metric": "memory_data_bytes",
@@ -982,19 +1072,16 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes is triggered by set.memory_data_bytes
-            (
-                {},
-                {},
-                {},
-                {
+            create_tc(
+                set_stats={
                     "1.1.1.1": {
                         ("ns1", "set1"): {
                             "memory_data_bytes": "100",
                         }
                     }
                 },
-                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
-                {
+                set_config={"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                expected={
                     "1.1.1.1": {
                         ("ns1", "set1", "memory_data_bytes"): {
                             "metric": "memory_data_bytes",
@@ -1009,11 +1096,8 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes is not triggered by set.device_data_bytes
-            (
-                {},
-                {},
-                {},
-                {
+            create_tc(
+                set_stats={
                     "1.1.1.1": {
                         ("ns1", "set1"): {
                             "memory_data_bytes": "0",
@@ -1021,8 +1105,8 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                         }
                     }
                 },
-                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
-                {
+                set_config={"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                expected={
                     "1.1.1.1": {
                         ("ns1", "set1", "device_data_bytes"): {
                             "metric": "device_data_bytes",
@@ -1037,19 +1121,16 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes is triggered by set.device_data_bytes
-            (
-                {},
-                {},
-                {},
-                {
+            create_tc(
+                set_stats={
                     "1.1.1.1": {
                         ("ns1", "set1"): {
                             "device_data_bytes": "100",
                         }
                     }
                 },
-                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
-                {
+                set_config={"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                expected={
                     "1.1.1.1": {
                         ("ns1", "set1", "device_data_bytes"): {
                             "metric": "device_data_bytes",
@@ -1064,19 +1145,16 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes is not triggered by set.objects
-            (
-                {},
-                {},
-                {},
-                {
+            create_tc(
+                set_stats={
                     "1.1.1.1": {
                         ("ns1", "set1"): {
                             "objects": "10",
                         }
                     }
                 },
-                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-count": "100"}}},
-                {
+                set_config={"1.1.1.1": {("ns1", "set1"): {"stop-writes-count": "100"}}},
+                expected={
                     "1.1.1.1": {
                         ("ns1", "set1", "objects"): {
                             "metric": "objects",
@@ -1091,19 +1169,16 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
                 },
             ),
             # stop_writes is triggered by set.objects
-            (
-                {},
-                {},
-                {},
-                {
+            create_tc(
+                set_stats={
                     "1.1.1.1": {
                         ("ns1", "set1"): {
                             "objects": "100",
                         }
                     }
                 },
-                {"1.1.1.1": {("ns1", "set1"): {"stop-writes-count": "100"}}},
-                {
+                set_config={"1.1.1.1": {("ns1", "set1"): {"stop-writes-count": "100"}}},
+                expected={
                     "1.1.1.1": {
                         ("ns1", "set1", "objects"): {
                             "metric": "objects",
