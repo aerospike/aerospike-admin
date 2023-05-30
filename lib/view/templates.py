@@ -1911,7 +1911,7 @@ def create_quota_tps_subgroup(
                 aggregator=Aggregators.sum(converter=Converters.scientific_units),
             ),
             Field(
-                "PI/SI Limitless",
+                "PI/SI Query Limitless",
                 Projectors.Func(
                     FieldType.number,
                     extract_value_from_dict("scan-query-limitless"),
