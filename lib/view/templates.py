@@ -1901,7 +1901,7 @@ def create_quota_tps_subgroup(
             # TODO: Support for Subgroups to have Subgroups to have Scan/Query be a
             # subgroup of Write
             Field(
-                "Scan/Query Limited RPS",
+                "PI/SI Query Limited RPS",
                 Projectors.Func(
                     FieldType.number,
                     extract_value_from_dict("scan-query-rps-limited"),
@@ -1911,7 +1911,7 @@ def create_quota_tps_subgroup(
                 aggregator=Aggregators.sum(converter=Converters.scientific_units),
             ),
             Field(
-                "Scan/Query Limitless",
+                "PI/SI Limitless",
                 Projectors.Func(
                     FieldType.number,
                     extract_value_from_dict("scan-query-limitless"),

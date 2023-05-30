@@ -1060,7 +1060,14 @@ class CliView(object):
         )
 
         sources = dict(data=users_data)
-        CliView.print_result(sheet.render(templates.show_users, title, sources))
+        CliView.print_result(
+            sheet.render(
+                templates.show_users,
+                title,
+                sources,
+                description="To see individual users metrics run 'show user statistics'",
+            )
+        )
 
     @staticmethod
     @reserved_modifiers
