@@ -652,6 +652,7 @@ class CliViewTest(unittest.TestCase):
             templates.show_users,
             "Users (test-stamp)",
             dict(data=formatted_users),
+            description="To see individual users metrics run 'show user statistics'",
         )
 
     def test_show_users_stats(self):
