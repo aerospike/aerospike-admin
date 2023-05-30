@@ -897,12 +897,12 @@ class TestShowUsersStats(asynctest.TestCase):
             "Connections",
             "Read Quota",
             "Read Single Record TPS",
-            "Read Scan/Query Limited RPS",
-            "Read Scan/Query Limitless",
+            "Read PI/SI Query Limited RPS",
+            "Read PI/SI Query Limitless",
             "Write Quota",
             "Write Single Record TPS",
-            "Write Scan/Query Limited RPS",
-            "Write Scan/Query Limitless",
+            "Write PI/SI Query Limited RPS",
+            "Write PI/SI Query Limitless",
         ]
 
         (
@@ -926,12 +926,12 @@ class TestShowUsersStats(asynctest.TestCase):
             "Connections",
             "Read Quota",
             "Read Single Record TPS",
-            "Read Scan/Query Limited RPS",
-            "Read Scan/Query Limitless",
+            "Read PI/SI Query Limited RPS",
+            "Read PI/SI Query Limitless",
             "Write Quota",
             "Write Single Record TPS",
-            "Write Scan/Query Limited RPS",
-            "Write Scan/Query Limitless",
+            "Write PI/SI Query Limited RPS",
+            "Write PI/SI Query Limitless",
         ]
 
         (

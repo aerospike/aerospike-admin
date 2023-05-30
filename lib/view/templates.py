@@ -1898,7 +1898,7 @@ def create_quota_tps_subgroup(
                 converter=Converters.scientific_units,
                 aggregator=Aggregators.sum(converter=Converters.scientific_units),
             ),
-            # TODO: Support for Subgroups to have Subgroups to have Scan/Query be a
+            # TODO: Support for Subgroups to have Subgroups to have PI/SI Query be a
             # subgroup of Write
             Field(
                 "PI/SI Query Limited RPS",
