@@ -35,9 +35,7 @@ from typing_extensions import NotRequired
 import distro
 import socket
 import time
-import urllib.request
-import urllib.error
-import urllib.parse
+from urllib import request, error, parse
 import aiohttp
 import zipfile
 from collections import OrderedDict
@@ -2364,6 +2362,25 @@ def _create_fail_string(cloud_provider):
     )
 
 
+class NoRedirect(request.HTTPRedirectHandler):
+    """
+    Disallow redirects when requesting a magic IP. Redirects should not happen in a properly
+    configured cloud instance. If a redirect occurs it is either not a cloud instance and
+    we are being sent to some type of proxy which will give the incorrect response
+    (TOOLS-2050 which is what prompted this change) or (hard to believe) we are going to
+    another machine in the cloud in which case we will get instance info from the wrong machine.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise request.HTTPError(
+            req.full_url, code, "Redirects disabled for cloud magic urls", headers, fp
+        )
+
+
+_opener = request.build_opener(NoRedirect)
+request.install_opener(_opener)
+
+
 def _get_aws_metadata(response_str, prefix="", old_response=""):
     aws_c = ""
     aws_metadata_base_url = "http://169.254.169.254/latest/meta-data"
@@ -2381,8 +2398,8 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
         else:
             urls_to_join = [aws_metadata_base_url, prefix, rsp]
             meta_url = "/".join(urls_to_join)
-            req = urllib.request.Request(meta_url)
-            r = urllib.request.urlopen(req)
+            req = request.Request(meta_url)
+            r = request.urlopen(req)
             if r.code != 404:
                 response = r.read().strip().decode("utf-8")
                 if response == old_response:
@@ -2430,8 +2447,8 @@ def _collect_aws_data(cmd=""):
     ]
     try:
         out += "\nRequesting . . . {0}".format(aws_metadata_base_url)
-        req = urllib.request.Request(aws_metadata_base_url)
-        r = urllib.request.urlopen(req)
+        req = request.Request(aws_metadata_base_url)
+        r = request.urlopen(req)
         if r.code == 200:
             rsp = r.read().decode("utf-8")
             aws_rsp += _get_aws_metadata(rsp, "/")
@@ -2470,10 +2487,8 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
         meta_url = "/".join(urls_to_join)
 
         try:
-            req = urllib.request.Request(
-                meta_url, headers={"Metadata-Flavor": "Google"}
-            )
-            r = urllib.request.urlopen(req)
+            req = request.Request(meta_url, headers={"Metadata-Flavor": "Google"})
+            r = request.urlopen(req)
 
             if r.code != 404:
                 response = r.read().strip().decode("utf-8")
@@ -2500,10 +2515,10 @@ def _collect_gce_data(cmd=""):
 
     try:
         out += "\nRequesting . . . {0}".format(gce_metadata_base_url)
-        req = urllib.request.Request(
+        req = request.Request(
             gce_metadata_base_url, headers={"Metadata-Flavor": "Google"}
         )
-        r = urllib.request.urlopen(req)
+        r = request.urlopen(req, timeout=gce_timeout)
 
         if r.code == 200:
             rsp = r.read().decode("utf-8")
@@ -2531,10 +2546,8 @@ def _collect_azure_data(cmd=""):
 
     try:
         out += "\nRequesting . . . {0}".format(azure_metadata_base_url)
-        req = urllib.request.Request(
-            azure_metadata_base_url, headers={"Metadata": "true"}
-        )
-        r = urllib.request.urlopen(req)
+        req = request.Request(azure_metadata_base_url, headers={"Metadata": "true"})
+        r = request.urlopen(req)
 
         if r.code == 200:
             rsp = r.read().decode("utf-8")
