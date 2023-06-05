@@ -2105,11 +2105,11 @@ def _get_bucket_range(current_bucket, next_bucket, width, rblock_size_bytes):
 
 
 def _create_range_key(s, e):
-    return "%s to %s" % (s, e)
+    return "%s-%s" % (s, e)
 
 
 def _string_to_bytes(k):
-    k = k.split(" to ")
+    k = k.split("-")
     s = k[0]
     b = {
         "K": 1024**1,
@@ -2156,15 +2156,21 @@ def _restructure_new_log_histogram(histogram_data):
                 except Exception:
                     continue
 
+        columns = sorted(columns, key=_string_to_bytes)
+
         for host_id, host_data in ns_data.items():
             if not host_data or isinstance(host_data, Exception):
                 continue
+
+            sorted_host_data = {}
 
             for k in columns:
                 if k not in host_data["values"].keys():
                     host_data["values"][k] = 0
 
-        ns_data["columns"] = sorted(columns, key=_string_to_bytes)
+                sorted_host_data[k] = host_data["values"][k]
+
+            host_data["values"] = sorted_host_data
 
     return histogram_data
 
@@ -2244,8 +2250,14 @@ def _parse_new_log_histogram(histogram, histogram_data):
     return result
 
 
-def create_histogram_output(histogram_name, histogram_data, **params):
-    if "byte_distribution" not in params or not params["byte_distribution"]:
+def create_histogram_output(
+    histogram_name,
+    histogram_data,
+    byte_distribution=False,
+    bucket_count=None,
+    builds=None,
+):
+    if not byte_distribution:
         return _create_histogram_percentiles_output(histogram_name, histogram_data)
 
     try:
@@ -2257,11 +2269,11 @@ def create_histogram_output(histogram_name, histogram_data, **params):
     except Exception as e:
         raise e
 
-    if "bucket_count" not in params or "builds" not in params:
+    if not bucket_count or not builds:
         return {}
 
     return _create_bytewise_histogram_percentiles_output(
-        histogram_data, params["bucket_count"], params["builds"]
+        histogram_data, bucket_count, builds
     )
 
 

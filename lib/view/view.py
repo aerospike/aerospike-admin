@@ -409,7 +409,9 @@ class CliView(object):
             sources = dict(
                 node_names=node_names,
                 histogram={
-                    h: d.get("data", {}) for h, d in node_data.items() if h != "columns"
+                    h: d.get("values", {})
+                    for h, d in node_data.items()
+                    if h != "columns"
                 },
             )
 
