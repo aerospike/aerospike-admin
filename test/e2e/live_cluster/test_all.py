@@ -97,8 +97,8 @@ class TableRenderTests(unittest.TestCase):
         ("show statistics xdr dc"),
         ("show statistics xdr namespace"),
         ("show latencies -v"),
-        # ("show distribution time_to_live"), # TODO: Causing issues on github actions
-        # ("show distribution object_size"),
+        ("show distribution time_to_live"),  # TODO: Causing issues on github actions
+        ("show distribution object_size"),
         ("show mapping ip"),
         ("show mapping node"),
         ("show pmap"),
@@ -129,6 +129,12 @@ class TableRenderTests(unittest.TestCase):
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
         lib.create_xdr_filter(lib.NAMESPACE, lib.DC, "kxGRSJMEk1ECo2FnZRU=")
         lib.upload_udf("metadata.lua", TEST_UDF)
+        util.run_asadm(
+            "-h {} --enable -e '{}' -Uadmin -Padmin".format(
+                lib.SERVER_IP,
+                "manage config namespace test param nsup-hist-period to 10; manage config namespace test param enable-benchmarks-write to true; manage config namespace test param enable-benchmarks-read to true",
+            )
+        )
         time.sleep(60)
         cls.collectinfo_cp = util.run_asadm(
             "-h {} -e '{}' -Uadmin -Padmin".format(
