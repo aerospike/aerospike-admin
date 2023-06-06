@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import datetime
 import locale
 import logging
 from os import path
+from signal import SIGINT, SIGTERM
 import sys
 import time
 from io import StringIO
@@ -36,6 +38,7 @@ from lib.utils.common import (
 from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
 from lib.view.table import Orientation, Table, TitleFormats
+from lib.live_cluster.client import info
 
 H1_offset = 13
 H2_offset = 15
@@ -1414,6 +1417,18 @@ class CliView(object):
 
     @staticmethod
     async def watch(ctrl, line):
+        loop = asyncio.get_event_loop()
+        watch_task = asyncio.current_task()
+
+        if watch_task:
+            """
+            We need ctrl-c to propagate up through the caller rather then event loop. This
+            is important for the 'watch' command where sometimes ctrl-c will propagate to
+            asyncio.run() which will terminate asadm rather than return to prompt.
+            """
+            for signal in [SIGINT, SIGTERM]:
+                loop.add_signal_handler(signal, watch_task.cancel)
+
         diff_highlight = True
         sleep = 2.0
         num_iterations = False
@@ -1531,7 +1546,7 @@ class CliView(object):
                 count += 1
                 time.sleep(sleep)
 
-        except (KeyboardInterrupt, SystemExit):
+        except asyncio.CancelledError:
             return
         finally:
             sys.stdout = real_stdout

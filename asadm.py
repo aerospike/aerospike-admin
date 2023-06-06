@@ -624,18 +624,16 @@ async def execute_asinfo_commands(
 
 async def main():
     loop = asyncio.get_event_loop()
+    admin_version = get_version()
 
-    if get_version == "development":
-        loop.set_debug(True)
-    else:
+    if admin_version != "development":
         # Do nothing in production. It is likely that another error occurred too that will be displayed.
         loop.set_exception_handler(lambda loop, context: None)
 
     cli_args = conf.get_cli_args()
 
-    admin_version = get_version()
-
     if cli_args.debug:
+        loop.set_debug(True)
         logger.setLevel(logging.DEBUG)
 
     if cli_args.help:
@@ -809,10 +807,7 @@ async def main():
             cleanup()
             logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
-    try:
-        await cmdloop(shell, func, args, use_yappi, single_command)
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    await cmdloop(shell, func, args, use_yappi, single_command)
     await shell.close()
 
     try:
@@ -882,5 +877,7 @@ def get_version():
 if __name__ == "__main__":
     try:
         asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        sys.exit(130)
     except Exception:
         pass

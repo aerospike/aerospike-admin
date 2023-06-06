@@ -121,7 +121,6 @@ class LiveClusterRootController(BaseController, AsyncObject):
         "           interrupted",
         "           watch 5 info namespace",
     )
-    @DisableAutoComplete()
     async def do_watch(self, line):
         await self.view.watch(self, line)
 
