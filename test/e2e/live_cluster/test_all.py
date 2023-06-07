@@ -119,11 +119,6 @@ class TableRenderTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """
-        TODO: enable micro-benchmarks like
-        asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-write=true' -Uadmin -Padmin
-        asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-read=true' -Uadmin -Padmin
-        """
         lib.start()
         lib.populate_db("no-error-test")
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
@@ -135,7 +130,7 @@ class TableRenderTests(unittest.TestCase):
                 "manage config namespace test param nsup-hist-period to 10; manage config namespace test param enable-benchmarks-write to true; manage config namespace test param enable-benchmarks-read to true",
             )
         )
-        time.sleep(60)
+        time.sleep(60000)
         cls.collectinfo_cp = util.run_asadm(
             "-h {} -e '{}' -Uadmin -Padmin".format(
                 lib.SERVER_IP, "collectinfo --output-prefix asadm_test_"

@@ -463,7 +463,7 @@ def populate_db(set_name: str):
                 "int-str-mix": str(idx % 5) if idx >= 80 else idx % 10,
             }
             keys.append(key)
-            CLIENT.put(key, bins, policy=write_policy)
+            CLIENT.put(key, bins, {"ttl": 3600 * (idx + 1)}, policy=write_policy)
     except:
         print("Failed to fully populate the DB")
         raise
