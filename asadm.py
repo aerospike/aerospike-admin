@@ -21,6 +21,7 @@ try:
 except:
     pass
 
+from signal import SIGINT, SIGTERM
 from lib.utils.logger import logger  # THIS MUST BE THE FIRST IMPORT
 from lib.base_controller import ShellException
 import inspect
@@ -308,7 +309,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
         off the received input, and dispatch to action methods, passing them
         the remainder of the line as argument.
-
         """
 
         self.preloop()
@@ -384,9 +384,23 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 )
 
             sys.stdout.write(terminal.reset())
+            signals = [SIGINT, SIGTERM]
+            loop = asyncio.get_event_loop()
 
             try:
-                response = await self.ctrl.execute(line)
+                task = asyncio.create_task(self.ctrl.execute(line))
+
+                if task:
+                    """
+                    Keyboard interrupts behave differently in asyncio.
+                    We need ctrl-c to propagate up through the caller rather then event loop. This
+                    is important for the 'watch' command where sometimes ctrl-c will propagate to
+                    asyncio.run() which will terminate asadm rather than return to prompt.
+                    """
+                    for signal in signals:
+                        loop.add_signal_handler(signal, task.cancel)
+
+                response = await task
 
                 if response == "EXIT":
                     return "exit"
@@ -397,8 +411,16 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 elif response == "DISABLE":
                     self.set_default_prompt()
 
+            except asyncio.CancelledError:
+                """
+                Interrupt in the middle of executing a command.
+                """
+                pass
             except Exception as e:
                 logger.error(e)
+            finally:
+                for signal in signals:
+                    loop.remove_signal_handler(signal)
         return ""  # line was handled by execute
 
     # overloaded to support async
@@ -624,18 +646,16 @@ async def execute_asinfo_commands(
 
 async def main():
     loop = asyncio.get_event_loop()
+    admin_version = get_version()
 
-    if get_version == "development":
-        loop.set_debug(True)
-    else:
+    if admin_version != "development":
         # Do nothing in production. It is likely that another error occurred too that will be displayed.
         loop.set_exception_handler(lambda loop, context: None)
 
     cli_args = conf.get_cli_args()
 
-    admin_version = get_version()
-
     if cli_args.debug:
+        loop.set_debug(True)
         logger.setLevel(logging.DEBUG)
 
     if cli_args.help:
@@ -717,7 +737,8 @@ async def main():
 
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
-    shell = await AerospikeShell(
+
+    shell: AerospikeShell = await AerospikeShell(
         admin_version,
         seeds,
         user=cli_args.user,
@@ -809,10 +830,7 @@ async def main():
             cleanup()
             logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
-    try:
-        await cmdloop(shell, func, args, use_yappi, single_command)
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    await cmdloop(shell, func, args, use_yappi, single_command)
     await shell.close()
 
     try:
@@ -835,7 +853,7 @@ async def cmdloop(shell, func, args, use_yappi, single_command):
     try:
         if use_yappi:
             yappi.start()
-            func(*args)
+            await func(*args)
             yappi.get_func_stats().print_all()
         else:
             await func(*args)
@@ -882,5 +900,7 @@ def get_version():
 if __name__ == "__main__":
     try:
         asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        sys.exit(130)
     except Exception:
         pass

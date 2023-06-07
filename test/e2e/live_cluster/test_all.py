@@ -119,11 +119,6 @@ class TableRenderTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """
-        TODO: enable micro-benchmarks like
-        asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-write=true' -Uadmin -Padmin
-        asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-read=true' -Uadmin -Padmin
-        """
         lib.start()
         lib.populate_db("no-error-test")
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
@@ -178,6 +173,9 @@ class TableRenderTests(unittest.TestCase):
             self.fail(
                 "This command returned no tables. There should be exactly 1 for this test."
             )
+
+        if "traceback" in cp.stderr:
+            self.fail("Traceback found in stderr")
 
         for group in stdout_dicts[0]["groups"]:
             for record in group["records"]:
