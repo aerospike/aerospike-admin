@@ -130,7 +130,7 @@ class TableRenderTests(unittest.TestCase):
                 "manage config namespace test param nsup-hist-period to 10; manage config namespace test param enable-benchmarks-write to true; manage config namespace test param enable-benchmarks-read to true",
             )
         )
-        time.sleep(60000)
+        time.sleep(60)
         cls.collectinfo_cp = util.run_asadm(
             "-h {} -e '{}' -Uadmin -Padmin".format(
                 lib.SERVER_IP, "collectinfo --output-prefix asadm_test_"
