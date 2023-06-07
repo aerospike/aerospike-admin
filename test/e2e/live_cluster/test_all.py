@@ -179,6 +179,9 @@ class TableRenderTests(unittest.TestCase):
                 "This command returned no tables. There should be exactly 1 for this test."
             )
 
+        if "traceback" in cp.stderr:
+            self.fail("Traceback found in stderr")
+
         for group in stdout_dicts[0]["groups"]:
             for record in group["records"]:
                 self.assertRecordNotError(self, record)

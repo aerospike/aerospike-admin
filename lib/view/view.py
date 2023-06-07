@@ -20,9 +20,8 @@ from os import path
 from signal import SIGINT, SIGTERM
 import sys
 import time
-from io import StringIO
 from pydoc import pipepager
-from typing import Any, Tuple
+from typing import Any, TextIO, Tuple
 
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
@@ -1415,145 +1414,98 @@ class CliView(object):
             yield val
 
     @staticmethod
-    async def watch(ctrl, line):
-        diff_highlight = True
-        sleep = 2.0
+    async def watch(
+        real_stdout: TextIO,
+        output: str,
+        line: str,
+        sleep: float,
+        count: int,
+        previous: str | None,
+        diff_highlight: bool,
+    ) -> str:
         num_iterations = False
-
-        try:
-            sleep = float(line[0])
-            line.pop(0)
-        except Exception:
-            pass
-        else:
-            try:
-                num_iterations = int(line[0])
-                line.pop(0)
-            except Exception:
-                pass
-
-        if line[0] == "--no-diff":
-            diff_highlight = False
-            line.pop(0)
 
         if not terminal.color_enabled:
             diff_highlight = False
 
-        real_stdout = sys.stdout
-        signals = [SIGINT, SIGTERM]
-        loop = asyncio.get_event_loop()
+        # try:
+        highlight = False
 
-        try:
-            watch_task = asyncio.current_task()
+        if previous and diff_highlight:
+            result = []
+            prev_iterator = CliView.group_output(previous)
+            next_peeked = []
+            next_iterator = CliView.group_output(output)
+            next_iterator = CliView.peekable(next_peeked, next_iterator)
 
-            if watch_task:
-                """
-                Keyboard interrupts behave differently in asyncio.
-                We need ctrl-c to propagate up through the caller rather then event loop. This
-                is important for the 'watch' command where sometimes ctrl-c will propagate to
-                asyncio.run() which will terminate asadm rather than return to prompt.
-                """
-                for signal in signals:
-                    loop.add_signal_handler(signal, watch_task.cancel)
+            for prev_group in prev_iterator:
+                if "\033" in prev_group:
+                    # skip prev escape seq
+                    continue
 
-            sys.stdout = mystdout = StringIO()
-            previous = None
-            count = 1
-
-            while True:
-                highlight = False
-                await ctrl.execute(line[:])
-                output = mystdout.getvalue()
-                mystdout.truncate(0)
-                mystdout.seek(0)
-
-                if previous and diff_highlight:
-                    result = []
-                    prev_iterator = CliView.group_output(previous)
-                    next_peeked = []
-                    next_iterator = CliView.group_output(output)
-                    next_iterator = CliView.peekable(next_peeked, next_iterator)
-
-                    for prev_group in prev_iterator:
-                        if "\033" in prev_group:
-                            # skip prev escape seq
-                            continue
-
-                        for next_group in next_iterator:
-                            if "\033" in next_group:
-                                # add current escape seq
-                                result += next_group
-                                continue
-                            elif next_group == "\n":
-                                if prev_group != "\n":
-                                    next_peeked.append(next_group)
-                                    break
-                                if highlight:
-                                    result += terminal.uninverse()
-                                    highlight = False
-                            elif prev_group == next_group:
-                                if highlight:
-                                    result += terminal.uninverse()
-                                    highlight = False
-                            else:
-                                if not highlight:
-                                    result += terminal.inverse()
-                                    highlight = True
-
-                            result += next_group
-
-                            if "\n" == prev_group and "\n" != next_group:
-                                continue
-                            break
-
-                    for next_group in next_iterator:
-                        if next_group == " " or next_group == "\n":
-                            if highlight:
-                                result += terminal.uninverse()
-                                highlight = False
-                        else:
-                            if not highlight:
-                                result += terminal.inverse()
-                                highlight = True
-
+                for next_group in next_iterator:
+                    if "\033" in next_group:
+                        # add current escape seq
                         result += next_group
+                        continue
+                    elif next_group == "\n":
+                        if prev_group != "\n":
+                            next_peeked.append(next_group)
+                            break
+                        if highlight:
+                            result += terminal.uninverse()
+                            highlight = False
+                    elif prev_group == next_group:
+                        if highlight:
+                            result += terminal.uninverse()
+                            highlight = False
+                    else:
+                        if not highlight:
+                            result += terminal.inverse()
+                            highlight = True
 
-                    if highlight:
-                        result += terminal.reset()
-                        highlight = False
+                    result += next_group
 
-                    result = "".join(result)
-                    previous = output
-                else:
-                    result = output
-                    previous = output
-
-                ts = time.time()
-                st = datetime.datetime.fromtimestamp(ts).strftime(" %Y-%m-%d %H:%M:%S")
-                command = " ".join(line)
-                print(
-                    "[%s '%s' sleep: %ss iteration: %s" % (st, command, sleep, count),
-                    end=" ",
-                    file=real_stdout,
-                )
-                if num_iterations:
-                    print(" of %s" % (num_iterations), end=" ", file=real_stdout)
-                print("]", file=real_stdout)
-                print(result, file=real_stdout)
-
-                if num_iterations and num_iterations <= count:
+                    if "\n" == prev_group and "\n" != next_group:
+                        continue
                     break
 
-                count += 1
-                await asyncio.sleep(sleep)
+            for next_group in next_iterator:
+                if next_group == " " or next_group == "\n":
+                    if highlight:
+                        result += terminal.uninverse()
+                        highlight = False
+                else:
+                    if not highlight:
+                        result += terminal.inverse()
+                        highlight = True
 
-        except asyncio.CancelledError:
-            return
-        finally:
-            sys.stdout = real_stdout
-            for signal in signals:
-                loop.remove_signal_handler(signal)
-            print("")
+                result += next_group
+
+            if highlight:
+                result += terminal.reset()
+                highlight = False
+
+            result = "".join(result)
+            previous = output
+        else:
+            result = output
+            previous = output
+
+        ts = time.time()
+        st = datetime.datetime.fromtimestamp(ts).strftime(" %Y-%m-%d %H:%M:%S")
+        command = " ".join(line)
+        print(
+            "[%s '%s' sleep: %ss iteration: %s" % (st, command, sleep, count),
+            end=" ",
+            file=real_stdout,
+        )
+        if num_iterations:
+            print(" of %s" % (num_iterations), end=" ", file=real_stdout)
+        print("]", file=real_stdout)
+        print(result, file=real_stdout)
+
+        return previous
 
     @staticmethod
     def print_info_responses(title, responses, cluster, **mods):

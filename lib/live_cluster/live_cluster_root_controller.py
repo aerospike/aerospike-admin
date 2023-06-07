@@ -12,15 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
+from io import StringIO
+import sys
+
 from lib.utils import constants, util
 from lib.base_controller import (
     DisableAutoComplete,
     BaseController,
     CommandHelp,
+    ShellException,
     create_disabled_controller,
 )
 from lib.utils.async_object import AsyncObject
-
 from .live_cluster_command_controller import LiveClusterCommandController
 from .client.cluster import Cluster
 from .asinfo_controller import ASInfoController
@@ -122,7 +126,58 @@ class LiveClusterRootController(BaseController, AsyncObject):
         "           watch 5 info namespace",
     )
     async def do_watch(self, line):
-        await self.view.watch(self, line)
+        sleep = 2.0
+        num_iterations = 0
+
+        try:
+            sleep = float(line[0])
+            line.pop(0)
+        except Exception:
+            pass
+        else:
+            try:
+                num_iterations = int(line[0])
+                line.pop(0)
+            except Exception:
+                pass
+
+        diff_highlight = not util.check_arg_and_delete_from_mods(
+            line, "--no-diff", False, self.modifiers, self.mods
+        )
+
+        if not line:
+            raise ShellException("Watch requires a single command argument")
+
+        real_stdout = sys.stdout
+        try:
+            sys.stdout = mystdout = StringIO()
+
+            previous = None
+            count = 1
+
+            while True:
+                await self.execute(line[:])
+                output = mystdout.getvalue()
+                mystdout.truncate(0)
+                mystdout.seek(0)
+
+                previous = await self.view.watch(
+                    real_stdout, output, line, sleep, count, previous, diff_highlight
+                )
+
+                if num_iterations != 0 and num_iterations <= count:
+                    break
+
+                count += 1
+                await asyncio.sleep(sleep)
+
+        except asyncio.CancelledError:
+            return
+        finally:
+            sys.stdout = real_stdout
+            print("")
+
+        # await self.view.watch(self, line)
 
     @DisableAutoComplete()
     @CommandHelp(
