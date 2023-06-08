@@ -124,17 +124,14 @@ class TableRenderTests(unittest.TestCase):
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
         lib.create_xdr_filter(lib.NAMESPACE, lib.DC, "kxGRSJMEk1ECo2FnZRU=")
         lib.upload_udf("metadata.lua", TEST_UDF)
+        cmd = "manage config namespace test param nsup-hist-period to 5; manage config namespace test param enable-benchmarks-write to true; manage config namespace test param enable-benchmarks-read to true"
         util.run_asadm(
-            "-h {} --enable -e '{}' -Uadmin -Padmin".format(
-                lib.SERVER_IP,
-                "manage config namespace test param nsup-hist-period to 10; manage config namespace test param enable-benchmarks-write to true; manage config namespace test param enable-benchmarks-read to true",
-            )
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{cmd}' -Uadmin -Padmin"
         )
         time.sleep(60)
+        cmd = "collectinfo --output-prefix asadm_test_"
         cls.collectinfo_cp = util.run_asadm(
-            "-h {} -e '{}' -Uadmin -Padmin".format(
-                lib.SERVER_IP, "collectinfo --output-prefix asadm_test_"
-            )
+            f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd}' -Uadmin -Padmin"
         )
 
     @classmethod
@@ -183,7 +180,7 @@ class TableRenderTests(unittest.TestCase):
 
     @parameterized.expand(CMDS)
     def test_live_cmds_for_errors(self, cmd):
-        args = "-h {} -e '{}' --json -Uadmin -Padmin".format(lib.SERVER_IP, cmd)
+        args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd}' --json -Uadmin -Padmin"
         o = util.run_asadm(args)
         self.check_cmd_for_errors(o)
 

@@ -262,4 +262,5 @@ class ASInfoNotAuthenticatedError(ASInfoError):
 
 
 class ASInfoClusterStableError(ASInfoError):
-    pass
+    def __init__(self, server_resp: str):
+        super().__init__("Cluster is unstable", server_resp)

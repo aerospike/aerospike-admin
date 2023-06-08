@@ -25,7 +25,7 @@ import signal
 import time
 
 # the port to use for one of the cluster nodes
-PORT = 3000
+PORT = 10000
 # the namespace to be used for the tests
 NAMESPACE = "test"
 # the set to be used for the tests

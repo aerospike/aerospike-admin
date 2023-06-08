@@ -177,8 +177,6 @@ class LiveClusterRootController(BaseController, AsyncObject):
             sys.stdout = real_stdout
             print("")
 
-        # await self.view.watch(self, line)
-
     @DisableAutoComplete()
     @CommandHelp(
         "Enters privileged mode, which allows a you to issue manage",
