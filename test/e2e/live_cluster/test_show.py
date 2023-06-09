@@ -580,7 +580,7 @@ class TestShowDistribution(asynctest.TestCase):
 
     async def setUp(self) -> None:
         self.rc = await controller.LiveClusterRootController(
-            user="admin", password="admin"
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
 
     @classmethod
@@ -952,7 +952,7 @@ class TestShowRoles(asynctest.TestCase):
     async def setUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController(
-            user="admin", password="admin"
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
 
@@ -1200,7 +1200,7 @@ end
         lib.start()
         self.path = lib.write_file("test.lua", self.udf_contents)
         self.rc = await controller.LiveClusterRootController(
-            user="admin", password="admin"
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
         await util.capture_stdout(
