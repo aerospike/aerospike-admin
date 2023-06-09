@@ -1003,7 +1003,9 @@ class ManageConfigXDRTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         lib.start(do_reset=False)
         time.sleep(1)
-        cls._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        cls._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
         cls.namespace = lib.NAMESPACE
         cls.dc = "my-test-dc"
 
