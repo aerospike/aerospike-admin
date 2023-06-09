@@ -277,7 +277,9 @@ class TestManageACLRoles(unittest.TestCase):
 
     def setUp(self):
         lib.start()
-        self._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        self._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
 
     def tearDown(self) -> None:
         lib.stop()
@@ -593,7 +595,9 @@ end
     def setUp(self):
         lib.start()
         self.path = lib.write_file("test.lua", self.TEST_UDF)
-        self._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        self._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
 
     def tearDown(self) -> None:
         lib.stop()
@@ -696,7 +700,9 @@ class ManageSindexTest(unittest.TestCase):
 
     def setUp(self):
         lib.start()
-        self._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        self._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
 
     def tearDown(self) -> None:
         lib.stop()
