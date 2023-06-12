@@ -23,7 +23,7 @@ typing-extensions = "*"
 
 [dev-packages]
 parameterized = "*"
-pyinstaller = "==4.10"
+pyinstaller = "==5.12.0"
 black = "*"
 flake8 = "*"
 pytest = "*"
