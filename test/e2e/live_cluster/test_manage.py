@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from mock import patch
+from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.types import ASINFO_RESPONSE_OK
 import os
 import time
@@ -31,7 +32,9 @@ class TestManageACLUsers(asynctest.TestCase):
 
     async def setUp(self):
         lib.start()
-        self._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        self._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
 
     def tearDown(self) -> None:
         lib.stop()
@@ -274,7 +277,9 @@ class TestManageACLRoles(unittest.TestCase):
 
     def setUp(self):
         lib.start()
-        self._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        self._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
 
     def tearDown(self) -> None:
         lib.stop()
@@ -590,7 +595,9 @@ end
     def setUp(self):
         lib.start()
         self.path = lib.write_file("test.lua", self.TEST_UDF)
-        self._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        self._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
 
     def tearDown(self) -> None:
         lib.stop()
@@ -693,7 +700,9 @@ class ManageSindexTest(unittest.TestCase):
 
     def setUp(self):
         lib.start()
-        self._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        self._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
 
     def tearDown(self) -> None:
         lib.stop()
@@ -850,7 +859,9 @@ class ManageConfigTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         lib.start()
-        cls._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        cls._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -940,6 +951,46 @@ class ManageConfigTests(unittest.TestCase):
             entry = row[1]
             self.assertEqual(entry, ASINFO_RESPONSE_OK)
 
+    def test_for_dc_does_not_exist_error(self):
+        cp = test_util.run_asadm(
+            self.get_args("manage config xdr dc non-existent param period-ms to 1000")
+        )
+
+        separated_stdout = test_util.get_separate_output(cp.stdout)
+        result = list(map(test_util.parse_output, separated_stdout))
+        (
+            _,
+            _,
+            _,
+            actual_values,
+            _,
+        ) = result[0]
+
+        for row in actual_values:
+            entry = row[1]
+            self.assertEqual(entry, "DC does not exist")
+
+    def test_for_ns_does_not_exist_error(self):
+        cp = test_util.run_asadm(
+            self.get_args(
+                "manage config namespace non-existent param disallow-expunge to true"
+            )
+        )
+
+        separated_stdout = test_util.get_separate_output(cp.stdout)
+        result = list(map(test_util.parse_output, separated_stdout))
+        (
+            _,
+            _,
+            _,
+            actual_values,
+            _,
+        ) = result[0]
+
+        for row in actual_values:
+            entry = row[1]
+            self.assertEqual(entry, "Namespace does not exist")
+
 
 class ManageConfigXDRTests(unittest.TestCase):
     NODE = "127.0.0.1:9000"
@@ -952,7 +1003,9 @@ class ManageConfigXDRTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         lib.start(do_reset=False)
         time.sleep(1)
-        cls._args = "-h " + lib.SERVER_IP + " --enable -e '{}' --json -Uadmin -Padmin"
+        cls._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
         cls.namespace = lib.NAMESPACE
         cls.dc = "my-test-dc"
 

@@ -2523,7 +2523,7 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 {
                     "1.1.1.1": "ABC",
                     "2.2.2.2": "ABC",
-                    "3.3.3.3": ASInfoClusterStableError("", "foo"),
+                    "3.3.3.3": ASInfoClusterStableError("foo"),
                 },
                 False,
             ),

@@ -24,6 +24,7 @@ from dateutil import parser as date_parser
 from typing import Optional
 from getpass import getpass
 from functools import reduce
+from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.ctx import ASValues, CTXItems
 
 from lib.view import terminal
@@ -915,7 +916,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
 
         if not os.path.isfile(udf_path):
             self.logger.error(
-                "Failed to add UDF {}: Path does not exist.".format(udf_name)
+                f"{ErrorsMsgs.UDF_UPLOAD_FAIL} {udf_name}: Path does not exist."
             )
             return
 

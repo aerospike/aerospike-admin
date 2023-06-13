@@ -22,6 +22,7 @@ import threading
 import time
 import base64
 from typing import Any, Callable, Optional, Union
+from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.ctx import CDTContext
 from lib.live_cluster.client.msgpack import ASPacker
 
@@ -1270,10 +1271,9 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_create_dc(self, dc):
         dcs = await self.info_dcs()
-        error_message = "Failed to create XDR datacenter"
 
         if dc in dcs:
-            raise ASInfoError(error_message, "DC already exists")
+            raise ASInfoError(ErrorsMsgs.DC_CREATE_FAIL, ErrorsMsgs.DC_EXISTS)
 
         build = await self.info_build()
         req = "set-config:context=xdr;dc={};action=create"
@@ -1287,19 +1287,18 @@ class Node(AsyncObject):
         resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(error_message, resp)
+            raise ASInfoError(ErrorsMsgs.DC_CREATE_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
     async def info_set_config_xdr_delete_dc(self, dc):
         dcs = await self.info_dcs()
-        error_message = "Failed to delete XDR datacenter"
 
         logger.debug("Found dcs: %s", dcs)
 
         if dc not in dcs:
-            raise ASInfoError(error_message, "DC does not exist")
+            raise ASInfoError(ErrorsMsgs.DC_DELETE_FAIL, "DC does not exist")
 
         build = await self.info_build()
         req = "set-config:context=xdr;dc={};action=delete"
@@ -1313,14 +1312,12 @@ class Node(AsyncObject):
         resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(error_message, resp)
+            raise ASInfoError(ErrorsMsgs.DC_DELETE_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
     async def info_set_config_xdr_add_namespace(self, dc, namespace, rewind=None):
-        error_message = "Failed to add namespace to XDR datacenter"
-
         build = await self.info_build()
         req = "set-config:context=xdr;dc={};namespace={};action=add"
 
@@ -1337,15 +1334,15 @@ class Node(AsyncObject):
                     int(rewind)
                 except ValueError:
                     raise ASInfoError(
-                        error_message,
-                        'Invalid rewind. Must be int or "all"',
+                        ErrorsMsgs.DC_NS_ADD_FAIL,
+                        ErrorsMsgs.INVALID_REWIND,
                     )
             req += ";rewind={}".format(rewind)
 
         resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(error_message, resp)
+            raise ASInfoError(ErrorsMsgs.DC_NS_ADD_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1363,7 +1360,7 @@ class Node(AsyncObject):
         resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to remove namespace from XDR datacenter", resp)
+            raise ASInfoError(ErrorsMsgs.DC_NS_REMOVE_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1381,7 +1378,7 @@ class Node(AsyncObject):
         resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to add node to XDR datacenter", resp)
+            raise ASInfoError(ErrorsMsgs.DC_NODE_ADD_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1399,7 +1396,7 @@ class Node(AsyncObject):
         resp = await self.info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to remove node from XDR datacenter", resp)
+            raise ASInfoError(ErrorsMsgs.DC_NODE_REMOVE_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1428,10 +1425,23 @@ class Node(AsyncObject):
         if resp != ASINFO_RESPONSE_OK:
             context = ["xdr"]
 
-            if dc is not None:
+            if dc:
                 context.append("dc")
 
-            if namespace is not None:
+                if dc not in await self.info_dcs():
+                    raise ASInfoError(
+                        "Failed to set XDR configuration parameter {} to {}".format(
+                            param, value
+                        ),
+                        ErrorsMsgs.DC_DNE,
+                    )
+
+                """
+                Server does not return an error if the namespace does not exist on a
+                certain dc.
+                """
+
+            if namespace:
                 context.append("namespace")
 
             raise ASInfoConfigError(
@@ -1532,6 +1542,19 @@ class Node(AsyncObject):
             if subcontext is not None:
                 context.append(subcontext)
 
+            if namespace not in await self.info_namespaces():
+                raise ASInfoError(
+                    "Failed to set namespace configuration parameter {} to {}".format(
+                        param, value
+                    ),
+                    ErrorsMsgs.NS_DNE,
+                )
+
+            """
+            Server does not return an error if the set does not exist on a
+            certain namespace.
+            """
+
             raise ASInfoConfigError(
                 "Failed to set namespace configuration parameter {} to {}".format(
                     param, value
@@ -1599,28 +1622,6 @@ class Node(AsyncObject):
             )
 
         return ASINFO_RESPONSE_OK
-
-    async def xdr_namespace_config_helper(self, xdr_configs, dc, namespace):
-        namespace_config = await self.info(
-            "get-config:context=xdr;dc=%s;namespace=%s" % (dc, namespace)
-        )
-        xdr_configs["ns_configs"][dc][namespace] = client_util.info_to_dict(
-            namespace_config
-        )
-
-    async def xdr_config_helper(self, xdr_configs, dc):
-        dc_config = await self.info("get-config:context=xdr;dc=%s" % dc)
-        dc_config = client_util.info_to_dict(dc_config)
-        xdr_configs["ns_configs"][dc] = {}
-        xdr_configs["dc_configs"][dc] = dc_config
-        namespaces = dc_config["namespaces"].split(",")
-
-        await asyncio.gather(
-            *[
-                self.xdr_namespace_config_helper(xdr_configs, dc, namespace)
-                for namespace in namespaces
-            ]
-        )
 
     @async_return_exceptions
     async def info_get_config(self, stanza="", namespace=""):
@@ -2229,7 +2230,7 @@ class Node(AsyncObject):
         resp = await self.info(command)
 
         if resp.lower() not in {ASINFO_RESPONSE_OK, ""}:
-            raise ASInfoError("Failed to add UDF", resp)
+            raise ASInfoError(ErrorsMsgs.UDF_UPLOAD_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2246,7 +2247,7 @@ class Node(AsyncObject):
         # Server does not check if udf exists
         if udf_file_name not in existing_names:
             raise ASInfoError(
-                "Failed to remove UDF {}".format(udf_file_name), "UDF does not exist"
+                "Failed to remove UDF {}".format(udf_file_name), ErrorsMsgs.UDF_DNE
             )
         command = "udf-remove:filename=" + udf_file_name + ";"
         resp = await self.info(command)
@@ -2270,7 +2271,7 @@ class Node(AsyncObject):
         resp = await self.info(req)
 
         if resp.startswith("ERROR"):
-            raise ASInfoError("Could not retrieve roster for namespace", resp)
+            raise ASInfoError(ErrorsMsgs.ROSTER_READ_FAIL, resp)
 
         response = client_util.info_to_dict(resp, delimiter=":")
 
@@ -2360,9 +2361,9 @@ class Node(AsyncObject):
 
         if "error" in resp.lower():
             if "cluster-not-specified-size" in resp or "unstable-cluster" in resp:
-                raise ASInfoClusterStableError("Cluster is unstable", resp)
+                raise ASInfoClusterStableError(resp)
 
-            raise ASInfoError("Failed to check cluster stability", resp)
+            raise ASInfoError(ErrorsMsgs.UNABLE_TO_DETERMINE_CLUSTER_STABILITY, resp)
 
         return resp
 

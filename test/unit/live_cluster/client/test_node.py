@@ -1127,18 +1127,13 @@ class NodeTest(asynctest.TestCase):
             "foo", "bar", dc="DC1", namespace="NS"
         )
 
-        self.info_mock.assert_called_with(
-            "set-config:context=xdr;foo=bar;dc=DC1;namespace=NS", self.ip
+        self.info_mock.assert_has_calls(
+            [call("set-config:context=xdr;foo=bar;dc=DC1;namespace=NS", self.ip)]  # type: ignore
         )
         self.assertEqual(
             actual.message, "Failed to set XDR configuration parameter foo to bar"
         )
-        """
-        This response has to do with the ASInfoConfigError trying to determine the cause of the
-        error. It first checks to see if the context exists and since the config_handler
-        is mocked it thinks xdr (same for the rest of tests) is a bad subcontext.
-        """
-        self.assertEqual(actual.response, "Invalid subcontext xdr")
+        self.assertEqual(actual.response, "DC does not exist")
 
     async def test_info_logs(self):
         self.info_mock.return_value = "0:path0;1:path1;2:path2"
@@ -1258,11 +1253,11 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
 
-        self.assertIsInstance(actual, ASInfoConfigError)
+        self.assertIsInstance(actual, ASInfoError)
         self.assertEqual(
             actual.message, "Failed to set namespace configuration parameter foo to bar"
         )
-        self.assertEqual(actual.response, "Invalid subcontext namespace")
+        self.assertEqual(actual.response, "Namespace does not exist")
 
     async def test_info_set_config_network_success(self):
         self.info_mock.return_value = "ok"
@@ -1956,9 +1951,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_cluster_stable_with_errors(self):
         self.info_mock.return_value = "ERROR::cluster-not-specified-size"
-        expected = ASInfoClusterStableError(
-            "Cluster is unstable", "ERROR::cluster-not-specified-size"
-        )
+        expected = ASInfoClusterStableError("ERROR::cluster-not-specified-size")
 
         actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 
@@ -1972,9 +1965,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.return_value = "ERROR::unstable-cluster"
-        expected = ASInfoClusterStableError(
-            "Cluster is unstable", "ERROR::unstable-cluster"
-        )
+        expected = ASInfoClusterStableError("ERROR::unstable-cluster")
 
         actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 
