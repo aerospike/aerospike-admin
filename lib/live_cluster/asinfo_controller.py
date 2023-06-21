@@ -12,19 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from lib.utils import util
-from lib.base_controller import CommandHelp, ShellException
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 
 from .live_cluster_command_controller import LiveClusterCommandController
 
 
 @CommandHelp(
-    '"asinfo" provides raw access to the info protocol.',
-    "  Options:",
-    "    -v <command>   - The command to execute",
-    '    -l             - Replace semicolons ";" with newlines. If output does',
-    '                     not contain semicolons "-l" will attempt to use',
-    '                     colons ":" followed by commas ",".',
-    "    --no_node_name - Force to display output without printing node names.",
+    "Provides raw access to the info protocol.",
+    usage="[-v <command>] [-l] [--no_node_name]",
+    modifiers=(
+        ModifierHelp(
+            "-v",
+            'The command to execute, e.g. "get-stats:context=xdr;dc=dataCenterName"',
+        ),
+        ModifierHelp(
+            "-l",
+            'Replace semicolons ";" with newlines. If output does not contain semicolons "-l" will attempt to use colons ":" followed by commas ",".',
+        ),
+        ModifierHelp(
+            "--no_node_name", "Force to display output without printing node names."
+        ),
+    ),
 )
 class ASInfoController(LiveClusterCommandController):
     def __init__(self):

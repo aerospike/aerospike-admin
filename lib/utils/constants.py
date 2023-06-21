@@ -127,6 +127,23 @@ class NodeSelection:
     RANDOM = "random"
 
 
+class Modifiers:
+    WITH = "with"
+    FOR = "for"
+    LIKE = "like"
+    DIFF = "diff"
+
+
+class ModifierUsage:
+    WITH = "with node1 [node2 [...]]"
+    # FOR = "for <key>=<value>"
+    LIKE = "like <substring>"
+
+
+class ModifierHelp:
+    WITH = "Show results from specified nodes. Acceptable values are ip:port, node-id, or FQDN"
+
+
 class JobType:
     SCAN = "scan"
     QUERY = "query"

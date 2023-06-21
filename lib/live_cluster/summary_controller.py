@@ -14,7 +14,7 @@
 import asyncio
 from typing import Union
 from lib.utils import common, util
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ModifierHelp
 from lib.utils import constants
 
 from .live_cluster_command_controller import LiveClusterCommandController
@@ -22,30 +22,43 @@ from .live_cluster_command_controller import LiveClusterCommandController
 
 @CommandHelp(
     "Displays summary of Aerospike cluster.",
-    "  Options:",
-    "    -l                        - Enable to display namespace output in List view. Default: Table view",
-    "    --enable-ssh              - Enables the collection of system statistics from a remote server.",
-    "    --ssh-user   <string>     - Default user ID for remote servers. This is the ID of a user of the",
-    "                                system, not the ID of an Aerospike user.",
-    "    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is the",
-    "                                user's password for logging into the system, not a password for logging",
-    "                                into Aerospike.",
-    "    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22",
-    "    --ssh-key    <string>     - Default SSH key (file path) for remote servers.",
-    "    --ssh-cf     <string>     - Remote System Credentials file path.",
-    "                                If the server credentials are not in the credentials file, then",
-    "                                authentication is attempted with the default credentials.",
-    "                                File format : each line should contain <IP[:PORT]>,<USER_ID>,",
-    "                                <PASSWORD or PASSPHRASE>,<SSH_KEY>",
-    "                                Example:  1.2.3.4,uid,pwd",
-    "                                          1.2.3.4:3232,uid,pwd",
-    "                                          1.2.3.4:3232,uid,,key_path",
-    "                                          1.2.3.4:3232,uid,passphrase,key_path",
-    "                                          [2001::1234:10],uid,pwd",
-    "                                          [2001::1234:10]:3232,uid,,key_path",
-    "    --agent-host    <host>    - Host IP of the Unique-Data-Agent (UDA) to collect license data usage.",
-    "    --agent-port    <int>     - Port of the UDA. Default: 8080",
-    "    --agent-unstable          - When processing UDA entries allow instances where the cluster is unstable.",
+    usage=f"[-l] [--enable-ssh --ssh-user <user> --ssh-pwd <pwd> [--ssh-port <port>] [--ssh-key <key_path>] [--ssh-cf <credentials_file_path>]] [--agent-host <host> --agent-port <port> [--agent-unstable]]",
+    modifiers=(
+        ModifierHelp(
+            "-l",
+            "Enable to display namespace output in list view.",
+            default="table view",
+        ),
+        ModifierHelp(
+            "--enable-ssh",
+            "Enables the collection of system statistics from a remote server.",
+        ),
+        ModifierHelp(
+            "--ssh-user",
+            "Default user ID for remote servers. This is the ID of a user of the system, not the ID of an Aerospike user.",
+        ),
+        ModifierHelp(
+            "--ssh-pwd",
+            "Default password or passphrase for key for remote servers. This is the user's password for logging into the system, not a password for logging into Aerospike.",
+        ),
+        ModifierHelp(
+            "--ssh-port", "Default SSH port for remote servers.", default="22"
+        ),
+        ModifierHelp("--ssh-key", "Default SSH key (file path) for remote servers."),
+        ModifierHelp(
+            "--ssh-cf",
+            "Remote System Credentials file path. If the server credentials are not in the credentials file, then authentication is attempted with the default credentials. File format: each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD-or-PASSPHRASE>,<SSH_KEY>. Example: 1.2.3.4,uid,pwd; 1.2.3.4:3232,uid,pwd; 1.2.3.4:3232,uid,,key_path; 1.2.3.4:3232,uid,passphrase,key_path; [2001::1234:10],uid,pwd; [2001::1234:10]:3232,uid,,key_path",
+        ),
+        ModifierHelp(
+            "--agent-host",
+            "Host IP of the Unique-Data-Agent (UDA) to collect license data usage.",
+        ),
+        ModifierHelp("--agent-port", "Port of the UDA.", default="8080"),
+        ModifierHelp(
+            "--agent-unstable",
+            "When processing UDA entries allow instances where the cluster is unstable.",
+        ),
+    ),
 )
 class SummaryController(LiveClusterCommandController):
     def __init__(self):

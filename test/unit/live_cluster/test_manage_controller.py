@@ -1225,7 +1225,7 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
         )
         self.cluster.update_node(self.node)
         self.controller = ManageConfigController()
-        self.controller.context = ["manage", "config"]
+        self.controller._context = ["manage", "config"]
         ManageConfigLeafController.mods = {}
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()

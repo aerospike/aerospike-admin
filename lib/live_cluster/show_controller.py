@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
-from lib.base_controller import CommandHelp, CommandName
+from lib.base_controller import CommandHelp, CommandName, ModifierHelp
 from lib.utils import common, util, version, constants
+from lib.utils.constants import ModifierUsage, Modifiers
 from lib.live_cluster.get_controller import (
     GetConfigController,
     GetDistributionController,
@@ -29,8 +30,39 @@ from lib.live_cluster.get_controller import (
 from .client import ASProtocolError
 from .live_cluster_command_controller import LiveClusterCommandController
 
+with_modifier_help = ModifierHelp(
+    Modifiers.WITH,
+    "Show results from specified nodes. Acceptable values are ip:port, node-id, or FQDN",
+    default="all",
+)
 
-@CommandHelp('"show" is used to display Aerospike Statistics configuration.')
+for_ns_modifier_help = ModifierHelp(
+    Modifiers.FOR,
+    "Filter by namespace using a substring match",
+)
+
+diff_row_modifier_help = ModifierHelp(
+    Modifiers.DIFF,
+    "Only display rows and values that differ between nodes.",
+)
+diff_col_modifier_help = ModifierHelp(
+    Modifiers.DIFF,
+    "Only display columns and values that differ between nodes.",
+)
+
+like_stat_modifier_help = ModifierHelp(
+    Modifiers.LIKE, "Filter by statistic substring match"
+)
+like_config_modifier_help = ModifierHelp(
+    Modifiers.LIKE, "Filter by configuration parameter substring match"
+)
+like_stat_usage = f"{Modifiers.LIKE} <stat-substring>"
+like_config_usage = f"{Modifiers.LIKE} <config-substring>"
+
+
+@CommandHelp(
+    "A collection of commands used to display information about the Aerospike cluster"
+)
 class ShowController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
@@ -53,17 +85,20 @@ class ShowController(LiveClusterCommandController):
 
         self.modifiers = set()
 
-    async def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    '"show distribution" is used to show the distribution of object sizes',
+    "A collection of commands that display the distribution of object sizes",
     "and time to live for node and a namespace.",
+    short_msg="A collection of commands that display the distribution of object sizes and time to live",
+    usage=f"[{Modifiers.FOR} <ns-substring>] [{ModifierUsage.WITH}]",
+    modifiers=(
+        for_ns_modifier_help,
+        with_modifier_help,
+    ),
 )
 class ShowDistributionController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with", "for"])
+        self.modifiers = set([Modifiers.WITH, Modifiers.FOR])
         self.getter = GetDistributionController(self.cluster)
 
     @CommandHelp("Shows the distributions of Time to Live and Object Size")
@@ -73,7 +108,15 @@ class ShowDistributionController(LiveClusterCommandController):
             self.do_object_size(line[:]),
         )
 
-    @CommandHelp("Shows the distribution of TTLs for namespaces")
+    @CommandHelp(
+        "Shows the distribution of TTLs for namespaces",
+        modifiers=(
+            for_ns_modifier_help,
+            with_modifier_help,
+        ),
+        short_msg="Displays the distribution of Object sizes for namespace",
+        usage=f"[{Modifiers.FOR} <ns-substring>] [{ModifierUsage.WITH}]",
+    )
     async def do_time_to_live(self, line):
         histogram = await self.getter.do_distribution("ttl", nodes=self.nodes)
 
@@ -84,18 +127,27 @@ class ShowDistributionController(LiveClusterCommandController):
             "Seconds",
             "ttl",
             self.cluster,
-            like=self.mods["for"],
+            like=self.mods[Modifiers.FOR],
         )
 
     @CommandHelp(
-        "Shows the distribution of Object sizes for namespaces",
-        "  Options:",
-        "    -b               - Force to show byte wise distribution of Object Sizes.",
-        "                       Default is rblock wise distribution in percentage",
-        "    -k <buckets>     - Maximum number of buckets to show if -b is set.",
-        "                       It distributes objects in same size k buckets and ",
-        "                       displays only buckets that have objects in them. ",
-        "                       [default is 5].",
+        "Displays the distribution of Object sizes for namespaces",
+        modifiers=(
+            ModifierHelp(
+                "-b",
+                "Force to show byte-wise distribution of Object Sizes.",
+                default="Record block wise distribution in percentage",
+            ),
+            ModifierHelp(
+                "-k",
+                "Maximum number of buckets to show if -b is set. It distributes objects in the same size k buckets and displays only buckets that have objects in them.",
+                default="5",
+            ),
+            for_ns_modifier_help,
+            with_modifier_help,
+        ),
+        short_msg="Displays the distribution of Object sizes for namespace",
+        usage=f"[-b] [-k <num-buckets>] [{Modifiers.FOR} <ns-substring>] [{ModifierUsage.WITH}]",
     )
     async def do_object_size(self, line):
         byte_distribution = util.check_arg_and_delete_from_mods(
@@ -131,7 +183,7 @@ class ShowDistributionController(LiveClusterCommandController):
                 units,
                 "objsz",
                 self.cluster,
-                like=self.mods["for"],
+                like=self.mods[Modifiers.FOR],
             )
 
         histogram = self.getter.do_object_size(
@@ -152,35 +204,47 @@ class ShowDistributionController(LiveClusterCommandController):
             bucket_count,
             set_bucket_count,
             self.cluster,
-            like=self.mods["for"],
+            like=self.mods[Modifiers.FOR],
         )
 
 
-@CommandHelp('"show latencies" is used to show the server latency histograms')
+@CommandHelp(
+    "Displays latency information for the Aerospike cluster.",
+    modifiers=(
+        ModifierHelp(
+            "-e",
+            "Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)",
+            default="3",
+        ),
+        ModifierHelp("-b", "Number of latency buckets to display.", default="3"),
+        ModifierHelp(
+            "-v", "Set to display verbose output of optionally configured histograms."
+        ),
+        for_ns_modifier_help,
+        ModifierHelp(Modifiers.LIKE, "Filter by histogram name substring match"),
+        with_modifier_help,
+    ),
+    short_msg="Displays the server latency histograms",
+    usage=f"[-e <increment>] [-b <num-buckets>] [-v] [{Modifiers.FOR} <ns-substring>] [like <histogram-substring>] {ModifierUsage.WITH}",
+)
 class ShowLatenciesController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with", "like", "for"])
+        self.modifiers = set([Modifiers.WITH, Modifiers.LIKE, Modifiers.FOR])
         self.latency_getter = GetLatenciesController(self.cluster)
 
     async def _get_namespace_set(self):
         namespace_set = None
 
-        if self.mods["for"]:
+        if self.mods[Modifiers.FOR]:
             namespace_set = await self.latency_getter.get_namespace_set(self.nodes)
-            namespace_set = set(util.filter_list(namespace_set, self.mods["for"]))
+            namespace_set = set(
+                util.filter_list(namespace_set, self.mods[Modifiers.FOR])
+            )
 
         return namespace_set
 
     # It would be nice if the  'show latencies' help section could be completely removed for servers prior to 5.1
-    @CommandHelp(
-        "Displays latency information for the Aerospike cluster.",
-        "  Options:",
-        "    -e           - Exponential increment of latency buckets, i.e. 2^0 2^(e) ... 2^(e * i)",
-        "                   [default: 3]",
-        "    -b           - Number of latency buckets to display.",
-        "                   [default: 3]",
-        "    -v           - Set to display verbose output of optionally configured histograms.",
-    )
+    # TODO: If it is a controller but it has only the default command then use its help
     async def _do_default(self, line):
         increment = util.get_arg_and_delete_from_mods(
             line=line,
@@ -231,19 +295,38 @@ class ShowLatenciesController(LiveClusterCommandController):
         )
 
 
-@CommandHelp('"show config" is used to display Aerospike configuration settings')
+repeat_modifier_help = ModifierHelp(
+    "-r",
+    "Repeat output table title and row header after every <terminal width> columns.",
+    default="False",
+)
+flip_config_modifier = ModifierHelp(
+    "--flip",
+    "Flip output table to show Nodes on Y axis and config on X axis.",
+)
+
+
+@CommandHelp(
+    "A collection of commands that display configuration settings",
+    usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{like_config_usage}] [{ModifierUsage.WITH}]",
+    modifiers=(
+        repeat_modifier_help,
+        flip_config_modifier,
+        diff_row_modifier_help,
+        like_config_modifier_help,
+        with_modifier_help,
+    ),
+)
 class ShowConfigController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with", "like", "diff", "for"])
+        self.modifiers = set(
+            [Modifiers.WITH, Modifiers.LIKE, Modifiers.DIFF, Modifiers.FOR]
+        )
         self.getter = GetConfigController(self.cluster)
         self.controller_map = {"xdr": ShowConfigXDRController}
 
     @CommandHelp(
         "Displays security, service, network, and namespace configuration",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
     )
     async def _do_default(self, line):
         return await asyncio.gather(
@@ -255,10 +338,14 @@ class ShowConfigController(LiveClusterCommandController):
 
     @CommandHelp(
         "Displays security configuration",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{like_config_usage}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            repeat_modifier_help,
+            flip_config_modifier,
+            diff_row_modifier_help,
+            like_config_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_security(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -298,10 +385,14 @@ class ShowConfigController(LiveClusterCommandController):
 
     @CommandHelp(
         "Displays service configuration",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{like_config_usage}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            repeat_modifier_help,
+            flip_config_modifier,
+            diff_row_modifier_help,
+            like_config_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_service(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -341,10 +432,14 @@ class ShowConfigController(LiveClusterCommandController):
 
     @CommandHelp(
         "Displays network configuration",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{like_config_usage}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            repeat_modifier_help,
+            flip_config_modifier,
+            diff_row_modifier_help,
+            like_config_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_network(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -383,11 +478,16 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays namespace configuration. Use the 'for' modifier to filter by namespace.",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        "Displays namespace configuration.",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <ns-substring>] [{like_config_usage}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            repeat_modifier_help,
+            flip_config_modifier,
+            diff_row_modifier_help,
+            for_ns_modifier_help,
+            like_config_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_namespace(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -414,7 +514,7 @@ class ShowConfigController(LiveClusterCommandController):
         )
 
         ns_configs = await self.getter.get_namespace(
-            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
 
         return [
@@ -432,12 +532,16 @@ class ShowConfigController(LiveClusterCommandController):
 
     # pre 5.0 but will still work
     @CommandHelp(
-        "DEPRECATED: Replaced by 'show config xdr'",
-        "Displays datacenter configuration.",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        "DEPRECATED: Replaced by 'show config xdr' Displays datacenter configuration.",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{like_config_usage}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            repeat_modifier_help,
+            flip_config_modifier,
+            diff_row_modifier_help,
+            like_config_modifier_help,
+            with_modifier_help,
+        ),
+        hide=True,
     )
     async def do_dc(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -487,26 +591,35 @@ class ShowConfigController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "'show config xdr' is used to display Aerospike XDR configuration settings."
+    "A collection of commands that display xdr configuration",
+    modifiers=(
+        repeat_modifier_help,
+        flip_config_modifier,
+        diff_row_modifier_help,
+        ModifierHelp(
+            Modifiers.FOR,
+            "Filter by datacenter or namespace substring match",
+        ),
+        like_config_modifier_help,
+        with_modifier_help,
+    ),
+    usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>|<ns-substring>] [{like_config_usage}] [{ModifierUsage.WITH}]",
 )
 class ShowConfigXDRController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with", "like", "diff", "for"])
+        self.modifiers = set(
+            [Modifiers.WITH, Modifiers.LIKE, Modifiers.DIFF, Modifiers.FOR]
+        )
         self.getter = GetConfigController(self.cluster)
 
     @CommandHelp(
-        "Displays xdr, xdr datacenter, and xdr namespace configuration. Use the 'for' modifier to filter",
-        "by dc or by namespace. Use the available sub-commands for more granularity.",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        "Displays xdr, xdr datacenter, and xdr namespace configuration",
     )
     async def _do_default(self, line):
         return await asyncio.gather(
             self._do_xdr(line[:]),
-            self.do_dc(line[:]),
-            self.do_namespace(line[:]),
+            self.do_dcs(line[:]),
+            self.do_namespaces(line[:]),
         )
 
     async def _do_xdr(self, line):
@@ -545,13 +658,19 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr datacenter configuration. Use the 'for' modifier to filter by dc.",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        "Displays xdr datacenter configuration",
+        short_msg="Displays xdr datacenter configuration",
+        modifiers=(
+            repeat_modifier_help,
+            flip_config_modifier,
+            diff_row_modifier_help,
+            ModifierHelp(Modifiers.FOR, "Filter by datacenter substring match"),
+            like_config_modifier_help,
+            with_modifier_help,
+        ),
+        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>] [{like_config_usage}] {ModifierUsage.WITH}",
     )
-    async def do_dc(self, line):
+    async def do_dcs(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -576,7 +695,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
         xdr_ns_configs = await self.getter.get_xdr_dcs(
-            nodes=self.nodes, for_mods=self.mods["for"]
+            nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
         return util.callable(
             self.view.show_xdr_dc_config,
@@ -588,13 +707,21 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr namespace configuration. Use the 'for' modifier to filter by namespace and then by dc.",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        "Displays xdr namespace configuration",
+        modifiers=(
+            repeat_modifier_help,
+            flip_config_modifier,
+            diff_row_modifier_help,
+            ModifierHelp(
+                Modifiers.FOR,
+                "Filter by namespace substring match then by datacenter substring match",
+            ),
+            like_config_modifier_help,
+            with_modifier_help,
+        ),
+        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <ns-substring> [<dc-substring>]] [{like_config_usage}] {ModifierUsage.WITH}",
     )
-    async def do_namespace(self, line):
+    async def do_namespaces(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -619,7 +746,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
         xdr_ns_configs = await self.getter.get_xdr_namespaces(
-            nodes=self.nodes, for_mods=self.mods["for"]
+            nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
         return util.callable(
             self.view.show_xdr_ns_config,
@@ -631,13 +758,20 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr filters. Use the 'for' modifier to filter by dc and then by namespace.",
-        "  Options:",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip      - Flip output table to show Nodes on Y axis and config on X axis.",
+        "Displays configured xdr filters",
+        modifiers=(
+            repeat_modifier_help,
+            flip_config_modifier,
+            diff_col_modifier_help,
+            ModifierHelp(
+                Modifiers.FOR,
+                "Filter by datacenter substring match then by namespace substring match",
+            ),
+            with_modifier_help,
+        ),
+        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring> [<ns-substring>]] {ModifierUsage.WITH}",
     )
-    async def do_filter(self, line):
+    async def do_filters(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -663,7 +797,9 @@ class ShowConfigXDRController(LiveClusterCommandController):
 
         builds = asyncio.create_task(self.cluster.info_build(nodes="principal"))
         xdr_filters = asyncio.create_task(
-            self.getter.get_xdr_filters(nodes="principal", for_mods=self.mods["for"])
+            self.getter.get_xdr_filters(
+                nodes="principal", for_mods=self.mods[Modifiers.FOR]
+            )
         )
         builds = await builds
 
@@ -691,11 +827,13 @@ class ShowConfigXDRController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"show mapping" is used to display Aerospike mapping from IP to Node_id and Node_id to IPs'
+    "A collection of commands to display mapping from IP to Node_id and Node_id to IPs",
+    modifiers=(ModifierHelp(Modifiers.LIKE, "Filter by IP or Node_id substring"),),
+    usage="[like <ip or node_id substring>]",
 )
 class ShowMappingController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
+        self.modifiers = set([Modifiers.LIKE])
 
     @CommandHelp("Displays mapping IPs to Node_id and Node_id to IPs")
     async def _do_default(self, line):
@@ -704,14 +842,22 @@ class ShowMappingController(LiveClusterCommandController):
             self.do_node(line),
         )
 
-    @CommandHelp("Displays IP to Node_id mapping")
+    @CommandHelp(
+        "Displays IP to Node_id mapping",
+        modifiers=(ModifierHelp(Modifiers.LIKE, "Filter by IP substring"),),
+        usage="[like <ip substring>]",
+    )
     async def do_ip(self, line):
         ip_to_node_map = await self.cluster.get_IP_to_node_map()
         return util.callable(
             self.view.show_mapping, "IP", "NODE-ID", ip_to_node_map, **self.mods
         )
 
-    @CommandHelp("Displays Node_id to IPs mapping")
+    @CommandHelp(
+        "Displays Node_id to IPs mapping",
+        modifiers=(ModifierHelp(Modifiers.LIKE, "Filter by Node_id substring"),),
+        usage="[like <node_id substring>]",
+    )
     async def do_node(self, line):
         node_to_ip_map = await self.cluster.get_node_to_IP_map()
         return util.callable(
@@ -719,20 +865,36 @@ class ShowMappingController(LiveClusterCommandController):
         )
 
 
-@CommandHelp('"show statistics" is used to display statistics.')
+total_modifier_help = ModifierHelp(
+    "-t",
+    "Set to show total column at the end. It contains node wise sum for statistics.",
+)
+
+flip_stats_modifier_help = flip_config_modifier
+flip_stats_modifier_help.msg = (
+    "Flip output table to show Nodes on Y axis and config on X axis."
+)
+
+
+@CommandHelp(
+    "A collection of commands that displays runtime statistics",
+    usage=f"[-rt] [--flip] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+    modifiers=(
+        total_modifier_help,
+        repeat_modifier_help,
+        flip_stats_modifier_help,
+        like_stat_modifier_help,
+        with_modifier_help,
+    ),
+)
 class ShowStatisticsController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with", "like", "for"])
+        self.modifiers = set([Modifiers.WITH, Modifiers.LIKE, Modifiers.FOR])
         self.getter = GetStatisticsController(self.cluster)
         self.controller_map = {"xdr": ShowStatisticsXDRController}
 
     @CommandHelp(
         "Displays bin, set, service, and namespace statistics",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
     )
     async def _do_default(self, line):
         return await asyncio.gather(
@@ -743,12 +905,15 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays service statistics.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "Displays service statistics",
+        usage=f"[-rt] [--flip] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            total_modifier_help,
+            repeat_modifier_help,
+            flip_stats_modifier_help,
+            like_stat_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_service(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -792,12 +957,16 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays namespace statistics. Use the 'for' modifier to filter by namespace.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "Displays namespace statistics",
+        usage=f"[-rt] [--flip] [{Modifiers.FOR} <ns-substring>] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            total_modifier_help,
+            repeat_modifier_help,
+            flip_stats_modifier_help,
+            for_ns_modifier_help,
+            like_stat_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_namespace(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -828,7 +997,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         ns_stats = await self.getter.get_namespace(
-            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
 
         return [
@@ -846,12 +1015,19 @@ class ShowStatisticsController(LiveClusterCommandController):
         ]
 
     @CommandHelp(
-        "Displays sindex statistics. Use the 'for' modifier to filter by namespace and then by sindex.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "Displays sindex statistics",
+        usage=f"[-rt] [--flip] [{Modifiers.FOR} <ns-substring> [<sindex-substring>]] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            total_modifier_help,
+            repeat_modifier_help,
+            flip_stats_modifier_help,
+            ModifierHelp(
+                Modifiers.FOR,
+                "Filter first by namespace substring and then by sindex substring",
+            ),
+            like_stat_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_sindex(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -882,7 +1058,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         sindex_stats = await self.getter.get_sindex(
-            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
 
         return [
@@ -900,12 +1076,19 @@ class ShowStatisticsController(LiveClusterCommandController):
         ]
 
     @CommandHelp(
-        "Displays set statistics. Use the 'for' modifier to filter by namespace and then by set.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "Displays set statistics",
+        usage=f"[-rt] [--flip] [{Modifiers.FOR} <ns-substring> [<set-substring>]] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            total_modifier_help,
+            repeat_modifier_help,
+            flip_stats_modifier_help,
+            ModifierHelp(
+                Modifiers.FOR,
+                "Filter first by namespace substring match and then by set substring match",
+            ),
+            like_stat_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_sets(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -936,7 +1119,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         set_stats = await self.getter.get_sets(
-            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
 
         return [
@@ -954,12 +1137,16 @@ class ShowStatisticsController(LiveClusterCommandController):
         ]
 
     @CommandHelp(
-        "Displays bin statistics. Use the 'for' modifier to filter by namespace.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "Displays bin statistics",
+        usage=f"[-rt] [--flip] [{Modifiers.FOR} <ns-substring>] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            total_modifier_help,
+            repeat_modifier_help,
+            flip_stats_modifier_help,
+            for_ns_modifier_help,
+            like_stat_modifier_help,
+            with_modifier_help,
+        ),
     )
     async def do_bins(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -990,7 +1177,7 @@ class ShowStatisticsController(LiveClusterCommandController):
         )
 
         new_bin_stats = await self.getter.get_bins(
-            flip=True, nodes=self.nodes, for_mods=self.mods["for"]
+            flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
 
         return [
@@ -1009,13 +1196,16 @@ class ShowStatisticsController(LiveClusterCommandController):
 
     # pre 5.0 but still works
     @CommandHelp(
-        "DEPRECATED: Replaced by 'show statistics xdr dc.'",
-        "Displays datacenter statistics.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "DEPRECATED: Replaced by 'show statistics xdr dc.' Displays datacenter statistics.",
+        usage=f"[-rt] [--flip] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            total_modifier_help,
+            repeat_modifier_help,
+            flip_stats_modifier_help,
+            like_stat_modifier_help,
+            with_modifier_help,
+        ),
+        hide=True,
     )
     async def do_dc(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -1070,21 +1260,29 @@ class ShowStatisticsController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    '"show statistics xdr" is used to display xdr statistics for Aerospike components.'
+    "A collection of commands that display xdr statistics for different contexts",
+    usage=f"[-rt] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc>|<ns>]] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+    modifiers=(
+        total_modifier_help,
+        repeat_modifier_help,
+        flip_stats_modifier_help,
+        diff_row_modifier_help,
+        like_stat_modifier_help,
+        ModifierHelp(
+            Modifiers.FOR, "Filter by datacenter or namespace substring match"
+        ),
+        with_modifier_help,
+    ),
 )
 class ShowStatisticsXDRController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with", "like", "diff", "for"])
+        self.modifiers = set(
+            [Modifiers.WITH, Modifiers.LIKE, Modifiers.DIFF, Modifiers.FOR]
+        )
         self.getter = GetStatisticsController(self.cluster)
 
     @CommandHelp(
-        "Displays xdr, xdr datacenter, and xdr namespace statistics. Use the 'for' modifier to filter by dc",
-        "or by namespace.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "Displays xdr, xdr datacenter, and xdr namespace statistics",
     )
     async def _do_default(self, line):
         return await asyncio.gather(
@@ -1134,12 +1332,17 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr datacenter statistics. Use the 'for' modifier to filter by dc.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
+        "Displays xdr datacenter statistics",
+        usage=f"[-rt] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>]] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            total_modifier_help,
+            repeat_modifier_help,
+            flip_stats_modifier_help,
+            diff_row_modifier_help,
+            like_stat_modifier_help,
+            ModifierHelp(Modifiers.FOR, "Filter by datacenter substring match"),
+            with_modifier_help,
+        ),
     )
     async def do_dc(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -1169,7 +1372,7 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
         )
 
         xdr_ns_configs = await self.getter.get_xdr_dcs(
-            nodes=self.nodes, for_mods=self.mods["for"]
+            nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
         self.view.show_xdr_dc_stats(
             xdr_ns_configs,
@@ -1181,15 +1384,25 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays xdr namespace statistics. Use the 'for' modifier to filter by namespace and then by dc.",
-        "  Options:",
-        "    -t           - Set to show total column at the end. It contains node wise sum for statistics.",
-        "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-        "                   [default: False, no repetition]",
-        "    --flip       - Flip output table to show Nodes on Y axis and stats on X axis.",
-        "    --by-dc      - Display each datacenter as a new table rather than each namespace. Makes it easier",
-        "                   to identify issues belonging to a particular namespace",
-        "                   [default: False, by namespace]",
+        "Displays xdr namespace statistics",
+        usage=f"[-rt] [--flip] [--by-dc] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring> <ns-substring>]] [{ModifierUsage.LIKE}] [{ModifierUsage.WITH}]",
+        modifiers=(
+            total_modifier_help,
+            repeat_modifier_help,
+            flip_stats_modifier_help,
+            ModifierHelp(
+                "--by-dc",
+                "Display each datacenter as a new table rather than each namespace. This makes it easier to identify issues belonging to a particular namespace.",
+                default="False",
+            ),
+            diff_row_modifier_help,
+            like_stat_modifier_help,
+            ModifierHelp(
+                Modifiers.FOR,
+                "Filter first by datacenter and then by namespace substring match",
+            ),
+            with_modifier_help,
+        ),
     )
     async def do_namespace(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -1227,7 +1440,7 @@ class ShowStatisticsXDRController(LiveClusterCommandController):
         )
 
         xdr_ns_configs = await self.getter.get_xdr_namespaces(
-            nodes=self.nodes, for_mods=self.mods["for"]
+            nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
         self.view.show_xdr_ns_stats(
             xdr_ns_configs,
@@ -1253,16 +1466,18 @@ class ShowPmapController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "Displays users and their assigned roles and quotas",
-    "for the Aerospike cluster.",
-    "Usage: users [user]",
-    "  user          - Display output for a single user.",
+    "A collection of commands that display user configuration and statistics",
+    usage=f"[user]",
+    modifiers=(ModifierHelp("user", "Display output for a single user."),),
 )
 class ShowUsersController(LiveClusterCommandController):
     def __init__(self):
         self.getter = GetAclController(self.cluster)
         self.controller_map = {"statistics": ShowUsersStatsController}
 
+    @CommandHelp(
+        "Displays users and their assigned roles and quotas",
+    )
     async def _do_default(self, line):
         user = None
 
@@ -1288,10 +1503,10 @@ class ShowUsersController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "Displays users, open connections, and quota usage",
-    "for the Aerospike cluster.",
-    "Usage: users [user]",
-    "  user          - Display output for a single user.",
+    "Displays users, open connections, and quota usage for the Aerospike cluster.",
+    modifiers=(ModifierHelp("user", "Display output for a single user."),),
+    short_msg="Displays users, open connections, and quota usage",
+    usage=f"[user]",
 )
 class ShowUsersStatsController(LiveClusterCommandController):
     def __init__(self):
@@ -1317,10 +1532,10 @@ class ShowUsersStatsController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "Displays roles and their assigned privileges, allowlist, and quotas",
-    "for the Aerospike cluster.",
-    "Usage: roles [role]",
-    "  role          - Display output for a single role.",
+    "Displays roles and their assigned privileges, allowlist, and quotas for the Aerospike cluster.",
+    modifiers=(ModifierHelp("role", "Display output for a single role"),),
+    short_msg="Displays roles and their assigned privileges, allowlist, and quotas",
+    usage="[role]",
 )
 class ShowRolesController(LiveClusterCommandController):
     def __init__(self):
@@ -1348,10 +1563,16 @@ class ShowRolesController(LiveClusterCommandController):
         return self.view.show_roles(resp, **self.mods)
 
 
-@CommandHelp("Displays UDF modules along with metadata.")
+@CommandHelp(
+    "Displays UDF modules along with metadata.",
+    modifiers=(
+        ModifierHelp(Modifiers.LIKE, "Filter UDFs by name using a substring match"),
+    ),
+    usage=f"[{ModifierUsage.LIKE}]",
+)
 class ShowUdfsController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like", "for"])
+        self.modifiers = set([Modifiers.LIKE])
         self.getter = GetUdfController(self.cluster)
 
     async def _do_default(self, line):
@@ -1361,10 +1582,16 @@ class ShowUdfsController(LiveClusterCommandController):
         return self.view.show_udfs(resp, **self.mods)
 
 
-@CommandHelp("Displays secondary indexes and static metadata.")
+@CommandHelp(
+    "Displays secondary indexes and static metadata.",
+    modifiers=(
+        ModifierHelp(Modifiers.LIKE, "Filter indexes by name using a substring match"),
+    ),
+    usage=f"[{ModifierUsage.LIKE}]",
+)
 class ShowSIndexController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["like"])
+        self.modifiers = set([Modifiers.LIKE])
         self.getter = GetSIndexController(self.cluster)
 
     async def _do_default(self, line):
@@ -1375,14 +1602,21 @@ class ShowSIndexController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    'Displays roster information per node. Use the "diff" modifier to',
-    'to show differences between node rosters. For easier viewing run "page on" first.',
-    "  Options:",
-    "    --flip       - Flip output table to show nodes on X axis and roster on Y axis.",
+    'Displays roster information per node. For easier viewing run "page on" first.',
+    modifiers=(
+        ModifierHelp(
+            "--flip", "Flip output table to show nodes on X axis and roster on Y axis."
+        ),
+        diff_col_modifier_help,
+        for_ns_modifier_help,
+        with_modifier_help,
+    ),
+    usage=f"[--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <ns-substring>] [{ModifierUsage.WITH}]",
+    short_msg="Displays roster information per node",
 )
 class ShowRosterController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["for", "with", "diff"])
+        self.modifiers = set([Modifiers.FOR, Modifiers.WITH, Modifiers.DIFF])
         self.getter = GetConfigController(self.cluster)
 
     async def _do_default(self, line):
@@ -1410,10 +1644,14 @@ class ShowRosterController(LiveClusterCommandController):
         )
 
 
-@CommandHelp('Displays any of Aerospike\'s violated "best-practices".')
+@CommandHelp(
+    'Displays any of Aerospike\'s violated "best-practices".',
+    modifiers=(with_modifier_help,),
+    usage=f"[{ModifierUsage.WITH}]",
+)
 class ShowBestPracticesController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with"])
+        self.modifiers = set([Modifiers.WITH])
 
     async def _do_default(self, line):
         versions = asyncio.create_task(self.cluster.info_build())
@@ -1446,11 +1684,11 @@ class ShowBestPracticesController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "Displays jobs and associated metadata.",
+    "A collection of commands that display jobs and associated metadata",
 )
 class ShowJobsController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with", "like", "trid"])
+        self.modifiers = set([Modifiers.WITH, "trid"])
         self.getter = GetJobsController(self.cluster)
 
     # TODO: This should be a utility
@@ -1472,7 +1710,7 @@ class ShowJobsController(LiveClusterCommandController):
         return await self._supported(constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION)
 
     @CommandHelp(
-        '"show jobs" displays jobs from all available modules.',
+        "Displays jobs from all available modules",
     )
     async def _do_default(self, line):
         return await asyncio.gather(
@@ -1483,8 +1721,12 @@ class ShowJobsController(LiveClusterCommandController):
 
     @CommandHelp(
         'Displays query jobs. For easier viewing run "page on" first.',
-        "Usage: queries [trid <trid1> [<trid2>]]",
-        "  trid          - List of transaction ids to filter for.",
+        modifiers=(
+            ModifierHelp("trid", "List of transaction IDs to filter for."),
+            with_modifier_help,
+        ),
+        usage=f"[trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
+        short_msg="Displays query jobs",
     )
     async def do_queries(self, line):
         jobs = await self.getter.get_query(nodes=self.nodes)
@@ -1495,12 +1737,13 @@ class ShowJobsController(LiveClusterCommandController):
     # TODO: Should be removed eventually. "scan-show" was removed in server 6.0.
     # So should probably be removed when server 7.0 is supported.
     @CommandHelp(
-        'Displays scan jobs. For easier viewing run "page on" first.',
-        "Removed in server v. {} and later.".format(
-            constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION
+        f'Displays scan jobs. For easier viewing run "page on" first. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later.',
+        modifiers=(
+            ModifierHelp("trid", "List of transaction IDs to filter for."),
+            with_modifier_help,
         ),
-        "Usage: scans [trid <trid1> [<trid2>]]",
-        "  trid          - List of transaction ids to filter for.",
+        usage=f"[trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
+        short_msg=f"Displays scan jobs. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later",
     )
     async def do_scans(self, line, default=False):
         # default indicates calling function is _do_default
@@ -1524,8 +1767,14 @@ class ShowJobsController(LiveClusterCommandController):
         "Displays sindex-builder jobs. Removed in server v. {} and later.".format(
             constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
         ),
-        "Usage: sindex-builder [trid <trid1> [<trid2>]]",
-        "  trid          - List of transaction ids to filter for.",
+        modifiers=(
+            ModifierHelp("trid", "List of transaction IDs to filter for."),
+            with_modifier_help,
+        ),
+        usage=f"[trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
+        short_msg="Displays sindex-builder jobs. Removed in server v. {} and later".format(
+            constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
+        ),
     )
     @CommandName("sindex-builder")
     async def do_sindex_builder(self, line, default=False):
@@ -1545,10 +1794,14 @@ class ShowJobsController(LiveClusterCommandController):
         )
 
 
-@CommandHelp("Displays rack information for a rack-aware cluster.")
+@CommandHelp(
+    "Displays rack information for a rack-aware cluster",
+    modifiers=(with_modifier_help,),
+    usage=f"[{ModifierUsage.WITH}]",
+)
 class ShowRacksController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with"])
+        self.modifiers = set([Modifiers.WITH])
         self.getter = GetConfigController(self.cluster)
 
     async def _do_default(self, line):
@@ -1556,27 +1809,38 @@ class ShowRacksController(LiveClusterCommandController):
         return self.view.show_racks(racks_data, **self.mods)
 
 
-@CommandHelp("Displays all metrics that could trigger stop-writes.")
+@CommandHelp(
+    "Displays all metrics that could trigger stop-writes",
+    modifiers=(
+        for_ns_modifier_help,
+        with_modifier_help,
+    ),
+    usage=f"[{Modifiers.FOR} <ns-substring>] [{ModifierUsage.WITH}]",
+)
 class ShowStopWritesController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set(["with", "for"])
+        self.modifiers = set([Modifiers.WITH, Modifiers.FOR])
         self.config_getter = GetConfigController(self.cluster)
         self.stat_getter = GetStatisticsController(self.cluster)
 
     async def _do_default(self, line):
         service_stats = await self.stat_getter.get_service()
 
-        if len(self.mods["for"]) < 2:
-            ns_stats = await self.stat_getter.get_namespace(for_mods=self.mods["for"])
+        if len(self.mods[Modifiers.FOR]) < 2:
+            ns_stats = await self.stat_getter.get_namespace(
+                for_mods=self.mods[Modifiers.FOR]
+            )
             ns_configs = await self.config_getter.get_namespace(
-                for_mods=self.mods["for"]
+                for_mods=self.mods[Modifiers.FOR]
             )
         else:
             ns_stats = {}
             ns_configs = {}
 
-        set_stats = await self.stat_getter.get_sets(for_mods=self.mods["for"])
-        set_configs = await self.config_getter.get_sets(for_mods=self.mods["for"])
+        set_stats = await self.stat_getter.get_sets(for_mods=self.mods[Modifiers.FOR])
+        set_configs = await self.config_getter.get_sets(
+            for_mods=self.mods[Modifiers.FOR]
+        )
         return self.view.show_stop_writes(
             common.create_stop_writes_summary(
                 service_stats, ns_stats, ns_configs, set_stats, set_configs

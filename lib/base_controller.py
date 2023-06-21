@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import inspect
 import re
 import logging
-from typing import Any, Union
+import string
+from typing import Any, Callable, Union
 
 from lib.health.health_checker import HealthChecker
 from lib.utils.lookup_dict import PrefixDict
@@ -27,54 +30,148 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
 
 
+class ModifierHelp:
+    def __init__(self, name: str, msg: str, default: str | None = None):
+        self.name = name
+        self.msg = msg
+        self.default = default
+
+
 class CommandHelp:
+    _MAX_SHORT_MSG = 120
+    _MAX_LONG_MSG_LEN = 100
+    DEFAULT_USAGE = "COMMAND"
 
     """
     hide - If True then the help info of command and its children will not be
            displayed unless it is explicitly called on the command.
-
-    If no help info is defined but succeeding help should still be shown you
-    must define CommandHelp with an empty message i.e. ''
     """
 
-    def __init__(self, *message, hide=False):
-        self.message = list(message)
-        self.hide = hide
+    def __init__(
+        self,
+        *long_msg: str,
+        short_msg: str | None = None,
+        usage=None,
+        hide=False,
+        modifiers: tuple[ModifierHelp, ...] | None = None,
+    ):
+        self._usage = usage
+        self._short_msg = short_msg
+        self._hide = hide
+        self._modifiers = modifiers
+
+        long_msg_str = " ".join(list(long_msg))
+
+        if not long_msg_str.endswith("."):
+            long_msg_str = long_msg_str + "."
+
+        self._long_msg = self.split_str_by_space(long_msg_str, self._MAX_LONG_MSG_LEN)
+
+        # Add period to end of long_msg
+        if not self._short_msg:
+            self._short_msg = " ".join(long_msg)
+
+            if len(self._short_msg) > self._MAX_SHORT_MSG:
+                logger.fatal(
+                    f"long_msg should be no longer than {self._MAX_SHORT_MSG} when no short_msg is supplied",
+                    stack_info=True,
+                )
+
+        # Remove period from end of short_msg
+        if self._short_msg and self._short_msg.endswith("."):
+            self._short_msg = self._short_msg[:-1]
+
+        if short_msg and len(short_msg) > self._MAX_SHORT_MSG:
+            logger.fatal(
+                f"short_msg should be no longer than {self._MAX_SHORT_MSG}",
+                stack_info=True,
+            )
 
     def __call__(self, func):
-        try:
-            if func.__name__ == DEFAULT:
-                self.message[0] = "%sDefault%s: %s" % (
-                    terminal.underline(),
-                    terminal.reset(),
-                    self.message[0],
-                )
-        except Exception:
-            pass
-
-        func._command_help = self.message
-        func._hide = self.hide
+        func._long_msg = self._long_msg
+        func._hide = self._hide
+        func._short_msg = self._short_msg
+        func._usage = self._usage
+        func._modifiers = self._modifiers
 
         return func
 
     @staticmethod
+    def split_str_by_space(string: str, length: int) -> list[str]:
+        result = []
+        line_start = 0
+        last_space = 0
+
+        for char_idx, char in enumerate(string):
+            if char_idx - line_start > length and line_start - 1 != last_space:
+                result.append(string[line_start:last_space])
+                line_start = last_space + 1
+
+            if char == " ":
+                last_space = char_idx
+
+        result.append(string[line_start:])
+        return result
+
+    @staticmethod
     def has_help(func):
         try:
-            func._command_help
+            func._long_msg
             return True
         except Exception:
             return False
 
     @staticmethod
-    def display(func, indent=0):
-        indent = "  " * indent
+    def display_long(func):
         try:
-            if func._command_help == [""]:
-                return
-
-            print("\n".join([indent + line for line in func._command_help]))
+            print("\n".join([line for line in CommandHelp.long_message(func)]))
         except Exception:
             pass
+
+    @staticmethod
+    def display_modifiers(func, indent=0):
+        indent = "  " * indent
+        try:
+            if func._modifiers:
+                max_length = max(len(mod.name) for mod in func._modifiers) + 5
+                CommandHelp.print_text("")
+                for mod in func._modifiers:
+                    ljust = mod.name.ljust(max_length)
+                    msg = CommandHelp.split_str_by_space(mod.msg, 50)
+                    print(f"{indent}{ljust}- {msg[0]}")
+
+                    for m in msg[1:]:
+                        print(f"{indent}  {' ' * max_length}{m}")
+
+                    if mod.default:
+                        print(f"{indent}  {' ' * max_length}Default: {mod.default}")
+
+        except Exception:
+            pass
+
+    @staticmethod
+    def long_message(func):
+        try:
+            return func._long_msg
+        except Exception:
+            return ""
+
+    @staticmethod
+    def short_message(func):
+        try:
+            return func._short_msg
+        except Exception:
+            return ""
+
+    @staticmethod
+    def usage(func):
+        try:
+            if not func._usage:
+                return ""
+
+            return func._usage
+        except Exception:
+            return ""
 
     @staticmethod
     def print_text(message, indent=0):
@@ -89,6 +186,7 @@ class CommandHelp:
             return False
 
 
+# TODO: CommandName should be used for context, not do_*
 class CommandName:
     def __init__(self, name):
         self._assigned_name = name
@@ -180,24 +278,27 @@ class BaseController(object):
                 self.commands.add(command[1], func)
 
         try:
-            if self.context:
-                pass
-        except Exception:
-            self.context = []
-
-        try:
             if self.mods:
                 pass
         except Exception:
             self.mods = {}
 
         for command, controller in self.controller_map.items():
-            context_cpy = list(self.context)
-            context_cpy.append(command)
-            controller = controller()
-            controller.context = context_cpy
+            self.commands.add(command, controller())
 
-            self.commands.add(command, controller)
+    def _set_controller_context(self):
+        for command in self.controller_map:
+            controller: BaseController = self.commands[command][0]
+            context_cpy = list(self._context)
+            context_cpy.append(command)
+            controller.set_context(context_cpy)
+
+    def set_context(self, context):
+        """
+        Called by the parent controller to set the context of the current controller
+        before use.
+        """
+        self._context = context
 
     def complete(self, line):
         self._init()
@@ -227,10 +328,6 @@ class BaseController(object):
                 )
             )
 
-            # TODO: Make modifiers auto-completable?
-            # if self.required_modifiers | self.modifiers:
-            #     return list(self.required_modifiers | self.modifiers)
-
             # The line contains an ambiguous entry
             # or exact match
             return []
@@ -247,7 +344,7 @@ class BaseController(object):
             if self.controller_map:
                 pass
         except Exception:
-            self.controller_map = {}
+            self.controller_map: dict[str, type[BaseController]] = {}
 
     def _init_modifiers(self):
         """
@@ -272,10 +369,19 @@ class BaseController(object):
         except Exception:
             self.mods = {}
 
+    def _init_context(self):
+        try:
+            if self._context:
+                pass
+        except Exception:
+            self._context = []
+
     def _init(self):
         self._init_modifiers()
         self._init_controller_map()
+        self._init_context()
         self._init_commands()
+        self._set_controller_context()
 
     def _find_method(self, line):
         method = None
@@ -374,7 +480,94 @@ class BaseController(object):
 
         raise ShellException("Method was not set? %s" % (line))
 
-    def execute_help(self, line, indent=0, method=None, print_modifiers=True):
+    def _print_usage(
+        self, method: Callable[[Any], Any], context: list[str], is_method: bool
+    ):
+        context_str = " ".join(context)
+        if self.commands and not is_method:
+            if CommandHelp.usage(method):
+                usage = [
+                    f"Usage:  {context_str} {terminal.bold()}{CommandHelp.DEFAULT_USAGE}{terminal.reset()}",
+                    f"Usage:  {context_str} {CommandHelp.usage(method)}",
+                ]
+            else:
+                usage = [f"Usage:  {context_str} {CommandHelp.DEFAULT_USAGE}"]
+        else:
+            usage = [f"Usage:  {context_str} {CommandHelp.usage(method)}"]
+
+        CommandHelp.print_text("\n" + "\n        or\n".join(usage))
+
+    def _print_help_helper(self, method, context, is_method):
+        CommandHelp.print_text("")
+        CommandHelp.display_long(method)
+
+        self._print_usage(method, context, is_method)
+
+        CommandHelp.display_modifiers(method, indent=4)
+        CommandHelp.print_text("")
+
+    def _print_help(self):
+        self._print_help_helper(self, self._context, False)
+
+    def _print_method_help(self, method):
+        context = self._context[:]
+        method_name = method.__name__
+        context.append(method_name[3:])
+        self._print_help_helper(method, context, True)
+
+    def _get_max_command_len(self, default_defined):
+        max_len_help_msg = 0
+
+        if default_defined:
+            max_len_help_msg = len(DEFAULT)
+
+        for command in self.commands.keys():
+            command_method = self._find_method([command])
+
+            if CommandHelp.has_help(command_method) and not CommandHelp.is_hidden(
+                command_method
+            ):
+                max_len_help_msg = max(max_len_help_msg, len(command))
+
+        return max_len_help_msg
+
+    def _print_sub_commands_help(self):
+        default_method = self._find_method([DEFAULT])
+        max_len_help_msg = self._get_max_command_len(default_method) + 5
+        indent = 2
+
+        if self.commands:
+            CommandHelp.print_text(("Commands:\n"))
+
+            # Print default command first if defined
+            if default_method:
+                command = "Default"
+                fmt_command = f"{terminal.bold()}{terminal.underline()}{command}{terminal.reset()}"
+                fmt_command = fmt_command.ljust(
+                    max_len_help_msg + (len(fmt_command) - len(command))
+                )
+                CommandHelp.print_text(
+                    f"{fmt_command}{CommandHelp.short_message(default_method)}",
+                    indent=indent - 1,
+                )
+
+        # Now print all possible subcommands
+        for command in sorted(self.commands.keys()):
+            default_method = self._find_method([command])
+
+            if CommandHelp.has_help(default_method) and not CommandHelp.is_hidden(
+                default_method
+            ):
+                command = command.ljust(max_len_help_msg)
+                CommandHelp.print_text(
+                    f"{terminal.bold()}{command}{terminal.reset()}{CommandHelp.short_message(default_method)}",
+                    indent=indent - 1,
+                )
+
+        CommandHelp.print_text("")
+
+    def execute_help(self, line, method=None):
+        """ """
         self._init()
 
         # Removes the need to call _find_method twice since it also happens
@@ -384,71 +577,41 @@ class BaseController(object):
 
         if method:
             try:
+                method_name: str | None = None
+
                 try:
+                    # Method name only exists on functions,
                     method_name = method.__name__
                 except Exception:
-                    method_name = None
+                    pass
 
-                if method_name == DEFAULT:  # Print controller help
-                    CommandHelp.display(self, indent=indent)
+                if method_name is None:
+                    # This is the top of the recursive calls meaning self = a root controller
+                    method.execute_help(line)
 
-                    if print_modifiers:
-                        required_mods = [
-                            mod for mod in self.required_modifiers if mod != "line"
-                        ]
-                        if required_mods:
+                elif method_name == DEFAULT:
+                    # Print controller help
+                    self._print_help()
+                    self._print_sub_commands_help()
+
+                    if self.commands:
+                        if self._context:
+                            context_str = " ".join(self._context)
                             CommandHelp.print_text(
-                                "%sRequired%s: %s"
-                                % (
-                                    terminal.underline(),
-                                    terminal.reset(),
-                                    ", ".join(sorted(required_mods)),
-                                ),
-                                indent=indent,
+                                f"\nRun 'help {context_str} {CommandHelp.DEFAULT_USAGE}' for more information on a command.\n"
                             )
-                        if self.modifiers:
+                        else:
                             CommandHelp.print_text(
-                                "%sModifiers%s: %s"
-                                % (
-                                    terminal.underline(),
-                                    terminal.reset(),
-                                    ", ".join(sorted(self.modifiers)),
-                                ),
-                                indent=indent,
-                            )
-
-                    if CommandHelp.has_help(method):
-                        CommandHelp.display(method, indent=indent)
-
-                    indent += 2
-                    for command in self.commands.keys():
-                        command_method = self._find_method([command])
-
-                        if CommandHelp.has_help(
-                            command_method
-                        ) and not CommandHelp.is_hidden(command_method):
-                            CommandHelp.print_text(
-                                "- %s%s%s:"
-                                % (terminal.bold(), command, terminal.reset()),
-                                indent=indent - 1,
-                            )
-
-                            self.execute_help(
-                                [command],
-                                indent=indent,
-                                method=command_method,
+                                f"\nRun 'help {CommandHelp.DEFAULT_USAGE}' for more information on a command.\n"
                             )
                     return
 
                 elif isinstance(method, ShellException):
                     # Method not implemented
                     pass
-
-                elif method_name is None:  # Nothing to print yet
-                    method.execute_help(line, indent=indent)
-
-                else:  # Print help for a command
-                    CommandHelp.display(method, indent=indent)
+                else:
+                    # Print help for a method i.e. do_watch or do_show but not _do_default
+                    self._print_method_help(method)
                     return
 
             except IOError as e:
@@ -456,9 +619,11 @@ class BaseController(object):
         else:
             raise ShellException("Method was not set? %s" % (line))
 
+    @CommandHelp("Print this help message")
     async def _do_default(self, line):
         # Override method to provide default command behavior
-        raise ShellException("%s: command not found." % (" ".join(line)))
+        self.execute_help(line)
+        self.logger.error("%s: command not found." % (" ".join(line)))
 
     def pre_command(self, line):
         """

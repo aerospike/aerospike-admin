@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
-import base64
 import binascii
 import copy
 import inspect
@@ -29,7 +28,7 @@ from lib.live_cluster.client.ctx import ASValues, CTXItems
 
 from lib.view import terminal
 from lib.utils import constants, util, version
-from lib.base_controller import CommandHelp, ShellException
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.utils.lookup_dict import PrefixDict
 from .client import (
     ASInfoClusterStableError,
@@ -47,19 +46,28 @@ from lib.live_cluster.get_controller import GetJobsController
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
 
+WithModifierHelp = ModifierHelp(
+    constants.Modifiers.WITH,
+    "Optional nodes to apply the change to. Acceptable values are ip:port, node-id, or FQDN",
+    default="all",
+)
+
 
 class LiveClusterManageCommandController(LiveClusterCommandController):
+    def _init(self):
+        self._init_controller_arg()
+        self._init_controller_arg_context()
+        return super()._init()
+
     def pre_controller(self, line):
         """
         Hook called before each controller and command is executed.
         This allows us to take controller_arg and append it to mods for
         the next controller.
         """
-        self._init_controller_arg()
 
         if self.controller_arg:
-            mod = self.context[-1]
-
+            mod = self._context[-1]
             if mod not in self.mods:
                 self.mods[mod] = []
 
@@ -84,6 +92,37 @@ class LiveClusterManageCommandController(LiveClusterCommandController):
         if controller and not inspect.ismethod(controller):
             controller.mods = copy.deepcopy(self.mods)
 
+    def set_context(self, context):
+        """
+        Called by the parent controller to set the context for this controller.
+        """
+        try:
+            if self.controller_arg:
+                self.controller_arg_context.append(f"<{self.controller_arg}>")
+        except Exception:
+            pass
+
+        return super().set_context(context)
+
+    def set_controller_arg_context(self, context):
+        """
+        Similar to set_context, but used when a parent controller takes an argument that needs parsing
+        """
+        self.controller_arg_context = context
+
+    def _print_help(self, method, context, is_method):
+        return super()._print_help(
+            method, " ".join(self.controller_arg_context), is_method
+        )
+
+    def _init_commands(self):
+        super()._init_commands()
+        for command in self.commands.keys():
+            controller: LiveClusterManageCommandController = self.commands[command][0]
+            context_cpy = list(self.controller_arg_context)
+            context_cpy.append(command)
+            controller.set_controller_arg_context(context_cpy)
+
     def _init_controller_arg(self):
         """
         For when a parent controller takes an argument that needs parsing
@@ -94,6 +133,17 @@ class LiveClusterManageCommandController(LiveClusterCommandController):
                 pass
         except Exception:
             self.controller_arg = None
+
+    def _init_controller_arg_context(self):
+        """
+        For when a parent controller takes an argument that needs parsing
+        before sending argument to child controllers
+        """
+        try:
+            if self.controller_arg_context:
+                pass
+        except Exception:
+            self.controller_arg_context = self._context[:]
 
 
 class ManageLeafCommandController(LiveClusterManageCommandController):
@@ -122,9 +172,10 @@ class ManageLeafCommandController(LiveClusterManageCommandController):
 
 
 @CommandHelp(
-    '"manage" is used for administrative tasks like managing users, roles, udf, and',
+    "Administrative tasks like managing users, roles, udf, and",
     'sindexes. It should be used in conjunction with the "show users" and "show roles"',
-    "command.",
+    "commands.",
+    short_msg="Administrative tasks like managing users, roles, udf, and sindexes",
 )
 class ManageController(LiveClusterManageCommandController):
     def __init__(self):
@@ -141,11 +192,8 @@ class ManageController(LiveClusterManageCommandController):
             "acl": ManageACLController,
         }
 
-    def _do_default(self, line):
-        self.execute_help(line)
 
-
-@CommandHelp('"manage acl" is used to manage users and roles.')
+@CommandHelp("Configure users and roles")
 class ManageACLController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -159,11 +207,8 @@ class ManageACLController(LiveClusterManageCommandController):
             "quotas": ManageACLQuotasRoleController,
         }
 
-    def _do_default(self, line):
-        self.execute_help(line)
 
-
-@CommandHelp("")
+@CommandHelp("Create users and roles")
 class ManageACLCreateController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -171,11 +216,8 @@ class ManageACLCreateController(LiveClusterManageCommandController):
             "role": ManageACLCreateRoleController,
         }
 
-    def _do_default(self, line):
-        self.execute_help(line)
 
-
-@CommandHelp("")
+@CommandHelp("Delete users and roles")
 class ManageACLDeleteController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -183,11 +225,8 @@ class ManageACLDeleteController(LiveClusterManageCommandController):
             "role": ManageACLDeleteRoleController,
         }
 
-    def _do_default(self, line):
-        self.execute_help(line)
 
-
-@CommandHelp("")
+@CommandHelp("Grant users and roles")
 class ManageACLGrantController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -195,11 +234,8 @@ class ManageACLGrantController(LiveClusterManageCommandController):
             "role": ManageACLGrantRoleController,
         }
 
-    def _do_default(self, line):
-        self.execute_help(line)
 
-
-@CommandHelp("")
+@CommandHelp("Revoke users and roles")
 class ManageACLRevokeController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -207,17 +243,18 @@ class ManageACLRevokeController(LiveClusterManageCommandController):
             "role": ManageACLRevokeRoleController,
         }
 
-    def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    "Usage: create user <username> [password <password>] [roles <role1> <role2> ...]",
-    "   username        - Name of the new user.",
-    "   password        - Password for the new user. User will be prompted if no",
-    "                     password is provided.",
-    "   roles           - Roles to be granted to the user.",
-    "                     [default: None]",
+    modifiers=(
+        ModifierHelp("username", "Name of the new user"),
+        ModifierHelp(
+            "password",
+            "Password for the new user. User will be prompted if no password is provided",
+        ),
+        ModifierHelp("roles", "Roles to be granted to the user", "None"),
+    ),
+    usage="<username> [password <password>] [roles <role1> <role2> ...]",
+    short_msg="Create a user",
 )
 class ManageACLCreateUserController(ManageLeafCommandController):
     def __init__(self):
@@ -268,8 +305,9 @@ class ManageACLCreateUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: delete user <username>",
-    "  username           - User to delete.",
+    modifiers=(ModifierHelp("username", "User to delete"),),
+    usage="<username>",
+    short_msg="Delete a user",
 )
 class ManageACLDeleteUserController(ManageLeafCommandController):
     def __init__(self):
@@ -295,10 +333,15 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: set-password user <username> [password <password>]",
-    "  username           - User to have password set.",
-    "  password           - Password for the user.  A prompt will appear if no",
-    "                       password is provided.",
+    modifiers=(
+        ModifierHelp("username", "User to have password set"),
+        ModifierHelp(
+            "password",
+            "Password for the user.  A prompt will appear if no password is provided",
+        ),
+    ),
+    usage="<username> [password <password>]",
+    short_msg="Change the password of another user",
 )
 class ManageACLSetPasswordUserController(ManageLeafCommandController):
     def __init__(self):
@@ -342,12 +385,19 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: change-password user <username> [old <old-password>] [new <new-password>]",
-    "  username           - User that needs a new password.",
-    "  old                - Current password for the user. User will be",
-    "                       prompted if no password is provided.",
-    "  new                - New password for the user. User will be prompted ",
-    "                       if no password is provided.",
+    modifiers=(
+        ModifierHelp("username", "User that needs a new password"),
+        ModifierHelp(
+            "old",
+            "Current password for the user. User will be prompted if no password is provided",
+        ),
+        ModifierHelp(
+            "new",
+            "New password for the user. User will be prompted if no password is provided",
+        ),
+    ),
+    usage="<username> [old <old-password>] [new <new-password>]",
+    short_msg="Change your password",
 )
 class ManageACLChangePasswordUserController(ManageLeafCommandController):
     def __init__(self):
@@ -397,9 +447,12 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: grant user <username> roles <role1> [<role2> [...]]",
-    "  username        - User to have roles granted.",
-    "  roles           - Roles to add to the user.",
+    modifiers=(
+        ModifierHelp("username", "User to have roles granted"),
+        ModifierHelp("roles", "Roles to add to the user"),
+    ),
+    usage="<username> roles <role1> [<role2> [...]]",
+    short_msg="Grant a user one or more roles",
 )
 class ManageACLGrantUserController(ManageLeafCommandController):
     def __init__(self):
@@ -430,9 +483,12 @@ class ManageACLGrantUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: revoke user <username> roles <role1> [<role2> [...]]",
-    "  username        - User to have roles revoked.",
-    "  roles           - Roles to delete from the user.",
+    modifiers=(
+        ModifierHelp("username", "User to have roles revoked"),
+        ModifierHelp("roles", "Roles to delete from the user"),
+    ),
+    usage="user <username> roles <role1> [<role2> [...]]",
+    short_msg="Revoke one or more roles from a user",
 )
 class ManageACLRevokeUserController(ManageLeafCommandController):
     def __init__(self):
@@ -476,21 +532,27 @@ class ManageACLRolesLeafCommandController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: create role <role-name> priv <privilege> [ns <namespace> [set <set>]] [allow <addr1> [<addr2> [...]]] [read <read-quota>] [write <write-quota>]",
-    "  role-name     - Name of the new role.",
-    "  priv          - Privilege for the new role. Some privileges are not",
-    "                  limited to a global scope. Scopes are either global, per",
-    "                  namespace, or per namespace and set.",
-    "                  [default: None]",
-    "  ns            - Namespace scope of privilege.",
-    "                  [default: None]",
-    "  set           - Set scope of privilege. Namespace scope is required.",
-    "                  [default: None]",
-    "  allow         - Addresses of nodes that a role will be allowed to connect",
-    "                  to a cluster from.",
-    "                  [default: None]",
-    "  read          - Quota for read transaction (TPS).",
-    "  write         - Quota for write transaction (TPS).",
+    modifiers=(
+        ModifierHelp("role-name", "Name of the new role."),
+        ModifierHelp(
+            "priv",
+            "Privilege for the new role. Some privileges are not limited to a global scope. Scopes are either global, per namespace, or per namespace and set",
+            "None",
+        ),
+        ModifierHelp("ns", "Namespace scope of privilege", "None"),
+        ModifierHelp(
+            "set", "Set scope of privilege. Namespace scope is required.", "None"
+        ),
+        ModifierHelp(
+            "allow",
+            "Addresses of nodes that a role will be allowed to connect to a cluster from",
+            "None",
+        ),
+        ModifierHelp("read", "Quota for read transaction (TPS)."),
+        ModifierHelp("write", "Quota for write transaction (TPS)."),
+    ),
+    usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]] [allow <addr1> [<addr2> [...]]] [read <read-quota>] [write <write-quota>]",
+    short_msg="Create a role",
 )
 class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
     def __init__(self):
@@ -583,8 +645,9 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: delete role <role-name>",
-    "  role-name     - Role to delete.",
+    modifiers=(ModifierHelp("role-name", "Role to delete."),),
+    usage="role <role-name>",
+    short_msg="Delete a role",
 )
 class ManageACLDeleteRoleController(ManageLeafCommandController):
     def __init__(self):
@@ -610,13 +673,18 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: grant role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
-    "  role-name     - Role to have the privilege granted.",
-    "  priv          - Privilege to be added to the role.",
-    "  ns            - Namespace scope of privilege.",
-    "                  [default: None]",
-    "  set           - Set scope of privilege. Namespace scope is required.",
-    "                  [default: None]",
+    modifiers=(
+        ModifierHelp("role-name", "Role to have the privilege granted."),
+        ModifierHelp("priv", "Privilege to be added to the role"),
+        ModifierHelp("ns", "Namespace scope of privilege", default="None"),
+        ModifierHelp(
+            "set",
+            "Set scope of privilege. Namespace scope is required.",
+            default="None",
+        ),
+    ),
+    usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
+    short_msg="Grant a role one or more privileges",
 )
 class ManageACLGrantRoleController(ManageLeafCommandController):
     def __init__(self):
@@ -629,7 +697,6 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
         privilege = self.mods["priv"][0]
 
         if len(self.mods["set"]) and not len(self.mods["ns"]):
-            self.execute_help(line)
             self.logger.error("A set must be accompanied by a namespace.")
             return
 
@@ -659,13 +726,18 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: revoke role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
-    "  role-name     - Role to have privilege revoked.",
-    "  priv          - Privilege to delete from the role.",
-    "  ns            - Namespace scope of privilege",
-    "                  [default: None]",
-    "  set           - Set scope of privilege. Namespace scope is required.",
-    "                  [default: None]",
+    modifiers=(
+        ModifierHelp("role-name", "Role to have privilege revoked."),
+        ModifierHelp("priv", "Privilege to delete from the role."),
+        ModifierHelp("ns", "Namespace scope of privilege", default="None"),
+        ModifierHelp(
+            "set",
+            "Set scope of privilege. Namespace scope is required.",
+            default="None",
+        ),
+    ),
+    usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
+    short_msg="Revoke one or more privileges from a role",
 )
 class ManageACLRevokeRoleController(ManageLeafCommandController):
     def __init__(self):
@@ -678,7 +750,6 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
         privilege = self.mods["priv"][0]
 
         if len(self.mods["set"]) and not len(self.mods["ns"]):
-            self.execute_help(line)
             self.logger.error("A set must be accompanied by a namespace")
             return
 
@@ -708,14 +779,19 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: allowlist role <role-name> allow <addr1> [<addr2> [...]]",
-    "  role-name     - Role that will have the new allowlist.",
-    "  allow         - Addresses of nodes that a role will be allowed to connect",
-    "                  from. This command erases and re-assigns the allowlist",
-    "Usage: allowlist role <role-name> clear",
-    "  role-name     - Role that will have the allowlist cleared.",
-    "  clear         - Clears allowlist from the role. Either 'allow' or 'clear' is",
-    "                  required.",
+    modifiers=(
+        ModifierHelp("role-name", "Role that you would edit the allowlist for."),
+        ModifierHelp(
+            "clear",
+            "Clears allowlist from the role. Either 'allow' or 'clear' is required.",
+        ),
+        ModifierHelp(
+            "allow",
+            "Addresses of nodes that a role will be allowed to connect from. This command erases and re-assigns the allowlist",
+        ),
+    ),
+    usage="role <role-name> [clear]|[allow <addr1> [<addr2> [...]]]",
+    short_msg="Change the allowlist for a role",
 )
 class ManageACLAllowListRoleController(ManageLeafCommandController):
     def __init__(self):
@@ -743,7 +819,6 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
         allowlist = self.mods["allow"]
 
         if not clear and not len(allowlist):
-            self.execute_help(line)
             self.logger.error("Allowlist or clear is required.")
             return
 
@@ -780,13 +855,17 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: quotas role <role-name> [read <read-quota>]|[write <write-quota>]",
-    "  role-name     - Role to assign a quota",
-    "  read          - Quota for read transaction (TPS). To give a role",
-    "                  an unlimited quota enter 0",
-    "  write         - Quota for write transaction (TPS).",
-    "  Note: A read or write quota is required. Not providing a quota will",
-    "        leave it unchanged.",
+    "Change the read and write quotes for a role. A read or write quota is required. Not providing a quota will leave it unchanged.",
+    modifiers=(
+        ModifierHelp("role-name", "Role to assign a quota"),
+        ModifierHelp(
+            "read",
+            "Quota for read transaction (TPS). To give a role an unlimited quota enter 0",
+        ),
+        ModifierHelp("write", "Quota for write transaction (TPS)."),
+    ),
+    usage="<role-name> [read <read-quota>]|[write <write-quota>]",
+    short_msg="Change the read and write quotes for a role",
 )
 class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
     def __init__(self):
@@ -882,8 +961,9 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
 
 
 @CommandHelp(
-    '"manage udfs" is used to add and remove user defined functions. It should be used',
+    "Add and remove user defined functions. It should be used",
     'in conjunction with the "show udfs" command.',
+    short_msg="Add and remove user defined functions",
 )
 class ManageUdfsController(LiveClusterManageCommandController):
     def __init__(self):
@@ -892,16 +972,20 @@ class ManageUdfsController(LiveClusterManageCommandController):
             "remove": ManageUdfsRemoveController,
         }
 
-    async def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    "Usage: add <module-name> path <module-path>",
-    "  module-name   - Name of module to be stored in the server.  Can be different",
-    "                  from file in path but must end with an extension.",
-    "  path          - Path to the udf module.  Can be either absolute or relative",
-    "                  to the current working directory.",
+    modifiers=(
+        ModifierHelp(
+            "module-name",
+            "Name of module to be stored in the server. Can be different from file in path but must end with an extension.",
+        ),
+        ModifierHelp(
+            "path",
+            "Path to the udf module. Can be either absolute or relative to the current working directory.",
+        ),
+    ),
+    usage="<module-name> path <module-path>",
+    short_msg="Add new udf modules",
 )
 class ManageUdfsAddController(ManageLeafCommandController):
     def __init__(self):
@@ -946,8 +1030,13 @@ class ManageUdfsAddController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: remove <module-name>",
-    "  module-name   - Name of module to remove as stored in the server.",
+    modifiers=(
+        ModifierHelp(
+            "module-name", "Name of module to remove as stored in the server."
+        ),
+    ),
+    usage="<module-name>",
+    short_msg="Remove udf modules",
 )
 class ManageUdfsRemoveController(ManageLeafCommandController):
     def __init__(self):
@@ -974,8 +1063,9 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    '"manage sindex" is used to create and delete secondary indexes. It should be used',
+    "Create and delete secondary indexes. It should be used",
     'in conjunction with the "show sindex" or "info sindex" command.',
+    short_msg="Create and delete secondary indexes",
 )
 class ManageSIndexController(LiveClusterManageCommandController):
     def __init__(self):
@@ -984,38 +1074,36 @@ class ManageSIndexController(LiveClusterManageCommandController):
             "delete": ManageSIndexDeleteController,
         }
 
-    def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    "Usage: create <bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>] [ctx <ctx-item> [. . .]]",
-    "  bin-type      - The bin type of the provided <bin-name>. Should be one of the following values:",
-    "                  numeric, string, or geo2dsphere",
-    "  index-name    - Name of the secondary index to be created. Should be 20 characters",
-    '                  or less and not contain ":" or ";".',
-    "  ns            - Name of namespace to create the secondary index on.",
-    "  set           - Name of set to create the secondary index on.",
-    "  bin           - Name of bin to create secondary index on.",
-    "  in            - Specifies how the secondary index is to collect keys:",
-    "                  list: Specifies to use the elements of a list as keys.",
-    "                  mapkeys: Specifies to use the keys of a map as keys.",
-    "                  mapvalues: Specifies to use the values of a map as keys.",
-    "                  [default: Specifies to use the contents of a bin as keys.]",
-    "  ctx           - A list of context items describing how to index into a CDT.",
-    "                  Possible values include: list_index(<int>) list_rank(<int>),",
-    "                  list_value(<value>), map_index(<int>), map_rank(<int>),",
-    "                  map_key(<value>), and map_value(<value>). Where <value> is",
-    "                  <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64",
-    "                  encoded byte array (no quotes).",
+    modifiers=(
+        ModifierHelp(
+            "bin-type",
+            "The bin type of the provided <bin-name>. Should be one of the following values: numeric, string, or geo2dsphere",
+        ),
+        ModifierHelp(
+            "index-name",
+            'Name of the secondary index to be created. Should be 20 characters or less and not contain ":" or ";".',
+        ),
+        ModifierHelp("ns", "Name of namespace to create the secondary index on."),
+        ModifierHelp("set", "Name of set to create the secondary index on."),
+        ModifierHelp("bin", "Name of bin to create secondary index on."),
+        ModifierHelp(
+            "in",
+            "Specifies how the secondary index is to collect keys list: Specifies to use the elements of a list as keys. mapkeys: Specifies to use the keys of a map as keys. mapvalues: Specifies to use the values of a map as keys. [default: Specifies to use the contents of a bin as keys.]",
+        ),
+        ModifierHelp(
+            "ctx",
+            "A list of context items describing how to index into a CDT. Possible values include: list_index(<int>) list_rank(<int>) list_value(<value>), map_index(<int>), map_rank(<int>) map_key(<value>), and map_value(<value>). Where <value> i <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64 encoded byte array (no quotes).",
+        ),
+    ),
+    usage="<bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>] [ctx <ctx-item> [. . .]]",
+    short_msg="Create a new secondary index",
 )
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["line", "ns", "bin"])
         self.modifiers = set(["set", "in", "ctx"])
-
-    def _do_default(self, line):
-        self.execute_help(line)
 
     @staticmethod
     def _split_ctx_list(ctx_str: str) -> list[str]:
@@ -1259,10 +1347,13 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Usage: delete <index-name> ns <ns> [set <set>]",
-    "  index-name    - Name of the secondary index to be deleted.",
-    "  ns            - Namespace where the sindex resides.",
-    "  set           - Set where the sindex resides.",
+    modifiers=(
+        ModifierHelp("index-name", "Name of the secondary index to be deleted."),
+        ModifierHelp("ns", "Namespace where the sindex resides."),
+        ModifierHelp("set", "Set where the sindex resides."),
+    ),
+    usage="<index-name> ns <ns> [set <set>]",
+    short_msg="Delete a secondary index",
 )
 class ManageSIndexDeleteController(ManageLeafCommandController):
     def __init__(self):
@@ -1456,13 +1547,13 @@ class ManageConfigLeafController(ManageLeafCommandController):
     def complete(self, line):
         logger.debug(
             "ManageConfigLeafController: Complete context {} and line {}".format(
-                self.context, line
+                self._context, line
             )
         )
 
         # They typed a top level context with no space.
         if len(line) == 0:
-            return [self.context[-1]]
+            return [self._context[-1]]
 
         # They type a modifier with no space.
         if line[-1] in {self.PARAM, self.TO}:
@@ -1470,7 +1561,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
 
         self._init()
         self._init_controller_arg()
-        contexts = self.context[:]
+        contexts = self._context[:]
         arg = None
 
         # hack to remove unwanted contexts
@@ -1598,7 +1689,7 @@ class ManageConfigLeafController(ManageLeafCommandController):
         return super().prompt_challenge(message=message)
 
 
-@CommandHelp('"manage config" is used to change dynamic configuration')
+@CommandHelp("Change dynamic runtime configuration")
 class ManageConfigController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -1610,15 +1701,16 @@ class ManageConfigController(LiveClusterManageCommandController):
             "xdr": ManageConfigXDRController,
         }
 
-    async def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    "Usage: logging file <log-file-name> param <parameter> to <value>",
-    "  file          - Name of log file as shown in the aerospike.conf.",
-    "  param         - The logging context.",
-    "  to            - The logging level to assign.",
+    modifiers=(
+        ModifierHelp("file", "Name of log file as shown in the aerospike.conf."),
+        ModifierHelp(ManageConfigLeafController.PARAM, "The logging context."),
+        ModifierHelp(ManageConfigLeafController.TO, "The logging level to assign."),
+        WithModifierHelp,
+    ),
+    usage=f"file <log-file-name> param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
+    short_msg="Change the logging context's dynamic runtime configuration",
 )
 class ManageConfigLoggingController(ManageConfigLeafController):
     def __init__(self):
@@ -1650,9 +1742,17 @@ class ManageConfigLoggingController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: service param <parameter> to <value>",
-    "  param         - The service configuration parameter.",
-    "  to            - The value to assign to the parameter.",
+    modifiers=(
+        ModifierHelp(
+            ManageConfigLeafController.PARAM, "The service configuration parameter."
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.TO, "The value to assign to the parameter."
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
+    short_msg="Change the service context's dynamic runtime configuration",
 )
 class ManageConfigServiceController(ManageConfigLeafController):
     def __init__(self):
@@ -1684,10 +1784,20 @@ class ManageConfigServiceController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: network <subcontext> param <parameter> to <value>",
-    "  subcontext    - The network subcontext where the parameter is located.",
-    "  param         - The network configuration parameter.",
-    "  to            - The value to assign to the parameter.",
+    modifiers=(
+        ModifierHelp(
+            "subcontext", "The network subcontext where the parameter is located."
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.PARAM, "The network configuration parameter."
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.TO, "The value to assign to the parameter."
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"<subcontext> param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
+    short_msg="Change the network context's dynamic runtime configuration",
 )
 class ManageConfigNetworkController(ManageConfigLeafController):
     def __init__(self):
@@ -1698,7 +1808,6 @@ class ManageConfigNetworkController(ManageConfigLeafController):
         param, value = self.extract_param_value(line)
 
         if len(line) == 0 or line[0] in self.required_modifiers | self.modifiers:
-            self.execute_help(line)
             self.logger.error("Subcontext required.")
             return
 
@@ -1718,11 +1827,22 @@ class ManageConfigNetworkController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: security [<subcontext>] param <parameter> to <value>",
-    "  subcontext    - The security subcontext where the parameter is located.",
-    "                  [default: None]",
-    "  param         - The security configuration parameter.",
-    "  to            - The value to assign to the parameter.",
+    modifiers=(
+        ModifierHelp(
+            "subcontext",
+            "The security subcontext where the parameter is located.",
+            default="None",
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.PARAM, "The security configuration parameter."
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.TO, "The value to assign to the parameter."
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"[<subcontext>] param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
+    short_msg="Change the security context's dynamic runtime configuration",
 )
 class ManageConfigSecurityController(ManageConfigLeafController):
     def __init__(self):
@@ -1753,12 +1873,23 @@ class ManageConfigSecurityController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: namespace <ns> [<subcontext>] param <parameter> to <value>",
-    "  ns            - The name of the namespace you would like to configure.",
-    "  subcontext    - The namespace subcontext where the parameter is located.",
-    "                  [default: None]",
-    "  param         - The namespace configuration parameter.",
-    "  to            - The value to assign to the parameter.",
+    modifiers=(
+        ModifierHelp("ns", "The name of the namespace you would like to configure."),
+        ModifierHelp(
+            "subcontext",
+            "The namespace subcontext where the parameter is located.",
+            default="None",
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.PARAM, "The namespace configuration parameter."
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.TO, "The value to assign to the parameter."
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"[<subcontext>] param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
+    short_msg="Change a namespace context's dynamic runtime configuration",
 )
 class ManageConfigNamespaceController(ManageConfigLeafController):
     def __init__(self):
@@ -1801,11 +1932,19 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: namespace <ns> set <set> param <parameter> to <value>",
-    "  ns            - The namespace you would like to configure.",
-    "  set           - The set subcontext you would like to configure.",
-    "  param         - The namespace configuration parameter.",
-    "  to            - The value to assign to the parameter.",
+    modifiers=(
+        ModifierHelp("ns", "The namespace you would like to configure."),
+        ModifierHelp("set", "The set subcontext you would like to configure."),
+        ModifierHelp(
+            ManageConfigLeafController.PARAM, "The namespace configuration parameter."
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.TO, "The value to assign to the parameter."
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
+    short_msg="Change a set context's dynamic runtime configuration",
 )
 class ManageConfigNamespaceSetController(ManageConfigLeafController):
     def __init__(self):
@@ -1834,9 +1973,17 @@ class ManageConfigNamespaceSetController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: xdr param <parameter> to <value>",
-    "  param         - The XDR configuration parameter.",
-    "  to         - The value to assign to the parameter.",
+    "A collection of commands to add/remove xdr nodes, namespace, and change dynamic runtime configuration",
+    modifiers=(
+        ModifierHelp(
+            ManageConfigLeafController.PARAM, "The XDR configuration parameter."
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.TO, "The value to assign to the parameter."
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
 )
 class ManageConfigXDRController(ManageConfigLeafController):
     def __init__(self):
@@ -1848,6 +1995,9 @@ class ManageConfigXDRController(ManageConfigLeafController):
             "delete": ManageConfigXDRDeleteController,
         }
 
+    @CommandHelp(
+        "Change the xdr context's dynamic runtime configuration",
+    )
     async def _do_default(self, line):
         param, value = self.extract_param_value(line)
 
@@ -1863,8 +2013,12 @@ class ManageConfigXDRController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: xdr create dc <dc>",
-    "  dc            - The name of the XDR datacenter you would like to create.",
+    modifiers=(
+        ModifierHelp("dc", "The name of the xdr datacenter you would like to create."),
+        WithModifierHelp,
+    ),
+    usage=f"xdr create dc <dc> [{constants.ModifierUsage.WITH}]",
+    short_msg="Create a new xdr datacenter",
 )
 class ManageConfigXDRCreateController(ManageConfigLeafController):
     def __init__(self):
@@ -1891,8 +2045,12 @@ class ManageConfigXDRCreateController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: xdr delete dc <dc>",
-    "  dc            - The name of the XDR datacenter you would like to delete.",
+    modifiers=(
+        ModifierHelp("dc", "The name of the XDR datacenter you would like to delete."),
+        WithModifierHelp,
+    ),
+    usage=f"dc <dc> [{constants.ModifierUsage.WITH}]",
+    short_msg="Delete an xdr datacenter",
 )
 class ManageConfigXDRDeleteController(ManageConfigLeafController):
     def __init__(self):
@@ -1919,10 +2077,21 @@ class ManageConfigXDRDeleteController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: xdr dc <dc> param <parameter> to <value>",
-    "  dc            - The XDR datacenter you would like to configure.",
-    "  param         - The XDR configuration parameter.",
-    "  to         - The value to assign to the parameter.",
+    "A collection of commands to change an xdr datacenter's dynamic runtime configuration",
+    modifiers=(
+        ModifierHelp(
+            "dc",
+            "The XDR datacenter you would like to configure",
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.PARAM, "The XDR configuration parameter"
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.TO, "The value to assign to the parameter"
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
 )
 class ManageConfigXDRDCController(ManageConfigLeafController):
     def __init__(self):
@@ -1935,11 +2104,9 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
             "remove": ManageConfigXDRDCRemoveController,
         }
 
-    def execute_help(self, line, indent=0, method=None):
-        return super().execute_help(
-            line, indent=indent, method=method, print_modifiers=False
-        )
-
+    @CommandHelp(
+        "Change an xdr datacenter's dynamic runtime configuration",
+    )
     async def _do_default(self, line):
         param, value = self.extract_param_value(line)
         dc = self.mods["dc"][0]
@@ -1957,7 +2124,7 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
-@CommandHelp("")
+@CommandHelp("Add a node or namespace to xdr datacenter")
 class ManageConfigXDRDCAddController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -1965,14 +2132,15 @@ class ManageConfigXDRDCAddController(LiveClusterManageCommandController):
             "namespace": ManageConfigXDRDCAddNamespaceController,
         }
 
-    async def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    "Usage: xdr dc <dc> add node <ip:port>",
-    "  dc            - The XDR datacenter you would like to configure.",
-    "  node          - The node address to add to the datacenter.",
+    modifiers=(
+        ModifierHelp("dc", "The XDR datacenter you would like to configure"),
+        ModifierHelp("node", "The node address to add to the datacenter"),
+        WithModifierHelp,
+    ),
+    usage=f"[{constants.ModifierUsage.WITH}]",
+    short_msg="Add a node to an xdr datacenter",
 )
 class ManageConfigXDRDCAddNodeController(ManageConfigLeafController):
     def __init__(self):
@@ -1997,13 +2165,18 @@ class ManageConfigXDRDCAddNodeController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: xdr dc <dc> add namespace <ns> [rewind <seconds>|all]",
-    "  dc            - The XDR datacenter you would like to configure.",
-    "  namespace     - The namespace to add to the datacenter.",
-    "  rewind        - Number of seconds to rewind a namespace's shipment of records.",
-    "                  Use 'all' to restart shipment completely.",
-    "  Note: When you are rewinding, the namespace to rewind must already have been",
-    "        configured.",
+    "Add a namespace to an xdr datacenter. When you are rewinding, the namespace to rewind must already have been configured.",
+    modifiers=(
+        ModifierHelp("dc", "The XDR datacenter you would like to configure"),
+        ModifierHelp("ns", "The namespace to add to the datacenter"),
+        ModifierHelp(
+            "rewind",
+            "Number of seconds to rewind a namespace's shipment of records. Use 'all' to restart shipment completely.",
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"[rewind <seconds>|all] [{constants.ModifierUsage.WITH}]",
+    short_msg="Add a namespace to an xdr datacenter",
 )
 class ManageConfigXDRDCAddNamespaceController(ManageConfigLeafController):
     def __init__(self):
@@ -2040,7 +2213,7 @@ class ManageConfigXDRDCAddNamespaceController(ManageConfigLeafController):
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
 
-@CommandHelp("")
+@CommandHelp("Remove a node or namespace from an xdr datacenter")
 class ManageConfigXDRDCRemoveController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -2048,14 +2221,15 @@ class ManageConfigXDRDCRemoveController(LiveClusterManageCommandController):
             "namespace": ManageConfigXDRDCRemoveNamespaceController,
         }
 
-    async def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    "Usage: xdr dc <dc> remove node <ip:port>",
-    "  dc            - The XDR datacenter you would like to configure.",
-    "  node          - The node address to remove from the datacenter.",
+    modifiers=(
+        ModifierHelp("dc", "The XDR datacenter you would like to configure"),
+        ModifierHelp("node", "The node address to remove from the datacenter"),
+        WithModifierHelp,
+    ),
+    usage=f"[{constants.ModifierUsage.WITH}]",
+    short_msg="Remove a node from and xdr datacenter",
 )
 class ManageConfigXDRDCRemoveNodeController(ManageConfigLeafController):
     def __init__(self):
@@ -2080,9 +2254,13 @@ class ManageConfigXDRDCRemoveNodeController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: xdr dc <dc> remove namespace <ns>",
-    "  dc            - The XDR datacenter you would like to configure.",
-    "  namespace     - The namespace to remove from the datacenter.",
+    modifiers=(
+        ModifierHelp("dc", "The XDR datacenter you would like to configure"),
+        ModifierHelp("ns", "The namespace to remove from the datacenter"),
+        WithModifierHelp,
+    ),
+    usage=f"[{constants.ModifierUsage.WITH}]",
+    short_msg="Remove a namespace from an xdr datacenter",
 )
 class ManageConfigXDRDCRemoveNamespaceController(ManageConfigLeafController):
     def __init__(self):
@@ -2107,11 +2285,19 @@ class ManageConfigXDRDCRemoveNamespaceController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Usage: xdr dc <dc> namespace <ns> param <parameter> to <value>",
-    "  dc            - The XDR datacenter you would like to configure.",
-    "  namespace     - The datacenter namespace you would like to configure.",
-    "  param         - The security configuration parameter.",
-    "  to            - The value to assign to the parameter.",
+    modifiers=(
+        ModifierHelp("dc", "The XDR datacenter you would like to configure"),
+        ModifierHelp("ns", "The datacenter namespace you would like to configure"),
+        ModifierHelp(
+            ManageConfigLeafController.PARAM, "The security configuration parameter"
+        ),
+        ModifierHelp(
+            ManageConfigLeafController.TO, "The value to assign to the parameter"
+        ),
+        WithModifierHelp,
+    ),
+    usage=f"param <parameter> to <value> [{constants.ModifierUsage.WITH}]",
+    short_msg="Configure an xdr namespace",
 )
 class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
     def __init__(self):
@@ -2140,23 +2326,32 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    '"manage truncate" is used to delete multiple records in the Aerospike cluster.',
+    "Truncate or detruncate a namespace or set in the Aerospike cluster",
     'Since the changes performed by this command are critical "--warn" is on by default.',
-    "Usage: truncate ns <ns> [set <set>] [undo]|[before <iso-8601-or-unix-epoch> iso-8601|unix-epoch]",
-    "  namespace     - The namespace you would like to truncate or undo truncation.",
-    "  set           - The set you would like to truncate or undo truncation",
-    "                  [default: None]",
-    "  undo          - Remove the associated SMD (System Meta Data) files entry and",
-    "                  allow (some) previously truncated records to be resurrected on",
-    "                  the next cold restart.",
-    "                  [default: false]",
-    "  before        - Deletes every record in the given namespace or set whose lut is",
-    "                  older than the given time. Time can be either an iso-8601 formatted",
-    '                  datetime followed by the literal "iso-8601" or unix-epoch',
-    '                  followed by the literal "unix-epoch".',
-    "                  [default: Now]",
-    "Options:",
-    "  --no-warn     - Turn off --warn mode. This is not advised.",
+    modifiers=(
+        ModifierHelp(
+            "ns", "The namespace you would like to truncate or undo truncation"
+        ),
+        ModifierHelp(
+            "set",
+            "The set you would like to truncate or undo truncation",
+        ),
+        ModifierHelp(
+            "undo",
+            "Remove the associated SMD (System Meta Data) files entry and allow (some) previously truncated records to be resurrected on the next cold restart.",
+        ),
+        ModifierHelp(
+            "before",
+            "Deletes every record in the given namespace or set whose lut is older than the given time. Time can be either an iso-8601 formatted datetime followed by the literal 'iso-8601' or unix-epoch followed by the literal 'unix-epoch'.",
+            default="Now",
+        ),
+        ModifierHelp(
+            "--no-warn",
+            "Turn off --warn mode. This is not advised.",
+        ),
+    ),
+    usage="ns <ns> [set <set>] [undo]|[before <iso-8601-or-unix-epoch> iso-8601|unix-epoch] [--no-warn]",
+    short_msg="Truncate a namespace or set in the Aerospike cluster",
 )
 class ManageTruncateController(ManageLeafCommandController):
     def __init__(self):
@@ -2349,7 +2544,6 @@ class ManageTruncateController(ManageLeafCommandController):
         )
 
         if self.mods["before"] and undo:
-            self.execute_help(line)
             self.logger.error('"undo" and "before" are mutually exclusive.')
             return
 
@@ -2424,9 +2618,8 @@ class ManageTruncateController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    '"manage recluster" is used to recluster an Aerospike cluster. This is',
-    "necessary for certain configuration changes to take effect.",
-    "Usage: recluster",
+    "Recluster an Aerospike cluster. This is necessary for certain configuration changes to take effect.",
+    short_msg="Recluster an Aerospike cluster",
 )
 class ManageReclusterController(ManageLeafCommandController):
     def __init__(self):
@@ -2446,11 +2639,20 @@ class ManageReclusterController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    '"manage quiesce" causes a node to avoid participating as a replica after the next recluster event.',
-    "Usage: quiesce with node1 [node2 [...]] [undo]",
-    "  with          - The node(s) to quiesce. Acceptable values are ip:port, node-id, or FQDN.",
-    "  undo          - Revert the effects of the quiesce on the next recluster event.",
-    "                  [default: false]",
+    "Causes a node to avoid participating as a replica after the next recluster event.",
+    modifiers=(
+        ModifierHelp(
+            constants.Modifiers.WITH,
+            "The node(s) to quiesce. Acceptable values are ip:port, node-id, or FQDN.",
+        ),
+        ModifierHelp(
+            "undo",
+            "Revert the effects of the quiesce on the next recluster event",
+            default="false",
+        ),
+    ),
+    usage=f"{constants.ModifierUsage.WITH} [undo]",
+    short_msg="Causes a node to avoid participating as a replica after the next recluster event",
 )
 class ManageQuiesceController(ManageLeafCommandController):
     def __init__(self):
@@ -2488,10 +2690,11 @@ class ManageQuiesceController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    '"manage revive" is used to revive dead partitions in a namespace running in strong',
+    "Revive dead partitions in a namespace running in strong",
     "consistency mode.",
-    "Usage: revive ns <ns>",
-    "  ns            - A namespace with dead partitions.",
+    modifiers=(ModifierHelp("ns", "A namespace with dead partitions"),),
+    usage=f"ns <ns> [{constants.ModifierUsage.WITH}]",
+    short_msg="Revive dead partitions in a namespace running in strong consistency mode",
 )
 class ManageReviveController(ManageLeafCommandController):
     def __init__(self):
@@ -2551,8 +2754,8 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    '"manage roster" is used to modify the clusters roster. It',
-    'should be used in conjunction with the "show roster" command',
+    'Modify the clusters roster. It should be used in conjunction with the "show roster" command',
+    short_msg="Modify the clusters roster",
 )
 class ManageRosterController(LiveClusterManageCommandController):
     def __init__(self):
@@ -2562,18 +2765,19 @@ class ManageRosterController(LiveClusterManageCommandController):
             "stage": ManageRosterStageController,
         }
 
-    async def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    '"manage roster add" is used to add node(s) to the pending-roster. Since the changes',
-    'performed by this command are critical "--warn" is on by default.',
-    "Usage: add nodes node_id1[@rack_id] [node_id2[@rack_id1] [...]] ns <ns>",
-    "  nodes         - The node(s) to add to the pending-roster.",
-    "  ns            - The namespace of the pending-roster.",
-    "Options:",
-    "  --no-warn     - Turn off --warn mode. This is not advised.",
+    'Add node(s) to the pending-roster. Since the changes performed by this command are critical "--warn" is on by default.',
+    modifiers=(
+        ModifierHelp("nodes", "The node(s) to add to the pending-roster."),
+        ModifierHelp("ns", "The namespace of the pending-roster."),
+        ModifierHelp(
+            "--no-warn",
+            "Turn off --warn mode. This is not advised.",
+        ),
+    ),
+    usage="nodes node_id1[@rack_id] [node_id2[@rack_id1] [...]] ns <ns>",
+    short_msg="Add node(s) to the pending-roster",
 )
 class ManageRosterAddController(ManageRosterLeafCommandController):
     def __init__(self):
@@ -2638,13 +2842,17 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
 
 
 @CommandHelp(
-    '"manage roster remove" is used to remove node(s) from the pending-roster. Since the',
-    'changes performed by this command are critical "--warn" is on by default.',
-    "Usage: remove nodes node_id1[@rack_id] [node_id2[@rack_id1] [...]] ns <ns>",
-    "  nodes         - The node(s) to remove from the pending-roster.",
-    "  ns            - The namespace of the pending-roster..",
-    "Options:",
-    "  --no-warn     - Turn off --warn mode. This is not advised.",
+    'Remove node(s) from the pending-roster. Since the changes performed by this command are critical "--warn" is on by default.',
+    modifiers=(
+        ModifierHelp("nodes", "The node(s) to remove from the pending-roster."),
+        ModifierHelp("ns", "The namespace of the pending-roster.."),
+        ModifierHelp(
+            "--no-warn",
+            "Turn off --warn mode. This is not advised.",
+        ),
+    ),
+    usage="nodes node_id1[@rack_id] [node_id2[@rack_id1] [...]] ns <ns>",
+    short_msg="Remove node(s) from the pending-roster",
 )
 class ManageRosterRemoveController(ManageRosterLeafCommandController):
     def __init__(self):
@@ -2714,7 +2922,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
         )
 
 
-@CommandHelp("")
+@CommandHelp("Stage nodes to be added to the roster on the next recluster event")
 class ManageRosterStageController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
@@ -2724,13 +2932,18 @@ class ManageRosterStageController(LiveClusterManageCommandController):
 
 
 @CommandHelp(
-    '"manage roster stage nodes" is used to overwrite the nodes in the pending-roster.',
+    "Overwrite the nodes in the pending-roster.",
     'Since the changes performed by this command are critical "--warn" is on by default.',
-    "Usage: roster stage nodes node_id1[@rack_id1] [node_id2[@rack_id2] [...]] ns <ns>",
-    "  nodes         - The node(s) to include in the new pending-roster.",
-    "  ns            - The namespace of the pending-roster.",
-    "Options:",
-    "  --no-warn     - Turn off --warn mode. This is not advised.",
+    modifiers=(
+        ModifierHelp("nodes", "The node(s) to include in the new pending-roster"),
+        ModifierHelp("ns", "The namespace of the pending-roster"),
+        ModifierHelp(
+            "--no-warn",
+            "Turn off --warn mode. This is not advised.",
+        ),
+    ),
+    usage="node_id1[@rack_id1] [node_id2[@rack_id2] [...]] ns <ns>",
+    short_msg="Overwrite the nodes in the pending-roster",
 )
 class ManageRosterStageNodesController(ManageRosterLeafCommandController):
     def __init__(self):
@@ -2791,10 +3004,12 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
 
 
 @CommandHelp(
-    '"manage roster stage observed" automatically adds observed-nodes to the',
-    "pending-roster.",
-    "Usage: roster stage observed ns <ns>",
-    "  ns            - The namespace of the pending-roster you would like to set.",
+    "Automatically adds observed-nodes to the pending-roster.",
+    modifiers=(
+        ModifierHelp("ns", "The namespace of the pending-roster you would like to set"),
+    ),
+    usage="ns <ns>",
+    short_msg="Automatically adds observed-nodes to the pending-roster",
 )
 class ManageRosterStageObservedController(ManageRosterLeafCommandController):
     def __init__(self):
@@ -2842,17 +3057,14 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
         )
 
 
-@CommandHelp("")
+@CommandHelp("Manage running jobs")
 class ManageJobsController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {"kill": ManageJobsKillController}
 
-    async def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    '"manage jobs kill" is used to abort jobs.',
+    "Abort jobs",
 )
 class ManageJobsKillController(LiveClusterManageCommandController):
     def __init__(self):
@@ -2861,14 +3073,14 @@ class ManageJobsKillController(LiveClusterManageCommandController):
             "all": ManageJobsKillAllController,
         }
 
-    async def _do_default(self, line):
-        self.execute_help(line)
-
 
 @CommandHelp(
-    '"manage jobs kill trids" is used to abort jobs using their transaction ids.',
-    "Usage: kill trids <trid1> [<trid2> [...]]",
-    "  trid          - The transaction ids of the jobs you would like to kill.",
+    "Abort jobs using their transaction ids.",
+    modifiers=(
+        ModifierHelp("trid", "The transaction ids of the jobs you would like to kill"),
+    ),
+    usage="<trid1> [<trid2> [...]]",
+    short_msg="Abort jobs using their transaction ids",
 )
 class ManageJobsKillTridController(ManageLeafCommandController):
     def __init__(self):
@@ -2938,16 +3150,13 @@ class ManageJobsKillTridController(ManageLeafCommandController):
         self.view.killed_jobs(self.cluster, responses, **self.mods)
 
 
-@CommandHelp("")
+@CommandHelp("Kill all jobs for a specified module")
 class ManageJobsKillAllController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
             "queries": ManageJobsKillAllQueriesController,
             "scans": ManageJobsKillAllScansController,
         }
-
-    def _do_default(self, line):
-        self.execute_help(line)
 
 
 class ManageJobsKillAllLeafCommandController(ManageLeafCommandController):
@@ -2968,11 +3177,12 @@ class ManageJobsKillAllLeafCommandController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    '"manage jobs kill all scans" is used to abort all scan jobs. Removed in server v.',
-    '{} and later. Use "manage jobs kill all queries" instead.'.format(
+    "Abort all scan jobs. Removed in server v.",
+    '{} and later. Use "manage jobs kill all queries" instead'.format(
         constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION
     ),
-    "Usage: kill all scans",
+    usage=f"[{constants.ModifierUsage.WITH}]",
+    short_msg=f"Abort all scan jobs. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later",
 )
 class ManageJobsKillAllScansController(ManageJobsKillAllLeafCommandController):
     def __init__(self):
@@ -3007,9 +3217,8 @@ class ManageJobsKillAllScansController(ManageJobsKillAllLeafCommandController):
 
 
 @CommandHelp(
-    '"manage jobs kill all queries" is used to abort all query jobs. Supported on',
-    "server v. {} and later.".format(constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION),
-    "Usage: kill all queries",
+    f"Abort all query jobs. Supported on server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later",
+    usage=f"[{constants.ModifierUsage.WITH}]",
 )
 class ManageJobsKillAllQueriesController(ManageJobsKillAllLeafCommandController):
     def __init__(self):
