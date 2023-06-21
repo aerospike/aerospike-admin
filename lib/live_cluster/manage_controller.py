@@ -110,10 +110,8 @@ class LiveClusterManageCommandController(LiveClusterCommandController):
         """
         self.controller_arg_context = context
 
-    def _print_help(self, method, context, is_method):
-        return super()._print_help(
-            method, " ".join(self.controller_arg_context), is_method
-        )
+    def _print_help(self):
+        return super()._print_help_helper(self, self.controller_arg_context, False)
 
     def _init_commands(self):
         super()._init_commands()
