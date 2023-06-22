@@ -617,7 +617,7 @@ class BaseController(object):
     async def _do_default(self, line):
         # Override method to provide default command behavior
         self.execute_help(line)
-        self.logger.error("%s: command not found." % (" ".join(line)))
+        raise ShellException("%s: command not found." % (" ".join(line)))
 
     def pre_command(self, line):
         """

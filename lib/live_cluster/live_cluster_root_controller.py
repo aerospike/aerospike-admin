@@ -96,7 +96,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
             pass
 
     # This function is a hack for autocomplete
-    @CommandHelp("Terminate session", usage="exit")
+    @CommandHelp("Terminate session")
     def do_exit(self, line):
         return "EXIT"
 
