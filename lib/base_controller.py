@@ -676,9 +676,9 @@ class CommandController(BaseController):
             if not self.mods[mod]:
                 self.execute_help(line)
                 if mod == "line":
-                    raise IOError("Missing required argument")
+                    raise ShellException("Missing required argument")
 
-                raise IOError("{} is required".format(mod))
+                raise ShellException("{} is required".format(mod))
 
     def pre_command(self, line):
         mods = self.modifiers | self.required_modifiers

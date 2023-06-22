@@ -72,9 +72,6 @@ class ShowController(CollectinfoCommandController):
         }
         self.modifiers = set()
 
-    def _do_default(self, line):
-        self.execute_help(line)
-
 
 repeat_modifier_help = ModifierHelp(
     "-r",
