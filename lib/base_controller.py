@@ -277,16 +277,10 @@ class BaseController(object):
             else:
                 self.commands.add(command[1], func)
 
-        try:
-            if self.mods:
-                pass
-        except Exception:
-            self.mods = {}
-
         for command, controller in self.controller_map.items():
             self.commands.add(command, controller())
 
-    def _set_controller_context(self):
+    def _set_command_contexts(self):
         for command in self.controller_map:
             controller: BaseController = self.commands[command][0]
             context_cpy = list(self._context)
@@ -381,7 +375,7 @@ class BaseController(object):
         self._init_controller_map()
         self._init_context()
         self._init_commands()
-        self._set_controller_context()
+        self._set_command_contexts()
 
     def _find_method(self, line):
         method = None

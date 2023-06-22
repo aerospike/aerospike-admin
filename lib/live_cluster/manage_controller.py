@@ -57,7 +57,8 @@ class LiveClusterManageCommandController(LiveClusterCommandController):
     def _init(self):
         self._init_controller_arg()
         self._init_controller_arg_context()
-        return super()._init()
+        super()._init()
+        self._set_controller_arg_context()
 
     def pre_controller(self, line):
         """
@@ -113,9 +114,9 @@ class LiveClusterManageCommandController(LiveClusterCommandController):
     def _print_help(self):
         return super()._print_help_helper(self, self.controller_arg_context, False)
 
-    def _init_commands(self):
-        super()._init_commands()
-        for command in self.commands.keys():
+    def _set_controller_arg_context(self):
+        # Use controller_map to only get commands that are controllers i.e. not methods
+        for command in self.controller_map:
             controller: LiveClusterManageCommandController = self.commands[command][0]
             context_cpy = list(self.controller_arg_context)
             context_cpy.append(command)
@@ -141,7 +142,10 @@ class LiveClusterManageCommandController(LiveClusterCommandController):
             if self.controller_arg_context:
                 pass
         except Exception:
-            self.controller_arg_context = self._context[:]
+            try:
+                self.controller_arg_context = self._context[:]
+            except Exception:
+                self.controller_arg_context = []
 
 
 class ManageLeafCommandController(LiveClusterManageCommandController):
