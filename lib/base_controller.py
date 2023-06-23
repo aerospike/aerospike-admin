@@ -39,7 +39,7 @@ class ModifierHelp:
 
 class CommandHelp:
     _MAX_SHORT_MSG = 120
-    _MAX_LONG_MSG_LEN = 100
+    _MAX_LINE_LENGTH = 80
     DEFAULT_USAGE = "COMMAND"
 
     """
@@ -55,6 +55,12 @@ class CommandHelp:
         hide=False,
         modifiers: tuple[ModifierHelp, ...] | None = None,
     ):
+        if not long_msg:
+            logger.fatal(
+                f"long_msg is required for CommandHelp",
+                stack_info=True,
+            )
+
         self._usage = usage
         self._short_msg = short_msg
         self._hide = hide
@@ -65,9 +71,8 @@ class CommandHelp:
         if not long_msg_str.endswith("."):
             long_msg_str = long_msg_str + "."
 
-        self._long_msg = self.split_str_by_space(long_msg_str, self._MAX_LONG_MSG_LEN)
+        self._long_msg = self.split_str_by_space(long_msg_str, self._MAX_LINE_LENGTH)
 
-        # Add period to end of long_msg
         if not self._short_msg:
             self._short_msg = " ".join(long_msg)
 
@@ -125,25 +130,32 @@ class CommandHelp:
     def modifiers(func, indent=0):
         modifiers = []
         indent = "  " * indent
+        mods = None
+
         try:
             if func._modifiers:
-                max_length = max(len(mod.name) for mod in func._modifiers) + 5
-                modifiers.append("")
-                for mod in func._modifiers:
-                    ljust = mod.name.ljust(max_length)
-                    msg = CommandHelp.split_str_by_space(mod.msg, 50)
-                    modifiers.append(f"{indent}{ljust}- {msg[0]}")
-
-                    for m in msg[1:]:
-                        modifiers.append(f"{indent}  {' ' * max_length}{m}")
-
-                    if mod.default:
-                        modifiers.append(
-                            f"{indent}  {' ' * max_length}Default: {mod.default}"
-                        )
-
+                mods = func._modifiers
         except Exception:
             pass
+
+        if mods:
+            max_length = max(len(mod.name) for mod in mods) + 5
+            modifiers.append("")
+
+            for mod in mods:
+                ljust = mod.name.ljust(max_length)
+                msg = CommandHelp.split_str_by_space(
+                    mod.msg, CommandHelp._MAX_LINE_LENGTH - max_length - len(indent) - 2
+                )
+                modifiers.append(f"{indent}{ljust}- {msg[0]}")
+
+                for m in msg[1:]:
+                    modifiers.append(f"{indent}  {' ' * max_length}{m}")
+
+                if mod.default:
+                    modifiers.append(
+                        f"{indent}  {' ' * max_length}Default: {mod.default}"
+                    )
 
         return "\n".join(modifiers)
 
@@ -179,7 +191,6 @@ class CommandHelp:
             return False
 
 
-# TODO: CommandName should be used for context, not do_*
 class CommandName:
     def __init__(self, name):
         self._assigned_name = name
@@ -272,6 +283,8 @@ class BaseController(object):
 
         for command, controller in self.controller_map.items():
             self.commands.add(command, controller())
+
+        self._set_command_contexts()
 
     def _set_command_contexts(self):
         for command in self.controller_map:
@@ -368,7 +381,6 @@ class BaseController(object):
         self._init_controller_map()
         self._init_context()
         self._init_commands()
-        self._set_command_contexts()
 
     def _find_method(self, line):
         method = None
@@ -468,12 +480,13 @@ class BaseController(object):
         raise ShellException("Method was not set? %s" % (line))
 
     def _format_usage(
-        self, method: Callable[[Any], Any], context: list[str], is_method: bool
+        self, method: Callable[[Any], Any], context: list[str]
     ) -> list[str]:
         help = []
         context_str = " ".join(context)
-        if self.commands and not is_method:
+        if self.commands and not inspect.ismethod(method):
             if CommandHelp.usage(method):
+                # Has subcommands and has default functionality
                 help.extend(
                     [
                         f"\nUsage:  {context_str} {terminal.bold()}{CommandHelp.DEFAULT_USAGE}{terminal.reset()}",
@@ -482,22 +495,24 @@ class BaseController(object):
                     ]
                 )
             else:
+                # A controller that only has subcommands and no default functionality
                 help.append(f"\nUsage:  {context_str} {CommandHelp.DEFAULT_USAGE}")
         else:
+            # A controller with not subcommands or a method. This would be a leaf node
             help.append(f"\nUsage:  {context_str} {CommandHelp.usage(method)}")
 
         return help
 
-    def _format_help_helper(self, method, context, is_method) -> list[str]:
+    def _format_help_helper(self, method, context) -> list[str]:
         """
         A helper to create help for a method or a controller class. This should only be
-        called through _help() or _method_help()
+        called through _format_help() or _format_method_help(). This makes the caller more easily overridable
         """
         help = []
         help.append("")
         help.append(CommandHelp.long_message(method))
 
-        help.extend(self._format_usage(method, context, is_method))
+        help.extend(self._format_usage(method, context))
 
         mod_help = CommandHelp.modifiers(method, indent=4)
         if mod_help:
@@ -510,22 +525,35 @@ class BaseController(object):
         """
         Create help for this controller class
         """
-        return self._format_help_helper(self, self._context, False)
+        return self._format_help_helper(self, self._context)
+
+    def _format_method_help_helper(self, method, context) -> list[str]:
+        """
+        Create help for a method in this controller class
+        """
+
+        if CommandName.has_name(method):
+            method_name = CommandName.name(method)
+        else:
+            method_name = method.__name__
+            method_name = method_name[
+                3:
+            ]  # all methods start with "do_" unless decorated with CommandName
+
+        context.append(method_name)
+        return self._format_help_helper(method, context)
 
     def _format_method_help(self, method) -> list[str]:
         """
         Create help for a method in this controller class
         """
-        context = self._context[:]
-        method_name = method.__name__
-        context.append(method_name[3:])
-        return self._format_help_helper(method, context, True)
+        return self._format_method_help_helper(method, self._context)
 
     def _get_max_command_len(self, default_defined):
         max_len_help_msg = 0
 
         if default_defined:
-            max_len_help_msg = len(DEFAULT)
+            max_len_help_msg = len("Default")
 
         for command in self.commands.keys():
             command_method = self._find_method([command])
@@ -560,17 +588,29 @@ class BaseController(object):
 
         # Now format all possible subcommands
         for command in sorted(self.commands.keys()):
-            default_method = self._find_method([command])
+            method = self._find_method([command])
 
-            if CommandHelp.has_help(default_method) and not CommandHelp.is_hidden(
-                default_method
-            ):
+            if CommandHelp.has_help(method) and not CommandHelp.is_hidden(method):
                 command = command.ljust(max_len_help_msg)
                 help.append(
-                    f"{index_str}{terminal.bold()}{command}{terminal.reset()}{CommandHelp.short_message(default_method)}"
+                    f"{index_str}{terminal.bold()}{command}{terminal.reset()}{CommandHelp.short_message(method)}"
                 )
 
         help.append("")
+        return help
+
+    def _format_additional_help(self) -> list[str]:
+        help = []
+        context_str = ""
+
+        if self._context:
+            context_str = " ".join(self._context)
+            context_str = f"{context_str} "
+
+        help.append(
+            f"Run 'help {context_str}{CommandHelp.DEFAULT_USAGE}' for more information on a command.\n"
+        )
+
         return help
 
     def execute_help(self, line, method=None) -> str:
@@ -601,15 +641,8 @@ class BaseController(object):
                     help.extend(self._format_sub_commands_help())
 
                     if self.commands:
-                        if self._context:
-                            context_str = " ".join(self._context)
-                            help.append(
-                                f"Run 'help {context_str} {CommandHelp.DEFAULT_USAGE}' for more information on a command.\n"
-                            )
-                        else:
-                            help.append(
-                                f"Run 'help {CommandHelp.DEFAULT_USAGE}' for more information on a command.\n"
-                            )
+                        help.extend(self._format_additional_help())
+
                     return "\n".join(help)
 
                 elif isinstance(method, ShellException):

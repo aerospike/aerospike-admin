@@ -194,9 +194,9 @@ Usage:   COMMAND
 
 Commands:
 
-    Default         Print this help message
-    fakea1          Fake Command 1 Help
-    fakeb2          Fake Command 2 Help
+    Default     Print this help message
+    fakea1      Fake Command 1 Help
+    fakeb2      Fake Command 2 Help
 
 Run 'help COMMAND' for more information on a command.
 """,
@@ -213,7 +213,7 @@ Usage:  fakea1 <default usage>
 
 Commands:
 
-    Default         Fake Command 1 Default
+    Default     Fake Command 1 Default
 
 Run 'help fakea1 COMMAND' for more information on a command.
 """,
@@ -221,8 +221,8 @@ Run 'help fakea1 COMMAND' for more information on a command.
             (
                 ["fakeb2"],
                 """
-Fake Command 2 Help. Here is a really long line that should wrap around. Let's check if it does. We
-need to make sure it is long enough.
+Fake Command 2 Help. Here is a really long line that should wrap around. Let's
+check if it does. We need to make sure it is long enough.
 
 Usage:  fakeb2 COMMAND
 or
@@ -230,9 +230,9 @@ Usage:  fakeb2 <default usage>
 
 Commands:
 
-    Default         Fake Command 2 Default
-    cmd             cmd help
-    foo             foo help
+    Default     Fake Command 2 Default
+    cmd         cmd help
+    foo         foo help
 
 Run 'help fakeb2 COMMAND' for more information on a command.
 """,
@@ -253,12 +253,6 @@ Usage:  fakeb2 foo <foo usage>
         ]
     )
     def test_execute_help(self, line, expected_result):
-        # (["fakea1"], "fake1"),
-        # (["fakeb2"], "fake2"),
-        # (["fakeb", "c"], "fake2"),
-        # (["fakeb2", "f"], "ShellException"),
-        # (["fakeb2", "foo"], "foo"),
-
         r = FakeRoot()
 
         try:

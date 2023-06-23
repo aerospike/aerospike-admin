@@ -221,11 +221,13 @@ class ShowDistributionController(LiveClusterCommandController):
             "-v", "Set to display verbose output of optionally configured histograms."
         ),
         for_ns_modifier_help,
-        ModifierHelp(Modifiers.LIKE, "Filter by histogram name substring match"),
+        ModifierHelp(
+            Modifiers.LIKE, "Filter by histogram name substring match", default="test"
+        ),
         with_modifier_help,
     ),
     short_msg="Displays the server latency histograms",
-    usage=f"[-e <increment>] [-b <num-buckets>] [-v] [{Modifiers.FOR} <ns-substring>] [like <histogram-substring>] {ModifierUsage.WITH}",
+    usage=f"[-e <increment>] [-b <num-buckets>] [-v] [{Modifiers.FOR} <ns-substring>] [like <histogram-substring>] [{ModifierUsage.WITH}",
 )
 class ShowLatenciesController(LiveClusterCommandController):
     def __init__(self):
