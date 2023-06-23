@@ -61,7 +61,7 @@ class LogAnalyzerRootController(BaseController):
         hide=True,
     )
     def do_help(self, line):
-        self.execute_help(line)
+        self.view.print_result(self.execute_help(line))
 
 
 @CommandHelp(

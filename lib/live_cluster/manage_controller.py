@@ -111,8 +111,8 @@ class LiveClusterManageCommandController(LiveClusterCommandController):
         """
         self.controller_arg_context = context
 
-    def _print_help(self):
-        return super()._print_help_helper(self, self.controller_arg_context, False)
+    def _format_help(self):
+        return super()._format_help_helper(self, self.controller_arg_context, False)
 
     def _set_controller_arg_context(self):
         # Use controller_map to only get commands that are controllers i.e. not methods
