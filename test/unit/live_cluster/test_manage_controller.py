@@ -183,8 +183,8 @@ Run 'help fakea1 COMMAND' for more information on a command.
             (
                 ["fakeb2"],
                 """
-Fake Command 2 Help. Here is a really long line that should wrap around. Let's check if it does. We
-need to make sure it is long enough.
+Fake Command 2 Help. Here is a really long line that should wrap around. Let's
+check if it does. We need to make sure it is long enough.
 
 Usage:  fakeb2 <arg2> COMMAND
 or
