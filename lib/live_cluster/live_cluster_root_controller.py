@@ -21,6 +21,7 @@ from lib.base_controller import (
     DisableAutoComplete,
     BaseController,
     CommandHelp,
+    ModifierHelp,
     ShellException,
     create_disabled_controller,
 )
@@ -41,7 +42,7 @@ from .manage_controller import (
 )
 
 
-@CommandHelp("Aerospike Admin")
+@CommandHelp("A tool for interacting with your Aerospike cluster")
 class LiveClusterRootController(BaseController, AsyncObject):
     cluster: Cluster
 
@@ -94,9 +95,6 @@ class LiveClusterRootController(BaseController, AsyncObject):
         except Exception:
             pass
 
-    def _do_default(self, line):
-        self.execute_help(line)
-
     # This function is a hack for autocomplete
     @CommandHelp("Terminate session")
     def do_exit(self, line):
@@ -106,24 +104,28 @@ class LiveClusterRootController(BaseController, AsyncObject):
         "Displays the documentation for the specified command.",
         "For example, to see the documentation for the 'info' command,",
         "use the command 'help info'.",
+        short_msg="Displays the documentation for the specified command",
+        hide=True,
     )
     def do_help(self, line):
-        self.execute_help(line)
+        self.view.print_result(self.execute_help(line))
 
     @CommandHelp(
         "Runs a command for a specified pause and iterations.",
-        "Usage: watch [pause] [iterations] [--no-diff] command",
-        "   pause:      The duration between executions.",
-        "               [default: 2 seconds]",
-        "   iterations: Number of iterations to execute command.",
-        "               [default: until keyboard interrupt]",
-        "  Options:",
-        "   --no-diff:  Do not highlight differences",
-        "Example 1: Show 'info network' 3 times and pause for 1 second each time.",
-        "           watch 1 3 info network",
-        'Example 2: Show "info namespace" with 5 seconds pause until',
-        "           interrupted",
-        "           watch 5 info namespace",
+        short_msg="Runs a command for a specified pause and iterations",
+        usage="[--no-diff] [pause [iterations]] <command>",
+        modifiers=(
+            ModifierHelp(
+                "pause", "The duration between executions", default="2 seconds"
+            ),
+            ModifierHelp(
+                "iterations",
+                "Number of iterations to execute command",
+                default="until keyboard interrupt",
+            ),
+            ModifierHelp("command", "The command to execute e.g. 'info network'"),
+            ModifierHelp("--no-diff", "Do not highlight differences"),
+        ),
     )
     async def do_watch(self, line):
         sleep = 2.0
@@ -184,6 +186,8 @@ class LiveClusterRootController(BaseController, AsyncObject):
         "  Options:",
         "    --warn:    Use this option to receive a prompt to confirm",
         "               that you want to run the command.",
+        short_msg="Enters privileged mode",
+        usage="[--warn]",
     )
     def do_enable(self, line):
         warn = util.check_arg_and_delete_from_mods(
@@ -195,6 +199,10 @@ class LiveClusterRootController(BaseController, AsyncObject):
         )
         return "ENABLE"
 
+    @CommandHelp(
+        "Exits privileged mode, which protects you from issuing manage and asinfo commands.",
+        short_msg="Exits privileged mode",
+    )
     def do_disable(self, line):
         self.controller_map.update(
             {

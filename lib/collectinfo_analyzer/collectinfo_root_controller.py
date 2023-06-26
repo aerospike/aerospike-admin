@@ -62,9 +62,11 @@ class CollectinfoRootController(BaseController):
         return "EXIT"
 
     @CommandHelp(
-        "Returns documentation related to a command.",
-        'for example, to retrieve documentation for the "info"',
-        'command use "help info".',
+        "Displays the documentation for the specified command.",
+        "For example, to see the documentation for the 'info' command,",
+        "use the command 'help info'.",
+        short_msg="Displays the documentation for the specified command",
+        hide=True,
     )
     def do_help(self, line):
-        self.execute_help(line)
+        self.view.print_result(self.execute_help(line))

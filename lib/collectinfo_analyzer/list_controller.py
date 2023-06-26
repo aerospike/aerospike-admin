@@ -18,16 +18,13 @@ from lib.base_controller import CommandHelp
 from .collectinfo_command_controller import CollectinfoCommandController
 
 
+@CommandHelp("Displays all added collectinfos files.")
 class ListController(CollectinfoCommandController):
     def __init__(self):
         self.controller_map = {}
         self.modifiers = set()
 
-    def _do_default(self, line):
-        self.do_all(line)
-
-    @CommandHelp("Displays list of all added collectinfos files.")
-    def do_all(self, line):
+    def _do_all(self, line):
         cinfo_logs = self.log_handler.all_cinfo_logs
         for timestamp, snapshot in cinfo_logs.items():
             print(
@@ -37,3 +34,6 @@ class ListController(CollectinfoCommandController):
                 + ": "
                 + str(snapshot.cinfo_file)
             )
+
+    def _do_default(self, line):
+        self._do_all(line)

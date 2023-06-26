@@ -26,7 +26,7 @@ from lib.utils.types import NodeDict
 from lib.view.sheet.render import get_style_json, set_style_json
 from lib.view.terminal import terminal
 from lib.utils import common, constants, util, version, logger
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ModifierHelp
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
@@ -46,7 +46,47 @@ from .show_controller import ShowController
 
 
 @CommandHelp(
-    '"collectinfo" is used to collect cluster info, aerospike conf file and system stats.'
+    "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided. If credentials are not available then it will collect system stats from local node only.",
+    usage="[-n <num-snapshots>] [-s <sleep>] [--enable-ssh --ssh-user <user> --ssh-pwd <pwd> [--ssh-port <port>] [--ssh-key <key>] [--ssh-cf <credentials-file>]] [--agent-host <host> --agent-port <port> [--agent-store]] [--output-prefix <prefix>] [--asconfig-file <path>]",
+    modifiers=(
+        ModifierHelp("-n", "Number of snapshots.", default="1"),
+        ModifierHelp(
+            "-s", "Sleep time in seconds between each snapshot.", default="5 sec"
+        ),
+        ModifierHelp(
+            "--enable-ssh",
+            "Enables the collection of system statistics from the remote server.",
+        ),
+        ModifierHelp(
+            "--ssh-user",
+            "Default user ID for remote servers. This is the ID of a user of the system, not the ID of an Aerospike user.",
+        ),
+        ModifierHelp(
+            "--ssh-pwd",
+            "Default password or passphrase for key for remote servers. This is the user's password for logging into the system, not a password for logging into Aerospike.",
+        ),
+        ModifierHelp(
+            "--ssh-port", "Default SSH port for remote servers.", default="22"
+        ),
+        ModifierHelp("--ssh-key", "Default SSH key (file path) for remote servers."),
+        ModifierHelp(
+            "--ssh-cf",
+            "Remote System Credentials file path. If the server credentials are not in the credentials file, then authentication is attempted with the default credentials. File format: each line must contain <IP[:PORT]>,<USER_ID>,<PASSWORD-or-PASSPHRASE>,<SSH_KEY>",
+        ),
+        ModifierHelp(
+            "--agent-host",
+            "Host IP of the Unique Data Agent to collect license data usage.",
+        ),
+        ModifierHelp("--agent-port", "Port of the UDA.", default="8080"),
+        ModifierHelp("--agent-store", "Collect the raw datastore of the UDA."),
+        ModifierHelp("--output-prefix", "Output directory name prefix."),
+        ModifierHelp(
+            "--asconfig-file",
+            "Aerospike config file path to collect.",
+            default="/etc/aerospike/aerospike.conf",
+        ),
+    ),
+    short_msg="Collects cluster info, system stats, and aerospike conf file for local node",
 )
 class CollectinfoController(LiveClusterCommandController):
     get_pmap = False
@@ -887,39 +927,6 @@ class CollectinfoController(LiveClusterCommandController):
         common.print_collectinfo_summary(aslogdir, failed_cmds=self.failed_cmds)
         terminal.enable_color(True)
 
-    @CommandHelp(
-        "Collects cluster info, aerospike conf file for local node and system stats from all nodes if",
-        "remote server credentials provided. If credentials are not available then it will collect system",
-        "stats from local node only.",
-        "  Options:",
-        "    -n              <int>        - Number of snapshots. Default: 1",
-        "    -s              <int>        - Sleep time in seconds between each snapshot. Default: 5 sec",
-        "    --enable-ssh                 - Enables the collection of system statistics from the remote server.",
-        "    --ssh-user      <string>     - Default user ID for remote servers. This is the ID of a user of the",
-        "                                   system not the ID of an Aerospike user.",
-        "    --ssh-pwd       <string>     - Default password or passphrase for key for remote servers. This is",
-        "                                   the user's password for logging into the system, not a password for",
-        "                                   logging into Aerospike.",
-        "    --ssh-port      <int>        - Default SSH port for remote servers. Default: 22",
-        "    --ssh-key       <string>     - Default SSH key (file path) for remote servers.",
-        "    --ssh-cf        <string>     - Remote System Credentials file path.",
-        "                                   If the server credentials are not in the credentials file, then",
-        "                                   authentication is attempted with the default credentials.",
-        "                                   File format : each line must contain <IP[:PORT]>,<USER_ID>",
-        "                                   <PASSWORD or PASSPHRASE>,<SSH_KEY>",
-        "                                   Example:  1.2.3.4,uid,pwd",
-        "                                             1.2.3.4:3232,uid,pwd",
-        "                                             1.2.3.4:3232,uid,,key_path",
-        "                                             1.2.3.4:3232,uid,passphrase,key_path",
-        "                                             [2001::1234:10],uid,pwd",
-        "                                             [2001::1234:10]:3232,uid,,key_path",
-        "    --agent-host    <host>       - Host IP of the Unique Data Agent to collect license data usage.",
-        "    --agent-port    <int>        - Port of the UDA. Default: 8080",
-        "    --agent-store                - Collect the raw datastore of the UDA."
-        "    --output-prefix <string>     - Output directory name prefix.",
-        "    --asconfig-file <string>     - Aerospike config file path to collect.",
-        "                                   Default: /etc/aerospike/aerospike.conf",
-    )
     async def _do_default(self, line):
         snp_count = util.get_arg_and_delete_from_mods(
             line=line,

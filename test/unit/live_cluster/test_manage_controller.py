@@ -14,9 +14,16 @@
 
 import unittest
 from pytest import PytestUnraisableExceptionWarning
-from lib.base_controller import BaseController, ShellException
+from lib.base_controller import (
+    BaseController,
+    CommandController,
+    CommandHelp,
+    ModifierHelp,
+    ShellException,
+)
 from mock import MagicMock, patch
 from mock.mock import AsyncMock, call
+from parameterized import parameterized
 
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
@@ -33,6 +40,7 @@ from lib.live_cluster.live_cluster_command_controller import (
     LiveClusterCommandController,
 )
 from lib.live_cluster.manage_controller import (
+    LiveClusterManageCommandController,
     ManageACLCreateRoleController,
     ManageACLCreateUserController,
     ManageACLQuotasRoleController,
@@ -62,6 +70,160 @@ import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import asynctest
+
+
+@CommandHelp(
+    "I am ROOT!!!",
+)
+class FakeRoot(BaseController):
+    def __init__(self):
+        self.modifiers = set()
+
+        self.controller_map = {"fakea1": FakeCommand1, "fakeb2": FakeCommand2}
+
+
+@CommandHelp(
+    "Fake Command 1 Help",
+    short_msg="Fake Command 1 Help.",
+    usage="<default usage>",
+)
+class FakeCommand1(LiveClusterManageCommandController):
+    def __init__(self):
+        pass
+
+    @CommandHelp(
+        "Fake Command 1 Default",
+    )
+    async def _do_default(self, line):
+        return await self.do_cmd(line[:])
+
+    @CommandHelp(
+        "Fake Command 1 cmd but is hidden so should not be in the list",
+        hide=True,
+    )
+    async def do_cmd(self, line):
+        return "fake1", line
+
+
+@CommandHelp(
+    "Fake Command 2 Help. Here is a really long line that should wrap around. Let's check if it does. We need to make sure it is long enough",
+    short_msg="Fake Command 2 Help.",
+    usage="<default usage>",
+)
+class FakeCommand2(LiveClusterManageCommandController):
+    def __init__(self):
+        self.controller_arg = "arg2"
+
+    @CommandHelp("Fake Command 2 Default")
+    async def _do_default(self, line):
+        return await self.do_cmd(line[:])
+
+    @CommandHelp(
+        "cmd help",
+    )
+    async def do_cmd(self, line):
+        return "fake2", line
+
+    @CommandHelp(
+        "foo help",
+        usage="<foo usage>",
+        modifiers=(
+            ModifierHelp("one", "all about one", default="1"),
+            ModifierHelp("two", "all about two", default="2"),
+        ),
+    )
+    async def do_foo(self, line):
+        return "foo", line
+
+    async def do_for(self, line):
+        return "for", line
+
+    async def do_zoo(self, line):
+        return "zoo", line
+
+
+class BaseControllerTest(asynctest.TestCase):
+    maxDiff = None
+
+    @parameterized.expand(
+        [
+            (
+                [],
+                """
+I am ROOT!!!.
+
+Usage:   COMMAND
+
+Commands:
+
+    Default     Print this help message
+    fakea1      Fake Command 1 Help
+    fakeb2      Fake Command 2 Help
+
+Run 'help COMMAND' for more information on a command.
+""",
+            ),
+            (["fake"], "ShellException"),
+            (
+                ["fakea1"],
+                """
+Fake Command 1 Help.
+
+Usage:  fakea1 COMMAND
+or
+Usage:  fakea1 <default usage>
+
+Commands:
+
+    Default     Fake Command 1 Default
+
+Run 'help fakea1 COMMAND' for more information on a command.
+""",
+            ),
+            (
+                ["fakeb2"],
+                """
+Fake Command 2 Help. Here is a really long line that should wrap around. Let's
+check if it does. We need to make sure it is long enough.
+
+Usage:  fakeb2 <arg2> COMMAND
+or
+Usage:  fakeb2 <arg2> <default usage>
+
+Commands:
+
+    Default     Fake Command 2 Default
+    cmd         cmd help
+    foo         foo help
+
+Run 'help fakeb2 COMMAND' for more information on a command.
+""",
+            ),
+            (
+                ["fakeb2", "foo"],
+                """
+foo help.
+
+Usage:  fakeb2 <arg2> foo <foo usage>
+
+        one     - all about one
+                  Default: 1
+        two     - all about two
+                  Default: 2
+""",
+            ),
+        ]
+    )
+    def test_execute_help(self, line, expected_result):
+        r = FakeRoot()
+
+        try:
+            actual_result = r.execute_help(line)
+            print(actual_result)
+        except ShellException:
+            self.assertEqual(expected_result, "ShellException")
+        else:
+            self.assertListEqual(expected_result.split("\n"), actual_result.split("\n"))
 
 
 @asynctest.fail_on(active_handles=True)
@@ -1225,7 +1387,7 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
         )
         self.cluster.update_node(self.node)
         self.controller = ManageConfigController()
-        self.controller.context = ["manage", "config"]
+        self.controller._context = ["manage", "config"]
         ManageConfigLeafController.mods = {}
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()

@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import inspect
 import re
 import logging
-from typing import Any, Union
+import string
+from typing import Any, Callable, Union
 
 from lib.health.health_checker import HealthChecker
 from lib.utils.lookup_dict import PrefixDict
@@ -27,59 +30,158 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
 
 
+class ModifierHelp:
+    def __init__(self, name: str, msg: str, default: str | None = None):
+        self.name = name
+        self.msg = msg
+        self.default = default
+
+
 class CommandHelp:
+    _MAX_SHORT_MSG = 120
+    _MAX_LINE_LENGTH = 80
+    DEFAULT_USAGE = "COMMAND"
 
     """
     hide - If True then the help info of command and its children will not be
            displayed unless it is explicitly called on the command.
-
-    If no help info is defined but succeeding help should still be shown you
-    must define CommandHelp with an empty message i.e. ''
     """
 
-    def __init__(self, *message, hide=False):
-        self.message = list(message)
-        self.hide = hide
+    def __init__(
+        self,
+        *long_msg: str,
+        short_msg: str | None = None,
+        usage=None,
+        hide=False,
+        modifiers: tuple[ModifierHelp, ...] | None = None,
+    ):
+        if not long_msg:
+            logger.fatal(
+                f"long_msg is required for CommandHelp",
+                stack_info=True,
+            )
+
+        self._usage = usage
+        self._short_msg = short_msg
+        self._hide = hide
+        self._modifiers = modifiers
+
+        long_msg_str = " ".join(list(long_msg))
+
+        if not long_msg_str.endswith("."):
+            long_msg_str = long_msg_str + "."
+
+        self._long_msg = self.split_str_by_space(long_msg_str, self._MAX_LINE_LENGTH)
+
+        if not self._short_msg:
+            self._short_msg = " ".join(long_msg)
+
+            if len(self._short_msg) > self._MAX_SHORT_MSG:
+                logger.fatal(
+                    f"long_msg should be no longer than {self._MAX_SHORT_MSG} when no short_msg is supplied",
+                    stack_info=True,
+                )
+
+        # Remove period from end of short_msg
+        if self._short_msg and self._short_msg.endswith("."):
+            self._short_msg = self._short_msg[:-1]
+
+        if short_msg and len(short_msg) > self._MAX_SHORT_MSG:
+            logger.fatal(
+                f"short_msg should be no longer than {self._MAX_SHORT_MSG}",
+                stack_info=True,
+            )
 
     def __call__(self, func):
-        try:
-            if func.__name__ == DEFAULT:
-                self.message[0] = "%sDefault%s: %s" % (
-                    terminal.underline(),
-                    terminal.reset(),
-                    self.message[0],
-                )
-        except Exception:
-            pass
-
-        func._command_help = self.message
-        func._hide = self.hide
+        func._long_msg = self._long_msg
+        func._hide = self._hide
+        func._short_msg = self._short_msg
+        func._usage = self._usage
+        func._modifiers = self._modifiers
 
         return func
 
     @staticmethod
+    def split_str_by_space(string: str, length: int) -> list[str]:
+        result = []
+        line_start = 0
+        last_space = 0
+
+        for char_idx, char in enumerate(string):
+            if char_idx - line_start > length and line_start - 1 != last_space:
+                result.append(string[line_start:last_space])
+                line_start = last_space + 1
+
+            if char == " ":
+                last_space = char_idx
+
+        result.append(string[line_start:])
+        return result
+
+    @staticmethod
     def has_help(func):
         try:
-            func._command_help
+            func._long_msg
             return True
         except Exception:
             return False
 
     @staticmethod
-    def display(func, indent=0):
+    def modifiers(func, indent=0):
+        modifiers = []
         indent = "  " * indent
-        try:
-            if func._command_help == [""]:
-                return
+        mods = None
 
-            print("\n".join([indent + line for line in func._command_help]))
+        try:
+            if func._modifiers:
+                mods = func._modifiers
         except Exception:
             pass
 
+        if mods:
+            max_length = max(len(mod.name) for mod in mods) + 5
+            modifiers.append("")
+
+            for mod in mods:
+                ljust = mod.name.ljust(max_length)
+                msg = CommandHelp.split_str_by_space(
+                    mod.msg, CommandHelp._MAX_LINE_LENGTH - max_length - len(indent) - 2
+                )
+                modifiers.append(f"{indent}{ljust}- {msg[0]}")
+
+                for m in msg[1:]:
+                    modifiers.append(f"{indent}  {' ' * max_length}{m}")
+
+                if mod.default:
+                    modifiers.append(
+                        f"{indent}  {' ' * max_length}Default: {mod.default}"
+                    )
+
+        return "\n".join(modifiers)
+
     @staticmethod
-    def print_text(message, indent=0):
-        indent = "  " * indent
-        print("%s%s" % (indent, message))
+    def long_message(func):
+        try:
+            return "\n".join([line for line in func._long_msg])
+        except Exception:
+            return ""
+
+    @staticmethod
+    def short_message(func):
+        try:
+            return func._short_msg
+        except Exception:
+            return ""
+
+    @staticmethod
+    def usage(func):
+        try:
+            if not func._usage:
+                return ""
+
+            return func._usage
+        except Exception:
+            return ""
 
     @staticmethod
     def is_hidden(func):
@@ -179,25 +281,24 @@ class BaseController(object):
             else:
                 self.commands.add(command[1], func)
 
-        try:
-            if self.context:
-                pass
-        except Exception:
-            self.context = []
-
-        try:
-            if self.mods:
-                pass
-        except Exception:
-            self.mods = {}
-
         for command, controller in self.controller_map.items():
-            context_cpy = list(self.context)
-            context_cpy.append(command)
-            controller = controller()
-            controller.context = context_cpy
+            self.commands.add(command, controller())
 
-            self.commands.add(command, controller)
+        self._set_command_contexts()
+
+    def _set_command_contexts(self):
+        for command in self.controller_map:
+            controller: BaseController = self.commands[command][0]
+            context_cpy = list(self._context)
+            context_cpy.append(command)
+            controller.set_context(context_cpy)
+
+    def set_context(self, context):
+        """
+        Called by the parent controller to set the context of the current controller
+        before use.
+        """
+        self._context = context
 
     def complete(self, line):
         self._init()
@@ -227,10 +328,6 @@ class BaseController(object):
                 )
             )
 
-            # TODO: Make modifiers auto-completable?
-            # if self.required_modifiers | self.modifiers:
-            #     return list(self.required_modifiers | self.modifiers)
-
             # The line contains an ambiguous entry
             # or exact match
             return []
@@ -247,7 +344,7 @@ class BaseController(object):
             if self.controller_map:
                 pass
         except Exception:
-            self.controller_map = {}
+            self.controller_map: dict[str, type[BaseController]] = {}
 
     def _init_modifiers(self):
         """
@@ -272,9 +369,17 @@ class BaseController(object):
         except Exception:
             self.mods = {}
 
+    def _init_context(self):
+        try:
+            if self._context:
+                pass
+        except Exception:
+            self._context = []
+
     def _init(self):
         self._init_modifiers()
         self._init_controller_map()
+        self._init_context()
         self._init_commands()
 
     def _find_method(self, line):
@@ -374,7 +479,141 @@ class BaseController(object):
 
         raise ShellException("Method was not set? %s" % (line))
 
-    def execute_help(self, line, indent=0, method=None, print_modifiers=True):
+    def _format_usage(
+        self, method: Callable[[Any], Any], context: list[str]
+    ) -> list[str]:
+        help = []
+        context_str = " ".join(context)
+        if self.commands and not inspect.ismethod(method):
+            if CommandHelp.usage(method):
+                # Has subcommands and has default functionality
+                help.extend(
+                    [
+                        f"\nUsage:  {context_str} {terminal.bold()}{CommandHelp.DEFAULT_USAGE}{terminal.reset()}",
+                        "or",
+                        f"Usage:  {context_str} {CommandHelp.usage(method)}",
+                    ]
+                )
+            else:
+                # A controller that only has subcommands and no default functionality
+                help.append(f"\nUsage:  {context_str} {CommandHelp.DEFAULT_USAGE}")
+        else:
+            # A controller with not subcommands or a method. This would be a leaf node
+            help.append(f"\nUsage:  {context_str} {CommandHelp.usage(method)}")
+
+        return help
+
+    def _format_help_helper(self, method, context) -> list[str]:
+        """
+        A helper to create help for a method or a controller class. This should only be
+        called through _format_help() or _format_method_help(). This makes the caller more easily overridable
+        """
+        help = []
+        help.append("")
+        help.append(CommandHelp.long_message(method))
+
+        help.extend(self._format_usage(method, context))
+
+        mod_help = CommandHelp.modifiers(method, indent=4)
+        if mod_help:
+            help.append(mod_help)
+
+        help.append("")
+        return help
+
+    def _format_help(self) -> list[str]:
+        """
+        Create help for this controller class
+        """
+        return self._format_help_helper(self, self._context)
+
+    def _format_method_help_helper(self, method, context) -> list[str]:
+        """
+        Create help for a method in this controller class
+        """
+
+        if CommandName.has_name(method):
+            method_name = CommandName.name(method)
+        else:
+            method_name = method.__name__
+            method_name = method_name[
+                3:
+            ]  # all methods start with "do_" unless decorated with CommandName
+
+        context.append(method_name)
+        return self._format_help_helper(method, context)
+
+    def _format_method_help(self, method) -> list[str]:
+        """
+        Create help for a method in this controller class
+        """
+        return self._format_method_help_helper(method, self._context)
+
+    def _get_max_command_len(self, default_defined):
+        max_len_help_msg = 0
+
+        if default_defined:
+            max_len_help_msg = len("Default")
+
+        for command in self.commands.keys():
+            command_method = self._find_method([command])
+
+            if CommandHelp.has_help(command_method) and not CommandHelp.is_hidden(
+                command_method
+            ):
+                max_len_help_msg = max(max_len_help_msg, len(command))
+
+        return max_len_help_msg
+
+    def _format_sub_commands_help(self) -> list[str]:
+        help = []
+        default_method = self._find_method([DEFAULT])
+        max_len_help_msg = self._get_max_command_len(default_method) + 5
+        indent = 2
+        index_str = "  " * indent
+
+        if self.commands:
+            help.append("Commands:\n")
+
+            # Formate default command first if defined
+            if default_method:
+                command = "Default"
+                fmt_command = f"{terminal.bold()}{terminal.underline()}{command}{terminal.reset()}"
+                fmt_command = fmt_command.ljust(
+                    max_len_help_msg + (len(fmt_command) - len(command))
+                )
+                help.append(
+                    f"{index_str}{fmt_command}{CommandHelp.short_message(default_method)}",
+                )
+
+        # Now format all possible subcommands
+        for command in sorted(self.commands.keys()):
+            method = self._find_method([command])
+
+            if CommandHelp.has_help(method) and not CommandHelp.is_hidden(method):
+                command = command.ljust(max_len_help_msg)
+                help.append(
+                    f"{index_str}{terminal.bold()}{command}{terminal.reset()}{CommandHelp.short_message(method)}"
+                )
+
+        help.append("")
+        return help
+
+    def _format_additional_help(self) -> list[str]:
+        help = []
+        context_str = ""
+
+        if self._context:
+            context_str = " ".join(self._context)
+            context_str = f"{context_str} "
+
+        help.append(
+            f"Run 'help {context_str}{CommandHelp.DEFAULT_USAGE}' for more information on a command.\n"
+        )
+
+        return help
+
+    def execute_help(self, line, method=None) -> str:
         self._init()
 
         # Removes the need to call _find_method twice since it also happens
@@ -384,80 +623,46 @@ class BaseController(object):
 
         if method:
             try:
+                method_name: str | None = None
+
                 try:
+                    # Method name only exists on functions,
                     method_name = method.__name__
                 except Exception:
-                    method_name = None
+                    pass
 
-                if method_name == DEFAULT:  # Print controller help
-                    CommandHelp.display(self, indent=indent)
+                if method_name is None:
+                    # This is the top of the recursive calls meaning self = a root controller
+                    return method.execute_help(line)
 
-                    if print_modifiers:
-                        required_mods = [
-                            mod for mod in self.required_modifiers if mod != "line"
-                        ]
-                        if required_mods:
-                            CommandHelp.print_text(
-                                "%sRequired%s: %s"
-                                % (
-                                    terminal.underline(),
-                                    terminal.reset(),
-                                    ", ".join(sorted(required_mods)),
-                                ),
-                                indent=indent,
-                            )
-                        if self.modifiers:
-                            CommandHelp.print_text(
-                                "%sModifiers%s: %s"
-                                % (
-                                    terminal.underline(),
-                                    terminal.reset(),
-                                    ", ".join(sorted(self.modifiers)),
-                                ),
-                                indent=indent,
-                            )
+                elif method_name == DEFAULT:
+                    # Create controller help
+                    help = self._format_help()
+                    help.extend(self._format_sub_commands_help())
 
-                    if CommandHelp.has_help(method):
-                        CommandHelp.display(method, indent=indent)
+                    if self.commands:
+                        help.extend(self._format_additional_help())
 
-                    indent += 2
-                    for command in self.commands.keys():
-                        command_method = self._find_method([command])
-
-                        if CommandHelp.has_help(
-                            command_method
-                        ) and not CommandHelp.is_hidden(command_method):
-                            CommandHelp.print_text(
-                                "- %s%s%s:"
-                                % (terminal.bold(), command, terminal.reset()),
-                                indent=indent - 1,
-                            )
-
-                            self.execute_help(
-                                [command],
-                                indent=indent,
-                                method=command_method,
-                            )
-                    return
+                    return "\n".join(help)
 
                 elif isinstance(method, ShellException):
                     # Method not implemented
                     pass
-
-                elif method_name is None:  # Nothing to print yet
-                    method.execute_help(line, indent=indent)
-
-                else:  # Print help for a command
-                    CommandHelp.display(method, indent=indent)
-                    return
+                else:
+                    # Create help for a method i.e. do_watch or do_show but not _do_default
+                    return "\n".join(self._format_method_help(method))
 
             except IOError as e:
                 raise ShellException(str(e))
         else:
             raise ShellException("Method was not set? %s" % (line))
 
+        return ""
+
+    @CommandHelp("Print this help message")
     async def _do_default(self, line):
         # Override method to provide default command behavior
+        self.view.print_result(self.execute_help(line))
         raise ShellException("%s: command not found." % (" ".join(line)))
 
     def pre_command(self, line):
@@ -515,11 +720,11 @@ class CommandController(BaseController):
     def _check_required_modifiers(self, line):
         for mod in self.required_modifiers:
             if not self.mods[mod]:
-                self.execute_help(line)
+                self.view.print_result(self.execute_help(line))
                 if mod == "line":
-                    raise IOError("Missing required argument")
+                    raise ShellException("Missing required argument")
 
-                raise IOError("{} is required".format(mod))
+                raise ShellException("{} is required".format(mod))
 
     def pre_command(self, line):
         mods = self.modifiers | self.required_modifiers
