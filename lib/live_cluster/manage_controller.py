@@ -2201,7 +2201,7 @@ class ManageConfigXDRDCRemoveController(LiveClusterManageCommandController):
 
 
 @CommandHelp(
-    "Remove a node from and xdr datacenter",
+    "Remove a node from an xdr datacenter",
     modifiers=(
         ModifierHelp("dc", "The XDR datacenter you would like to configure"),
         ModifierHelp("node", "The node address to remove from the datacenter"),

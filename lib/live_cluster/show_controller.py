@@ -605,7 +605,7 @@ class ShowConfigController(LiveClusterCommandController):
         like_config_modifier_help,
         with_modifier_help,
     ),
-    usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>|<ns-substring>] [{like_config_usage}] [{ModifierUsage.WITH}]",
+    usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>|<ns-substring>] [{like_config_usage}] [{ModifierUsage.WITH}]",
 )
 class ShowConfigXDRController(LiveClusterCommandController):
     def __init__(self):
@@ -670,7 +670,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
             like_config_modifier_help,
             with_modifier_help,
         ),
-        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>] [{like_config_usage}] {ModifierUsage.WITH}",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>] [{like_config_usage}] {ModifierUsage.WITH}",
     )
     async def do_dcs(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -721,7 +721,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
             like_config_modifier_help,
             with_modifier_help,
         ),
-        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <ns-substring> [<dc-substring>]] [{like_config_usage}] {ModifierUsage.WITH}",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <ns-substring> [<dc-substring>]] [{like_config_usage}] {ModifierUsage.WITH}",
     )
     async def do_namespaces(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -771,7 +771,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
             ),
             with_modifier_help,
         ),
-        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring> [<ns-substring>]] {ModifierUsage.WITH}",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring> [<ns-substring>]] {ModifierUsage.WITH}",
     )
     async def do_filters(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -1469,7 +1469,7 @@ class ShowPmapController(LiveClusterCommandController):
 
 @CommandHelp(
     "A collection of commands that display user configuration and statistics",
-    usage=f"[user]",
+    usage=f"[<username>]",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
 )
 class ShowUsersController(LiveClusterCommandController):
@@ -1508,7 +1508,7 @@ class ShowUsersController(LiveClusterCommandController):
     "Displays users, open connections, and quota usage for the Aerospike cluster.",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
     short_msg="Displays users, open connections, and quota usage",
-    usage=f"[user]",
+    usage=f"[<username>]",
 )
 class ShowUsersStatsController(LiveClusterCommandController):
     def __init__(self):
