@@ -513,7 +513,7 @@ class ManageACLRolesLeafCommandController(ManageLeafCommandController):
     "Create a role",
     usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]] [allow <addr1> [<addr2> [...]]] [read <read-quota>] [write <write-quota>]",
     modifiers=(
-        ModifierHelp("role-name", "Name of the new role."),
+        ModifierHelp("role", "Name of the new role."),
         ModifierHelp(
             "priv",
             "Privilege for the new role. Some privileges are not limited to a global scope. Scopes are either global, per namespace, or per namespace and set",
@@ -625,7 +625,7 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
 @CommandHelp(
     "Delete a role",
     usage="role <role-name>",
-    modifiers=(ModifierHelp("role-name", "Role to delete."),),
+    modifiers=(ModifierHelp("role", "Role to delete."),),
 )
 class ManageACLDeleteRoleController(ManageLeafCommandController):
     def __init__(self):
@@ -654,7 +654,7 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
     "Grant a role one or more privileges",
     usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
     modifiers=(
-        ModifierHelp("role-name", "Role to have the privilege granted."),
+        ModifierHelp("role", "Role to have the privilege granted."),
         ModifierHelp("priv", "Privilege to be added to the role"),
         ModifierHelp("ns", "Namespace scope of privilege", default="None"),
         ModifierHelp(
@@ -707,7 +707,7 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
     "Revoke one or more privileges from a role",
     usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
     modifiers=(
-        ModifierHelp("role-name", "Role to have privilege revoked."),
+        ModifierHelp("role", "Role to have privilege revoked."),
         ModifierHelp("priv", "Privilege to delete from the role."),
         ModifierHelp("ns", "Namespace scope of privilege", default="None"),
         ModifierHelp(
@@ -760,7 +760,7 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
     "Change the allowlist for a role",
     usage="role <role-name> [clear]|[allow <addr1> [<addr2> [...]]]",
     modifiers=(
-        ModifierHelp("role-name", "Role that you would edit the allowlist for."),
+        ModifierHelp("role", "Role that you would edit the allowlist for."),
         ModifierHelp(
             "clear",
             "Clears allowlist from the role. Either 'allow' or 'clear' is required.",
@@ -835,14 +835,14 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
 @CommandHelp(
     "Change the read and write quotes for a role. A read or write quota is required. Not providing a quota will leave it unchanged.",
     modifiers=(
-        ModifierHelp("role-name", "Role to assign a quota"),
+        ModifierHelp("role", "Role to assign a quota"),
         ModifierHelp(
             "read",
             "Quota for read transaction (TPS). To give a role an unlimited quota enter 0",
         ),
         ModifierHelp("write", "Quota for write transaction (TPS)."),
     ),
-    usage="<role-name> [read <read-quota>]|[write <write-quota>]",
+    usage="<role> [read <read-quota>]|[write <write-quota>]",
     short_msg="Change the read and write quotes for a role",
 )
 class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
