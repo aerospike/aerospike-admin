@@ -372,7 +372,7 @@ class ShowConfigController(CollectinfoCommandController):
         ),
         like_config_modifier_help,
     ),
-    usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>|<ns-substring>] [{like_config_usage}]",
+    usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>|<ns-substring>] [{like_config_usage}]",
 )
 class ShowConfigXDRController(CollectinfoCommandController):
     def __init__(self):
@@ -445,7 +445,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
             ModifierHelp(Modifiers.FOR, "Filter by datacenter substring match"),
             like_config_modifier_help,
         ),
-        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>] [{like_config_usage}]",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>] [{like_config_usage}]",
     )
     def do_dc(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -496,7 +496,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
             ),
             like_config_modifier_help,
         ),
-        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <ns-substring> [<dc-substring>]] [{like_config_usage}]",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <ns-substring> [<dc-substring>]] [{like_config_usage}]",
     )
     def do_namespace(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -546,7 +546,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
                 "Filter by datacenter substring match then by namespace substring match",
             ),
         ),
-        usage=f"[-r] [-flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring> [<ns-substring>]]",
+        usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring> [<ns-substring>]]",
     )
     def do_filter(self, line):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -1411,7 +1411,7 @@ class ShowPmapController(CollectinfoCommandController):
 
 @CommandHelp(
     "A collection of commands that display user configuration and statistics",
-    usage=f"[user]",
+    usage=f"[<username>]",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
 )
 class ShowUsersController(CollectinfoCommandController):
@@ -1448,7 +1448,7 @@ class ShowUsersController(CollectinfoCommandController):
     "Displays users, open connections, and quota usage for the Aerospike cluster.",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
     short_msg="Displays users, open connections, and quota usage",
-    usage=f"[user]",
+    usage=f"[<username>]",
 )
 class ShowUsersStatsController(CollectinfoCommandController):
     def __init__(self):
