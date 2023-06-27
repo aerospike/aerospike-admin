@@ -576,7 +576,11 @@ class TestShowDistribution(asynctest.TestCase):
     def setUpClass(cls):
         lib.start()
         lib.populate_db("show-dis-test")
-        lib.safe_sleep(3)
+        cmd = "manage config namespace test param nsup-hist-period to 5"
+        test_util.run_asadm(
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{cmd}' -Uadmin -Padmin"
+        )
+        time.sleep(20)
 
     async def setUp(self) -> None:
         self.rc = await controller.LiveClusterRootController(
