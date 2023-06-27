@@ -3563,14 +3563,6 @@
                 "description": "",
                 "dynamic": true
               },
-              "max-used-service-threads": {
-                "type": "integer",
-                "default": 0,
-                "minimum": 0,
-                "maximum": 4096,
-                "description": "",
-                "dynamic": true
-              },
               "node-address-ports": {
                 "type": "array",
                 "items": {
