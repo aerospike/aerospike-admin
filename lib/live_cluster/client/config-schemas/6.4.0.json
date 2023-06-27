@@ -927,6 +927,23 @@
             "dynamic": true,
             "default": "INFO"
           },
+          "hotkey": {
+            "enum": [
+              "CRITICAL",
+              "critical",
+              "WARNING",
+              "warning",
+              "INFO",
+              "info",
+              "DEBUG",
+              "debug",
+              "DETAIL",
+              "detail"
+            ],
+            "description": "",
+            "dynamic": true,
+            "default": "INFO"
+          },
           "index": {
             "enum": [
               "CRITICAL",
