@@ -99,6 +99,7 @@ class TestCollectinfo(asynctest.TestCase):
         ("show sindex", [], None),
         ("show stop-writes", [], None),
         ("health", [], None),
+        ("summary", [], None),
     ]
 
     maxDiff = None
