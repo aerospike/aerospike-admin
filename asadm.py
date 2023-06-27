@@ -442,7 +442,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 line.append("")
 
         if len(line) > 0:
-            self.ctrl._init_commands()  # dirty
+            self.ctrl._init()  # dirty
             cmds = self.ctrl.commands.get_key(line[0])
         else:
             cmds = []
