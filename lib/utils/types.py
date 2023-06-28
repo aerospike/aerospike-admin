@@ -12,12 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypeVar
+from typing import TypeVar, TypedDict
+from typing_extensions import NotRequired
 
 T = TypeVar("T")
 
 # TODO: Could be moved to its own utils.types module.
-NodeDict = dict[str, T]
-DatacenterDict = dict[str, T]
-NamespaceDict = dict[str, T]
-UsersDict = dict[str, T]
+NodeIP = str
+DC = str
+NS = str
+SET = str
+METRIC = str
+Users = str
+NodeDict = dict[NodeIP, T]
+DatacenterDict = dict[DC, T]
+NamespaceDict = dict[NS, T]
+UsersDict = dict[Users, T]
+
+
+class StopWritesEntry(TypedDict):
+    metric: str
+    metric_usage: int | float
+    stop_writes: bool
+    metric_threshold: NotRequired[int | float]
+    config: NotRequired[str]
+    namespace: NotRequired[str]
+    set: NotRequired[str]
+
+
+StopWritesEntryKey = tuple[NS, SET, METRIC]
+StopWritesDict = NodeDict[dict[StopWritesEntryKey, StopWritesEntry]]

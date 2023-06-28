@@ -23,6 +23,8 @@ except:
 
 from signal import SIGINT, SIGTERM
 from lib.utils.logger import logger  # THIS MUST BE THE FIRST IMPORT
+from lib.live_cluster.client import Cluster, Addr_Port_TLSName
+from lib.live_cluster.get_controller import GetConfigController, GetStatisticsController
 from lib.base_controller import ShellException
 import inspect
 import cmd
@@ -85,14 +87,14 @@ PRIVILEGED_PROMPT = "Admin+> "
 class AerospikeShell(cmd.Cmd, AsyncObject):
     async def __init__(
         self,
-        admin_version,
-        seeds,
-        user=None,
-        password=None,
+        admin_version: str,
+        seeds: list[Addr_Port_TLSName],
+        user: str | None = None,
+        password: str | None = None,
         auth_mode=AuthMode.INTERNAL,
         use_services_alumni=False,
         use_services_alt=False,
-        log_path="",
+        log_path: str = "",
         mode=AdminMode.LIVE_CLUSTER,
         ssl_context=None,
         only_connect_seed=False,
@@ -138,7 +140,8 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>"
                     )
                     await self.do_exit("")
-                    sys.exit(1)
+                    self.connected = False
+                    return
 
                 self.ctrl = CollectinfoRootController(
                     admin_version, clinfo_path=log_path
@@ -174,13 +177,12 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
                 if not self.ctrl.cluster.get_live_nodes():
                     await self.do_exit("")
-                    if self.execute_only_mode:
-                        self.connected = False
-                        return
-                    else:
-                        logger.critical(
+                    self.connected = False
+                    if not self.execute_only_mode:
+                        logger.error(
                             "Not able to connect any cluster with " + str(seeds) + "."
                         )
+                        return
 
                 self.set_default_prompt()
                 self.intro = ""
@@ -194,24 +196,40 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     )
 
                     if cluster_visibility_error_nodes:
-                        self.intro += (
-                            terminal.fg_red()
-                            + "Cluster Visibility error (Please check services list): %s"
+                        logger.warning(
+                            terminal.fg_yellow()
+                            + "Some nodes are unable to connect to other nodes in the cluster. %s"
                             % (", ".join(cluster_visibility_error_nodes))
                             + terminal.fg_clear()
-                            + "\n"
                         )
 
                     cluster_down_nodes = await self.ctrl.cluster.get_down_nodes()
 
                     if cluster_down_nodes:
-                        self.intro += (
-                            terminal.fg_red()
-                            + "Extra nodes in alumni list: %s"
+                        logger.warning(
+                            terminal.fg_yellow()
+                            + "Some nodes have become unreachable by other nodes in the cluster. Check their peers lists: %s"
                             % (", ".join(cluster_down_nodes))
                             + terminal.fg_clear()
-                            + "\n"
                         )
+
+                    active_stop_writes = await self.active_stop_writes(
+                        self.ctrl.cluster
+                    )
+
+                    if active_stop_writes:
+                        logger.warning(
+                            terminal.fg_yellow()
+                            + "This cluster is currently in stop writes. Run `show stop-writes` for more details."
+                            + terminal.fg_clear()
+                        )
+
+                    if (
+                        cluster_visibility_error_nodes
+                        or cluster_down_nodes
+                        or active_stop_writes
+                    ):
+                        print("", file=self.stdout)
 
         except Exception as e:
             await self.do_exit("")
@@ -231,6 +249,23 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         for command in commands:
             if command != "help":
                 self.commands.add(command)
+
+    async def active_stop_writes(self, cluster: Cluster):
+        """
+        Checks for active stop writes in the cluster. Only callable from live cluster mode.
+        """
+        stat_getter = GetStatisticsController(cluster)
+        config_getter = GetConfigController(cluster)
+
+        service_stats = await stat_getter.get_service()
+        ns_stats = await stat_getter.get_namespace()
+        ns_configs = await config_getter.get_namespace()
+        set_stats = await stat_getter.get_sets()
+        set_configs = await config_getter.get_sets()
+        stop_writes_dict = common.create_stop_writes_summary(
+            service_stats, ns_stats, ns_configs, set_stats, set_configs
+        )
+        return common.active_stop_writes(stop_writes_dict)
 
     def set_prompt(self, prompt, color="green"):
         self.prompt = prompt

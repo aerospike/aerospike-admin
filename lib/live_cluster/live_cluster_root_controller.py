@@ -27,7 +27,7 @@ from lib.base_controller import (
 )
 from lib.utils.async_object import AsyncObject
 from .live_cluster_command_controller import LiveClusterCommandController
-from .client.cluster import Cluster
+from .client import Cluster, Addr_Port_TLSName
 from .asinfo_controller import ASInfoController
 from .collectinfo_controller import CollectinfoController
 from .features_controller import FeaturesController
@@ -48,7 +48,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
 
     async def __init__(
         self,
-        seed_nodes=[("127.0.0.1", 3000, None)],
+        seed_nodes: list[Addr_Port_TLSName] = [("127.0.0.1", 3000, None)],
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,

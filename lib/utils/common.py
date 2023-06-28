@@ -42,7 +42,12 @@ from collections import OrderedDict
 from dateutil import parser as date_parser
 
 from lib.utils import constants, file_size, util, version, data
-from lib.utils.types import NamespaceDict, NodeDict
+from lib.utils.types import (
+    NamespaceDict,
+    StopWritesDict,
+    StopWritesEntry,
+    StopWritesEntryKey,
+)
 from lib.view import terminal
 
 logger = logging.getLogger("asadm")
@@ -1614,20 +1619,6 @@ def create_summary(
 ####### Stop-Writes #########
 
 
-class StopWritesEntry(TypedDict):
-    metric: str
-    metric_usage: int | float
-    stop_writes: bool
-    metric_threshold: NotRequired[int | float]
-    config: NotRequired[str]
-    namespace: NotRequired[str]
-    set: NotRequired[str]
-
-
-StopWritesEntryKey = tuple[str | None, str | None, str]
-StopWritesDict = NodeDict[dict[StopWritesEntryKey, StopWritesEntry]]
-
-
 def _create_stop_writes_entry(
     node_sw_metrics: dict[StopWritesEntryKey, StopWritesEntry],
     metric: str,
@@ -1900,6 +1891,18 @@ def create_stop_writes_summary(
     _format_ns_stop_writes_metrics(stop_writes_metrics, service_stats, ns_stats)
     _format_set_stop_writes_metrics(stop_writes_metrics, set_stats)
     return stop_writes_metrics
+
+
+async def active_stop_writes(stop_writes_dict: StopWritesDict):
+    """
+    Checks for active stop writes in the cluster. Only callable from live cluster mode.
+    """
+    for node_entry in stop_writes_dict.values():
+        for sw_entry in node_entry.values():
+            if sw_entry["stop_writes"] == True:
+                return True
+
+    return False
 
 
 #############################

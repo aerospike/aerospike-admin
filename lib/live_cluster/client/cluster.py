@@ -212,7 +212,7 @@ class Cluster(AsyncObject):
         # TODO: why not return a reference to Node objects instead?
         return self._live_nodes
 
-    def get_visibility_error_nodes(self):
+    def get_visibility_error_nodes(self) -> list[str]:
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
 
@@ -225,12 +225,14 @@ class Cluster(AsyncObject):
             peers = client_util.flatten(node.peers)
             not_visible = set(visible) - set(peers)
 
+            # There should be cluster size - 1 nodes not visible because each nodes has
+            # cluster-1 peers.
             if len(not_visible) != 1:
                 cluster_visibility_error_nodes.append(node.key)
 
         return cluster_visibility_error_nodes
 
-    async def get_down_nodes(self):
+    async def get_down_nodes(self) -> list[str]:
         cluster_down_nodes = []
         for k in self.nodes.keys():
             try:
@@ -453,7 +455,12 @@ class Cluster(AsyncObject):
 
     def get_nodes(
         self,
-        nodes: Literal[constants.NodeSelection.ALL, constants.NodeSelection.PRINCIPAL, constants.NodeSelection.RANDOM] | list[str],
+        nodes: Literal[
+            constants.NodeSelection.ALL,
+            constants.NodeSelection.PRINCIPAL,
+            constants.NodeSelection.RANDOM,
+        ]
+        | list[str],
     ) -> list[Node]:
         use_nodes = []
 

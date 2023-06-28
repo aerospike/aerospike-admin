@@ -16,7 +16,7 @@ from enum import IntEnum, unique
 import logging
 from typing import Literal, Union
 
-Addr_Port_TLSName = tuple[str, int, str]
+Addr_Port_TLSName = tuple[str, int, str | None]
 
 
 @unique
