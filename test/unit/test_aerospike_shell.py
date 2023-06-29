@@ -1,5 +1,5 @@
 import asynctest
-from mock import AsyncMock, patch
+from mock import AsyncMock, Mock, patch
 from mock.mock import call
 
 from asadm import AerospikeShell
@@ -28,16 +28,22 @@ class AerospikeShellTest(asynctest.TestCase):
                 self.cluster = ClusterMock()
 
         patch(
-            "asadm.LiveClusterRootController",  # Target class to patch
-            MockLiveClusterRootController,  # Mocked class
+            "asadm.LiveClusterRootController",
+            MockLiveClusterRootController,
         ).start()
-        mock_logger = patch(
-            "asadm.logger", autospec=True  # Target class to patch  # Mocked class
-        ).start()
+        mock_logger = patch("asadm.logger", autospec=True).start()
         patch(
             "asadm.AerospikeShell.active_stop_writes",
             AsyncMock(),
         ).start().return_value = True
+        patch(
+            "readline.write_history_file",
+            Mock(),
+        ).start()  # Need to override or test will fail in github actions where user is root
+        patch(
+            "readline.read_history_file",
+            Mock(),
+        ).start()  # Need to override or test will fail in github actions where user is root
         self.addCleanup(patch.stopall)
         shell = await AerospikeShell("test-version", seeds=[("1.1.1.1", 3000, None)])  # type: ignore
         self.assertEqual(shell.intro, "Online: 1.1.1.1:3000\n")
