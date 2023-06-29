@@ -1,10 +1,8 @@
+from asadm import AerospikeShell
+
 import asynctest
 from mock import AsyncMock, Mock, patch
 from mock.mock import call
-
-from asadm import AerospikeShell
-from lib.live_cluster.client import Cluster
-from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
 from lib.utils import async_object
 
 
