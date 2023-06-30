@@ -330,9 +330,6 @@ class BaseRSheet(object):
         has_int = False
 
         for entry in entries:
-            if entry == "1463E6705933":
-                pass
-
             try:
                 int(entry)
                 has_int = True
