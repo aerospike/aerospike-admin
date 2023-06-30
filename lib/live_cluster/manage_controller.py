@@ -511,7 +511,7 @@ class ManageACLRolesLeafCommandController(ManageLeafCommandController):
 
 @CommandHelp(
     "Create a role",
-    usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]] [allow <addr1> [<addr2> [...]]] [read <read-quota>] [write <write-quota>]",
+    usage="<role-name> priv <privilege> [ns <namespace> [set <set>]] [allow <addr1> [<addr2> [...]]] [read <read-quota>] [write <write-quota>]",
     modifiers=(
         ModifierHelp("role", "Name of the new role."),
         ModifierHelp(

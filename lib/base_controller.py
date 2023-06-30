@@ -663,7 +663,10 @@ class BaseController(object):
     async def _do_default(self, line):
         # Override method to provide default command behavior
         self.view.print_result(self.execute_help(line))
-        raise ShellException("%s: command not found." % (" ".join(line)))
+
+        if line:
+            # It is only an error if there is still something left to be parsed
+            raise ShellException("%s: command not found." % (" ".join(line)))
 
     def pre_command(self, line):
         """
