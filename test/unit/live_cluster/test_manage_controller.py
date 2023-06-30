@@ -14,9 +14,9 @@
 
 import unittest
 from pytest import PytestUnraisableExceptionWarning
+from parameterized import parameterized
 from lib.base_controller import (
     BaseController,
-    CommandController,
     CommandHelp,
     ModifierHelp,
     ShellException,
@@ -331,6 +331,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageACLCreateRoleController()
+        self.controller._context = ["manage", "acl", "create", "role"]
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
@@ -484,6 +485,9 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
         )
+        self.logger_mock.warning.assert_called_with(
+            "Namespace and set options are deprecated. Provide a privilege in the format 'privilege.namespace.set' instead."
+        )
 
     async def test_with_read_privilege_only(self):
         self.cluster_mock.admin_create_role.return_value = {
@@ -585,6 +589,82 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created role test-role."
+        )
+
+    async def test_with_multiple_privileges(self):
+        self.cluster_mock.admin_create_role.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        line = "test-role priv read.test.testset write sys-admin data-admin"
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_role.assert_called_with(
+            "test-role",
+            privileges=["read.test.testset", "write", "sys-admin", "data-admin"],
+            whitelist=[],
+            read_quota=None,
+            write_quota=None,
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created role test-role."
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "test-role priv read.test.testset write sys-admin data-admin read 1000 write 2000"
+            ),
+            (
+                "test-role priv read.test.testset data-admin sys-admin write read read 1000 write 2000"
+            ),
+            (
+                "test-role read 1000 write 2000 priv read.test.testset write sys-admin data-admin "
+            ),
+        ]
+    )
+    async def test_with_multiple_privileges_with_quotas(self, line):
+        self.cluster_mock.admin_create_role.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_role.assert_called_with(
+            "test-role",
+            privileges=["read.test.testset", "write", "sys-admin", "data-admin"],
+            whitelist=[],
+            read_quota=1000,
+            write_quota=2000,
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created role test-role."
+        )
+
+    async def test_for_error_multiple_privileges_and_namespace_option(self):
+        self.cluster_mock.admin_create_role.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        line = "test-role priv read.test.testset write ns test"
+
+        await self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_with(
+            "Only a single privilege is allowed when using the namespace and set options."
+        )
+
+    async def test_for_error_no_privileges_and_namespace_option(self):
+        self.cluster_mock.admin_create_role.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        line = "test-role ns test"
+
+        await self.controller.execute(line.split())
+
+        self.logger_mock.error.assert_called_with(
+            "A privilege must be provided with a namespace scope."
         )
 
     async def test_logs_error_when_quotas_are_not_int(self):

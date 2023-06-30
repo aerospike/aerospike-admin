@@ -511,17 +511,13 @@ class ManageACLRolesLeafCommandController(ManageLeafCommandController):
 
 @CommandHelp(
     "Create a role",
-    usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]] [allow <addr1> [<addr2> [...]]] [read <read-quota>] [write <write-quota>]",
+    usage="<role-name> privs <privilege>[.<namespace>[.<set>]] [<privilege2>[.<namespace>[.<set>]] [...]] [allow <addr1> [<addr2> [...]]] [read <read-quota>] [write <write-quota>]",
     modifiers=(
         ModifierHelp("role", "Name of the new role."),
         ModifierHelp(
             "priv",
             "Privilege for the new role. Some privileges are not limited to a global scope. Scopes are either global, per namespace, or per namespace and set",
             "None",
-        ),
-        ModifierHelp("ns", "Namespace scope of privilege", "None"),
-        ModifierHelp(
-            "set", "Set scope of privilege. Namespace scope is required.", "None"
         ),
         ModifierHelp(
             "allow",
@@ -534,8 +530,8 @@ class ManageACLRolesLeafCommandController(ManageLeafCommandController):
 )
 class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
     def __init__(self):
-        self.modifiers = set(["ns", "set", "allow", "read", "write"])
-        self.required_modifiers = set(["line", "priv"])
+        self.modifiers = set(["ns", "set", "allow", "read", "write", "priv", "privs"])
+        self.controller_arg = "role-name"
         self.controller_map = {}
 
     # Overridden because of conflict between 'read' privilege and 'read' modifier
@@ -546,20 +542,52 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
             line, duplicates_in_line_allowed=duplicates_in_line_allowed
         )
 
-        if len(groups["priv"]) == 0 and "priv" in line_copy:
-            priv_index = line_copy.index("priv") + 1
+        if "privs" in line_copy or "priv" in line_copy:
+            try:
+                priv_idx = line_copy.index("privs") + 1
+            except ValueError:
+                priv_idx = line_copy.index("priv") + 1
 
-            if len(line_copy) > priv_index and line_copy[priv_index] in {
-                "read",
-                "write",
-            }:
-                groups["priv"].append(line_copy[priv_index])
+            if priv_idx < len(line_copy):
+                mods = self.modifiers | self.required_modifiers
+                privs = []
+                word = line_copy[priv_idx]
+
+                # Stop parsing privs when we hit another modifier and that modifier is
+                # not read or write followed by a number
+                while priv_idx + 1 < len(line_copy) and (
+                    word not in mods
+                    or (
+                        line_copy[priv_idx] in {"read", "write"}
+                        and not line_copy[priv_idx + 1].isdigit()
+                    )
+                ):
+                    if word not in groups["privs"]:
+                        privs.append(word)
+
+                    priv_idx += 1
+                    word = line_copy[priv_idx]
+
+                if word not in mods or (
+                    word in {"read", "write"} and priv_idx == len(line_copy) - 1
+                ):
+                    privs.append(word)
+
+                groups["privs"].extend(privs)
+
+            # Needed when more privs follow the word read or write
+            # ex: "manage acl create role test-role priv read.test.testset write sys-admin data-admin"
+            for priv in groups["privs"]:
+                if priv in groups["read"]:
+                    groups["read"].remove(priv)
+                if priv in groups["write"]:
+                    groups["write"].remove(priv)
 
         return groups
 
     async def _do_default(self, line):
-        role_name = line.pop(0)
-        privilege = None
+        role_name = self.mods["role"][0]
+        privs = None
         allowlist = self.mods["allow"]
 
         # Can't use util.get_arg_and_delete_from_mods because of conflict
@@ -584,28 +612,45 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
             self.logger.error("Quotas must be integers.")
             return
 
-        if len(self.mods["priv"]):
-            privilege = self.mods["priv"][0]
+        if len(self.mods["privs"]):
+            privs = self.mods["privs"]
 
         if len(self.mods["set"]) and not len(self.mods["ns"]):
             self.logger.error("A set must be accompanied by a namespace.")
             return
 
+        # For backwards compatibility
         if len(self.mods["ns"]):
-            privilege += "." + self.mods["ns"][0]
+            if not privs:
+                self.logger.error(
+                    "A privilege must be provided with a namespace scope."
+                )
+                return
+
+            self.logger.warning(
+                "Namespace and set options are deprecated. Provide a privilege in the format 'privilege.namespace.set' instead."
+            )
+
+            if privs and len(privs) != 1:
+                self.logger.error(
+                    "Only a single privilege is allowed when using the namespace and set options."
+                )
+                return
+
+            privs[0] += "." + self.mods["ns"][0]
 
             if len(self.mods["set"]):
-                privilege += "." + self.mods["set"][0]
+                privs[0] += "." + self.mods["set"][0]
 
         # admin_create_role expects a list of privileges but the UI excepts one.
-        privilege = [] if privilege is None else [privilege]
+        privs = [] if privs is None else privs
 
         if self.warn and not self.prompt_challenge():
             return
 
         result = await self.cluster.admin_create_role(
             role_name,
-            privileges=privilege,
+            privileges=privs,
             whitelist=allowlist,
             read_quota=read_quota,
             write_quota=write_quota,
@@ -616,7 +661,7 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
         if isinstance(result, ASProtocolError):
             self.logger.error(result)
             return
-        elif isinstance(result, Exception):
+        if isinstance(result, Exception):
             raise result
 
         self.view.print_result("Successfully created role {}.".format(role_name))
