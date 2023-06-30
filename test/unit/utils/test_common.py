@@ -1230,8 +1230,8 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
             ),
         ]
     )
-    async def test_active_stop_writes(self, stop_writes_dict, expected):
+    def test_active_stop_writes(self, stop_writes_dict, expected):
         self.assertEqual(
-            await common.active_stop_writes(stop_writes_dict),
+            common.active_stop_writes(stop_writes_dict),
             expected,
         )
