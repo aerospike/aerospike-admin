@@ -1893,7 +1893,7 @@ def create_stop_writes_summary(
     return stop_writes_metrics
 
 
-async def active_stop_writes(stop_writes_dict: StopWritesDict):
+def active_stop_writes(stop_writes_dict: StopWritesDict):
     """
     Checks for active stop writes in the cluster. Only callable from live cluster mode.
     """

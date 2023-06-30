@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from typing import Any, Literal
+from typing import Any
 
 from lib.utils import common, util
 from lib.utils.constants import NodeSelection, NodeSelectionType

@@ -109,10 +109,13 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         self.privileged_mode = False
         if mode == AdminMode.LOG_ANALYZER:
             self.name = "Aerospike Log Analyzer Shell"
+            self.prompt = "Log-analyzer> "
         elif mode == AdminMode.COLLECTINFO_ANALYZER:
             self.name = "Aerospike Collectinfo Shell"
+            self.prompt = "Collectinfo-analyzer> "
         else:
             self.name = "Aerospike Interactive Shell"
+            self.set_default_prompt()
 
         if not execute_only_mode:
             print(
@@ -132,12 +135,11 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     log_path = " "
 
                 self.ctrl = LogAnalyzerRootController(admin_version, log_path)
-                self.prompt = "Log-analyzer> "
 
             elif mode == AdminMode.COLLECTINFO_ANALYZER:
                 if not log_path:
                     logger.error(
-                        "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>"
+                        "You have not specified any collectinfo path. Usage: asadm -c -f <path/to/collectinfo.tgz>"
                     )
                     await self.do_exit("")
                     self.connected = False
@@ -146,7 +148,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 self.ctrl = CollectinfoRootController(
                     admin_version, clinfo_path=log_path
                 )
-                self.prompt = "Collectinfo-analyzer> "
+
                 if not execute_only_mode:
                     self.intro = str(self.ctrl.log_handler)
 
@@ -157,10 +159,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                             password = getpass.getpass("Enter Password:")
                         else:
                             password = sys.stdin.readline().strip()
-
-                    if not info.hasbcrypt:
-                        await self.do_exit("")
-                        logger.critical("Authentication failed: bcrypt not installed.")
 
                 self.ctrl = await LiveClusterRootController(
                     seeds,
@@ -178,13 +176,11 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 if not self.ctrl.cluster.get_live_nodes():
                     await self.do_exit("")
                     self.connected = False
-                    if not self.execute_only_mode:
-                        logger.error(
-                            "Not able to connect any cluster with " + str(seeds) + "."
-                        )
-                        return
+                    logger.error(
+                        "Not able to connect any cluster with " + str(seeds) + "."
+                    )
+                    return
 
-                self.set_default_prompt()
                 self.intro = ""
                 if execute_only_mode:
                     if privileged_mode:
@@ -863,7 +859,6 @@ async def main():
                 sys.exit(1)
 
             cleanup()
-            logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
     await cmdloop(shell, func, args, use_yappi, single_command)
     await shell.close()
