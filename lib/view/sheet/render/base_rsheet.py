@@ -14,6 +14,7 @@
 
 from collections import OrderedDict
 from itertools import groupby
+import math
 from operator import itemgetter
 
 from lib.utils import util
@@ -329,6 +330,9 @@ class BaseRSheet(object):
         has_int = False
 
         for entry in entries:
+            if entry == "1463E6705933":
+                pass
+
             try:
                 int(entry)
                 has_int = True
@@ -337,8 +341,8 @@ class BaseRSheet(object):
                 pass
 
             try:
-                float(entry)
-                has_float = True
+                if float(entry) != math.inf:
+                    has_float = True
                 continue
             except (ValueError, TypeError):
                 pass
