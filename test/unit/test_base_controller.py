@@ -161,9 +161,8 @@ class BaseControllerTest(asynctest.TestCase):
             except ShellException:
                 self.assertEqual("ShellException", expected_method)
 
-    async def test_execute(self):
-        test_lines = [
-            ([], "ShellException"),
+    @parameterized.expand(
+        [
             (["fake"], "ShellException"),
             (["fakea1"], "fake1"),
             (["fakeb2"], "fake2"),
@@ -171,17 +170,17 @@ class BaseControllerTest(asynctest.TestCase):
             (["fakeb2", "f"], "ShellException"),
             (["fakeb2", "foo"], "foo"),
         ]
-
+    )
+    async def test_execute(self, line, expected_result):
         r = FakeRoot()
 
-        for line, expected_result in test_lines:
-            try:
-                actual_result = await r(line)
-                actual_result = actual_result[0]
-            except ShellException:
-                self.assertEqual(expected_result, "ShellException")
-            else:
-                self.assertEqual(expected_result, actual_result)
+        try:
+            actual_result = await r(line)
+            actual_result = actual_result[0]
+        except ShellException:
+            self.assertEqual(expected_result, "ShellException")
+        else:
+            self.assertEqual(expected_result, actual_result)
 
     @parameterized.expand(
         [
