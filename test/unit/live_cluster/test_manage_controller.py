@@ -614,17 +614,17 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
     @parameterized.expand(
         [
             (
-                "test-role priv read.test.testset write sys-admin data-admin read 1000 write 2000"
+                "test-role priv read.test.testset write sys-admin data-admin read 1000 write 2000", ["read.test.testset", "write", "sys-admin", "data-admin"]
             ),
             (
-                "test-role priv read.test.testset data-admin sys-admin write read read 1000 write 2000"
+                "test-role priv read.test.testset data-admin sys-admin write read read 1000 write 2000", ["read.test.testset","data-admin", "sys-admin", "write", "read"]
             ),
             (
-                "test-role read 1000 write 2000 priv read.test.testset write sys-admin data-admin "
+                "test-role read 1000 write 2000 priv read.test.testset write sys-admin data-admin ", ["read.test.testset", "write", "sys-admin", "data-admin"]
             ),
         ]
     )
-    async def test_with_multiple_privileges_with_quotas(self, line):
+    async def test_with_multiple_privileges_with_quotas(self, line, privs):
         self.cluster_mock.admin_create_role.return_value = {
             "principal_ip": ASResponse.OK
         }
@@ -633,7 +633,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
 
         self.cluster_mock.admin_create_role.assert_called_with(
             "test-role",
-            privileges=["read.test.testset", "write", "sys-admin", "data-admin"],
+            privileges=privs,
             whitelist=[],
             read_quota=1000,
             write_quota=2000,
