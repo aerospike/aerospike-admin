@@ -290,6 +290,24 @@
           "description": "",
           "dynamic": false
         },
+        "secrets-address-port": {
+          "type": "string",
+          "default": "",
+          "description": "",
+          "dynamic": false
+        },
+        "secrets-tls-context": {
+          "type": "string",
+          "default": "",
+          "description": "",
+          "dynamic": false
+        },
+        "secrets-uds-path": {
+          "type": "string",
+          "default": "",
+          "description": "",
+          "dynamic": false
+        },
         "service-threads": {
           "type": "integer",
           "default": 1,
