@@ -16,7 +16,6 @@ import ntpath
 import os
 import shutil
 import tarfile
-from typing import Literal
 import zipfile
 
 from lib.utils import common, log_util, util, constants
@@ -39,6 +38,10 @@ COLLECTINFO_DIR = constants.ADMIN_HOME + "collectinfo/"
 COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
 
 ######################
+
+
+class LogHandlerException(Exception):
+    pass
 
 
 class CollectinfoLogHandler(object):
@@ -313,14 +316,14 @@ class CollectinfoLogHandler(object):
 
     def _add_cinfo_log_files(self, cinfo_path=""):
         if not cinfo_path:
-            raise Exception("Collectinfo path not specified.")
+            raise LogHandlerException("Collectinfo path not specified.")
 
         if not os.path.exists(cinfo_path):
-            raise Exception("Wrong Collectinfo path.")
+            raise LogHandlerException("Wrong Collectinfo path.")
 
         files = self._get_all_file_paths(cinfo_path)
         if not files:
-            raise Exception("No valid Aerospike collectinfo log available.")
+            raise LogHandlerException("No valid Aerospike collectinfo log available.")
 
         cinfo_log = CollectinfoLog(cinfo_path, files)
         self.selected_cinfo_logs = cinfo_log.snapshots
@@ -328,7 +331,7 @@ class CollectinfoLogHandler(object):
         self.license_data_usage = cinfo_log.license_data_usage
         snapshots_added = len(self.all_cinfo_logs)
         if not snapshots_added:
-            raise Exception("Multiple snapshots available without JSON dump.")
+            raise LogHandlerException("Multiple snapshots available without JSON dump.")
 
     def _fetch_from_cinfo_log(
         self,

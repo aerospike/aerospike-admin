@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib.base_controller import BaseController, CommandHelp
+from lib.base_controller import BaseController, CommandHelp, ShellException
 
-from .collectinfo_handler.log_handler import CollectinfoLogHandler
+from .collectinfo_handler.log_handler import CollectinfoLogHandler, LogHandlerException
 from .collectinfo_command_controller import CollectinfoCommandController
 from .features_controller import FeaturesController
 from .health_check_controller import HealthCheckController
@@ -34,7 +34,10 @@ class CollectinfoRootController(BaseController):
         BaseController.asadm_version = asadm_version
 
         # Create Static Instance of Loghdlr
-        CollectinfoRootController.log_handler = CollectinfoLogHandler(clinfo_path)
+        try:
+            CollectinfoRootController.log_handler = CollectinfoLogHandler(clinfo_path)
+        except LogHandlerException as e:
+            raise ShellException(e)
 
         CollectinfoRootController.command = CollectinfoCommandController(
             self.log_handler

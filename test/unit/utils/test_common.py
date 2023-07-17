@@ -13,13 +13,14 @@
 # limitations under the License.
 
 from datetime import datetime
+import asynctest
 from parameterized import parameterized
 import unittest
 
 from lib.utils import common, util
 
 
-class ComputeLicenseDataSizeTest(unittest.TestCase):
+class ComputeLicenseDataSizeTest(asynctest.TestCase):
     maxDiff = None
 
     def run_test_case(
@@ -588,7 +589,7 @@ class ComputeLicenseDataSizeTest(unittest.TestCase):
             )
 
 
-class CreateStopWritesSummaryTests(unittest.TestCase):
+class CreateStopWritesSummaryTests(asynctest.TestCase):
     maxDiff = None
 
     @staticmethod
@@ -1194,10 +1195,43 @@ class CreateStopWritesSummaryTests(unittest.TestCase):
             ),
         ],
     )
-    def test(self, service_stats, ns_stats, ns_config, set_stats, set_config, expected):
+    def test_summary_creation(
+        self, service_stats, ns_stats, ns_config, set_stats, set_config, expected
+    ):
         self.assertDictEqual(
             common.create_stop_writes_summary(
                 service_stats, ns_stats, ns_config, set_stats, set_config
             ),
+            expected,
+        )
+
+    @parameterized.expand(
+        [
+            ({"1.1.1.1": {}, "2.2.2.2": {}}, False),
+            (
+                {
+                    "1.1.1.1": {("test", "testset", "a"): {"stop_writes": False}},
+                    "2.2.2.2": {("test", "testset", "a"): {"stop_writes": False}},
+                },
+                False,
+            ),
+            (
+                {
+                    "1.1.1.1": {
+                        ("test", "testset", "a"): {"stop_writes": False},
+                        ("bar", "testset", "a"): {"stop_writes": False},
+                    },
+                    "2.2.2.2": {
+                        ("test", "testset", "a"): {"stop_writes": False},
+                        ("bar", "testset", "a"): {"stop_writes": True},
+                    },
+                },
+                True,
+            ),
+        ]
+    )
+    def test_active_stop_writes(self, stop_writes_dict, expected):
+        self.assertEqual(
+            common.active_stop_writes(stop_writes_dict),
             expected,
         )

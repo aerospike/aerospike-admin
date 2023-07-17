@@ -88,7 +88,7 @@ integration:
 
 .PHONY: unit-cov
 unit-cov:
-	COVERAGE_PROCESS_START=$(COVERAGE_CONF) coverage run --module $(UNIT_TEST_CMD)
+	coverage run --module $(UNIT_TEST_CMD)
 
 .PHONY: integration-cov
 integration-cov:

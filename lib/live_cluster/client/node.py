@@ -816,7 +816,7 @@ class Node(AsyncObject):
     ###### Services ######
 
     # post 3.10 services
-    def _info_peers_helper(self, peers) -> list[tuple[Addr_Port_TLSName]]:
+    def _info_peers_helper(self, peers) -> list[Addr_Port_TLSName]:
         """
         Takes an info peers list response and returns a list.
         """
@@ -889,7 +889,7 @@ class Node(AsyncObject):
             return "peers-clear-std"
 
     @async_return_exceptions
-    async def info_peers(self):
+    async def info_peers(self) -> list[Addr_Port_TLSName]:
         """
         Get peers this node knows of that are active
 
@@ -905,7 +905,7 @@ class Node(AsyncObject):
             return "alumni-clear-std"
 
     @async_return_exceptions
-    async def info_peers_alumni(self):
+    async def info_peers_alumni(self) -> list[Addr_Port_TLSName]:
         """
         Get peers this node has ever know of
         Note: info_peers_alumni for server version prior to 4.3.1 gives only old nodes
@@ -925,7 +925,7 @@ class Node(AsyncObject):
             return "peers-clear-alt"
 
     @async_return_exceptions
-    async def info_peers_alt(self):
+    async def info_peers_alt(self) -> list[Addr_Port_TLSName]:
         """
         Get peers this node knows of that are active alternative addresses
 
@@ -947,12 +947,12 @@ class Node(AsyncObject):
 
         return calls
 
-    def _aggregate_peers(self, results) -> list[tuple[Addr_Port_TLSName]]:
+    def _aggregate_peers(self, results) -> list[Addr_Port_TLSName]:
         results = [self._info_peers_helper(result) for result in results]
         return list(set().union(*results))
 
     @async_return_exceptions
-    async def info_peers_list(self) -> list[tuple[Addr_Port_TLSName]]:
+    async def info_peers_list(self) -> list[Addr_Port_TLSName]:
         results = await asyncio.gather(
             *[self.info(call) for call in self._get_info_peers_list_calls()]
         )
