@@ -42,7 +42,7 @@ SIZE_HIST_LIST = ["device-read-size", "device-write-size"]
 COUNT_HIST_LIST = ["query-rec-count"]
 
 # Unit map
-UNITS_MAP = {"msec": "ms", "usec": "\u03bcs"}
+UNITS_MAP = {"msec": "ms", "usec": "us"}
 
 
 # relative stats to input histogram

@@ -2061,7 +2061,7 @@ class Node(AsyncObject):
         tdata = hist_info.split(";")
         hist_name = None
         ns = None
-        unit_mapping = {"msec": "ms", "usec": "\u03bcs"}
+        unit_mapping = {"msec": "ms", "usec": "us"}
         time_units = None
         exponent_increment = 1 if exponent_increment <= 0 else exponent_increment
         columns = [
