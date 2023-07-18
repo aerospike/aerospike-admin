@@ -200,7 +200,7 @@ class GetLatenciesController:
             )
             latencies = self.merge_latencies_and_latency_tables(latencies, latency)
 
-        return latencies
+        return util.filter_exceptions(latencies)
 
 
 async def get_sets(cluster, flip, nodes, for_mods: list[str] | None):
@@ -578,7 +578,8 @@ class GetStatisticsController:
         return stat_map
 
     async def get_service(self, nodes="all"):
-        return await self.cluster.info_statistics(nodes=nodes)
+        service_stats = await self.cluster.info_statistics(nodes=nodes)
+        return util.filter_exceptions(service_stats)
 
     async def get_namespace(self, flip=False, nodes="all", for_mods=[]):
         namespace_set = set(await _get_all_namespaces(self.cluster, nodes))
