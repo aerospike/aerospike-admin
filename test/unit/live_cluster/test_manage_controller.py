@@ -1383,7 +1383,7 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
         self.root_controller = LiveClusterCommandController(self.cluster)
         self.node = list(self.cluster.nodes.values())[0]
         self.node.conf_schema_handler = JsonDynamicConfigHandler(
-            constants.CONFIG_SCHEMAS_HOME, "5.5"
+            constants.CONFIG_SCHEMAS_HOME, "5.6.0"
         )
         self.cluster.update_node(self.node)
         self.controller = ManageConfigController()
@@ -1397,34 +1397,21 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_auto_complete(self):
-        class TestCase:
-            def __init__(self, line, possible_completions):
-                self.line = line
-                self.possible_completions = possible_completions
-
-        def run_test(tc: TestCase):
-            actual = self.controller.complete(tc.line.split(" "))
-            self.assertCountEqual(
-                tc.possible_completions,
-                actual,
-                'Failed with input: "{}"'.format(tc.line),
-            )
-
-        test_cases = [
-            TestCase("net", ["network"]),
-            TestCase("network", ["network"]),
-            TestCase("network ", ["fabric", "heartbeat"]),
-            TestCase("network fab", ["fabric"]),
-            TestCase("network fabric", []),
-            TestCase("network fabric ", []),
-            TestCase(
+    @parameterized.expand(
+        [
+            ("net", ["network"]),
+            ("network", ["network"]),
+            ("network ", ["fabric", "heartbeat"]),
+            ("network fab", ["fabric"]),
+            ("network fabric", []),
+            ("network fabric ", []),
+            (
                 "network fabric param",
                 [
                     "param",
                 ],
             ),
-            TestCase(
+            (
                 "network fabric param ",
                 [
                     "channel-bulk-recv-threads",
@@ -1434,74 +1421,79 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
                     "recv-rearm-threshold",
                 ],
             ),
-            TestCase(
+            (
                 "network heartbeat param ",
                 ["connect-timeout-ms", "interval", "mtu", "protocol", "timeout"],
             ),
-            TestCase(
+            (
                 "network heartbeat param protocol",
                 ["protocol to"],
             ),
-            TestCase(
+            (
                 "network heartbeat param protocol ",
                 ["to"],
             ),
-            TestCase(
+            (
                 "network heartbeat param protocol to",
                 ["to"],
             ),
-            TestCase(
+            (
                 "network heartbeat param protocol to none",
                 [],
             ),
-            TestCase(
+            (
                 "namespace",
                 ["namespace"],
             ),
-            TestCase(
+            (
                 "namespace ",
                 ["<ns>"],
             ),
-            TestCase(
+            (
                 "namespace test",
                 [],
             ),
-            TestCase(
+            (
                 "namespace test ",
                 ["geo2dsphere-within", "index-type", "set", "storage-engine"],
             ),
-            TestCase(
+            (
                 "namespace test set ",
                 ["<set>"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param co",
                 ["compression", "compression-level"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression",
                 ["compression", "compression-level"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression ",
                 ["to"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression-level to ",
                 ["<int>"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression-level to <int>",
                 [],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression-level to <int> ",
                 [],
             ),
         ]
-
-        for tc in test_cases:
-            run_test(tc)
+    )
+    def test_auto_complete(self, line, possible_completions):
+        actual = self.controller.complete(line.split(" "))
+        self.assertCountEqual(
+            possible_completions,
+            actual,
+            'Failed with input: "{}"'.format(line),
+        )
 
 
 class ManageSIndexCreateStrToCTXTest(unittest.TestCase):

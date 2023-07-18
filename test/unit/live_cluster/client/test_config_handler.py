@@ -262,7 +262,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.maxDiff = None
-        cls.handler = JsonDynamicConfigHandler("config-schemas", "5.5.0")
+        cls.handler = JsonDynamicConfigHandler("config-schemas", "5.6.0")
 
     def pkgutil_side_effect(self, name, path):
         if path.endswith("schema_map.json"):
@@ -335,7 +335,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
     def test_get_service_params(self):
         expected = [
             "advertise-ipv6",
-            "downgrading",
+            # "downgrading",
             "cluster-name",
             "query-microbenchmark",
             "proto-fd-max",
@@ -383,7 +383,6 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         ]
 
         params = self.handler.get_params(["service"])
-        # print(params)
         self.assertCountEqual(expected, params)
 
     def test_get_service_value(self):
@@ -647,17 +646,17 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         )
 
     def test_get_namespace_set_params(self):
-        expected = ["set-disable-eviction", "set-stop-writes-count"]
+        expected = ["disable-eviction", "stop-writes-count", "enable-index"]
 
         params = self.handler.get_params(["namespace", "set"])
 
         self.assertCountEqual(expected, params)
 
     def test_get_namespace_set_values(self):
-        values = self.handler.get_types(["namespace", "set"], ["set-disable-eviction"])
+        values = self.handler.get_types(["namespace", "set"], ["disable-eviction"])
 
         self.assertEqual(
-            values["set-disable-eviction"],
+            values["disable-eviction"],
             BoolConfigType(True, False),
         )
 
@@ -754,7 +753,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         )
 
     def test_get_security_params(self):
-        expected = ["privilege-refresh-period"]
+        expected = ["privilege-refresh-period", "tps-weight"]
 
         params = self.handler.get_params(["security"])
 
