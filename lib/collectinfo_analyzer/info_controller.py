@@ -109,6 +109,10 @@ class InfoController(CollectinfoCommandController):
 
             for xdr_node in old_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
+                build = builds.get(xdr_node)
+
+                if not build:
+                    continue
 
                 if version.LooseVersion(builds[xdr_node]) < version.LooseVersion(
                     constants.SERVER_NEW_XDR5_VERSION

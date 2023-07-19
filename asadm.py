@@ -253,11 +253,19 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         stat_getter = GetStatisticsController(cluster)
         config_getter = GetConfigController(cluster)
 
-        service_stats = await stat_getter.get_service()
-        ns_stats = await stat_getter.get_namespace()
-        ns_configs = await config_getter.get_namespace()
-        set_stats = await stat_getter.get_sets()
-        set_configs = await config_getter.get_sets()
+        (
+            service_stats,
+            ns_stats,
+            ns_configs,
+            set_stats,
+            set_configs,
+        ) = await asyncio.gather(
+            stat_getter.get_service(),
+            stat_getter.get_namespace(),
+            config_getter.get_namespace(),
+            stat_getter.get_sets(),
+            config_getter.get_sets(),
+        )
         stop_writes_dict = common.create_stop_writes_summary(
             service_stats, ns_stats, ns_configs, set_stats, set_configs
         )

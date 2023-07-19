@@ -200,7 +200,7 @@ class GetLatenciesController:
             )
             latencies = self.merge_latencies_and_latency_tables(latencies, latency)
 
-        return latencies
+        return util.filter_exceptions(latencies)
 
 
 async def get_sets(cluster, flip, nodes, for_mods: list[str] | None):
@@ -578,7 +578,8 @@ class GetStatisticsController:
         return stat_map
 
     async def get_service(self, nodes="all"):
-        return await self.cluster.info_statistics(nodes=nodes)
+        service_stats = await self.cluster.info_statistics(nodes=nodes)
+        return util.filter_exceptions(service_stats)
 
     async def get_namespace(self, flip=False, nodes="all", for_mods=[]):
         namespace_set = set(await _get_all_namespaces(self.cluster, nodes))
@@ -613,6 +614,7 @@ class GetStatisticsController:
         self, flip=False, nodes="all", for_mods: list[str] | None = None
     ):
         stats = await self.cluster.info_sindex(nodes=nodes)
+        stats = util.filter_exceptions(stats)
 
         result = {}
         if stats:
@@ -650,15 +652,18 @@ class GetStatisticsController:
                     sindex_key = "%s %s %s" % (ns, set_, indexname)
 
                     if sindex_key not in result:
-                        result[sindex_key] = {}
-                    result[sindex_key] = await self.cluster.info_sindex_statistics(
-                        ns, indexname, nodes=nodes
-                    )
-                    for node in result[sindex_key]:
+                        # Only call this once per sindex
+                        result[sindex_key] = await self.cluster.info_sindex_statistics(
+                            ns, indexname, nodes=nodes
+                        )
+
+                    for node in list(result[sindex_key]):
                         if not result[sindex_key][node] or isinstance(
                             result[sindex_key][node], Exception
                         ):
+                            del result[sindex_key][node]
                             continue
+
                         for key, value in stat.items():
                             result[sindex_key][node][key] = value
 
@@ -874,6 +879,10 @@ class GetPmapController:
 
         for _node, partitions in pmap_info.items():
             node_pmap = dict()
+
+            if _node not in cluster_keys or _node not in node_ids:
+                continue
+
             ck = cluster_keys[_node]
             node_id = node_ids[_node]
 

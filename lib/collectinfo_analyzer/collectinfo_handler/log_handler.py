@@ -120,9 +120,9 @@ class CollectinfoLogHandler(object):
             return principal
 
         for node_ip in service_data[timestamp]:
-            temp_principal = service_data[timestamp][node_ip]["cluster_principal"]
+            temp_principal = service_data[timestamp][node_ip].get("cluster_principal")
 
-            if principal and temp_principal != principal:
+            if principal and temp_principal and temp_principal != principal:
                 self.logger.warning("Found multiple cluster principals.")
                 return principal
             elif not principal:
