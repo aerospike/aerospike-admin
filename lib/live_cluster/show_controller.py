@@ -1826,23 +1826,33 @@ class ShowStopWritesController(LiveClusterCommandController):
         self.stat_getter = GetStatisticsController(self.cluster)
 
     async def _do_default(self, line):
-        service_stats = await self.stat_getter.get_service()
-
         if len(self.mods[Modifiers.FOR]) < 2:
-            ns_stats = await self.stat_getter.get_namespace(
-                for_mods=self.mods[Modifiers.FOR]
-            )
-            ns_configs = await self.config_getter.get_namespace(
-                for_mods=self.mods[Modifiers.FOR]
+            (
+                service_stats,
+                ns_stats,
+                ns_configs,
+                set_stats,
+                set_configs,
+            ) = await asyncio.gather(
+                self.stat_getter.get_service(),
+                self.stat_getter.get_namespace(for_mods=self.mods[Modifiers.FOR]),
+                self.config_getter.get_namespace(for_mods=self.mods[Modifiers.FOR]),
+                self.stat_getter.get_sets(for_mods=self.mods[Modifiers.FOR]),
+                self.config_getter.get_sets(for_mods=self.mods[Modifiers.FOR]),
             )
         else:
             ns_stats = {}
             ns_configs = {}
+            (
+                service_stats,
+                set_stats,
+                set_configs,
+            ) = await asyncio.gather(
+                self.stat_getter.get_service(),
+                self.stat_getter.get_sets(for_mods=self.mods[Modifiers.FOR]),
+                self.config_getter.get_sets(for_mods=self.mods[Modifiers.FOR]),
+            )
 
-        set_stats = await self.stat_getter.get_sets(for_mods=self.mods[Modifiers.FOR])
-        set_configs = await self.config_getter.get_sets(
-            for_mods=self.mods[Modifiers.FOR]
-        )
         return self.view.show_stop_writes(
             common.create_stop_writes_summary(
                 service_stats, ns_stats, ns_configs, set_stats, set_configs

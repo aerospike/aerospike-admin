@@ -129,7 +129,7 @@ class TableRenderNoErrorTests(unittest.TestCase):
         util.run_asadm(
             f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{cmd}' -Uadmin -Padmin"
         )
-        time.sleep(60)
+        time.sleep(30)
         cmd = "collectinfo --output-prefix asadm_test_"
         cls.collectinfo_cp = util.run_asadm(
             f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd}' -Uadmin -Padmin"
