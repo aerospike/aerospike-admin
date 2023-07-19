@@ -1660,7 +1660,7 @@ class ShowBestPracticesController(LiveClusterCommandController):
         best_practices = asyncio.create_task(
             self.cluster.info_best_practices(nodes=self.nodes)
         )
-        versions = await versions
+        versions = util.filter_exceptions(await versions)
 
         fully_supported = all(
             [

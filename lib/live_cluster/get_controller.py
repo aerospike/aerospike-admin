@@ -614,6 +614,7 @@ class GetStatisticsController:
         self, flip=False, nodes="all", for_mods: list[str] | None = None
     ):
         stats = await self.cluster.info_sindex(nodes=nodes)
+        stats = util.filter_exceptions(stats)
 
         result = {}
         if stats:
@@ -651,15 +652,18 @@ class GetStatisticsController:
                     sindex_key = "%s %s %s" % (ns, set_, indexname)
 
                     if sindex_key not in result:
-                        result[sindex_key] = {}
-                    result[sindex_key] = await self.cluster.info_sindex_statistics(
-                        ns, indexname, nodes=nodes
-                    )
-                    for node in result[sindex_key]:
+                        # Only call this once per sindex
+                        result[sindex_key] = await self.cluster.info_sindex_statistics(
+                            ns, indexname, nodes=nodes
+                        )
+
+                    for node in list(result[sindex_key]):
                         if not result[sindex_key][node] or isinstance(
                             result[sindex_key][node], Exception
                         ):
+                            del result[sindex_key][node]
                             continue
+
                         for key, value in stat.items():
                             result[sindex_key][node][key] = value
 
@@ -875,6 +879,10 @@ class GetPmapController:
 
         for _node, partitions in pmap_info.items():
             node_pmap = dict()
+
+            if _node not in cluster_keys or _node not in node_ids:
+                continue
+
             ck = cluster_keys[_node]
             node_id = node_ids[_node]
 

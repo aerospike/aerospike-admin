@@ -315,7 +315,7 @@ class CliView(object):
                 ns = key.split()[0]
 
                 sindex_type = (
-                    ns_configs.get(node, {}).get(ns).get("sindex-type", "shmem")
+                    ns_configs.get(node, {}).get(ns, {}).get("sindex-type", "shmem")
                 )
 
                 sindex_stats[node][key]["sindex-type"] = sindex_type

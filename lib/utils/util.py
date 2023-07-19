@@ -620,11 +620,8 @@ def filter_exceptions(data: Any):
             else:
                 filter_exceptions(data[_k])
     elif isinstance(data, list):
-        for _i, val in list(enumerate(data)):
-            if isinstance(val, Exception):
-                del data[_i]
-            else:
-                filter_exceptions(_i)
+        for val in data:
+            filter_exceptions(val)
 
     return data
 

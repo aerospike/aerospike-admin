@@ -1520,9 +1520,17 @@ class ShowUdfsController(CollectinfoCommandController):
 
             node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
             principal_id = self.log_handler.get_principal(timestamp)
-            principal_ip = node_id_to_ip[principal_id]
-            data = udf_data[timestamp][principal_ip]
-            self.view.show_udfs(data, timestamp=timestamp, **self.mods)
+
+            try:
+                principal_ip = node_id_to_ip[principal_id]
+                data = udf_data[timestamp][principal_ip]
+                self.view.show_udfs(data, timestamp=timestamp, **self.mods)
+            except KeyError:
+                data = list(udf_data[timestamp].values())[0]
+                self.view.show_udfs(data, timestamp=timestamp, **self.mods)
+                self.logger.warning(
+                    f"No UDF data found for principal node {principal_id}. Using a random node instead."
+                )
 
 
 @CommandHelp(
@@ -1545,13 +1553,19 @@ class ShowSIndexController(CollectinfoCommandController):
 
             node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
             principal_id = self.log_handler.get_principal(timestamp)
-            principal_ip = node_id_to_ip[principal_id]
-            data_to_process = sindexes_data[timestamp][principal_ip]
 
-            # Re-format data since key = "<ns> <set> <sindex>" and it should be
-            # a list of dictionaries where each dict hold meta for a singel sindex.
-            formatted_data = list(data_to_process.values())
-            self.view.show_sindex(formatted_data, timestamp=timestamp, **self.mods)
+            try:
+                principal_ip = node_id_to_ip[principal_id]
+                data = sindexes_data[timestamp][principal_ip]
+                formatted_data = list(data.values())
+                self.view.show_sindex(formatted_data, timestamp=timestamp, **self.mods)
+            except KeyError:
+                data = list(sindexes_data[timestamp].values())[0]
+                formatted_data = list(data.values())
+                self.view.show_sindex(formatted_data, timestamp=timestamp, **self.mods)
+                self.logger.warning(
+                    f"No sindex data found for principal node {principal_id}. Using a random node instead."
+                )
 
 
 @CommandHelp(
@@ -1695,10 +1709,17 @@ class ShowRacksController(CollectinfoCommandController):
         for timestamp, data in racks_data.items():
             node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
             principal_id = self.log_handler.get_principal(timestamp)
-            principal_ip = node_id_to_ip[principal_id]
-            data = {principal_ip: data[principal_ip]}
 
-            self.view.show_racks(data, timestamp=timestamp, **self.mods)
+            try:
+                principal_ip = node_id_to_ip[principal_id]
+                data = {principal_ip: data[principal_ip]}
+                self.view.show_racks(data, timestamp=timestamp, **self.mods)
+            except KeyError:
+                data = {1: list(data.values())[0]}
+                self.view.show_racks(data, timestamp=timestamp, **self.mods)
+                self.logger.warning(
+                    f"No racks data found for principal node {principal_id}. Using a random node instead."
+                )
 
 
 @CommandHelp(
