@@ -47,7 +47,12 @@ if sys.platform == "linux":
     USE_VALGRIND = False
 else:
     USE_VALGRIND = False
-DOCKER_CLIENT = docker.from_env()
+
+# Fixes issue where call fails during vscode pytest discovery causing not tests to be found
+try:
+    DOCKER_CLIENT = docker.from_env()
+except:
+    pass
 
 # a list of docker instances running server nodes
 NODES = [None for i in range(NODE_CAPACITY)]
