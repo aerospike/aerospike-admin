@@ -872,3 +872,8 @@ class async_cached(Generic[AwaitableType]):
     def __get__(self, obj, objtype):
         """Support instance methods."""
         return functools.partial(self.__call__, obj)
+
+
+def remove_escape_sequence(line):
+    ansi_escape = re.compile(r"(\x9b|\x1b\[)[0-?]*[ -\/]*[@-~]")
+    return ansi_escape.sub("", line)

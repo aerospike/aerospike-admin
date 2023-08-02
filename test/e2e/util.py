@@ -192,11 +192,6 @@ def check_for_subset_in_list_of_lists(actual_list, list_of_expected_sub_lists):
     return False
 
 
-def remove_escape_sequence(line):
-    ansi_escape = re.compile(r"(\x9b|\x1b\[)[0-?]*[ -\/]*[@-~]")
-    return ansi_escape.sub("", line)
-
-
 def check_for_types(actual_lists, expected_types):
     def is_float(x):
         try:
