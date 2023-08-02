@@ -622,7 +622,12 @@ def parse_lscpu_section(cmd_raw_output: str) -> dict[str, Any]:
     for line in output_lines:
         if line == "":
             continue
+
         lineobj = line.rstrip().split(":")
+
+        if len(lineobj) < 2:
+            continue
+
         key = str(lineobj[0])
         val = str(lineobj[1])
         lscpu_data[key.strip()] = val.strip()
@@ -661,7 +666,12 @@ def parse_sysctlall_section(cmd_raw_output) -> dict[str, Any]:
     for line in output_lines:
         if line == "":
             continue
+
         lineobj = line.rstrip().split("=")
+
+        if len(lineobj) < 2:
+            continue
+
         key = str(lineobj[0])
         val = str(lineobj[1])
         sysctlall_data[key.strip()] = val.strip()

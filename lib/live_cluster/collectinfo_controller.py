@@ -491,7 +491,6 @@ class CollectinfoController(LiveClusterCommandController):
 
     async def _dump_collectinfo_json(
         self,
-        timestamp,
         as_logfile_prefix,
         default_user,
         default_pwd,
@@ -829,7 +828,7 @@ class CollectinfoController(LiveClusterCommandController):
             complete_filename = as_logfile_prefix + id + "_aerospike.conf"
             line = f"-o {complete_filename} with {key}"
             await GenerateConfigController().execute(line.split())
-            
+
         level = self.logger.getEffectiveLevel()
         self.logger.setLevel(logging.ERROR)
         results = await asyncio.gather(
@@ -855,6 +854,7 @@ class CollectinfoController(LiveClusterCommandController):
         credential_file: Optional[str],
         snp_count: int,
         wait_time: int,
+        include_logs: bool,
         ignore_errors: bool,
         agent_host: Optional[str] = None,
         agent_port: Optional[str] = None,
@@ -905,7 +905,6 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             await self._dump_collectinfo_json(
-                timestamp,
                 as_logfile_prefix,
                 default_user,
                 default_pwd,
@@ -932,10 +931,19 @@ class CollectinfoController(LiveClusterCommandController):
             self._dump_collectinfo_ascollectinfo(as_logfile_prefix, file_header),
             self._dump_collectinfo_summary(as_logfile_prefix, file_header),
             self._dump_collectinfo_health(as_logfile_prefix, file_header),
-            self._dump_collectinfo_sysinfo(as_logfile_prefix, file_header),
-            self._dump_collectinfo_aerospike_conf(as_logfile_prefix, config_path),
-            self._dump_collectinfo_dynamic_aerospike_conf(as_logfile_prefix),
         ]
+
+        if not enable_ssh or self.cluster.is_localhost_a_node():
+            coroutines.append(
+                self._dump_collectinfo_sysinfo(as_logfile_prefix, file_header)
+            )
+            coroutines.append(
+                self._dump_collectinfo_aerospike_conf(as_logfile_prefix, config_path)
+            )
+        else:
+            self.logger.info(
+                "SSH is enabled. Skipping sysinfo.log and aerospike.conf collection."
+            )
 
         for c in coroutines:
             try:
@@ -1057,6 +1065,14 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
+        include_logs = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--include-logs",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
         output_prefix = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--output-prefix",
@@ -1097,6 +1113,7 @@ class CollectinfoController(LiveClusterCommandController):
             snp_count,
             wait_time,
             ignore_errors,
+            include_logs=include_logs,
             agent_host=agent_host,
             agent_port=agent_port,
             agent_store=agent_store,
