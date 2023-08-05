@@ -61,7 +61,6 @@ def reserved_modifiers(func):
 class CliView(object):
     NO_PAGER, LESS, MORE, SCROLL = range(4)
     pager = NO_PAGER
-    logger = logging.getLogger("asadm")
 
     @staticmethod
     def print_result(out):

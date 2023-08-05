@@ -218,8 +218,8 @@ def configTypeFactory(value):
 
 
 class BaseConfigHandler:
-    def __init__(self):
-        self.logger = logging.getLogger("asadm")
+    def __init__(self, as_build):
+        self.as_build = as_build
 
     def get_subcontext(self, context):
         """

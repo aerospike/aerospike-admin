@@ -39,12 +39,13 @@ STEP = 1000
 SERVER_ID_FETCH_READ_SIZE = 10000
 FILE_READ_ENDS = ["tail", "head"]
 
+logger = logging.getLogger(__name__)
+
 
 class LogReader(object):
     server_log_ext = "/aerospike.log"
     server_log_file_identifier = ["thr_info.c::", "heartbeat_received", "Cluster_size"]
     server_log_file_identifier_pattern = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4} \d{2}:\d{2}:\d{2}(\.\d+){0,3} GMT([-+]\d+){0,1}: (?:INFO|WARNING|DEBUG|DETAIL) \([a-z_:]+\): \([A-Za-z_\.\[\]]+:{1,2}-?[\d]+\)"
-    logger = logging.getLogger("asadm")
 
     def get_server_node_id(
         self, file, fetch_end="tail", read_block_size=SERVER_ID_FETCH_READ_SIZE
@@ -169,7 +170,7 @@ class LogReader(object):
             try:
                 init_dt = tail_dt - self.parse_timedelta(arg_from.strip("- "))
             except Exception:
-                self.logger.warning(
+                logger.warning(
                     "Ignoring relative start time. Can't parse relative start time "
                     + arg_from
                 )
@@ -181,7 +182,7 @@ class LogReader(object):
                     *(time.strptime(arg_from, constants.DT_FMT)[0:6])
                 )
             except Exception as e:
-                self.logger.warning(
+                logger.warning(
                     "Ignoring absolute start time. Can't parse absolute start time "
                     + arg_from
                     + " "

@@ -62,9 +62,10 @@ class _AsyncioSSLConnectionAdapter(SSL.Connection):
             raise BlockingIOError("Wrapped SSL.WantReadError")
 
 
-class ASSocket:
-    logger = logging.getLogger("asadm")
+logger = logging.getLogger(__name__)
 
+
+class ASSocket:
     def __init__(
         self, ip, port, tls_name, user, password, auth_mode, ssl_context, timeout=5
     ):
@@ -212,7 +213,7 @@ class ASSocket:
                 return False
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
         except Exception as e:
-            self.logger.debug(e)
+            logger.debug(e, exc_info=True)
             return False
         return True
 
@@ -227,7 +228,7 @@ class ASSocket:
                 return False
 
         except Exception as e:
-            self.logger.debug(e)
+            logger.debug(e, exc_info=True)
             return False
 
         return True

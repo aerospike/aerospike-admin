@@ -23,6 +23,7 @@ import logging
 import operator
 import os
 import platform
+import shutil
 from typing import (
     Any,
     Literal,
@@ -50,7 +51,7 @@ from lib.utils.types import (
 )
 from lib.view import terminal
 
-logger = logging.getLogger("asadm")
+logger = logging.getLogger(__name__)
 
 ########## Feature ##########
 
@@ -2777,12 +2778,6 @@ def _collectinfo_content(func, cmd=None, alt_cmds=[]):
     except Exception:
         pass
 
-    info_line = constants.COLLECTINFO_PROGRESS_MSG % (
-        fname,
-        (" %s" % (str(cmd)) if cmd else ""),
-    )
-    logger.info(info_line)
-
     o_line = constants.COLLECTINFO_SEPERATOR
 
     o, e = None, None
@@ -2985,7 +2980,14 @@ def get_asd_pids():
     return pids
 
 
-def set_collectinfo_path(timestamp, output_prefix=""):
+class CollectinfoPathInfo:
+    log_dir = ""
+    cf_dir = ""
+    files_prefix = ""
+    output_time = ""
+
+
+def get_collectinfo_path(timestamp, output_prefix=""):
     output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
 
     if output_prefix:
@@ -3002,50 +3004,60 @@ def set_collectinfo_path(timestamp, output_prefix=""):
             else "",
         )
 
-    aslogdir = "/tmp/%scollect_info_" % (aslogdir_prefix) + output_time
-    as_logfile_prefix = aslogdir + "/" + output_time + "_"
+    cf_path_info = CollectinfoPathInfo()
 
-    os.makedirs(aslogdir)
+    cf_path_info.cf_dir = f"/tmp/{aslogdir_prefix}collect_info_{output_time}"
+    cf_path_info.log_dir = f"/tmp/{aslogdir_prefix}collect_logs_{output_time}"
+    cf_path_info.files_prefix = output_time + "_"
+    cf_path_info.output_time = output_time
 
-    return aslogdir, as_logfile_prefix
+    os.makedirs(cf_path_info.cf_dir)
+
+    return cf_path_info
 
 
 def archive_log(logdir):
     _zip_files(logdir)
-    util.shell_command(["tar -czvf " + logdir + ".tgz " + logdir])
-    print("\n\n\n")
-    logger.info("Files in " + logdir + " and " + logdir + ".tgz saved.")
+    archive = logdir + ".tgz"
+    util.shell_command(["tar -czvf " + archive + " " + logdir])
+    logger.info("Files in " + logdir + " and " + archive + " saved.")
+    return archive
 
 
-def print_collectinfo_summary(logdir, failed_cmds):
+def print_collectinfo_summary(cf_archive, log_archive=None, failed_cmds=None):
     if failed_cmds:
         logger.warning(
             "Following commands are either unavailable or giving runtime error..."
         )
         logger.warning(list(set(failed_cmds)))
+    logger.info("END OF ASCOLLECTINFO")
 
     print("\n")
-    logger.info("Please provide file " + logdir + ".tgz to Aerospike Support.")
-    logger.info("END OF ASCOLLECTINFO")
+    if log_archive:
+        logger.info(
+            f"Please provide file {cf_archive} and {log_archive} to Aerospike Support."
+        )
+    else:
+        logger.info(f"Please provide file {cf_archive} to Aerospike Support.")
 
     # If multiple commands are given in execute_only mode then we might need coloring for next commands
     terminal.enable_color(True)
 
 
-def collect_sys_info(port=3000, timestamp="", outfile=""):
+def collect_sys_info(port=3000, file_header="", outfile=""):
     failed_cmds = []
 
     cluster_online = True
     aslogdir = ""
 
-    if not timestamp:
+    if not file_header:
         cluster_online = False
         ts = time.gmtime()
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", ts)
-        aslogdir, as_logfile_prefix = set_collectinfo_path(ts)
+        file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", ts)
+        aslogdir, as_logfile_prefix = get_collectinfo_path(ts)
         outfile = as_logfile_prefix + "sysinfo.log"
 
-    util.write_to_file(outfile, timestamp)
+    util.write_to_file(outfile, file_header)
 
     try:
         for cmds in get_system_commands(port=port):

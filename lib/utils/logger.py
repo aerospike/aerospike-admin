@@ -122,7 +122,7 @@ class LogFormatter(DebugFormatter):
 
 logging.setLoggerClass(BaseLogger)
 logging.basicConfig()
-logger = logging.getLogger("asadm")
+logger = logging.getLogger("lib")
 logger.propagate = False
 logger.setLevel(logging.INFO)
 logging_handler = logging.StreamHandler()

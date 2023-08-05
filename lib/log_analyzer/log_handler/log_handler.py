@@ -38,9 +38,9 @@ TIME_SEPARATOR = ":"
 HH = 0
 MM = 1
 SS = 2
-
-
 ######################
+
+logger = logging.getLogger(__name__)
 
 
 class LogHandler(object):
@@ -51,7 +51,6 @@ class LogHandler(object):
 
     def __init__(self, log_path):
         self.log_path = log_path
-        self.logger = logging.getLogger("asadm")
 
         self.reader = LogReader()
 
@@ -60,7 +59,7 @@ class LogHandler(object):
         # Continue in case of error as well. Files
         # can be added later
         if log_added == 0:
-            self.logger.info(err)
+            logger.info(err)
 
         fg_color_re = re.compile("^(fg_(.*))$")
         self.fg_colors = [
@@ -96,13 +95,13 @@ class LogHandler(object):
             for log_file in self._get_valid_log_files(log_path):
                 status, err_str = self._add_log_file(log_file)
                 if status:
-                    self.logger.info("Added Log File " + str(log_file) + ".")
+                    logger.info("Added Log File " + str(log_file) + ".")
                     server_logs_added += 1
 
         elif os.path.isfile(log_path):
             status, err_str = self._add_log_file(log_path)
             if status:
-                self.logger.info("Added Log File " + str(log_path) + ".")
+                logger.info("Added Log File " + str(log_path) + ".")
                 server_logs_added += 1
             else:
                 return server_logs_added, err_str
@@ -163,7 +162,7 @@ class LogHandler(object):
                 log = log_names[int(index) - 1]
 
                 if log in self.all_logs:
-                    self.logger.info(
+                    logger.info(
                         "Removed Log File " + str(self.all_logs[log].file_name) + "."
                     )
                     self.all_logs[log].destroy()
@@ -173,7 +172,7 @@ class LogHandler(object):
                     del self.selected_logs[log]
 
             except Exception as e:
-                self.logger.warning(
+                logger.warning(
                     "Ignoring remove operation for index %s. Error: %s"
                     % (str(index), str(e))
                 )

@@ -22,6 +22,8 @@ from lib.utils import common, log_util, util, constants
 from lib.utils.constants import NodeSelection, NodeSelectionType
 from .collectinfo_log import CollectinfoLog
 
+logger = logging.getLogger(__name__)
+
 ###### Constants ######
 DATE_SEG = 0
 YEAR = 0
@@ -59,7 +61,6 @@ class CollectinfoLogHandler(object):
             cinfo_path, dest_dir=self.collectinfo_dir
         )
         self.cinfo_timestamp = None
-        self.logger = logging.getLogger("asadm")
 
         try:
             self._add_cinfo_log_files(cinfo_path)

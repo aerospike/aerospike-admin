@@ -40,7 +40,7 @@ except Exception:
     # fatal when authentication is required.
     hasbcrypt = False
 
-logger = logging.getLogger("asadm")
+logger = logging.getLogger(__name__)
 
 
 # There are three different headers referenced here in the code. I am adding

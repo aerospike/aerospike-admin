@@ -19,12 +19,13 @@ from lib.base_controller import ShellException
 
 from .log_analyzer_command_controller import LogAnalyzerCommandController
 
+logger = logging.getLogger(__name__)
+
 
 class GrepFile(LogAnalyzerCommandController):
     def __init__(self, modifiers, required_modifiers):
         self.modifiers = modifiers
         self.required_modifiers = required_modifiers
-        self.logger = logging.getLogger("asadm")
 
     def do_show(self, line):
         if not line:
@@ -74,7 +75,7 @@ class GrepFile(LogAnalyzerCommandController):
                 try:
                     output_page_size = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.warning("Wrong output page size, setting default value")
+                    logger.warning("Wrong output page size, setting default value")
             elif word == "-n":
                 try:
                     sources = [
@@ -101,7 +102,7 @@ class GrepFile(LogAnalyzerCommandController):
         logs = self.log_handler.get_logs_by_index(sources)
 
         if not logs:
-            self.logger.info("No log files added. Use add command to add log files.")
+            logger.info("No log files added. Use add command to add log files.")
 
         show_results = self.log_handler.grep(
             logs,
@@ -167,12 +168,12 @@ class GrepFile(LogAnalyzerCommandController):
                 try:
                     output_page_size = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.warning("Wrong output page size, setting default value")
+                    logger.warning("Wrong output page size, setting default value")
             elif word == "-r":
                 try:
                     title_every_nth = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.warning(
+                    logger.warning(
                         "Wrong output title repetition value, setting default value"
                     )
             elif word == "-f":
@@ -210,7 +211,7 @@ class GrepFile(LogAnalyzerCommandController):
         logs = self.log_handler.get_logs_by_index(sources)
 
         if not logs:
-            self.logger.info("No log files added. Use add command to add log files.")
+            logger.info("No log files added. Use add command to add log files.")
 
         count_results = self.log_handler.grep_count(
             logs,
@@ -289,12 +290,12 @@ class GrepFile(LogAnalyzerCommandController):
                 try:
                     output_page_size = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.warning("Wrong output page size, setting default value")
+                    logger.warning("Wrong output page size, setting default value")
             elif word == "-r":
                 try:
                     title_every_nth = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.warning(
+                    logger.warning(
                         "Wrong output title repetition value, setting default value"
                     )
             elif word == "-n":
@@ -326,7 +327,7 @@ class GrepFile(LogAnalyzerCommandController):
         logs = self.log_handler.get_logs_by_index(sources)
 
         if not logs:
-            self.logger.info("No log files added. Use add command to add log files.")
+            logger.info("No log files added. Use add command to add log files.")
 
         diff_results = self.log_handler.grep_diff(
             logs,
@@ -397,12 +398,12 @@ class GrepFile(LogAnalyzerCommandController):
                 try:
                     output_page_size = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.warning("Wrong output page size, setting default value")
+                    logger.warning("Wrong output page size, setting default value")
             elif word == "-r":
                 try:
                     title_every_nth = int(util.strip_string(tline.pop(0)))
                 except Exception:
-                    self.logger.warning(
+                    logger.warning(
                         "Wrong output title repetition value, setting default value"
                     )
             elif word == "-n":
@@ -438,7 +439,7 @@ class GrepFile(LogAnalyzerCommandController):
         logs = self.log_handler.get_logs_by_index(sources)
 
         if not logs:
-            self.logger.info(
+            logger.info(
                 "No log files added. Use 'add /path/to/log' command to add log files."
             )
 

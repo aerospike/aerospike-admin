@@ -1,34 +1,37 @@
 import asyncio
+import os
 import asyncssh
-from lib.live_cluster.client.cluster import Cluster
-from lib.utils.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
+# logger.setLevel(logging.CRITICAL)
 
 
 class SSHConnection:
-    _in_use = False
-
-    def __init__(self, conn: asyncssh.SSHClientConnection):
+    def __init__(self, conn: asyncssh.SSHClientConnection, max_sessions: int = 10):
         self._conn = conn
-        SSHConnection._in_use = False
+        self._max_sessions_sem = asyncio.Semaphore(max_sessions)
+        self._num_sessions = 0  # Could be used to sort a priority queue of connections
 
     async def run(self, cmd: str) -> asyncssh.SSHCompletedProcess:
-        if self._in_use:
-            logger.fatal(
-                "SSHConnection is already in use. To make concurrent calls to the same host, create a new connection."
-            )
-
-        SSHConnection._in_use = True
-
+        logger.debug(
+            f"{self._conn.get_extra_info('peername')}: Running command on remote: {cmd}"
+        )
         try:
-            return await self._conn.run(cmd, check=True, timeout=5)
+            async with self._max_sessions_sem:
+                self._num_sessions += 1
+                proc = await self._conn.run(cmd, check=True, timeout=10)
+                self._num_sessions -= 1
+                return proc
         except asyncssh.TimeoutError as e:
+            logger.error(f"Timeout error: {e.reason}")
             raise SSHTimeoutError(e)
         except asyncssh.ProcessError as e:
+            logger.error(f"Process error: {e.stderr}")
             raise SSHNonZeroExitCodeError(e)
         except asyncssh.Error as e:
+            logger.error(f"Generic error: {e.reason}")
             raise SSHError(e)
-        finally:
-            SSHConnection._in_use = False
 
     async def close(self):
         self._conn.close()
@@ -51,21 +54,12 @@ class SSHConnectionConfig:
         self.private_key_pwd = private_key_pwd
 
 
-class SCPRemoteSrc:
-    def __init__(
-        self,
-        conn: SSHConnection,
-        paths: list[str] | str,
-    ):
-        self.paths = paths
-        self.conn = conn
+RemoteSrc = list[str] | str
+LocalSrc = list[str] | str
+LocalDst = str
 
 
-SCPLocalSrc = list[str] | str
-SCPLocalDst = str
-
-
-class SCPRemoteDest:
+class RemoteDest:
     def __init__(
         self,
         conn: SSHConnection,
@@ -75,7 +69,7 @@ class SCPRemoteDest:
         self.conn = conn
 
 
-class SCPCommand:
+class FileTransfer:
     @staticmethod
     def create_error_handler(errors: list[Exception]):
         def error_handler(exc):
@@ -86,59 +80,91 @@ class SCPCommand:
 
     @staticmethod
     async def remote_to_local(
-        src_paths: SCPRemoteSrc, dest_path: SCPLocalDst, parallel: bool = False
-    ):
-        src_conns: list[tuple[asyncssh.SSHClientConnection, str]] = []
+        paths: list[tuple[RemoteSrc, LocalDst]],
+        src_conn: SSHConnection,
+        # TODO: Maybe allow another error_handler to be passed in
+    ) -> list[Exception]:
+        # TODO: Handle rate limiting
+        logger.debug(
+            f"{src_conn._conn.get_extra_info('peername')}: Starting remote to local file transfer"
+        )
+        errors = []
+        error_handler = FileTransfer.create_error_handler(errors)
+        tasks = []
+        sftp_session = (
+            await src_conn._conn.start_sftp_client()
+        )  # You can have multiple sftp sessions per connection. The default is 10. We are only using 1 per node here.
 
-        for path in src_paths.paths:
-            src_conns.append(
-                (
-                    src_paths.conn._conn,
-                    path,
+        for src, dst in paths:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+
+            if isinstance(src, str):
+                src = [src]
+
+            if len(src) > 1:
+                logger.debug(
+                    f"{src_conn._conn.get_extra_info('peername')}: Multiple source paths provided for a single destination. Destination must be a path to a directory."
+                )
+
+            logger.info(
+                f"{src_conn._conn.get_extra_info('peername')}: Initiating transfer of {src[0] if len(src)> 0 else src} to {dst}"
+            )
+            tasks.append(
+                sftp_session.get(
+                    src, dst, recurse=True, preserve=True, error_handler=error_handler
                 )
             )
 
-        errors = []
-        error_handler = SCPCommand.create_error_handler(errors)
+        await asyncio.gather(*tasks)
+        logger.debug("Finished remote to local file transfer")
 
-        if parallel:
-            # use a new ssh connection for each source path
-            await asyncio.gather(
-                *[
-                    asyncssh.scp(
-                        src_conn,
-                        dest_path,
-                        preserve=True,
-                        recurse=True,
-                        error_handler=error_handler,  # Won't throw exceptions
-                    )
-                    for src_conn in src_conns
-                ],
-            )
-        else:
-            await asyncssh.scp(
-                src_conns,
-                dest_path,
-                preserve=True,
-                recurse=True,
-                error_handler=error_handler,  # Won't throw exceptions
-            )
+        return errors
 
         # TODO: need to handle the case where there are no successful transfers
 
     @staticmethod
-    async def remote_to_remote(src_paths: SCPRemoteSrc, dest_path: SCPRemoteDest):
+    async def remote_to_remote(src_paths: RemoteSrc, dest_path: RemoteDest):
+        # This can try to run sftp on the remote host to copy files directly from one remote host to another
+        # and if that fails it can fallback to remote -> local -> remote
         raise NotImplementedError("remote to remote scp not implemented")
 
     @staticmethod
-    async def local_to_remote(src_paths: SCPLocalSrc, dest_path: SCPRemoteDest):
+    async def local_to_remote(src_paths: LocalSrc, dest_path: RemoteDest):
         raise NotImplementedError("local to remote scp not implemented")
 
 
 class SSHConnectionFactory:
-    def __init__(self, ip, ssh_config: SSHConnectionConfig | None = None):
+    """
+    Static dict of ip -> (semaphore, Number of SSHConnectionFactory objects using this ip)
+    This will allow us to limit the number of connections being created to a single host across all SSHConnectionFactory objects
+    """
+
+    class SemaphoreCountValue:
+        def __init__(self, semaphore: asyncio.Semaphore, count: int) -> None:
+            self.semaphore = semaphore
+            self.count = count
+
+    semaphore_host_dict: dict[str, SemaphoreCountValue] = {}
+
+    def __init__(
+        self, ip, ssh_config: SSHConnectionConfig | None = None, max_startups: int = 10
+    ):
+        """
+        max_startups: The maximum number connections that can be in the process of initialising at any time.
+                      Not to be confused with the maximum number of connections that can be active at any time.
+        """
         self.ip = ip
         self.opts = None
+
+        if self.ip not in SSHConnectionFactory.semaphore_host_dict:
+            SSHConnectionFactory.semaphore_host_dict[
+                self.ip
+            ] = SSHConnectionFactory.SemaphoreCountValue(
+                asyncio.Semaphore(max_startups),
+                1,
+            )
+        else:
+            SSHConnectionFactory.semaphore_host_dict[self.ip].count += 1
 
         if ssh_config is not None:
             self.opts = asyncssh.SSHClientConnectionOptions()
@@ -153,9 +179,20 @@ class SSHConnectionFactory:
             if ssh_config.private_key:
                 self.opts.prepare(client_keys=ssh_config.private_key)
 
-    # TODO: Maybe connection should be wrapped?
     async def create_connection(self) -> SSHConnection:
-        return SSHConnection(await asyncssh.connect(self.ip, options=self.opts))
+        logger.debug(f"{self.ip}: Checking semaphore before creating connection")
+        async with SSHConnectionFactory.semaphore_host_dict[self.ip].semaphore:
+            logger.debug(f"{self.ip}: Creating connection")
+            return SSHConnection(await asyncssh.connect(self.ip, options=self.opts))
+
+    def close(self):
+        SSHConnectionFactory.semaphore_host_dict[self.ip].count -= 1
+
+        if SSHConnectionFactory.semaphore_host_dict[self.ip].count == 0:
+            logger.debug(
+                f"{self.ip}: Host has no other factories. Cleaning up host semaphore"
+            )
+            del SSHConnectionFactory.semaphore_host_dict[self.ip]
 
 
 class SSHError(Exception):

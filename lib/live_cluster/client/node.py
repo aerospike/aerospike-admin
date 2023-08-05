@@ -20,10 +20,8 @@ import re
 import socket
 import threading
 import time
-import asyncssh
 import base64
 from typing import Any, Callable, Optional, Union
-from lib.live_cluster import ssh
 from lib.live_cluster.ssh import (
     SSHConnectionConfig,
     SSHConnectionFactory,
@@ -35,7 +33,7 @@ from lib.live_cluster.ssh import (
 from lib.utils import common, constants, util, version, logger_debug, conf_parser
 from lib.utils.async_object import AsyncObject
 
-from .constants import DEFAULT_CONFIG_PATH, ErrorsMsgs
+from .constants import ErrorsMsgs
 from .ctx import CDTContext
 from .msgpack import ASPacker
 from .assocket import ASSocket
@@ -55,7 +53,7 @@ from .types import (
     Addr_Port_TLSName,
 )
 
-logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
+logger = logging.getLogger(__name__)
 
 
 def get_fully_qualified_domain_name(address, timeout=0.5):
@@ -181,7 +179,7 @@ class Node(AsyncObject):
         ssl_context=None,
         consider_alumni=False,
         use_services_alt=False,
-    ):
+    ) -> None:
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -195,7 +193,6 @@ class Node(AsyncObject):
         access port. Can we detect from the socket?
         ALSO NOTE: May be better to just use telnet instead?
         """
-        self.logger = logging.getLogger("asadm")
         self.remote_system_command_prompt = "[#$] "
         self.ip: str = address
         self.port: int = port
@@ -229,6 +226,7 @@ class Node(AsyncObject):
         self.sys_default_pwd = None
         self.sys_default_ssh_key = None
 
+        # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
         self.sys_cmds: list[_SysCmd] = [
             _SysCmd(
@@ -342,7 +340,9 @@ class Node(AsyncObject):
         self.peers_generation = -1
         self.service_addresses = []
         self._initialize_socket_pool()
-        await self.connect(address, port)
+        await self.connect(
+            address, port
+        )  # TODO Init and connect steps should be separate
         self.localhost = False
 
         try:
@@ -466,7 +466,7 @@ class Node(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception as e:
-            self.logger.debug(e)  # type: ignore
+            logger.debug(e, exc_info=True)  # type: ignore
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -519,24 +519,24 @@ class Node(AsyncObject):
 
         try:
             if not await sock.login():
-                self.logger.debug(
+                logger.debug(
                     "%s:%s failed to login to socket %s", self.ip, self.port, sock
                 )
                 await sock.close()
                 return False
         except ASProtocolError as e:
             if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
-                self.logger.debug(
+                logger.debug(
                     "%s:%s failed to login to socket, security not enabled, ignoring... %s",
                     self.ip,
                     self.port,
                     sock,
                 )
                 if not Node.security_disabled_warning:
-                    self.logger.warning(e)
+                    logger.warning(e)
                     Node.security_disabled_warning = True
             else:
-                self.logger.debug(
+                logger.debug(
                     "%s:%s failed to login to socket %s, exc: %s",
                     self.ip,
                     self.port,
@@ -549,9 +549,7 @@ class Node(AsyncObject):
         self.socket_pool[self.port].add(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
-        self.logger.debug(
-            "%s:%s successful login to socket %s", self.ip, self.port, sock
-        )
+        logger.debug("%s:%s successful login to socket %s", self.ip, self.port, sock)
         return True
 
     @property
@@ -644,6 +642,9 @@ class Node(AsyncObject):
 
         try:
             while True:
+                if not self.socket_pool[port]:
+                    break
+
                 sock = self.socket_pool[port].pop()
 
                 if await sock.is_connected():
@@ -653,7 +654,7 @@ class Node(AsyncObject):
                 sock = None
 
         except Exception as e:
-            self.logger.debug(e)
+            logger.debug(e, exc_info=True)
 
         if sock:
             return sock
@@ -669,15 +670,15 @@ class Node(AsyncObject):
             timeout=self._timeout,
         )
 
-        self.logger.debug("%s:%s created new sock %s", ip, port, id(sock))
+        logger.debug("%s:%s created new sock %s", ip, port, id(sock))
 
         if await sock.connect():
             try:
                 if await sock.authenticate(self.session_token):
-                    self.logger.debug("sock auth successful %s", id(sock))
+                    logger.debug("sock auth successful %s", id(sock))
                     return sock
             except ASProtocolError as e:
-                self.logger.debug("sock auth failed %s", id(sock))
+                logger.debug("sock auth failed %s", id(sock))
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
@@ -688,19 +689,17 @@ class Node(AsyncObject):
                 ):
                     # A node likely switched from security disabled to security enable.
                     # In which case the error is caused by login never being called.
-                    self.logger.debug("trying to sock login again %s", id(sock))
+                    logger.debug("trying to sock login again %s", id(sock))
                     self.perform_login = True
                     await self.login()
                     if await sock.authenticate(self.session_token):
-                        self.logger.debug(
-                            "sock auth successful on second try %s", id(sock)
-                        )
+                        logger.debug("sock auth successful on second try %s", id(sock))
                         return sock
 
                 await sock.close()
                 raise
 
-        self.logger.debug("sock connect failed %s", id(sock))
+        logger.debug("sock connect failed %s", id(sock))
         return None
 
     async def close(self):
@@ -755,7 +754,7 @@ class Node(AsyncObject):
                     await sock.close()
 
             if result is not None:
-                self.logger.debug(
+                logger.debug(
                     "%s:%s info cmd '%s' and sock %s returned %s",
                     self.ip,
                     self.port,
@@ -772,7 +771,7 @@ class Node(AsyncObject):
             if sock:
                 await sock.close()
 
-            self.logger.debug(
+            logger.debug(
                 "%s:%s info cmd '%s' and sock %s raised %s for",
                 self.ip,
                 self.port,
@@ -3220,7 +3219,7 @@ class Node(AsyncObject):
             try:
                 f = open(self.sys_credential_file, "r")
             except IOError as e:
-                self.logger.warning(
+                logger.warning(
                     "Ignoring credential file. cannot open credential file. \n%s."
                     % (str(e))
                 )
@@ -3275,7 +3274,7 @@ class Node(AsyncObject):
                 except Exception:
                     pass
         except Exception as e:
-            self.logger.warning("Ignoring credential file.\n%s." % (str(e)))
+            logger.warning("Ignoring credential file.\n%s." % (str(e)))
         finally:
             if f:
                 f.close()
@@ -3298,7 +3297,7 @@ class Node(AsyncObject):
         self.sys_ssh_port = self.sys_default_ssh_port
 
     def _get_localhost_system_statistics(self, commands):
-        self.logger.info(
+        logger.info(
             f"Collecting system information for localhost ({self.ip}:{self.port})"
         )
 
@@ -3346,14 +3345,14 @@ class Node(AsyncObject):
                 private_key=self.sys_ssh_key,
                 private_key_pwd=self.sys_pwd,
             )
-            conn = await SSHConnectionFactory(self.ip, conn_config).create_connection()
-            self.logger.info(
-                f"Collecting local system info for remote host {self.ip}:{self.port}"
-            )
+            conn_factory = SSHConnectionFactory(self.ip, conn_config)
+            conn = await conn_factory.create_connection()
+            conn_factory.close()
+            logger.info(f"({self.ip}): Collecting system info for remote host")
 
         except SSHError as e:
-            self.logger.warning(
-                f"Ignoring system statistics collection. Couldn't make SSH login to remote server {self.ip}:{port} : {e.reason}"
+            logger.warning(
+                f"({self.ip}, {port}): Ignoring system statistics collection. Couldn't make SSH login to remote server : {e}"
             )
 
         if not conn:
@@ -3390,7 +3389,7 @@ class Node(AsyncObject):
         except SSHError as e:
             # Catches async.ChannelOpenError
             port = "22" if self.sys_ssh_port is None else str(self.sys_ssh_port)
-            self.logger.warning(
+            logger.warning(
                 f"Ignoring system statistics collection. Couldn't get or parse remote system stats for remote server {self.ip}:{port} : {e}"
             )
 
