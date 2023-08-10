@@ -13,6 +13,7 @@
 # limitations under the License.
 import asyncio
 import copy
+import logging
 import time
 
 from lib.health import util as health_util
@@ -24,6 +25,8 @@ from lib.utils import util
 from lib.base_controller import CommandHelp, ModifierHelp
 
 from .live_cluster_command_controller import LiveClusterCommandController
+
+logger = logging.getLogger(__name__)
 
 
 @CommandHelp(
@@ -745,7 +748,7 @@ class HealthCheckController(LiveClusterCommandController):
             sn_ct = 0
             sleep = sleep_tm * 1.0
 
-            self.logger.info(
+            logger.info(
                 "Collecting "
                 + str(snap_count)
                 + " collectinfo snapshot. Use -n to set number of snapshots."
@@ -836,7 +839,7 @@ class HealthCheckController(LiveClusterCommandController):
                         )
 
                 sn_ct += 1
-                self.logger.info("Snapshot " + str(sn_ct))
+                logger.info("Snapshot " + str(sn_ct))
                 time.sleep(sleep)
 
             health_input = health_util.h_eval(health_input)
@@ -846,7 +849,7 @@ class HealthCheckController(LiveClusterCommandController):
             HealthCheckController.last_snapshot_count = snap_count
 
         else:
-            self.logger.info(
+            logger.info(
                 "Using previous collected snapshot data since it is not older than 1 minute."
             )
 
@@ -862,4 +865,4 @@ class HealthCheckController(LiveClusterCommandController):
                 output_filter_warning_level,
             )
             if not verbose:
-                self.logger.info("Please use -v option for more details on failure. \n")
+                logger.info("Please use -v option for more details on failure. \n")

@@ -659,4 +659,4 @@ class HealthCheckController(CollectinfoCommandController):
                 output_filter_warning_level=output_filter_warning_level,
             )
             if not verbose:
-                self.logger.info("Please use -v option for more details on failure. \n")
+                logger.info("Please use -v option for more details on failure. \n")

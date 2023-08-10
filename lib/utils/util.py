@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+from asyncio.subprocess import Process
 import contextlib
 import copy
 import functools
@@ -20,6 +21,7 @@ import inspect
 import io
 import pipes
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -41,9 +43,7 @@ from typing import (
     overload,
 )
 
-from lib.utils import logger_debug
-
-logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
+logger = logging.getLogger(__name__)
 
 
 def callable(func, *args, **kwargs):
@@ -61,12 +61,28 @@ def shell_command(command) -> tuple[str, str]:
     command = ["bash", "-c", "'%s'" % (command)]
     try:
         p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
         out, err = p.communicate()
     except Exception:
         return "", "error"
     else:
         return bytes_to_str(out), bytes_to_str(err)
+
+
+async def async_shell_command(command: str) -> Process | None:
+    """
+    command is a list of ['cmd','arg1','arg2',...]
+    """
+
+    try:
+        return await asyncio.create_subprocess_exec(
+            "bash",
+            *["-c", f"{command}"],
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+    except Exception:
+        logger.debug("Error running command: %s", command)
+        return None
 
 
 async def capture_stdout(func, *args, **kwargs):

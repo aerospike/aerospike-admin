@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+import logging
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp
 from lib.utils import common, util, version, constants
 from lib.utils.constants import ModifierUsage, Modifiers
@@ -30,6 +31,8 @@ from lib.live_cluster.get_controller import (
 
 from .client import ASProtocolError
 from .live_cluster_command_controller import LiveClusterCommandController
+
+logger = logging.getLogger(__name__)
 
 with_modifier_help = ModifierHelp(
     Modifiers.WITH,
@@ -174,7 +177,7 @@ class ShowDistributionController(LiveClusterCommandController):
                 if units is None:
                     units = "Record Blocks"
             except Exception as e:
-                self.logger.error(e)
+                logger.error(e)
                 return
 
             return util.callable(
@@ -281,12 +284,12 @@ class ShowLatenciesController(LiveClusterCommandController):
 
         # No nodes support "show latencies"
         if len(latencies_nodes) == 0:
-            self.logger.warning(
+            logger.warning(
                 "'show latencies' is not fully supported on aerospike versions <= 5.0"
             )
         # Some nodes support latencies and some do not
         elif len(latency_nodes) != 0:
-            self.logger.warning(
+            logger.warning(
                 "'show latencies' is not fully supported on aerospike versions <= 5.0"
             )
 
@@ -585,7 +588,7 @@ class ShowConfigController(LiveClusterCommandController):
 
         futures.append(
             util.callable(
-                self.logger.warning,
+                logger.warning,
                 "'show config dc' is deprecated. Please use 'show config xdr dc' instead.",
             )
         )
@@ -824,7 +827,7 @@ class ShowConfigXDRController(LiveClusterCommandController):
         )
 
         if not fully_supported:
-            self.logger.warning(
+            logger.warning(
                 "Server version 5.3 or newer is required to run 'show config xdr filter'"
             )
 
@@ -1268,7 +1271,7 @@ class ShowStatisticsController(LiveClusterCommandController):
 
         futures.append(
             util.callable(
-                self.logger.warning,
+                logger.warning,
                 "'show statistics dc' is deprecated. Please use 'show statistics xdr dc' instead.",
             )
         )
@@ -1511,7 +1514,7 @@ class ShowUsersController(LiveClusterCommandController):
         resp = list(users_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -1572,7 +1575,7 @@ class ShowRolesController(LiveClusterCommandController):
         resp = list(roles_data.values())[0]
 
         if isinstance(resp, ASProtocolError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -1690,7 +1693,7 @@ class ShowBestPracticesController(LiveClusterCommandController):
         )
 
         if not fully_supported:
-            self.logger.warning(
+            logger.warning(
                 "'show best-practices' is not supported on aerospike versions < {}",
                 constants.SERVER_SHOW_BEST_PRACTICES_FIRST_VERSION,
             )
@@ -1766,7 +1769,7 @@ class ShowJobsController(LiveClusterCommandController):
         # default indicates calling function is _do_default
         if not await self._scans_supported():
             if not default:
-                self.logger.error(
+                logger.error(
                     "Scans were unified into queries in server v. {} and later. Use 'show jobs queries' instead.".format(
                         constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION
                     )
@@ -1798,7 +1801,7 @@ class ShowJobsController(LiveClusterCommandController):
         # default indicates calling function is _do_default
         if not await self._sindex_supported():
             if not default:
-                self.logger.error(
+                logger.error(
                     "SIndex builder jobs were removed in server v. {} and later.".format(
                         constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
                     )

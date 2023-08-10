@@ -318,4 +318,4 @@ class SummaryController(LiveClusterCommandController):
         )
 
         if error is not None:
-            self.logger.error(error)
+            logger.error(error)

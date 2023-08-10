@@ -161,7 +161,7 @@ class ShowConfigXDRControllerTest(asynctest.TestCase):
         self.cluster_mock = self.controller.cluster = AsyncMock()
         self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
         self.view_mock = self.controller.view = create_autospec(CliView)
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.mods = (
             {}
         )  # For some reason they are being polluted from other tests
@@ -278,7 +278,7 @@ class ShowConfigXDRControllerTest(asynctest.TestCase):
             flip_output=False,
             **mods,
         )
-        self.logger_mock.warning.assert_called_once_with(
+        logger_mock.warning.assert_called_once_with(
             "Server version 5.3 or newer is required to run 'show config xdr filter'"
         )
 
@@ -600,7 +600,7 @@ class ShowUsersControllerTest(asynctest.TestCase):
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
         self.getter_mock = self.controller.getter = create_autospec(GetAclController)
         self.view_mock = self.controller.view = create_autospec(CliView)
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
@@ -682,7 +682,7 @@ class ShowUsersControllerTest(asynctest.TestCase):
         await self.controller.execute([])
 
         self.getter_mock.get_users.assert_called_with(nodes="principal")
-        self.logger_mock.error.assert_called_with(as_error)
+        logger_mock.error.assert_called_with(as_error)
         self.view_mock.show_users.assert_not_called()
 
     async def test_raises_error(self):
@@ -709,7 +709,7 @@ class ShowUsersStatsControllerTest(asynctest.TestCase):
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
         self.getter_mock = self.controller.getter = create_autospec(GetAclController)
         self.view_mock = self.controller.view = create_autospec(CliView)
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
@@ -853,7 +853,7 @@ class ShowRolesControllerTest(asynctest.TestCase):
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
         self.getter_mock = self.controller.getter = create_autospec(GetAclController)
         self.view_mock = self.controller.view = create_autospec(CliView)
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
@@ -935,7 +935,7 @@ class ShowRolesControllerTest(asynctest.TestCase):
         await self.controller.execute([])
 
         self.getter_mock.get_roles.assert_called_with(nodes="principal")
-        self.logger_mock.error.assert_called_with(as_error)
+        logger_mock.error.assert_called_with(as_error)
         self.view_mock.assert_not_called()
 
     async def test_raises_error(self):
@@ -962,7 +962,7 @@ class ShowBestPracticesControllerTest(asynctest.TestCase):
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
         self.view_mock = self.controller.view = create_autospec(CliView)
         self.controller.cluster = self.cluster_mock = AsyncMock()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
 
     async def test_full_support(self):
         resp = {
@@ -977,7 +977,7 @@ class ShowBestPracticesControllerTest(asynctest.TestCase):
 
         await self.controller.execute([])
 
-        self.logger_mock.warning.assert_not_called()
+        logger_mock.warning.assert_not_called()
         self.view_mock.show_best_practices.assert_called_with(
             self.cluster_mock, resp, **self.controller.mods
         )
@@ -995,7 +995,7 @@ class ShowBestPracticesControllerTest(asynctest.TestCase):
 
         await self.controller.execute([])
 
-        self.logger_mock.warning.assert_called_with(
+        logger_mock.warning.assert_called_with(
             "'show best-practices' is not supported on aerospike versions < {}", "5.7"
         )
         self.view_mock.show_best_practices.assert_called_with(
@@ -1015,7 +1015,7 @@ class ShowJobsControllerTest(asynctest.TestCase):
         )  # can't use autospec here because info_* cluster functions are not autospec-able
         self.getter_mock = self.controller.getter = create_autospec(GetJobsController)
         self.view_mock = self.controller.view = create_autospec(CliView)
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
 
     async def test_default_6_0(self):
         self.getter_mock.get_query.return_value = "queries"
@@ -1115,7 +1115,7 @@ class ShowJobsControllerTest(asynctest.TestCase):
 
         self.getter_mock.get_scans.assert_not_called()
         self.view_mock.show_jobs.assert_not_called()
-        self.logger_mock.error.assert_called_with(
+        logger_mock.error.assert_called_with(
             "Scans were unified into queries in server v. 6.0 and later. Use 'show jobs queries' instead."
         )
 
@@ -1145,7 +1145,7 @@ class ShowJobsControllerTest(asynctest.TestCase):
 
         self.getter_mock.get_sindex_builder.assert_not_called()
         self.view_mock.show_jobs.assert_not_called()
-        self.logger_mock.error.assert_called_with(
+        logger_mock.error.assert_called_with(
             "SIndex builder jobs were removed in server v. 5.7 and later."
         )
 
@@ -1158,7 +1158,7 @@ class ShowRosterControllerTest(asynctest.TestCase):
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
         self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
         self.view_mock = self.controller.view = create_autospec(CliView)
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.getter = self.getter_mock
         self.controller.mods = {}
 
@@ -1228,7 +1228,7 @@ class ShowRacksControllerTest(asynctest.TestCase):
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
         self.getter_mock = self.controller.getter = create_autospec(GetConfigController)
         self.view_mock = self.controller.view = create_autospec(CliView)
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.mods = {}
 
         self.addCleanup(patch.stopall)
@@ -1261,7 +1261,7 @@ class ShowStopWritesControllerTest(asynctest.TestCase):
             "lib.utils.common.create_stop_writes_summary",
             MagicMock(),
         ).start()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.controller.mods = {}
 
         self.addCleanup(patch.stopall)

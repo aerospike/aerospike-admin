@@ -12,21 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from distutils import debug
 from enum import Enum
-import logging
 import traceback
 from sys import exit
 from typing import Optional
-from lib.utils.logger_debug import DebugFormatter
 
 
 from lib.view import terminal
 
+exit_code = 0
+
+
+def get_exit_code():
+    global exit_code
+    return exit_code
+
+
+def set_exit_code(code):
+    global exit_code
+    exit_code = code
+
 
 class BaseLogger(logging.Logger, object):
-    execute_only_mode = False
-
     def _handle_exception(self, msg):
         if (
             isinstance(msg, Exception)
@@ -37,40 +46,24 @@ class BaseLogger(logging.Logger, object):
             traceback.print_exc()
 
     def debug(self, msg, *args, **kwargs):
-        include_traceback = (
-            "include_traceback" in kwargs and kwargs["include_traceback"]
-        )
-
-        if include_traceback:
-            del kwargs["include_traceback"]
-
         kwargs["stacklevel"] = kwargs.get("stacklevel", 1) + 1
 
         super().debug(msg, *args, **kwargs)
 
-        if (
-            self.level <= logging.DEBUG
-            and include_traceback
-            and isinstance(msg, Exception)
-        ):
-            traceback.print_exc()
-
     def error(self, msg, *args, **kwargs):
         super().error(msg, *args, **kwargs)
+        # global g_exit_code
 
         if self.level <= logging.ERROR:
             self._handle_exception(msg)
-
-            if self.execute_only_mode:
-                exit(2)
+            set_exit_code(1)
 
     def critical(self, msg, *args, **kwargs):
         super().critical(msg, *args, **kwargs)
 
         if self.level <= logging.CRITICAL:
             self._handle_exception(msg)
-
-        exit(1)
+            set_exit_code(2)
 
 
 class _LogColors(Enum):
@@ -78,7 +71,7 @@ class _LogColors(Enum):
     yellow = "yellow"
 
 
-class LogFormatter(DebugFormatter):
+class LogFormatter(logging.Formatter):
     def __init__(self, fmt="%(levelno)s: %(msg)s"):
         super().__init__(fmt=fmt)
 
@@ -100,8 +93,41 @@ class LogFormatter(DebugFormatter):
 
     def format(self, record: logging.LogRecord):
         if record.levelno == logging.DEBUG:
-            return super().format(record)
-        if record.levelno == logging.INFO:
+            path_split = record.pathname.split("lib")
+
+            if len(path_split) > 1:
+                path = "lib" + record.pathname.split("lib")[1]
+            else:
+                path = record.filename
+
+            msg = self._format_message(
+                f"{{{path}:{record.lineno}}} - {record.msg}",
+                "DEBUG",
+                None,
+                record.args,
+            )
+
+            if record.exc_info:
+                exc = traceback.format_exception(*record.exc_info)
+                for line in exc:
+                    for subline in line.split("\n"):
+                        if subline:
+                            msg += "\n" + self._format_message(
+                                f"{{{path}:{record.lineno}}} - {subline}",
+                                "DEBUG",
+                                None,
+                                record.args,
+                            )
+                    msg += "\n" + self._format_message(
+                        f"{{{path}:{record.lineno}}} -",
+                        "DEBUG",
+                        None,
+                        record.args,
+                    )
+
+            return msg
+
+        elif record.levelno == logging.INFO:
             return self._format_message(record.msg, "INFO", None, record.args)
         elif record.levelno == logging.WARNING:
             return self._format_message(
@@ -121,14 +147,17 @@ class LogFormatter(DebugFormatter):
 
 
 logging.setLoggerClass(BaseLogger)
-logging.basicConfig()
 logger = logging.getLogger("lib")
 logger.propagate = False
-logger.setLevel(logging.INFO)
-logging_handler = logging.StreamHandler()
-logging_handler.setLevel(logging.DEBUG)
-logging_handler.setFormatter(LogFormatter())
-logger.addHandler(logging_handler)
+logger.setLevel(
+    logging.INFO
+)  # This only allows INFO and above to be logged to handlers
+stderr_log_handler = logging.StreamHandler()
+stderr_log_handler.setLevel(
+    logging.ERROR
+)  # This only allows ERROR and above to be logged to stderr.
+stderr_log_handler.setFormatter(LogFormatter())
+logger.addHandler(stderr_log_handler)
 
 
 # must be imported after logger instantiation

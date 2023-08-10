@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import socket
+from ssl import SSLContext
 import threading
 import time
 import base64
@@ -30,7 +31,7 @@ from lib.live_cluster.ssh import (
     SSHTimeoutError,
 )
 
-from lib.utils import common, constants, util, version, logger_debug, conf_parser
+from lib.utils import common, constants, util, version, conf_parser
 from lib.utils.async_object import AsyncObject
 
 from .constants import ErrorsMsgs
@@ -176,7 +177,7 @@ class Node(AsyncObject):
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,
-        ssl_context=None,
+        ssl_context: SSLContext | None = None,
         consider_alumni=False,
         use_services_alt=False,
     ) -> None:
@@ -193,7 +194,6 @@ class Node(AsyncObject):
         access port. Can we detect from the socket?
         ALSO NOTE: May be better to just use telnet instead?
         """
-        self.remote_system_command_prompt = "[#$] "
         self.ip: str = address
         self.port: int = port
         self._timeout = timeout
@@ -346,11 +346,31 @@ class Node(AsyncObject):
         self.localhost = False
 
         try:
-            if address.lower() == "localhost":
+            if address.lower() == "localhost" or address == "127.0.0.1":
                 self.localhost = True
-            else:
-                o, e = util.shell_command(["hostname -I"])
-                self.localhost = self._is_any_my_ip(o.split())
+            elif self.alive:
+                """
+                Handles edge cases where either:
+                1. The users provided an ip address even though localhost would have sufficed.
+                2. Multiple instances of aerospike are running on the same machine.
+                Note: We can't simply use the result of `hostname -I` because it will
+                return something other than the ip address of the node if "access-address"
+                is set in the config file.
+                """
+
+                tmp_node = await Node(
+                    "localhost",
+                    port=self.port,
+                    tls_name=self.tls_name,
+                    timeout=0.1,
+                    user=self.user,
+                    password=self.password,
+                    auth_mode=self.auth_mode,
+                    ssl_context=self.ssl_context,
+                    consider_alumni=self.consider_alumni,
+                    use_services_alt=self.use_services_alt,
+                )
+                self.localhost = tmp_node.alive and self.ip == tmp_node.ip
         except Exception:
             pass
 
@@ -642,7 +662,7 @@ class Node(AsyncObject):
 
         try:
             while True:
-                if not self.socket_pool[port]:
+                if port not in self.socket_pool or len(self.socket_pool[port]) == 0:
                     break
 
                 sock = self.socket_pool[port].pop()
@@ -3210,75 +3230,75 @@ class Node(AsyncObject):
             except Exception:
                 pass
 
-    def _set_system_credentials_from_file(self):
-        if not self.sys_credential_file:
-            return False
-        result = False
-        f = None
-        try:
-            try:
-                f = open(self.sys_credential_file, "r")
-            except IOError as e:
-                logger.warning(
-                    "Ignoring credential file. cannot open credential file. \n%s."
-                    % (str(e))
-                )
-                return result
+    # def _set_system_credentials_from_file(self):
+    #     if not self.sys_credential_file:
+    #         return False
+    #     result = False
+    #     f = None
+    #     try:
+    #         try:
+    #             f = open(self.sys_credential_file, "r")
+    #         except IOError as e:
+    #             logger.warning(
+    #                 "Ignoring credential file. cannot open credential file. \n%s."
+    #                 % (str(e))
+    #             )
+    #             return result
 
-            for line in f.readlines():
-                if not line or not line.strip():
-                    continue
-                try:
-                    line = line.strip().replace("\n", " ").strip().split(",")
-                    if len(line) < 2:
-                        continue
+    #         for line in f.readlines():
+    #             if not line or not line.strip():
+    #                 continue
+    #             try:
+    #                 line = line.strip().replace("\n", " ").strip().split(",")
+    #                 if len(line) < 2:
+    #                     continue
 
-                    ip = None
-                    port = None
-                    ip_port = line[0].strip()
-                    if not ip_port:
-                        continue
+    #                 ip = None
+    #                 port = None
+    #                 ip_port = line[0].strip()
+    #                 if not ip_port:
+    #                     continue
 
-                    if "]" in ip_port:
-                        # IPv6
-                        try:
-                            ip_port = ip_port[1:].split("]")
-                            ip = ip_port[0].strip()
-                            if len(ip_port) > 1:
-                                # Removing ':' from port
-                                port = int(ip_port[1].strip()[1:])
-                        except Exception:
-                            pass
+    #                 if "]" in ip_port:
+    #                     # IPv6
+    #                     try:
+    #                         ip_port = ip_port[1:].split("]")
+    #                         ip = ip_port[0].strip()
+    #                         if len(ip_port) > 1:
+    #                             # Removing ':' from port
+    #                             port = int(ip_port[1].strip()[1:])
+    #                     except Exception:
+    #                         pass
 
-                    else:
-                        # IPv4
-                        try:
-                            ip_port = ip_port.split(":")
-                            ip = ip_port[0]
-                            if len(ip_port) > 1:
-                                port = int(ip_port[1].strip())
-                        except Exception:
-                            pass
+    #                 else:
+    #                     # IPv4
+    #                     try:
+    #                         ip_port = ip_port.split(":")
+    #                         ip = ip_port[0]
+    #                         if len(ip_port) > 1:
+    #                             port = int(ip_port[1].strip())
+    #                     except Exception:
+    #                         pass
 
-                    if ip and self._is_any_my_ip([ip]):
-                        self.sys_user_id = line[1].strip()
-                        try:
-                            self.sys_pwd = line[2].strip()
-                            self.sys_ssh_key = line[3].strip()
-                        except Exception:
-                            pass
-                        self.sys_ssh_port = port
-                        result = True
-                        break
+    #                 if ip and self._is_any_my_ip([ip]):
+    #                     self.sys_user_id = line[1].strip()
+    #                     try:
+    #                         self.sys_pwd = line[2].strip()
+    #                         self.sys_ssh_key = line[3].strip()
+    #                     except Exception:
+    #                         pass
+    #                     self.sys_ssh_port = port
+    #                     result = True
+    #                     break
 
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning("Ignoring credential file.\n%s." % (str(e)))
-        finally:
-            if f:
-                f.close()
-        return result
+    #             except Exception:
+    #                 pass
+    #     except Exception as e:
+    #         logger.warning("Ignoring credential file.\n%s." % (str(e)))
+    #     finally:
+    #         if f:
+    #             f.close()
+    #     return result
 
     def _clear_sys_credentials(self):
         self.sys_ssh_port = None
@@ -3288,9 +3308,9 @@ class Node(AsyncObject):
 
     def _set_system_credentials(self):
         self._clear_sys_credentials()
-        set = self._set_system_credentials_from_file()
-        if set:
-            return
+        # set = self._set_system_credentials_from_file()
+        # if set:
+        #     return
         self.sys_user_id = self.sys_default_user_id
         self.sys_pwd = self.sys_default_pwd
         self.sys_ssh_key = self.sys_default_ssh_key
@@ -3298,7 +3318,7 @@ class Node(AsyncObject):
 
     def _get_localhost_system_statistics(self, commands):
         logger.info(
-            f"Collecting system information for localhost ({self.ip}:{self.port})"
+            f"({self.ip}:{self.port}): Collecting system information for localhost"
         )
 
         sys_stats = {}
@@ -3330,6 +3350,10 @@ class Node(AsyncObject):
 
                 break
 
+        logger.info(
+            f"({self.ip}:{self.port}): Finished collecting system info for localhost"
+        )
+
         return sys_stats
 
     async def _get_remote_host_system_statistics(self, commands):
@@ -3345,15 +3369,19 @@ class Node(AsyncObject):
                 private_key=self.sys_ssh_key,
                 private_key_pwd=self.sys_pwd,
             )
-            conn_factory = SSHConnectionFactory(self.ip, conn_config)
-            conn = await conn_factory.create_connection()
-            conn_factory.close()
-            logger.info(f"({self.ip}): Collecting system info for remote host")
+            with SSHConnectionFactory(self.ip, conn_config) as conn_factory:
+                conn = await conn_factory.create_connection()
+            logger.info(
+                f"({self.ip}:{self.port}): Collecting system info for remote host"
+            )
 
         except SSHError as e:
-            logger.warning(
-                f"({self.ip}, {port}): Ignoring system statistics collection. Couldn't make SSH login to remote server : {e}"
+            logger.error(
+                f"({self.ip}:{port}): Ignoring system statistics collection. Couldn't SSH login to remote server: {e}"
             )
+        except Exception as e:
+            logger.exception(e)
+            raise
 
         if not conn:
             return sys_stats
@@ -3385,6 +3413,10 @@ class Node(AsyncObject):
                         We will try the next command in the list.
                         """
                         continue
+
+            logger.info(
+                f"({self.ip}:{self.port}): Finished collecting system info for remote host"
+            )
 
         except SSHError as e:
             # Catches async.ChannelOpenError

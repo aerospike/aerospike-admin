@@ -11,10 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from lib.utils import constants, util
+import logging
+from lib.utils import constants
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 
 from .live_cluster_command_controller import LiveClusterCommandController
+
+logger = logging.getLogger(__name__)
 
 
 @CommandHelp(
@@ -68,9 +71,7 @@ class ASInfoController(LiveClusterCommandController):
                         "Do not understand '%s' in '%s'" % (word, " ".join(line))
                     )
         except Exception:
-            self.logger.warning(
-                "Do not understand '%s' in '%s'" % (word, " ".join(line))
-            )
+            logger.warning("Do not understand '%s' in '%s'" % (word, " ".join(line)))
             return
         if value is not None:
             value = value.translate(str.maketrans("", "", "'\""))

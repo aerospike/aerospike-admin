@@ -294,7 +294,7 @@ class AddController(LogAnalyzerCommandController):
                 print("%d server logs added for server analysis." % (n_log_added))
 
             if error:
-                self.logger.error(error)
+                logger.error(error)
 
 
 @CommandHelp("Displays list of all server logs.")

@@ -4,7 +4,8 @@ import asyncssh
 import logging
 
 logger = logging.getLogger(__name__)
-# logger.setLevel(logging.CRITICAL)
+logger.setLevel(logging.CRITICAL)
+# asyncssh.set_log_level("CRITICAL")
 
 
 class SSHConnection:
@@ -24,13 +25,13 @@ class SSHConnection:
                 self._num_sessions -= 1
                 return proc
         except asyncssh.TimeoutError as e:
-            logger.error(f"Timeout error: {e.reason}")
+            logger.warning(f"Timeout error: {e.reason}")
             raise SSHTimeoutError(e)
         except asyncssh.ProcessError as e:
-            logger.error(f"Process error: {e.stderr}")
+            logger.warning(f"Process error: {e.stderr}")
             raise SSHNonZeroExitCodeError(e)
         except asyncssh.Error as e:
-            logger.error(f"Generic error: {e.reason}")
+            logger.warning(f"Generic error: {e.reason}")
             raise SSHError(e)
 
     async def close(self):
@@ -106,7 +107,7 @@ class FileTransfer:
                     f"{src_conn._conn.get_extra_info('peername')}: Multiple source paths provided for a single destination. Destination must be a path to a directory."
                 )
 
-            logger.info(
+            logger.debug(
                 f"{src_conn._conn.get_extra_info('peername')}: Initiating transfer of {src[0] if len(src)> 0 else src} to {dst}"
             )
             tasks.append(
@@ -181,9 +182,12 @@ class SSHConnectionFactory:
 
     async def create_connection(self) -> SSHConnection:
         logger.debug(f"{self.ip}: Checking semaphore before creating connection")
-        async with SSHConnectionFactory.semaphore_host_dict[self.ip].semaphore:
-            logger.debug(f"{self.ip}: Creating connection")
-            return SSHConnection(await asyncssh.connect(self.ip, options=self.opts))
+        try:
+            async with SSHConnectionFactory.semaphore_host_dict[self.ip].semaphore:
+                logger.debug(f"{self.ip}: Creating connection")
+                return SSHConnection(await asyncssh.connect(self.ip, options=self.opts))
+        except asyncssh.DisconnectError as e:
+            raise SSHConnectionError(e)
 
     def close(self):
         SSHConnectionFactory.semaphore_host_dict[self.ip].count -= 1
@@ -193,6 +197,12 @@ class SSHConnectionFactory:
                 f"{self.ip}: Host has no other factories. Cleaning up host semaphore"
             )
             del SSHConnectionFactory.semaphore_host_dict[self.ip]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
 
 class SSHError(Exception):
@@ -204,4 +214,8 @@ class SSHTimeoutError(SSHError):
 
 
 class SSHNonZeroExitCodeError(SSHError):
+    pass
+
+
+class SSHConnectionError(SSHError):
     pass

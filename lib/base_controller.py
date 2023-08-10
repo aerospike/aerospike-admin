@@ -27,7 +27,6 @@ from lib.view import view, terminal
 DEFAULT = "_do_default"
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
 
 
 class ModifierHelp:
