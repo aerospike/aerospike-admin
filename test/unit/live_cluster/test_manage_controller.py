@@ -234,7 +234,7 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageACLCreateUserController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
@@ -302,7 +302,7 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
         self.cluster_mock.admin_create_user.assert_called_with(
             "test-user", "pass", [], nodes="principal"
         )
-        logger_mock.error.assert_called_with(as_error)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     async def test_raises_exception_when_exception_returned(self):
@@ -331,7 +331,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageACLCreateRoleController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
@@ -353,7 +353,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
 
         for _ in range(2):
             await self.controller.execute(line.split())
-            logger_mock.warning.assert_called_with(log_message)
+            self.logger_mock.warning.assert_called_with(log_message)
 
     async def test_with_only_privilege(self):
         self.cluster_mock.admin_create_role.return_value = {
@@ -421,7 +421,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        logger_mock.error.assert_called_with(
+        self.logger_mock.error.assert_called_with(
             "A set must be accompanied by a namespace."
         )
 
@@ -594,7 +594,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
         await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_not_called()
-        logger_mock.error.assert_called_with(log_message)
+        self.logger_mock.error.assert_called_with(log_message)
         self.view_mock.print_result.assert_not_called()
 
         line = "test-role priv write write 100 read 100a"
@@ -602,7 +602,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
         await self.controller.execute(line.split())
 
         self.cluster_mock.admin_create_role.assert_not_called()
-        logger_mock.error.assert_called_with(log_message)
+        self.logger_mock.error.assert_called_with(log_message)
         self.view_mock.print_result.assert_not_called()
 
     async def test_logs_error_when_asprotocol_error_returned(self):
@@ -620,7 +620,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
             write_quota=None,
             nodes="principal",
         )
-        logger_mock.error.assert_called_with(as_error)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     async def test_raises_exception_when_exception_returned(self):
@@ -653,7 +653,7 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageACLQuotasRoleController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
@@ -673,14 +673,14 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
 
         for _ in range(2):
             await self.controller.execute(line.split())
-            logger_mock.error.assert_called_with(log_message)
+            self.logger_mock.error.assert_called_with(log_message)
 
     async def test_logs_error_with_read_and_write_not_provided(self):
         log_message = "'read' or 'write' is required."
 
         await self.controller.execute(["role", "test-role"])
 
-        logger_mock.error.assert_called_with(log_message)
+        self.logger_mock.error.assert_called_with(log_message)
 
     async def test_success_with_read_and_write(self):
         log_message = "Successfully set quotas for role test-role."
@@ -767,7 +767,7 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_not_called()
-        logger_mock.error.assert_called_with(log_message)
+        self.logger_mock.error.assert_called_with(log_message)
         self.view_mock.print_result.assert_not_called()
 
         line = "role test-role write 100 read 100a"
@@ -775,7 +775,7 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         await self.controller.execute(line.split())
 
         self.cluster_mock.admin_set_quotas.assert_not_called()
-        logger_mock.error.assert_called_with(log_message)
+        self.logger_mock.error.assert_called_with(log_message)
         self.view_mock.print_result.assert_not_called()
 
     async def test_logs_error_when_asprotocol_error_returned(self):
@@ -788,7 +788,7 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         self.cluster_mock.admin_set_quotas.assert_called_with(
             "test-role", read_quota=100, write_quota=100, nodes="principal"
         )
-        logger_mock.error.assert_called_with(as_error)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     async def test_raises_exception_when_exception_returned(self):
@@ -817,7 +817,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         ).start()
         self.controller = ManageConfigController()
         ManageConfigLeafController.mods = {}
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageConfigLeafController.prompt_challenge"
@@ -911,7 +911,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        logger_mock.error.assert_called_once_with("Subcontext required.")
+        self.logger_mock.error.assert_called_once_with("Subcontext required.")
         self.cluster_mock.info_set_config_network.assert_not_called()
 
     async def test_network_prompt(self):
@@ -1390,7 +1390,7 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
         self.controller = ManageConfigController()
         self.controller._context = ["manage", "config"]
         ManageConfigLeafController.mods = {}
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageConfigLeafController.prompt_challenge"
@@ -1688,7 +1688,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageSIndexCreateController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageSIndexCreateController.prompt_challenge"
@@ -1784,7 +1784,7 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageSIndexDeleteController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageSIndexDeleteController.prompt_challenge"
@@ -1849,7 +1849,7 @@ class ManageTruncateControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageTruncateController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageTruncateController.prompt_challenge"
@@ -2109,7 +2109,7 @@ class ManageTruncateControllerTest(asynctest.TestCase):
         self.cluster_mock.info_truncate.assert_called_with(
             "test", None, "1620690614000000000", nodes="principal"
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.view_mock.print_result.assert_called_with(
             "Successfully started truncation for namespace test"
         )
@@ -2123,7 +2123,7 @@ class ManageTruncateControllerTest(asynctest.TestCase):
         self.cluster_mock.info_truncate.assert_called_with(
             "test", "test-set", "1620690614000000000", nodes="principal"
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.view_mock.print_result.assert_called_with(
             "Successfully started truncation for set test-set of namespace test"
         )
@@ -2138,7 +2138,7 @@ class ManageTruncateControllerTest(asynctest.TestCase):
         self.cluster_mock.info_truncate.assert_called_with(
             "test", "test-set", "1620690614000000000", nodes="principal"
         )
-        logger_mock.error.assert_called_with(as_error)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     async def test_raises_exception_when_exception_returned(self):
@@ -2166,7 +2166,7 @@ class ManageTruncateUndoControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageTruncateController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageTruncateController.prompt_challenge"
@@ -2227,7 +2227,7 @@ class ManageTruncateUndoControllerTest(asynctest.TestCase):
         self.cluster_mock.info_truncate_undo.assert_called_with(
             "test", "test-set", nodes="principal"
         )
-        logger_mock.error.assert_called_with(as_error)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     async def test_raises_exception_when_exception_returned(self):
@@ -2255,7 +2255,7 @@ class ManageReclusterControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageReclusterController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
@@ -2283,7 +2283,7 @@ class ManageReclusterControllerTest(asynctest.TestCase):
         await self.controller.execute(line.split())
 
         self.cluster_mock.info_recluster.assert_called_with(nodes="principal")
-        logger_mock.error.assert_called_with(as_error)
+        self.logger_mock.error.assert_called_with(as_error)
         self.view_mock.print_result.assert_not_called()
 
     async def test_raises_exception_when_exception_returned(self):
@@ -2309,7 +2309,7 @@ class ManageQuiesceControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageQuiesceController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.controller.mods = {}
@@ -2364,7 +2364,7 @@ class ManageReviveControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageReviveController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
@@ -2578,7 +2578,7 @@ class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.prompt_challenge"
         ).start()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.addCleanup(patch.stopall)
 
     async def test_kill_all_scans(self):
@@ -2610,7 +2610,7 @@ class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
         await self.controller.execute(module.split())
 
         self.cluster_mock.info_scan_abort_all.assert_not_called()
-        logger_mock.error.assert_called_with(
+        self.logger_mock.error.assert_called_with(
             "Killing scans is not supported on server v. 6.0 and later."
         )
 
@@ -2629,7 +2629,7 @@ class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillAllQueriesController.prompt_challenge"
         ).start()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.addCleanup(patch.stopall)
 
     async def test_kill_all_queries(self):
@@ -2661,7 +2661,7 @@ class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
         await self.controller.execute(module.split())
 
         self.cluster_mock.info_scan_abort_all.assert_not_called()
-        logger_mock.error.assert_called_with(
+        self.logger_mock.error.assert_called_with(
             "Killing all queries is only supported on server v. 6.0 and later."
         )
 
@@ -2676,7 +2676,7 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
             AsyncMock,
         ).start()
         self.controller = ManageRosterLeafCommandController(self.cluster_mock)
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
 
         self.addCleanup(patch.stopall)
 
@@ -2709,7 +2709,7 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
             )
 
             if tc.output is False:
-                logger_mock.warning.assert_called_with(
+                self.logger_mock.warning.assert_called_with(
                     "The cluster is unstable. It is advised that you do not manage the roster. Run 'info network' for more information."
                 )
 
@@ -2747,7 +2747,7 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
         ]
 
         for tc in test_cases:
-            logger_mock.reset_mock()
+            self.logger_mock.reset_mock()
             result = self.controller._check_and_log_nodes_in_observed(
                 tc.observed, tc.nodes
             )
@@ -2759,9 +2759,9 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
             )
 
             if tc.output is True:
-                logger_mock.warning.assert_not_called()
+                self.logger_mock.warning.assert_not_called()
             else:
-                logger_mock.warning.assert_called_once()
+                self.logger_mock.warning.assert_called_once()
 
 
 @asynctest.fail_on(active_handles=True)
@@ -2774,7 +2774,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageRosterAddController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.prompt_challenge"
@@ -2815,7 +2815,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        logger_mock.error.assert_called_once_with(error)
+        self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
@@ -2829,7 +2829,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        logger_mock.error.assert_called_once_with(error)
+        self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
@@ -2841,7 +2841,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
@@ -2856,7 +2856,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
@@ -2922,7 +2922,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
         ).start()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
     async def test_success(self):
@@ -2951,7 +2951,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        logger_mock.error.assert_called_once_with(error)
+        self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
@@ -2968,7 +2968,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        logger_mock.error.assert_called_once_with(error)
+        self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
@@ -2983,7 +2983,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        logger_mock.warning.assert_any_call(
+        self.logger_mock.warning.assert_any_call(
             "The following nodes are not in the pending-roster: {}", "GHI"
         )
         self.check_and_log_cluster_stable_mock.assert_called_once_with(
@@ -3000,7 +3000,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
@@ -3018,7 +3018,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
@@ -3078,7 +3078,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageRosterStageNodesController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
@@ -3118,7 +3118,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
             "test", ["ABC@rack1", "DEF@rack2"], nodes="principal"
         )
 
-        logger_mock.error.assert_called_once_with(error)
+        self.logger_mock.error.assert_called_once_with(error)
         self.view_mock.print_result.assert_not_called()
 
     async def test_raises_error_from_roster_set(self):
@@ -3139,7 +3139,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_called_once_with(
             "test", ["ABC@rack1", "DEF@rack2"], nodes="principal"
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
     async def test_warn_returns_false(self):
@@ -3202,7 +3202,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageRosterStageObservedController()
-        logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
@@ -3240,7 +3240,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
 
         await self.controller.execute(line.split())
 
-        logger_mock.error.assert_called_once_with(error)
+        self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
@@ -3257,7 +3257,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_called_once_with(
             "test", ["ABC", "DEF"], nodes="principal"
         )
-        logger_mock.error.assert_called_once_with(error)
+        self.logger_mock.error.assert_called_once_with(error)
         self.view_mock.print_result.assert_not_called()
 
     async def test_raises_error_from_roster(self):
@@ -3268,7 +3268,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
@@ -3283,7 +3283,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         await test_util.assert_exception_async(
             self, Exception, "test exception", self.controller.execute, line.split()
         )
-        logger_mock.error.assert_not_called()
+        self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 

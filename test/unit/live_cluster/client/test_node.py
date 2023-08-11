@@ -194,7 +194,9 @@ class NodeTest(asynctest.TestCase):
         self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
             "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
         ).start()
+        self.logger_mock = patch("lib.live_cluster.client.node.logger").start()
         self.node.conf_schema_handler = MagicMock()
+        self.addCleanup(patch.stopall)
 
     async def test_login_returns_true_if_user_is_none(self):
         self.node.user = None
@@ -255,7 +257,7 @@ class NodeTest(asynctest.TestCase):
     async def test_login_logs_warning_when_socket_raises_security_not_enabled(
         self, as_socket_mock
     ):
-        self.node.logger.warning = MagicMock()
+        self.logger_mock.warning = MagicMock()
         as_socket_mock = as_socket_mock.return_value
         self.node.user = True
         as_socket_mock.connect.return_value = True
@@ -265,7 +267,7 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
 
         self.assertTrue(await self.node.login())
-        self.node.logger.warning.assert_called_with(
+        self.logger_mock.warning.assert_called_with(
             ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
         )
         as_socket_mock.close.assert_not_called()
@@ -275,7 +277,7 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(self.node.session_expiration, "session-ttl")
 
         # call again to make sure it is not logged twice.
-        self.node.logger.warning.reset_mock()
+        self.logger_mock.warning.reset_mock()
         self.node.session_expiration = 0
         as_socket_mock.connect.return_value = True
         as_socket_mock.login.side_effect = Mock(
@@ -284,7 +286,7 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
 
         self.assertTrue(await self.node.login())
-        self.node.logger.warning.assert_not_called()
+        self.logger_mock.warning.assert_not_called()
 
     # TODO: Make unit tests for socket pool
     async def test_get_connection_uses_socket_pool(self):

@@ -1884,7 +1884,7 @@ class Node(AsyncObject):
             return config
 
         if not self.as_conf_data:
-            self.as_conf_data = conf_parser.parse_file(DEFAULT_CONFIG_PATH)
+            self.as_conf_data = conf_parser.parse_file("/etc/aerospike/aerospike.conf")
             if "namespace" in self.as_conf_data:
                 for ns in self.as_conf_data["namespace"].keys():
                     if "service" in self.as_conf_data["namespace"][ns]:
