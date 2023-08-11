@@ -13,12 +13,15 @@
 # limitations under the License.
 
 import copy
+import logging
 
 from lib.base_controller import CommandHelp, ModifierHelp
 import lib.health as health
 from lib.utils import util
 
 from .collectinfo_command_controller import CollectinfoCommandController
+
+logger = logging.getLogger(__name__)
 
 
 @CommandHelp(

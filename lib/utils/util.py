@@ -74,12 +74,14 @@ async def async_shell_command(command: str) -> Process | None:
     """
 
     try:
-        return await asyncio.create_subprocess_exec(
+        p = await asyncio.create_subprocess_exec(
             "bash",
             *["-c", f"{command}"],
             stderr=subprocess.PIPE,
             stdout=subprocess.PIPE,
         )
+        await p.wait()
+        return p
     except Exception:
         logger.debug("Error running command: %s", command)
         return None

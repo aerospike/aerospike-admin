@@ -51,6 +51,7 @@ from lib.utils.types import (
 from lib.view import terminal
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 ########## Feature ##########
 

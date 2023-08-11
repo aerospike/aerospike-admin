@@ -23,6 +23,7 @@ import time
 import sys
 import traceback
 from typing import Any, Callable, Coroutine, Optional
+from lib.live_cluster.client import node
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.generate_config_controller import GenerateConfigController
 from lib.live_cluster.logfile_downloader import LogFileDownloader
@@ -852,7 +853,7 @@ class CollectinfoController(LiveClusterCommandController):
         default_ssh_port: int | None,
         default_ssh_key: str | None,
     ):
-        logger.info("SSH is enabled. Collecting logs from nodes...")
+        logger.info("Collecting logs from nodes...")
         ssh_config = None
 
         if enable_ssh:
@@ -873,8 +874,9 @@ class CollectinfoController(LiveClusterCommandController):
         download_errors = []
 
         def error_handler(error: Exception, node: Node):
-            logger.error(str(error))
             download_errors.append(error)
+            if isinstance(error, ssh.SSHConnectionError):
+                raise
 
         """
         Returned errors are for connection issues. error_handler handles errors after
@@ -897,15 +899,30 @@ class CollectinfoController(LiveClusterCommandController):
         self.debug_output_handler = logging.FileHandler(debug_file)
         self.debug_output_handler.setLevel(logging.DEBUG)
         self.debug_output_handler.setFormatter(LogFormatter())
+        self.loggers: list[logging.Logger | logging.Handler] = [
+            g_logger,
+            stderr_log_handler,
+            logging.getLogger(Node.__name__),
+            logging.getLogger(common.__name__),
+            logging.getLogger(LogFileDownloader.__module__),
+        ]
+        self.old_levels = [logger.level for logger in self.loggers]
+
         g_logger.setLevel(logging.DEBUG)
 
-        if stderr_log_handler.level > logging.INFO:
-            stderr_log_handler.setLevel(logging.INFO)
+        for logger in self.loggers[1:]:
+            # Only set the level to INFO if it is not already set to DEBUG or INFO.
+            if logger.level > logging.INFO:
+                logger.setLevel(logging.INFO)
 
         g_logger.addHandler(self.debug_output_handler)
 
     def teardown_loggers(self):
         g_logger.removeHandler(self.debug_output_handler)
+        for logger, level in zip(self.loggers, self.old_levels):
+            logger.setLevel(level)
+
+        # TODO: clean up log levels
 
     ###########################################################################
     # Collectinfo caller functions

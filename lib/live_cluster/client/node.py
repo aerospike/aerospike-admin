@@ -55,6 +55,7 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.CRITICAL)
 
 
 def get_fully_qualified_domain_name(address, timeout=0.5):
@@ -756,7 +757,7 @@ class Node(AsyncObject):
 
         sock = await self._get_connection(ip, port)
         if not sock:
-            raise IOError("Error: Could not connect to node %s" % ip)
+            raise IOError("Could not connect to node %s" % ip)
 
         try:
             if sock:
@@ -2959,7 +2960,7 @@ class Node(AsyncObject):
         sock = await self._get_connection(ip, port)
 
         if not sock:
-            raise IOError("Error: Could not connect to node %s" % ip)
+            raise IOError("Could not connect to node %s" % ip)
 
         try:
             result = await admin_func(sock, *args)
@@ -3318,7 +3319,7 @@ class Node(AsyncObject):
 
     def _get_localhost_system_statistics(self, commands):
         logger.info(
-            f"({self.ip}:{self.port}): Collecting system information for localhost"
+            f"({self.ip}:{self.port}): Collecting system information for localhost..."
         )
 
         sys_stats = {}
@@ -3351,7 +3352,7 @@ class Node(AsyncObject):
                 break
 
         logger.info(
-            f"({self.ip}:{self.port}): Finished collecting system info for localhost"
+            f"({self.ip}:{self.port}): Finished collecting system info for localhost."
         )
 
         return sys_stats

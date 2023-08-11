@@ -5,7 +5,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
-# asyncssh.set_log_level("CRITICAL")
 
 
 class SSHConnection:
@@ -37,6 +36,12 @@ class SSHConnection:
     async def close(self):
         self._conn.close()
         await self._conn.wait_closed()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.close()
 
 
 class SSHConnectionConfig:
@@ -83,43 +88,46 @@ class FileTransfer:
     async def remote_to_local(
         paths: list[tuple[RemoteSrc, LocalDst]],
         src_conn: SSHConnection,
-        # TODO: Maybe allow another error_handler to be passed in
+        return_exceptions: bool = False,
     ) -> list[Exception]:
         # TODO: Handle rate limiting
         logger.debug(
             f"{src_conn._conn.get_extra_info('peername')}: Starting remote to local file transfer"
         )
         errors = []
-        error_handler = FileTransfer.create_error_handler(errors)
         tasks = []
-        sftp_session = (
-            await src_conn._conn.start_sftp_client()
-        )  # You can have multiple sftp sessions per connection. The default is 10. We are only using 1 per node here.
 
-        for src, dst in paths:
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
+        # You can have multiple sftp sessions per connection. The default is 10. We are only using 1 per node here.
+        async with src_conn._conn.start_sftp_client() as sftp_session:
+            for src, dst in paths:
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
 
-            if isinstance(src, str):
-                src = [src]
+                if isinstance(src, str):
+                    src = [src]
 
-            if len(src) > 1:
+                if len(src) > 1:
+                    logger.debug(
+                        f"{src_conn._conn.get_extra_info('peername')}: Multiple source paths provided for a single destination. Destination must be a path to a directory."
+                    )
+
                 logger.debug(
-                    f"{src_conn._conn.get_extra_info('peername')}: Multiple source paths provided for a single destination. Destination must be a path to a directory."
+                    f"{src_conn._conn.get_extra_info('peername')}: Initiating transfer of {src[0] if len(src)> 0 else src} to {dst}"
+                )
+                tasks.append(
+                    sftp_session.get(
+                        src,
+                        dst,
+                        recurse=True,
+                        preserve=True,
+                    )
                 )
 
-            logger.debug(
-                f"{src_conn._conn.get_extra_info('peername')}: Initiating transfer of {src[0] if len(src)> 0 else src} to {dst}"
-            )
-            tasks.append(
-                sftp_session.get(
-                    src, dst, recurse=True, preserve=True, error_handler=error_handler
-                )
-            )
+            errors = await asyncio.gather(
+                *tasks, return_exceptions=return_exceptions
+            )  # TODO: Should wrap asyncssh errors with out own
+            logger.debug("Finished remote to local file transfer")
 
-        await asyncio.gather(*tasks)
-        logger.debug("Finished remote to local file transfer")
-
-        return errors
+            return errors
 
         # TODO: need to handle the case where there are no successful transfers
 
