@@ -3894,7 +3894,7 @@ class NodeTest(asynctest.TestCase):
         await util.assert_exception_async(
             self,
             OSError,
-            "Error: Could not connect to node 192.1.1.1",
+            "Could not connect to node 192.1.1.1",
             self.node._admin_cadmin,
             ASSocket.create_user,
             (1, 2, 3),
