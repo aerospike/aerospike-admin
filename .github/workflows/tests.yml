@@ -1,7 +1,7 @@
 name: Tests
 on:
   push:
-    branches: [actionsHub, master, test-ready, "bugfix-*"]
+    branches: ["*"]
   pull_request:
     branches: [test-ready, master]
 jobs:
@@ -28,6 +28,13 @@ jobs:
         run: |
           pipenv run bash -c "make coverage"
           pipenv run bash -c "coverage xml"
+      - name: Upload Collectinfo for Debugging
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test_collectinfo
+          path: /tmp/asadm_test*.tgz
+          if-no-files-found: error
       - name: Upload coverage report to Codecov
         uses: codecov/codecov-action@v3
         with:
