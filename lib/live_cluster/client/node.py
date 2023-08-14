@@ -346,34 +346,41 @@ class Node(AsyncObject):
         )  # TODO Init and connect steps should be separate
         self.localhost = False
 
-        try:
-            if address.lower() == "localhost" or address == "127.0.0.1":
-                self.localhost = True
-            elif self.alive:
-                """
-                Handles edge cases where either:
-                1. The users provided an ip address even though localhost would have sufficed.
-                2. Multiple instances of aerospike are running on the same machine.
-                Note: We can't simply use the result of `hostname -I` because it will
-                return something other than the ip address of the node if "access-address"
-                is set in the config file.
-                """
+        if address.lower() == "localhost":
+            self.localhost = True
+        # if address.lower() == "localhost" or address == "127.0.0.1":
+        #     self.localhost = True
 
-                tmp_node = await Node(
-                    "localhost",
-                    port=self.port,
-                    tls_name=self.tls_name,
-                    timeout=0.1,
-                    user=self.user,
-                    password=self.password,
-                    auth_mode=self.auth_mode,
-                    ssl_context=self.ssl_context,
-                    consider_alumni=self.consider_alumni,
-                    use_services_alt=self.use_services_alt,
-                )
-                self.localhost = tmp_node.alive and self.ip == tmp_node.ip
-        except Exception:
-            pass
+        # elif self.alive:
+        #     tmp_node = None
+        #     try:
+        #         """
+        #         Handles edge cases where either:
+        #         1. The users provided an ip address even though localhost would have sufficed.
+        #         2. Multiple instances of aerospike are running on the same machine.
+        #         3. We can't simply use the result of `hostname -I` because it will
+        #         return something other than the ip address of the node if "access-address"
+        #         is set in the config file.
+        #         """
+
+        #         tmp_node = await Node(
+        #             "localhost",
+        #             port=self.port,
+        #             tls_name=self.tls_name,
+        #             timeout=0.1,
+        #             user=self.user,
+        #             password=self.password,
+        #             auth_mode=self.auth_mode,
+        #             ssl_context=self.ssl_context,
+        #             consider_alumni=self.consider_alumni,
+        #             use_services_alt=self.use_services_alt,
+        #         )
+        #         self.localhost = tmp_node.alive and self.ip == tmp_node.ip
+        #     except Exception:
+        #         pass
+        #     finally:
+        #         if tmp_node:
+        #             await tmp_node.close()
 
         # configurations from conf file
         self.as_conf_data = {}
