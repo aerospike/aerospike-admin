@@ -76,10 +76,6 @@ logger = logging.getLogger(__name__)
             "--ssh-key",
             "Default SSH key (file path) for remote servers.",
         ),
-        ModifierHelp(
-            "--ssh-cf",
-            'Remote System Credentials file path. If the server credentials are not in the credentials file, then authentication is attempted with the default credentials. File format: each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD-or-PASSPHRASE>,<SSH_KEY>. Examples: "1.2.3.4,uid,pwd" "1.2.3.4:3232,uid,pwd" "1.2.3.4:3232,uid,,key_path" "1.2.3.4:3232,uid,passphrase,key_path" "[2001::1234:10],uid,pwd" "[2001::1234:10]:3232,uid,,key_path"',
-        ),
     ),
     hide=True,
 )
@@ -239,15 +235,6 @@ class HealthCheckController(LiveClusterCommandController):
         default_ssh_key = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-key",
-            return_type=str,
-            default=None,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        credential_file = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="--ssh-cf",
             return_type=str,
             default=None,
             modifiers=self.modifiers,
@@ -771,7 +758,6 @@ class HealthCheckController(LiveClusterCommandController):
                         default_pwd=default_pwd,
                         default_ssh_key=default_ssh_key,
                         default_ssh_port=default_ssh_port,
-                        credential_file=credential_file,
                         collect_remote_data=enable_ssh,
                     )
                 )

@@ -425,7 +425,6 @@ class CollectinfoController(LiveClusterCommandController):
         default_pwd_key,
         default_ssh_port,
         default_ssh_key,
-        credential_file,
         enable_ssh,
     ):
         logger.debug("Collectinfo data to store in collectinfo_*.json")
@@ -452,7 +451,6 @@ class CollectinfoController(LiveClusterCommandController):
                 default_pwd=default_pwd_key,
                 default_ssh_key=default_ssh_key,
                 default_ssh_port=default_ssh_port,
-                credential_file=credential_file,
                 nodes=self.nodes,
                 collect_remote_data=enable_ssh,
             ),
@@ -506,7 +504,6 @@ class CollectinfoController(LiveClusterCommandController):
         default_pwd_key,
         default_ssh_port,
         default_ssh_key,
-        credential_file,
         enable_ssh,
         snp_count,
         wait_time,
@@ -524,7 +521,6 @@ class CollectinfoController(LiveClusterCommandController):
                 default_pwd_key,
                 default_ssh_port,
                 default_ssh_key,
-                credential_file,
                 enable_ssh,
             )
 
@@ -933,7 +929,6 @@ class CollectinfoController(LiveClusterCommandController):
         default_pwd_key: str | None,
         default_ssh_port: int | None,
         default_ssh_key: str | None,
-        credential_file: str | None,
         snp_count: int,
         wait_time: int,
         ignore_errors: bool,
@@ -992,7 +987,6 @@ class CollectinfoController(LiveClusterCommandController):
                         default_pwd_key,
                         default_ssh_port,
                         default_ssh_key,
-                        credential_file,
                         enable_ssh,
                         snp_count,
                         wait_time,
@@ -1180,15 +1174,6 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        credential_file = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="--ssh-cf",
-            return_type=str,
-            default=None,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
         include_logs = util.check_arg_and_delete_from_mods(
             line=line,
             arg="--include-logs",
@@ -1233,7 +1218,6 @@ class CollectinfoController(LiveClusterCommandController):
             default_pwd_key,
             default_ssh_port,
             default_ssh_key,
-            credential_file,
             snp_count,
             wait_time,
             ignore_errors,

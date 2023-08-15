@@ -113,15 +113,6 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        credential_file = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="--ssh-cf",
-            return_type=str,
-            default=None,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
         agent_host = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--agent-host",
@@ -164,7 +155,6 @@ class SummaryController(LiveClusterCommandController):
             default_pwd=default_pwd,
             default_ssh_key=default_ssh_key,
             default_ssh_port=default_ssh_port,
-            credential_file=credential_file,
             commands=["lsb"],
             collect_remote_data=enable_ssh,
         )
@@ -174,7 +164,6 @@ class SummaryController(LiveClusterCommandController):
             default_pwd=default_pwd,
             default_ssh_key=default_ssh_key,
             default_ssh_port=default_ssh_port,
-            credential_file=credential_file,
             commands=["uname"],
             collect_remote_data=enable_ssh,
         )

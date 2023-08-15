@@ -148,6 +148,7 @@ class _SysCmd:
         return self._uid == 0
 
     def __iter__(self):
+        self._idx = 0
         return self
 
     def __next__(self):
@@ -221,7 +222,6 @@ class Node(AsyncObject):
         self.sys_user_id = None
         self.sys_pwd = None
         self.sys_ssh_key = None
-        self.sys_credential_file = None
         self.sys_default_ssh_port = None
         self.sys_default_user_id = None
         self.sys_default_pwd = None
@@ -346,41 +346,52 @@ class Node(AsyncObject):
         )  # TODO Init and connect steps should be separate
         self.localhost = False
 
-        if address.lower() == "localhost":
-            self.localhost = True
-        # if address.lower() == "localhost" or address == "127.0.0.1":
+        # if address.lower() == "localhost":
         #     self.localhost = True
+        if address.lower() == "localhost" or address == "127.0.0.1":
+            p = await util.async_shell_command(
+                "docker ps | tail -n +2 | awk '{print $2}' | grep 'aerospike/aerospike-server'"
+            )
 
-        # elif self.alive:
-        #     tmp_node = None
-        #     try:
-        #         """
-        #         Handles edge cases where either:
-        #         1. The users provided an ip address even though localhost would have sufficed.
-        #         2. Multiple instances of aerospike are running on the same machine.
-        #         3. We can't simply use the result of `hostname -I` because it will
-        #         return something other than the ip address of the node if "access-address"
-        #         is set in the config file.
-        #         """
+            if p and not p.returncode:
+                """
+                Check if any docker containers are running. If they are then lets assume
+                that an aerospike node is not running on localhost since this affects how
+                we gather logs and the aerospike.conf file
+                """
 
-        #         tmp_node = await Node(
-        #             "localhost",
-        #             port=self.port,
-        #             tls_name=self.tls_name,
-        #             timeout=0.1,
-        #             user=self.user,
-        #             password=self.password,
-        #             auth_mode=self.auth_mode,
-        #             ssl_context=self.ssl_context,
-        #             consider_alumni=self.consider_alumni,
-        #             use_services_alt=self.use_services_alt,
-        #         )
-        #         self.localhost = tmp_node.alive and self.ip == tmp_node.ip
-        #     except Exception:
-        #         pass
-        #     finally:
-        #         if tmp_node:
-        #             await tmp_node.close()
+                self.localhost = True
+
+        elif self.alive:
+            tmp_node = None
+            try:
+                """
+                Handles edge cases where either:
+                1. The users provided an ip address even though localhost would have sufficed.
+                2. Multiple instances of aerospike are running on the same machine.
+                3. We can't simply use the result of `hostname -I` because it will
+                return something other than the ip address of the node if "access-address"
+                is set in the config file.
+                """
+
+                tmp_node = await Node(
+                    "localhost",
+                    port=self.port,
+                    tls_name=self.tls_name,
+                    timeout=0.1,
+                    user=self.user,
+                    password=self.password,
+                    auth_mode=self.auth_mode,
+                    ssl_context=self.ssl_context,
+                    consider_alumni=self.consider_alumni,
+                    use_services_alt=self.use_services_alt,
+                )
+                self.localhost = tmp_node.alive and self.ip == tmp_node.ip
+            except Exception:
+                pass
+            finally:
+                if tmp_node:
+                    await tmp_node.close()
 
         # configurations from conf file
         self.as_conf_data = {}
@@ -3217,7 +3228,6 @@ class Node(AsyncObject):
         default_pwd=None,
         default_ssh_key=None,
         default_ssh_port=None,
-        credential_file=None,
     ):
         if default_user:
             self.sys_default_user_id = default_user
@@ -3228,85 +3238,11 @@ class Node(AsyncObject):
         if default_ssh_key:
             self.sys_default_ssh_key = default_ssh_key
 
-        self.sys_credential_file = None
-        if credential_file:
-            self.sys_credential_file = credential_file
-
         if default_ssh_port:
             try:
                 self.sys_default_ssh_port = int(default_ssh_port)
             except Exception:
                 pass
-
-    # def _set_system_credentials_from_file(self):
-    #     if not self.sys_credential_file:
-    #         return False
-    #     result = False
-    #     f = None
-    #     try:
-    #         try:
-    #             f = open(self.sys_credential_file, "r")
-    #         except IOError as e:
-    #             logger.warning(
-    #                 "Ignoring credential file. cannot open credential file. \n%s."
-    #                 % (str(e))
-    #             )
-    #             return result
-
-    #         for line in f.readlines():
-    #             if not line or not line.strip():
-    #                 continue
-    #             try:
-    #                 line = line.strip().replace("\n", " ").strip().split(",")
-    #                 if len(line) < 2:
-    #                     continue
-
-    #                 ip = None
-    #                 port = None
-    #                 ip_port = line[0].strip()
-    #                 if not ip_port:
-    #                     continue
-
-    #                 if "]" in ip_port:
-    #                     # IPv6
-    #                     try:
-    #                         ip_port = ip_port[1:].split("]")
-    #                         ip = ip_port[0].strip()
-    #                         if len(ip_port) > 1:
-    #                             # Removing ':' from port
-    #                             port = int(ip_port[1].strip()[1:])
-    #                     except Exception:
-    #                         pass
-
-    #                 else:
-    #                     # IPv4
-    #                     try:
-    #                         ip_port = ip_port.split(":")
-    #                         ip = ip_port[0]
-    #                         if len(ip_port) > 1:
-    #                             port = int(ip_port[1].strip())
-    #                     except Exception:
-    #                         pass
-
-    #                 if ip and self._is_any_my_ip([ip]):
-    #                     self.sys_user_id = line[1].strip()
-    #                     try:
-    #                         self.sys_pwd = line[2].strip()
-    #                         self.sys_ssh_key = line[3].strip()
-    #                     except Exception:
-    #                         pass
-    #                     self.sys_ssh_port = port
-    #                     result = True
-    #                     break
-
-    #             except Exception:
-    #                 pass
-    #     except Exception as e:
-    #         logger.warning("Ignoring credential file.\n%s." % (str(e)))
-    #     finally:
-    #         if f:
-    #             f.close()
-    #     return result
 
     def _clear_sys_credentials(self):
         self.sys_ssh_port = None
@@ -3353,7 +3289,8 @@ class Node(AsyncObject):
 
                 try:
                     sys_stats[sys_cmd.key] = sys_cmd.parse(o)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Failed to parse system cmd {cmd}: {e}")
                     pass
 
                 break
@@ -3394,11 +3331,9 @@ class Node(AsyncObject):
         if not conn:
             return sys_stats
 
-        sys_cmds = list(self.sys_cmds)
-
         try:
             # Collects system statistics by running commands sequentially
-            for sys_cmd in sys_cmds:
+            for sys_cmd in self.sys_cmds:
                 key = sys_cmd.key
 
                 if key not in commands:
@@ -3445,7 +3380,6 @@ class Node(AsyncObject):
         default_pwd=None,
         default_ssh_key=None,
         default_ssh_port=None,
-        credential_file=None,
         commands=[],
         collect_remote_data=False,
     ):
@@ -3457,8 +3391,8 @@ class Node(AsyncObject):
         """
         logger.debug(
             (
-                "%s.info_system_statistics default_user=%s default_pws=%s"
-                "default_ssh_key=%s default_ssh_port=%s credential_file=%s"
+                "default_user=%s default_pws=%s"
+                "default_ssh_key=%s default_ssh_port=%s"
                 "commands=%s collect_remote_data=%s"
             ),
             self.ip,
@@ -3466,7 +3400,6 @@ class Node(AsyncObject):
             default_pwd,
             default_ssh_key,
             default_ssh_port,
-            credential_file,
             commands,
             collect_remote_data,
         )
@@ -3485,7 +3418,6 @@ class Node(AsyncObject):
                 default_pwd,
                 default_ssh_key,
                 default_ssh_port,
-                credential_file,
             )
             return await self._get_remote_host_system_statistics(cmd_list)
 

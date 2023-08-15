@@ -234,6 +234,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         except Exception as e:
             await self.do_exit("")
             logger.critical(e)
+            return
 
         if not execute_only_mode:
             try:

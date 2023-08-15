@@ -260,7 +260,6 @@ def _merge_nodelevel_map_to_mainmap(
 def _get_sys_map(parsed_map, ignore_exception):
     """
     Extract System information from imap
-
     """
 
     sys_map = {}
@@ -270,6 +269,9 @@ def _get_sys_map(parsed_map, ignore_exception):
             pmt_cluster_name = list(pm_timestamp.values())[0]  # length always = 1
             for ip, pmtc_ip in pmt_cluster_name.items():
                 sys_map = pmtc_ip.get("sys_stat", {})
+
+                # TODO: This only handles the case where a single node has sys_stats.
+                # This is not the case when when we --enable-ssh
                 if sys_map != {}:
                     return sys_map
 

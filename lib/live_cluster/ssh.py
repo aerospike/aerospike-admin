@@ -13,7 +13,9 @@ class SSHConnection:
         self._max_sessions_sem = asyncio.Semaphore(max_sessions)
         self._num_sessions = 0  # Could be used to sort a priority queue of connections
 
-    async def run(self, cmd: str) -> asyncssh.SSHCompletedProcess:
+    async def run(
+        self, cmd: str
+    ) -> asyncssh.SSHCompletedProcess:  # Might want to wrap this before returning?
         logger.debug(
             f"{self._conn.get_extra_info('peername')}: Running command on remote: {cmd}"
         )
