@@ -136,7 +136,7 @@ async def _receive_data(reader: asyncio.StreamReader, sz):
     pos = 0
     data = None
     while pos < sz:
-        chunk = await reader.read(sz - pos)
+        chunk = await reader.read(max(sz - pos, 1024))
         if pos == 0:
             data = chunk
         else:

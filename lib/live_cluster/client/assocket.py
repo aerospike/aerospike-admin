@@ -69,7 +69,7 @@ class ASSocket:
         self.ssl_context = ssl_context
         self._timeout = timeout
 
-    def _wrap_socket(self, sock, ctx):
+    def _wrap_socket(self, sock, ctx: SSL.Context):
         if ctx:
             if HAVE_PYOPENSSL:
                 sock = SSL.Connection(ctx, sock)
@@ -78,7 +78,7 @@ class ASSocket:
 
         return sock
 
-    def _create_socket_for_addrinfo(self, addrinfo):
+    async def _create_socket_for_addrinfo(self, addrinfo):
         sock = None
         try:
             # sock_info format : (family, socktype, proto, canonname, sockaddr)
@@ -89,18 +89,31 @@ class ASSocket:
             sock.settimeout(self._timeout)
 
             sock = self._wrap_socket(sock, self.ssl_context)
-            sock.connect(sock_addr)
+            sock.setblocking(False)
+            # sock.connect(sock_addr)
+            await asyncio.get_event_loop().sock_connect(sock, sock_addr)
 
             if self.ssl_context:
                 try:
                     sock.set_app_data(self.tls_name)
 
                     # timeout on wrapper might give errors
-                    sock.setblocking(1)
+                    sock.setblocking(0)
+                    count = 0
+                    while True:
+                        try:
+                            sock.do_handshake()
+                            break
+                        except SSL.WantReadError:
+                            await asyncio.sleep(0.1)
+                            count += 1
+                            pass
+                    print(count)
+                    # sock.do_handshake()
 
-                    sock.do_handshake()
+                    # sock.setblocking(0)
                 except Exception as tlse:
-                    print("TLS connection exception: " + str(tlse))
+                    print("TLS connection exception: ", type(tlse))
                     if sock:
                         sock.close()
                         sock = None
@@ -112,14 +125,14 @@ class ASSocket:
 
         return sock
 
-    def _create_socket(self):
+    async def _create_socket(self):
         sock = None
         for addrinfo in socket.getaddrinfo(
             self.ip, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM
         ):
             # for DNS it will try all possible addresses
             try:
-                sock = self._create_socket_for_addrinfo(addrinfo)
+                sock = await self._create_socket_for_addrinfo(addrinfo)
                 if sock:
                     break
             except Exception:
@@ -169,7 +182,7 @@ class ASSocket:
 
     async def connect(self):
         try:
-            self.sock = self._create_socket()
+            self.sock = await self._create_socket()
             if not self.sock:
                 return False
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
