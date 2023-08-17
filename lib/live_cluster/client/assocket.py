@@ -98,7 +98,7 @@ class ASSocket:
                     sock.set_app_data(self.tls_name)
 
                     # timeout on wrapper might give errors
-                    sock.setblocking(0)
+                    sock.setblocking(False)
                     count = 0
                     while True:
                         try:
@@ -107,6 +107,7 @@ class ASSocket:
                         except SSL.WantReadError:
                             await asyncio.sleep(0.1)
                             count += 1
+                            print("WantReadError", count, sock_addr)
                             pass
                     print(count)
                     # sock.do_handshake()
