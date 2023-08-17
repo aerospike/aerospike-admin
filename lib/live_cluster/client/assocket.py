@@ -98,7 +98,7 @@ class ASSocket:
                     sock.set_app_data(self.tls_name)
 
                     # timeout on wrapper might give errors
-                    sock.setblocking(False)
+                    sock.setblocking(True)
                     count = 0
                     while True:
                         try:
@@ -112,7 +112,7 @@ class ASSocket:
                     print(count)
                     # sock.do_handshake()
 
-                    # sock.setblocking(0)
+                    sock.setblocking(False)
                 except Exception as tlse:
                     print("TLS connection exception: ", type(tlse))
                     if sock:
