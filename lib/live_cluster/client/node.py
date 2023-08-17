@@ -380,7 +380,9 @@ class Node(AsyncObject):
     async def connect(self, address, port):
         try:
             if not await self.login():
-                raise IOError("Login Error")
+                raise IOError(
+                    "Login Error"
+                )  # TODO: Better error message that is displayed to user to indicate the node is reachable but we could not login
 
             # At startup the socket_pool is empty.  Login adds its socket to the pool.
             # This ensures that the following call uses the same socket as login(). This is
@@ -497,7 +499,7 @@ class Node(AsyncObject):
         )
 
         if not await sock.connect():
-            logger.debug(
+            self.logger.debug(
                 "%s:%s failed to connect to socket %s", self.ip, self.port, sock
             )
             await sock.close()

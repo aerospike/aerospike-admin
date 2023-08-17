@@ -44,13 +44,22 @@ from .info import (
 )
 from lib.utils.constants import AuthMode
 
-try:
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        from OpenSSL import SSL
-    HAVE_PYOPENSSL = True
-except ImportError:
-    HAVE_PYOPENSSL = False
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    from OpenSSL import SSL
+
+
+class _AsyncioSSLConnectionAdapter(SSL.Connection):
+    def recv(self, bufsiz: int, flags: int | None = None) -> bytes:
+        """Custom wrapper around SSL.Connection.recv that raises a BlockingIOError instead of SSL.WantReadError
+        since pyOpenSSL.SSL.Connection (basically a socket) is not compatible with asyncio streams and raises SSL.WantReadError
+        in cases when no data is available to read. If we raise SSL.WantReadError asyncio will close the underlying socket
+        and not allow retries. By raising BlockingIOError asyncio will retry the read operation. See: TOOLS-2267 for more info
+        """
+        try:
+            return super().recv(bufsiz, flags)
+        except SSL.WantReadError:
+            raise BlockingIOError("Wrapped SSL.WantReadError")
 
 
 class ASSocket:
@@ -71,14 +80,11 @@ class ASSocket:
 
     def _wrap_socket(self, sock, ctx):
         if ctx:
-            if HAVE_PYOPENSSL:
-                sock = SSL.Connection(ctx, sock)
-            else:
-                raise ImportError("No module named pyOpenSSL")
+            sock = _AsyncioSSLConnectionAdapter(ctx, sock)
 
         return sock
 
-    def _create_socket_for_addrinfo(self, addrinfo):
+    async def _create_socket_for_addrinfo(self, addrinfo):
         sock = None
         try:
             # sock_info format : (family, socktype, proto, canonname, sockaddr)
@@ -89,40 +95,62 @@ class ASSocket:
             sock.settimeout(self._timeout)
 
             sock = self._wrap_socket(sock, self.ssl_context)
-            sock.connect(sock_addr)
+            sock.setblocking(False)
+
+            """We are creating our own socket, optionally wrapping it with an SSL.Context (not the same as ssl.SSLContext)
+            to get an SSL.Connection (same interface as a socket.socket). Further up the stack we pass this socket to asyncio.open_connection
+            to create streams. The perfered way of creating a socket would be to
+            allow asyncio create the socket (ssl or not) by passing the ssl_context (or None) to asyncio.open_connection. However, ssl_context must
+            be an instance of ssl.SSLContext, which is not compatible with SSL.Context which is what we use. SSL.Context enables a higher level
+            of control over certificate verification which we need (see ./ssl_context.py). Another solution might be to create a custom implementation
+            of he asyncio Transport that uses pyOpenSSL.SSL.Context (or use https://github.com/horazont/aioopenssl) but that would be a 
+            considerable amount of work.
+            """
+
+            await asyncio.get_event_loop().sock_connect(sock, sock_addr)
 
             if self.ssl_context:
                 try:
                     sock.set_app_data(self.tls_name)
 
-                    # timeout on wrapper might give errors
-                    sock.setblocking(1)
+                    """Hack, we must do that handshake here so we can pass the connected socket to asyncio.open_connection.
+                    The loop handles the handshake on a non-blocking socket otherwise a blocking socket would block the event loop.
+                    """
+                    while True:
+                        try:
+                            sock.do_handshake()
+                            break
+                        except (SSL.WantReadError, SSL.WantWriteError):
+                            await asyncio.sleep(0.01)
 
-                    sock.do_handshake()
                 except Exception as tlse:
-                    print("TLS connection exception: " + str(tlse))
+                    self.logger.debug(
+                        f"TLS connection exception {type(tlse)}: {str(tlse)}"
+                    )
                     if sock:
                         sock.close()
                         sock = None
                     return None
 
-        except Exception:
+        except Exception as e:
+            self.logger.debug("Failed to connect to socket %s", e)
             sock = None
             pass
 
         return sock
 
-    def _create_socket(self):
+    async def _create_socket(self):
         sock = None
         for addrinfo in socket.getaddrinfo(
             self.ip, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM
         ):
             # for DNS it will try all possible addresses
             try:
-                sock = self._create_socket_for_addrinfo(addrinfo)
+                sock = await self._create_socket_for_addrinfo(addrinfo)
                 if sock:
                     break
             except Exception:
+                self.logger.debug("Failed to create socket to %s", addrinfo)
                 pass
         return sock
 
@@ -169,7 +197,7 @@ class ASSocket:
 
     async def connect(self):
         try:
-            self.sock = self._create_socket()
+            self.sock = await self._create_socket()
             if not self.sock:
                 return False
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
