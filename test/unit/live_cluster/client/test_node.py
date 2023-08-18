@@ -113,7 +113,6 @@ class NodeInitTest(asynctest.TestCase):
         def as_socket_mock():
             mock = AsyncMock()
             mock.get_session_info = Mock()
-            mock.settimeout = Mock()
             return mock
 
         as_socket_mock_used_for_login = as_socket_mock()
@@ -286,7 +285,7 @@ class NodeTest(asynctest.TestCase):
     # TODO: Make unit tests for socket pool
     async def test_get_connection_uses_socket_pool(self):
         class ASSocket_Mock(AsyncMock):
-            settimeout = Mock()
+            pass
 
         as_socket_mock1 = ASSocket_Mock()
         as_socket_mock2 = ASSocket_Mock()
@@ -309,7 +308,7 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock = as_socket_mock.return_value
 
         class ASSocket_Mock(AsyncMock):
-            settimeout = Mock()
+            pass
 
         as_socket_in_pool = ASSocket_Mock()
         as_socket_in_pool.is_connected.return_value = False
@@ -3825,10 +3824,7 @@ class NodeTest(asynctest.TestCase):
 
     @patch("lib.live_cluster.client.assocket.ASSocket.create_user")
     @patch("lib.live_cluster.client.node.Node._get_connection")
-    @patch("lib.live_cluster.client.assocket.ASSocket.settimeout")
-    async def test_admin_cadmin(
-        self, set_timeout_mock, get_connection_mock, create_user_mock
-    ):
+    async def test_admin_cadmin(self, get_connection_mock, create_user_mock):
         get_connection_mock.return_value = ASSocket(
             self.node.ip,
             self.node.port,
@@ -3841,13 +3837,11 @@ class NodeTest(asynctest.TestCase):
         )
         expected = 1
         create_user_mock.return_value = expected
-        set_timeout_mock.return_value = None
 
         actual = await self.node._admin_cadmin(
             ASSocket.create_user, (1, 2, 3), self.node.ip, self.node.port
         )
 
-        set_timeout_mock.assert_called_with(None)
         get_connection_mock.assert_called_with(self.node.ip, self.node.port)
         create_user_mock.assert_called_with(get_connection_mock.return_value, 1, 2, 3)
         self.assertEqual(actual, expected)

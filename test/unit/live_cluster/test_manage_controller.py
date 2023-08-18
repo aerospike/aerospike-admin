@@ -1385,6 +1385,7 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
         self.node.conf_schema_handler = JsonDynamicConfigHandler(
             constants.CONFIG_SCHEMAS_HOME, "5.6.0"
         )
+        self.node.alive = True
         self.cluster.update_node(self.node)
         self.controller = ManageConfigController()
         self.controller._context = ["manage", "config"]

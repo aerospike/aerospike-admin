@@ -94,7 +94,6 @@ class ASSocketTestConnect(asynctest.TestCase):
 
         socket_module_mock.assert_called_with("family1", socket.SOCK_STREAM)
         socket_mock = socket_module_mock.return_value
-        socket_mock.settimeout.assert_called_with(self.as_socket._timeout)
         ssl_connect_mock.assert_called_with(True, socket_mock)
         socket_mock = ssl_connect_mock.return_value
         socket_mock.connect.assert_called_with("sockaddr1")
