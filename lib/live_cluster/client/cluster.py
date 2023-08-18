@@ -466,10 +466,11 @@ class Cluster(AsyncObject):
 
         # TODO: Make an enum or class to store the different node selections
         if nodes == constants.NodeSelection.ALL:
-            use_nodes = list(self.nodes.values())
+            use_nodes = [node for node in self.nodes.values() if node.alive]
         elif nodes == constants.NodeSelection.RANDOM:
-            randint = random.randint(0, len(self.nodes) - 1)
-            use_nodes = [list(self.nodes.values())[randint]]
+            live_nodes = [node for node in self.nodes.values() if node.alive]
+            randint = random.randint(0, len(live_nodes) - 1)
+            use_nodes = [live_nodes[randint]]
         elif nodes == constants.NodeSelection.PRINCIPAL:
             principal = self.get_expected_principal()
             use_nodes = self.get_node(principal)
@@ -586,7 +587,7 @@ class Cluster(AsyncObject):
             if not new_node.alive:
                 if not force:
                     # Check other endpoints
-                    new_node.close()
+                    await new_node.close()
                     return None
             self.update_node(new_node)
             self.update_aliases(self.aliases, new_node.service_addresses, new_node.key)
