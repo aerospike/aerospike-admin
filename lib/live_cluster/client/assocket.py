@@ -106,8 +106,9 @@ class ASSocket:
             of he asyncio Transport that uses pyOpenSSL.SSL.Context (or use https://github.com/horazont/aioopenssl) but that would be a 
             considerable amount of work.
             """
-
-            await asyncio.get_event_loop().sock_connect(sock, sock_addr)
+            await asyncio.wait_for(
+                asyncio.get_event_loop().sock_connect(sock, sock_addr), self._timeout
+            )
 
             if self.ssl_context:
                 try:
@@ -116,12 +117,16 @@ class ASSocket:
                     """Hack, we must do that handshake here so we can pass the connected socket to asyncio.open_connection.
                     The loop handles the handshake on a non-blocking socket otherwise a blocking socket would block the event loop.
                     """
-                    while True:
-                        try:
-                            sock.do_handshake()
-                            break
-                        except (SSL.WantReadError, SSL.WantWriteError):
-                            await asyncio.sleep(0.01)
+
+                    async def _handshake():
+                        while True:
+                            try:
+                                sock.do_handshake()
+                                break
+                            except (SSL.WantReadError, SSL.WantWriteError):
+                                await asyncio.sleep(0.01)
+
+                    await asyncio.wait_for(_handshake(), self._timeout)
 
                 except Exception as tlse:
                     self.logger.debug(
