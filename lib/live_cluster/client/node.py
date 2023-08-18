@@ -632,8 +632,6 @@ class Node(AsyncObject):
                 sock = self.socket_pool[port].pop()
 
                 if await sock.is_connected():
-                    if not self.ssl_context:
-                        sock.settimeout(self._timeout)
                     break
 
                 await sock.close()
@@ -733,7 +731,6 @@ class Node(AsyncObject):
                     # TODO: same code is in _admin_cadmin. management of socket_pool should
                     # be abstracted.
                     if len(self.socket_pool[port]) < self.socket_pool_max_size:
-                        sock.settimeout(None)
                         self.socket_pool[port].add(sock)
 
                     else:
@@ -2911,7 +2908,6 @@ class Node(AsyncObject):
 
             # Either restore the socket in the pool or close it if it is full.
             if len(self.socket_pool[port]) < self.socket_pool_max_size:
-                sock.settimeout(None)
                 self.socket_pool[port].add(sock)
             else:
                 await sock.close()
