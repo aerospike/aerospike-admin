@@ -74,7 +74,7 @@ class ASSocketTestConnect(asynctest.TestCase):
 
     @patch("socket.socket")
     @patch("socket.getaddrinfo")
-    @patch("lib.live_cluster.client.assocket.SSL.Connection")
+    @patch("lib.live_cluster.client.assocket._AsyncioSSLConnectionAdapter")
     @patch("asyncio.open_connection", new_callable=AsyncMock)
     async def test_can_connect_with_ssl_context(
         self,
