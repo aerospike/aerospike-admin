@@ -28,7 +28,9 @@ class TestWatch(asynctest.TestCase):
     async def setUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController(
-            user="admin", password="admin"
+            [(lib.SERVER_IP, lib.PORT, None)],
+            user="admin",
+            password="admin",
         )  # type: ignore
 
     def tearDown(self) -> None:
