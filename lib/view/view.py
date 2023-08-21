@@ -17,7 +17,6 @@ import datetime
 import locale
 import logging
 from os import path
-from signal import SIGINT, SIGTERM
 import sys
 import time
 from pydoc import pipepager
@@ -25,9 +24,7 @@ from typing import Any, TextIO, Tuple
 
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
-from lib.live_cluster.client import Cluster
-from lib.live_cluster.client.node import ASInfoResponseError
-from lib.live_cluster.client.types import ASInfoError
+from lib.live_cluster.client import Cluster, ASInfoError
 from lib.utils import file_size, constants, util
 from lib.utils.common import (
     StopWritesDict,
